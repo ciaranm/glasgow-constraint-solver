@@ -662,10 +662,10 @@ auto main(int argc, char * argv[]) -> int
             else if (id == "glasgow_diffn" || id == "glasgow_diffn_nonstrict") {
                 const auto & xs = arg_as_array_of_var(data, args, 0);
                 const auto & ys = arg_as_array_of_var(data, args, 1);
-                auto widths = arg_as_array_of_integer(data, args, 2);
-                auto heights = arg_as_array_of_integer(data, args, 3);
+                const auto & widths = arg_as_array_of_var(data, args, 2);
+                const auto & heights = arg_as_array_of_var(data, args, 3);
                 auto strict = (id == "glasgow_diffn");
-                problem.post(Disjunctive2D{xs, ys, *widths, *heights, strict});
+                problem.post(Disjunctive2D{xs, ys, widths, heights, strict});
             }
             else if (id == "glasgow_global_cardinality" || id == "glasgow_global_cardinality_closed") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);

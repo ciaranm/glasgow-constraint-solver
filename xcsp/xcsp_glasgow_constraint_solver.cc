@@ -508,10 +508,22 @@ namespace
             _problem.post(Disjunctive2D{xs, ys, widths, heights, ! zeroIgnored});
         }
 
-        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> &,
-            vector<vector<XVariable *>> &, bool) -> void override
+        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins,
+            vector<vector<XVariable *>> & lengths, bool zeroIgnored) -> void override
         {
-            report_unsupported("noOverlap", "variable-size Disjunctive2D not yet supported (#146)");
+            // 2D non-overlap with variable sizes: each origin is [x, y] and each
+            // length is [width, height] (all variables).
+            for (size_t r = 0; r < origins.size(); ++r)
+                if (origins[r].size() != 2 || lengths[r].size() != 2)
+                    report_unsupported("noOverlap", "only 2D Disjunctive2D is supported (#146)");
+            vector<IntegerVariableID> xs, ys, widths, heights;
+            for (size_t r = 0; r < origins.size(); ++r) {
+                xs.push_back(need_variable(origins[r][0]->id));
+                ys.push_back(need_variable(origins[r][1]->id));
+                widths.push_back(need_variable(lengths[r][0]->id));
+                heights.push_back(need_variable(lengths[r][1]->id));
+            }
+            _problem.post(Disjunctive2D{xs, ys, widths, heights, ! zeroIgnored});
         }
 
         // Shared backend for every cumulative shape: lengths and heights are

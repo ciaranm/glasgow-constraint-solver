@@ -227,6 +227,27 @@ on that axis), emitted once at `Top` for each axis.
   axis where they span no cells (strict-mode zero-area conflicts are
   caught by an all-fixed RUP leaf check instead).
 
+### Variable rectangle sizes
+
+`Disjunctive2D` also supports variable widths/heights (rotation,
+strip-packing), reusing the Cumulative `end = pos + size` proxy. With a
+variable size the `before` flag stays linear (`pos_i + size_i ≤ pos_j`),
+but the bridge "after" flag `pos_i + size_i ≥ p+1` is two-variable, so it
+is reified instead on a proof-only `end = pos + size`, single-variable. The
+contradiction and push proofs gain two `end` steps wherever a size varies:
+pinning an "after" first materialises `end ≥ s_lo + lb(size)` with a `pol`
+over the captured `end ≥ pos + size` line and the operand order-literal
+defs (`s_lo` is `lb(pos)` for a mandatory span, the chain running bound /
+`¬ext_lit` for the pushed rectangle); and the `before`-flag pol adds the
+`end ≤ pos + size` line so `end` cancels back to `pos + size`. A constant
+size folds into the OPB and keeps the single-variable "after" with no
+`end`. In **non-strict mode**, a rectangle that can be zero-area carries a
+reified `size ≤ 0` escape flag added to its separation clauses (so a
+zero-area rectangle never constrains, matching `fzn_diffn_nonstrict`).
+Whenever an inference fires, the relevant sizes are `≥ 1`, so the
+contradiction / reduced-clause pol pins those escape flags false (RUP from
+`size ≥ 1`) before using the clause.
+
 ## Open follow-ups
 
 - **Variable lengths.** The OPB encoding generalises directly

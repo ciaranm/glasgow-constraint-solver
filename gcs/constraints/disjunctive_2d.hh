@@ -3,11 +3,14 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -46,10 +49,21 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _xs;
         std::vector<IntegerVariableID> _ys;
-        std::vector<Integer> _widths;
-        std::vector<Integer> _heights;
+        std::vector<IntegerVariableID> _widths;
+        std::vector<IntegerVariableID> _heights;
         bool _strict;
         std::vector<std::size_t> _active_rects;
+
+        // Size snapshots resolved in prepare(). _*_vals holds the constant
+        // value for a constant size (0 for a variable one, where the variable
+        // is used instead); _*_ub holds the initial upper bound (used for the
+        // possible-active window and the active-rect filter). Until the
+        // variable-size milestone lands, sizes must be constant.
+        std::vector<Integer> _width_vals, _width_ub;
+        std::vector<Integer> _height_vals, _height_ub;
+        // Non-strict mode: whether each rectangle's width/height can be 0
+        // (std::uint8_t rather than the vector<bool> bitset specialisation).
+        std::vector<std::uint8_t> _can_be_zero_w, _can_be_zero_h;
 
         // Per-rectangle possible-active windows in each dimension, from root
         // bounds in prepare(). Used to size the proof bridge and to index the
@@ -74,11 +88,39 @@ namespace gcs
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_y;
         std::map<std::pair<std::size_t, std::size_t>, innards::ProofLine> _clause_lines;
 
+        // For a rectangle with a variable size on an axis, a proof-only
+        // end = pos + size on which that axis's "after" bridge flag is reified
+        // (single variable, keeping the after pin RUP-friendly). Both definition
+        // lines are captured: _end_*_ge is end >= pos+size (used to materialise
+        // end's bound), _end_*_le is end <= pos+size (used to cancel end back to
+        // pos+size in the before-flag pol). nullopt when that size is constant.
+        std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end_x, _end_y;
+        std::vector<std::optional<innards::ProofLine>> _end_x_ge, _end_x_le, _end_y_ge, _end_y_le;
+
+        // Non-strict mode only: for a rectangle whose width/height can be 0, a
+        // reified "size <= 0" flag that escapes the separation clause (a
+        // zero-area rectangle does not constrain). nullopt otherwise.
+        std::vector<std::optional<innards::ProofFlag>> _zero_w, _zero_h;
+
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
+        /**
+         * \brief General form: widths and heights may be variables or constants
+         * (constants pass through as ConstantIntegerVariableID).
+         */
+        explicit Disjunctive2D(std::vector<IntegerVariableID> xs,
+            std::vector<IntegerVariableID> ys,
+            std::vector<IntegerVariableID> widths,
+            std::vector<IntegerVariableID> heights,
+            bool strict = true);
+
+        /**
+         * \brief Convenience form for constant rectangle sizes. Delegates to
+         * the general constructor.
+         */
         explicit Disjunctive2D(std::vector<IntegerVariableID> xs,
             std::vector<IntegerVariableID> ys,
             std::vector<Integer> widths,
