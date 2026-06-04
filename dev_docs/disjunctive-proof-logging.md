@@ -194,16 +194,45 @@ The disjunctive scaffolding adds a third:
    reasoning vocabulary outgrows the time-table flags currently in
    the OPB.
 
+## 2D non-overlap (`Disjunctive2D` / `diffn`)
+
+The same recipe lifts one dimension up to non-overlapping rectangles
+(`gcs/constraints/disjunctive_2d.{hh,cc}`), with constant sizes. The
+declarative OPB is the `diffn` definition: for each pair and axis `d`,
+`before_{i,j,d} ⇔ pos_{i,d} + size_{i,d} ≤ pos_{j,d}`, plus a single
+**4-way separation clause** per pair
+`before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y} ≥ 1`.
+The bridge is per *axis*: per-`(rect, coordinate)` single-variable
+`before`/`after`/`active` flags (`active` = the rect spans that coordinate
+on that axis), emitted once at `Top` for each axis.
+
+- **Contradiction** (mandatory-box overlap). Two rectangles whose
+  mandatory boxes overlap on *both* axes is infeasible. At an overlap
+  cell `(p, q)`, pin `active_x` and `active_y` for both rectangles, then
+  derive each of the four `before` flags false with the 1D `pair_ne`
+  pol *per axis/direction* (the integer terms cancel exactly as in 1D),
+  contradicting the 4-way clause. Only two rectangles meet at a cell
+  (capacity 1), so no `recover_am1` is needed.
+- **Bound push** (a forced overlap on one axis pushes the other). When a
+  pair's mandatory parts overlap on the *forced* axis, the x-elimination
+  above — run only for that axis and combined with the 4-way clause —
+  yields a real **reduced clause** `before_{i,j,free} +
+  before_{j,i,free} ≥ 1`. That is a 1D disjunctive in the free axis, so a
+  1D-style chain against it pushes the rectangle clear of the blocker's
+  mandatory part. Because the bridge flags are single-variable, the
+  cross-variable terms cancel in the pol — no explicit materialisation is
+  needed. Two edge cases: the push target is capped to the rectangle's
+  own domain (a blocker reaching past it would otherwise reference an
+  unspannable free cell), and zero-size rectangles are skipped on the
+  axis where they span no cells (strict-mode zero-area conflicts are
+  caught by an all-fixed RUP leaf check instead).
+
 ## Open follow-ups
 
 - **Variable lengths.** The OPB encoding generalises directly
   (`s_i + l_i ≤ s_j` is still pseudo-Boolean over the bit
   decompositions), but the bridge derivation per `(task, t)` would
   need to account for `l_i` being a variable rather than a constant.
-- **2D / k-D `Disjunctive2D`.** The OPB encoding would still be
-  pairwise, but per-pair per-dimension: `Σ_d before_{i,j,d} +
-  before_{j,i,d} ≥ 1`. The bridge would presumably introduce per-axis
-  `active_{i,t,d}` flags.
 - **Optional tasks (`*_opt`).** A presence flag per task gates the
   encoded pairwise clauses; the bridge gets a per-(task, t) flag
   that's only meaningful when the task is present.

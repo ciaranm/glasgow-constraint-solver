@@ -1,0 +1,16 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="x1"> 0..2 </var>
+        <var id="x2"> 0..2 </var>
+        <var id="x3"> 0..2 </var>
+        <var id="y1"> 0..2 </var>
+        <var id="y2"> 0..2 </var>
+        <var id="y3"> 0..2 </var>
+    </variables>
+    <constraints>
+        <noOverlap>
+            <origins> (x1,y1)(x2,y2)(x3,y3) </origins>
+            <lengths> (2,1)(1,2)(1,1) </lengths>
+        </noOverlap>
+    </constraints>
+</instance>
