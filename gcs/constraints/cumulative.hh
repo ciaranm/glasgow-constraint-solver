@@ -36,9 +36,15 @@ namespace gcs
     {
     private:
         std::vector<IntegerVariableID> _starts;
-        std::vector<Integer> _lengths;
-        std::vector<Integer> _heights;
-        Integer _capacity;
+        std::vector<IntegerVariableID> _lengths;
+        std::vector<IntegerVariableID> _heights;
+        IntegerVariableID _capacity;
+        // Constant snapshots resolved in prepare(). Until the variable d/r/b
+        // milestones land, every length/height/capacity must be constant and
+        // these hold their values; the propagator and proof model read these.
+        std::vector<Integer> _length_vals;
+        std::vector<Integer> _height_vals;
+        Integer _capacity_val;
         std::vector<std::size_t> _active_tasks;
         std::vector<Integer> _per_task_t_lo;
         std::vector<Integer> _per_task_t_hi;
@@ -55,6 +61,20 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
+        /**
+         * \brief General form: lengths, heights, and capacity may be variables
+         * or constants (constants pass through as ConstantIntegerVariableID).
+         */
+        explicit Cumulative(std::vector<IntegerVariableID> starts,
+            std::vector<IntegerVariableID> lengths,
+            std::vector<IntegerVariableID> heights,
+            IntegerVariableID capacity);
+
+        /**
+         * \brief Convenience form for the all-constant case (variable starts,
+         * constant lengths, heights, and capacity). Delegates to the general
+         * constructor.
+         */
         explicit Cumulative(std::vector<IntegerVariableID> starts,
             std::vector<Integer> lengths,
             std::vector<Integer> heights,

@@ -36,23 +36,51 @@ using std::print;
 using fmt::print;
 #endif
 
-Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths,
-    vector<Integer> heights, Integer capacity) :
+namespace
+{
+    auto const_value_of(const IntegerVariableID & v) -> Integer
+    {
+        return std::get<ConstantIntegerVariableID>(v).const_value;
+    }
+
+    auto as_constant_var_ids(const vector<Integer> & vals) -> vector<IntegerVariableID>
+    {
+        vector<IntegerVariableID> result;
+        result.reserve(vals.size());
+        for (const auto & v : vals)
+            result.push_back(constant_variable(v));
+        return result;
+    }
+}
+
+Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths,
+    vector<IntegerVariableID> heights, IntegerVariableID capacity) :
     _starts(move(starts)),
     _lengths(move(lengths)),
     _heights(move(heights)),
-    _capacity(capacity)
+    _capacity(capacity),
+    _capacity_val(0_i)
 {
     if (_starts.size() != _lengths.size() || _starts.size() != _heights.size())
         throw InvalidProblemDefinitionException{"Cumulative: starts, lengths, heights must have the same size"};
-    if (_capacity < 0_i)
+    // Constant non-negativity can be checked here. Variable lengths/heights/
+    // capacity carry the modelling assumption d, r, b >= 0 (mirroring MiniZinc);
+    // their domains are not available until prepare().
+    if (is_constant_variable(_capacity) && const_value_of(_capacity) < 0_i)
         throw InvalidProblemDefinitionException{"Cumulative: capacity must be non-negative"};
-    for (auto & l : _lengths)
-        if (l < 0_i)
+    for (const auto & l : _lengths)
+        if (is_constant_variable(l) && const_value_of(l) < 0_i)
             throw InvalidProblemDefinitionException{"Cumulative: lengths must be non-negative"};
-    for (auto & h : _heights)
-        if (h < 0_i)
+    for (const auto & h : _heights)
+        if (is_constant_variable(h) && const_value_of(h) < 0_i)
             throw InvalidProblemDefinitionException{"Cumulative: heights must be non-negative"};
+}
+
+Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths,
+    vector<Integer> heights, Integer capacity) :
+    Cumulative(move(starts), as_constant_var_ids(lengths), as_constant_var_ids(heights),
+        constant_variable(capacity))
+{
 }
 
 auto Cumulative::clone() const -> unique_ptr<Constraint>
@@ -73,11 +101,34 @@ auto Cumulative::install(Propagators & propagators, State & initial_state, Proof
 
 auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
-    // Tasks with length 0 or height 0 never raise the load profile.
     auto n = _starts.size();
+
+    // Variable lengths/heights/capacity are not yet supported (milestones
+    // M1-M3 lift these one at a time); reject them clearly until then.
+    for (const auto & l : _lengths)
+        if (! is_constant_variable(l))
+            throw UnimplementedException{"Cumulative: variable lengths not yet supported"};
+    for (const auto & h : _heights)
+        if (! is_constant_variable(h))
+            throw UnimplementedException{"Cumulative: variable heights not yet supported"};
+    if (! is_constant_variable(_capacity))
+        throw UnimplementedException{"Cumulative: variable capacity not yet supported"};
+
+    // Resolve constant snapshots used by define_proof_model and the propagator.
+    _length_vals.clear();
+    _height_vals.clear();
+    _length_vals.reserve(n);
+    _height_vals.reserve(n);
+    for (const auto & l : _lengths)
+        _length_vals.push_back(const_value_of(l));
+    for (const auto & h : _heights)
+        _height_vals.push_back(const_value_of(h));
+    _capacity_val = const_value_of(_capacity);
+
+    // Tasks with length 0 or height 0 never raise the load profile.
     _active_tasks.reserve(n);
     for (size_t i = 0; i < n; ++i)
-        if (_lengths[i] > 0_i && _heights[i] > 0_i)
+        if (_length_vals[i] > 0_i && _height_vals[i] > 0_i)
             _active_tasks.push_back(i);
 
     if (_active_tasks.empty())
@@ -88,7 +139,7 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     for (auto i : _active_tasks) {
         auto [s_lo, s_hi] = initial_state.bounds(_starts[i]);
         _per_task_t_lo[i] = s_lo;
-        _per_task_t_hi[i] = s_hi + _lengths[i] - 1_i;
+        _per_task_t_hi[i] = s_hi + _length_vals[i] - 1_i;
     }
     return true;
 }
@@ -119,7 +170,7 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
                 WPBSum{} + 1_i * _starts[i] <= t);
             auto after = model.create_proof_flag_fully_reifying(
                 "cumafter", "Cumulative", "not yet finished at time",
-                WPBSum{} + 1_i * _starts[i] >= t - _lengths[i] + 1_i);
+                WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i);
             auto active = model.create_proof_flag_fully_reifying(
                 "cumactive", "Cumulative", "task active at time",
                 WPBSum{} + 1_i * before + 1_i * after >= 2_i);
@@ -136,12 +187,12 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             if (t < _per_task_t_lo[i] || t > _per_task_t_hi[i])
                 continue;
             auto idx = (t - _per_task_t_lo[i]).raw_value;
-            load += _heights[i] * _active_flags[i][idx];
+            load += _height_vals[i] * _active_flags[i][idx];
             any = true;
         }
         if (any) {
             auto line = model.add_constraint("Cumulative", "load at time",
-                load <= _capacity);
+                load <= _capacity_val);
             if (line)
                 _capacity_lines.emplace(t, *line);
         }
@@ -155,8 +206,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         triggers.on_bounds.emplace_back(_starts[i]);
 
     propagators.install(
-        [starts = move(_starts), lengths = move(_lengths), heights = move(_heights),
-            capacity = _capacity, active_tasks = move(_active_tasks),
+        [starts = move(_starts), lengths = move(_length_vals), heights = move(_height_vals),
+            capacity = _capacity_val, active_tasks = move(_active_tasks),
             before_flags = move(_before_flags), after_flags = move(_after_flags),
             active_flags = move(_active_flags), capacity_lines = move(_capacity_lines),
             per_task_t_lo = move(_per_task_t_lo)](
@@ -433,10 +484,10 @@ auto Cumulative::s_exprify(const ProofModel * const model) const -> string
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     print(s, " ) ( ");
     for (const auto & l : _lengths)
-        print(s, " {}", l);
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(l));
     print(s, " ) ( ");
     for (const auto & h : _heights)
-        print(s, " {}", h);
-    print(s, " ) {}", _capacity);
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(h));
+    print(s, " ) {}", model->names_and_ids_tracker().s_expr_name_of(_capacity));
     return s.str();
 }
