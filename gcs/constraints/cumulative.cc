@@ -104,31 +104,38 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
 {
     auto n = _starts.size();
 
-    // Variable lengths/heights are not yet supported (milestones M2-M3 lift
-    // these); reject them clearly until then. Variable capacity is supported.
+    // Variable lengths are not yet supported (milestone M3 lifts that);
+    // reject them clearly until then. Variable heights and capacity are
+    // supported.
     for (const auto & l : _lengths)
         if (! is_constant_variable(l))
             throw UnimplementedException{"Cumulative: variable lengths not yet supported"};
-    for (const auto & h : _heights)
-        if (! is_constant_variable(h))
-            throw UnimplementedException{"Cumulative: variable heights not yet supported"};
 
-    // Resolve constant snapshots used by define_proof_model and the propagator.
+    // Resolve snapshots used by define_proof_model and the propagator. For a
+    // variable height, _height_vals[i] is a placeholder 0 (the propagator
+    // reads lb(h_i) from the state and the proof uses _contrib_vars instead);
+    // _height_ub[i] is the initial upper bound, used to size the contrib var
+    // and to filter tasks that can never raise the profile.
     _length_vals.clear();
     _height_vals.clear();
+    _height_ub.clear();
     _length_vals.reserve(n);
     _height_vals.reserve(n);
+    _height_ub.reserve(n);
     for (const auto & l : _lengths)
         _length_vals.push_back(const_value_of(l));
-    for (const auto & h : _heights)
-        _height_vals.push_back(const_value_of(h));
+    for (const auto & h : _heights) {
+        _height_vals.push_back(is_constant_variable(h) ? const_value_of(h) : 0_i);
+        _height_ub.push_back(initial_state.upper_bound(h));
+    }
     if (is_constant_variable(_capacity))
         _capacity_val = const_value_of(_capacity);
 
-    // Tasks with length 0 or height 0 never raise the load profile.
+    // Tasks with length 0, or whose height can only ever be 0, never raise the
+    // load profile.
     _active_tasks.reserve(n);
     for (size_t i = 0; i < n; ++i)
-        if (_length_vals[i] > 0_i && _height_vals[i] > 0_i)
+        if (_length_vals[i] > 0_i && _height_ub[i] > 0_i)
             _active_tasks.push_back(i);
 
     if (_active_tasks.empty())
@@ -156,6 +163,7 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
     _before_flags.assign(_starts.size(), {});
     _after_flags.assign(_starts.size(), {});
     _active_flags.assign(_starts.size(), {});
+    _contrib_vars.assign(_starts.size(), {});
 
     Integer global_lo = 0_i, global_hi = -1_i;
     bool first = true;
@@ -177,6 +185,27 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             _before_flags[i].push_back(before);
             _after_flags[i].push_back(after);
             _active_flags[i].push_back(active);
+
+            // For a variable height, the task's load contribution at t is the
+            // product height·active, which is nonlinear. Linearise it with a
+            // proof-only integer contrib in [0, ub(h)]:
+            //   active   ⇒ contrib = h   (contrib − h ≥ 0 and ≤ 0)
+            //   ¬active  ⇒ contrib = 0   (contrib ≤ 0; contrib ≥ 0 by domain)
+            if (! is_constant_variable(_heights[i])) {
+                auto contrib = model.create_proof_only_integer_variable(
+                    0_i, _height_ub[i], "cumcontrib",
+                    IntegerVariableProofRepresentation::Bits);
+                model.add_constraint("Cumulative", "contrib >= h when active",
+                    WPBSum{} + 1_i * contrib + -1_i * _heights[i] >= 0_i,
+                    HalfReifyOnConjunctionOf{active});
+                model.add_constraint("Cumulative", "contrib <= h when active",
+                    WPBSum{} + 1_i * contrib + -1_i * _heights[i] <= 0_i,
+                    HalfReifyOnConjunctionOf{active});
+                model.add_constraint("Cumulative", "contrib = 0 when inactive",
+                    WPBSum{} + 1_i * contrib <= 0_i,
+                    HalfReifyOnConjunctionOf{! active});
+                _contrib_vars[i].push_back(contrib);
+            }
         }
     }
 
@@ -187,7 +216,10 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             if (t < _per_task_t_lo[i] || t > _per_task_t_hi[i])
                 continue;
             auto idx = (t - _per_task_t_lo[i]).raw_value;
-            load += _height_vals[i] * _active_flags[i][idx];
+            if (is_constant_variable(_heights[i]))
+                load += _height_vals[i] * _active_flags[i][idx];
+            else
+                load += 1_i * _contrib_vars[i][idx];
             any = true;
         }
         if (any) {
@@ -216,22 +248,84 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
     // profile, so re-fire on it too (constant capacity never changes).
     if (! is_constant_variable(_capacity))
         triggers.on_bounds.emplace_back(_capacity);
+    // A rise in a task's guaranteed height (lb) raises the mandatory load, so
+    // re-fire on variable-height bound changes too.
+    for (auto i : _active_tasks)
+        if (! is_constant_variable(_heights[i]))
+            triggers.on_bounds.emplace_back(_heights[i]);
 
     propagators.install(
-        [starts = move(_starts), lengths = move(_length_vals), heights = move(_height_vals),
+        [starts = move(_starts), lengths = move(_length_vals), heights_var = move(_heights),
             capacity_var = _capacity, active_tasks = move(_active_tasks),
             before_flags = move(_before_flags), after_flags = move(_after_flags),
-            active_flags = move(_active_flags), capacity_lines = move(_capacity_lines),
-            per_task_t_lo = move(_per_task_t_lo)](
+            active_flags = move(_active_flags), contrib_vars = move(_contrib_vars),
+            capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // The capacity may be a variable: the load profile is infeasible
             // only when it exceeds the *largest* still-allowed capacity, so the
             // threshold for every overflow/blocked test is ub(capacity). When
             // capacity is a genuine variable its bound is part of every reason.
             auto capacity = state.upper_bound(capacity_var);
+
+            // A height may be a variable: a task's *guaranteed* contribution to
+            // the load is its smallest still-allowed height, lb(h_i). For a
+            // constant height lb(h_i) is just its value. Variable heights' bounds
+            // are part of every reason, and the proof uses contrib_vars.
+            auto hlb = [&](size_t i) { return state.lower_bound(heights_var[i]); };
+            auto h_is_var = [&](size_t i) { return ! is_constant_variable(heights_var[i]); };
+
             vector<IntegerVariableID> reason_vars = starts;
             if (! is_constant_variable(capacity_var))
                 reason_vars.push_back(capacity_var);
+            for (auto i : active_tasks)
+                if (h_is_var(i))
+                    reason_vars.push_back(heights_var[i]);
+
+            // Proof helper: pin task i's guaranteed load contribution at t and
+            // return a (line, coeff) pair to feed the time-table pol. For a
+            // constant height that is "active = 1" scaled by the height; for a
+            // variable height it is "contrib >= lb(h_i)" with coefficient 1
+            // (contrib is the proof-only product h_i·active in C_t). The
+            // before/after RUPs give VeriPB the units to chase active's AND-gate.
+            auto pin_contributor = [&](const ReasonFunction & reason, size_t i, Integer t)
+                -> std::pair<ProofLine, Integer> {
+                auto fi = (t - per_task_t_lo[i]).raw_value;
+                logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                auto active_line = logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                if (! h_is_var(i))
+                    return {active_line, hlb(i)};
+                auto contrib_line = logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * contrib_vars[i][fi] >= hlb(i), ProofLevel::Temporary);
+                return {contrib_line, 1_i};
+            };
+
+            // Proof helper for the pushed task j, pinned under the EXTENDED
+            // reason {reason ∧ ¬ext_lit} (ext_lit appended as a disjunct). For a
+            // constant height it returns (active_j+ext_lit ≥ 1, h_j); for a
+            // variable height it deposits contrib_j + lb(h_j)·ext_lit ≥ lb(h_j)
+            // (vacuous when ext_lit holds, "contrib_j ≥ lb(h_j)" otherwise) and
+            // returns that line with coefficient 1.
+            auto pin_pushed = [&](const ReasonFunction & reason, size_t j_idx, Integer t,
+                                  IntegerVariableCondition ext_lit) -> std::pair<ProofLine, Integer> {
+                auto fj = (t - per_task_t_lo[j_idx]).raw_value;
+                logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * before_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * after_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                auto active_line = logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * active_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                if (! h_is_var(j_idx))
+                    return {active_line, hlb(j_idx)};
+                auto contrib_line = logger->emit_rup_proof_line_under_reason(reason,
+                    WPBSum{} + 1_i * contrib_vars[j_idx][fj] + hlb(j_idx) * ext_lit >= hlb(j_idx),
+                    ProofLevel::Temporary);
+                return {contrib_line, 1_i};
+            };
+
             // Time-table consistency. The mandatory part of task i is the
             // half-open interval [lst_i, eet_i) where lst_i = ub(s_i) and
             // eet_i = lb(s_i) + l_i. Summing heights over mandatory parts
@@ -262,7 +356,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 auto eet = state.lower_bound(starts[i]) + lengths[i];
                 if (lst < eet)
                     for (Integer t = lst; t < eet; ++t)
-                        mand_load[(t - t_lo).raw_value] += heights[i];
+                        mand_load[(t - t_lo).raw_value] += hlb(i);
             }
 
             for (auto idx = 0; idx < range; ++idx)
@@ -281,36 +375,17 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
                     auto justify = [&, violating_t, contributing](const ReasonFunction & reason) -> void {
                         if (! logger) return;
-                        // For each contributing task: RUP before=1, then
-                        // after=1, then active=1. VeriPB UP can't chase
-                        // through the AND-gate of `active` in one step; the
-                        // intermediate before/after units give it the unit
-                        // facts it needs to close the reverse-half of
-                        // `active`'s reification.
-                        //
-                        // Once every contributing active=1 line exists, a
-                        // pol line combines C_t with the scaled assertions
-                        // to produce a constraint that's unsatisfiable
-                        // under the reason context, closing the framework's
-                        // wrapping RUP step.
-                        vector<ProofLine> active_lines;
-                        for (auto i : contributing) {
-                            auto fi = (violating_t - per_task_t_lo[i]).raw_value;
-                            logger->emit_rup_proof_line_under_reason(reason,
-                                WPBSum{} + 1_i * before_flags[i][fi] >= 1_i,
-                                ProofLevel::Temporary);
-                            logger->emit_rup_proof_line_under_reason(reason,
-                                WPBSum{} + 1_i * after_flags[i][fi] >= 1_i,
-                                ProofLevel::Temporary);
-                            auto line = logger->emit_rup_proof_line_under_reason(reason,
-                                WPBSum{} + 1_i * active_flags[i][fi] >= 1_i,
-                                ProofLevel::Temporary);
-                            active_lines.push_back(line);
-                        }
+                        // Pin every contributing task's guaranteed load at
+                        // violating_t, then combine those lines with C_t in a
+                        // single pol. The result is unsatisfiable under the
+                        // reason context (the pinned loads already exceed
+                        // ub(capacity)), closing the framework's wrapping RUP.
                         PolBuilder pol;
                         pol.add(capacity_lines.at(violating_t));
-                        for (size_t k = 0; k < contributing.size(); ++k)
-                            pol.add(active_lines[k], heights[contributing[k]]);
+                        for (auto i : contributing) {
+                            auto [line, coeff] = pin_contributor(reason, i, violating_t);
+                            pol.add(line, coeff);
+                        }
                         pol.emit(*logger, ProofLevel::Temporary);
                     };
 
@@ -344,39 +419,19 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                                        IntegerVariableCondition ext_lit,
                                        bool emit_intermediate,
                                        const ReasonFunction & reason) -> void {
-                // (a) Pin active_{i,t} = 1 for each task i ≠ j mandatory at t.
-                vector<ProofLine> active_lines;
-                for (auto i : contributing) {
-                    auto fi = (t - per_task_t_lo[i]).raw_value;
-                    logger->emit_rup_proof_line_under_reason(reason,
-                        WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                    logger->emit_rup_proof_line_under_reason(reason,
-                        WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                    auto line = logger->emit_rup_proof_line_under_reason(reason,
-                        WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                    active_lines.push_back(line);
-                }
-
-                // (b) Pin active_{j,t} = 1 under the extended reason. In OPB
-                // terms that's "(reason ∧ ¬ext_lit) ⇒ active=1", encoded by
-                // appending ext_lit as a disjunct to each line.
-                auto fj = (t - per_task_t_lo[j_idx]).raw_value;
-                logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * before_flags[j_idx][fj] + 1_i * ext_lit >= 1_i,
-                    ProofLevel::Temporary);
-                logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * after_flags[j_idx][fj] + 1_i * ext_lit >= 1_i,
-                    ProofLevel::Temporary);
-                auto j_active_line = logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * active_flags[j_idx][fj] + 1_i * ext_lit >= 1_i,
-                    ProofLevel::Temporary);
-
-                // (c) pol C_t + sum of scaled active=1 lines, including j's.
+                // (a) Pin each task i ≠ j mandatory at t under the reason, and
+                // (b) pin the pushed task j under the EXTENDED reason. Then
+                // (c) combine all pinned load lines with C_t in one pol. After
+                // cancellation the pol is dominated by (load − capacity)·ext_lit,
+                // forcing ext_lit = 1 (the new bound) under the reason context.
                 PolBuilder pol;
                 pol.add(capacity_lines.at(t));
-                for (size_t k = 0; k < contributing.size(); ++k)
-                    pol.add(active_lines[k], heights[contributing[k]]);
-                pol.add(j_active_line, heights[j_idx]);
+                for (auto i : contributing) {
+                    auto [line, coeff] = pin_contributor(reason, i, t);
+                    pol.add(line, coeff);
+                }
+                auto [j_line, j_coeff] = pin_pushed(reason, j_idx, t, ext_lit);
+                pol.add(j_line, j_coeff);
                 pol.emit(*logger, ProofLevel::Temporary);
 
                 // (d) Deposit the running-bound advance as a fact under
@@ -396,8 +451,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     for (Integer t = s; t < s + lengths[j]; ++t) {
                         auto load = mand_load[(t - t_lo).raw_value];
                         if (lst_j < eet_j && t >= lst_j && t < eet_j)
-                            load -= heights[j];
-                        if (load + heights[j] > capacity)
+                            load -= hlb(j);
+                        if (load + hlb(j) > capacity)
                             return false;
                     }
                     return true;
@@ -406,8 +461,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 auto is_blocked_at = [&](Integer t) -> bool {
                     auto load = mand_load[(t - t_lo).raw_value];
                     if (lst_j < eet_j && t >= lst_j && t < eet_j)
-                        load -= heights[j];
-                    return load + heights[j] > capacity;
+                        load -= hlb(j);
+                    return load + hlb(j) > capacity;
                 };
 
                 auto contributors_at = [&](Integer t) -> vector<size_t> {

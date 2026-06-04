@@ -3,6 +3,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -39,11 +40,13 @@ namespace gcs
         std::vector<IntegerVariableID> _lengths;
         std::vector<IntegerVariableID> _heights;
         IntegerVariableID _capacity;
-        // Constant snapshots resolved in prepare(). Until the variable d/r/b
-        // milestones land, every length/height/capacity must be constant and
-        // these hold their values; the propagator and proof model read these.
+        // Snapshots resolved in prepare(). Lengths are still constant (M3
+        // lifts that); _height_vals holds the constant value for constant
+        // heights (and 0 for variable ones, where _contrib_vars is used
+        // instead); _height_ub holds each height's initial upper bound.
         std::vector<Integer> _length_vals;
         std::vector<Integer> _height_vals;
+        std::vector<Integer> _height_ub;
         Integer _capacity_val;
         std::vector<std::size_t> _active_tasks;
         std::vector<Integer> _per_task_t_lo;
@@ -54,6 +57,10 @@ namespace gcs
         std::vector<std::vector<innards::ProofFlag>> _before_flags;
         std::vector<std::vector<innards::ProofFlag>> _after_flags;
         std::vector<std::vector<innards::ProofFlag>> _active_flags;
+        // Per (variable-height task, t) load contribution contrib = h·active,
+        // a proof-only integer in [0, ub(h)]. Empty inner vector for tasks
+        // whose height is constant (those use h·active directly in C_t).
+        std::vector<std::vector<innards::ProofOnlySimpleIntegerVariableID>> _contrib_vars;
         std::map<Integer, innards::ProofLine> _capacity_lines; // t -> proof line for the per-t time-table constraint
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
