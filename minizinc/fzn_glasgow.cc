@@ -641,10 +641,10 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "glasgow_cumulative") {
                 const auto & starts = arg_as_array_of_var(data, args, 0);
-                auto lengths = arg_as_array_of_integer(data, args, 1);
-                auto heights = arg_as_array_of_integer(data, args, 2);
-                auto capacity = Integer{static_cast<long long>(args.at(3))};
-                problem.post(Cumulative{starts, *lengths, *heights, capacity});
+                const auto & lengths = arg_as_array_of_var(data, args, 1);
+                const auto & heights = arg_as_array_of_var(data, args, 2);
+                const auto & capacity = arg_as_var(data, args, 3);
+                problem.post(Cumulative{starts, lengths, heights, capacity});
             }
             else if (id == "glasgow_disjunctive" || id == "glasgow_disjunctive_strict") {
                 const auto & starts = arg_as_array_of_var(data, args, 0);

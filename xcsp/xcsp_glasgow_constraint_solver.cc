@@ -500,33 +500,63 @@ namespace
             report_unsupported("noOverlap", "no Disjunctive2D propagator yet (#146)");
         }
 
+        // Shared backend for every cumulative shape: lengths and heights are
+        // already resolved to IntegerVariableIDs (constants pass through as
+        // ConstantIntegerVariableID), and the capacity comes from the
+        // XCondition (a constant or a variable). Only the `le` condition is
+        // meaningful for cumulative.
+        auto post_cumulative(vector<XVariable *> & origins, vector<IntegerVariableID> lengths,
+            vector<IntegerVariableID> heights, XCondition & cond) -> void
+        {
+            if (cond.op != OrderType::LE)
+                report_unsupported("cumulative", "only `le` condition is supported (#147)");
+            IntegerVariableID capacity = constant_variable(0_i);
+            if (cond.operandType == OperandType::INTEGER)
+                capacity = constant_variable(Integer{cond.val});
+            else if (cond.operandType == OperandType::VARIABLE) {
+                // The condition parser can leave surrounding whitespace on the
+                // operand name (e.g. "(le, cap)" -> " cap"); trim before lookup.
+                auto name = cond.var;
+                name.erase(0, name.find_first_not_of(" \t"));
+                name.erase(name.find_last_not_of(" \t") + 1);
+                capacity = need_variable(name);
+            }
+            else
+                report_unsupported("cumulative", "capacity must be an integer or a variable (#147)");
+            _problem.post(Cumulative{need_variables(origins), std::move(lengths), std::move(heights), capacity});
+        }
+
+        auto as_constant_ids(const vector<int> & values) -> vector<IntegerVariableID>
+        {
+            vector<IntegerVariableID> result;
+            result.reserve(values.size());
+            for (auto v : values)
+                result.push_back(constant_variable(Integer{v}));
+            return result;
+        }
+
         auto buildConstraintCumulative(string, vector<XVariable *> & origins,
             vector<int> & lengths, vector<int> & heights, XCondition & cond) -> void override
         {
-            if (cond.op != OrderType::LE)
-                report_unsupported("cumulative", "only `le` condition is supported in this basic case (#147)");
-            if (cond.operandType != OperandType::INTEGER)
-                report_unsupported("cumulative", "only integer-constant capacity is supported in this basic case (#147)");
-
-            auto starts = need_variables(origins);
-            vector<Integer> lengths_i, heights_i;
-            for (auto l : lengths)
-                lengths_i.push_back(Integer{l});
-            for (auto h : heights)
-                heights_i.push_back(Integer{h});
-            _problem.post(Cumulative{starts, lengths_i, heights_i, Integer{cond.val}});
+            post_cumulative(origins, as_constant_ids(lengths), as_constant_ids(heights), cond);
         }
 
-        auto buildConstraintCumulative(string, vector<XVariable *> &,
-            vector<int> &, vector<XVariable *> &, XCondition &) -> void override
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
+            vector<int> & lengths, vector<XVariable *> & heights, XCondition & cond) -> void override
         {
-            report_unsupported("cumulative", "no Cumulative propagator yet (#147)");
+            post_cumulative(origins, as_constant_ids(lengths), need_variables(heights), cond);
         }
 
-        auto buildConstraintCumulative(string, vector<XVariable *> &,
-            vector<XVariable *> &, vector<int> &, XCondition &) -> void override
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
+            vector<XVariable *> & lengths, vector<int> & heights, XCondition & cond) -> void override
         {
-            report_unsupported("cumulative", "no Cumulative propagator yet (#147)");
+            post_cumulative(origins, need_variables(lengths), as_constant_ids(heights), cond);
+        }
+
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
+            vector<XVariable *> & lengths, vector<XVariable *> & heights, XCondition & cond) -> void override
+        {
+            post_cumulative(origins, need_variables(lengths), need_variables(heights), cond);
         }
 
         auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
