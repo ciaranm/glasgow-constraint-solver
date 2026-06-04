@@ -104,26 +104,24 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
 {
     auto n = _starts.size();
 
-    // Variable lengths are not yet supported (milestone M3 lifts that);
-    // reject them clearly until then. Variable heights and capacity are
-    // supported.
-    for (const auto & l : _lengths)
-        if (! is_constant_variable(l))
-            throw UnimplementedException{"Cumulative: variable lengths not yet supported"};
-
     // Resolve snapshots used by define_proof_model and the propagator. For a
-    // variable height, _height_vals[i] is a placeholder 0 (the propagator
-    // reads lb(h_i) from the state and the proof uses _contrib_vars instead);
-    // _height_ub[i] is the initial upper bound, used to size the contrib var
-    // and to filter tasks that can never raise the profile.
+    // variable length/height, _*_vals[i] is a placeholder 0 (the propagator
+    // reads the bound from the state and the proof uses the variable /
+    // _contrib_vars instead); _*_ub[i] is the initial upper bound, used to size
+    // the possible-active window / contrib domain and to filter tasks that can
+    // never raise the profile.
     _length_vals.clear();
+    _length_ub.clear();
     _height_vals.clear();
     _height_ub.clear();
     _length_vals.reserve(n);
+    _length_ub.reserve(n);
     _height_vals.reserve(n);
     _height_ub.reserve(n);
-    for (const auto & l : _lengths)
-        _length_vals.push_back(const_value_of(l));
+    for (const auto & l : _lengths) {
+        _length_vals.push_back(is_constant_variable(l) ? const_value_of(l) : 0_i);
+        _length_ub.push_back(initial_state.upper_bound(l));
+    }
     for (const auto & h : _heights) {
         _height_vals.push_back(is_constant_variable(h) ? const_value_of(h) : 0_i);
         _height_ub.push_back(initial_state.upper_bound(h));
@@ -131,22 +129,24 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     if (is_constant_variable(_capacity))
         _capacity_val = const_value_of(_capacity);
 
-    // Tasks with length 0, or whose height can only ever be 0, never raise the
-    // load profile.
+    // Tasks whose length can only ever be 0, or whose height can only ever be 0,
+    // never raise the load profile.
     _active_tasks.reserve(n);
     for (size_t i = 0; i < n; ++i)
-        if (_length_vals[i] > 0_i && _height_ub[i] > 0_i)
+        if (_length_ub[i] > 0_i && _height_ub[i] > 0_i)
             _active_tasks.push_back(i);
 
     if (_active_tasks.empty())
         return false;
 
+    // The possible-active window of task i is [lb(s_i), ub(s_i)+ub(l_i)-1]; the
+    // per-(i,t) flags span it, so it must use the largest possible duration.
     _per_task_t_lo.assign(n, 0_i);
     _per_task_t_hi.assign(n, 0_i);
     for (auto i : _active_tasks) {
         auto [s_lo, s_hi] = initial_state.bounds(_starts[i]);
         _per_task_t_lo[i] = s_lo;
-        _per_task_t_hi[i] = s_hi + _length_vals[i] - 1_i;
+        _per_task_t_hi[i] = s_hi + _length_ub[i] - 1_i;
     }
     return true;
 }
@@ -164,6 +164,7 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
     _after_flags.assign(_starts.size(), {});
     _active_flags.assign(_starts.size(), {});
     _contrib_vars.assign(_starts.size(), {});
+    _end_def_lines.assign(_starts.size(), std::nullopt);
 
     Integer global_lo = 0_i, global_hi = -1_i;
     bool first = true;
@@ -172,13 +173,43 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
         if (first || t_lo < global_lo) global_lo = t_lo;
         if (first || t_hi > global_hi) global_hi = t_hi;
         first = false;
+
+        // When both start and length vary, after_{i,t} ⇔ s_i + l_i ≥ t+1 is a
+        // two-variable fact whose pinning RUP cannot reach from the operands'
+        // bounds. Introduce a proof-only end = s_i + l_i and reify after on the
+        // single variable end ≥ t+1; keep the captured `end ≥ s+l` line to
+        // materialise end's bound in the proof. If either operand is constant
+        // it folds into the OPB and after is already single-variable.
+        bool use_end = ! is_constant_variable(_starts[i]) && ! is_constant_variable(_lengths[i]);
+        std::optional<ProofOnlySimpleIntegerVariableID> end;
+        if (use_end) {
+            end = model.create_proof_only_integer_variable(
+                0_i, _per_task_t_hi[i] + 1_i, "cumend", IntegerVariableProofRepresentation::Bits);
+            _end_def_lines[i] = model.add_constraint("Cumulative", "end >= s + l",
+                WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
+            model.add_constraint("Cumulative", "end <= s + l",
+                WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
+        }
+
         for (Integer t = t_lo; t <= t_hi; ++t) {
             auto before = model.create_proof_flag_fully_reifying(
                 "cumbefore", "Cumulative", "starts at or before time",
                 WPBSum{} + 1_i * _starts[i] <= t);
-            auto after = model.create_proof_flag_fully_reifying(
-                "cumafter", "Cumulative", "not yet finished at time",
-                WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i);
+            // after_{i,t} ⇔ task i not yet finished at t ⇔ s_i + l_i ≥ t + 1.
+            // Constant length: single-variable s_i ≥ t−l+1. One variable
+            // operand: keep s_i + l_i (the constant folds in). Both variable:
+            // reify on the proof-only end.
+            auto after = is_constant_variable(_lengths[i])
+                ? model.create_proof_flag_fully_reifying(
+                      "cumafter", "Cumulative", "not yet finished at time",
+                      WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i)
+                : (use_end
+                          ? model.create_proof_flag_fully_reifying(
+                                "cumafter", "Cumulative", "not yet finished at time",
+                                WPBSum{} + 1_i * *end >= t + 1_i)
+                          : model.create_proof_flag_fully_reifying(
+                                "cumafter", "Cumulative", "not yet finished at time",
+                                WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] >= t + 1_i));
             auto active = model.create_proof_flag_fully_reifying(
                 "cumactive", "Cumulative", "task active at time",
                 WPBSum{} + 1_i * before + 1_i * after >= 2_i);
@@ -253,13 +284,19 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
     for (auto i : _active_tasks)
         if (! is_constant_variable(_heights[i]))
             triggers.on_bounds.emplace_back(_heights[i]);
+    // A rise in a task's guaranteed length (lb) extends its mandatory part, so
+    // re-fire on variable-length bound changes too.
+    for (auto i : _active_tasks)
+        if (! is_constant_variable(_lengths[i]))
+            triggers.on_bounds.emplace_back(_lengths[i]);
 
     propagators.install(
-        [starts = move(_starts), lengths = move(_length_vals), heights_var = move(_heights),
+        [starts = move(_starts), lengths_var = move(_lengths), heights_var = move(_heights),
             capacity_var = _capacity, active_tasks = move(_active_tasks),
             before_flags = move(_before_flags), after_flags = move(_after_flags),
             active_flags = move(_active_flags), contrib_vars = move(_contrib_vars),
-            capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo)](
+            end_def_lines = move(_end_def_lines), capacity_lines = move(_capacity_lines),
+            per_task_t_lo = move(_per_task_t_lo)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // The capacity may be a variable: the load profile is infeasible
             // only when it exceeds the *largest* still-allowed capacity, so the
@@ -274,12 +311,45 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             auto hlb = [&](size_t i) { return state.lower_bound(heights_var[i]); };
             auto h_is_var = [&](size_t i) { return ! is_constant_variable(heights_var[i]); };
 
+            // A length may be a variable: a task's *mandatory* part and its
+            // guaranteed footprint when placed use the smallest still-allowed
+            // duration lb(l_i); the possible-active window uses ub(l_i). For a
+            // constant length both are its value. Variable-length bounds join
+            // every reason.
+            auto llb = [&](size_t i) { return state.lower_bound(lengths_var[i]); };
+            auto lub = [&](size_t i) { return state.upper_bound(lengths_var[i]); };
+            auto l_is_var = [&](size_t i) { return ! is_constant_variable(lengths_var[i]); };
+            auto s_is_var = [&](size_t i) { return ! is_constant_variable(starts[i]); };
+
+            // For a task whose start AND length are both variables, after_{i,t}
+            // is reified on the proof-only end = s_i + l_i. To pin after = 1 we
+            // first materialise end ≥ s_lo + lb(l_i) with a pol over the captured
+            // `end ≥ s + l` line plus the two operand order-literal defining
+            // lines; the after = 1 RUP is then single-variable in end (just like
+            // the constant-duration case). s_lo is the start lower bound that,
+            // with lb(l_i), reaches t+1: the chain running bound for lb-push,
+            // t−lb(l_j)+1 (= ¬ext_lit) for ub-push, lb(s_i) for a mandatory task.
+            // Only needed when both operands vary (else after is already
+            // single-variable and the plain RUP closes).
+            auto materialise_after_sum = [&](size_t i, Integer s_lo) -> void {
+                if (! (l_is_var(i) && s_is_var(i)))
+                    return;
+                PolBuilder sp;
+                sp.add(*end_def_lines[i]);
+                sp.add_for_literal(logger->names_and_ids_tracker(), starts[i] >= s_lo);
+                sp.add_for_literal(logger->names_and_ids_tracker(), lengths_var[i] >= llb(i));
+                sp.emit(*logger, ProofLevel::Temporary);
+            };
+
             vector<IntegerVariableID> reason_vars = starts;
             if (! is_constant_variable(capacity_var))
                 reason_vars.push_back(capacity_var);
-            for (auto i : active_tasks)
+            for (auto i : active_tasks) {
                 if (h_is_var(i))
                     reason_vars.push_back(heights_var[i]);
+                if (l_is_var(i))
+                    reason_vars.push_back(lengths_var[i]);
+            }
 
             // Proof helper: pin task i's guaranteed load contribution at t and
             // return a (line, coeff) pair to feed the time-table pol. For a
@@ -292,6 +362,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 auto fi = (t - per_task_t_lo[i]).raw_value;
                 logger->emit_rup_proof_line_under_reason(reason,
                     WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                // A mandatory task has s_i + l_i ≥ lb(s_i) + lb(l_i) > t.
+                materialise_after_sum(i, state.lower_bound(starts[i]));
                 logger->emit_rup_proof_line_under_reason(reason,
                     WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
                 auto active_line = logger->emit_rup_proof_line_under_reason(reason,
@@ -310,10 +382,13 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             // (vacuous when ext_lit holds, "contrib_j ≥ lb(h_j)" otherwise) and
             // returns that line with coefficient 1.
             auto pin_pushed = [&](const ReasonFunction & reason, size_t j_idx, Integer t,
-                                  IntegerVariableCondition ext_lit) -> std::pair<ProofLine, Integer> {
+                                  IntegerVariableCondition ext_lit, Integer s_lo_after) -> std::pair<ProofLine, Integer> {
                 auto fj = (t - per_task_t_lo[j_idx]).raw_value;
                 logger->emit_rup_proof_line_under_reason(reason,
                     WPBSum{} + 1_i * before_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                // s_lo_after + lb(l_j) ≥ t+1 gives after_{j,t} = 1 (under ¬ext_lit
+                // for ub-push, under the running bound for lb-push).
+                materialise_after_sum(j_idx, s_lo_after);
                 logger->emit_rup_proof_line_under_reason(reason,
                     WPBSum{} + 1_i * after_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
                 auto active_line = logger->emit_rup_proof_line_under_reason(reason,
@@ -340,7 +415,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             Integer t_lo = 0_i, t_hi = -1_i;
             for (auto i : active_tasks) {
                 auto [s_lo, s_hi] = state.bounds(starts[i]);
-                auto lo = s_lo, hi = s_hi + lengths[i] - 1_i;
+                auto lo = s_lo, hi = s_hi + lub(i) - 1_i;
                 if (! any || lo < t_lo) t_lo = lo;
                 if (! any || hi > t_hi) t_hi = hi;
                 any = true;
@@ -353,7 +428,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
             for (auto i : active_tasks) {
                 auto lst = state.upper_bound(starts[i]);
-                auto eet = state.lower_bound(starts[i]) + lengths[i];
+                auto eet = state.lower_bound(starts[i]) + llb(i);
                 if (lst < eet)
                     for (Integer t = lst; t < eet; ++t)
                         mand_load[(t - t_lo).raw_value] += hlb(i);
@@ -368,7 +443,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     vector<size_t> contributing;
                     for (auto i : active_tasks) {
                         auto lst = state.upper_bound(starts[i]);
-                        auto eet = state.lower_bound(starts[i]) + lengths[i];
+                        auto eet = state.lower_bound(starts[i]) + llb(i);
                         if (lst < eet && violating_t >= lst && violating_t < eet)
                             contributing.push_back(i);
                     }
@@ -401,6 +476,9 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             {
                 Integer t;
                 vector<size_t> contributing;
+                // Start lower bound that, with lb(l_j), forces after_{j,t}=1:
+                // the running bound for lb-push, t−lb(l_j)+1 for ub-push.
+                Integer s_lo_after;
             };
 
             // Helper: emit (a)–(d) for one chain step.
@@ -416,7 +494,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             // RUP closes the final inference).
             auto emit_chain_step = [&](size_t j_idx, Integer t,
                                        const vector<size_t> & contributing,
-                                       IntegerVariableCondition ext_lit,
+                                       IntegerVariableCondition ext_lit, Integer s_lo_after,
                                        bool emit_intermediate,
                                        const ReasonFunction & reason) -> void {
                 // (a) Pin each task i ≠ j mandatory at t under the reason, and
@@ -430,7 +508,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     auto [line, coeff] = pin_contributor(reason, i, t);
                     pol.add(line, coeff);
                 }
-                auto [j_line, j_coeff] = pin_pushed(reason, j_idx, t, ext_lit);
+                auto [j_line, j_coeff] = pin_pushed(reason, j_idx, t, ext_lit, s_lo_after);
                 pol.add(j_line, j_coeff);
                 pol.emit(*logger, ProofLevel::Temporary);
 
@@ -446,9 +524,9 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 if (cur_lb == cur_ub)
                     continue;
 
-                auto lst_j = cur_ub, eet_j = cur_lb + lengths[j];
+                auto lst_j = cur_ub, eet_j = cur_lb + llb(j);
                 auto fits_at = [&](Integer s) -> bool {
-                    for (Integer t = s; t < s + lengths[j]; ++t) {
+                    for (Integer t = s; t < s + llb(j); ++t) {
                         auto load = mand_load[(t - t_lo).raw_value];
                         if (lst_j < eet_j && t >= lst_j && t < eet_j)
                             load -= hlb(j);
@@ -470,7 +548,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     for (auto i : active_tasks) {
                         if (i == j) continue;
                         auto lst_i = state.upper_bound(starts[i]);
-                        auto eet_i = state.lower_bound(starts[i]) + lengths[i];
+                        auto eet_i = state.lower_bound(starts[i]) + llb(i);
                         if (lst_i < eet_i && t >= lst_i && t < eet_i)
                             result.push_back(i);
                     }
@@ -488,9 +566,9 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     Integer running_bound = cur_lb;
                     while (running_bound < new_lb) {
                         bool found = false;
-                        for (Integer t = running_bound + lengths[j] - 1_i; t >= running_bound; --t)
+                        for (Integer t = running_bound + llb(j) - 1_i; t >= running_bound; --t)
                             if (is_blocked_at(t)) {
-                                chain.push_back(ChainStep{t, contributors_at(t)});
+                                chain.push_back(ChainStep{t, contributors_at(t), running_bound});
                                 running_bound = t + 1_i;
                                 found = true;
                                 break;
@@ -502,7 +580,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         if (! logger) return;
                         for (size_t step = 0; step < chain.size(); ++step)
                             emit_chain_step(j, chain[step].t, chain[step].contributing,
-                                starts[j] > chain[step].t,
+                                starts[j] > chain[step].t, chain[step].s_lo_after,
                                 step + 1 < chain.size(), reason);
                     };
 
@@ -522,10 +600,10 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     Integer running_bound = cur_ub;
                     while (running_bound > new_ub) {
                         bool found = false;
-                        for (Integer t = running_bound; t <= running_bound + lengths[j] - 1_i; ++t)
+                        for (Integer t = running_bound; t <= running_bound + llb(j) - 1_i; ++t)
                             if (is_blocked_at(t)) {
-                                chain.push_back(ChainStep{t, contributors_at(t)});
-                                running_bound = t - lengths[j];
+                                chain.push_back(ChainStep{t, contributors_at(t), t - llb(j) + 1_i});
+                                running_bound = t - llb(j);
                                 found = true;
                                 break;
                             }
@@ -536,7 +614,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         if (! logger) return;
                         for (size_t step = 0; step < chain.size(); ++step)
                             emit_chain_step(j, chain[step].t, chain[step].contributing,
-                                starts[j] < chain[step].t - lengths[j] + 1_i,
+                                starts[j] < chain[step].t - llb(j) + 1_i, chain[step].s_lo_after,
                                 step + 1 < chain.size(), reason);
                     };
 

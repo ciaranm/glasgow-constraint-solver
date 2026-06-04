@@ -40,11 +40,13 @@ namespace gcs
         std::vector<IntegerVariableID> _lengths;
         std::vector<IntegerVariableID> _heights;
         IntegerVariableID _capacity;
-        // Snapshots resolved in prepare(). Lengths are still constant (M3
-        // lifts that); _height_vals holds the constant value for constant
-        // heights (and 0 for variable ones, where _contrib_vars is used
-        // instead); _height_ub holds each height's initial upper bound.
+        // Snapshots resolved in prepare(). For each of lengths and heights,
+        // _*_vals holds the constant value for a constant argument (and 0 for a
+        // variable one, where the variable / _contrib_vars is used instead) and
+        // _*_ub holds the initial upper bound (used to size the possible-active
+        // window / contrib domain and to filter tasks that can never load).
         std::vector<Integer> _length_vals;
+        std::vector<Integer> _length_ub;
         std::vector<Integer> _height_vals;
         std::vector<Integer> _height_ub;
         Integer _capacity_val;
@@ -61,6 +63,11 @@ namespace gcs
         // a proof-only integer in [0, ub(h)]. Empty inner vector for tasks
         // whose height is constant (those use h·active directly in C_t).
         std::vector<std::vector<innards::ProofOnlySimpleIntegerVariableID>> _contrib_vars;
+        // For a task whose start AND length both vary, a proof-only end = s + l
+        // on which `after` is reified (single variable, so the after pin stays
+        // RUP-friendly); _end_def_lines[i] is the captured `end ≥ s + l` line
+        // used to materialise end's bound. nullopt for all other tasks.
+        std::vector<std::optional<innards::ProofLine>> _end_def_lines;
         std::map<Integer, innards::ProofLine> _capacity_lines; // t -> proof line for the per-t time-table constraint
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
