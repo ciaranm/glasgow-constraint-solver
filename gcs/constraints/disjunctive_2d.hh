@@ -60,6 +60,8 @@ namespace gcs
         // variable-size milestone lands, sizes must be constant.
         std::vector<Integer> _width_vals, _width_ub;
         std::vector<Integer> _height_vals, _height_ub;
+        // Non-strict mode: whether each rectangle's width/height can be 0.
+        std::vector<bool> _can_be_zero_w, _can_be_zero_h;
 
         // Per-rectangle possible-active windows in each dimension, from root
         // bounds in prepare(). Used to size the proof bridge and to index the
@@ -92,6 +94,11 @@ namespace gcs
         // pos+size in the before-flag pol). nullopt when that size is constant.
         std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end_x, _end_y;
         std::vector<std::optional<innards::ProofLine>> _end_x_ge, _end_x_le, _end_y_ge, _end_y_le;
+
+        // Non-strict mode only: for a rectangle whose width/height can be 0, a
+        // reified "size <= 0" flag that escapes the separation clause (a
+        // zero-area rectangle does not constrain). nullopt otherwise.
+        std::vector<std::optional<innards::ProofFlag>> _zero_w, _zero_h;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;

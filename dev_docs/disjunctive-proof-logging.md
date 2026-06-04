@@ -241,8 +241,12 @@ defs (`s_lo` is `lb(pos)` for a mandatory span, the chain running bound /
 `¬ext_lit` for the pushed rectangle); and the `before`-flag pol adds the
 `end ≤ pos + size` line so `end` cancels back to `pos + size`. A constant
 size folds into the OPB and keeps the single-variable "after" with no
-`end`. Non-strict mode with a size that can be 0 needs a reified zero-size
-escape disjunct in the separation clause and is not yet supported.
+`end`. In **non-strict mode**, a rectangle that can be zero-area carries a
+reified `size ≤ 0` escape flag added to its separation clauses (so a
+zero-area rectangle never constrains, matching `fzn_diffn_nonstrict`).
+Whenever an inference fires, the relevant sizes are `≥ 1`, so the
+contradiction / reduced-clause pol pins those escape flags false (RUP from
+`size ≥ 1`) before using the clause.
 
 ## Open follow-ups
 

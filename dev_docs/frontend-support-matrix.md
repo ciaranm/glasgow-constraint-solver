@@ -77,7 +77,7 @@ addressed.
 
 ## Solver gaps tracked elsewhere
 
-- [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive`: 1D shipped (variable starts, constant lengths, strict and non-strict). `Disjunctive2D` (2D `noOverlap` / `diffn`) shipped: variable origins, constant *or* variable sizes (rotation), strict and non-strict, pairwise time-table strength, fully VeriPB-certified (variable sizes via the Cumulative end-proxy technique). Non-strict with a size that can be 0, k-D, optional tasks, and a sweep / cumulative-relaxation propagator are open follow-ups under the same issue.
+- [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive`: 1D shipped (variable starts, constant lengths, strict and non-strict). `Disjunctive2D` (2D `noOverlap` / `diffn`) shipped: variable origins, constant *or* variable sizes (rotation), strict and non-strict (incl. zero-area sizes via a reified zero-size escape clause), pairwise time-table strength, fully VeriPB-certified (variable sizes via the Cumulative end-proxy technique). k-D, optional tasks, and a sweep / cumulative-relaxation propagator are open follow-ups under the same issue.
 - [#147](https://github.com/ciaranm/glasgow-constraint-solver/issues/147) — `Cumulative`: full `cumulative(var s, var d, var r, var b)` shipped with time-table propagation and VeriPB proofs (the `(le, int)` and `(le, var)` XCSP3 conditions). Edge-finding and energetic (stronger-than-time-table) propagation are open follow-ups under the same issue.
 - [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`
 - [#149](https://github.com/ciaranm/glasgow-constraint-solver/issues/149) — `MDD`

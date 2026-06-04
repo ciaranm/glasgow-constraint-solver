@@ -145,16 +145,17 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         _active_rects.push_back(i);
     }
 
-    // Non-strict mode with a *variable* size that can be 0 needs a zero-size
-    // escape disjunct in the separation clause (a reified size==0 flag), which
-    // is a separate follow-up; reject it clearly for now. (Strict mode, and
-    // non-strict with sizes that are always positive, are fine.)
+    // Non-strict mode: a rectangle whose width or height can be 0 may be
+    // zero-area for some assignments, in which case it does not constrain. Note
+    // which sizes can be zero so define_proof_model can add a zero-size escape
+    // to the separation clause; the propagator already ignores zero-mandatory
+    // rectangles via lb(size).
+    _can_be_zero_w.assign(n, false);
+    _can_be_zero_h.assign(n, false);
     if (! _strict)
         for (auto i : _active_rects) {
-            if (! is_constant_variable(_widths[i]) && initial_state.lower_bound(_widths[i]) == 0_i)
-                throw UnimplementedException{"Disjunctive2D: non-strict variable width that can be zero not yet supported"};
-            if (! is_constant_variable(_heights[i]) && initial_state.lower_bound(_heights[i]) == 0_i)
-                throw UnimplementedException{"Disjunctive2D: non-strict variable height that can be zero not yet supported"};
+            _can_be_zero_w[i] = ! is_constant_variable(_widths[i]) && initial_state.lower_bound(_widths[i]) == 0_i;
+            _can_be_zero_h[i] = ! is_constant_variable(_heights[i]) && initial_state.lower_bound(_heights[i]) == 0_i;
         }
 
     if (_active_rects.size() < 2)
@@ -230,6 +231,20 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
             make_end(_ys[i], _heights[i], _y_hi[i] + 1_i, _end_y[i], _end_y_ge[i], _end_y_le[i]);
     }
 
+    // Non-strict mode: a zero-size escape flag per size that can be 0.
+    _zero_w.assign(_xs.size(), std::nullopt);
+    _zero_h.assign(_xs.size(), std::nullopt);
+    for (auto i : _active_rects) {
+        if (_can_be_zero_w[i])
+            _zero_w[i] = model.create_proof_flag_fully_reifying(
+                "d2dzerow", "Disjunctive2D", "rectangle has zero width",
+                WPBSum{} + 1_i * _widths[i] <= 0_i);
+        if (_can_be_zero_h[i])
+            _zero_h[i] = model.create_proof_flag_fully_reifying(
+                "d2dzeroh", "Disjunctive2D", "rectangle has zero height",
+                WPBSum{} + 1_i * _heights[i] <= 0_i);
+    }
+
     for (size_t a = 0; a < _active_rects.size(); ++a) {
         auto i = _active_rects[a];
         for (size_t b = a + 1; b < _active_rects.size(); ++b) {
@@ -238,8 +253,16 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
             auto bx_ji = emit_before(_xs[j], _widths[j], _width_vals[j], _xs[i]);
             auto by_ij = emit_before(_ys[i], _heights[i], _height_vals[i], _ys[j]);
             auto by_ji = emit_before(_ys[j], _heights[j], _height_vals[j], _ys[i]);
+            // A zero-area rectangle escapes the separation clause.
+            auto clause_sum = WPBSum{} + 1_i * bx_ij.flag + 1_i * bx_ji.flag + 1_i * by_ij.flag + 1_i * by_ji.flag;
+            for (auto r : {i, j}) {
+                if (_zero_w[r])
+                    clause_sum += 1_i * *_zero_w[r];
+                if (_zero_h[r])
+                    clause_sum += 1_i * *_zero_h[r];
+            }
             auto clause = model.add_constraint("Disjunctive2D", "rectangles must be separated on some axis",
-                WPBSum{} + 1_i * bx_ij.flag + 1_i * bx_ji.flag + 1_i * by_ij.flag + 1_i * by_ji.flag >= 1_i);
+                move(clause_sum) >= 1_i);
             if (! clause)
                 throw UnexpectedException{"Disjunctive2D: separation clause missing"};
             _before_x.emplace(make_pair(i, j), bx_ij);
@@ -336,7 +359,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             active_rects = move(_active_rects), before_x = move(_before_x), before_y = move(_before_y),
             clause_lines = move(_clause_lines), end_x = move(_end_x), end_y = move(_end_y),
             end_x_ge = move(_end_x_ge), end_x_le = move(_end_x_le), end_y_ge = move(_end_y_ge),
-            end_y_le = move(_end_y_le), strict = _strict, bridge_x, bridge_y](
+            end_y_le = move(_end_y_le), zero_w = move(_zero_w), zero_h = move(_zero_h),
+            strict = _strict, bridge_x, bridge_y](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Pairwise 2D time-table. The mandatory box of rectangle i is
             //   [ub(x_i), lb(x_i)+lb(w_i)) x [ub(y_i), lb(y_i)+lb(h_i))
@@ -347,6 +371,22 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             auto hlb = [&](size_t i) { return state.lower_bound(height_var[i]); };
             auto w_is_var = [&](size_t i) { return ! is_constant_variable(width_var[i]); };
             auto h_is_var = [&](size_t i) { return ! is_constant_variable(height_var[i]); };
+
+            // Non-strict mode: a rectangle that can be zero-area carries a
+            // size<=0 escape flag in its clauses. Whenever an inference fires the
+            // relevant sizes are >= 1, so pin those flags false (RUP) and add the
+            // lines to the clause pol so it reduces to the before-flag
+            // disjunction. No-op in strict mode / for always-positive sizes.
+            auto add_escape_pins = [&](PolBuilder & pol, const ReasonFunction & reason, size_t i, size_t j) {
+                for (auto r : {i, j}) {
+                    if (zero_w[r])
+                        pol.add(logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * *zero_w[r] <= 0_i, ProofLevel::Temporary));
+                    if (zero_h[r])
+                        pol.add(logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * *zero_h[r] <= 0_i, ProofLevel::Temporary));
+                }
+            };
 
             auto mand = [&](IntegerVariableID pos, Integer size) -> pair<Integer, Integer> {
                 return {state.upper_bound(pos), state.lower_bound(pos) + size};
@@ -430,19 +470,20 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             // Combine the four precedence-false lines with the
                             // 4-way separation clause and the four active AND-gate
                             // forward reifs: the precedence and before/after terms
-                            // cancel, leaving "not all four spans hold".
-                            auto not_all = PolBuilder{}
-                                               .add(clause_lines.at(make_pair(min(i, j), max(i, j))))
-                                               .add(Lx1)
-                                               .add(Lx2)
-                                               .add(Ly1)
-                                               .add(Ly2)
-                                               .add(bx_i.active_fwd)
-                                               .add(bx_j.active_fwd)
-                                               .add(by_i.active_fwd)
-                                               .add(by_j.active_fwd)
-                                               .saturate()
-                                               .emit(*logger, ProofLevel::Temporary);
+                            // cancel, leaving "not all four spans hold". Pin any
+                            // zero-size escape flags false first (non-strict).
+                            PolBuilder nb;
+                            nb.add(clause_lines.at(make_pair(min(i, j), max(i, j))))
+                                .add(Lx1)
+                                .add(Lx2)
+                                .add(Ly1)
+                                .add(Ly2)
+                                .add(bx_i.active_fwd)
+                                .add(bx_j.active_fwd)
+                                .add(by_i.active_fwd)
+                                .add(by_j.active_fwd);
+                            add_escape_pins(nb, reason, i, j);
+                            auto not_all = nb.saturate().emit(*logger, ProofLevel::Temporary);
 
                             // Pol "not all four spans" against the four pinned
                             // spans: infeasible under the reason, closing the
@@ -572,16 +613,16 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     auto & fx_j = forced_bridge.at(make_pair(j, forced_col));
                     auto Lf1 = Lpol(forced_before.at(make_pair(i, j)), fx_i, fx_j, forced_end_le[i]);
                     auto Lf2 = Lpol(forced_before.at(make_pair(j, i)), fx_j, fx_i, forced_end_le[j]);
-                    auto reduced = PolBuilder{}
-                                       .add(clause_lines.at(make_pair(min(i, j), max(i, j))))
-                                       .add(Lf1)
-                                       .add(Lf2)
-                                       .add(fx_i.active_fwd)
-                                       .add(fx_j.active_fwd)
-                                       .add(Ax_i)
-                                       .add(Ax_j)
-                                       .saturate()
-                                       .emit(*logger, ProofLevel::Temporary);
+                    PolBuilder rb;
+                    rb.add(clause_lines.at(make_pair(min(i, j), max(i, j))))
+                        .add(Lf1)
+                        .add(Lf2)
+                        .add(fx_i.active_fwd)
+                        .add(fx_j.active_fwd)
+                        .add(Ax_i)
+                        .add(Ax_j);
+                    add_escape_pins(rb, reason, i, j);
+                    auto reduced = rb.saturate().emit(*logger, ProofLevel::Temporary);
 
                     // Free-axis chain: at each blocked cell t, both i (under the
                     // running bound / ext_lit) and j span t, contradicting the

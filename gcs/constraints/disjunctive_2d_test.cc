@@ -361,11 +361,13 @@ auto main(int argc, char * argv[]) -> int
         // Wider value ranges so we exercise the end-proxy bit encoding.
         run_disjunctive_2d_var_test(proofs, mode, strict, "wide", {{0, 4}, {0, 4}}, {{0, 3}, {0, 3}},
             {{2, 4}, {1, 3}}, {{1, 3}, {2, 4}});
-        // A possibly-zero variable size (strict only: non-strict needs the
-        // zero-size escape clause, a separate follow-up).
-        if (strict)
-            run_disjunctive_2d_var_test(proofs, mode, strict, "zero", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}},
-                {{0, 2}, {2, 2}}, {{2, 2}, {1, 2}});
+        // A possibly-zero variable size (strict: the size==0 rect still respects
+        // the clause; non-strict: it escapes via the zero-size disjunct).
+        run_disjunctive_2d_var_test(proofs, mode, strict, "zero", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}},
+            {{0, 2}, {2, 2}}, {{2, 2}, {1, 2}});
+        // Both rectangles can be zero-area on either axis.
+        run_disjunctive_2d_var_test(proofs, mode, strict, "zero2", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}},
+            {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}});
     }
 
     return EXIT_SUCCESS;
