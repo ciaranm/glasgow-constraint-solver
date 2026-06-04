@@ -168,6 +168,73 @@ namespace
     }
 }
 
+namespace
+{
+    // Variable-capacity test: the capacity is a decision variable. The
+    // capacity value is enumerated alongside the starts (appended as the
+    // last element of every solution vector), and the satisfiability check
+    // reads it from there. Lengths and heights stay constant.
+    auto run_cumulative_var_cap_test(bool proofs, const std::string & tag,
+        const vector<pair<int, int>> & start_ranges,
+        const vector<int> & lengths, const vector<int> & heights, pair<int, int> cap_range) -> void
+    {
+        print(cerr, "cumulative varcap {} starts={} lens={} hts={} cap=[{},{}]{}",
+            tag, start_ranges, lengths, heights, cap_range.first, cap_range.second,
+            proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto n = start_ranges.size();
+
+        auto is_satisfying = [&](const vector<int> & vals) {
+            int capacity = vals.at(n);
+            int t_lo = INT_MAX, t_hi = INT_MIN;
+            for (size_t i = 0; i < n; ++i) {
+                if (lengths[i] == 0 || heights[i] == 0)
+                    continue;
+                t_lo = min(t_lo, vals[i]);
+                t_hi = max(t_hi, vals[i] + lengths[i] - 1);
+            }
+            for (int t = t_lo; t <= t_hi; ++t) {
+                int load = 0;
+                for (size_t i = 0; i < n; ++i)
+                    if (vals[i] <= t && t < vals[i] + lengths[i])
+                        load += heights[i];
+                if (load > capacity)
+                    return false;
+            }
+            return true;
+        };
+
+        vector<pair<int, int>> all_ranges = start_ranges;
+        all_ranges.push_back(cap_range);
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, is_satisfying, all_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (auto & [lo, hi] : start_ranges)
+            starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        auto cap = p.create_integer_variable(Integer{cap_range.first}, Integer{cap_range.second});
+
+        vector<IntegerVariableID> lengths_v, heights_v;
+        for (auto l : lengths)
+            lengths_v.push_back(constant_variable(Integer{l}));
+        for (auto h : heights)
+            heights_v.push_back(constant_variable(Integer{h}));
+
+        p.post(Cumulative{starts, lengths_v, heights_v, cap});
+
+        vector<IntegerVariableID> all_vars = starts;
+        all_vars.push_back(cap);
+
+        auto proof_name = proofs ? make_optional("cumulative_test_varcap_" + tag) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
+        check_results(proof_name, expected, actual);
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -269,6 +336,24 @@ auto main(int argc, char * argv[]) -> int
             // Three tasks, two of which share a start. Third has its own start.
             run_dup_cumulative_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1},
                 {2, 2, 1}, {1, 1, 1}, 2);
+
+            // Variable-capacity instances. The capacity is a decision variable
+            // enumerated alongside the starts.
+            // Small: exercise cap = 0..2 directly.
+            run_cumulative_var_cap_test(proofs, "small", {{0, 3}, {0, 3}}, {2, 2}, {1, 1}, {0, 2});
+            // Three tasks, cap 1..3.
+            run_cumulative_var_cap_test(proofs, "mid", {{0, 4}, {0, 4}, {0, 4}},
+                {2, 2, 1}, {1, 1, 1}, {1, 3});
+            // Wide values, tight capacity: heights 20/25 can't coexist under any
+            // allowed capacity, so the structure is no-overlap; exercises the
+            // capacity bit-encoding at realistic magnitudes (>4 bits).
+            run_cumulative_var_cap_test(proofs, "wide_tight", {{0, 8}, {0, 8}},
+                {3, 4}, {20, 25}, {25, 27});
+            // Wide values, capacity range spans the overlap threshold (heights
+            // 30+30=60): cap 55..62 forbids overlap at the low end and allows it
+            // at the high end, exercising both the push and the contradiction.
+            run_cumulative_var_cap_test(proofs, "wide_span", {{0, 6}, {0, 6}},
+                {3, 3}, {30, 30}, {55, 62});
         }
     }
 
