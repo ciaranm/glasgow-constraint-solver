@@ -58,6 +58,9 @@ set_tests_properties(minizinc-disjunctivestrict PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-diffn COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ diffntest true true)
 set_tests_properties(minizinc-diffn PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-diffn-rotate COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ diffnrotatetest true true)
+set_tests_properties(minizinc-diffn-rotate PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-countops COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countops true true)
 set_tests_properties(minizinc-countops PROPERTIES SKIP_RETURN_CODE 66)
 
