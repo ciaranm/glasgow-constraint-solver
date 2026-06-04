@@ -716,14 +716,10 @@ namespace
                                 move(xcount) >= Integer{static_cast<long long>(j) + 1}, ProofLevel::Temporary);
                             // RANKLB2_i : pos[i] + n*[x_i<=U] >= j+1, folding count_U away
                             // with the x-count (cross-constraint sum, hence a pol not RUP).
-                            std::vector<ProofLine> ranklb2(n);
-                            for (size_t i = 0; i < n; ++i) {
-                                PolBuilder pol;
-                                pol.add(ranklb[i]);
-                                pol.add(xcount_line);
-                                ranklb2[i] = pol.emit(*logger, ProofLevel::Temporary);
-                            }
-                            (void)ranklb2;
+                            // Emitted for their RUP side effect; consumed by the per-i lines
+                            // below via the database, never by explicit reference.
+                            for (size_t i = 0; i < n; ++i)
+                                PolBuilder{}.add(ranklb[i]).add(xcount_line).emit(*logger, ProofLevel::Temporary);
                             // HONEST (extended reason): per i, (pos[i] != j) v (y[j] <= U).
                             // RUP from RANKLB2_i + channel: negate -> pos[i]=j and
                             // y[j] >= U+1; channel gives x_i = y[j] >= U+1 so [x_i<=U]=0,
