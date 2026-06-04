@@ -54,8 +54,8 @@ add_library(glasgow_constraint_solver
         constraints/n_value.cc
         constraints/parity.cc
         constraints/plus.cc
-        constraints/regular.cc
-        constraints/regular_regex.cc
+        constraints/regular/regular.cc
+        constraints/regular/regex.cc
         constraints/seq_precede_chain.cc
         constraints/smart_table.cc
         constraints/sort/arg_sort.cc
@@ -151,7 +151,7 @@ if(GCS_BUILD_TESTS)
     add_executable(n_value_test constraints/n_value_test.cc)
     add_executable(parity_test constraints/parity_test.cc)
     add_executable(plus_minus_test constraints/plus_minus_test.cc)
-    add_executable(regular_test constraints/regular_test.cc)
+    add_executable(regular_test constraints/regular/regular_test.cc)
     add_executable(seq_precede_chain_test constraints/seq_precede_chain_test.cc)
     add_executable(smart_table_test constraints/smart_table_test.cc)
     add_executable(smart_table_dup_test constraints/smart_table_dup_test.cc)
@@ -371,9 +371,9 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(linear_utils_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)
 
-    add_executable(regular_regex_test constraints/regular_regex_test.cc)
-    target_link_libraries(regular_regex_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
-    add_test(NAME regular_regex_test COMMAND $<TARGET_FILE:regular_regex_test>)
+    add_executable(regex_test constraints/regular/regex_test.cc)
+    target_link_libraries(regex_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME regex_test COMMAND $<TARGET_FILE:regex_test>)
 
     add_executable(bits_encoding_test innards/proofs/bits_encoding_test.cc)
     target_link_libraries(bits_encoding_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
