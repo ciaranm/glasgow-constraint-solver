@@ -28,11 +28,14 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::cmp_greater;
+using std::cmp_less;
 using std::make_shared;
 using std::make_unique;
 using std::map;
@@ -303,7 +306,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                             ++possible;
                     }
                     for (long long r = forced; r <= possible; ++r)
-                        if (r >= 0 && r < static_cast<long long>(n))
+                        if (r >= 0 && cmp_less(r, n))
                             reachable[r] = true;
                 }
             }
@@ -315,8 +318,8 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                 if (! state.in_domain(p[j], pv))
                     continue;
 
-                bool below = static_cast<long long>(j) < a_k;
-                bool above = static_cast<long long>(j) > b_k;
+                bool below = cmp_less(j, a_k);
+                bool above = cmp_greater(j, b_k);
                 if (below || above) {
                     // Outside the rank interval: the cross-variable rank deduction
                     // is not plain RUP, so derive the rank bound by an explicit
@@ -371,7 +374,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                     // has #possible(lk) <= j-1 and #possible(uk) = b_k >= j).
                     long long U = lk.raw_value;
                     for (long long v = lk.raw_value; v < uk.raw_value; ++v) {
-                        if (possible_at(v + 1) <= static_cast<long long>(j) - 1)
+                        if (cmp_less(possible_at(v + 1), j))
                             U = v + 1;
                         else
                             break;
@@ -444,52 +447,12 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     },
         ad_triggers);
 
-    Triggers triggers;
-    triggers.on_instantiated.insert(triggers.on_instantiated.end(), _x.begin(), _x.end());
-    triggers.on_instantiated.insert(triggers.on_instantiated.end(), _p.begin(), _p.end());
-
-    // Checking-only propagator: act only once every element of x and p is
-    // fixed, then verify p really is the stable sorting permutation of x.
-    propagators.install([x = _x, p = _p, offset = _offset](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        for (const auto & v : x)
-            if (! state.has_single_value(v))
-                return PropagatorState::Enable;
-        for (const auto & v : p)
-            if (! state.has_single_value(v))
-                return PropagatorState::Enable;
-
-        auto all_vars = [&]() {
-            vector<IntegerVariableID> vars = x;
-            vars.insert(vars.end(), p.begin(), p.end());
-            return vars;
-        };
-
-        auto n = x.size();
-        vector<Integer> p_vals;
-        for (const auto & v : p)
-            p_vals.push_back(state(v));
-
-        // p must be a permutation of {offset, ..., offset + n - 1}.
-        vector<bool> seen(n, false);
-        for (auto pv : p_vals) {
-            auto idx = (pv - offset).raw_value;
-            if (idx < 0 || idx >= static_cast<long long>(n) || seen[idx])
-                inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, all_vars()));
-            seen[idx] = true;
-        }
-
-        // x[p[j]] must be non-decreasing, with ties broken by index.
-        for (size_t j = 0; j + 1 < n; ++j) {
-            auto a = state(x[(p_vals[j] - offset).as_index()]);
-            auto b = state(x[(p_vals[j + 1] - offset).as_index()]);
-            if (a > b || (a == b && p_vals[j] >= p_vals[j + 1]))
-                inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, all_vars()));
-        }
-
-        return PropagatorState::DisableUntilBacktrack;
-    },
-        triggers);
+    // No leaf-checking propagator is needed: once every x is fixed, each
+    // element k's reachable-rank set collapses to the single stable rank, so the
+    // achievable-rank-set propagator (with GAC all_different) prunes p down to
+    // the one correct permutation -- any wrong p is a domain wipeout before a
+    // leaf is reached. A former checking-only propagator here was confirmed dead
+    // (full enumeration + BC consistency + VeriPB all unchanged when removed).
 }
 
 auto ArgSort::s_exprify(const ProofModel * const model) const -> string

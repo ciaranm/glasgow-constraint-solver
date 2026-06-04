@@ -32,6 +32,10 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::cmp_greater;
+using std::cmp_greater_equal;
+using std::cmp_less;
+using std::cmp_less_equal;
 using std::function;
 using std::greater;
 using std::make_unique;
@@ -266,13 +270,13 @@ namespace
         // wholly contained. Returns (S, a, b); S empty if none.
         auto find_band = [n](const vector<size_t> & lo, const vector<size_t> & hi)
             -> std::tuple<vector<size_t>, long long, long long> {
-            for (long long a = 0; a <= static_cast<long long>(n); ++a)
-                for (long long b = a - 1; b < static_cast<long long>(n); ++b) {
+            for (long long a = 0; cmp_less_equal(a, n); ++a)
+                for (long long b = a - 1; cmp_less(b, n); ++b) {
                     vector<size_t> cand;
                     for (size_t i = 0; i < n; ++i)
-                        if (static_cast<long long>(lo[i]) >= a && static_cast<long long>(hi[i]) <= b + 1)
+                        if (cmp_greater_equal(lo[i], a) && cmp_less_equal(hi[i], b + 1))
                             cand.push_back(i);
-                    if (static_cast<long long>(cand.size()) > b - a + 1)
+                    if (cmp_greater(cand.size(), b - a + 1))
                         return {move(cand), a, b};
                 }
             return {{}, 0, -1};
@@ -301,7 +305,7 @@ namespace
                     // restricted at-least-one then follows from the root al1[i].
                     vector<ProofLine> restricted(S.size());
                     for (const auto & [idx, i] : enumerate(S)) {
-                        for (long long k = 0; k < static_cast<long long>(n); ++k)
+                        for (long long k = 0; cmp_less(k, n); ++k)
                             if (k < fa || k > fb)
                                 logger->emit_rup_proof_line_under_reason(reason_fn,
                                     WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
@@ -602,10 +606,10 @@ namespace
                                         ProofLevel::Temporary);
                                 std::vector<ProofLine> restricted(S.size());
                                 for (const auto & [idx, i] : enumerate(S)) {
-                                    for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                    for (long long k = 0; cmp_less(k, n); ++k) {
                                         if (k >= fa && k <= fb)
                                             continue;
-                                        if (static_cast<size_t>(k) < lo_i[i] || static_cast<size_t>(k) >= hi_i[i])
+                                        if (cmp_less(k, lo_i[i]) || cmp_greater_equal(k, hi_i[i]))
                                             logger->emit_rup_proof_line_under_reason(reason_fn,
                                                 WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
                                         else
@@ -719,7 +723,7 @@ namespace
                                 pol.add(xcount_line);
                                 ranklb2[i] = pol.emit(*logger, ProofLevel::Temporary);
                             }
-                            (void) ranklb2;
+                            (void)ranklb2;
                             // HONEST (extended reason): per i, (pos[i] != j) v (y[j] <= U).
                             // RUP from RANKLB2_i + channel: negate -> pos[i]=j and
                             // y[j] >= U+1; channel gives x_i = y[j] >= U+1 so [x_i<=U]=0,
@@ -789,10 +793,10 @@ namespace
                                 // Per i in S: pin pos[i] into [fa,fb].
                                 std::vector<ProofLine> restricted(S.size());
                                 for (const auto & [idx, i] : enumerate(S)) {
-                                    for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                    for (long long k = 0; cmp_less(k, n); ++k) {
                                         if (k >= fa && k <= fb)
                                             continue;
-                                        if (static_cast<size_t>(k) < lo_i[i] || static_cast<size_t>(k) >= hi_i[i])
+                                        if (cmp_less(k, lo_i[i]) || cmp_greater_equal(k, hi_i[i]))
                                             logger->emit_rup_proof_line_under_reason(reason_fn,
                                                 WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
                                         else
@@ -862,7 +866,7 @@ namespace
                                     logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
                                 std::vector<ProofLine> restricted(S.size());
                                 for (const auto & [idx, m] : enumerate(S)) {
-                                    for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                    for (long long k = 0; cmp_less(k, n); ++k) {
                                         if (k >= fa && k <= fb)
                                             continue;
                                         // i excluded from ranks > fb (>= jl) needs the
@@ -924,7 +928,7 @@ namespace
                                     logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
                                 std::vector<ProofLine> restricted(S.size());
                                 for (const auto & [idx, m] : enumerate(S)) {
-                                    for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                    for (long long k = 0; cmp_less(k, n); ++k) {
                                         if (k >= fa && k <= fb)
                                             continue;
                                         // i excluded from ranks < fa (<= jh) needs the
@@ -1081,7 +1085,8 @@ auto gcs::innards::install_sortedness_propagator(Propagators & propagators,
                 }
                 inj_lines->push_back(am1.emit(*logger, ProofLevel::Top));
             }
-        });
+        },
+        InitialiserPriority::Expensive);
 
     Triggers triggers;
     triggers.on_bounds.insert(triggers.on_bounds.end(), x.begin(), x.end());
