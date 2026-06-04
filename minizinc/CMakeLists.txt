@@ -46,6 +46,9 @@ set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-cumulative COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativetest false true)
 set_tests_properties(minizinc-cumulative PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-cumulative-mode COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativemodetest true true)
+set_tests_properties(minizinc-cumulative-mode PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-disjunctive COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctivetest true true)
 set_tests_properties(minizinc-disjunctive PROPERTIES SKIP_RETURN_CODE 66)
 
