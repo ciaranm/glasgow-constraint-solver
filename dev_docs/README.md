@@ -49,6 +49,12 @@ library. For an introduction to *using* the solver, start with the top-level
   in `constraints.md`; this doc spells them out for one concrete propagator
   and flags the bits that should carry across to `Disjunctive` and
   `BinPacking`.
+- [`Regular`: design and proof scaffolding](regular.md) — working-design
+  note for the upfront-DAG `Regular` propagator: layered-DAG view, OPB
+  encoding, Top-level scaffolding (per-val backward chains + statically-
+  dead-state lines), slim per-call propagator, and bench numbers vs
+  `RegularLegacy`. Cross-references the broader unification path of
+  issue #200.
 - [Proof logging for `Disjunctive`](disjunctive-proof-logging.md) — companion
   to the cumulative writeup, focused on the new bridge pattern:
   keeping the OPB encoding declarative (pairwise non-overlap clauses

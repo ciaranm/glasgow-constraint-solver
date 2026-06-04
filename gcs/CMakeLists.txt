@@ -54,7 +54,8 @@ add_library(glasgow_constraint_solver
         constraints/n_value.cc
         constraints/parity.cc
         constraints/plus.cc
-        constraints/regular.cc
+        constraints/regular/regular.cc
+        constraints/regular/regular_legacy.cc
         constraints/seq_precede_chain.cc
         constraints/smart_table.cc
         constraints/table/negative_table.cc
@@ -149,6 +150,7 @@ if(GCS_BUILD_TESTS)
     add_executable(parity_test constraints/parity_test.cc)
     add_executable(plus_minus_test constraints/plus_minus_test.cc)
     add_executable(regular_test constraints/regular_test.cc)
+    add_executable(regular_legacy_test constraints/regular_legacy_test.cc)
     add_executable(seq_precede_chain_test constraints/seq_precede_chain_test.cc)
     add_executable(smart_table_test constraints/smart_table_test.cc)
     add_executable(smart_table_dup_test constraints/smart_table_dup_test.cc)
@@ -163,7 +165,7 @@ if(GCS_BUILD_TESTS)
             abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
             count_test cumulative_test disjunctive_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
-            plus_minus_test regular_test seq_precede_chain_test smart_table_test symmetric_all_different_test
+            plus_minus_test regular_test regular_legacy_test seq_precede_chain_test smart_table_test symmetric_all_different_test
             negative_table_test table_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
@@ -288,6 +290,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME parity_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
     add_test(NAME plus_minus_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
     add_test(NAME regular_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_test>)
+    add_test(NAME regular_legacy_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_legacy_test>)
     add_test(NAME seq_precede_chain_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:seq_precede_chain_test>)
     foreach(mode lex_gt lex_ge lex_lt lex_le
                  lex_gt_fixed lex_ge_fixed lex_lt_fixed lex_le_fixed
