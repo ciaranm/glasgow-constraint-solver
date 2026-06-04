@@ -1,4 +1,4 @@
-#include <gcs/constraints/regular_regex.hh>
+#include <gcs/constraints/regular/regex.hh>
 #include <gcs/exception.hh>
 
 #include <catch2/catch_test_macros.hpp>

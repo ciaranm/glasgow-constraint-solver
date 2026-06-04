@@ -1,5 +1,5 @@
-#include <gcs/constraints/regular.hh>
-#include <gcs/constraints/regular_regex.hh>
+#include <gcs/constraints/regular/regex.hh>
+#include <gcs/constraints/regular/regular.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>

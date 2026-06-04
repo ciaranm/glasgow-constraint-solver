@@ -1,6 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
-#include <gcs/constraints/regular.hh>
-#include <gcs/constraints/regular_regex.hh>
+#include <gcs/constraints/regular/regex.hh>
+#include <gcs/constraints/regular/regular.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -133,7 +133,7 @@ auto run_dup_regular_test(bool proofs, const string & label,
 }
 
 // Regex-string form of the constraint. The oracle is the independent reference
-// matcher from regular_regex.hh, given the same contiguous min..max alphabet
+// matcher from regular/regex.hh, given the same contiguous min..max alphabet
 // that Regular::prepare derives from the variable domains.
 auto run_regular_regex_test(bool proofs, const string & label, const string & regex,
     const vector<pair<int, int>> & var_ranges) -> void
