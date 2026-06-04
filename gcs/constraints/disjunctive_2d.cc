@@ -347,12 +347,6 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             auto hlb = [&](size_t i) { return state.lower_bound(height_var[i]); };
             auto w_is_var = [&](size_t i) { return ! is_constant_variable(width_var[i]); };
             auto h_is_var = [&](size_t i) { return ! is_constant_variable(height_var[i]); };
-            // True when the pair's proof needs the variable-size end-proxy
-            // machinery (lands in VS-b/VS-c); until then those inferences are
-            // asserted.
-            auto pair_var_size = [&](size_t i, size_t j) {
-                return w_is_var(i) || h_is_var(i) || w_is_var(j) || h_is_var(j);
-            };
 
             auto mand = [&](IntegerVariableID pos, Integer size) -> pair<Integer, Integer> {
                 return {state.upper_bound(pos), state.lower_bound(pos) + size};
@@ -486,16 +480,35 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // free_*: the axis we push on; forced_*: the axis they overlap on;
             // i is pushed, j blocks, forced_col is a column both span on the
             // forced axis.
-            auto push_axis = [&](const vector<IntegerVariableID> & free_pos, const vector<IntegerVariableID> & free_size,
-                                 BridgeMap & free_bridge, const std::map<pair<size_t, size_t>, BeforeFlagData> & free_before,
-                                 BridgeMap & forced_bridge, const std::map<pair<size_t, size_t>, BeforeFlagData> & forced_before,
-                                 size_t i, size_t j, Integer forced_col, bool skip_var_size) {
-                // Variable-size pushes (the end-proxy push proof) land in VS-c;
-                // until then they are simply not performed (the contradiction and
-                // leaf checks keep the propagator complete, just with less
-                // pruning for variable-size rectangles).
-                if (skip_var_size)
-                    return;
+            // free_is_x selects which axis we push on (the other is the forced
+            // axis they overlap on). i is pushed, j blocks, forced_col is a
+            // column both span on the forced axis. Variable sizes get the
+            // Cumulative end-proxy treatment throughout: the "after" pin
+            // materialises end's bound, and the before-flag pol cancels end back
+            // to pos+size.
+            struct ChainStep
+            {
+                Integer t;
+                // Start bound that, with lb(size), forces the pushed rect to span
+                // t: the running bound for lb-push, t−sz+1 for ub-push.
+                Integer s_lo;
+            };
+            auto push_axis = [&](bool free_is_x, size_t i, size_t j, Integer forced_col) {
+                const auto & free_pos = free_is_x ? xs : ys;
+                const auto & free_size = free_is_x ? width_var : height_var;
+                const auto & free_end = free_is_x ? end_x : end_y;
+                const auto & free_end_ge = free_is_x ? end_x_ge : end_y_ge;
+                const auto & free_end_le = free_is_x ? end_x_le : end_y_le;
+                auto & free_bridge = free_is_x ? *bridge_x : *bridge_y;
+                const auto & free_before = free_is_x ? before_x : before_y;
+                const auto & forced_pos = free_is_x ? ys : xs;
+                const auto & forced_size = free_is_x ? height_var : width_var;
+                const auto & forced_end = free_is_x ? end_y : end_x;
+                const auto & forced_end_ge = free_is_x ? end_y_ge : end_x_ge;
+                const auto & forced_end_le = free_is_x ? end_y_le : end_x_le;
+                auto & forced_bridge = free_is_x ? *bridge_y : *bridge_x;
+                const auto & forced_before = free_is_x ? before_y : before_x;
+
                 auto sz = state.lower_bound(free_size[i]);
                 if (sz == 0_i)
                     return; // a zero-size rectangle spans no cells on this axis
@@ -514,33 +527,51 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
 
                 // Emit the reduced clause by_ij + by_ji >= 1 (forced-axis
                 // elimination), then one chain step per blocked free-cell. dir
-                // = +1 for an lb-push (ext_lit: pos > t), -1 for a ub-push
-                // (ext_lit: pos < t - sz + 1).
-                auto emit_proof = [&, i, j, forced_col, sz](const vector<Integer> & chain, int dir,
+                // = +1 for an lb-push (ext_lit: pos > t), -1 for a ub-push.
+                auto emit_proof = [&, i, j, forced_col, sz](const vector<ChainStep> & chain, int dir,
                                       const ReasonFunction & reason) {
-                    auto pin = [&](BridgeMap & bridge, Integer coord, size_t r) -> ProofLine {
+                    // Materialise end >= pos_lb + lb(size) (for a variable size).
+                    auto materialise_end = [&](const std::optional<ProofOnlySimpleIntegerVariableID> & end_opt,
+                                               const std::optional<ProofLine> & end_ge, IntegerVariableID pos,
+                                               IntegerVariableID size, Integer pos_lb) {
+                        if (! end_opt)
+                            return;
+                        PolBuilder{}
+                            .add(*end_ge)
+                            .add_for_literal(logger->names_and_ids_tracker(), pos >= pos_lb)
+                            .add_for_literal(logger->names_and_ids_tracker(), size >= state.lower_bound(size))
+                            .emit(*logger, ProofLevel::Temporary);
+                    };
+                    auto pin = [&](BridgeMap & bridge, const std::optional<ProofOnlySimpleIntegerVariableID> & end_opt,
+                                   const std::optional<ProofLine> & end_ge, IntegerVariableID pos,
+                                   IntegerVariableID size, Integer coord, size_t r) -> ProofLine {
                         auto & bf = bridge.at(make_pair(r, coord));
                         logger->emit_rup_proof_line_under_reason(reason,
                             WPBSum{} + 1_i * bf.before >= 1_i, ProofLevel::Temporary);
+                        materialise_end(end_opt, end_ge, pos, size, state.lower_bound(pos));
                         logger->emit_rup_proof_line_under_reason(reason,
                             WPBSum{} + 1_i * bf.after >= 1_i, ProofLevel::Temporary);
                         return logger->emit_rup_proof_line_under_reason(reason,
                             WPBSum{} + 1_i * bf.active >= 1_i, ProofLevel::Temporary);
                     };
                     auto Lpol = [&](const BeforeFlagData & bf_ab, const BridgeFlags & aft_a,
-                                    const BridgeFlags & bef_b) -> ProofLine {
-                        return PolBuilder{}.add(bf_ab.forward_line).add(aft_a.after_fwd).add(bef_b.before_fwd).saturate().emit(*logger, ProofLevel::Temporary);
+                                    const BridgeFlags & bef_b, const std::optional<ProofLine> & aft_end_le) -> ProofLine {
+                        PolBuilder pol;
+                        pol.add(bf_ab.forward_line).add(aft_a.after_fwd).add(bef_b.before_fwd);
+                        if (aft_end_le)
+                            pol.add(*aft_end_le);
+                        return pol.saturate().emit(*logger, ProofLevel::Temporary);
                     };
 
                     // Forced-axis elimination: both rects span forced_col, so
                     // neither forced-axis precedence holds; with the 4-way clause
                     // that leaves the free-axis disjunction.
-                    auto Ax_i = pin(forced_bridge, forced_col, i);
-                    auto Ax_j = pin(forced_bridge, forced_col, j);
+                    auto Ax_i = pin(forced_bridge, forced_end[i], forced_end_ge[i], forced_pos[i], forced_size[i], forced_col, i);
+                    auto Ax_j = pin(forced_bridge, forced_end[j], forced_end_ge[j], forced_pos[j], forced_size[j], forced_col, j);
                     auto & fx_i = forced_bridge.at(make_pair(i, forced_col));
                     auto & fx_j = forced_bridge.at(make_pair(j, forced_col));
-                    auto Lf1 = Lpol(forced_before.at(make_pair(i, j)), fx_i, fx_j);
-                    auto Lf2 = Lpol(forced_before.at(make_pair(j, i)), fx_j, fx_i);
+                    auto Lf1 = Lpol(forced_before.at(make_pair(i, j)), fx_i, fx_j, forced_end_le[i]);
+                    auto Lf2 = Lpol(forced_before.at(make_pair(j, i)), fx_j, fx_i, forced_end_le[j]);
                     auto reduced = PolBuilder{}
                                        .add(clause_lines.at(make_pair(min(i, j), max(i, j))))
                                        .add(Lf1)
@@ -556,19 +587,23 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     // running bound / ext_lit) and j span t, contradicting the
                     // reduced clause, forcing the bound advance ext_lit.
                     for (size_t step = 0; step < chain.size(); ++step) {
-                        auto t = chain[step];
+                        auto t = chain[step].t;
                         auto ext_lit = dir > 0 ? (free_pos[i] > t) : (free_pos[i] < t - sz + 1_i);
-                        auto A_blk = pin(free_bridge, t, j);
+                        auto A_blk = pin(free_bridge, free_end[j], free_end_ge[j], free_pos[j], free_size[j], t, j);
                         auto & fy_i = free_bridge.at(make_pair(i, t));
                         auto & fy_j = free_bridge.at(make_pair(j, t));
                         logger->emit_rup_proof_line_under_reason(reason,
                             WPBSum{} + 1_i * fy_i.before + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                        // The pushed rect's after under ext_lit needs end >= s_lo
+                        // + lb(size) (>= t+1), materialised under the extended
+                        // reason (s_lo is the running bound / ¬ext_lit's bound).
+                        materialise_end(free_end[i], free_end_ge[i], free_pos[i], free_size[i], chain[step].s_lo);
                         logger->emit_rup_proof_line_under_reason(reason,
                             WPBSum{} + 1_i * fy_i.after + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
                         auto A_psh = logger->emit_rup_proof_line_under_reason(reason,
                             WPBSum{} + 1_i * fy_i.active + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-                        auto Ly1 = Lpol(free_before.at(make_pair(i, j)), fy_i, fy_j);
-                        auto Ly2 = Lpol(free_before.at(make_pair(j, i)), fy_j, fy_i);
+                        auto Ly1 = Lpol(free_before.at(make_pair(i, j)), fy_i, fy_j, free_end_le[i]);
+                        auto Ly2 = Lpol(free_before.at(make_pair(j, i)), fy_j, fy_i, free_end_le[j]);
                         auto not_both = PolBuilder{}
                                             .add(Ly1)
                                             .add(Ly2)
@@ -585,20 +620,17 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 };
 
                 // lb-push: i cannot fit below the blocker, push its origin up to
-                // blk_hi -- but capped at cur_hi + 1, since beyond that the
-                // domain is already empty (i cannot fit above either) and the
-                // chain would reference free cells i can never span. The capped
-                // bound is weaker but sound, and empties the domain to a
-                // contradiction when needed.
+                // blk_hi -- capped at cur_hi + 1 (beyond that the domain is empty
+                // and the chain would reference free cells i can never span).
                 if (cur_lo > blk_lo - sz && cur_lo < blk_hi) {
                     auto target = min(blk_hi, cur_hi + 1_i);
-                    vector<Integer> chain;
+                    vector<ChainStep> chain;
                     Integer running = cur_lo;
                     while (running < target) {
                         bool found = false;
                         for (Integer t = running + sz - 1_i; t >= running; --t)
                             if (is_blocked(t)) {
-                                chain.push_back(t);
+                                chain.push_back({t, running});
                                 running = t + 1_i;
                                 found = true;
                                 break;
@@ -617,13 +649,13 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 // blk_lo - sz -- capped at cur_lo - 1 by the same reasoning.
                 else if (cur_hi > blk_lo - sz && cur_hi < blk_hi) {
                     auto target = max(blk_lo - sz, cur_lo - 1_i);
-                    vector<Integer> chain;
+                    vector<ChainStep> chain;
                     Integer running = cur_hi;
                     while (running > target) {
                         bool found = false;
                         for (Integer t = running; t <= running + sz - 1_i; ++t)
                             if (is_blocked(t)) {
-                                chain.push_back(t);
+                                chain.push_back({t, t - sz + 1_i});
                                 running = t - sz;
                                 found = true;
                                 break;
@@ -652,16 +684,15 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     auto [lst_yj, eet_yj] = mand(ys[j], hlb(j));
                     bool x_overlap = max(lst_xi, lst_xj) < min(eet_xi, eet_xj);
                     bool y_overlap = max(lst_yi, lst_yj) < min(eet_yi, eet_yj);
-                    auto av = pair_var_size(i, j);
                     if (x_overlap) {
                         auto px = max(lst_xi, lst_xj);
-                        push_axis(ys, height_var, *bridge_y, before_y, *bridge_x, before_x, i, j, px, av);
-                        push_axis(ys, height_var, *bridge_y, before_y, *bridge_x, before_x, j, i, px, av);
+                        push_axis(false, i, j, px); // free axis = y
+                        push_axis(false, j, i, px);
                     }
                     if (y_overlap) {
                         auto py = max(lst_yi, lst_yj);
-                        push_axis(xs, width_var, *bridge_x, before_x, *bridge_y, before_y, i, j, py, av);
-                        push_axis(xs, width_var, *bridge_x, before_x, *bridge_y, before_y, j, i, py, av);
+                        push_axis(true, i, j, py); // free axis = x
+                        push_axis(true, j, i, py);
                     }
                 }
             }
