@@ -37,6 +37,9 @@ set_tests_properties(minizinc-boolxor PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-cake COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cake false true)
 set_tests_properties(minizinc-cake PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-circuit COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ circuittest true true)
+set_tests_properties(minizinc-circuit PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-count COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ counttest true true)
 set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
 
@@ -147,6 +150,12 @@ set_tests_properties(minizinc-sets PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-small COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ small true true)
 set_tests_properties(minizinc-small PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-sort COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ sorttest true true)
+set_tests_properties(minizinc-sort PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-argsort COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ argsorttest true true)
+set_tests_properties(minizinc-argsort PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-strictlydecreasing COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ strictlydecreasing true true)
 set_tests_properties(minizinc-strictlydecreasing PROPERTIES SKIP_RETURN_CODE 66)

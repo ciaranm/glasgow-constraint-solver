@@ -58,9 +58,12 @@ add_library(glasgow_constraint_solver
         constraints/n_value.cc
         constraints/parity.cc
         constraints/plus.cc
-        constraints/regular.cc
+        constraints/regular/regular.cc
+        constraints/regular/regex.cc
         constraints/seq_precede_chain.cc
         constraints/smart_table.cc
+        constraints/sort/arg_sort.cc
+        constraints/sort/sort.cc
         constraints/table/negative_table.cc
         constraints/table/table.cc
         constraints/value_precede.cc
@@ -148,18 +151,21 @@ if(GCS_BUILD_TESTS)
     add_executable(knapsack_test constraints/knapsack_test.cc)
     add_executable(lex_test constraints/lex_test.cc)
     add_executable(linear_test constraints/linear/linear_test.cc)
+    add_executable(linear_constant_test constraints/linear/linear_constant_test.cc)
     add_executable(logical_test constraints/logical_test.cc)
     add_executable(min_max_test constraints/min_max_test.cc)
     add_executable(mult_bc_test constraints/mult_bc_test.cc)
     add_executable(n_value_test constraints/n_value_test.cc)
     add_executable(parity_test constraints/parity_test.cc)
     add_executable(plus_minus_test constraints/plus_minus_test.cc)
-    add_executable(regular_test constraints/regular_test.cc)
+    add_executable(regular_test constraints/regular/regular_test.cc)
     add_executable(seq_precede_chain_test constraints/seq_precede_chain_test.cc)
     add_executable(smart_table_test constraints/smart_table_test.cc)
     add_executable(smart_table_dup_test constraints/smart_table_dup_test.cc)
     target_link_libraries(smart_table_dup_test PRIVATE glasgow_constraint_solver)
     add_test(NAME smart_table_dup COMMAND $<TARGET_FILE:smart_table_dup_test>)
+    add_executable(sort_test constraints/sort/sort_test.cc)
+    add_executable(arg_sort_test constraints/sort/arg_sort_test.cc)
     add_executable(negative_table_test constraints/table/negative_table_test.cc)
     add_executable(symmetric_all_different_test constraints/all_different/symmetric_all_different_test.cc)
     add_executable(table_test constraints/table_test.cc)
@@ -167,9 +173,9 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
-            count_test cumulative_test disjunctive_test element_test equals_test decomposed_global_cardinality_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test
+            count_test cumulative_test disjunctive_test element_test equals_test decomposed_global_cardinality_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
-            plus_minus_test regular_test seq_precede_chain_test smart_table_test symmetric_all_different_test
+            plus_minus_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
@@ -199,6 +205,9 @@ if(GCS_BUILD_TESTS)
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
     endforeach()
     add_test(NAME equals_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
+    add_test(NAME linear_constant_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_constant_test>)
+    add_test(NAME sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:sort_test>)
+    add_test(NAME arg_sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:arg_sort_test>)
 
     # View-wrap sweep: feeds the constraint each variable as a ViewOfIntegerVariableID
     # (offset / negation / both) instead of a bare SimpleIntegerVariableID. The
@@ -371,6 +380,10 @@ if(GCS_BUILD_TESTS)
     add_executable(linear_utils_test constraints/linear/utils_test.cc)
     target_link_libraries(linear_utils_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)
+
+    add_executable(regex_test constraints/regular/regex_test.cc)
+    target_link_libraries(regex_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME regex_test COMMAND $<TARGET_FILE:regex_test>)
 
     add_executable(bits_encoding_test innards/proofs/bits_encoding_test.cc)
     target_link_libraries(bits_encoding_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

@@ -254,8 +254,9 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
     else {
         overloaded{
             [&](const evaluated_reif::MustHold & reif) {
-                // condition is definitely true, an empty sum matches iff the modifiers sum to the value
-                if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != _value) {
+                // condition is definitely true; with no variable terms left the sum is just
+                // the (folded-out) constant part, so the equality holds iff _value + modifier == 0
+                if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != -_value) {
                     propagators.install_initialiser([reason_from_cond = reif.cond](const State &, auto & inference, ProofLogger * const logger) {
                         inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reason_from_cond}}; }});
                     });
@@ -278,8 +279,9 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
             },
 
             [&](const evaluated_reif::MustNotHold & reif) {
-                // condition is definitely false on a full reification, an empty sum matches iff the modifiers sum to something other than the value
-                if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == _value) {
+                // condition is definitely false on a full reification; with no variable terms left
+                // the equality _value + modifier == 0 must NOT hold, so it is violated iff it does
+                if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == -_value) {
                     propagators.install_initialiser([reason_from_cond = reif.cond](const State &, auto & inference, ProofLogger * const logger) {
                         inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{reason_from_cond}}; }});
                     });
