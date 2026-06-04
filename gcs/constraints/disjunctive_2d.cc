@@ -27,6 +27,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::function;
+using std::get;
 using std::make_pair;
 using std::make_shared;
 using std::make_unique;
@@ -34,6 +35,8 @@ using std::map;
 using std::max;
 using std::min;
 using std::move;
+using std::nullopt;
+using std::optional;
 using std::pair;
 using std::shared_ptr;
 using std::size_t;
@@ -52,7 +55,7 @@ namespace
 {
     auto const_value_of(const IntegerVariableID & v) -> Integer
     {
-        return std::get<ConstantIntegerVariableID>(v).const_value;
+        return get<ConstantIntegerVariableID>(v).const_value;
     }
 
     auto as_constant_var_ids(const vector<Integer> & vals) -> vector<IntegerVariableID>
@@ -75,9 +78,8 @@ Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariabl
 {
     if (_xs.size() != _ys.size() || _xs.size() != _widths.size() || _xs.size() != _heights.size())
         throw InvalidProblemDefinitionException{"Disjunctive2D: xs, ys, widths, heights must have the same size"};
-    // Constant non-negativity can be checked here; variable sizes carry the
-    // modelling assumption width, height >= 0 (their domains are not available
-    // until prepare()).
+    // Constant non-negativity is checked here; variable sizes are checked in
+    // prepare(), where their domains first become available.
     for (const auto & w : _widths)
         if (is_constant_variable(w) && const_value_of(w) < 0_i)
             throw InvalidProblemDefinitionException{"Disjunctive2D: widths must be non-negative"};
@@ -116,6 +118,17 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     // always separate, so it never forces an overlap, but its pairwise clauses
     // remain in the OPB for leaf correctness.
     auto n = _xs.size();
+
+    // Non-negativity: constant sizes are rejected in the constructor; variable
+    // sizes are checked here, where their domains are finally available. A
+    // negative size has no sensible rectangle interpretation, so treat it as a
+    // modelling error rather than silently producing nonsense.
+    for (size_t i = 0; i < n; ++i) {
+        if (! is_constant_variable(_widths[i]) && initial_state.lower_bound(_widths[i]) < 0_i)
+            throw InvalidProblemDefinitionException{"Disjunctive2D: widths must be non-negative"};
+        if (! is_constant_variable(_heights[i]) && initial_state.lower_bound(_heights[i]) < 0_i)
+            throw InvalidProblemDefinitionException{"Disjunctive2D: heights must be non-negative"};
+    }
 
     // Resolve size snapshots. _*_vals is the constant value (0 placeholder for a
     // variable size); _*_ub is the initial upper bound.
@@ -207,15 +220,15 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
 
     // For each rectangle with a variable size on an axis, a proof-only
     // end = pos + size with both definition directions captured.
-    _end_x.assign(_xs.size(), std::nullopt);
-    _end_y.assign(_xs.size(), std::nullopt);
-    _end_x_ge.assign(_xs.size(), std::nullopt);
-    _end_x_le.assign(_xs.size(), std::nullopt);
-    _end_y_ge.assign(_xs.size(), std::nullopt);
-    _end_y_le.assign(_xs.size(), std::nullopt);
+    _end_x.assign(_xs.size(), nullopt);
+    _end_y.assign(_xs.size(), nullopt);
+    _end_x_ge.assign(_xs.size(), nullopt);
+    _end_x_le.assign(_xs.size(), nullopt);
+    _end_y_ge.assign(_xs.size(), nullopt);
+    _end_y_le.assign(_xs.size(), nullopt);
     auto make_end = [&](IntegerVariableID pos, IntegerVariableID size, Integer dom_hi,
-                        std::optional<ProofOnlySimpleIntegerVariableID> & end_out,
-                        std::optional<ProofLine> & ge_out, std::optional<ProofLine> & le_out) {
+                        optional<ProofOnlySimpleIntegerVariableID> & end_out,
+                        optional<ProofLine> & ge_out, optional<ProofLine> & le_out) {
         auto end = model.create_proof_only_integer_variable(
             0_i, dom_hi, "d2dend", IntegerVariableProofRepresentation::Bits);
         ge_out = model.add_constraint("Disjunctive2D", "end >= pos + size",
@@ -232,8 +245,8 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
     }
 
     // Non-strict mode: a zero-size escape flag per size that can be 0.
-    _zero_w.assign(_xs.size(), std::nullopt);
-    _zero_h.assign(_xs.size(), std::nullopt);
+    _zero_w.assign(_xs.size(), nullopt);
+    _zero_h.assign(_xs.size(), nullopt);
     for (auto i : _active_rects) {
         if (_can_be_zero_w[i])
             _zero_w[i] = model.create_proof_flag_fully_reifying(
@@ -318,7 +331,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // single-variable end >= t+1 (end = pos + size).
             auto emit_axis = [&](BridgeMap & bridge, const vector<IntegerVariableID> & pos,
                                  const vector<IntegerVariableID> & size_var, const vector<Integer> & size_val,
-                                 const vector<std::optional<ProofOnlySimpleIntegerVariableID>> & end,
+                                 const vector<optional<ProofOnlySimpleIntegerVariableID>> & end,
                                  size_t i, Integer lo, Integer hi) {
                 for (Integer t = lo; t <= hi; ++t) {
                     auto [B, B_fwd, B_rev] = logger->create_proof_flag_reifying(
@@ -420,8 +433,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             // after RUP closes single-variable in end (the
                             // Cumulative end-proxy technique).
                             auto pin = [&](BridgeMap & bridge,
-                                           const std::optional<ProofOnlySimpleIntegerVariableID> & end_opt,
-                                           const std::optional<ProofLine> & end_ge, IntegerVariableID pos,
+                                           const optional<ProofOnlySimpleIntegerVariableID> & end_opt,
+                                           const optional<ProofLine> & end_ge, IntegerVariableID pos,
                                            IntegerVariableID size, Integer coord, size_t r) -> ProofLine {
                                 auto & bf = bridge.at(make_pair(r, coord));
                                 logger->emit_rup_proof_line_under_reason(reason,
@@ -455,7 +468,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             // before flag's pos+size term.
                             auto Lpol = [&](const BeforeFlagData & bf_ab, const BridgeFlags & aft_a,
                                             const BridgeFlags & bef_b,
-                                            const std::optional<ProofLine> & aft_end_le) -> ProofLine {
+                                            const optional<ProofLine> & aft_end_le) -> ProofLine {
                                 PolBuilder pol;
                                 pol.add(bf_ab.forward_line).add(aft_a.after_fwd).add(bef_b.before_fwd);
                                 if (aft_end_le)
@@ -572,8 +585,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 auto emit_proof = [&, i, j, forced_col, sz](const vector<ChainStep> & chain, int dir,
                                       const ReasonFunction & reason) {
                     // Materialise end >= pos_lb + lb(size) (for a variable size).
-                    auto materialise_end = [&](const std::optional<ProofOnlySimpleIntegerVariableID> & end_opt,
-                                               const std::optional<ProofLine> & end_ge, IntegerVariableID pos,
+                    auto materialise_end = [&](const optional<ProofOnlySimpleIntegerVariableID> & end_opt,
+                                               const optional<ProofLine> & end_ge, IntegerVariableID pos,
                                                IntegerVariableID size, Integer pos_lb) {
                         if (! end_opt)
                             return;
@@ -583,8 +596,8 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             .add_for_literal(logger->names_and_ids_tracker(), size >= state.lower_bound(size))
                             .emit(*logger, ProofLevel::Temporary);
                     };
-                    auto pin = [&](BridgeMap & bridge, const std::optional<ProofOnlySimpleIntegerVariableID> & end_opt,
-                                   const std::optional<ProofLine> & end_ge, IntegerVariableID pos,
+                    auto pin = [&](BridgeMap & bridge, const optional<ProofOnlySimpleIntegerVariableID> & end_opt,
+                                   const optional<ProofLine> & end_ge, IntegerVariableID pos,
                                    IntegerVariableID size, Integer coord, size_t r) -> ProofLine {
                         auto & bf = bridge.at(make_pair(r, coord));
                         logger->emit_rup_proof_line_under_reason(reason,
@@ -596,7 +609,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             WPBSum{} + 1_i * bf.active >= 1_i, ProofLevel::Temporary);
                     };
                     auto Lpol = [&](const BeforeFlagData & bf_ab, const BridgeFlags & aft_a,
-                                    const BridgeFlags & bef_b, const std::optional<ProofLine> & aft_end_le) -> ProofLine {
+                                    const BridgeFlags & bef_b, const optional<ProofLine> & aft_end_le) -> ProofLine {
                         PolBuilder pol;
                         pol.add(bf_ab.forward_line).add(aft_a.after_fwd).add(bef_b.before_fwd);
                         if (aft_end_le)

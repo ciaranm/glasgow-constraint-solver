@@ -8,6 +8,7 @@
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <utility>
@@ -60,8 +61,9 @@ namespace gcs
         // variable-size milestone lands, sizes must be constant.
         std::vector<Integer> _width_vals, _width_ub;
         std::vector<Integer> _height_vals, _height_ub;
-        // Non-strict mode: whether each rectangle's width/height can be 0.
-        std::vector<bool> _can_be_zero_w, _can_be_zero_h;
+        // Non-strict mode: whether each rectangle's width/height can be 0
+        // (std::uint8_t rather than the vector<bool> bitset specialisation).
+        std::vector<std::uint8_t> _can_be_zero_w, _can_be_zero_h;
 
         // Per-rectangle possible-active windows in each dimension, from root
         // bounds in prepare(). Used to size the proof bridge and to index the
