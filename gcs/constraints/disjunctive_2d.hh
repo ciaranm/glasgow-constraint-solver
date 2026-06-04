@@ -1,0 +1,95 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DISJUNCTIVE_2D_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DISJUNCTIVE_2D_HH
+
+#include <gcs/constraint.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/integer.hh>
+#include <gcs/variable_id.hh>
+
+#include <cstddef>
+#include <map>
+#include <utility>
+#include <vector>
+
+namespace gcs
+{
+    /**
+     * \brief Disjunctive2D (2D non-overlap, a.k.a. <code>diffn</code>) constraint,
+     * basic case: rectangles with variable origins and constant sizes. No two
+     * rectangles may overlap in area.
+     *
+     * Rectangle <em>i</em> occupies <em>[xs[i], xs[i] + widths[i]) &times;
+     * [ys[i], ys[i] + heights[i])</em>. Two rectangles do not overlap iff they
+     * are separated in at least one direction: <em>xs[i] + widths[i] &le;
+     * xs[j]</em>, or <em>xs[j] + widths[j] &le; xs[i]</em>, or <em>ys[i] +
+     * heights[i] &le; ys[j]</em>, or <em>ys[j] + heights[j] &le; ys[i]</em>.
+     *
+     * The <em>strict</em> flag controls zero-area rectangles, mirroring 1D
+     * Disjunctive: in strict mode (the default) every rectangle participates
+     * (a degenerate rectangle still respects the pairwise separation clause),
+     * equivalent to MiniZinc's <code>diffn</code> and XCSP3's
+     * <code>zeroIgnored = false</code>; in non-strict mode zero-area rectangles
+     * are dropped, equivalent to <code>diffn_nonstrict</code> /
+     * <code>zeroIgnored = true</code>.
+     *
+     * Propagation is pairwise 2D time-table strength (the analogue of 1D
+     * Disjunctive one dimension up): if two rectangles' mandatory boxes overlap
+     * the constraint is infeasible, and if a pair is forced to overlap in one
+     * dimension their positions are pushed apart in the other. Stronger
+     * reasoning (the cumulative relaxation, a 2D sweep, edge-finding) and
+     * variable sizes / k dimensions are left for future work.
+     *
+     * \ingroup Constraints
+     */
+    class Disjunctive2D : public Constraint
+    {
+    private:
+        std::vector<IntegerVariableID> _xs;
+        std::vector<IntegerVariableID> _ys;
+        std::vector<Integer> _widths;
+        std::vector<Integer> _heights;
+        bool _strict;
+        std::vector<std::size_t> _active_rects;
+
+        // Per-rectangle possible-active windows in each dimension, from root
+        // bounds in prepare(). Used to size the proof bridge and to index the
+        // per-(rect, coordinate) bridge flags. Only meaningful for positive-size
+        // rectangles in the relevant dimension.
+        std::vector<Integer> _x_lo, _x_hi;
+        std::vector<Integer> _y_lo, _y_hi;
+
+        // Encoded pairwise reified before-flags, one per (ordered pair, axis).
+        // The OPB stays declarative: for each axis d and ordered pair (i, j),
+        // before_{i,j,d} <-> pos_{i,d} + size_{i,d} <= pos_{j,d}, plus one 4-way
+        // separation clause per unordered pair. Reification line numbers are
+        // stored so the propagator's bridge derivations can pol them.
+        struct BeforeFlagData
+        {
+            innards::ProofFlag flag;
+            innards::ProofLine forward_line;
+            innards::ProofLine reverse_line;
+        };
+        // Keyed by (i, j); axis 0 = x, axis 1 = y.
+        std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_x;
+        std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_y;
+        std::map<std::pair<std::size_t, std::size_t>, innards::ProofLine> _clause_lines;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+
+    public:
+        explicit Disjunctive2D(std::vector<IntegerVariableID> xs,
+            std::vector<IntegerVariableID> ys,
+            std::vector<Integer> widths,
+            std::vector<Integer> heights,
+            bool strict = true);
+
+        virtual auto install(innards::Propagators &, innards::State &,
+            innards::ProofModel * const) && -> void override;
+        virtual auto clone() const -> std::unique_ptr<Constraint> override;
+        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string override;
+    };
+}
+
+#endif
