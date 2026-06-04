@@ -15,21 +15,24 @@
 namespace gcs
 {
     /**
-     * \brief Cumulative constraint, basic case: tasks with variable origins
-     * and constant durations, demands, and capacity. At every time point the
-     * sum of demands of currently-active tasks must not exceed the capacity.
+     * \brief Cumulative constraint: tasks with start times, durations, and
+     * demands, sharing a resource of a given capacity. Any of the durations,
+     * demands, and the capacity may be variables or constants (constants are
+     * passed as ConstantIntegerVariableID). At every time point the sum of
+     * demands of currently-active tasks must not exceed the capacity.
      *
      * A task <em>i</em> is active at time <em>t</em> iff
      * <em>starts[i] &le; t &lt; starts[i] + lengths[i]</em>.
      *
      * Propagation is time-table consistent. For each task, the
      * <em>mandatory part</em> is the interval
-     * <em>[ub(start), lb(start) + length)</em> &mdash; the time it must occupy
-     * regardless of where exactly it starts. Summing heights over mandatory
-     * parts gives a load profile; if that profile exceeds capacity anywhere,
-     * the constraint is infeasible. Each task's bounds are pushed away from
-     * any time point where placing it would force the load over capacity.
-     * Stronger reasoning (edge-finding, energetic) is left for future work.
+     * <em>[ub(start), lb(start) + lb(length))</em> &mdash; the time it must
+     * occupy regardless of where exactly it starts. Summing the guaranteed
+     * demands (lb(height)) over mandatory parts gives a load profile; if that
+     * profile exceeds the largest allowed capacity (ub) anywhere, the
+     * constraint is infeasible. Each task's bounds are pushed away from any
+     * time point where placing it would force the load over capacity. Stronger
+     * reasoning (edge-finding, energetic) is left for future work.
      *
      * \ingroup Constraints
      */

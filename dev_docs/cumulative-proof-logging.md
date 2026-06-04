@@ -273,11 +273,52 @@ See [`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)
 for the bridge mechanics, the at-most-one derivation, and how the
 three patterns compose in the `h = 1`, `c = 1` specialisation.
 
+## Variable durations, heights, and capacity
+
+The basic case (constant `d`/`r`/`b`) generalises to full
+`cumulative(var s, var d, var r, var b)` while staying time-table
+strength. The propagator reasons over *bounds*: a task's mandatory part
+and its guaranteed footprint when placed use `lb(l_i)`, the
+possible-active flag window uses `ub(l_i)`, the guaranteed demand uses
+`lb(h_i)`, and the overflow/blocked threshold uses `ub(capacity)`. Every
+non-constant `d`/`r`/`b` joins the reason. Each extension touches the OPB
+and the pol differently:
+
+- **Variable capacity** is nearly free: `C_t` becomes
+  `Σ h_i·active_{i,t} − capacity ≤ 0` (the bound moves left as a single
+  linear term). The existing pol closes unchanged because the wrapping
+  RUP now has `capacity ≤ ub(capacity)` in the reason.
+
+- **Variable heights** linearise the nonlinear product `h_i·active_{i,t}`
+  with a proof-only integer `contrib_{i,t} ∈ [0, ub(h_i)]`, half-reified
+  `active ⇒ contrib = h_i` and `¬active ⇒ contrib = 0`. `C_t` sums
+  `contrib` for variable heights (and `h_i·active` for constant ones, so
+  the all-constant proof is byte-identical). The pol pins
+  `contrib_{i,t} ≥ lb(h_i)` (coeff 1) instead of an `active = 1` line
+  scaled by the constant height; for the pushed task it deposits
+  `contrib_j + lb(h_j)·ext_lit ≥ lb(h_j)`. This is **variable × Boolean**,
+  which is linear — *not* the multiplication frontier.
+
+- **Variable durations** rewrite `after_{i,t} ⇔ s_i + l_i ≥ t+1`. The
+  pinning `after = 1` then needs the *cross-variable* fact
+  `s_i + l_i ≥ B`, which RUP cannot derive from the operands' bounds
+  alone (the VeriPB linear-combination limit). When **both** `s_i` and
+  `l_i` vary, `after` is reified instead on a proof-only
+  `end_i = s_i + l_i` (single variable), and the pin first materialises
+  `end_i ≥ s_lo + lb(l_i)` with a `pol` over the captured `end ≥ s + l`
+  definition line plus the two operand order-literal defining lines
+  (the `plus.cc` pattern). The `after = 1` RUP is then single-variable in
+  `end_i`, exactly like the constant-duration case. `s_lo` is the chain
+  running bound (lb-push), `t − lb(l_j) + 1` (ub-push, i.e. `¬ext_lit`),
+  or `lb(s_i)` (a mandatory task). If either operand is constant it folds
+  into the OPB and `after` is already single-variable — no `end`, no pol.
+
+The `pin_contributor` / `pin_pushed` helpers in `cumulative.cc` package
+the (a)/(b) emission so the overflow and both push inferences share one
+shape across all constant/variable combinations.
+
 ## Open follow-ups
 
-- **Variable lengths / heights / capacity.** Out of scope for stage 1.
-  Adding them needs new reifications for `before` / `after` over
-  variable expressions; the chain logic should carry through.
 - **Edge-finding.** A *set* of tasks blocks an interval, not a single
   task at a single time. The pol arithmetic would need to sum across
   the set; the chain idea no longer fits directly.
@@ -286,7 +327,8 @@ three patterns compose in the `h = 1`, `c = 1` specialisation.
   scaffold would need extra auxiliary flags.
 
 The current scaffolding (`_before_flags`, `_after_flags`,
-`_active_flags`, `_capacity_lines`) is enough for time-table-strength
-reasoning and not much more.
+`_active_flags`, `_contrib_vars`, `_end_def_lines`, `_capacity_lines`) is
+enough for time-table-strength reasoning over variable `d`/`r`/`b` and not
+much more.
 
 <!-- vim: set tw=72 spell spelllang=en : -->
