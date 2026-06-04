@@ -138,7 +138,7 @@ for line in sys.stdin:
         continue
     print(" ".join(f"{n}={v}" for n, v in sorted(zip(names, vals))))
 ' "$instance" \
-    | sort > "$expected"
+    | sort -u > "$expected"
 
 count=$(wc -l < "$expected")
 echo "wrote $expected ($count solutions)"
