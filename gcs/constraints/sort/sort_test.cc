@@ -185,9 +185,8 @@ auto main(int argc, char * argv[]) -> int
 
         // NB: the large-count order-statistic case (verifying that the count
         // line stays RUP at high degree, over non-fixed x with upper bounds
-        // strictly below the threshold) is NOT here -- the enumerate-and-compare
-        // harness can't take wide domains. It lives as a standalone proof-only
-        // probe: examples/sort_count_probe.
+        // strictly below the threshold) is NOT exercised here -- the
+        // enumerate-and-compare harness can't take the wide domains it needs.
     }
 
     // Seeded randomized batch: sizes up to 5, a mix of wide y-windows (exercising

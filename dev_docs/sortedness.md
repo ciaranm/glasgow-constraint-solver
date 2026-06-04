@@ -41,8 +41,10 @@ permutation and stable variants are NP-hard too. So:
 Both constraints run the Mehlhorn-Thiel bounds-consistent propagator (below),
 achieving `bounds(Z)` on the source `x` and the sorted values. `ArgSort`
 additionally runs a channel pass and GAC `all_different` on the permutation `p`
-(see its section). A checking propagator that rejects bad leaves is kept as a
-cheap backstop, but it is no longer the only inference.
+(see its section). No leaf checker is needed: once `x` is fixed the
+achievable-rank-set propagator collapses each element's reachable ranks to its
+single stable rank and prunes `p` to the unique permutation, so a bad `p` is a
+domain wipeout before any leaf.
 
 ## The OPB encoding (proof model)
 
@@ -247,11 +249,9 @@ the propagator from `uy[j]`, `ux[phi[j]]` and the count of x's forced `<= U`:
    `Σ_k [x_k <= U] >= j+1` is *plain RUP under the reason* (each of the `>= j+1`
    forced terms is independently entailed by its own upper bound — no
    cross-constraint step). This is genuinely RUP at any count, not a
-   small-numbers artefact: `examples/sort_count_probe` drives the root
-   order statistic over 20 *non-fixed* x's whose upper bounds sit strictly
-   below the threshold, and VeriPB checks the resulting degree-20 count line
-   (the literals stay variable — nothing is constant-folded). Fold it through
-   the pivot bridge (`RANKLB`,
+   small-numbers artefact: the count line stays a degree-`j+1` constraint over
+   *variable* literals (the forced `x_k`s need not be fixed, only bounded), so
+   nothing is constant-folded. Fold it through the pivot bridge (`RANKLB`,
    `RANKLB2`) and the per-`i` extended-reason lines `(pos[i] != j) v (y[j] <=
    U)` — all RUP under the reason. **Surjectivity** `Σ_i [pos[i] = j] >= 1` is
    now honest too (see below), so this case is fully certified.
@@ -291,9 +291,10 @@ all over the `before` flags (whose two reification halves are captured in
 Then per bound, surjectivity of rank `j` is the counting pol
 `Σ_i al1_i + Σ_{k≠j} inj_k` (the `n(n-1)` constants cancel, leaving
 `Σ_i [pos[i]=j] >= 1`), where `al1_i = Σ_k [pos[i]=k] >= 1` is a `Top` RUP. This
-is `O(n^3)` at the root (the transitivity clauses) but paid once. With it,
-`examples/sort_count_probe` (n = 20, all order-statistic) verifies `s VERIFIED`
-with **no assertions**.
+is `O(n^3)` at the root (the transitivity clauses) but paid once. With it, a
+root-only order-statistic instance (n = 20, non-fixed x's whose upper bounds sit
+strictly below the threshold, so the degree-20 count line stays variable)
+verifies `s VERIFIED` with **no assertions**.
 
 So the count (the feared "P3") was *not* the hard part — it is RUP whenever
 true, and the case split says when.
