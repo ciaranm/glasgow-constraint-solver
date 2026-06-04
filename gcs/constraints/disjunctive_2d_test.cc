@@ -179,6 +179,92 @@ namespace
     }
 }
 
+namespace
+{
+    // Variable-size test: each width/height is a spec {lo, hi}; lo == hi is a
+    // constant, lo < hi a decision variable. Enumerated variables appear in
+    // every solution vector in this order: xs, ys, variable widths (task
+    // order), variable heights (task order).
+    auto run_disjunctive_2d_var_test(bool proofs, const string & mode, bool strict, const string & tag,
+        const vector<pair<int, int>> & x_ranges, const vector<pair<int, int>> & y_ranges,
+        const vector<pair<int, int>> & w_specs, const vector<pair<int, int>> & h_specs) -> void
+    {
+        auto n = x_ranges.size();
+        vector<bool> wvar(n), hvar(n);
+        for (size_t i = 0; i < n; ++i) {
+            wvar[i] = w_specs[i].first != w_specs[i].second;
+            hvar[i] = h_specs[i].first != h_specs[i].second;
+        }
+        print(cerr, "disjunctive2d{} var {} xr={} yr={} wspec={} hspec={}{}", strict ? "_strict" : "",
+            tag, x_ranges, y_ranges, w_specs, h_specs, proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto is_satisfying = [&](const vector<int> & vals) {
+            vector<int> w(n), h(n);
+            size_t k = 2 * n;
+            for (size_t i = 0; i < n; ++i)
+                w[i] = wvar[i] ? vals.at(k++) : w_specs[i].first;
+            for (size_t i = 0; i < n; ++i)
+                h[i] = hvar[i] ? vals.at(k++) : h_specs[i].first;
+            for (size_t i = 0; i < n; ++i)
+                for (size_t j = i + 1; j < n; ++j) {
+                    if (! strict && (zero_area(w[i], h[i]) || zero_area(w[j], h[j])))
+                        continue;
+                    int xi = vals[i], yi = vals[n + i], xj = vals[j], yj = vals[n + j];
+                    bool sep = (xi + w[i] <= xj) || (xj + w[j] <= xi) ||
+                        (yi + h[i] <= yj) || (yj + h[j] <= yi);
+                    if (! sep)
+                        return false;
+                }
+            return true;
+        };
+
+        vector<pair<int, int>> all_ranges = x_ranges;
+        all_ranges.insert(all_ranges.end(), y_ranges.begin(), y_ranges.end());
+        for (size_t i = 0; i < n; ++i)
+            if (wvar[i])
+                all_ranges.push_back(w_specs[i]);
+        for (size_t i = 0; i < n; ++i)
+            if (hvar[i])
+                all_ranges.push_back(h_specs[i]);
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, is_satisfying, all_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> xs, ys, all_vars;
+        for (auto & [lo, hi] : x_ranges) {
+            auto v = p.create_integer_variable(Integer{lo}, Integer{hi});
+            xs.push_back(v);
+            all_vars.push_back(v);
+        }
+        for (auto & [lo, hi] : y_ranges) {
+            auto v = p.create_integer_variable(Integer{lo}, Integer{hi});
+            ys.push_back(v);
+        }
+        all_vars.insert(all_vars.end(), ys.begin(), ys.end());
+        auto make = [&](pair<int, int> spec, bool isvar) -> IntegerVariableID {
+            if (! isvar)
+                return constant_variable(Integer{spec.first});
+            auto v = p.create_integer_variable(Integer{spec.first}, Integer{spec.second});
+            all_vars.push_back(v);
+            return v;
+        };
+        vector<IntegerVariableID> widths, heights;
+        for (size_t i = 0; i < n; ++i)
+            widths.push_back(make(w_specs[i], wvar[i]));
+        for (size_t i = 0; i < n; ++i)
+            heights.push_back(make(h_specs[i], hvar[i]));
+
+        p.post(Disjunctive2D{xs, ys, widths, heights, strict});
+
+        auto proof_name = proofs ? make_optional("disjunctive_2d_test_" + mode + "_var_" + tag) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
+        check_results(proof_name, expected, actual);
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     if (argc != 2)
@@ -250,6 +336,36 @@ auto main(int argc, char * argv[]) -> int
         // Two rectangles share an x handle: they may still separate in y.
         run_dup_disjunctive_2d_test(proofs, mode, strict, {{0, 2}}, {{0, 2}, {0, 2}},
             {0, 0}, {2, 2}, {1, 1});
+
+        // Variable rectangle sizes (rotation-style). {lo, hi} with lo < hi is a
+        // variable size; lo == hi a constant.
+        // Two squares with variable side 1..2.
+        run_disjunctive_2d_var_test(proofs, mode, strict, "sq", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}},
+            {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
+        // Rotation: a 1x2 / 2x1 rectangle whose orientation varies (width and
+        // height swap), alongside a fixed unit square.
+        run_disjunctive_2d_var_test(proofs, mode, strict, "rot", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}},
+            {{1, 2}, {1, 1}}, {{1, 2}, {1, 1}});
+        // Mixed: one fixed rectangle, one with variable width only.
+        run_disjunctive_2d_var_test(proofs, mode, strict, "mixed", {{0, 3}, {0, 3}}, {{0, 2}, {0, 2}},
+            {{2, 2}, {1, 3}}, {{1, 1}, {2, 2}});
+        // Forced overlap: two rectangles pinned to the origin with variable
+        // sizes >= 1 always overlap -> UNSAT, exercising the variable-size
+        // contradiction proof.
+        run_disjunctive_2d_var_test(proofs, mode, strict, "clash", {{0, 0}, {0, 0}}, {{0, 0}, {0, 0}},
+            {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
+        // Near-clash: small position freedom with variable sizes, forcing both
+        // contradictions and pushes.
+        run_disjunctive_2d_var_test(proofs, mode, strict, "tight", {{0, 1}, {0, 1}}, {{0, 1}, {0, 1}},
+            {{2, 2}, {1, 2}}, {{2, 2}, {1, 2}});
+        // Wider value ranges so we exercise the end-proxy bit encoding.
+        run_disjunctive_2d_var_test(proofs, mode, strict, "wide", {{0, 4}, {0, 4}}, {{0, 3}, {0, 3}},
+            {{2, 4}, {1, 3}}, {{1, 3}, {2, 4}});
+        // A possibly-zero variable size (strict only: non-strict needs the
+        // zero-size escape clause, a separate follow-up).
+        if (strict)
+            run_disjunctive_2d_var_test(proofs, mode, strict, "zero", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}},
+                {{0, 2}, {2, 2}}, {{2, 2}, {1, 2}});
     }
 
     return EXIT_SUCCESS;

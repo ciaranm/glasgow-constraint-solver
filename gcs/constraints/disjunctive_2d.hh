@@ -3,11 +3,13 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -81,6 +83,15 @@ namespace gcs
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_x;
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_y;
         std::map<std::pair<std::size_t, std::size_t>, innards::ProofLine> _clause_lines;
+
+        // For a rectangle with a variable size on an axis, a proof-only
+        // end = pos + size on which that axis's "after" bridge flag is reified
+        // (single variable, keeping the after pin RUP-friendly). Both definition
+        // lines are captured: _end_*_ge is end >= pos+size (used to materialise
+        // end's bound), _end_*_le is end <= pos+size (used to cancel end back to
+        // pos+size in the before-flag pol). nullopt when that size is constant.
+        std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end_x, _end_y;
+        std::vector<std::optional<innards::ProofLine>> _end_x_ge, _end_x_le, _end_y_ge, _end_y_le;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
