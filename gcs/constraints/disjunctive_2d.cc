@@ -338,6 +338,187 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 }
             }
 
+            // Pairwise bound pushes. A pair whose mandatory parts overlap on one
+            // axis (the "forced" axis) must separate on the other (the "free"
+            // axis) -- no pair overlaps on both, since the contradiction pass
+            // returned otherwise. So the pushed rectangle is moved clear of the
+            // blocker's mandatory part on the free axis: a 1D single-blocker
+            // disjunctive push, justified by deriving the reduced clause
+            // by_ij + by_ji >= 1 from the forced-axis overlap and then running a
+            // 1D-style chain against it on the free axis.
+            //
+            // free_*: the axis we push on; forced_*: the axis they overlap on;
+            // i is pushed, j blocks, forced_col is a column both span on the
+            // forced axis.
+            auto push_axis = [&](const vector<IntegerVariableID> & free_pos, const vector<Integer> & free_size,
+                                 BridgeMap & free_bridge, const std::map<pair<size_t, size_t>, BeforeFlagData> & free_before,
+                                 BridgeMap & forced_bridge, const std::map<pair<size_t, size_t>, BeforeFlagData> & forced_before,
+                                 size_t i, size_t j, Integer forced_col) {
+                auto sz = free_size[i];
+                if (sz == 0_i)
+                    return; // a zero-size rectangle spans no cells on this axis
+                auto [cur_lo, cur_hi] = state.bounds(free_pos[i]);
+                auto blk_lo = state.upper_bound(free_pos[j]);
+                auto blk_hi = state.lower_bound(free_pos[j]) + free_size[j];
+                if (blk_lo >= blk_hi)
+                    return; // blocker has no mandatory part on the free axis
+                auto is_blocked = [&](Integer t) { return t >= blk_lo && t < blk_hi; };
+
+                vector<IntegerVariableID> rv{xs[i], ys[i], xs[j], ys[j]};
+
+                // Emit the reduced clause by_ij + by_ji >= 1 (forced-axis
+                // elimination), then one chain step per blocked free-cell. dir
+                // = +1 for an lb-push (ext_lit: pos > t), -1 for a ub-push
+                // (ext_lit: pos < t - sz + 1).
+                auto emit_proof = [&, i, j, forced_col, sz](const vector<Integer> & chain, int dir,
+                                      const ReasonFunction & reason) {
+                    auto pin = [&](BridgeMap & bridge, Integer coord, size_t r) -> ProofLine {
+                        auto & bf = bridge.at(make_pair(r, coord));
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * bf.before >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * bf.after >= 1_i, ProofLevel::Temporary);
+                        return logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * bf.active >= 1_i, ProofLevel::Temporary);
+                    };
+                    auto Lpol = [&](const BeforeFlagData & bf_ab, const BridgeFlags & aft_a,
+                                    const BridgeFlags & bef_b) -> ProofLine {
+                        return PolBuilder{}.add(bf_ab.forward_line).add(aft_a.after_fwd).add(bef_b.before_fwd).saturate().emit(*logger, ProofLevel::Temporary);
+                    };
+
+                    // Forced-axis elimination: both rects span forced_col, so
+                    // neither forced-axis precedence holds; with the 4-way clause
+                    // that leaves the free-axis disjunction.
+                    auto Ax_i = pin(forced_bridge, forced_col, i);
+                    auto Ax_j = pin(forced_bridge, forced_col, j);
+                    auto & fx_i = forced_bridge.at(make_pair(i, forced_col));
+                    auto & fx_j = forced_bridge.at(make_pair(j, forced_col));
+                    auto Lf1 = Lpol(forced_before.at(make_pair(i, j)), fx_i, fx_j);
+                    auto Lf2 = Lpol(forced_before.at(make_pair(j, i)), fx_j, fx_i);
+                    auto reduced = PolBuilder{}
+                                       .add(clause_lines.at(make_pair(min(i, j), max(i, j))))
+                                       .add(Lf1)
+                                       .add(Lf2)
+                                       .add(fx_i.active_fwd)
+                                       .add(fx_j.active_fwd)
+                                       .add(Ax_i)
+                                       .add(Ax_j)
+                                       .saturate()
+                                       .emit(*logger, ProofLevel::Temporary);
+
+                    // Free-axis chain: at each blocked cell t, both i (under the
+                    // running bound / ext_lit) and j span t, contradicting the
+                    // reduced clause, forcing the bound advance ext_lit.
+                    for (size_t step = 0; step < chain.size(); ++step) {
+                        auto t = chain[step];
+                        auto ext_lit = dir > 0 ? (free_pos[i] > t) : (free_pos[i] < t - sz + 1_i);
+                        auto A_blk = pin(free_bridge, t, j);
+                        auto & fy_i = free_bridge.at(make_pair(i, t));
+                        auto & fy_j = free_bridge.at(make_pair(j, t));
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * fy_i.before + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * fy_i.after + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                        auto A_psh = logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * fy_i.active + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                        auto Ly1 = Lpol(free_before.at(make_pair(i, j)), fy_i, fy_j);
+                        auto Ly2 = Lpol(free_before.at(make_pair(j, i)), fy_j, fy_i);
+                        auto not_both = PolBuilder{}
+                                            .add(Ly1)
+                                            .add(Ly2)
+                                            .add(reduced)
+                                            .add(fy_i.active_fwd)
+                                            .add(fy_j.active_fwd)
+                                            .saturate()
+                                            .emit(*logger, ProofLevel::Temporary);
+                        PolBuilder{}.add(not_both).add(A_blk).add(A_psh).saturate().emit(*logger, ProofLevel::Temporary);
+                        if (step + 1 < chain.size())
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                    }
+                };
+
+                // lb-push: i cannot fit below the blocker, push its origin up to
+                // blk_hi -- but capped at cur_hi + 1, since beyond that the
+                // domain is already empty (i cannot fit above either) and the
+                // chain would reference free cells i can never span. The capped
+                // bound is weaker but sound, and empties the domain to a
+                // contradiction when needed.
+                if (cur_lo > blk_lo - sz && cur_lo < blk_hi) {
+                    auto target = min(blk_hi, cur_hi + 1_i);
+                    vector<Integer> chain;
+                    Integer running = cur_lo;
+                    while (running < target) {
+                        bool found = false;
+                        for (Integer t = running + sz - 1_i; t >= running; --t)
+                            if (is_blocked(t)) {
+                                chain.push_back(t);
+                                running = t + 1_i;
+                                found = true;
+                                break;
+                            }
+                        if (! found)
+                            break;
+                    }
+                    auto justify = [&, chain](const ReasonFunction & reason) -> void {
+                        if (logger)
+                            emit_proof(chain, +1, reason);
+                    };
+                    inference.infer_greater_than_or_equal(logger, free_pos[i], target,
+                        JustifyExplicitlyThenRUP{justify}, generic_reason(state, rv));
+                }
+                // ub-push: i cannot fit above the blocker, push its origin down to
+                // blk_lo - sz -- capped at cur_lo - 1 by the same reasoning.
+                else if (cur_hi > blk_lo - sz && cur_hi < blk_hi) {
+                    auto target = max(blk_lo - sz, cur_lo - 1_i);
+                    vector<Integer> chain;
+                    Integer running = cur_hi;
+                    while (running > target) {
+                        bool found = false;
+                        for (Integer t = running; t <= running + sz - 1_i; ++t)
+                            if (is_blocked(t)) {
+                                chain.push_back(t);
+                                running = t - sz;
+                                found = true;
+                                break;
+                            }
+                        if (! found)
+                            break;
+                    }
+                    auto justify = [&, chain](const ReasonFunction & reason) -> void {
+                        if (logger)
+                            emit_proof(chain, -1, reason);
+                    };
+                    inference.infer_less_than(logger, free_pos[i], target + 1_i,
+                        JustifyExplicitlyThenRUP{justify}, generic_reason(state, rv));
+                }
+            };
+
+            for (size_t a = 0; a < active_rects.size(); ++a) {
+                auto i = active_rects[a];
+                for (size_t b = a + 1; b < active_rects.size(); ++b) {
+                    auto j = active_rects[b];
+                    // Recompute fresh each pair: earlier pushes may have moved
+                    // bounds this pass.
+                    auto [lst_xi, eet_xi] = mand(xs[i], widths[i]);
+                    auto [lst_yi, eet_yi] = mand(ys[i], heights[i]);
+                    auto [lst_xj, eet_xj] = mand(xs[j], widths[j]);
+                    auto [lst_yj, eet_yj] = mand(ys[j], heights[j]);
+                    bool x_overlap = max(lst_xi, lst_xj) < min(eet_xi, eet_xj);
+                    bool y_overlap = max(lst_yi, lst_yj) < min(eet_yi, eet_yj);
+                    if (x_overlap) {
+                        auto px = max(lst_xi, lst_xj);
+                        push_axis(ys, heights, *bridge_y, before_y, *bridge_x, before_x, i, j, px);
+                        push_axis(ys, heights, *bridge_y, before_y, *bridge_x, before_x, j, i, px);
+                    }
+                    if (y_overlap) {
+                        auto py = max(lst_yi, lst_yj);
+                        push_axis(xs, widths, *bridge_x, before_x, *bridge_y, before_y, i, j, py);
+                        push_axis(xs, widths, *bridge_x, before_x, *bridge_y, before_y, j, i, py);
+                    }
+                }
+            }
+
             // Strict-mode zero-area rectangles: the mandatory-box pass skips
             // them (their box is empty), but the declarative ≤-clause still
             // forbids a zero-area rectangle sitting inside another. Catch that
