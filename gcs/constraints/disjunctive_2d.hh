@@ -46,10 +46,18 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _xs;
         std::vector<IntegerVariableID> _ys;
-        std::vector<Integer> _widths;
-        std::vector<Integer> _heights;
+        std::vector<IntegerVariableID> _widths;
+        std::vector<IntegerVariableID> _heights;
         bool _strict;
         std::vector<std::size_t> _active_rects;
+
+        // Size snapshots resolved in prepare(). _*_vals holds the constant
+        // value for a constant size (0 for a variable one, where the variable
+        // is used instead); _*_ub holds the initial upper bound (used for the
+        // possible-active window and the active-rect filter). Until the
+        // variable-size milestone lands, sizes must be constant.
+        std::vector<Integer> _width_vals, _width_ub;
+        std::vector<Integer> _height_vals, _height_ub;
 
         // Per-rectangle possible-active windows in each dimension, from root
         // bounds in prepare(). Used to size the proof bridge and to index the
@@ -79,6 +87,20 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
+        /**
+         * \brief General form: widths and heights may be variables or constants
+         * (constants pass through as ConstantIntegerVariableID).
+         */
+        explicit Disjunctive2D(std::vector<IntegerVariableID> xs,
+            std::vector<IntegerVariableID> ys,
+            std::vector<IntegerVariableID> widths,
+            std::vector<IntegerVariableID> heights,
+            bool strict = true);
+
+        /**
+         * \brief Convenience form for constant rectangle sizes. Delegates to
+         * the general constructor.
+         */
         explicit Disjunctive2D(std::vector<IntegerVariableID> xs,
             std::vector<IntegerVariableID> ys,
             std::vector<Integer> widths,

@@ -48,8 +48,25 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace
+{
+    auto const_value_of(const IntegerVariableID & v) -> Integer
+    {
+        return std::get<ConstantIntegerVariableID>(v).const_value;
+    }
+
+    auto as_constant_var_ids(const vector<Integer> & vals) -> vector<IntegerVariableID>
+    {
+        vector<IntegerVariableID> result;
+        result.reserve(vals.size());
+        for (const auto & v : vals)
+            result.push_back(constant_variable(v));
+        return result;
+    }
+}
+
 Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariableID> ys,
-    vector<Integer> widths, vector<Integer> heights, bool strict) :
+    vector<IntegerVariableID> widths, vector<IntegerVariableID> heights, bool strict) :
     _xs(move(xs)),
     _ys(move(ys)),
     _widths(move(widths)),
@@ -58,12 +75,21 @@ Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariabl
 {
     if (_xs.size() != _ys.size() || _xs.size() != _widths.size() || _xs.size() != _heights.size())
         throw InvalidProblemDefinitionException{"Disjunctive2D: xs, ys, widths, heights must have the same size"};
-    for (auto & w : _widths)
-        if (w < 0_i)
+    // Constant non-negativity can be checked here; variable sizes carry the
+    // modelling assumption width, height >= 0 (their domains are not available
+    // until prepare()).
+    for (const auto & w : _widths)
+        if (is_constant_variable(w) && const_value_of(w) < 0_i)
             throw InvalidProblemDefinitionException{"Disjunctive2D: widths must be non-negative"};
-    for (auto & h : _heights)
-        if (h < 0_i)
+    for (const auto & h : _heights)
+        if (is_constant_variable(h) && const_value_of(h) < 0_i)
             throw InvalidProblemDefinitionException{"Disjunctive2D: heights must be non-negative"};
+}
+
+Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariableID> ys,
+    vector<Integer> widths, vector<Integer> heights, bool strict) :
+    Disjunctive2D(move(xs), move(ys), as_constant_var_ids(widths), as_constant_var_ids(heights), strict)
+{
 }
 
 auto Disjunctive2D::clone() const -> unique_ptr<Constraint>
@@ -90,9 +116,40 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     // always separate, so it never forces an overlap, but its pairwise clauses
     // remain in the OPB for leaf correctness.
     auto n = _xs.size();
+
+    // Variable sizes are not yet supported (the variable-size milestone lifts
+    // this); reject them clearly until then.
+    for (const auto & w : _widths)
+        if (! is_constant_variable(w))
+            throw UnimplementedException{"Disjunctive2D: variable widths not yet supported"};
+    for (const auto & h : _heights)
+        if (! is_constant_variable(h))
+            throw UnimplementedException{"Disjunctive2D: variable heights not yet supported"};
+
+    // Resolve size snapshots. _*_vals is the constant value (0 placeholder for a
+    // variable size); _*_ub is the initial upper bound.
+    _width_vals.clear();
+    _width_ub.clear();
+    _height_vals.clear();
+    _height_ub.clear();
+    _width_vals.reserve(n);
+    _width_ub.reserve(n);
+    _height_vals.reserve(n);
+    _height_ub.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        _width_vals.push_back(is_constant_variable(_widths[i]) ? const_value_of(_widths[i]) : 0_i);
+        _width_ub.push_back(initial_state.upper_bound(_widths[i]));
+        _height_vals.push_back(is_constant_variable(_heights[i]) ? const_value_of(_heights[i]) : 0_i);
+        _height_ub.push_back(initial_state.upper_bound(_heights[i]));
+    }
+
+    // In non-strict mode, a rectangle whose width or height can only ever be 0
+    // is zero-area and cannot overlap anything; drop it. In strict mode every
+    // rectangle participates (its pairwise clauses remain in the OPB for leaf
+    // correctness).
     _active_rects.reserve(n);
     for (size_t i = 0; i < n; ++i) {
-        if (! _strict && (_widths[i] == 0_i || _heights[i] == 0_i))
+        if (! _strict && (_width_ub[i] == 0_i || _height_ub[i] == 0_i))
             continue;
         _active_rects.push_back(i);
     }
@@ -100,6 +157,7 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     if (_active_rects.size() < 2)
         return false;
 
+    // Possible-active windows use the largest possible size.
     _x_lo.assign(n, 0_i);
     _x_hi.assign(n, 0_i);
     _y_lo.assign(n, 0_i);
@@ -108,9 +166,9 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         auto [x_lo, x_hi] = initial_state.bounds(_xs[i]);
         auto [y_lo, y_hi] = initial_state.bounds(_ys[i]);
         _x_lo[i] = x_lo;
-        _x_hi[i] = x_hi + _widths[i] - 1_i;
+        _x_hi[i] = x_hi + _width_ub[i] - 1_i;
         _y_lo[i] = y_lo;
-        _y_hi[i] = y_hi + _heights[i] - 1_i;
+        _y_hi[i] = y_hi + _height_ub[i] - 1_i;
     }
 
     return true;
@@ -143,10 +201,10 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
         auto i = _active_rects[a];
         for (size_t b = a + 1; b < _active_rects.size(); ++b) {
             auto j = _active_rects[b];
-            auto bx_ij = emit_before(_xs, _widths, i, j);
-            auto bx_ji = emit_before(_xs, _widths, j, i);
-            auto by_ij = emit_before(_ys, _heights, i, j);
-            auto by_ji = emit_before(_ys, _heights, j, i);
+            auto bx_ij = emit_before(_xs, _width_vals, i, j);
+            auto bx_ji = emit_before(_xs, _width_vals, j, i);
+            auto by_ij = emit_before(_ys, _height_vals, i, j);
+            auto by_ji = emit_before(_ys, _height_vals, j, i);
             auto clause = model.add_constraint("Disjunctive2D", "rectangles must be separated on some axis",
                 WPBSum{} + 1_i * bx_ij.flag + 1_i * bx_ji.flag + 1_i * by_ij.flag + 1_i * by_ji.flag >= 1_i);
             if (! clause)
@@ -192,7 +250,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
     auto bridge_y = make_shared<BridgeMap>();
 
     propagators.install_initialiser(
-        [xs = _xs, ys = _ys, widths = _widths, heights = _heights, active_rects = _active_rects,
+        [xs = _xs, ys = _ys, widths = _width_vals, heights = _height_vals, active_rects = _active_rects,
             x_lo = _x_lo, x_hi = _x_hi, y_lo = _y_lo, y_hi = _y_hi, bridge_x, bridge_y](
             State &, auto &, ProofLogger * const logger) -> void {
             if (! logger)
@@ -225,7 +283,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
     }
 
     propagators.install(
-        [xs = move(_xs), ys = move(_ys), widths = move(_widths), heights = move(_heights),
+        [xs = move(_xs), ys = move(_ys), widths = move(_width_vals), heights = move(_height_vals),
             active_rects = move(_active_rects), before_x = move(_before_x), before_y = move(_before_y),
             clause_lines = move(_clause_lines), bridge_x, bridge_y](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
@@ -563,10 +621,10 @@ auto Disjunctive2D::s_exprify(const ProofModel * const model) const -> string
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     print(s, " ) ( ");
     for (const auto & w : _widths)
-        print(s, " {}", w);
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(w));
     print(s, " ) ( ");
     for (const auto & h : _heights)
-        print(s, " {}", h);
+        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(h));
     print(s, " )");
     return s.str();
 }
