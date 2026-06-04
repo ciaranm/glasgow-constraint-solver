@@ -1,5 +1,6 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -421,9 +422,47 @@ namespace
     }
 }
 
+namespace
+{
+    // Regression: a *variable* duration/demand/capacity whose domain dips below
+    // zero is a modelling error with no sensible cumulative interpretation. The
+    // constructor only sees constants, so the check happens in prepare() (at
+    // install time, when the domains are finally available); installing is
+    // driven here by calling solve(). Mirrors the constant-size checks in the
+    // constructor and the Disjunctive2D sibling fix.
+    auto expect_negative_size_throws(const char * label, pair<int, int> len, pair<int, int> ht,
+        pair<int, int> cap) -> bool
+    {
+        Problem p;
+        auto s = p.create_integer_variable(0_i, 3_i, "s");
+        auto length = p.create_integer_variable(Integer{len.first}, Integer{len.second}, "len");
+        auto height = p.create_integer_variable(Integer{ht.first}, Integer{ht.second}, "ht");
+        auto capacity = p.create_integer_variable(Integer{cap.first}, Integer{cap.second}, "cap");
+        p.post(Cumulative{vector<IntegerVariableID>{s}, vector<IntegerVariableID>{length},
+            vector<IntegerVariableID>{height}, capacity});
+        try {
+            solve(p, [](const CurrentState &) { return true; });
+        }
+        catch (const InvalidProblemDefinitionException &) {
+            return true;
+        }
+        println(cerr, "{}: expected InvalidProblemDefinitionException", label);
+        return false;
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Negative variable sizes must be rejected at install time (constants are
+    // rejected by the constructor).
+    bool negative_checks_ok = true;
+    negative_checks_ok &= expect_negative_size_throws("negative length", {-1, 2}, {1, 1}, {1, 1});
+    negative_checks_ok &= expect_negative_size_throws("negative height", {1, 2}, {-1, 1}, {1, 1});
+    negative_checks_ok &= expect_negative_size_throws("negative capacity", {1, 2}, {1, 1}, {-1, 1});
+    if (! negative_checks_ok)
+        return EXIT_FAILURE;
 
     // Start-variable positions wrapped by the single-position sweep. The
     // fixed and random data top out at 4 tasks, so a single-position index

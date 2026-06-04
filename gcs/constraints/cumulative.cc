@@ -64,9 +64,9 @@ Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableI
 {
     if (_starts.size() != _lengths.size() || _starts.size() != _heights.size())
         throw InvalidProblemDefinitionException{"Cumulative: starts, lengths, heights must have the same size"};
-    // Constant non-negativity can be checked here. Variable lengths/heights/
-    // capacity carry the modelling assumption d, r, b >= 0 (mirroring MiniZinc);
-    // their domains are not available until prepare().
+    // Constant non-negativity is checked here; variable lengths/heights/
+    // capacity are checked in prepare(), where their domains first become
+    // available.
     if (is_constant_variable(_capacity) && const_value_of(_capacity) < 0_i)
         throw InvalidProblemDefinitionException{"Cumulative: capacity must be non-negative"};
     for (const auto & l : _lengths)
@@ -103,6 +103,19 @@ auto Cumulative::install(Propagators & propagators, State & initial_state, Proof
 auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     auto n = _starts.size();
+
+    // Non-negativity for variable durations/demands/capacity (constants are
+    // checked in the constructor): a negative length/height/capacity has no
+    // sensible cumulative interpretation, so reject it now that the domains are
+    // available rather than producing nonsense.
+    for (const auto & l : _lengths)
+        if (! is_constant_variable(l) && initial_state.lower_bound(l) < 0_i)
+            throw InvalidProblemDefinitionException{"Cumulative: lengths must be non-negative"};
+    for (const auto & h : _heights)
+        if (! is_constant_variable(h) && initial_state.lower_bound(h) < 0_i)
+            throw InvalidProblemDefinitionException{"Cumulative: heights must be non-negative"};
+    if (! is_constant_variable(_capacity) && initial_state.lower_bound(_capacity) < 0_i)
+        throw InvalidProblemDefinitionException{"Cumulative: capacity must be non-negative"};
 
     // Resolve snapshots used by define_proof_model and the propagator. For a
     // variable length/height, _*_vals[i] is a placeholder 0 (the propagator
