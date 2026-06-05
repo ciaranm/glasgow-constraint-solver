@@ -226,6 +226,25 @@ auto ProofModel::add_labelled_constraint(const string & label, const WPBSumLE & 
     return l;
 }
 
+auto ProofModel::add_labelled_constraint(const string & constraint_id, const string & role,
+    const StringLiteral & constraint_name, const StringLiteral & rule,
+    const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+{
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+    if (half_reif)
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
+
+    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
+    auto label = emit_constraint_label(constraint_id, role);
+    _imp->opb << label << " ";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
+    _imp->opb << ";\n";
+    advance_constraint_counter();
+    // emit_inequality_to negates the LE inequality to land in PB >= form.
+    names_and_ids_tracker().derive_deviewed_form_for(label, ineq.lhs, /*le_half=*/true);
+    return label;
+}
+
 auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
