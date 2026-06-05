@@ -85,10 +85,22 @@ namespace gcs
 
     public:
         virtual ~Constraint() = 0;
+
+        /**
+         * \brief The constraint's identity --- `_1`, `_2`, or a caller-given
+         * name --- as set by Problem::post() / Problem::post_named(). This is the
+         * identity, not the type (e.g. `abs`); see ConstraintID.
+         */
         [[nodiscard]] auto constraint_id() const -> const ConstraintID &
         {
             return _constraint_id;
         }
+
+        /**
+         * \brief Set the constraint's identity. Called internally by Problem when
+         * the constraint is posted (and when its install-time clone is made), so
+         * its proof labels match the name written to the `.scp`.
+         */
         auto set_constraint_id(ConstraintID constraint_id) -> void
         {
             _constraint_id = std::move(constraint_id);
