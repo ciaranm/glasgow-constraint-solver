@@ -2,7 +2,9 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/in.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/current_state.hh>
+#include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/integer.hh>
 #include <gcs/problem.hh>
@@ -132,6 +134,48 @@ TEST_CASE("read_scp: comparisons survive write -> read -> write unchanged")
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_cmp_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: linear constraints enumerate correctly")
+{
+    // X + Y == 3
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) ) ( (_1 lin_equals (1 X 1 Y) 3) ) )"))
+        CHECK(s.at("X") + s.at("Y") == 3);
+    // X - Y <= 1
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) ) ( (_1 lin_less_than_equal (1 X -1 Y) 1) ) )"))
+        CHECK(s.at("X") - s.at("Y") <= 1);
+    // X + Y != 2
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 lin_not_equals (1 X 1 Y) 2) ) )"))
+        CHECK(s.at("X") + s.at("Y") != 2);
+}
+
+TEST_CASE("read_scp: a reified linear constraint enumerates correctly")
+{
+    // C == 1  iff  X + Y == 3.
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (C 0 1) ) ( (_1 lin_equals_iff (C eq 1) (1 X 1 Y) 3) ) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") == 3));
+}
+
+TEST_CASE("read_scp: linear constraints survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+    auto z = original.create_integer_variable(-2_i, 2_i, "Z");
+    auto c = original.create_integer_variable(0_i, 1_i, "C");
+    original.post(LinearEquality{WeightedSum{} + 1_i * x + 1_i * y, 1_i});
+    original.post(LinearLessThanEqual{WeightedSum{} + 1_i * x + -1_i * z, 2_i});
+    original.post(LinearNotEquals{WeightedSum{} + 2_i * y, 0_i});
+    original.post(LinearEqualityIff{WeightedSum{} + 1_i * x + 1_i * z, 1_i, c == 1_i});
+    original.post(LinearNotEqualsIff{WeightedSum{} + 1_i * y + 1_i * z, 0_i, c == 1_i}); // flipped_cond path
+    auto scp_a = prove_to_scp(original, "scp_reader_lin_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_lin_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

@@ -2,6 +2,9 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/in.hh>
+#include <gcs/constraints/linear/linear_equality.hh>
+#include <gcs/constraints/linear/linear_inequality.hh>
+#include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/problem.hh>
 #include <gcs/reification.hh>
@@ -162,6 +165,57 @@ namespace
                 cond, or_equal, vars_swapped},
             label);
     }
+
+    // The linear family: (label lin_<equals|not_equals|less_than_equal>[_if|_iff]
+    // [(cond)] (c1 v1 c2 v2 ...) value). The keyword selects the constraint and
+    // its reification, matching the general ReifiedLinear* constructors. (The
+    // .scp does not record the GAC flag, so it defaults off; that affects
+    // propagation strength, not the solution set or the written .scp.)
+    auto read_linear(Problem & problem, const map<string, IntegerVariableID> & variables,
+        const string & op, const vector<SExpr> & terms, const string & label) -> void
+    {
+        bool iff = op.ends_with("_iff");
+        bool half = ! iff && op.ends_with("_if");
+        bool reified = iff || half;
+
+        if (terms.size() != (reified ? 5u : 4u))
+            throw ScpReadError{"linear constraint '" + op + "' has the wrong number of parts"};
+
+        const auto & pairs = children_of(terms[reified ? 3 : 2], "the linear coefficient/variable list");
+        if (pairs.size() % 2 != 0)
+            throw ScpReadError{"the linear coefficient/variable list must alternate coefficient and variable"};
+        WeightedSum coeff_vars;
+        for (std::size_t i = 0; i + 1 < pairs.size(); i += 2)
+            coeff_vars += as_integer(pairs[i]) * resolve_variable(variables, pairs[i + 1]);
+        auto value = as_integer(terms[reified ? 4 : 3]);
+
+        auto condition = [&] { return resolve_condition(variables, terms[2]); };
+
+        if (op.starts_with("lin_less_than_equal")) {
+            ReificationCondition cond = reif::MustHold{};
+            if (iff)
+                cond = reif::Iff{condition()};
+            else if (half)
+                cond = reif::If{condition()};
+            post_constraint(problem, ReifiedLinearInequality{std::move(coeff_vars), value, cond}, label);
+            return;
+        }
+
+        // Equality family: lin_equals* and lin_not_equals*.
+        bool not_equals = op.starts_with("lin_not_equals");
+        ReificationCondition cond = reif::MustHold{};
+        bool flipped_cond = false;
+        if (iff) {
+            cond = reif::Iff{condition()};
+            flipped_cond = not_equals; // lin_not_equals_iff is Iff with a flipped condition
+        }
+        else if (half)
+            cond = not_equals ? ReificationCondition{reif::NotIf{condition()}} : ReificationCondition{reif::If{condition()}};
+        else if (not_equals)
+            cond = reif::MustNotHold{};
+
+        post_constraint(problem, ReifiedLinearEquality{std::move(coeff_vars), value, cond, false, flipped_cond}, label);
+    }
 }
 
 auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVariableID>
@@ -212,6 +266,9 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
         }
         else if (op.starts_with("less_than") || op.starts_with("greater_than")) {
             read_comparison(problem, variables, op, terms, label);
+        }
+        else if (op.starts_with("lin_")) {
+            read_linear(problem, variables, op, terms, label);
         }
         else
             throw ScpReadError{"unsupported constraint operator '" + op + "'"};
