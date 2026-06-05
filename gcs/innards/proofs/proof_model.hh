@@ -36,7 +36,7 @@ namespace gcs::innards
         auto advance_constraint_counter() -> ProofLineNumber;
 
         // Build the constraint label `c[constraint_id][role]` (printed with a
-        // leading @). Credit: design from philrod1's constraint-labels branch.
+        // leading @).
         auto emit_constraint_label(const std::string & constraint_id, const std::string & role) -> ProofLine;
 
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
@@ -120,7 +120,7 @@ namespace gcs::innards
          * Returns `{LE-half, GE-half}`, as the unlabelled overload does.
          *
          * Part of moving every constraint reference off line numbers and onto
-         * labels. Credit: design from philrod1's constraint-labels branch.
+         * labels.
          */
         auto add_labelled_constraint(
             const std::string & constraint_id,
