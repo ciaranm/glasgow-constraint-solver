@@ -18,16 +18,12 @@ endfunction()
 
 # strict: the solver's OPB matches cake's by label, exactly.
 add_scp_chain_test(abs_unsat            strict)
+add_scp_chain_test(equals_unsat         strict)
 add_scp_chain_test(less_equal_sat       strict)
 add_scp_chain_test(less_equal_unsat     strict)
 add_scp_chain_test(greater_equal_unsat  strict)
+add_scp_chain_test(lin_equals_unsat     strict)
 add_scp_chain_test(lin_less_equal_unsat strict)
-
-# TODO: upgrade equals_unsat / lin_equals_unsat to `strict` once the
-# equals/linear @c[id][le]/[ge] labelling (PR #275) is merged -- the chain
-# already verifies; only the opbdiff label check awaits those labels.
-add_scp_chain_test(equals_unsat         none)
-add_scp_chain_test(lin_equals_unsat     none)
 
 # aux: matches modulo a constraint-local selector flag's *name* -- cake names
 # not_equals' flag b[name][ne], the solver f[N][gt], but with the same polarity,

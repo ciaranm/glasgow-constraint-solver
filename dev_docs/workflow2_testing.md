@@ -32,10 +32,9 @@ Per-case `opbdiff` mode (3rd runner arg):
 - `strict` — exact label match (abs, comparisons, lin_less_equal, …).
 - `aux` — match modulo a same-polarity selector flag *name* (not_equals,
   lin_not_equals: cake names it `b[name][ne]`, the solver `f[N][gt]`).
-- `none` — chain-only: all_different (its selector has the *opposite* polarity to
-  cake's, and multiple identical-looking selectors defeat label matching), and
-  (until PR #275 lands) equals/lin_equals, whose `@c[id][le]/[ge]` labels come
-  from that PR.
+- `none` — chain-only: all_different, whose selector has the *opposite* polarity
+  to cake's and whose multiple identical-looking selectors defeat label matching
+  (the deferred conform-the-solver item).
 
 **Domains are bits-encoded on purpose**, to dodge the direct-only-vs-bits
 divergence (a `[0,1]` variable is direct-encoded by the solver but bits-encoded
