@@ -54,33 +54,14 @@ echo "[4/5] cake_pb_cp: check the elaborated core"
 "$CAKE_PB_CP" "${progname}.scp" "${progname}.corepb"
 
 echo "[5/5] opbdiff oracle: solver OPB vs cake OPB"
-if have opbdiff && have jq; then
-    # opbdiff exits 1 when the files differ in any way (here, the one-sided
-    # preserved: line), 2 on a real error. We inspect the JSON rather than the
-    # exit code, so don't let `set -e` abort on the expected exit 1.
-    set +e
-    opbdiff "${progname}.opb" "${progname}.verifiedopb" --unordered --format json > "${progname}.opbdiff.json"
-    opbdiff_rc=$?
-    set -e
-    if [[ "$opbdiff_rc" -ge 2 ]]; then
-        echo "      opbdiff failed to run (exit ${opbdiff_rc})" >&2
-        exit 1
-    fi
-    # Require no real differences. A one-sided `preserved:` line is allowed: the
-    # solver always emits one and cake_pb_cp does not yet, which is a documented
-    # cake limitation, not an encoding disagreement.
-    if jq -e '.summary | (.differing == 0 and .only_in_a == 0 and .only_in_b == 0)' \
-        "${progname}.opbdiff.json" > /dev/null; then
-        matches=$(jq '.summary.matches' "${progname}.opbdiff.json")
-        preserved=$(jq '.summary.preserved_difference' "${progname}.opbdiff.json")
-        echo "      opbdiff: ${matches} matches, 0 differing (preserved_difference=${preserved}, allowed)"
-    else
-        echo "      opbdiff: solver and cake OPB disagree:" >&2
-        jq '.summary' "${progname}.opbdiff.json" >&2
-        exit 1
-    fi
+if have opbdiff; then
+    # `--ignore-no-preserved-in b`: cake_pb_cp emits no `preserved:` line (it is
+    # file B here), so its one-sided absence is treated as equivalent rather than
+    # a difference. Any real disagreement (exit 1) or error (exit 2) then aborts
+    # the script via `set -e`, failing the test.
+    opbdiff "${progname}.opb" "${progname}.verifiedopb" --unordered --ignore-no-preserved-in b
 else
-    echo "      opbdiff oracle skipped (need opbdiff + jq); cake verification above is authoritative"
+    echo "      opbdiff absent; cake verification above is authoritative"
 fi
 
 echo "OK: verified-encoding chain passed for ${progname}"
