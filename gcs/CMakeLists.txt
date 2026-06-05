@@ -5,6 +5,7 @@ add_library(glasgow_constraint_solver
         presolver.cc
         problem.cc
         proof.cc
+        scp_reader.cc
         search_heuristics.cc
         solve.cc
         stats.cc
@@ -373,6 +374,10 @@ if(GCS_BUILD_TESTS)
     add_executable(s_expr_test innards/s_expr_test.cc)
     target_link_libraries(s_expr_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME s_expr_test COMMAND $<TARGET_FILE:s_expr_test>)
+
+    add_executable(scp_reader_test scp_reader_test.cc)
+    target_link_libraries(scp_reader_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME scp_reader_test COMMAND $<TARGET_FILE:scp_reader_test>)
 
     add_executable(integer_test integer_test.cc)
     target_link_libraries(integer_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

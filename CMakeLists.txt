@@ -251,6 +251,7 @@ install(FILES
 if(GCS_ENABLE_EXAMPLES)
     add_subdirectory(examples)
     add_subdirectory(verified_encodings)
+    add_subdirectory(scp)
     add_subdirectory(minicp_benchmarks)
     add_subdirectory(test)
 endif()
