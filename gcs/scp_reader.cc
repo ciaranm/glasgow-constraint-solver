@@ -50,6 +50,26 @@ namespace
         return e.as_list();
     }
 
+    // Resolve an argument to a variable: a declared name, or an integer constant
+    // mapped to a ConstantIntegerVariableID. Anywhere a variable name may appear
+    // in a .scp, a constant integer may appear in its place.
+    auto resolve_variable(const map<string, IntegerVariableID> & variables, const SExpr & e) -> IntegerVariableID
+    {
+        const auto & a = e.as_atom();
+        if (auto it = variables.find(a); it != variables.end())
+            return it->second;
+        return constant_variable(as_integer(e));
+    }
+
+    // Resolve a list term to a vector of variables (the common case).
+    auto resolve_variable_list(const map<string, IntegerVariableID> & variables, const SExpr & list, const char * what) -> vector<IntegerVariableID>
+    {
+        vector<IntegerVariableID> result;
+        for (const auto & e : children_of(list, what))
+            result.push_back(resolve_variable(variables, e));
+        return result;
+    }
+
     // If `s` is the form Problem auto-generates for unnamed constraints,
     // `_<digits>`, return that number; otherwise nullopt.
     auto auto_number_of(const string & s) -> std::optional<unsigned long long>
@@ -98,15 +118,6 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             throw ScpReadError{"duplicate variable name '" + name + "'"};
     }
 
-    // Resolve an argument atom to a variable: a declared name, otherwise an
-    // integer constant.
-    auto resolve = [&](const SExpr & e) -> IntegerVariableID {
-        const auto & a = e.as_atom();
-        if (auto it = variables.find(a); it != variables.end())
-            return it->second;
-        return constant_variable(as_integer(e));
-    };
-
     // Constraints: each is (label operator args...).
     for (const auto & constraint : children_of(sections[1], "the constraints section")) {
         const auto & terms = children_of(constraint, "a constraint");
@@ -118,30 +129,20 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
         if (op == "abs") {
             if (terms.size() != 4)
                 throw ScpReadError{"abs takes two operands: (label abs v1 v2)"};
-            post_constraint(problem, Abs{resolve(terms[2]), resolve(terms[3])}, label);
+            post_constraint(problem, Abs{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3])}, label);
         }
         else if (op == "all_different") {
             if (terms.size() != 3)
                 throw ScpReadError{"all_different takes one list: (label all_different (vars...))"};
-            vector<IntegerVariableID> vars;
-            for (const auto & v : children_of(terms[2], "the all_different variable list"))
-                vars.push_back(resolve(v));
-            post_constraint(problem, AllDifferent{move(vars)}, label);
+            post_constraint(problem, AllDifferent{resolve_variable_list(variables, terms[2], "the all_different variable list")}, label);
         }
         else if (op == "in") {
             if (terms.size() != 4)
                 throw ScpReadError{"in takes a variable and a list: (label in var (values...))"};
-            auto var = resolve(terms[2]);
-            vector<IntegerVariableID> var_values;
-            vector<Integer> int_values;
-            for (const auto & v : children_of(terms[3], "the in value list")) {
-                const auto & a = v.as_atom();
-                if (auto it = variables.find(a); it != variables.end())
-                    var_values.push_back(it->second);
-                else
-                    int_values.push_back(as_integer(v));
-            }
-            post_constraint(problem, In{var, move(var_values), move(int_values)}, label);
+            // The value list is just a list of variables; an integer value is a
+            // ConstantIntegerVariableID, which In folds back into a constant.
+            post_constraint(problem,
+                In{resolve_variable(variables, terms[2]), resolve_variable_list(variables, terms[3], "the in value list")}, label);
         }
         else
             throw ScpReadError{"unsupported constraint operator '" + op + "'"};

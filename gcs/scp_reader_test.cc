@@ -89,6 +89,17 @@ TEST_CASE("read_scp: in with a mix of integer and variable values")
     CHECK(! solutions.empty());
 }
 
+TEST_CASE("read_scp: a constant integer can stand in for a variable anywhere")
+{
+    // An abs operand that is a constant: Y = |3|.
+    CHECK(enumerate("( ( (Y 0 5) ) ( (_1 abs 3 Y) ) )") ==
+        set<map<string, long long>>{{{"Y", 3}}});
+
+    // A constant member of all_different: A, 1, B all distinct, so A,B in {0,2}.
+    auto all_diff = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 all_different (A 1 B)) ) )");
+    CHECK(all_diff == set<map<string, long long>>{{{"A", 0}, {"B", 2}}, {{"A", 2}, {"B", 0}}});
+}
+
 TEST_CASE("read_scp: constraint labels and variable names round-trip via the map")
 {
     Problem problem;
