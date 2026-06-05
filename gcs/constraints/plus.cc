@@ -158,7 +158,7 @@ auto Plus::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} plus (", _name);
+    print(s, "{} plus (", _constraint_id);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
@@ -166,4 +166,3 @@ auto Plus::s_exprify(const innards::ProofModel * const model) const -> string
 
     return s.str();
 }
-

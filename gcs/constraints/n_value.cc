@@ -140,7 +140,7 @@ auto NValue::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} nvalue (", _name);
+    print(s, "{} nvalue (", _constraint_id);
     for (const auto & var : _vars) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     }

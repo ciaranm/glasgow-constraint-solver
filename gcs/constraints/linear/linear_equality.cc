@@ -1,6 +1,6 @@
-#include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/constraints/innards/triggers.hh>
+#include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/exception.hh>
@@ -415,7 +415,7 @@ auto ReifiedLinearEquality::s_exprify(const ProofModel * const model) const -> s
         [&](const reif::NotIf &) { return make_pair(true, "lin_not_equals_if"); }}
                            .visit(_reif_cond);
 
-    print(s, "{} {}", _name, cons);
+    print(s, "{} {}", _constraint_id, cons);
     if (rei) {
         print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
     }

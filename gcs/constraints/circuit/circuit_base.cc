@@ -246,7 +246,7 @@ auto CircuitBase::s_exprify(const innards::ProofModel * const model) const -> st
 {
     stringstream s;
 
-    print(s, "{} circuit (", _name);
+    print(s, "{} circuit (", _constraint_id);
     for (const auto & var : _succ)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");

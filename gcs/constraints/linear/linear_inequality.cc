@@ -1,6 +1,6 @@
-#include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -210,7 +210,7 @@ auto ReifiedLinearInequality::s_exprify(const ProofModel * const model) const ->
         [&](const auto &) { throw UnexpectedException{"Unexpected reification type in s_exprify"}; return make_pair(false, ""); }}
                            .visit(_reif_cond);
 
-    print(s, "{} {}", _name, cons);
+    print(s, "{} {}", _constraint_id, cons);
     if (rei) {
         print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
     }

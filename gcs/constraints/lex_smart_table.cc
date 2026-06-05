@@ -69,7 +69,7 @@ auto LexSmartTable::s_exprify(const innards::ProofModel * const model) const -> 
 {
     stringstream s;
 
-    print(s, "{} lex (", _name);
+    print(s, "{} lex (", _constraint_id);
     for (const auto & var : _vars_1)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") (");

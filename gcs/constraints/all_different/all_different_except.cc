@@ -35,12 +35,12 @@ using std::make_unique;
 using std::map;
 using std::move;
 using std::next;
-using std::ranges::sort;
 using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -206,7 +206,7 @@ auto AllDifferentExcept::s_exprify(const ProofModel * const model) const -> stri
 {
     stringstream s;
 
-    print(s, "{} all_different_except (", _name);
+    print(s, "{} all_different_except (", _constraint_id);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") (");

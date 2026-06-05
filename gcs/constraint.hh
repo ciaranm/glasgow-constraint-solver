@@ -51,9 +51,12 @@ namespace gcs
         }
     };
 
-    using ConstraintName = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
+    // The *identity* of a constraint (`_1`, `_2`, or a caller-given name) -- not
+    // its type (`abs`, `all_different`, ...). Kept distinct from "name" because
+    // both readings of that word kept getting confused.
+    using ConstraintID = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
 
-    [[nodiscard]] auto as_string(const ConstraintName &) -> std::string;
+    [[nodiscard]] auto as_string(const ConstraintID &) -> std::string;
 
     /**
      * \brief Subclasses of Constraint give a high level way of defining
@@ -70,9 +73,9 @@ namespace gcs
     class [[nodiscard]] Constraint
     {
     protected:
-        ConstraintName _name;
-        Constraint() : _name(CurrentlyUnnamedConstraint{}) {};
-        explicit Constraint(ConstraintName name) : _name(std::move(name)) {};
+        ConstraintID _constraint_id;
+        Constraint() : _constraint_id(CurrentlyUnnamedConstraint{}) {};
+        explicit Constraint(ConstraintID constraint_id) : _constraint_id(std::move(constraint_id)) {};
         virtual auto define_proof_model(innards::ProofModel &) -> void {};
         virtual auto install_propagators(innards::Propagators &) -> void {};
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool
@@ -82,13 +85,13 @@ namespace gcs
 
     public:
         virtual ~Constraint() = 0;
-        [[nodiscard]] auto name() const -> const ConstraintName &
+        [[nodiscard]] auto constraint_id() const -> const ConstraintID &
         {
-            return _name;
+            return _constraint_id;
         }
-        auto set_name(ConstraintName name) -> void
+        auto set_constraint_id(ConstraintID constraint_id) -> void
         {
-            _name = std::move(name);
+            _constraint_id = std::move(constraint_id);
         }
         /**
          * Called internally to install the constraint. A Constraint is expected
@@ -130,23 +133,23 @@ namespace gcs
     };
 }
 
-// The following is needed to allow ConstraintName to be used in format strings.
+// The following is needed to allow ConstraintID to be used in format strings.
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 template <>
-struct std::formatter<gcs::ConstraintName> : std::formatter<std::string>
+struct std::formatter<gcs::ConstraintID> : std::formatter<std::string>
 {
-    auto format(const gcs::ConstraintName & name, std::format_context & ctx) const
+    auto format(const gcs::ConstraintID & constraint_id, std::format_context & ctx) const
     {
-        return std::formatter<std::string>::format(gcs::as_string(name), ctx);
+        return std::formatter<std::string>::format(gcs::as_string(constraint_id), ctx);
     }
 };
 #else
 template <>
-struct fmt::formatter<gcs::ConstraintName> : fmt::formatter<std::string>
+struct fmt::formatter<gcs::ConstraintID> : fmt::formatter<std::string>
 {
-    auto format(const gcs::ConstraintName & name, fmt::format_context & ctx) const
+    auto format(const gcs::ConstraintID & constraint_id, fmt::format_context & ctx) const
     {
-        return fmt::formatter<std::string>::format(gcs::as_string(name), ctx);
+        return fmt::formatter<std::string>::format(gcs::as_string(constraint_id), ctx);
     }
 };
 #endif

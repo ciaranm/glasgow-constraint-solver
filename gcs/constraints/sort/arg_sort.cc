@@ -459,7 +459,7 @@ auto ArgSort::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} arg_sort\n          (", _name);
+    print(s, "{} arg_sort\n          (", _constraint_id);
     for (const auto & v : _x)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     print(s, ")\n          (");

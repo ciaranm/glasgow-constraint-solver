@@ -94,9 +94,9 @@ auto Abs::define_proof_model(ProofModel & model) -> void
 {
     // Labels match cake_pb_cp's: the non-negative case is @c[name][posle]/[posge]
     // (V2 = V1 split into <= and >=), the negative case [negle]/[negge].
-    _abs_nonneg_lines = model.add_labelled_constraint(as_string(_name), "posle", "posge",
+    _abs_nonneg_lines = model.add_labelled_constraint(as_string(_constraint_id), "posle", "posge",
         "Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
-    _abs_neg_lines = model.add_labelled_constraint(as_string(_name), "negle", "negge",
+    _abs_neg_lines = model.add_labelled_constraint(as_string(_constraint_id), "negle", "negge",
         "Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
 }
 
@@ -302,7 +302,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
 auto Abs::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    return SExpr::list({SExpr::atom(as_string(_name)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
         SExpr::atom("abs"),
         tracker.s_expr_term_of(_v1),
         tracker.s_expr_term_of(_v2)});

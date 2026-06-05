@@ -687,7 +687,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 auto Disjunctive::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
-    print(s, "{} disjunctive{} (", _name, _strict ? "_strict" : "");
+    print(s, "{} disjunctive{} (", _constraint_id, _strict ? "_strict" : "");
     for (const auto & v : _starts)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     print(s, " ) ( ");

@@ -237,7 +237,7 @@ auto Count::s_exprify(const ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    print(s, "{} count (", _name);
+    print(s, "{} count (", _constraint_id);
     for (const auto & v : _vars) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     }
