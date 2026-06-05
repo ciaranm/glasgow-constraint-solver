@@ -253,9 +253,12 @@ namespace
 auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVariableID>
 {
     auto top = parse_s_expr(text);
-    const auto & sections = children_of(top, "the top-level (variables constraints) form");
-    if (sections.size() != 2)
-        throw ScpReadError{"top level must be exactly (variables constraints)"};
+    const auto & sections = children_of(top, "the top-level (variables constraints [objective]) form");
+    // The optional third element is the objective / (enumerate) directive; this
+    // reader solves and enumerates, so it is accepted but not acted on (an
+    // objective would need the client to optimise rather than enumerate).
+    if (sections.size() != 2 && sections.size() != 3)
+        throw ScpReadError{"top level must be (variables constraints) or (variables constraints objective)"};
 
     map<string, IntegerVariableID> variables;
 

@@ -1241,6 +1241,17 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
     throw NonExhaustiveSwitch{};
 }
 
+auto NamesAndIDsTracker::s_expr_render_of(IntegerVariableID id) const -> string
+{
+    return overloaded{
+        [&](const ConstantIntegerVariableID & c) -> string { return "(minimize " + c.const_value.to_string() + ")"; },
+        [&](const SimpleIntegerVariableID & v) -> string { return "(minimize " + name_of(v) + ")"; },
+        [&](const ViewOfIntegerVariableID & vv) -> string {
+            return "(" + string{vv.negate_first ? "maximize" : "minimize"} + " " + name_of(vv.actual_variable) + ")";
+        }}
+        .visit(id);
+}
+
 auto NamesAndIDsTracker::s_expr_term_of(IntegerVariableID id) const -> SExpr
 {
     // A variable / literal name is always a single, non-empty s-expression term
