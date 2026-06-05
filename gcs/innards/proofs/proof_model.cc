@@ -211,6 +211,21 @@ auto ProofModel::add_labelled_constraint(
     return pair{le, ge};
 }
 
+auto ProofModel::add_labelled_constraint(const string & label, const WPBSumLE & ineq,
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+{
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+    if (half_reif)
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
+
+    ProofLineLabel l{label};
+    _imp->opb << l << " ";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
+    _imp->opb << ";\n";
+    advance_constraint_counter();
+    return l;
+}
+
 auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {

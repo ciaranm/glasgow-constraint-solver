@@ -599,10 +599,23 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                                                    id));
     }
     else {
-        _imp->gevars_that_exist[id].emplace(v, visit([&](const auto & id) {
-            return pair{
-                _imp->model->add_constraint(WPBSum{} + (1_i * id) >= v, {{id >= v}}).value(),
-                _imp->model->add_constraint(WPBSum{} + (-1_i * id) >= -v + 1_i, {{id < v}}).value()};
+        // Label the two halves @i[name][ge<v>][f]/[r] to match cake_pb_cp, but
+        // only where it is safe: a real (non-proof-only) variable, a name without
+        // `[` (vector names nest brackets the @label parser rejects), and v >= 0
+        // (a negative v would put a `-` in the role). The first emitted half (the
+        // id>=v reif, carrying ~ge..) is cake's [r]; the second is [f].
+        const auto & name = name_of(id);
+        bool can_label = std::holds_alternative<SimpleIntegerVariableID>(id) && name.find('[') == string::npos && v >= 0_i;
+        string ge_label = can_label ? "i[" + name + "][ge" + to_string(v.raw_value) + "]" : "";
+        _imp->gevars_that_exist[id].emplace(v, visit([&](const auto & vid) -> pair<ProofLine, ProofLine> {
+            if (can_label)
+                return pair{
+                    _imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}).value(),
+                    _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}}).value()};
+            else
+                return pair{
+                    _imp->model->add_constraint(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}).value(),
+                    _imp->model->add_constraint(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}}).value()};
         },
                                                    id));
         ++_imp->model_variables;

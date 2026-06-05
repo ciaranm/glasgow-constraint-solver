@@ -130,6 +130,16 @@ namespace gcs::innards
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
         /**
+         * \brief Add a single inequality under a caller-supplied @label, returning
+         * that label as the ProofLine. `label` is the full label body (e.g.
+         * \c i[X][ge0][f]); used for the variable-encoding @i labels, whose shape
+         * (\c i[name][...][f|r]) the caller builds rather than the c[id][role] form.
+         */
+        auto add_labelled_constraint(
+            const std::string & label, const WPBSumLE & ineq,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
+
+        /**
          * Add a CNF definition to a Proof model.
          */
         auto add_constraint(
