@@ -1,6 +1,7 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/current_state.hh>
@@ -176,6 +177,45 @@ TEST_CASE("read_scp: linear constraints survive write -> read -> write unchanged
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_lin_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: equals and not_equals enumerate correctly")
+{
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 equals X Y) ) )"))
+        CHECK(s.at("X") == s.at("Y"));
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 not_equals X Y) ) )"))
+        CHECK(s.at("X") != s.at("Y"));
+    // not_equals against a constant, the way crystal_maze uses it.
+    for (const auto & s : enumerate("( ( (X -2 2) ) ( (_1 not_equals X 0) ) )"))
+        CHECK(s.at("X") != 0);
+}
+
+TEST_CASE("read_scp: a reified equals enumerates correctly")
+{
+    // C == 1  iff  X == Y.
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 equals_iff (C eq 1) X Y) ) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") == s.at("Y")));
+}
+
+TEST_CASE("read_scp: equals constraints survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+    auto z = original.create_integer_variable(-2_i, 2_i, "Z");
+    auto c = original.create_integer_variable(0_i, 1_i, "C");
+    original.post(Equals{x, y});
+    original.post(NotEquals{x, constant_variable(0_i)}); // against a constant
+    original.post(EqualsIff{x, z, c == 1_i});
+    original.post(NotEqualsIff{y, z, c == 1_i}); // _neq path
+    auto scp_a = prove_to_scp(original, "scp_reader_eq_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_eq_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

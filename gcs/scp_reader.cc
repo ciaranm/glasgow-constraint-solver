@@ -1,6 +1,7 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
@@ -125,6 +126,23 @@ namespace
         throw ScpReadError{"unknown reification-condition operator '" + op + "'"};
     }
 
+    // For the equals-style families (equals / not_equals and their lin_
+    // counterparts): map a keyword's reification suffix to a (condition, flipped)
+    // pair. `flipped` is the cosmetic not-equals-iff flag (ReifiedEquals::_neq /
+    // ReifiedLinearEquality::_flipped_cond). `cond_term` is only read when the
+    // form is reified (the (variable op value) triple).
+    auto equality_reification(bool not_equals, bool iff, bool half,
+        const map<string, IntegerVariableID> & variables, const SExpr & cond_term) -> std::pair<ReificationCondition, bool>
+    {
+        if (iff)
+            return {ReificationCondition{reif::Iff{resolve_condition(variables, cond_term)}}, not_equals};
+        if (half)
+            return {not_equals ? ReificationCondition{reif::NotIf{resolve_condition(variables, cond_term)}}
+                               : ReificationCondition{reif::If{resolve_condition(variables, cond_term)}},
+                false};
+        return {not_equals ? ReificationCondition{reif::MustNotHold{}} : ReificationCondition{reif::MustHold{}}, false};
+    }
+
     // The comparison family: (label <less|greater>_than[_equal][_if|_iff]
     // [(cond)] v1 v2). The keyword carries the swapped / or-equal / reification
     // flags that the general ReifiedCompareLessThanOrMaybeEqual constructor takes
@@ -202,19 +220,27 @@ namespace
         }
 
         // Equality family: lin_equals* and lin_not_equals*.
-        bool not_equals = op.starts_with("lin_not_equals");
-        ReificationCondition cond = reif::MustHold{};
-        bool flipped_cond = false;
-        if (iff) {
-            cond = reif::Iff{condition()};
-            flipped_cond = not_equals; // lin_not_equals_iff is Iff with a flipped condition
-        }
-        else if (half)
-            cond = not_equals ? ReificationCondition{reif::NotIf{condition()}} : ReificationCondition{reif::If{condition()}};
-        else if (not_equals)
-            cond = reif::MustNotHold{};
-
+        auto [cond, flipped_cond] = equality_reification(op.starts_with("lin_not_equals"), iff, half, variables, terms[2]);
         post_constraint(problem, ReifiedLinearEquality{std::move(coeff_vars), value, cond, false, flipped_cond}, label);
+    }
+
+    // The equals family: (label <equals|not_equals>[_if|_iff] [(cond)] v1 v2),
+    // reconstructed via the general ReifiedEquals constructor.
+    auto read_equals(Problem & problem, const map<string, IntegerVariableID> & variables,
+        const string & op, const vector<SExpr> & terms, const string & label) -> void
+    {
+        bool iff = op.ends_with("_iff");
+        bool half = ! iff && op.ends_with("_if");
+        bool reified = iff || half;
+
+        if (terms.size() != (reified ? 5u : 4u))
+            throw ScpReadError{"equals constraint '" + op + "' is (label op [(cond)] v1 v2)"};
+        std::size_t v1_index = reified ? 3 : 2;
+
+        auto [cond, neq] = equality_reification(op.starts_with("not_equals"), iff, half, variables, terms[2]);
+        post_constraint(problem,
+            ReifiedEquals{resolve_variable(variables, terms[v1_index]), resolve_variable(variables, terms[v1_index + 1]), cond, neq},
+            label);
     }
 }
 
@@ -269,6 +295,9 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
         }
         else if (op.starts_with("lin_")) {
             read_linear(problem, variables, op, terms, label);
+        }
+        else if (op.starts_with("equals") || op.starts_with("not_equals")) {
+            read_equals(problem, variables, op, terms, label);
         }
         else
             throw ScpReadError{"unsupported constraint operator '" + op + "'"};
