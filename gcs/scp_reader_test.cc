@@ -1,5 +1,6 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/current_state.hh>
 #include <gcs/innards/s_expr.hh>
@@ -48,6 +49,18 @@ namespace
             }});
         return solutions;
     }
+
+    // --prove a problem to `basename`, returning the .scp it wrote.
+    auto prove_to_scp(Problem & problem, const std::string & basename) -> std::string
+    {
+        solve_with(problem, SolveCallbacks{},
+            std::make_optional<ProofOptions>(ProofFileNames{basename}, true, false));
+        std::ifstream in{basename + ".scp"};
+        std::string scp{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+        for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})
+            std::remove((basename + ext).c_str());
+        return scp;
+    }
 }
 
 TEST_CASE("read_scp: abs enumerates correctly")
@@ -89,6 +102,41 @@ TEST_CASE("read_scp: in with a mix of integer and variable values")
     CHECK(! solutions.empty());
 }
 
+TEST_CASE("read_scp: comparisons enumerate correctly")
+{
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 less_than X Y) ) )"))
+        CHECK(s.at("X") < s.at("Y"));
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 less_than_equal X Y) ) )"))
+        CHECK(s.at("X") <= s.at("Y"));
+}
+
+TEST_CASE("read_scp: a fully-reified comparison enumerates correctly")
+{
+    // C == 1  iff  X <= Y.
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 less_than_equal_iff (C eq 1) X Y) ) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") <= s.at("Y")));
+}
+
+TEST_CASE("read_scp: comparisons survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+    auto z = original.create_integer_variable(-2_i, 2_i, "Z");
+    auto c = original.create_integer_variable(0_i, 1_i, "C");
+    original.post(LessThanEqual{x, y});              // plain, or_equal
+    original.post(GreaterThan{y, z});                // operands swapped on write
+    original.post(LessThanEqualIff{x, z, c == 1_i}); // fully reified, with a condition
+    auto scp_a = prove_to_scp(original, "scp_reader_cmp_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_cmp_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
 TEST_CASE("read_scp: a constant integer can stand in for a variable anywhere")
 {
     // An abs operand that is a constant: Y = |3|.
@@ -107,21 +155,6 @@ TEST_CASE("read_scp: constraint labels and variable names round-trip via the map
     CHECK(variables.size() == 2);
     CHECK(variables.contains("X"));
     CHECK(variables.contains("Y"));
-}
-
-namespace
-{
-    // --prove a problem to `basename`, returning the .scp it wrote.
-    auto prove_to_scp(Problem & problem, const std::string & basename) -> std::string
-    {
-        solve_with(problem, SolveCallbacks{},
-            std::make_optional<ProofOptions>(ProofFileNames{basename}, true, false));
-        std::ifstream in{basename + ".scp"};
-        std::string scp{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
-        for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})
-            std::remove((basename + ext).c_str());
-        return scp;
-    }
 }
 
 TEST_CASE("read_scp: a solver-written .scp survives write -> read -> write unchanged")

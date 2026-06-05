@@ -1,9 +1,12 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/problem.hh>
+#include <gcs/reification.hh>
 #include <gcs/scp_reader.hh>
+#include <gcs/variable_condition.hh>
 
 #include <charconv>
 #include <optional>
@@ -96,6 +99,69 @@ namespace
         else
             problem.post_named(constraint, label);
     }
+
+    // A reification condition is the triple (variable op value), where op is the
+    // s_expr_name_of(VariableConditionOperator) spelling.
+    auto resolve_condition(const map<string, IntegerVariableID> & variables, const SExpr & triple) -> IntegerVariableCondition
+    {
+        const auto & parts = children_of(triple, "a reification condition");
+        if (parts.size() != 3)
+            throw ScpReadError{"a reification condition must be (variable op value)"};
+        auto var = resolve_variable(variables, parts[0]);
+        const auto & op = parts[1].as_atom();
+        auto value = as_integer(parts[2]);
+        using enum VariableConditionOperator;
+        if (op == "eq")
+            return {var, Equal, value};
+        if (op == "neq")
+            return {var, NotEqual, value};
+        if (op == "geq")
+            return {var, GreaterEqual, value};
+        if (op == "lt")
+            return {var, Less, value};
+        throw ScpReadError{"unknown reification-condition operator '" + op + "'"};
+    }
+
+    // The comparison family: (label <less|greater>_than[_equal][_if|_iff]
+    // [(cond)] v1 v2). The keyword carries the swapped / or-equal / reification
+    // flags that the general ReifiedCompareLessThanOrMaybeEqual constructor takes
+    // directly, so this reconstructs exactly the object the writer serialised.
+    auto read_comparison(Problem & problem, const map<string, IntegerVariableID> & variables,
+        const string & op, const vector<SExpr> & terms, const string & label) -> void
+    {
+        bool vars_swapped = op.starts_with("greater_than");
+        string rest = op.substr(vars_swapped ? sizeof("greater_than") - 1 : sizeof("less_than") - 1);
+        bool or_equal = rest.starts_with("_equal");
+        if (or_equal)
+            rest = rest.substr(sizeof("_equal") - 1);
+        // `rest` is now "" (unconditional), "_if" (half-reified) or "_iff".
+
+        ReificationCondition cond = reif::MustHold{};
+        std::size_t v1_index = 2;
+        if (rest.empty()) {
+            if (terms.size() != 4)
+                throw ScpReadError{"comparison '" + op + "' is (label op v1 v2)"};
+        }
+        else {
+            if (terms.size() != 5)
+                throw ScpReadError{"reified comparison '" + op + "' is (label op (cond) v1 v2)"};
+            auto condition = resolve_condition(variables, terms[2]);
+            if (rest == "_if")
+                cond = reif::If{condition};
+            else if (rest == "_iff")
+                cond = reif::Iff{condition};
+            else
+                throw ScpReadError{"unknown comparison '" + op + "'"};
+            v1_index = 3;
+        }
+
+        post_constraint(problem,
+            ReifiedCompareLessThanOrMaybeEqual{
+                resolve_variable(variables, terms[v1_index]),
+                resolve_variable(variables, terms[v1_index + 1]),
+                cond, or_equal, vars_swapped},
+            label);
+    }
 }
 
 auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVariableID>
@@ -143,6 +209,9 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             // ConstantIntegerVariableID, which In folds back into a constant.
             post_constraint(problem,
                 In{resolve_variable(variables, terms[2]), resolve_variable_list(variables, terms[3], "the in value list")}, label);
+        }
+        else if (op.starts_with("less_than") || op.starts_with("greater_than")) {
+            read_comparison(problem, variables, op, terms, label);
         }
         else
             throw ScpReadError{"unsupported constraint operator '" + op + "'"};
