@@ -360,13 +360,24 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
     names_and_ids_tracker().track_bits(id, negative_bit_coeff, bits);
     _imp->model_variables += bits.size();
 
+    // @i[name][lb]/[ub] labels match cake_pb_cp, but only for a real variable
+    // with a label-safe name: views / proof-only variables are not in cake's OPB,
+    // and a `[` in the name (e.g. a vector variable box[0]) nests brackets that
+    // veripb's @label parser rejects. The bracket guard is temporary -- nested
+    // brackets are coming in a future cake_pb_cp release.
+    bool labelled = std::holds_alternative<SimpleIntegerVariableID>(id) && name.find('[') == string::npos;
+
     // lower bound
+    if (labelled)
+        _imp->opb << ProofLineLabel{"i[" + name + "][lb]"} << " ";
     for (auto & [coeff, var] : bits)
         _imp->opb << coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << lower << " ;\n";
     advance_constraint_counter();
 
     // upper bound
+    if (labelled)
+        _imp->opb << ProofLineLabel{"i[" + name + "][ub]"} << " ";
     for (auto & [coeff, var] : bits)
         _imp->opb << -coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << -upper << " ;\n";
