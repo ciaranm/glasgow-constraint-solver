@@ -73,20 +73,24 @@ auto main(int argc, char * argv[]) -> int
 
     Problem p;
 
-    // Deliberately UNSAT: y = |x| forces y in [0, 3], but y is declared in
-    // [4, 5], so there is no solution. x spans both signs, so the abs sign bit
+    // Deliberately UNSAT: Y = |X| forces Y in [0, 3], but Y is declared in
+    // [4, 5], so there is no solution. X spans both signs, so the abs sign bit
     // is genuinely exercised. An UNSAT refutation avoids solution-logging
     // (solx) steps, which the workflow-2 chain cannot yet verify against a
     // cake_pb_cp OPB because cake emits no `preserved:` line (see the encoding
     // spec repo / dev_docs — a documented cake limitation to lift later).
-    auto x = p.create_integer_variable(-3_i, 3_i, "x");
-    auto y = p.create_integer_variable(4_i, 5_i, "y");
-    p.post(Abs{x, y}); // y = |x|
+    //
+    // Named CP variables are upper-case by convention (the PB variables they
+    // encode to, e.g. i[X][sign], are lower-case); only auto-numbered _N
+    // names are the exception.
+    auto x = p.create_integer_variable(-3_i, 3_i, "X");
+    auto y = p.create_integer_variable(4_i, 5_i, "Y");
+    p.post(Abs{x, y}); // Y = |X|
 
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
-                println("x = {}, y = {}", s(x), s(y));
+                println("X = {}, Y = {}", s(x), s(y));
                 return true;
             }},
         options_vars.contains("prove")
