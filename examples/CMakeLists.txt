@@ -1,5 +1,6 @@
 add_subdirectory(auto_table)
 add_subdirectory(cake)
+add_subdirectory(cake_abs)
 add_subdirectory(colour)
 add_subdirectory(circuit_small)
 add_subdirectory(circuit_random)
