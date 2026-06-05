@@ -203,10 +203,11 @@ auto ReifiedLinearInequality::s_exprify(const ProofModel * const model) const ->
 {
     stringstream s;
 
+    // cake_pb_cp's name for the <= form is lin_less_equal (not lin_less_than_equal).
     auto [rei, cons] = overloaded{
-        [&](const reif::MustHold &) { return make_pair(false, "lin_less_than_equal"); },
-        [&](const reif::If &) { return make_pair(true, "lin_less_than_equal_if"); },
-        [&](const reif::Iff &) { return make_pair(true, "lin_less_than_equal_iff"); },
+        [&](const reif::MustHold &) { return make_pair(false, "lin_less_equal"); },
+        [&](const reif::If &) { return make_pair(true, "lin_less_equal_if"); },
+        [&](const reif::Iff &) { return make_pair(true, "lin_less_equal_iff"); },
         [&](const auto &) { throw UnexpectedException{"Unexpected reification type in s_exprify"}; return make_pair(false, ""); }}
                            .visit(_reif_cond);
 

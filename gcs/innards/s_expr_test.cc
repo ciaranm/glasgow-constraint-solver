@@ -94,8 +94,8 @@ TEST_CASE("SExpr: the canonical forms the refactored constraints now emit")
     for (auto s : {
              "(_1 abs _2 _3)",
              "(_3 all_different (_1 _1 _2 _2))",
-             "(_1 less_than_equal _2 _3)",
-             "(_1 less_than_equal_iff (_2 neq 1) _3 _4)",
+             "(_1 less_equal _2 _3)",
+             "(_1 less_equal_iff (_2 != 1) _3 _4)",
              "(_5 in _2 (0 1 _3))"}) {
         CHECK(format("{}", parse_s_expr(s)) == s);
     }

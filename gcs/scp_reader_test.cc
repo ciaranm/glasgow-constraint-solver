@@ -109,14 +109,14 @@ TEST_CASE("read_scp: comparisons enumerate correctly")
 {
     for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 less_than X Y) ) )"))
         CHECK(s.at("X") < s.at("Y"));
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 less_than_equal X Y) ) )"))
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 less_equal X Y) ) )"))
         CHECK(s.at("X") <= s.at("Y"));
 }
 
 TEST_CASE("read_scp: a fully-reified comparison enumerates correctly")
 {
     // C == 1  iff  X <= Y.
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 less_than_equal_iff (C eq 1) X Y) ) )"))
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 less_equal_iff (C = 1) X Y) ) )"))
         CHECK((s.at("C") == 1) == (s.at("X") <= s.at("Y")));
 }
 
@@ -146,7 +146,7 @@ TEST_CASE("read_scp: linear constraints enumerate correctly")
     for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) ) ( (_1 lin_equals (1 X 1 Y) 3) ) )"))
         CHECK(s.at("X") + s.at("Y") == 3);
     // X - Y <= 1
-    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) ) ( (_1 lin_less_than_equal (1 X -1 Y) 1) ) )"))
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) ) ( (_1 lin_less_equal (1 X -1 Y) 1) ) )"))
         CHECK(s.at("X") - s.at("Y") <= 1);
     // X + Y != 2
     for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 lin_not_equals (1 X 1 Y) 2) ) )"))
@@ -156,7 +156,7 @@ TEST_CASE("read_scp: linear constraints enumerate correctly")
 TEST_CASE("read_scp: a reified linear constraint enumerates correctly")
 {
     // C == 1  iff  X + Y == 3.
-    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (C 0 1) ) ( (_1 lin_equals_iff (C eq 1) (1 X 1 Y) 3) ) )"))
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (C 0 1) ) ( (_1 lin_equals_iff (C = 1) (1 X 1 Y) 3) ) )"))
         CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") == 3));
 }
 
@@ -196,7 +196,7 @@ TEST_CASE("read_scp: equals and not_equals enumerate correctly")
 TEST_CASE("read_scp: a reified equals enumerates correctly")
 {
     // C == 1  iff  X == Y.
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 equals_iff (C eq 1) X Y) ) )"))
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 equals_iff (C = 1) X Y) ) )"))
         CHECK((s.at("C") == 1) == (s.at("X") == s.at("Y")));
 }
 
