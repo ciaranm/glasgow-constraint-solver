@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/overloaded.hh>
@@ -30,8 +31,8 @@ using namespace gcs::innards;
 using std::nullopt;
 using std::optional;
 using std::string;
-using std::stringstream;
 using std::unique_ptr;
+using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
@@ -223,31 +224,25 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
 
 auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const ProofModel * const model) const -> std::string
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
-    auto reif = overloaded{
+    auto reif_suffix = overloaded{
         [&](const reif::MustHold &) -> string { return ""; },
         [&](const reif::If &) -> string { return "_if"; },
         [&](const reif::Iff &) -> string { return "_iff"; },
         [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"}; }}
-                    .visit(_reif_cond);
+                           .visit(_reif_cond);
 
     string cmp = format("{}{}{}",
         _vars_swapped ? "greater_than" : "less_than",
         _or_equal ? "_equal" : "",
-        reif);
+        reif_suffix);
 
-    if (reif.empty()) {
-        print(s, "{} {} {} {}", _name, cmp,
-            model->names_and_ids_tracker().s_expr_name_of(_v1),
-            model->names_and_ids_tracker().s_expr_name_of(_v2));
-    }
-    else {
-        print(s, "{} {} {} {} {}", _name, cmp,
-            model->names_and_ids_tracker().s_expr_name_of(_reif_cond),
-            model->names_and_ids_tracker().s_expr_name_of(_v1),
-            model->names_and_ids_tracker().s_expr_name_of(_v2));
-    }
+    vector<SExpr> terms{SExpr::atom(as_string(_name)), SExpr::atom(cmp)};
+    if (auto cond = tracker.s_expr_term_of(_reif_cond))
+        terms.push_back(std::move(*cond));
+    terms.push_back(tracker.s_expr_term_of(_v1));
+    terms.push_back(tracker.s_expr_term_of(_v2));
 
-    return s.str();
+    return format("{:#}", SExpr::list(std::move(terms)));
 }

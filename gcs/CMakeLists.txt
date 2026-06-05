@@ -82,6 +82,7 @@ add_library(glasgow_constraint_solver
         innards/proofs/simplify_literal.cc
         innards/propagators.cc
         innards/reason.cc
+        innards/s_expr.cc
         innards/state.cc
         innards/variable_id_utils.cc
         presolvers/auto_table.cc
@@ -367,6 +368,10 @@ if(GCS_BUILD_TESTS)
     add_executable(interval_set_test innards/interval_set_test.cc)
     target_link_libraries(interval_set_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)
+
+    add_executable(s_expr_test innards/s_expr_test.cc)
+    target_link_libraries(s_expr_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME s_expr_test COMMAND $<TARGET_FILE:s_expr_test>)
 
     add_executable(integer_test integer_test.cc)
     target_link_libraries(integer_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

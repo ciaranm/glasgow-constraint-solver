@@ -5,11 +5,13 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <util/enumerate.hh>
 
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/ostream.h>
@@ -33,7 +35,6 @@ using std::is_same_v;
 using std::list;
 using std::pair;
 using std::string;
-using std::stringstream;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
@@ -41,8 +42,10 @@ using std::ranges::adjacent_find;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -170,12 +173,9 @@ template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintState
 
 auto VCAllDifferent::s_exprify(const innards::ProofModel * const model) const -> string
 {
-    stringstream s;
-
-    print(s, "{} all_different (", _name);
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> vars;
     for (const auto & var : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ")");
-
-    return s.str();
+        vars.push_back(tracker.s_expr_term_of(var));
+    return format("{:#}", SExpr::list({SExpr::atom(as_string(_name)), SExpr::atom("all_different"), SExpr::list(std::move(vars))}));
 }
