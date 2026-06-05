@@ -13,9 +13,9 @@
 #
 # Exits 77 (the ctest SKIP_RETURN_CODE for this test) when a *required* external
 # tool is missing, so the test is skipped rather than failed on machines without
-# cake_pb_cp or veripb. The opbdiff oracle (steps needing opbdiff + jq) is an
-# extra cross-check: if those are absent it is reported and skipped, but the cake
-# verification in steps 2-4 still runs and is authoritative.
+# cake_pb_cp or veripb. The opbdiff oracle (step 5) is an extra cross-check: if
+# opbdiff is absent it is reported and skipped, but the cake verification in
+# steps 2-4 still runs and is authoritative.
 
 set -u
 
