@@ -115,13 +115,14 @@ namespace
         const auto & op = parts[1].as_atom();
         auto value = as_integer(parts[2]);
         using enum VariableConditionOperator;
-        if (op == "eq")
+        // cake_pb_cp's condition operators are symbols.
+        if (op == "=")
             return {var, Equal, value};
-        if (op == "neq")
+        if (op == "!=")
             return {var, NotEqual, value};
-        if (op == "geq")
+        if (op == ">=")
             return {var, GreaterEqual, value};
-        if (op == "lt")
+        if (op == "<")
             return {var, Less, value};
         throw ScpReadError{"unknown reification-condition operator '" + op + "'"};
     }
@@ -143,18 +144,18 @@ namespace
         return {not_equals ? ReificationCondition{reif::MustNotHold{}} : ReificationCondition{reif::MustHold{}}, false};
     }
 
-    // The comparison family: (label <less|greater>_than[_equal][_if|_iff]
-    // [(cond)] v1 v2). The keyword carries the swapped / or-equal / reification
-    // flags that the general ReifiedCompareLessThanOrMaybeEqual constructor takes
-    // directly, so this reconstructs exactly the object the writer serialised.
+    // The comparison family: (label <less|greater>_<than|equal>[_if|_iff]
+    // [(cond)] v1 v2), in cake_pb_cp's names. The keyword carries the swapped /
+    // or-equal / reification flags that the general
+    // ReifiedCompareLessThanOrMaybeEqual constructor takes directly, so this
+    // reconstructs exactly the object the writer serialised.
     auto read_comparison(Problem & problem, const map<string, IntegerVariableID> & variables,
         const string & op, const vector<SExpr> & terms, const string & label) -> void
     {
-        bool vars_swapped = op.starts_with("greater_than");
-        string rest = op.substr(vars_swapped ? sizeof("greater_than") - 1 : sizeof("less_than") - 1);
-        bool or_equal = rest.starts_with("_equal");
-        if (or_equal)
-            rest = rest.substr(sizeof("_equal") - 1);
+        bool vars_swapped = op.starts_with("greater_");
+        string rest = op.substr(vars_swapped ? sizeof("greater_") - 1 : sizeof("less_") - 1);
+        bool or_equal = rest.starts_with("equal");
+        rest = rest.substr(or_equal ? sizeof("equal") - 1 : sizeof("than") - 1);
         // `rest` is now "" (unconditional), "_if" (half-reified) or "_iff".
 
         ReificationCondition cond = reif::MustHold{};
@@ -176,15 +177,20 @@ namespace
             v1_index = 3;
         }
 
+        // "less A B" means A <op> B; "greater A B" means A >op B, i.e. B <op A.
+        // The base constructor enforces (first) <op> (second), so reverse the
+        // operands for the greater form to recover that.
+        auto first = resolve_variable(variables, terms[v1_index]);
+        auto second = resolve_variable(variables, terms[v1_index + 1]);
         post_constraint(problem,
             ReifiedCompareLessThanOrMaybeEqual{
-                resolve_variable(variables, terms[v1_index]),
-                resolve_variable(variables, terms[v1_index + 1]),
+                vars_swapped ? second : first,
+                vars_swapped ? first : second,
                 cond, or_equal, vars_swapped},
             label);
     }
 
-    // The linear family: (label lin_<equals|not_equals|less_than_equal>[_if|_iff]
+    // The linear family: (label lin_<equals|not_equals|lin_less_equal>[_if|_iff]
     // [(cond)] (c1 v1 c2 v2 ...) value). The keyword selects the constraint and
     // its reification, matching the general ReifiedLinear* constructors. (The
     // .scp does not record the GAC flag, so it defaults off; that affects
@@ -209,7 +215,7 @@ namespace
 
         auto condition = [&] { return resolve_condition(variables, terms[2]); };
 
-        if (op.starts_with("lin_less_than_equal")) {
+        if (op.starts_with("lin_less_equal")) {
             ReificationCondition cond = reif::MustHold{};
             if (iff)
                 cond = reif::Iff{condition()};
@@ -290,7 +296,7 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             post_constraint(problem,
                 In{resolve_variable(variables, terms[2]), resolve_variable_list(variables, terms[3], "the in value list")}, label);
         }
-        else if (op.starts_with("less_than") || op.starts_with("greater_than")) {
+        else if (op.starts_with("less_") || op.starts_with("greater_")) {
             read_comparison(problem, variables, op, terms, label);
         }
         else if (op.starts_with("lin_")) {

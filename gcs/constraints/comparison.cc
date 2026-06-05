@@ -233,16 +233,20 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_expr(const ProofModel * const model) 
         [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_expr"}; }}
                            .visit(_reif_cond);
 
-    string cmp = format("{}{}{}",
-        _vars_swapped ? "greater_than" : "less_than",
-        _or_equal ? "_equal" : "",
+    // cake_pb_cp's names: less_than / less_equal / greater_than / greater_equal.
+    string cmp = format("{}_{}{}",
+        _vars_swapped ? "greater" : "less",
+        _or_equal ? "equal" : "than",
         reif_suffix);
 
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cmp)};
     if (auto cond = tracker.s_expr_term_of(_reif_cond))
         terms.push_back(std::move(*cond));
-    terms.push_back(tracker.s_expr_term_of(_v1));
-    terms.push_back(tracker.s_expr_term_of(_v2));
+    // The constraint enforces _v1 <op> _v2. cake reads "less A B" as A<=B but
+    // "greater A B" as A>=B, so for the greater form the operands are reversed:
+    // "greater _v2 _v1" reads as _v2 >= _v1, i.e. _v1 <= _v2.
+    terms.push_back(tracker.s_expr_term_of(_vars_swapped ? _v2 : _v1));
+    terms.push_back(tracker.s_expr_term_of(_vars_swapped ? _v1 : _v2));
 
     return SExpr::list(std::move(terms));
 }
