@@ -28,7 +28,7 @@ namespace gcs
         // selector flag, which the caller can cite from a justification that
         // derives contradiction explicitly (RUP alone cannot pick a polarity,
         // since both half-reifications are non-unit).
-        auto define_clique_not_equals_encoding(ProofModel & model,
+        auto define_clique_not_equals_encoding(ProofModel & model, const std::string & constraint_id,
             const std::vector<IntegerVariableID> & vars) -> std::optional<std::pair<IntegerVariableID, ProofFlag>>;
 
         // Emits the AllDifferentExcept clique encoding. Where the same variable

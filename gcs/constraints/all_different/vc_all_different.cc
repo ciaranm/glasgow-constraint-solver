@@ -144,7 +144,7 @@ auto VCAllDifferent::prepare(Propagators &, State & initial_state, ProofModel * 
 
 auto VCAllDifferent::define_proof_model(ProofModel & model) -> void
 {
-    _duplicate_witness = define_clique_not_equals_encoding(model, _sanitised_vars);
+    _duplicate_witness = define_clique_not_equals_encoding(model, as_string(_constraint_id), _sanitised_vars);
 }
 
 auto VCAllDifferent::install_propagators(Propagators & propagators) -> void

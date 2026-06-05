@@ -140,6 +140,17 @@ namespace gcs::innards
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
 
         /**
+         * \brief Like add_constraint for a single inequality, but emits @c[id][role]
+         * and returns that label as the ProofLine, so the proof references it by
+         * label. The role must match what \c cake_pb_cp emits.
+         */
+        auto add_labelled_constraint(
+            const std::string & constraint_id, const std::string & role,
+            const StringLiteral & constraint_name, const StringLiteral & rule,
+            const WPBSumLE & ineq,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
+
+        /**
          * Add a CNF definition to a Proof model.
          */
         auto add_constraint(

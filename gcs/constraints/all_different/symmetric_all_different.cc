@@ -113,7 +113,7 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
                 WPBSum{} + 1_i * (_vars[j] != Integer(i) + _start) + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
         }
 
-    _duplicate_witness = define_clique_not_equals_encoding(model, _vars);
+    _duplicate_witness = define_clique_not_equals_encoding(model, as_string(_constraint_id), _vars);
 
     // Per-value am1s for the alldiff hall-set / SCC justifications,
     // built once at the root.
