@@ -17,14 +17,21 @@ files, one+ per cake-encodable constraint/form, driven by
 `verified_encodings/run_scp_chain.bash`:
 
 ```
-glasgow_scp_solver --all --prove <scp>   # re-emits scp (+ (enumerate)) + opb + pbp
-cake_pb_cp <scp>            -> verifiedopb
-veripb verifiedopb pbp      -> "s VERIFIED ..."   (UNSAT or complete enumeration)
+glasgow_scp_solver --all --prove <scp>          # re-emits scp (+ (enumerate)) + opb + pbp
+cake_pb_cp <scp>                  -> verifiedopb # re-derive OPB (verified)
+veripb verifiedopb pbp --elaborate corepb        # elaborate (VeriPB = untrusted translator)
+cake_pb_cp <scp> corepb           -> "s VERIFIED" # verified checker re-checks the core
 opbdiff opb verifiedopb --match-labels [mode]
 ```
 
-One skippable ctest per case (`SKIP_RETURN_CODE 77` when cake_pb_cp / veripb are
-absent). The `(enumerate)` `.scp` element (so cake emits `preserved:`) means
+The **verified checker has the last word** (step 4) — VeriPB is only an untrusted
+elaborator, so this is the real workflow-2 trust story, not a VeriPB check.
+
+One ctest per case. **Where `cake_pb_cp` is absent** (e.g. GitHub CI, where
+building CakeML is awkward) the runner degrades to a workflow-1 self-verify
+(`veripb` on the solver's *own* OPB/pbp) rather than skipping, so the case is
+still exercised; it skips (`SKIP_RETURN_CODE 77`) only when `veripb` itself is
+absent. The `(enumerate)` `.scp` element (so cake emits `preserved:`) means
 **SAT cases verify by complete enumeration** — not just UNSAT — so the table can
 exercise the naturally-satisfiable forms too.
 
