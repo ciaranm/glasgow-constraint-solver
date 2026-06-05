@@ -36,17 +36,17 @@ using fmt::println;
 // A deliberately tiny model used to exercise the *verified-encoding* workflow
 // end to end: the solver writes a .scp alongside the .opb/.pbp, and the chain
 //
-//     cake_pb_cp cake_abs.scp > cake_abs.verifiedopb
-//     veripb cake_abs.verifiedopb cake_abs.pbp --elaborate cake_abs.corepb
-//     cake_pb_cp cake_abs.scp cake_abs.corepb
+//     cake_pb_cp abs.scp > abs.verifiedopb
+//     veripb abs.verifiedopb abs.pbp --elaborate abs.corepb
+//     cake_pb_cp abs.scp abs.corepb
 //
 // re-derives the OPB from the .scp with the CakeML-verified encoder and checks
 // the elaborated proof against it. abs is the first constraint whose solver
-// encoding lines up with cake_pb_cp's (see dev_docs / the encoding spec repo),
-// so it is the bootstrap example. See run_cake_pb_cp.bash for the driver.
+// encoding lines up with cake_pb_cp's (see the encoding spec repo), so it is the
+// bootstrap of the verified_encodings/ family. See ../run_cake_pb_cp.bash.
 auto main(int argc, char * argv[]) -> int
 {
-    cxxopts::Options options("cake_abs");
+    cxxopts::Options options("abs (verified-encoding demo)");
     cxxopts::ParseResult options_vars;
 
     try {
@@ -54,7 +54,7 @@ auto main(int argc, char * argv[]) -> int
             ("help", "Display help information")                             //
             ("prove", "Create a proof")                                      //
             ("proof-files-basename", "Basename for the .opb and .pbp files", //
-                cxxopts::value<string>()->default_value("cake_abs"))         //
+                cxxopts::value<string>()->default_value("abs"))              //
             ("stats", "Print solve statistics")                              //
             ;
         options_vars = options.parse(argc, argv);
