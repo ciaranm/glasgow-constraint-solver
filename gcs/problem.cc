@@ -213,6 +213,9 @@ auto Problem::create_propagators(State & state, ProofModel * const optional_proo
     Propagators result;
     for (auto & c : _imp->constraints) {
         auto cc = c->clone();
+        // clone() does not carry the name, but define_proof_model needs it to
+        // build @c[name][...] labels matching the .scp (and cake), so copy it.
+        cc->set_name(c->name());
         move(*cc).install(result, state, optional_proof_model);
     }
 

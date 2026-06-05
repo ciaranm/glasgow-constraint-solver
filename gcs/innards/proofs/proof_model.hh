@@ -35,6 +35,10 @@ namespace gcs::innards
 
         auto advance_constraint_counter() -> ProofLineNumber;
 
+        // Build the constraint label `c[constraint_id][role]` (printed with a
+        // leading @). Credit: design from philrod1's constraint-labels branch.
+        auto emit_constraint_label(const std::string & constraint_id, const std::string & role) -> ProofLine;
+
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
@@ -103,6 +107,25 @@ namespace gcs::innards
         auto add_constraint(
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
+            const WPBSumEq & eq,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+
+        /**
+         * \brief Like add_constraint for an equality, but emits an @label on each
+         * half --- \c c[constraint_id][role_le] on the LE half and \c [role_ge]
+         * on the GE half --- and returns those labels, so the proof references
+         * the halves by label rather than by line number. The labels must match
+         * what \c cake_pb_cp emits for this constraint.
+         *
+         * Returns `{LE-half, GE-half}`, as the unlabelled overload does.
+         *
+         * Part of moving every constraint reference off line numbers and onto
+         * labels. Credit: design from philrod1's constraint-labels branch.
+         */
+        auto add_labelled_constraint(
+            const std::string & constraint_id,
+            const std::string & role_le, const std::string & role_ge,
+            const StringLiteral & constraint_name, const StringLiteral & rule,
             const WPBSumEq & eq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
 
