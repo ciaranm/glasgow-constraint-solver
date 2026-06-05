@@ -93,26 +93,33 @@ auto ReifiedCompareLessThanOrMaybeEqual::prepare(Propagators &, State & initial_
 
 auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model) -> void
 {
-    auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const StringLiteral & rule) {
-        model.add_constraint("ReifiedCompareLessThanOrMaybeEqual", rule, WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
+    // `role` is the cake_pb_cp @c label role, or "" for the lines cake leaves
+    // unlabelled (an unconditional comparison is a single bare inequality).
+    auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const string & role, const StringLiteral & rule) {
+        auto ineq = WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i);
+        if (role.empty())
+            model.add_constraint("ReifiedCompareLessThanOrMaybeEqual", rule, ineq, cond);
+        else
+            model.add_labelled_constraint(as_string(_constraint_id), role, "ReifiedCompareLessThanOrMaybeEqual", rule, ineq, cond);
     };
 
     overloaded{
         [&](const reif::MustHold &) {
-            do_less(_v1, _v2, nullopt, _or_equal, "condition true");
+            do_less(_v1, _v2, nullopt, _or_equal, "", "condition true");
         },
         [&](const reif::MustNotHold &) {
-            do_less(_v2, _v1, nullopt, ! _or_equal, "condition false");
+            do_less(_v2, _v1, nullopt, ! _or_equal, "", "condition false");
         },
         [&](const reif::If & cond) {
-            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition");
+            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "", "if condition");
         },
         [&](const reif::NotIf & cond) {
-            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{cond.cond}}, ! _or_equal, "if condition");
+            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{cond.cond}}, ! _or_equal, "", "if condition");
         },
         [&](const reif::Iff & cond) {
-            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "if condition");
-            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond.cond}}, ! _or_equal, "if not condition");
+            // cake_pb_cp labels the !cond half [f] and the cond half [r].
+            do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "r", "if condition");
+            do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond.cond}}, ! _or_equal, "f", "if not condition");
         }}
         .visit(_reif_cond);
 }

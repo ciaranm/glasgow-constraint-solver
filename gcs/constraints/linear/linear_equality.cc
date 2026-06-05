@@ -173,14 +173,16 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
 
     overloaded{
         [&](const reif::MustHold &) {
-            // condition is definitely true, it's just an inequality
-            _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
+            // condition is definitely true, it's just an inequality -- cake_pb_cp
+            // labels the equality halves le (sum <= value) / ge (sum >= value).
+            _proof_line = model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
         },
         [&](const reif::MustNotHold &) {
-            // condition is definitely false, the flag implies either greater or less
+            // condition is definitely false, the flag implies either greater or
+            // less -- cake_pb_cp labels them gt (sum > value) / lt (sum < value).
             auto neflag = model.create_proof_flag("linne");
-            model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
-            model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
+            model.add_labelled_constraint(as_string(_constraint_id), "gt", "ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
+            model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },
         [&](const reif::If & cond) {
             _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
