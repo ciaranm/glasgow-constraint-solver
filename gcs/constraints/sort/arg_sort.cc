@@ -465,7 +465,10 @@ auto ArgSort::s_exprify(const ProofModel * const model) const -> string
     print(s, ")\n          (");
     for (const auto & v : _p)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    print(s, ")\n          {})", _offset);
+    // Note: no trailing ')' here -- solve()/write_scp wraps the whole body in
+    // one pair of parentheses. The stray ')' this used to emit left the .scp
+    // unbalanced (harmless only because nothing parsed it).
+    print(s, ")\n          {}", _offset);
 
     return s.str();
 }

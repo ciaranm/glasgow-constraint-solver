@@ -198,7 +198,10 @@ auto Inverse::s_exprify(const innards::ProofModel * const model) const -> std::s
     for (const auto & y : _y) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(y));
     }
-    print(s, ")\n          {} {})", _x_start, _y_start);
+    // Note: no trailing ')' here -- solve()/write_scp wraps the whole body in
+    // one pair of parentheses. The stray ')' this used to emit left the .scp
+    // unbalanced (harmless only because nothing parsed it).
+    print(s, ")\n          {} {}", _x_start, _y_start);
 
     return s.str();
 }

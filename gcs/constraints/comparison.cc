@@ -222,7 +222,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
     }
 }
 
-auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const ProofModel * const model) const -> std::string
+auto ReifiedCompareLessThanOrMaybeEqual::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
@@ -230,7 +230,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const ProofModel * const mode
         [&](const reif::MustHold &) -> string { return ""; },
         [&](const reif::If &) -> string { return "_if"; },
         [&](const reif::Iff &) -> string { return "_iff"; },
-        [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"}; }}
+        [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_expr"}; }}
                            .visit(_reif_cond);
 
     string cmp = format("{}{}{}",
@@ -244,5 +244,5 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const ProofModel * const mode
     terms.push_back(tracker.s_expr_term_of(_v1));
     terms.push_back(tracker.s_expr_term_of(_v2));
 
-    return format("{:#}", SExpr::list(std::move(terms)));
+    return SExpr::list(std::move(terms));
 }

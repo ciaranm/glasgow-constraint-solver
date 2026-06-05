@@ -3,6 +3,7 @@
 
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
+#include <gcs/innards/s_expr-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 
 #include <memory>
@@ -24,21 +25,30 @@ namespace gcs
 
     struct CurrentlyUnnamedConstraint final
     {
-        [[nodiscard]] auto as_string() const -> std::string { return "unnamed"; }
+        [[nodiscard]] auto as_string() const -> std::string
+        {
+            return "unnamed";
+        }
     };
 
     struct NumberedConstraint final
     {
         unsigned long long number;
         [[nodiscard]] auto operator<=>(const NumberedConstraint &) const = default;
-        [[nodiscard]] auto as_string() const -> std::string { return "_" + std::to_string(number); }
+        [[nodiscard]] auto as_string() const -> std::string
+        {
+            return "_" + std::to_string(number);
+        }
     };
 
     struct NamedConstraint final
     {
         std::string name;
         [[nodiscard]] auto operator<=>(const NamedConstraint &) const = default;
-        [[nodiscard]] auto as_string() const -> std::string { return name; }
+        [[nodiscard]] auto as_string() const -> std::string
+        {
+            return name;
+        }
     };
 
     using ConstraintName = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
@@ -72,8 +82,14 @@ namespace gcs
 
     public:
         virtual ~Constraint() = 0;
-        [[nodiscard]] auto name() const -> const ConstraintName & { return _name; }
-        auto set_name(ConstraintName name) -> void { _name = std::move(name); }
+        [[nodiscard]] auto name() const -> const ConstraintName &
+        {
+            return _name;
+        }
+        auto set_name(ConstraintName name) -> void
+        {
+            _name = std::move(name);
+        }
         /**
          * Called internally to install the constraint. A Constraint is expected
          * to define zero or more propagators, and to provide a description of
@@ -90,9 +106,27 @@ namespace gcs
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Constraint> = 0;
 
         /**
-         * Return an s-expr representation of the constraint. To be used internally.
+         * Return the constraint's `.scp` entry as an s-expression term: the
+         * list `(name op args...)`. This is the preferred representation --
+         * routing the writer through it (see innards::write_scp) means the
+         * stringification happens once, centrally, and the structured term can
+         * be compared against a parsed `.scp` line directly.
+         *
+         * A constraint must override **exactly one** of s_expr() (preferred) or
+         * the legacy s_exprify(): by default s_expr() parses s_exprify()'s
+         * string and s_exprify() prints s_expr(), so overriding neither would
+         * recurse. New constraints should override s_expr(); the remaining
+         * legacy s_exprify() overrides are being migrated across (see
+         * dev_docs/scp_s_expr_migration.md), after which s_exprify() goes away.
          */
-        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string = 0;
+        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr;
+
+        /**
+         * Legacy string form: the body of s_expr() *without* the enclosing
+         * parentheses (the historical `Constraint::s_exprify` contract). \see
+         * s_expr.
+         */
+        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string;
     };
 }
 

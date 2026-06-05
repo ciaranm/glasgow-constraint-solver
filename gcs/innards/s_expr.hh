@@ -1,6 +1,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_S_EXPR_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_S_EXPR_HH
 
+#include <gcs/innards/s_expr-fwd.hh>
+
 #include <exception>
 #include <string>
 #include <string_view>

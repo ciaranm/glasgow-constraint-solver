@@ -171,11 +171,13 @@ template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintState
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
     EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
 
-auto VCAllDifferent::s_exprify(const innards::ProofModel * const model) const -> string
+auto VCAllDifferent::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return format("{:#}", SExpr::list({SExpr::atom(as_string(_name)), SExpr::atom("all_different"), SExpr::list(std::move(vars))}));
+    return SExpr::list({SExpr::atom(as_string(_name)),
+        SExpr::atom("all_different"),
+        SExpr::list(std::move(vars))});
 }

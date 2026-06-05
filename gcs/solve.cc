@@ -3,6 +3,7 @@
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/scp_writer.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/proof.hh>
@@ -11,41 +12,20 @@
 
 #include <util/enumerate.hh>
 
-#include <fstream>
 #include <string>
-#include <version>
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-#include <format>
-#include <print>
-#else
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#endif
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
-using std::ios;
-using std::ios_base;
 using std::max;
 using std::nullopt;
-using std::ofstream;
 using std::optional;
 using std::pair;
 using std::vector;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::steady_clock;
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-using std::format;
-using std::println;
-#else
-using fmt::format;
-using fmt::println;
-#endif
 
 namespace
 {
@@ -172,27 +152,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         optional_proof->logger()->start_proof(*optional_proof->model());
         optional_proof->model()->names_and_ids_tracker().emit_delayed_proof_steps();
 
-        if (auto & fn = optional_proof_options->proof_file_names.s_expr_file) {
-            try {
-                ofstream s_expr;
-                s_expr.exceptions(ios::failbit | ios::badbit);
-                s_expr.open(*fn);
-                println(s_expr, "(");
-                println(s_expr, "    (");
-                for (const auto & [_, l, u, n] : problem.each_variable_with_bounds_and_name()) {
-                    println(s_expr, "        ({} {} {})", n, l, u);
-                }
-                println(s_expr, "    )");
-                println(s_expr, "    (");
-                for (const auto & c : problem.each_constraint()) {
-                    println(s_expr, "        ({})", c.s_exprify(optional_proof->model()));
-                }
-                println(s_expr, "    )");
-                println(s_expr, ")");
-            } catch (const ios_base::failure &) {
-                throw ProofError{"Error writing proof s-expr file to '" + *fn + "'"};
-            }
-        }
+        if (auto & fn = optional_proof_options->proof_file_names.s_expr_file)
+            write_scp(*fn, problem, optional_proof->model());
     }
 
     if (callbacks.after_proof_started)
