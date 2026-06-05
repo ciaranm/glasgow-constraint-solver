@@ -25,7 +25,12 @@ template <typename Literal_>
     const function<auto(const Literal_ &, const Literal_ &)->ProofLine> & pair_ne) -> ProofLine
 {
     if (atoms.size() < 2)
-        throw UnexpectedException{"recover_am1 requires at least 2 atoms"};
+        // An at-most-one over fewer than two atoms is vacuous; the caller should
+        // handle it directly rather than ask the helper to fold zero pairwise
+        // lines into a pol. Needing at least two atoms is part of the helper's
+        // API, not something we expect to relax, so this is unexpected rather
+        // than unimplemented.
+        throw UnexpectedException{"recover_am1 needs at least two atoms"};
 
     if constexpr (is_same_v<Literal_, IntegerVariableCondition>) {
         // If ≥2 atoms simplify to FalseLiteral (e.g. literals over constants
@@ -64,10 +69,15 @@ template <typename Literal_>
     // To isolate, we increase active_proof_level by one before emitting
     // pair_ne lines. They then record at the new active+1, one deeper
     // than the caller's Temporary depth, and forgetting that deeper depth
-    // on exit cleans up only our own intermediates. Existing callers all
-    // pass level=Top, for which the result records at depth 0 regardless
-    // of our temporary level shift; non-Top callers are forward-looking
-    // and not exercised yet.
+    // on exit cleans up only our own intermediates.
+    //
+    // The result itself is emitted *after* restoring the caller's level, so
+    // it records at the level the caller asked for: Top callers (in
+    // initialisers, caching the line for reuse) get depth 0 as before;
+    // Temporary callers (e.g. inside a JustifyExplicitlyThenRUP that folds
+    // the result into a further pol) get the caller's Temporary depth, so
+    // the line survives our own deeper cleanup and is reclaimed when the
+    // caller's scope is forgotten.
     auto saved_level = logger.proof_level();
     logger.enter_proof_level(saved_level + 1);
 
@@ -92,12 +102,14 @@ template <typename Literal_>
     }
     am1 << ';';
 
-    // Emit the result while the pair_ne lines are still alive (VeriPB
-    // resolves the line-number references during this emit), then forget
-    // the inner scope and restore the caller's level.
+    // Restore the caller's level, then emit the result there (its level is
+    // resolved at emit time) while the pair_ne lines are still alive — VeriPB
+    // resolves the line-number references during this emit. Finally forget the
+    // inner scope, which removes only our deeper pair_ne intermediates and
+    // leaves the result (at the caller's level) intact.
+    logger.enter_proof_level(saved_level);
     auto result = logger.emit_proof_line(am1.str(), level);
     logger.forget_proof_level(saved_level + 2);
-    logger.enter_proof_level(saved_level);
     return result;
 }
 

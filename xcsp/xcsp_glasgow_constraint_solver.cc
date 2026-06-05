@@ -38,6 +38,7 @@ using XCSP3Core::Tree;
 using XCSP3Core::XCondition;
 using XCSP3Core::XCSP3CoreCallbacks;
 using XCSP3Core::XCSP3CoreParser;
+using XCSP3Core::XInterval;
 using XCSP3Core::XTransition;
 using XCSP3Core::XVariable;
 
@@ -488,45 +489,100 @@ namespace
             report_unsupported("noOverlap", "variable-length Disjunctive not yet supported (#146)");
         }
 
-        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> &,
-            vector<vector<int>> &, bool) -> void override
+        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins,
+            vector<vector<int>> & lengths, bool zeroIgnored) -> void override
         {
-            report_unsupported("noOverlap", "no Disjunctive2D propagator yet (#146)");
+            // 2D non-overlap (diffn): each origin is [x, y] and each length is
+            // [width, height]. Only the 2D constant-size case is supported.
+            for (size_t r = 0; r < origins.size(); ++r)
+                if (origins[r].size() != 2 || lengths[r].size() != 2)
+                    report_unsupported("noOverlap", "only 2D Disjunctive2D is supported (#146)");
+            vector<IntegerVariableID> xs, ys;
+            vector<Integer> widths, heights;
+            for (size_t r = 0; r < origins.size(); ++r) {
+                xs.push_back(need_variable(origins[r][0]->id));
+                ys.push_back(need_variable(origins[r][1]->id));
+                widths.push_back(Integer{lengths[r][0]});
+                heights.push_back(Integer{lengths[r][1]});
+            }
+            _problem.post(Disjunctive2D{xs, ys, widths, heights, ! zeroIgnored});
         }
 
-        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> &,
-            vector<vector<XVariable *>> &, bool) -> void override
+        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins,
+            vector<vector<XVariable *>> & lengths, bool zeroIgnored) -> void override
         {
-            report_unsupported("noOverlap", "no Disjunctive2D propagator yet (#146)");
+            // 2D non-overlap with variable sizes: each origin is [x, y] and each
+            // length is [width, height] (all variables).
+            for (size_t r = 0; r < origins.size(); ++r)
+                if (origins[r].size() != 2 || lengths[r].size() != 2)
+                    report_unsupported("noOverlap", "only 2D Disjunctive2D is supported (#146)");
+            vector<IntegerVariableID> xs, ys, widths, heights;
+            for (size_t r = 0; r < origins.size(); ++r) {
+                xs.push_back(need_variable(origins[r][0]->id));
+                ys.push_back(need_variable(origins[r][1]->id));
+                widths.push_back(need_variable(lengths[r][0]->id));
+                heights.push_back(need_variable(lengths[r][1]->id));
+            }
+            _problem.post(Disjunctive2D{xs, ys, widths, heights, ! zeroIgnored});
+        }
+
+        // Shared backend for every cumulative shape: lengths and heights are
+        // already resolved to IntegerVariableIDs (constants pass through as
+        // ConstantIntegerVariableID), and the capacity comes from the
+        // XCondition (a constant or a variable). Only the `le` condition is
+        // meaningful for cumulative.
+        auto post_cumulative(vector<XVariable *> & origins, vector<IntegerVariableID> lengths,
+            vector<IntegerVariableID> heights, XCondition & cond) -> void
+        {
+            if (cond.op != OrderType::LE)
+                report_unsupported("cumulative", "only `le` condition is supported (#147)");
+            IntegerVariableID capacity = constant_variable(0_i);
+            if (cond.operandType == OperandType::INTEGER)
+                capacity = constant_variable(Integer{cond.val});
+            else if (cond.operandType == OperandType::VARIABLE) {
+                // The condition parser can leave surrounding whitespace on the
+                // operand name (e.g. "(le, cap)" -> " cap"); trim before lookup.
+                auto name = cond.var;
+                name.erase(0, name.find_first_not_of(" \t"));
+                name.erase(name.find_last_not_of(" \t") + 1);
+                capacity = need_variable(name);
+            }
+            else
+                report_unsupported("cumulative", "capacity must be an integer or a variable (#147)");
+            _problem.post(Cumulative{need_variables(origins), std::move(lengths), std::move(heights), capacity});
+        }
+
+        auto as_constant_ids(const vector<int> & values) -> vector<IntegerVariableID>
+        {
+            vector<IntegerVariableID> result;
+            result.reserve(values.size());
+            for (auto v : values)
+                result.push_back(constant_variable(Integer{v}));
+            return result;
         }
 
         auto buildConstraintCumulative(string, vector<XVariable *> & origins,
             vector<int> & lengths, vector<int> & heights, XCondition & cond) -> void override
         {
-            if (cond.op != OrderType::LE)
-                report_unsupported("cumulative", "only `le` condition is supported in this basic case (#147)");
-            if (cond.operandType != OperandType::INTEGER)
-                report_unsupported("cumulative", "only integer-constant capacity is supported in this basic case (#147)");
-
-            auto starts = need_variables(origins);
-            vector<Integer> lengths_i, heights_i;
-            for (auto l : lengths)
-                lengths_i.push_back(Integer{l});
-            for (auto h : heights)
-                heights_i.push_back(Integer{h});
-            _problem.post(Cumulative{starts, lengths_i, heights_i, Integer{cond.val}});
+            post_cumulative(origins, as_constant_ids(lengths), as_constant_ids(heights), cond);
         }
 
-        auto buildConstraintCumulative(string, vector<XVariable *> &,
-            vector<int> &, vector<XVariable *> &, XCondition &) -> void override
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
+            vector<int> & lengths, vector<XVariable *> & heights, XCondition & cond) -> void override
         {
-            report_unsupported("cumulative", "no Cumulative propagator yet (#147)");
+            post_cumulative(origins, as_constant_ids(lengths), need_variables(heights), cond);
         }
 
-        auto buildConstraintCumulative(string, vector<XVariable *> &,
-            vector<XVariable *> &, vector<int> &, XCondition &) -> void override
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
+            vector<XVariable *> & lengths, vector<int> & heights, XCondition & cond) -> void override
         {
-            report_unsupported("cumulative", "no Cumulative propagator yet (#147)");
+            post_cumulative(origins, need_variables(lengths), as_constant_ids(heights), cond);
+        }
+
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
+            vector<XVariable *> & lengths, vector<XVariable *> & heights, XCondition & cond) -> void override
+        {
+            post_cumulative(origins, need_variables(lengths), need_variables(heights), cond);
         }
 
         auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
@@ -617,31 +673,54 @@ namespace
             apply_count_condition(profit_total, profitCondition, "knapsack profit");
         }
 
+        static auto gcc_cover(const vector<int> & values) -> vector<Integer>
+        {
+            vector<Integer> ivals;
+            ivals.reserve(values.size());
+            for (auto v : values)
+                ivals.emplace_back(Integer{v});
+            return ivals;
+        }
+
+        // Cover values as constants. The occurrences may be given as constants,
+        // variables, or intervals; each maps to a count variable of the native
+        // GlobalCardinality constraint (a singleton domain for a constant, a
+        // lo..hi domain for an interval). The cover-as-variables forms are left
+        // to the base-class default (unsupported).
         auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
             vector<int> values, vector<int> & occurs, bool closed) -> void override
         {
-            // Decomposition: one Count per (value, occurrence) pair. A
-            // native GCC propagator would be a future improvement (see the
-            // CPMpy globals list in #61).
             if (values.size() != occurs.size())
                 report_unsupported("cardinality", "values/occurs size mismatch");
             auto vars = need_variables(x_vars);
-            for (size_t i = 0; i != values.size(); ++i)
-                _problem.post(Count{vars, constant_variable(Integer{values[i]}),
-                    constant_variable(Integer{occurs[i]})});
-            if (closed) {
-                // Every var must take a value from the given list.
-                vector<Integer> ivals;
-                ivals.reserve(values.size());
-                for (auto v : values)
-                    ivals.emplace_back(Integer{v});
-                vector<vector<Integer>> tuples;
-                tuples.reserve(ivals.size());
-                for (auto v : ivals)
-                    tuples.emplace_back(vector{v});
-                for (auto v : vars)
-                    _problem.post(Table{vector<IntegerVariableID>{v}, tuples});
-            }
+            vector<IntegerVariableID> counts;
+            counts.reserve(occurs.size());
+            for (auto o : occurs)
+                counts.emplace_back(constant_variable(Integer{o}));
+            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts), closed});
+        }
+
+        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
+            vector<int> values, vector<XVariable *> & occurs, bool closed) -> void override
+        {
+            if (values.size() != occurs.size())
+                report_unsupported("cardinality", "values/occurs size mismatch");
+            auto vars = need_variables(x_vars);
+            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), need_variables(occurs), closed});
+        }
+
+        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
+            vector<int> values, vector<XInterval> & occurs, bool closed) -> void override
+        {
+            if (values.size() != occurs.size())
+                report_unsupported("cardinality", "values/occurs size mismatch");
+            auto vars = need_variables(x_vars);
+            vector<IntegerVariableID> counts;
+            counts.reserve(occurs.size());
+            for (size_t i = 0; i != occurs.size(); ++i)
+                counts.emplace_back(_problem.create_integer_variable(Integer{occurs[i].min}, Integer{occurs[i].max},
+                    "gccoccurs" + std::to_string(i)));
+            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts), closed});
         }
 
         auto buildConstraintIntension(string, Tree * tree) -> void override

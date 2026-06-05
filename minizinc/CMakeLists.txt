@@ -46,11 +46,23 @@ set_tests_properties(minizinc-count PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-cumulative COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativetest false true)
 set_tests_properties(minizinc-cumulative PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-cumulative-mode COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativemodetest true true)
+set_tests_properties(minizinc-cumulative-mode PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-disjunctive COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctivetest true true)
 set_tests_properties(minizinc-disjunctive PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-disjunctivestrict COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctivestricttest true true)
 set_tests_properties(minizinc-disjunctivestrict PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-diffn COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ diffntest true true)
+set_tests_properties(minizinc-diffn PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-diffn-rotate COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ diffnrotatetest true true)
+set_tests_properties(minizinc-diffn-rotate PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-diffn-nonstrict COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ diffnnonstricttest true true)
+set_tests_properties(minizinc-diffn-nonstrict PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-countops COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ countops true true)
 set_tests_properties(minizinc-countops PROPERTIES SKIP_RETURN_CODE 66)
@@ -72,6 +84,15 @@ set_tests_properties(minizinc-equals PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-equalsreif COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ equalsreif true true)
 set_tests_properties(minizinc-equalsreif PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-globalcardinality COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinality true true)
+set_tests_properties(minizinc-globalcardinality PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-globalcardinalityclosed COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalityclosed true true)
+set_tests_properties(minizinc-globalcardinalityclosed PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-globalcardinalitylowup COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ globalcardinalitylowup true true)
+set_tests_properties(minizinc-globalcardinalitylowup PROPERTIES SKIP_RETURN_CODE 66)
 
 add_test(NAME minizinc-increasing COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ increasing true true)
 set_tests_properties(minizinc-increasing PROPERTIES SKIP_RETURN_CODE 66)

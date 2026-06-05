@@ -1,5 +1,6 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -168,9 +169,300 @@ namespace
     }
 }
 
+namespace
+{
+    // Variable-capacity test: the capacity is a decision variable. The
+    // capacity value is enumerated alongside the starts (appended as the
+    // last element of every solution vector), and the satisfiability check
+    // reads it from there. Lengths and heights stay constant.
+    auto run_cumulative_var_cap_test(bool proofs, const std::string & tag,
+        const vector<pair<int, int>> & start_ranges,
+        const vector<int> & lengths, const vector<int> & heights, pair<int, int> cap_range) -> void
+    {
+        print(cerr, "cumulative varcap {} starts={} lens={} hts={} cap=[{},{}]{}",
+            tag, start_ranges, lengths, heights, cap_range.first, cap_range.second,
+            proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto n = start_ranges.size();
+
+        auto is_satisfying = [&](const vector<int> & vals) {
+            int capacity = vals.at(n);
+            int t_lo = INT_MAX, t_hi = INT_MIN;
+            for (size_t i = 0; i < n; ++i) {
+                if (lengths[i] == 0 || heights[i] == 0)
+                    continue;
+                t_lo = min(t_lo, vals[i]);
+                t_hi = max(t_hi, vals[i] + lengths[i] - 1);
+            }
+            for (int t = t_lo; t <= t_hi; ++t) {
+                int load = 0;
+                for (size_t i = 0; i < n; ++i)
+                    if (vals[i] <= t && t < vals[i] + lengths[i])
+                        load += heights[i];
+                if (load > capacity)
+                    return false;
+            }
+            return true;
+        };
+
+        vector<pair<int, int>> all_ranges = start_ranges;
+        all_ranges.push_back(cap_range);
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, is_satisfying, all_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (auto & [lo, hi] : start_ranges)
+            starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+        auto cap = p.create_integer_variable(Integer{cap_range.first}, Integer{cap_range.second});
+
+        vector<IntegerVariableID> lengths_v, heights_v;
+        for (auto l : lengths)
+            lengths_v.push_back(constant_variable(Integer{l}));
+        for (auto h : heights)
+            heights_v.push_back(constant_variable(Integer{h}));
+
+        p.post(Cumulative{starts, lengths_v, heights_v, cap});
+
+        vector<IntegerVariableID> all_vars = starts;
+        all_vars.push_back(cap);
+
+        auto proof_name = proofs ? make_optional("cumulative_test_varcap_" + tag) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
+        check_results(proof_name, expected, actual);
+    }
+}
+
+namespace
+{
+    // General variable-position test: lengths are constant, while each height
+    // and the capacity may be a constant or a variable. A spec pair {lo, hi}
+    // with lo == hi is posted as a true constant (ConstantIntegerVariableID);
+    // lo < hi is a genuine decision variable that is enumerated. Enumerated
+    // variables appear in every solution vector in this order: starts, then
+    // variable heights (task order), then the capacity (if variable).
+    auto run_cumulative_var_test(bool proofs, const std::string & tag,
+        const vector<pair<int, int>> & start_ranges,
+        const vector<int> & lengths,
+        const vector<pair<int, int>> & height_specs, pair<int, int> cap_spec) -> void
+    {
+        auto n = start_ranges.size();
+        vector<bool> hvar(n);
+        for (size_t i = 0; i < n; ++i)
+            hvar[i] = height_specs[i].first != height_specs[i].second;
+        bool cvar = cap_spec.first != cap_spec.second;
+
+        print(cerr, "cumulative var {} starts={} lens={} hspecs={} cap=[{},{}]{}",
+            tag, start_ranges, lengths, height_specs, cap_spec.first, cap_spec.second,
+            proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto is_satisfying = [&](const vector<int> & vals) {
+            vector<int> h(n);
+            size_t k = n;
+            for (size_t i = 0; i < n; ++i)
+                h[i] = hvar[i] ? vals.at(k++) : height_specs[i].first;
+            int capacity = cvar ? vals.at(k++) : cap_spec.first;
+            int t_lo = INT_MAX, t_hi = INT_MIN;
+            for (size_t i = 0; i < n; ++i) {
+                if (lengths[i] == 0 || h[i] == 0)
+                    continue;
+                t_lo = min(t_lo, vals[i]);
+                t_hi = max(t_hi, vals[i] + lengths[i] - 1);
+            }
+            for (int t = t_lo; t <= t_hi; ++t) {
+                int load = 0;
+                for (size_t i = 0; i < n; ++i)
+                    if (vals[i] <= t && t < vals[i] + lengths[i])
+                        load += h[i];
+                if (load > capacity)
+                    return false;
+            }
+            return true;
+        };
+
+        vector<pair<int, int>> all_ranges = start_ranges;
+        for (size_t i = 0; i < n; ++i)
+            if (hvar[i])
+                all_ranges.push_back(height_specs[i]);
+        if (cvar)
+            all_ranges.push_back(cap_spec);
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, is_satisfying, all_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> starts, all_vars;
+        for (auto & [lo, hi] : start_ranges) {
+            auto v = p.create_integer_variable(Integer{lo}, Integer{hi});
+            starts.push_back(v);
+            all_vars.push_back(v);
+        }
+        vector<IntegerVariableID> lengths_v, heights_v;
+        for (auto l : lengths)
+            lengths_v.push_back(constant_variable(Integer{l}));
+        for (size_t i = 0; i < n; ++i) {
+            if (hvar[i]) {
+                auto hv = p.create_integer_variable(Integer{height_specs[i].first}, Integer{height_specs[i].second});
+                heights_v.push_back(hv);
+                all_vars.push_back(hv);
+            }
+            else
+                heights_v.push_back(constant_variable(Integer{height_specs[i].first}));
+        }
+        IntegerVariableID cap = constant_variable(Integer{cap_spec.first});
+        if (cvar) {
+            cap = p.create_integer_variable(Integer{cap_spec.first}, Integer{cap_spec.second});
+            all_vars.push_back(cap);
+        }
+
+        p.post(Cumulative{starts, lengths_v, heights_v, cap});
+
+        auto proof_name = proofs ? make_optional("cumulative_test_var_" + tag) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
+        check_results(proof_name, expected, actual);
+    }
+}
+
+namespace
+{
+    // Fully general test: lengths, heights, and capacity may each be constant
+    // ({lo, hi} with lo == hi) or a decision variable (lo < hi). Enumerated
+    // variables appear in every solution vector in this order: starts, then
+    // variable lengths (task order), then variable heights (task order), then
+    // the capacity (if variable).
+    auto run_cumulative_full_test(bool proofs, const std::string & tag,
+        const vector<pair<int, int>> & start_ranges,
+        const vector<pair<int, int>> & length_specs,
+        const vector<pair<int, int>> & height_specs, pair<int, int> cap_spec) -> void
+    {
+        auto n = start_ranges.size();
+        vector<bool> lvar(n), hvar(n);
+        for (size_t i = 0; i < n; ++i) {
+            lvar[i] = length_specs[i].first != length_specs[i].second;
+            hvar[i] = height_specs[i].first != height_specs[i].second;
+        }
+        bool cvar = cap_spec.first != cap_spec.second;
+
+        print(cerr, "cumulative full {} starts={} lspecs={} hspecs={} cap=[{},{}]{}",
+            tag, start_ranges, length_specs, height_specs, cap_spec.first, cap_spec.second,
+            proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto is_satisfying = [&](const vector<int> & vals) {
+            vector<int> l(n), h(n);
+            size_t k = n;
+            for (size_t i = 0; i < n; ++i)
+                l[i] = lvar[i] ? vals.at(k++) : length_specs[i].first;
+            for (size_t i = 0; i < n; ++i)
+                h[i] = hvar[i] ? vals.at(k++) : height_specs[i].first;
+            int capacity = cvar ? vals.at(k++) : cap_spec.first;
+            int t_lo = INT_MAX, t_hi = INT_MIN;
+            for (size_t i = 0; i < n; ++i) {
+                if (l[i] == 0 || h[i] == 0)
+                    continue;
+                t_lo = min(t_lo, vals[i]);
+                t_hi = max(t_hi, vals[i] + l[i] - 1);
+            }
+            for (int t = t_lo; t <= t_hi; ++t) {
+                int load = 0;
+                for (size_t i = 0; i < n; ++i)
+                    if (vals[i] <= t && t < vals[i] + l[i])
+                        load += h[i];
+                if (load > capacity)
+                    return false;
+            }
+            return true;
+        };
+
+        vector<pair<int, int>> all_ranges = start_ranges;
+        for (size_t i = 0; i < n; ++i)
+            if (lvar[i])
+                all_ranges.push_back(length_specs[i]);
+        for (size_t i = 0; i < n; ++i)
+            if (hvar[i])
+                all_ranges.push_back(height_specs[i]);
+        if (cvar)
+            all_ranges.push_back(cap_spec);
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, is_satisfying, all_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> starts, all_vars;
+        for (auto & [lo, hi] : start_ranges) {
+            auto v = p.create_integer_variable(Integer{lo}, Integer{hi});
+            starts.push_back(v);
+            all_vars.push_back(v);
+        }
+        auto make = [&](pair<int, int> spec, bool isvar) -> IntegerVariableID {
+            if (! isvar)
+                return constant_variable(Integer{spec.first});
+            auto v = p.create_integer_variable(Integer{spec.first}, Integer{spec.second});
+            all_vars.push_back(v);
+            return v;
+        };
+        vector<IntegerVariableID> lengths_v, heights_v;
+        for (size_t i = 0; i < n; ++i)
+            lengths_v.push_back(make(length_specs[i], lvar[i]));
+        for (size_t i = 0; i < n; ++i)
+            heights_v.push_back(make(height_specs[i], hvar[i]));
+        IntegerVariableID cap = make(cap_spec, cvar);
+
+        p.post(Cumulative{starts, lengths_v, heights_v, cap});
+
+        auto proof_name = proofs ? make_optional("cumulative_test_full_" + tag) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
+        check_results(proof_name, expected, actual);
+    }
+}
+
+namespace
+{
+    // Regression: a *variable* duration/demand/capacity whose domain dips below
+    // zero is a modelling error with no sensible cumulative interpretation. The
+    // constructor only sees constants, so the check happens in prepare() (at
+    // install time, when the domains are finally available); installing is
+    // driven here by calling solve(). Mirrors the constant-size checks in the
+    // constructor and the Disjunctive2D sibling fix.
+    auto expect_negative_size_throws(const char * label, pair<int, int> len, pair<int, int> ht,
+        pair<int, int> cap) -> bool
+    {
+        Problem p;
+        auto s = p.create_integer_variable(0_i, 3_i, "s");
+        auto length = p.create_integer_variable(Integer{len.first}, Integer{len.second}, "len");
+        auto height = p.create_integer_variable(Integer{ht.first}, Integer{ht.second}, "ht");
+        auto capacity = p.create_integer_variable(Integer{cap.first}, Integer{cap.second}, "cap");
+        p.post(Cumulative{vector<IntegerVariableID>{s}, vector<IntegerVariableID>{length},
+            vector<IntegerVariableID>{height}, capacity});
+        try {
+            solve(p, [](const CurrentState &) { return true; });
+        }
+        catch (const InvalidProblemDefinitionException &) {
+            return true;
+        }
+        println(cerr, "{}: expected InvalidProblemDefinitionException", label);
+        return false;
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // Negative variable sizes must be rejected at install time (constants are
+    // rejected by the constructor).
+    bool negative_checks_ok = true;
+    negative_checks_ok &= expect_negative_size_throws("negative length", {-1, 2}, {1, 1}, {1, 1});
+    negative_checks_ok &= expect_negative_size_throws("negative height", {1, 2}, {-1, 1}, {1, 1});
+    negative_checks_ok &= expect_negative_size_throws("negative capacity", {1, 2}, {1, 1}, {-1, 1});
+    if (! negative_checks_ok)
+        return EXIT_FAILURE;
 
     // Start-variable positions wrapped by the single-position sweep. The
     // fixed and random data top out at 4 tasks, so a single-position index
@@ -269,6 +561,62 @@ auto main(int argc, char * argv[]) -> int
             // Three tasks, two of which share a start. Third has its own start.
             run_dup_cumulative_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1},
                 {2, 2, 1}, {1, 1, 1}, 2);
+
+            // Variable-capacity instances. The capacity is a decision variable
+            // enumerated alongside the starts.
+            // Small: exercise cap = 0..2 directly.
+            run_cumulative_var_cap_test(proofs, "small", {{0, 3}, {0, 3}}, {2, 2}, {1, 1}, {0, 2});
+            // Three tasks, cap 1..3.
+            run_cumulative_var_cap_test(proofs, "mid", {{0, 4}, {0, 4}, {0, 4}},
+                {2, 2, 1}, {1, 1, 1}, {1, 3});
+            // Wide values, tight capacity: heights 20/25 can't coexist under any
+            // allowed capacity, so the structure is no-overlap; exercises the
+            // capacity bit-encoding at realistic magnitudes (>4 bits).
+            run_cumulative_var_cap_test(proofs, "wide_tight", {{0, 8}, {0, 8}},
+                {3, 4}, {20, 25}, {25, 27});
+            // Wide values, capacity range spans the overlap threshold (heights
+            // 30+30=60): cap 55..62 forbids overlap at the low end and allows it
+            // at the high end, exercising both the push and the contradiction.
+            run_cumulative_var_cap_test(proofs, "wide_span", {{0, 6}, {0, 6}},
+                {3, 3}, {30, 30}, {55, 62});
+
+            // Variable heights (the contrib proof-only product). cap_spec
+            // {c, c} keeps the capacity constant.
+            // Tiny: heights 0..1, cap 1.
+            run_cumulative_var_test(proofs, "h_tiny", {{0, 3}, {0, 3}}, {2, 2},
+                {{0, 1}, {0, 1}}, {1, 1});
+            // Mixed constant/variable height in one constraint.
+            run_cumulative_var_test(proofs, "h_mixed", {{0, 3}, {0, 3}}, {2, 2},
+                {{2, 2}, {0, 2}}, {2, 2});
+            // Three tasks, heights variable (one can be 0).
+            run_cumulative_var_test(proofs, "h_three", {{0, 2}, {0, 2}, {0, 2}},
+                {2, 1, 1}, {{1, 2}, {1, 1}, {0, 1}}, {2, 2});
+            // Wide values: heights 8..11 exercise the contrib bit-encoding above
+            // 3 bits; cap 20 makes overlap depend on the chosen heights.
+            run_cumulative_var_test(proofs, "h_wide", {{0, 4}, {0, 4}}, {2, 2},
+                {{8, 11}, {8, 11}}, {20, 20});
+            // Combined: both heights AND capacity variable.
+            run_cumulative_var_test(proofs, "hc_combined", {{0, 3}, {0, 3}}, {2, 2},
+                {{1, 3}, {1, 3}}, {2, 4});
+
+            // Variable durations (the two-variable after flag). Heights and
+            // capacity constant unless noted.
+            // Tiny: durations 1..2, unit heights, cap 1 (no overlap).
+            run_cumulative_full_test(proofs, "len_tiny", {{0, 3}, {0, 3}},
+                {{1, 2}, {1, 2}}, {{1, 1}, {1, 1}}, {1, 1});
+            // Mixed constant/variable durations.
+            run_cumulative_full_test(proofs, "len_mixed", {{0, 3}, {0, 3}},
+                {{2, 2}, {1, 3}}, {{1, 1}, {1, 1}}, {1, 1});
+            // Wide durations 3..5 over a longer horizon, cap 1.
+            run_cumulative_full_test(proofs, "len_wide", {{0, 6}, {0, 6}},
+                {{3, 5}, {3, 5}}, {{1, 1}, {1, 1}}, {1, 1});
+            // MRCPSP shape: durations AND heights both variable (mode-coupled in
+            // real models), capacity constant.
+            run_cumulative_full_test(proofs, "mrcpsp", {{0, 4}, {0, 4}},
+                {{1, 3}, {2, 3}}, {{1, 2}, {1, 2}}, {2, 2});
+            // Full: durations, heights AND capacity all variable.
+            run_cumulative_full_test(proofs, "full", {{0, 3}, {0, 3}},
+                {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}}, {2, 3});
         }
     }
 

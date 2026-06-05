@@ -1,0 +1,15 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="a"> 0..2 </var>
+        <var id="b"> 0..2 </var>
+        <var id="c"> 0..2 </var>
+        <array id="o" size="[2]"> 0..3 </array>
+    </variables>
+    <constraints>
+        <cardinality>
+            <list> a b c </list>
+            <values closed="false"> 0 1 </values>
+            <occurs> o[0] o[1] </occurs>
+        </cardinality>
+    </constraints>
+</instance>

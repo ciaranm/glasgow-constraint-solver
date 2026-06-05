@@ -1,4 +1,5 @@
-#include <gcs/constraints/regular.hh>
+#include <gcs/constraints/regular/regex.hh>
+#include <gcs/constraints/regular/regular.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -18,8 +19,10 @@
 #include <any>
 #include <cstdio>
 #include <functional>
+#include <optional>
 #include <set>
 #include <sstream>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -32,6 +35,8 @@ using std::any_cast;
 using std::cmp_less;
 using std::ios;
 using std::move;
+using std::nullopt;
+using std::optional;
 using std::set;
 using std::string;
 using std::stringstream;
@@ -50,13 +55,15 @@ using fmt::print;
 
 namespace
 {
-    // Returns the next state for (state, val), or -1 if no transition exists.
-    // Treats both absent keys and explicit -1 values as disallowed transitions.
-    auto find_transition(const unordered_map<Integer, long> & state_transitions, Integer val) -> long
+    // Returns the set of next states for (state, val), or an empty set if no
+    // transition exists. A deterministic automaton is the special case where
+    // every non-empty set is a singleton.
+    auto find_transitions(const unordered_map<Integer, set<long>> & state_transitions, Integer val) -> const set<long> &
     {
+        static const set<long> none;
         auto it = state_transitions.find(val);
         if (it == state_transitions.end())
-            return -1L;
+            return none;
         return it->second;
     }
 
@@ -99,7 +106,7 @@ namespace
     }
 
     auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars,
-        const long num_states, const vector<unordered_map<Integer, long>> & transitions,
+        const long num_states, const vector<unordered_map<Integer, set<long>>> & transitions,
         const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags,
         const State & state, const ReasonFunction & reason, ProofLogger * const logger)
     {
@@ -113,10 +120,11 @@ namespace
         for (unsigned long i = 0; i < num_vars; ++i) {
             for (auto val : state.each_value_immutable(vars[i])) {
                 for (const auto & q : graph.nodes[i]) {
-                    auto next_q = find_transition(transitions[q], val);
-                    if (next_q != -1) {
+                    const auto & next_states = find_transitions(transitions[q], val);
+                    if (! next_states.empty()) {
                         graph.states_supporting[i][val].insert(q);
-                        graph.nodes[i + 1].insert(next_q);
+                        for (const auto & next_q : next_states)
+                            graph.nodes[i + 1].insert(next_q);
                     }
                 }
             }
@@ -157,14 +165,18 @@ namespace
             for (auto val : state.each_value_mutable(vars[i])) {
                 set<long> states = graph.states_supporting[i][val];
                 for (const auto & q : states) {
-                    auto next_q = find_transition(transitions[q], val);
-                    if (next_q != -1 && graph.nodes[i + 1].contains(next_q)) {
-                        graph.out_edges[i][q][next_q].emplace(val);
-                        graph.out_deg[i][q]++;
-                        graph.in_edges[i + 1][next_q][q].emplace(val);
-                        graph.in_deg[i + 1][next_q]++;
-                        state_is_support[q] = 1;
+                    bool any_live_target = false;
+                    for (const auto & next_q : find_transitions(transitions[q], val)) {
+                        if (graph.nodes[i + 1].contains(next_q)) {
+                            graph.out_edges[i][q][next_q].emplace(val);
+                            graph.out_deg[i][q]++;
+                            graph.in_edges[i + 1][next_q][q].emplace(val);
+                            graph.in_deg[i + 1][next_q]++;
+                            any_live_target = true;
+                        }
                     }
+                    if (any_live_target)
+                        state_is_support[q] = 1;
                     else {
                         graph.states_supporting[i][val].erase(q);
                         if (logger)
@@ -186,6 +198,17 @@ namespace
         graph.initialised = true;
     }
 
+    // True if state l at position pos still has a live out-edge labelled val. For
+    // a DFA this is never the case once the single (l, val) edge is gone, but an
+    // NFA may have several edges on the same value.
+    auto still_supports(const RegularGraph & graph, const long pos, const long l, Integer val) -> bool
+    {
+        for (const auto & [next_q, vals] : graph.out_edges[pos][l])
+            if (vals.contains(val))
+                return true;
+        return false;
+    }
+
     auto decrement_outdeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
         const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const ReasonFunction & reason, ProofLogger * const logger) -> void
     {
@@ -195,10 +218,15 @@ namespace
                 auto l = edge.first;
                 graph.out_edges[i - 1][l].erase(k);
                 for (const auto & val : edge.second) {
-                    graph.states_supporting[i - 1][val].erase(l);
-                    if (logger)
-                        log_additional_inference(logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, reason,
-                            "dec outdeg inner");
+                    // For an NFA, l may still reach a live state on val via
+                    // another edge; only drop support (and justify doing so)
+                    // once no such edge remains.
+                    if (! still_supports(graph, i - 1, l, val)) {
+                        graph.states_supporting[i - 1][val].erase(l);
+                        if (logger)
+                            log_additional_inference(logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, reason,
+                                "dec outdeg inner");
+                    }
                     decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state, reason, logger);
                 }
             }
@@ -246,7 +274,7 @@ namespace
 
     auto propagate_regular(const vector<IntegerVariableID> & vars,
         const long num_states,
-        const vector<unordered_map<Integer, long>> & transitions,
+        const vector<unordered_map<Integer, set<long>>> & transitions,
         const vector<long> & final_states,
         const vector<vector<ProofFlag>> & state_at_pos_flags,
         const ConstraintStateHandle & graph_handle,
@@ -288,24 +316,28 @@ namespace
                 if (! graph.states_supporting[i][val].empty() && ! state.in_domain(vars[i], val)) {
 
                     for (const auto & q : graph.states_supporting[i][val]) {
-                        auto next_q = find_transition(transitions[q], val);
+                        // Remove every edge out of q that carries this value; an
+                        // NFA may have several. Collect them first to avoid
+                        // mutating out_edges[i][q] while iterating it.
+                        vector<long> next_qs;
+                        for (const auto & [next_q, vals] : graph.out_edges[i][q])
+                            if (vals.contains(val))
+                                next_qs.push_back(next_q);
 
-                        if (graph.out_edges[i][q].contains(next_q)) {
+                        for (const auto & next_q : next_qs) {
                             graph.out_edges[i][q][next_q].erase(val);
-
                             if (graph.out_edges[i][q][next_q].empty())
                                 graph.out_edges[i][q].erase(next_q);
+
+                            if (graph.in_edges[i + 1][next_q].contains(q)) {
+                                graph.in_edges[i + 1][next_q][q].erase(val);
+                                if (graph.in_edges[i + 1][next_q][q].empty())
+                                    graph.in_edges[i + 1][next_q].erase(q);
+                            }
+
+                            decrement_outdeg(graph, i, q, vars, state_at_pos_flags, state, reason, logger);
+                            decrement_indeg(graph, i + 1, next_q, vars, state_at_pos_flags, state, reason, logger);
                         }
-
-                        if (graph.in_edges[i + 1][next_q].contains(q)) {
-                            graph.in_edges[i + 1][next_q][q].erase(val);
-
-                            if (graph.in_edges[i + 1][next_q][q].empty())
-                                graph.in_edges[i + 1][next_q].erase(q);
-                        }
-
-                        decrement_outdeg(graph, i, q, vars, state_at_pos_flags, state, reason, logger);
-                        decrement_indeg(graph, i + 1, next_q, vars, state_at_pos_flags, state, reason, logger);
                     }
                     graph.states_supporting[i][val] = {};
                 }
@@ -329,36 +361,69 @@ namespace
     }
 }
 
+namespace
+{
+    // Records the alphabet (sorted transition keys) for proof logging and s_exprify.
+    auto symbols_of(const vector<unordered_map<Integer, set<long>>> & transitions) -> vector<Integer>
+    {
+        set<Integer> sym_set;
+        for (const auto & state_map : transitions)
+            for (const auto & [val, _] : state_map)
+                sym_set.insert(val);
+        return {sym_set.begin(), sym_set.end()};
+    }
+}
+
 Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
     _vars(move(v)),
     _num_states(n),
-    _transitions(move(t)),
+    _transitions(t.size()),
     _final_states(move(f)),
-    _short_reasons(sr)
+    _short_reasons(sr),
+    _regex(nullopt)
 {
-    set<Integer> sym_set;
-    for (const auto & state_map : _transitions)
-        for (const auto & [val, _] : state_map)
-            sym_set.insert(val);
-    _symbols.assign(sym_set.begin(), sym_set.end());
+    for (size_t q = 0; q < t.size(); ++q)
+        for (const auto & [val, target] : t[q])
+            if (target != -1L)
+                _transitions[q][val].insert(target);
+    _symbols = symbols_of(_transitions);
 }
 
 Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> transitions, vector<long> f, bool sr) :
     _vars(move(v)),
     _num_states(n),
-    _transitions(vector<unordered_map<Integer, long>>(n, unordered_map<Integer, long>{})),
+    _transitions(n),
     _final_states(move(f)),
-    _short_reasons(sr)
+    _short_reasons(sr),
+    _regex(nullopt)
 {
     for (size_t i = 0; i < transitions.size(); i++)
         for (size_t j = 0; j < transitions[i].size(); j++)
-            if (transitions[i][j] != -1)
-                _transitions[i][Integer(j)] = transitions[i][j];
-    set<Integer> sym_set;
-    for (const auto & state_map : _transitions)
-        for (const auto & [val, _] : state_map)
-            sym_set.insert(val);
-    _symbols.assign(sym_set.begin(), sym_set.end());
+            if (transitions[i][j] != -1L)
+                _transitions[i][Integer(j)].insert(transitions[i][j]);
+    _symbols = symbols_of(_transitions);
+}
+
+Regular::Regular(vector<IntegerVariableID> v, string regex, bool sr) :
+    _vars(move(v)),
+    _num_states(0),
+    _short_reasons(sr),
+    _regex(move(regex))
+{
+    // The automaton is compiled from the regex in prepare(), once the
+    // variables' domains (and hence the alphabet for "." and "[^...]") are known.
+}
+
+Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, set<long>>> t,
+    vector<long> f, vector<Integer> syms, bool sr, optional<string> regex) :
+    _vars(move(v)),
+    _num_states(n),
+    _transitions(move(t)),
+    _final_states(move(f)),
+    _short_reasons(sr),
+    _regex(move(regex)),
+    _symbols(move(syms))
+{
 }
 
 auto Regular::symbols() const -> const vector<Integer> &
@@ -368,7 +433,7 @@ auto Regular::symbols() const -> const vector<Integer> &
 
 auto Regular::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Regular>(_vars, _num_states, _transitions, _final_states, _short_reasons);
+    return unique_ptr<Constraint>(new Regular(_vars, _num_states, _transitions, _final_states, _symbols, _short_reasons, _regex));
 }
 
 auto Regular::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -384,6 +449,28 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
 
 auto Regular::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
+    if (_regex) {
+        // Alphabet for "." and "[^...]": the contiguous min..max range over the
+        // union of the variables' domains, mirroring MiniZinc's semantics.
+        auto lo = Integer::max_value(), hi = Integer::min_value();
+        for (const auto & var : _vars)
+            for (const auto & val : initial_state.each_value_immutable(var)) {
+                if (val < lo)
+                    lo = val;
+                if (val > hi)
+                    hi = val;
+            }
+        vector<Integer> alphabet;
+        for (auto val = lo; val <= hi; ++val)
+            alphabet.push_back(val);
+
+        auto nfa = regex_to_nfa(*_regex, alphabet);
+        _num_states = nfa.num_states;
+        _transitions = move(nfa.transitions);
+        _final_states = move(nfa.final_states);
+        _symbols = symbols_of(_transitions);
+    }
+
     _graph_idx = initial_state.add_constraint_state(RegularGraph(_vars.size(), _num_states));
 
     // Build the OPB alphabet: the union of transition keys and each var's initial
@@ -426,15 +513,19 @@ auto Regular::define_proof_model(ProofModel & model) -> void
     for (size_t idx = 0; idx < _vars.size(); ++idx) {
         for (long q = 0; q < _num_states; ++q) {
             for (const auto & val : _opb_alphabet) {
-                auto new_q = find_transition(_transitions[q], val);
-                if (new_q == -1) {
-                    // No transition for q, v, so constrain ~(state_i = q /\ X_i = val)
+                const auto & targets = find_transitions(_transitions[q], val);
+                if (targets.empty()) {
+                    // No transition for (q, val), so constrain ~(state_i = q /\ X_i = val)
                     model.add_constraint(
                         WPBSum{} + 1_i * (_vars[idx] != val) + (1_i * ! _state_at_pos_flags[idx][q]) >= 1_i);
                 }
                 else {
-                    model.add_constraint(
-                        WPBSum{} + 1_i * ! _state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val) + 1_i * _state_at_pos_flags[idx + 1][new_q] >= 1_i);
+                    // state_i = q /\ X_i = val implies state_{i+1} is one of the
+                    // targets (a single target for a DFA, several for an NFA).
+                    auto clause = WPBSum{} + 1_i * ! _state_at_pos_flags[idx][q] + 1_i * (_vars[idx] != val);
+                    for (const auto & new_q : targets)
+                        clause += 1_i * _state_at_pos_flags[idx + 1][new_q];
+                    model.add_constraint(move(clause) >= 1_i);
                 }
             }
         }
@@ -468,7 +559,8 @@ auto Regular::s_exprify(const ProofModel * const model) const -> string
     for (size_t i = 0; i < _transitions.size(); i++) {
         print(s, "(");
         for (const auto & tran : _transitions[i]) {
-            print(s, " ({} {})", tran.first, tran.second);
+            for (const auto & target : tran.second)
+                print(s, " ({} {})", tran.first, target);
         }
         print(s, ")\n        ");
     }

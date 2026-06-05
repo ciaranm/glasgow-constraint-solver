@@ -70,16 +70,15 @@ namespace gcs::innards
      * constraints. Returns a SortPermWitness holding the p flags and the
      * key doubly-stochastic constraint lines needed by the propagation proofs.
      *
-     * The `def_order` / `dom` canonicalisation is emitted separately by
-     * install_sort_propagator_perm at proof time.
+     * The before[ip][i] and rank[i][j] flags are also added to the OPB model
+     * for UP-determinism — see dev_docs/sortedness.md.
      */
     [[nodiscard]] auto define_sort_proof_model_perm(ProofModel & model,
         const std::vector<IntegerVariableID> & x, const std::vector<IntegerVariableID> & y) -> SortPermWitness;
 
     /**
      * \brief Install the Mehlhorn-Thiel propagator using the permutation
-     * witness. Emits the def_order/dom canonicalisation at proof-root time,
-     * then certifies every inference via direct p[i][j] pigeonhole reasoning.
+     * witness, certifying every inference via direct p[i][j] pigeonhole reasoning.
      */
     auto install_sort_propagator_perm(Propagators & propagators,
         const std::vector<IntegerVariableID> & x, const std::vector<IntegerVariableID> & y,

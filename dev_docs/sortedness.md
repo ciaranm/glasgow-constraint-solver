@@ -41,8 +41,10 @@ permutation and stable variants are NP-hard too. So:
 Both constraints run the Mehlhorn-Thiel bounds-consistent propagator (below),
 achieving `bounds(Z)` on the source `x` and the sorted values. `ArgSort`
 additionally runs a channel pass and GAC `all_different` on the permutation `p`
-(see its section). A checking propagator that rejects bad leaves is kept as a
-cheap backstop, but it is no longer the only inference.
+(see its section). No leaf checker is needed: once `x` is fixed the
+achievable-rank-set propagator collapses each element's reachable ranks to its
+single stable rank and prunes `p` to the unique permutation, so a bad `p` is a
+domain wipeout before any leaf.
 
 ## The OPB encoding (proof model)
 

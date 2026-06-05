@@ -29,8 +29,12 @@ add_library(glasgow_constraint_solver
         constraints/count.cc
         constraints/cumulative.cc
         constraints/disjunctive.cc
+        constraints/disjunctive_2d.cc
         constraints/element.cc
         constraints/equals.cc
+        constraints/global_cardinality/bounds_global_cardinality.cc
+        constraints/global_cardinality/gac_global_cardinality.cc
+        constraints/global_cardinality/justify.cc
         constraints/in.cc
         constraints/increasing.cc
         constraints/innards/recover_am1.cc
@@ -54,7 +58,8 @@ add_library(glasgow_constraint_solver
         constraints/n_value.cc
         constraints/parity.cc
         constraints/plus.cc
-        constraints/regular.cc
+        constraints/regular/regular.cc
+        constraints/regular/regex.cc
         constraints/seq_precede_chain.cc
         constraints/smart_table.cc
         constraints/sort/arg_sort.cc
@@ -135,8 +140,11 @@ if(GCS_BUILD_TESTS)
     add_executable(count_test constraints/count_test.cc)
     add_executable(cumulative_test constraints/cumulative_test.cc)
     add_executable(disjunctive_test constraints/disjunctive_test.cc)
+    add_executable(disjunctive_2d_test constraints/disjunctive_2d_test.cc)
     add_executable(element_test constraints/element_test.cc)
     add_executable(equals_test constraints/equals_test.cc)
+    add_executable(bounds_global_cardinality_test constraints/global_cardinality/bounds_global_cardinality_test.cc)
+    add_executable(gac_global_cardinality_test constraints/global_cardinality/gac_global_cardinality_test.cc)
     add_executable(in_test constraints/in_test.cc)
     add_executable(increasing_test constraints/increasing_test.cc)
     add_executable(inverse_test constraints/inverse_test.cc)
@@ -150,7 +158,7 @@ if(GCS_BUILD_TESTS)
     add_executable(n_value_test constraints/n_value_test.cc)
     add_executable(parity_test constraints/parity_test.cc)
     add_executable(plus_minus_test constraints/plus_minus_test.cc)
-    add_executable(regular_test constraints/regular_test.cc)
+    add_executable(regular_test constraints/regular/regular_test.cc)
     add_executable(seq_precede_chain_test constraints/seq_precede_chain_test.cc)
     add_executable(smart_table_test constraints/smart_table_test.cc)
     add_executable(smart_table_dup_test constraints/smart_table_dup_test.cc)
@@ -165,7 +173,7 @@ if(GCS_BUILD_TESTS)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
-            count_test cumulative_test disjunctive_test element_test equals_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
+            count_test cumulative_test disjunctive_test disjunctive_2d_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
             plus_minus_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test value_precede_test)
@@ -184,10 +192,16 @@ if(GCS_BUILD_TESTS)
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:comparison_test> ${mode})
     endforeach()
     add_test(NAME count_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:count_test>)
+    add_test(NAME bounds_global_cardinality_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:bounds_global_cardinality_test>)
+    add_test(NAME gac_global_cardinality_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:gac_global_cardinality_test>)
     add_test(NAME cumulative_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
     foreach(mode strict nonstrict)
         add_test(NAME disjunctive_constraint_${mode}
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_test> ${mode})
+    endforeach()
+    foreach(mode strict nonstrict)
+        add_test(NAME disjunctive_2d_constraint_${mode}
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_test> ${mode})
     endforeach()
     foreach(mode const const2d var var2d)
         add_test(NAME element_constraint_${mode}
@@ -369,6 +383,10 @@ if(GCS_BUILD_TESTS)
     add_executable(linear_utils_test constraints/linear/utils_test.cc)
     target_link_libraries(linear_utils_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)
+
+    add_executable(regex_test constraints/regular/regex_test.cc)
+    target_link_libraries(regex_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME regex_test COMMAND $<TARGET_FILE:regex_test>)
 
     add_executable(bits_encoding_test innards/proofs/bits_encoding_test.cc)
     target_link_libraries(bits_encoding_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
