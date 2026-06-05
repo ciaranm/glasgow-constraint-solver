@@ -31,6 +31,21 @@ namespace gcs::innards
     };
 
     /**
+     * \brief Proof-only witness for the permutation-based Sort encoding.
+     *
+     * `p[i][j]` is the binary flag "x[i] is placed at position j in y".
+     * `row_al1[i]` is the model line for `Σ_j p[i][j] >= 1` (used as the
+     * at-least-one in pigeonhole counting pols). `col_am1[j]` is the model
+     * line for `-Σ_i p[i][j] >= -1` (at-most-one per column).
+     */
+    struct SortPermWitness
+    {
+        std::vector<std::vector<ProofFlag>> p;
+        std::vector<ProofLine> row_al1;
+        std::vector<ProofLine> col_am1;
+    };
+
+    /**
      * \brief Emit the OPB encoding of `y = sort(x)` (the compact, domain-width-
      * independent stable-rank encoding) and return its proof-only witness.
      *
@@ -48,6 +63,27 @@ namespace gcs::innards
     auto install_sortedness_propagator(Propagators & propagators,
         const std::vector<IntegerVariableID> & x, const std::vector<IntegerVariableID> & y,
         const SortednessWitness & witness) -> void;
+
+    /**
+     * \brief Permutation-based model: emit the doubly-stochastic p[i][j]
+     * encoding plus the channel `p[i][j] -> y[j]=x[i]` and the y-sorted
+     * constraints. Returns a SortPermWitness holding the p flags and the
+     * key doubly-stochastic constraint lines needed by the propagation proofs.
+     *
+     * The `def_order` / `dom` canonicalisation is emitted separately by
+     * install_sort_propagator_perm at proof time.
+     */
+    [[nodiscard]] auto define_sort_proof_model_perm(ProofModel & model,
+        const std::vector<IntegerVariableID> & x, const std::vector<IntegerVariableID> & y) -> SortPermWitness;
+
+    /**
+     * \brief Install the Mehlhorn-Thiel propagator using the permutation
+     * witness. Emits the def_order/dom canonicalisation at proof-root time,
+     * then certifies every inference via direct p[i][j] pigeonhole reasoning.
+     */
+    auto install_sort_propagator_perm(Propagators & propagators,
+        const std::vector<IntegerVariableID> & x, const std::vector<IntegerVariableID> & y,
+        const SortPermWitness & witness) -> void;
 }
 
 #endif

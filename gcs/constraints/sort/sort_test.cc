@@ -135,6 +135,8 @@ auto main(int argc, char * argv[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
 
+        // all equal
+        run_sort_test(proofs, {{2, 2}, {2, 2}}, {{2, 2}, {2, 2}});
         // Pairs.
         run_sort_test(proofs, {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}});
         // Triples, full domains -> exercises duplicate values in the sorted output.
