@@ -211,6 +211,21 @@ auto ProofModel::add_labelled_constraint(
     return pair{le, ge};
 }
 
+auto ProofModel::add_labelled_constraint(const string & label, const WPBSumLE & ineq,
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+{
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+    if (half_reif)
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
+
+    ProofLineLabel l{label};
+    _imp->opb << l << " ";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
+    _imp->opb << ";\n";
+    advance_constraint_counter();
+    return l;
+}
+
 auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<optional<ProofLine>, optional<ProofLine>>
 {
@@ -360,13 +375,24 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
     names_and_ids_tracker().track_bits(id, negative_bit_coeff, bits);
     _imp->model_variables += bits.size();
 
+    // @i[name][lb]/[ub] labels match cake_pb_cp, but only for a real variable
+    // with a label-safe name: views / proof-only variables are not in cake's OPB,
+    // and a `[` in the name (e.g. a vector variable box[0]) nests brackets that
+    // veripb's @label parser rejects. The bracket guard is temporary -- nested
+    // brackets are coming in a future cake_pb_cp release.
+    bool labelled = std::holds_alternative<SimpleIntegerVariableID>(id) && name.find('[') == string::npos;
+
     // lower bound
+    if (labelled)
+        _imp->opb << ProofLineLabel{"i[" + name + "][lb]"} << " ";
     for (auto & [coeff, var] : bits)
         _imp->opb << coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << lower << " ;\n";
     advance_constraint_counter();
 
     // upper bound
+    if (labelled)
+        _imp->opb << ProofLineLabel{"i[" + name + "][ub]"} << " ";
     for (auto & [coeff, var] : bits)
         _imp->opb << -coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << -upper << " ;\n";

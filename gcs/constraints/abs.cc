@@ -92,11 +92,12 @@ auto Abs::install(Propagators & propagators, State &, ProofModel * const optiona
 
 auto Abs::define_proof_model(ProofModel & model) -> void
 {
-    // Labels match cake_pb_cp's: the non-negative case is @c[name][posle]/[posge]
-    // (V2 = V1 split into <= and >=), the negative case [negle]/[negge].
-    _abs_nonneg_lines = model.add_labelled_constraint(as_string(_constraint_id), "posle", "posge",
+    // Labels match cake_pb_cp's. cake names the V2 >= V1 half [posle] and the
+    // V2 <= V1 half [posge] (i.e. its le/ge track the slack direction, opposite
+    // to V2-vs-V1), so the roles go (LE-half, GE-half) = (posge, posle).
+    _abs_nonneg_lines = model.add_labelled_constraint(as_string(_constraint_id), "posge", "posle",
         "Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
-    _abs_neg_lines = model.add_labelled_constraint(as_string(_constraint_id), "negle", "negge",
+    _abs_neg_lines = model.add_labelled_constraint(as_string(_constraint_id), "negge", "negle",
         "Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
 }
 
