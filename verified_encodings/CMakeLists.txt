@@ -5,3 +5,4 @@
 # chain is driven by the shared run_cake_pb_cp.bash here; each subdirectory adds
 # one constraint's demo and its skippable test.
 add_subdirectory(abs)
+add_subdirectory(scp_cases)
