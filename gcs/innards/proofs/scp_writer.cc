@@ -1,5 +1,7 @@
 #include <gcs/constraint.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_error.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/proofs/scp_writer.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/problem.hh>
@@ -47,6 +49,14 @@ auto gcs::innards::write_scp(const string & file_name, const Problem & problem, 
         for (const auto & c : problem.each_constraint())
             println(s_expr, "        {}", c.s_expr(model));
         println(s_expr, "    )");
+        // The final element is the objective, or (enumerate) for a satisfaction /
+        // enumeration problem. cake_pb_cp uses it to decide whether to emit a
+        // `preserved:` set -- which veripb needs to log/exclude solutions, so
+        // without it only refutation (UNSAT) proofs verify through the chain.
+        if (auto objective = problem.optional_minimise_variable())
+            println(s_expr, "    {}", model->names_and_ids_tracker().s_expr_render_of(*objective));
+        else
+            println(s_expr, "    (enumerate)");
         println(s_expr, ")");
     }
     catch (const ios_base::failure &) {
