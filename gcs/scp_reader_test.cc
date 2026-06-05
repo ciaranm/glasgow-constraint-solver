@@ -1,0 +1,279 @@
+#include <gcs/constraints/abs.hh>
+#include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/equals.hh>
+#include <gcs/constraints/in.hh>
+#include <gcs/constraints/linear.hh>
+#include <gcs/current_state.hh>
+#include <gcs/expression.hh>
+#include <gcs/innards/s_expr.hh>
+#include <gcs/integer.hh>
+#include <gcs/problem.hh>
+#include <gcs/proof.hh>
+#include <gcs/scp_reader.hh>
+#include <gcs/solve.hh>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <iterator>
+#include <map>
+#include <optional>
+#include <set>
+#include <string>
+#include <string_view>
+
+using namespace gcs;
+
+using std::map;
+using std::set;
+using std::string;
+using std::string_view;
+
+namespace
+{
+    // Read a .scp, enumerate every solution, and return the set of solutions as
+    // name -> value maps.
+    auto enumerate(string_view scp) -> set<map<string, long long>>
+    {
+        Problem problem;
+        auto variables = read_scp(problem, scp);
+
+        set<map<string, long long>> solutions;
+        solve_with(problem,
+            SolveCallbacks{.solution = [&](const CurrentState & state) -> bool {
+                map<string, long long> solution;
+                for (const auto & [name, id] : variables)
+                    solution.emplace(name, state(id).raw_value);
+                solutions.insert(std::move(solution));
+                return true;
+            }});
+        return solutions;
+    }
+
+    // --prove a problem to `basename`, returning the .scp it wrote.
+    auto prove_to_scp(Problem & problem, const std::string & basename) -> std::string
+    {
+        solve_with(problem, SolveCallbacks{},
+            std::make_optional<ProofOptions>(ProofFileNames{basename}, true, false));
+        std::ifstream in{basename + ".scp"};
+        std::string scp{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
+        for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})
+            std::remove((basename + ext).c_str());
+        return scp;
+    }
+}
+
+TEST_CASE("read_scp: abs enumerates correctly")
+{
+    auto solutions = enumerate(R"(
+        (
+            ( (X -3 3) (Y 0 3) )
+            ( (_1 abs X Y) )
+        ))");
+
+    CHECK(solutions.size() == 7);
+    for (const auto & s : solutions)
+        CHECK(s.at("Y") == std::abs(s.at("X")));
+}
+
+TEST_CASE("read_scp: all_different enumerates correctly")
+{
+    auto solutions = enumerate(R"(
+        (
+            ( (A 0 1) (B 0 1) )
+            ( (_1 all_different (A B)) )
+        ))");
+
+    CHECK(solutions == set<map<string, long long>>{{{"A", 0}, {"B", 1}}, {{"A", 1}, {"B", 0}}});
+}
+
+TEST_CASE("read_scp: in with a mix of integer and variable values")
+{
+    // V in {0, 3} (constants) or = W (a variable).
+    auto solutions = enumerate(R"(
+        (
+            ( (V 0 5) (W 0 5) )
+            ( (_1 in V (0 3 W)) )
+        ))");
+
+    for (const auto & s : solutions)
+        CHECK((s.at("V") == 0 || s.at("V") == 3 || s.at("V") == s.at("W")));
+    // Every (V, W) with V in {0,3} (6 W values each) plus V == W (the rest).
+    CHECK(! solutions.empty());
+}
+
+TEST_CASE("read_scp: comparisons enumerate correctly")
+{
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 less_than X Y) ) )"))
+        CHECK(s.at("X") < s.at("Y"));
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 less_than_equal X Y) ) )"))
+        CHECK(s.at("X") <= s.at("Y"));
+}
+
+TEST_CASE("read_scp: a fully-reified comparison enumerates correctly")
+{
+    // C == 1  iff  X <= Y.
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 less_than_equal_iff (C eq 1) X Y) ) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") <= s.at("Y")));
+}
+
+TEST_CASE("read_scp: comparisons survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+    auto z = original.create_integer_variable(-2_i, 2_i, "Z");
+    auto c = original.create_integer_variable(0_i, 1_i, "C");
+    original.post(LessThanEqual{x, y});              // plain, or_equal
+    original.post(GreaterThan{y, z});                // operands swapped on write
+    original.post(LessThanEqualIff{x, z, c == 1_i}); // fully reified, with a condition
+    auto scp_a = prove_to_scp(original, "scp_reader_cmp_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_cmp_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: linear constraints enumerate correctly")
+{
+    // X + Y == 3
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) ) ( (_1 lin_equals (1 X 1 Y) 3) ) )"))
+        CHECK(s.at("X") + s.at("Y") == 3);
+    // X - Y <= 1
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) ) ( (_1 lin_less_than_equal (1 X -1 Y) 1) ) )"))
+        CHECK(s.at("X") - s.at("Y") <= 1);
+    // X + Y != 2
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 lin_not_equals (1 X 1 Y) 2) ) )"))
+        CHECK(s.at("X") + s.at("Y") != 2);
+}
+
+TEST_CASE("read_scp: a reified linear constraint enumerates correctly")
+{
+    // C == 1  iff  X + Y == 3.
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (C 0 1) ) ( (_1 lin_equals_iff (C eq 1) (1 X 1 Y) 3) ) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") == 3));
+}
+
+TEST_CASE("read_scp: linear constraints survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+    auto z = original.create_integer_variable(-2_i, 2_i, "Z");
+    auto c = original.create_integer_variable(0_i, 1_i, "C");
+    original.post(LinearEquality{WeightedSum{} + 1_i * x + 1_i * y, 1_i});
+    original.post(LinearLessThanEqual{WeightedSum{} + 1_i * x + -1_i * z, 2_i});
+    original.post(LinearNotEquals{WeightedSum{} + 2_i * y, 0_i});
+    original.post(LinearEqualityIff{WeightedSum{} + 1_i * x + 1_i * z, 1_i, c == 1_i});
+    original.post(LinearNotEqualsIff{WeightedSum{} + 1_i * y + 1_i * z, 0_i, c == 1_i}); // flipped_cond path
+    auto scp_a = prove_to_scp(original, "scp_reader_lin_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_lin_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: equals and not_equals enumerate correctly")
+{
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 equals X Y) ) )"))
+        CHECK(s.at("X") == s.at("Y"));
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 not_equals X Y) ) )"))
+        CHECK(s.at("X") != s.at("Y"));
+    // not_equals against a constant, the way crystal_maze uses it.
+    for (const auto & s : enumerate("( ( (X -2 2) ) ( (_1 not_equals X 0) ) )"))
+        CHECK(s.at("X") != 0);
+}
+
+TEST_CASE("read_scp: a reified equals enumerates correctly")
+{
+    // C == 1  iff  X == Y.
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 equals_iff (C eq 1) X Y) ) )"))
+        CHECK((s.at("C") == 1) == (s.at("X") == s.at("Y")));
+}
+
+TEST_CASE("read_scp: equals constraints survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+    auto z = original.create_integer_variable(-2_i, 2_i, "Z");
+    auto c = original.create_integer_variable(0_i, 1_i, "C");
+    original.post(Equals{x, y});
+    original.post(NotEquals{x, constant_variable(0_i)}); // against a constant
+    original.post(EqualsIff{x, z, c == 1_i});
+    original.post(NotEqualsIff{y, z, c == 1_i}); // _neq path
+    auto scp_a = prove_to_scp(original, "scp_reader_eq_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_eq_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: a constant integer can stand in for a variable anywhere")
+{
+    // An abs operand that is a constant: Y = |3|.
+    CHECK(enumerate("( ( (Y 0 5) ) ( (_1 abs 3 Y) ) )") ==
+        set<map<string, long long>>{{{"Y", 3}}});
+
+    // A constant member of all_different: A, 1, B all distinct, so A,B in {0,2}.
+    auto all_diff = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 all_different (A 1 B)) ) )");
+    CHECK(all_diff == set<map<string, long long>>{{{"A", 0}, {"B", 2}}, {{"A", 2}, {"B", 0}}});
+}
+
+TEST_CASE("read_scp: constraint labels and variable names round-trip via the map")
+{
+    Problem problem;
+    auto variables = read_scp(problem, "( ( (X 0 1) (Y 0 1) ) ( (_1 abs X Y) ) )");
+    CHECK(variables.size() == 2);
+    CHECK(variables.contains("X"));
+    CHECK(variables.contains("Y"));
+}
+
+TEST_CASE("read_scp: a solver-written .scp survives write -> read -> write unchanged")
+{
+    // Build a problem, write its canonical .scp, read it back, write again, and
+    // check the two .scp files are byte-identical -- the round-trip invariant.
+    Problem original;
+    auto x = original.create_integer_variable(-3_i, 3_i, "X");
+    auto y = original.create_integer_variable(0_i, 3_i, "Y");
+    auto z = original.create_integer_variable(0_i, 3_i, "Z");
+    original.post(Abs{x, y});
+    original.post(In{x, std::vector<Integer>{-3_i, -1_i, 1_i, 3_i}});
+    original.post(AllDifferent{std::vector<IntegerVariableID>{y, z}});
+    auto scp_a = prove_to_scp(original, "scp_reader_roundtrip_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_roundtrip_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: an out-of-order auto-number is rejected, not silently relabelled")
+{
+    // A single constraint labelled _2 would auto-number to _1 on re-post, so
+    // post_autonumbered rejects the mismatch instead of quietly changing it.
+    CHECK_THROWS_AS(enumerate("( ( (X 0 1) (Y 0 1) ) ( (_2 abs X Y) ) )"), NamingError);
+}
+
+TEST_CASE("read_scp: unsupported and malformed input throws")
+{
+    CHECK_THROWS_AS(enumerate("( ( (X 0 1) ) ( (_1 frobnicate X) ) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( ( (X 0 1) ) )"), ScpReadError);        // not (vars constraints)
+    CHECK_THROWS_AS(enumerate("( ( (X 0) ) ( ) )"), ScpReadError);      // bad var decl
+    CHECK_THROWS_AS(enumerate("( ( (X zero 1) ) ( ) )"), ScpReadError); // non-integer bound
+    CHECK_THROWS_AS(enumerate("not an s-expr ("), innards::SExprParseError);
+}
