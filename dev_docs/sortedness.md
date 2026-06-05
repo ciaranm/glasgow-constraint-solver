@@ -55,25 +55,65 @@ solution (`solx`) lines (see
 ### Sort
 
 `Sort` exposes the sorted values `y` as its real output and keeps the
-permutation proof-only. A naive "some permutation `pos` with `y[pos[i]]=x[i]`"
-encoding fails: with duplicate values the permutation is **not unique**, so UP
-can't pin it on a solution. The fix is to make `pos` the **canonical stable
-rank** of `x` — a function of `x` alone:
+permutation proof-only. The central constraint for VeriPB is **UP-determinism**:
+every proof-only auxiliary variable must be uniquely determined by the real
+variables (x and y) via unit propagation, or VeriPB cannot verify solution
+(`solx`) lines.
+
+The naive approach — "some permutation matrix `p[i][j]` with `p[i][j]=1 ⟹
+y[j]=x[i]`" plus doubly-stochastic constraints — fails because with duplicate
+`x` values, multiple permutation matrices satisfy the constraints equally well.
+UP cannot pick the canonical one.
+
+**The fix (current encoding):** make the permutation canonical by deriving it
+from the *stable rank* of `x` — a function of `x` alone. The OPB model encodes
+this in three layers:
 
 ```
-before[i'][i]  ==  x[i'] comes before x[i] under the order (value, then index)
-               ==  (i' < i) ? (x[i'] <= x[i]) : (x[i'] < x[i])      [fully reified flags]
-pos[i]         ==  sum over i' != i of before[i'][i]                [proof-only int, = stable rank]
-channel        ==  (pos[i] = j) -> y[j] = x[i]
+before[ip][i]  ==  x[ip] comes before x[i] under the stable order (value, index)
+               ==  (ip < i) ? (x[ip] <= x[i]) : (x[ip] < x[i])
+               [fully reified flag, both halves in OPB]
+
+rank[i][j]     ==  exactly j of the n-1 before-flags for row i are set
+               [proof-only binary flag; OPB has forward-ge, forward-le, al1]
+
+p[i][j]        ==  x[i] is placed at sorted position j  (equivalently y[j] = x[i])
+               [proof-only binary flag]
 ```
 
-Plus `y[j] <= y[j+1]`. Because `pos` is determined by `x`, the channel pins
-`y = sorted(x)`, so a violated leaf is refuted by **plain RUP** (no Hall/
-pigeonhole proof needed for the *checker*). The encoding is `O(n^2)` and
-**domain-width independent** — no `O(number of values)` constraints. This
-mirrors the spirit of `Inverse`/`all_different` (compact clique-style OPB,
-per-value facts recovered lazily) without needing `propagate_gac_all_different`
-(which requires real state variables, not proof-only ones).
+Plus `y[j] <= y[j+1]` (sortedness) and the doubly-stochastic constraints
+`Σ_j p[i][j] = 1` and `Σ_i p[i][j] = 1`, plus the p-rank link
+`~p[i][j] + rank[i][j] >= 1` (wrong-rank positions cannot hold the element),
+plus the channel `p[i][j] → y[j] = x[i]`.
+
+**UP-determinism chain:** given a solution's `x` values, the OPB constraints
+determine everything by unit propagation:
+
+1. `before[ip][i]` ← x comparison (bidirectional reification pinned by fixed x)
+2. For each row `i`, the unique `j*` with `Σ before = j*` forces `rank[i][j'] = 0`
+   for all `j' ≠ j*` (forward-ge/le eliminate them), then the al1 forces
+   `rank[i][j*] = 1`
+3. `p[i][j'] = 0` for `j' ≠ j*` (p-rank link + rank=0) and `p[i][j*] = 1`
+   (row al1 + all others excluded)
+4. `y[j*] = x[i]` (channel)
+
+This encoding is `O(n^2)` OPB constraints, **domain-width independent**.
+
+**Why not the `dom` step (reviewer suggestion)?** A natural alternative — encode
+just the doubly-stochastic p model, then use VeriPB's `def_order`/`dom`
+mechanism to canonicalise p at proof time — was fully explored. The core insight
+is that the before/rank flags *can* be defined as proof extension variables
+(using `red` steps before `def_order`, making them regular proof variables
+that the `dom` witness can reference). However, the `def_order` transitivity
+proof for the canonical-condition constraints requires establishing
+`v_rank = u_rank` across two O⪯ instantiations, which demands an explicit
+multi-step pol chain through x-equality → bef-consistency → rank-consistency.
+VeriPB's augmented-format autoprovability cannot close these goals automatically.
+Rather than write a complex generated transitivity proof, we place the before and
+rank flags directly in the OPB model — achieving the same UP-determinism with
+no proof-time machinery at all. The `dom` step infrastructure added to
+`ProofLogger` (`emit_dom_step`, `emit_load_order`, `write_raw_to_proof`)
+remains available for future use.
 
 ### ArgSort
 
@@ -139,9 +179,14 @@ Gecode's `sorted` with permutation variables (Thiel's algorithm), but certified.
 Full GAC on `p` remains NP-hard (rank-feasible but integer-infeasible values can
 survive); that residual is the frontier and is deliberately not pursued.
 
-The asymmetry with Sort's witness is deliberate: a proof-only permutation (Sort)
-*forces* the stable-rank construction; a real permutation (ArgSort) channels
-directly to the reused sorted values.
+The asymmetry between Sort's and ArgSort's witnesses is deliberate:
+- **Sort** uses `SortPermWitness` (the p-based encoding above); the
+  stable-rank construction is baked into the OPB model.
+- **ArgSort** still uses `SortednessWitness` (before/pos integer encoding,
+  shared with ArgSort's internal sorted-values subproblem); its real
+  permutation variable `p` channels directly to `pos`, so the argmax
+  achievable-rank-set reasoning can reference `rank_ge`/`rank_le`/`before`
+  directly without the p[i][j] layer.
 
 ## Survey of propagation algorithms
 
@@ -200,151 +245,89 @@ The inferences this propagator makes — the only things the proof must justify 
 are exactly four bound tightenings (`lb(y)` up, `ub(y)` down, `lb(x)` up,
 `ub(x)` down) plus a no-matching contradiction.
 
-## Proof logging plan
+## Proof logging
 
-No certifying sortedness propagator existed, so the proofs were designed from
-scratch. **This is now complete: every inference is certified and the suite
-verifies with no assertions** (see "The Hall witness" below for the final
-shape). The staged approach that got us there:
+The propagation proofs are complete and fully certified (`s VERIFIED` across
+the full `sort_test` suite). The approach changed significantly when the
+encoding moved from `pos[i]` integers to `p[i][j]` binary flags; this section
+documents the current (p-based) proof structure.
 
-1. **Implement the propagator with `AssertRatherThanJustifying` for every
-   inference** (a development-only "trust me" step — never merged). Get strong
-   bounds-consistency tests passing; VeriPB then verifies everything *subject to
-   the cheating assertions*, which exercises the algorithm and the encoding
-   without yet paying the proof cost.
-2. **Then take each inference-producing site in turn** and ask: *precisely what
-   is the general nature of what is being inferred here, and why is it true?*
-   Often the answer dictates the proof directly; when it doesn't, it states a
-   sharp question to work on. (The crux turned out to be the permutation/
-   surjectivity of the stable rank, then a single Hall pigeonhole over the rank
-   line shared by every bound and the contradiction.)
+### Key simplification: surjectivity and injectivity for free
 
-The expected shape (to be confirmed site-by-site): each bound tightening is a
-**Hall-interval witness** — the set of `x` (or `y`) variables whose
-bound-intervals saturate a contiguous block — structurally the same as gcs's
-existing `all_different` Hall-set proofs (`recover_am1` +
-`justify_all_different_hall_set_or_violator`), so that machinery should be
-reusable. **Open question / risk:** MT reasons over interval-intersection
-matchings, whereas our `Sort` witness `pos` is the *stable total order*; the
-two need not line up, so whether MT's bound prunings are cleanly derivable
-(RUP + Hall-style `pol`) from the stable-rank encoding is the thing to settle
-as we go.
+The old `pos[i]` encoding required deriving the permutation properties of `pos`
+at the proof root via an expensive `O(n^3)` chain (totality → antisymmetry →
+transitivity → rank-gap → `recover_am1` injectivity), before every bound proof
+could reuse the surjectivity pol. With the `p[i][j]` doubly-stochastic model,
+these properties are **model constraints**:
 
-### Where the y-upper-bound proof stands (worked out site-by-site)
+- **Injectivity** (`Σ_i p[i][j] ≤ 1`): the column at-most-one from the OPB
+  model — `col_am1[j]`.
+- **Surjectivity** (`Σ_i p[i][j] ≥ 1`): the counting pol
+  `Σ_i row_al1[i] + Σ_{k≠j} col_am1[k]` gives `Σ_i p[i][j] ≥ 1` with no
+  root initialiser needed.
 
-Certifying `ub(y[j]) = U` splits into **three cases**, distinguished cheaply in
-the propagator from `uy[j]`, `ux[phi[j]]` and the count of x's forced `<= U`:
+There is no `install_initialiser` in `install_sort_propagator_perm`; the
+doubly-stochastic lines are referenced directly from the model. This eliminates
+the `O(n^3)` root cost entirely.
 
-1. **Normalization** (`U = uy[j] <= ux[phi[j]]`, and `uy[j] < ouy[j]`): the
-   bound came from a *later* `y`'s upper bound via the step-1 right-to-left min,
-   so it is pure `y`-sortedness. **Honest:** emit the monotonicity clauses
-   `(y[k] <= U) v (y[k+1] > U)` for `k = j..n-2` (each RUP from the single
-   sortedness constraint `y[k] <= y[k+1]`); the closing RUP walks the chain up
-   to the witnessing position.
-2. **Order statistic** (`U = ux[phi[j]]` and `>= j+1` of the x's are
-   *unconditionally* forced `<= U`, i.e. `ux[i] <= U`): the `(j+1)`-th smallest
-   value is `<= U`. **Fully honest.** The count line
-   `Σ_k [x_k <= U] >= j+1` is *plain RUP under the reason* (each of the `>= j+1`
-   forced terms is independently entailed by its own upper bound — no
-   cross-constraint step). This is genuinely RUP at any count, not a
-   small-numbers artefact: `examples/sort_count_probe` drives the root
-   order statistic over 20 *non-fixed* x's whose upper bounds sit strictly
-   below the threshold, and VeriPB checks the resulting degree-20 count line
-   (the literals stay variable — nothing is constant-folded). Fold it through
-   the pivot bridge (`RANKLB`,
-   `RANKLB2`) and the per-`i` extended-reason lines `(pos[i] != j) v (y[j] <=
-   U)` — all RUP under the reason. **Surjectivity** `Σ_i [pos[i] = j] >= 1` is
-   now honest too (see below), so this case is fully certified.
-3. **Hall** (`U = ux[phi[j]]` but `< j+1` x's forced `<= U`): the tightening is
-   a genuine matching argument — the `y`-domains commit some x to a lower
-   position, freeing the matched x for `j` — so the simple count is *false* and
-   must not be claimed. The whole bridge (pivot, rank bounds, per-position
-   lines, surjectivity) is shared with case 2 and honest; **the only remaining
-   assert is the count line `count_U >= j+1` itself**, which needs a Hall
-   witness drawing on the `y`-domains.
+### The Hall witness (band pigeonhole over p columns)
 
-### Surjectivity (the permutation), once at the root
+Every inference — contradiction, y-bounds, x-bounds — reduces to the same
+pigeonhole argument. A rank interval `[a,b]` and set `S` of x's whose
+feasible-rank intervals `[lo_i, hi_i)` ⊆ `[a,b]`, with `|S| > b−a+1`.
 
-`Σ_i [pos[i] = j] >= 1` — rank `j` is occupied — needs `pos` to be a
-permutation, which needs the order to be total and transitive. An
-`install_initialiser` derives this once at `ProofLevel::Top` and every bound
-justification reuses it (the Cumulative/Disjunctive bridge pattern). The chain,
-all over the `before` flags (whose two reification halves are captured in
-`define_proof_model`):
+The proof (`fail_hall_perm` in `sort.cc`):
 
-- **totality** `before[a][b] + before[b][a] >= 1` = `rev(a,b) + rev(b,a)`,
-  saturated (the `x` terms cancel);
-- **antisymmetry** `¬before[a][b] + ¬before[b][a] >= 1` = `fwd(a,b) + fwd(b,a)`,
-  saturated;
-- **transitivity** `¬before[k][i] + ¬before[i][i'] + before[k][i'] >= 1`: sum
-  `fwd(k,i) + fwd(i,i') + rev(k,i')` (the `x` terms cancel, leaving a flags-only
-  `>= s+1` where the lex tiebreak slack `s >= 0` varies), then take the clause
-  as a **RUP from that sum** — magnitude-independent, unlike saturate-then-
-  divide which depends on the reif big-M exceeding `s`;
-- **rank gap** `GAP[i][i'] : pos[i'] - pos[i] + n·before[i'][i] >= 1` (i.e.
-  `before[i][i'] => pos[i'] >= pos[i]+1`) = `rank_ge[i'] + rank_le[i] +
-  Σ_{k≠i,i'} T[k] + (n-1)·TOT[i][i']` — an *exact* pol (no saturate);
-- **injectivity** `Σ_i [pos[i]=k] <= 1` via the `recover_am1` fold (inlined
-  because `pos` is proof-only), whose pairwise `¬[pos[i]=k] + ¬[pos[i']=k] >= 1`
-  is RUP from the two `GAP`s + antisymmetry.
+1. **Normalized y-bounds** as RUPs: `NUY[k]: y_k ≤ uy[k]` (top-down) and
+   `NLY[k]: y_k ≥ ly[k]` (bottom-up). Each exclusion `~p[i][k]` for `k` outside
+   `[a,b]` is then one-step RUP from the channel `p[i][k]=1 ⟹ x[i]=y[k]` and
+   the normalized bound (`k<a: y_k ≤ uy[k] < lx[i]`; `k>b: y_k ≥ ly[k] > ux[i]`).
 
-Then per bound, surjectivity of rank `j` is the counting pol
-`Σ_i al1_i + Σ_{k≠j} inj_k` (the `n(n-1)` constants cancel, leaving
-`Σ_i [pos[i]=j] >= 1`), where `al1_i = Σ_k [pos[i]=k] >= 1` is a `Top` RUP. This
-is `O(n^3)` at the root (the transitivity clauses) but paid once. With it,
-`examples/sort_count_probe` (n = 20, all order-statistic) verifies `s VERIFIED`
-with **no assertions**.
+2. **Restricted row al1**: for each `i∈S`, `Σ_{k∈[a,b]} p[i][k] ≥ 1` (RUP from
+   the OPB `row_al1[i]` minus the excluded positions).
 
-So the count (the feared "P3") was *not* the hard part — it is RUP whenever
-true, and the case split says when.
+3. **Counting pol**: `Σ_{i∈S} restricted_al1[i] + Σ_{k∈[a,b]} col_am1[k]`
+   simplifies to `−Σ_{k∈[a,b]} Σ_{i∉S} p[i][k] ≥ |S| − (b−a+1) ≥ 1`. Since
+   the LHS is non-positive, this is a contradiction.
 
-### The other inferences (same shape)
+For the bound inference sub-cases, the goal literal (`y[j] ≤ U`, `x[i] ≥ L`,
+…) is ORed into the assumption-dependent exclusions and restricted-al1s (anchored
+by a `BNLY`/`BNUY` y-sortedness chain under the negated goal), and the closing
+RUP discharges it.
 
-- **`lb(y[j])`** mirrors `ub(y[j])` exactly: it uses the "out" flag
-  `before[j'][m]` + antisymmetry to *upper*-bound `pos[i]`
-  (`x_i < L ⇒ pos[i] ≤ j-1`), with the same per-position lines and the *same*
-  surjectivity pol. Normalization and order-statistic cases honest; only the
-  Hall count asserted.
-- **`lb(x[i]) ≥ ly[jl]` / `ub(x[i]) ≤ uy[jh]`** reduce to a rank bound on `x_i`
-  plus the channel. The **intersection** case (`jl = lo_i`, resp.
-  `jh = hi_i-1`) is honest: for every rank `k`, `(pos[i] ≠ k) ∨ (x_i ≥ L)` is
-  RUP under the reason — `k < lo_i` is impossible (`y_k ≤ uy[k] < lx[i] ≤ x_i`
-  would break the channel), and `k ≥ lo_i` gives `x_i = y_k ≥ ly[k] ≥ L`; the
-  at-least-one line for `pos[i]` closes it. When the SCC strictly tightens the
-  rank range past the intersection extremes (`jl > lo_i`), it is a genuine Hall
-  argument and stays asserted.
+### The three cases for each y-bound
 
-### The Hall witness (the band)
+Certifying `ub(y[j]) = U` (and its lb mirror) splits as before:
 
-The shared certificate is a pigeonhole **on the rank line**: a rank interval
-`[a,b]` and a set `S` of x's whose feasible-rank intervals `[lo_i,hi_i)` are all
-`⊆ [a,b]`, with `|S| > b−a+1`. The slots are ranks; capacity 1 per rank is the
-root injectivity (`inj_lines`); membership "pos[i] ∈ [a,b]" comes from excluding
-every outside rank via the channel and a normalized y-bound. Concretely
-(`fail_hall` in `sort.cc`):
+1. **Normalization** (`U = uy[j]`, propagated from a later y via step-1 min):
+   pure y-sortedness chain — identical to the old pos-based proof.
 
-- emit `NUY[k]: y_k ≤ uy[k]` (top-down) and `NLY[k]: y_k ≥ ly[k]` (bottom-up) as
-  single-step RUP chains, so each exclusion `(pos[i] ≠ k)` is one-step RUP
-  (`k<a`: `y_k ≤ uy[k] < lx_i`; `k>b`: `y_k ≥ ly[k] > ux_i`);
-- per `i∈S`, the restricted at-least-one `Σ_{k∈[a,b]}[pos[i]=k] ≥ 1` from the
-  root `al1[i]` minus the exclusions;
-- pol the restricted-al1s against `inj_k` for `k∈[a,b]` ⟹ `|S| ≤ b−a+1`,
-  contradiction. (Empty band `b=a−1` ⟹ a single x with no feasible rank; its
-  restricted-al1 is already `0 ≥ 1`.)
+2. **Order statistic** (`≥ j+1` x's have `ux[i] ≤ U`): under the negated goal
+   `y[j] ≥ U+1`, a BNUY chain gives `y[k] ≥ U+1` for all `k ≥ j`. For each
+   `i` with `ux[i] ≤ U`: `~p[i][k] + [y[j]<U+1] ≥ 1` for `k ≥ j` is RUP
+   (channel + BNUY + reason); the restricted al1 `[y[j]<U+1] + Σ_{k<j} p[i][k]
+   ≥ 1` follows. The counting pol over `j+1` such restricted-al1s and `j`
+   `col_am1[k<j]` gives the contradiction. **No pivot bridge needed** — the
+   BNUY chain + channel directly exclude wrong columns.
 
-**This certifies every inference.** The no-matching contradiction uses the
-pigeonhole directly (pure y-window case: a sortedness chain; matching case: the
-band). The bound Hall sub-cases are the *same* pigeonhole **under the
-negated-goal assumption** (route a / Cor 2.1): the assumption shifts one
-endpoint of each feasible-rank interval (e.g. `ub(y_j)`: every `x` with
-`ux ≤ U` gets `hi'[i] = min(hi_i, j)`; `lb(x_i)`: `hi'[i] = jl`), `find_band`
-finds the violator, the goal literal (`y_j ≤ U`, `x_i ≥ L`, …) is ORed into the
-assumption-dependent clauses (anchored by a `BNLY`/`BNUY` sortedness chain), and
-the closing RUP discharges it. The whole `sort_test` suite, the n=20 probe, and
-a 200-seed random sweep verify `s VERIFIED` with **no assertions**; the
-Mehlhorn–Thiel propagator is fully VeriPB-certified. `find_band` returning a
-violator is an invariant whenever an inference fired, so a miss throws
-`UnexpectedException` rather than weakening the proof.
+3. **Hall** (`< j+1` x's forced `≤ U`): `find_band` on the shifted feasible
+   intervals (`hi'[i] = min(hi_i, j)` for `ux[i] ≤ U`) finds the violating band
+   `[a,b]`; the same pigeonhole runs under the negated-goal assumption.
+
+### The x-bound cases
+
+- **Intersection** (`jl = lo_i[i]`): for each column `k`, `~p[i][k] + [x[i]≥L]
+  ≥ 1` is RUP under the reason — `k < lo_i` is excluded unconditionally
+  (channel + `uy[k] < lx[i]`), `k ≥ lo_i` gives `x[i] = y[k] ≥ ly[k] ≥ L`
+  via the channel. The `row_al1[i]` then closes via the closing RUP.
+
+- **Hall** (`jl > lo_i[i]`): `find_band` on `hi'[i] = jl`, same pigeonhole
+  under the negated goal.
+
+**All cases fully certified**: the whole `sort_test` suite verifies `s VERIFIED`
+with no assertions. `find_band` returning a violator is an invariant wherever an
+inference fired; a miss throws `UnexpectedException` rather than silently
+weakening the proof.
 
 ## References
 
