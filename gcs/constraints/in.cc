@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
@@ -34,7 +35,6 @@ using std::make_unique;
 using std::move;
 using std::optional;
 using std::string;
-using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::any_of;
@@ -263,14 +263,15 @@ auto In::install_propagators(Propagators & propagators) -> void
 
 auto In::s_exprify(const ProofModel * const model) const -> string
 {
-    stringstream s;
-
-    print(s, "{} in {} (", _name, model->names_and_ids_tracker().s_expr_name_of(_var));
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> vals;
     for (const auto & v : _var_vals)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
+        vals.push_back(parse_s_expr(tracker.s_expr_name_of(v)));
     for (const auto & v : _val_vals)
-        print(s, " {}", v);
-    print(s, ")");
-
-    return s.str();
+        vals.push_back(SExpr::atom(v.to_string()));
+    return to_string(vector<SExpr>{
+        SExpr::atom(as_string(_name)),
+        SExpr::atom("in"),
+        parse_s_expr(tracker.s_expr_name_of(_var)),
+        SExpr::list(std::move(vals))});
 }
