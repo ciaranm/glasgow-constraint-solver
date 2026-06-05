@@ -30,10 +30,7 @@ auto Constraint::s_exprify(const innards::ProofModel * const model) const -> str
     return format("{:#}", s_expr(model));
 }
 
-namespace gcs
+auto gcs::as_string(const ConstraintID & constraint_id) -> std::string
 {
-    auto as_string(const ConstraintID & constraint_id) -> std::string
-    {
-        return visit([](const auto & n) { return n.as_string(); }, constraint_id);
-    }
+    return visit([](const auto & n) { return n.as_string(); }, constraint_id);
 }
