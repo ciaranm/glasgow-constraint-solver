@@ -18,6 +18,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/core.h>
@@ -37,6 +38,7 @@ using std::vector;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
 using fmt::format;
@@ -296,9 +298,5 @@ auto Abs::install_propagators(Propagators & propagators) -> void
 auto Abs::s_exprify(const innards::ProofModel * const model) const -> string
 {
     auto & tracker = model->names_and_ids_tracker();
-    return to_string(vector<SExpr>{
-        SExpr::atom(as_string(_name)),
-        SExpr::atom("abs"),
-        parse_s_expr(tracker.s_expr_name_of(_v1)),
-        parse_s_expr(tracker.s_expr_name_of(_v2))});
+    return format("{:#}", SExpr::list({SExpr::atom(as_string(_name)), SExpr::atom("abs"), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2)}));
 }

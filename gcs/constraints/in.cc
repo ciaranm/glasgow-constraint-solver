@@ -266,12 +266,8 @@ auto In::s_exprify(const ProofModel * const model) const -> string
     auto & tracker = model->names_and_ids_tracker();
     vector<SExpr> vals;
     for (const auto & v : _var_vals)
-        vals.push_back(parse_s_expr(tracker.s_expr_name_of(v)));
+        vals.push_back(tracker.s_expr_term_of(v));
     for (const auto & v : _val_vals)
         vals.push_back(SExpr::atom(v.to_string()));
-    return to_string(vector<SExpr>{
-        SExpr::atom(as_string(_name)),
-        SExpr::atom("in"),
-        parse_s_expr(tracker.s_expr_name_of(_var)),
-        SExpr::list(std::move(vals))});
+    return format("{:#}", SExpr::list({SExpr::atom(as_string(_name)), SExpr::atom("in"), tracker.s_expr_term_of(_var), SExpr::list(std::move(vals))}));
 }

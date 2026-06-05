@@ -6,6 +6,13 @@
 #include <string_view>
 #include <variant>
 #include <vector>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#else
+#include <fmt/format.h>
+#endif
 
 namespace gcs::innards
 {
@@ -39,11 +46,14 @@ namespace gcs::innards
      * list. The model carries no further type information — meaning is imposed
      * by whoever consumes the term.
      *
-     * The point of routing both the writer (`Constraint::s_exprify`) and any
-     * reader through this one type is that `to_string(parse_s_expr(s)) == s`
-     * holds for every `s` already in the canonical form `to_string` emits, so
-     * "write an `.scp`, read it back, write it again" is identity by
-     * construction rather than by careful hand-formatting.
+     * An SExpr is rendered with `std::format` / `fmt::format`: `format("{}", e)`
+     * gives the canonical single-line form (an atom verbatim; a list as `(`, its
+     * space-separated children, `)`, with no padding, so `()` for the empty
+     * list). The alternate form `format("{:#}", e)` renders a *list* without its
+     * enclosing parentheses — the body of a constraint's `.scp` line. Because
+     * the writer and any reader share this one type, `format("{}",
+     * parse_s_expr(s)) == s` for every `s` already in canonical form, so "write
+     * an `.scp`, read it back, write it again" is identity by construction.
      */
     class SExpr final
     {
@@ -83,21 +93,86 @@ namespace gcs::innards
 
     /// \brief Parse zero or more whitespace-separated top-level s-expressions.
     [[nodiscard]] auto parse_s_expr_seq(std::string_view text) -> std::vector<SExpr>;
-
-    /**
-     * \brief Render `expr` canonically on a single line: an atom verbatim, a
-     * list as `(` followed by its space-separated children followed by `)`,
-     * with no padding next to the parentheses (so `()` for the empty list).
-     */
-    [[nodiscard]] auto to_string(const SExpr & expr) -> std::string;
-
-    /**
-     * \brief Render a sequence of terms as the space-separated body of a
-     * constraint line — each term via `to_string`, joined by single spaces,
-     * with no enclosing parentheses. This is what `Constraint::s_exprify`
-     * returns; `solve()` adds the surrounding `( ... )`.
-     */
-    [[nodiscard]] auto to_string(const std::vector<SExpr> & terms) -> std::string;
 }
+
+// SExpr is rendered through the formatting machinery rather than a free
+// to_string(), both because that is how the rest of the codebase formats and to
+// avoid a to_string() overload in gcs::innards shadowing std::to_string. The
+// optional '#' flag drops a list's enclosing parentheses (the constraint body).
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+template <>
+struct std::formatter<gcs::innards::SExpr>
+{
+    bool bare = false;
+
+    constexpr auto parse(std::format_parse_context & ctx)
+    {
+        auto it = ctx.begin();
+        if (it != ctx.end() && *it == '#') {
+            bare = true;
+            ++it;
+        }
+        if (it != ctx.end() && *it != '}')
+            throw std::format_error{"invalid format spec for SExpr (only '#' is accepted)"};
+        return it;
+    }
+
+    auto format(const gcs::innards::SExpr & expr, std::format_context & ctx) const
+    {
+        auto out = ctx.out();
+        if (expr.is_atom())
+            return std::format_to(out, "{}", expr.as_atom());
+        if (! bare)
+            *out++ = '(';
+        bool first = true;
+        for (const auto & child : expr.as_list()) {
+            if (! first)
+                *out++ = ' ';
+            first = false;
+            out = std::format_to(out, "{}", child);
+        }
+        if (! bare)
+            *out++ = ')';
+        return out;
+    }
+};
+#else
+template <>
+struct fmt::formatter<gcs::innards::SExpr>
+{
+    bool bare = false;
+
+    constexpr auto parse(fmt::format_parse_context & ctx) -> decltype(ctx.begin())
+    {
+        auto it = ctx.begin();
+        if (it != ctx.end() && *it == '#') {
+            bare = true;
+            ++it;
+        }
+        if (it != ctx.end() && *it != '}')
+            throw fmt::format_error{"invalid format spec for SExpr (only '#' is accepted)"};
+        return it;
+    }
+
+    auto format(const gcs::innards::SExpr & expr, fmt::format_context & ctx) const -> decltype(ctx.out())
+    {
+        auto out = ctx.out();
+        if (expr.is_atom())
+            return fmt::format_to(out, "{}", expr.as_atom());
+        if (! bare)
+            *out++ = '(';
+        bool first = true;
+        for (const auto & child : expr.as_list()) {
+            if (! first)
+                *out++ = ' ';
+            first = false;
+            out = fmt::format_to(out, "{}", child);
+        }
+        if (! bare)
+            *out++ = ')';
+        return out;
+    }
+};
+#endif
 
 #endif

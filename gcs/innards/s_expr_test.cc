@@ -4,6 +4,15 @@
 
 #include <string>
 #include <vector>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+using std::format;
+#else
+#include <fmt/format.h>
+using fmt::format;
+#endif
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -16,7 +25,7 @@ TEST_CASE("SExpr: an atom round-trips")
     auto e = parse_s_expr("_1");
     CHECK(e.is_atom());
     CHECK(e.as_atom() == "_1");
-    CHECK(to_string(e) == "_1");
+    CHECK(format("{}", e) == "_1");
 }
 
 TEST_CASE("SExpr: a flat list round-trips canonically")
@@ -26,7 +35,7 @@ TEST_CASE("SExpr: a flat list round-trips canonically")
     REQUIRE(e.as_list().size() == 4);
     CHECK(e.as_list()[0].as_atom() == "_1");
     CHECK(e.as_list()[1].as_atom() == "abs");
-    CHECK(to_string(e) == "(_1 abs _2 _3)");
+    CHECK(format("{}", e) == "(_1 abs _2 _3)");
 }
 
 TEST_CASE("SExpr: incidental whitespace is normalised away")
@@ -34,10 +43,10 @@ TEST_CASE("SExpr: incidental whitespace is normalised away")
     // Leading/trailing/inner spacing, tabs and newlines all collapse to the
     // single canonical form: this is exactly the messy hand-formatting the
     // old string-built s_exprify produced (e.g. "( 0 3)").
-    CHECK(to_string(parse_s_expr("(   0    3 )")) == "(0 3)");
-    CHECK(to_string(parse_s_expr("  (_1   all_different ( _1 _1 _2 _2))  ")) ==
+    CHECK(format("{}", parse_s_expr("(   0    3 )")) == "(0 3)");
+    CHECK(format("{}", parse_s_expr("  (_1   all_different ( _1 _1 _2 _2))  ")) ==
         "(_1 all_different (_1 _1 _2 _2))");
-    CHECK(to_string(parse_s_expr("(a\n\tb\r\n c)")) == "(a b c)");
+    CHECK(format("{}", parse_s_expr("(a\n\tb\r\n c)")) == "(a b c)");
 }
 
 TEST_CASE("SExpr: nested lists round-trip")
@@ -47,7 +56,7 @@ TEST_CASE("SExpr: nested lists round-trip")
     REQUIRE(e.is_list());
     REQUIRE(e.as_list().size() == 2);
     CHECK(e.as_list()[0].is_list());
-    CHECK(to_string(e) == s);
+    CHECK(format("{}", e) == s);
 }
 
 TEST_CASE("SExpr: the empty list")
@@ -55,8 +64,8 @@ TEST_CASE("SExpr: the empty list")
     auto e = parse_s_expr("()");
     REQUIRE(e.is_list());
     CHECK(e.as_list().empty());
-    CHECK(to_string(e) == "()");
-    CHECK(to_string(parse_s_expr("(  )")) == "()");
+    CHECK(format("{}", e) == "()");
+    CHECK(format("{}", parse_s_expr("(  )")) == "()");
 }
 
 TEST_CASE("SExpr: a view parses as a list and re-renders identically")
@@ -64,14 +73,14 @@ TEST_CASE("SExpr: a view parses as a list and re-renders identically")
     // s_expr_name_of renders a ViewOfIntegerVariableID as "(-_1 + 17)" /
     // "(_2 + 0)"; that textual form already is canonical s-expr spacing, so a
     // constraint line embedding a view round-trips exactly.
-    CHECK(to_string(parse_s_expr("(-_1 + 17)")) == "(-_1 + 17)");
-    CHECK(to_string(parse_s_expr("(_2 + 0)")) == "(_2 + 0)");
-    CHECK(to_string(parse_s_expr("(_1 abs (-_1 + 17) _2)")) == "(_1 abs (-_1 + 17) _2)");
+    CHECK(format("{}", parse_s_expr("(-_1 + 17)")) == "(-_1 + 17)");
+    CHECK(format("{}", parse_s_expr("(_2 + 0)")) == "(_2 + 0)");
+    CHECK(format("{}", parse_s_expr("(_1 abs (-_1 + 17) _2)")) == "(_1 abs (-_1 + 17) _2)");
 }
 
 TEST_CASE("SExpr: reification-condition triples, signs, symbols and commas are atoms-in-lists")
 {
-    CHECK(to_string(parse_s_expr("(_2 neq 1)")) == "(_2 neq 1)");
+    CHECK(format("{}", parse_s_expr("(_2 neq 1)")) == "(_2 neq 1)");
     CHECK(parse_s_expr("-3").as_atom() == "-3");
     CHECK(parse_s_expr(">=").as_atom() == ">=");
     CHECK(parse_s_expr("*").as_atom() == "*");
@@ -88,7 +97,7 @@ TEST_CASE("SExpr: the canonical forms the refactored constraints now emit")
              "(_1 less_than_equal _2 _3)",
              "(_1 less_than_equal_iff (_2 neq 1) _3 _4)",
              "(_5 in _2 (0 1 _3))"}) {
-        CHECK(to_string(parse_s_expr(s)) == s);
+        CHECK(format("{}", parse_s_expr(s)) == s);
     }
 }
 
@@ -96,9 +105,9 @@ TEST_CASE("SExpr: parsing is idempotent under print-then-reparse")
 {
     for (auto s : {"x", "()", "(a (b c) ((d)) e)", "(  messy   ( spacing ) )", "(-_1 + 17)"}) {
         auto once = parse_s_expr(s);
-        auto twice = parse_s_expr(to_string(once));
+        auto twice = parse_s_expr(format("{}", once));
         CHECK(once == twice);
-        CHECK(to_string(once) == to_string(twice));
+        CHECK(format("{}", once) == format("{}", twice));
     }
 }
 
@@ -119,16 +128,18 @@ TEST_CASE("SExpr: a sequence of top-level terms")
     CHECK(parse_s_expr_seq("   ").empty());
 }
 
-TEST_CASE("SExpr: a term sequence renders as an unbracketed, space-joined body")
+TEST_CASE("SExpr: the '#' alternate form drops a list's enclosing parentheses")
 {
     // This is the shape Constraint::s_exprify returns; solve() wraps it in ().
-    vector<SExpr> body{
-        SExpr::atom("_1"),
+    auto body = SExpr::list({SExpr::atom("_1"),
         SExpr::atom("abs"),
         parse_s_expr("_2"),
-        parse_s_expr("(-_1 + 17)")};
-    CHECK(to_string(body) == "_1 abs _2 (-_1 + 17)");
-    CHECK(to_string(vector<SExpr>{}) == "");
+        parse_s_expr("(-_1 + 17)")});
+    CHECK(format("{:#}", body) == "_1 abs _2 (-_1 + 17)");
+    CHECK(format("{}", body) == "(_1 abs _2 (-_1 + 17))");
+    // Only the outermost list loses its parentheses; nested lists keep theirs.
+    CHECK(format("{:#}", parse_s_expr("(a (b c) d)")) == "a (b c) d");
+    CHECK(format("{:#}", SExpr::list({})) == "");
 }
 
 TEST_CASE("SExpr: malformed input throws")

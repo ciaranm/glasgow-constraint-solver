@@ -226,23 +226,23 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_exprify(const ProofModel * const mode
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    auto reif = overloaded{
+    auto reif_suffix = overloaded{
         [&](const reif::MustHold &) -> string { return ""; },
         [&](const reif::If &) -> string { return "_if"; },
         [&](const reif::Iff &) -> string { return "_iff"; },
         [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_exprify"}; }}
-                    .visit(_reif_cond);
+                           .visit(_reif_cond);
 
     string cmp = format("{}{}{}",
         _vars_swapped ? "greater_than" : "less_than",
         _or_equal ? "_equal" : "",
-        reif);
+        reif_suffix);
 
     vector<SExpr> terms{SExpr::atom(as_string(_name)), SExpr::atom(cmp)};
-    if (! reif.empty())
-        terms.push_back(parse_s_expr(tracker.s_expr_name_of(_reif_cond)));
-    terms.push_back(parse_s_expr(tracker.s_expr_name_of(_v1)));
-    terms.push_back(parse_s_expr(tracker.s_expr_name_of(_v2)));
+    if (auto cond = tracker.s_expr_term_of(_reif_cond))
+        terms.push_back(std::move(*cond));
+    terms.push_back(tracker.s_expr_term_of(_v1));
+    terms.push_back(tracker.s_expr_term_of(_v2));
 
-    return to_string(terms);
+    return format("{:#}", SExpr::list(std::move(terms)));
 }

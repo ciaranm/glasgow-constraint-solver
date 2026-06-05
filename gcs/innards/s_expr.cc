@@ -146,32 +146,6 @@ auto gcs::innards::parse_s_expr_seq(string_view text) -> vector<SExpr>
     return result;
 }
 
-auto gcs::innards::to_string(const SExpr & expr) -> string
-{
-    if (expr.is_atom())
-        return expr.as_atom();
-
-    string result = "(";
-    bool first = true;
-    for (const auto & child : expr.as_list()) {
-        if (! first)
-            result += ' ';
-        first = false;
-        result += to_string(child);
-    }
-    result += ')';
-    return result;
-}
-
-auto gcs::innards::to_string(const vector<SExpr> & terms) -> string
-{
-    string result;
-    bool first = true;
-    for (const auto & term : terms) {
-        if (! first)
-            result += ' ';
-        first = false;
-        result += to_string(term);
-    }
-    return result;
-}
+// Rendering is provided by the std::formatter / fmt::formatter specialisation in
+// s_expr.hh, so there is no to_string() here (which would shadow std::to_string
+// inside gcs::innards).

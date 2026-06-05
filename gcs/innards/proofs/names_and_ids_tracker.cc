@@ -44,6 +44,7 @@ using std::list;
 using std::map;
 using std::max;
 using std::min;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
@@ -1224,6 +1225,25 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
     }
 
     throw NonExhaustiveSwitch{};
+}
+
+auto NamesAndIDsTracker::s_expr_term_of(IntegerVariableID id) const -> SExpr
+{
+    // A variable / literal name is always a single, non-empty s-expression term
+    // (a bare atom like `_1`, or a list like a view `(-_1 + 17)`), so parsing it
+    // can't fail or be empty.
+    return parse_s_expr(s_expr_name_of(id));
+}
+
+auto NamesAndIDsTracker::s_expr_term_of(ReificationCondition cond) const -> optional<SExpr>
+{
+    // s_expr_name_of(ReificationCondition) returns "" for the unconditional
+    // cases (MustHold / MustNotHold); surface that as nullopt so callers don't
+    // have to know about the empty-string sentinel.
+    auto name = s_expr_name_of(cond);
+    if (name.empty())
+        return nullopt;
+    return parse_s_expr(name);
 }
 
 auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE

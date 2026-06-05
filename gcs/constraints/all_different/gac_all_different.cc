@@ -14,6 +14,7 @@
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
 #include <print>
 #else
 #include <fmt/ostream.h>
@@ -55,8 +56,10 @@ using std::ranges::adjacent_find;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
 using std::print;
 #else
+using fmt::format;
 using fmt::print;
 #endif
 
@@ -671,9 +674,6 @@ auto GACAllDifferent::s_exprify(const innards::ProofModel * const model) const -
     auto & tracker = model->names_and_ids_tracker();
     vector<SExpr> vars;
     for (const auto & var : _vars)
-        vars.push_back(parse_s_expr(tracker.s_expr_name_of(var)));
-    return to_string(vector<SExpr>{
-        SExpr::atom(as_string(_name)),
-        SExpr::atom("all_different"),
-        SExpr::list(std::move(vars))});
+        vars.push_back(tracker.s_expr_term_of(var));
+    return format("{:#}", SExpr::list({SExpr::atom(as_string(_name)), SExpr::atom("all_different"), SExpr::list(std::move(vars))}));
 }

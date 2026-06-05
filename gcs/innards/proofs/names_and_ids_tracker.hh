@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/proof.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
@@ -383,6 +384,22 @@ namespace gcs::innards
          * Get the human-readable / s-expr name for a condition operator
          */
         [[nodiscard]] auto s_expr_name_of(VariableConditionOperator op) const -> std::string;
+
+        /**
+         * Get the s-expr *term* for a variable: s_expr_name_of() parsed into an
+         * SExpr, so a view like `(-_1 + 17)` becomes a list rather than an atom.
+         * Prefer this over `parse_s_expr(s_expr_name_of(...))` at call sites so
+         * the wrap can't be forgotten.
+         */
+        [[nodiscard]] auto s_expr_term_of(IntegerVariableID id) const -> SExpr;
+
+        /**
+         * Get the s-expr term for a reification condition, or nullopt when the
+         * condition is unconditional (MustHold / MustNotHold). Keeps the
+         * "no condition" case explicit rather than leaking the empty string that
+         * the s_expr_name_of(ReificationCondition) overload returns.
+         */
+        [[nodiscard]] auto s_expr_term_of(ReificationCondition cond) const -> std::optional<SExpr>;
 
         /**
          * Get the human-readable name for a variable.
