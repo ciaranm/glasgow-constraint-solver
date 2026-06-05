@@ -213,8 +213,9 @@ auto Problem::create_propagators(State & state, ProofModel * const optional_proo
     Propagators result;
     for (auto & c : _imp->constraints) {
         auto cc = c->clone();
-        // clone() does not carry the constraint id, but define_proof_model needs
-        // it to build @c[id][...] labels matching the .scp (and cake), so copy it.
+        // clone() is deliberately id-agnostic; each post/install site sets the id.
+        // post() assigns a fresh number; here we preserve the original's, since
+        // define_proof_model builds @c[id][...] labels that must match the .scp.
         cc->set_constraint_id(c->constraint_id());
         move(*cc).install(result, state, optional_proof_model);
     }
