@@ -26,7 +26,4 @@ compile_commands.json
 out/
 .claude
 Testing/
-verification_pipeline.sh
-crystal_maze_pipeline.sh
-verification/
 .DS_Store

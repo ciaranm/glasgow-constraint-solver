@@ -55,16 +55,16 @@ auto main(int argc, char * argv[]) -> int
     auto x = p.create_integer_variable_vector(n, 0_i, 10_i, "x");
     auto y = p.create_integer_variable_vector(n, 0_i, 10_i, "y");
 
-    p.post_named(Equals(y[0], 5_c), "y0");
-    p.post_named(Equals(y[1], 2_c), "y1");
-    p.post_named(Equals(y[2], 10_c), "y2");
-    p.post_named(Equals(y[3], 5_c), "y3");
+    p.post_named(Equals(y[0], 5_c), "y_0");
+    p.post_named(Equals(y[1], 2_c), "y_1");
+    p.post_named(Equals(y[2], 10_c), "y_2");
+    p.post_named(Equals(y[3], 5_c), "y_3");
 
-    p.post_named(Equals(x[0], 5_c), "x0");
-    p.post_named(Equals(x[1], 2_c), "x1");
+    p.post_named(Equals(x[0], 5_c), "x_0");
+    p.post_named(Equals(x[1], 2_c), "x_1");
     // Only option for x[2] is 10, since it comes lexicographically after
-    p.post_named(Equals(x[2], 10_c), "x2");
-    p.post_named(Equals(x[3], 6_c), "x3");
+    p.post_named(Equals(x[2], 10_c), "x_2");
+    p.post_named(Equals(x[3], 6_c), "x_3");
 
     p.post_named(LexSmartTable{x, y}, "lex_smart_table");
 
