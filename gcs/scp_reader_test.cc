@@ -134,6 +134,13 @@ TEST_CASE("read_scp: a solver-written .scp survives write -> read -> write uncha
     CHECK_FALSE(scp_a.empty());
 }
 
+TEST_CASE("read_scp: an out-of-order auto-number is rejected, not silently relabelled")
+{
+    // A single constraint labelled _2 would auto-number to _1 on re-post, so
+    // post_autonumbered rejects the mismatch instead of quietly changing it.
+    CHECK_THROWS_AS(enumerate("( ( (X 0 1) (Y 0 1) ) ( (_2 abs X Y) ) )"), NamingError);
+}
+
 TEST_CASE("read_scp: unsupported and malformed input throws")
 {
     CHECK_THROWS_AS(enumerate("( ( (X 0 1) ) ( (_1 frobnicate X) ) )"), ScpReadError);

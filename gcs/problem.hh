@@ -93,6 +93,19 @@ namespace gcs
         auto post_named(const Constraint &, const std::string &) -> void;
 
         /**
+         * \brief Add a clone of this Constraint that is expected to receive the
+         * auto-generated name `_expected_number`.
+         *
+         * Behaves like post(), but throws NamingError if Problem's own
+         * auto-numbering would not assign exactly `_expected_number`. Used when
+         * reconstructing a model from its `.scp` (see read_scp): auto-generated
+         * `_N` labels can't be passed to post_named (they are reserved), so they
+         * are reproduced by re-posting in order, and this checks that the order
+         * really does line up rather than silently relabelling.
+         */
+        auto post_autonumbered(const Constraint &, unsigned long long expected_number) -> void;
+
+        /**
          * \brief Post this expression as a LinearLessThanEqual constraint.
          */
         auto post(SumLessThanEqual<Weighted<IntegerVariableID>>) -> void;

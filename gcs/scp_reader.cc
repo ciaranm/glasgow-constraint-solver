@@ -6,6 +6,7 @@
 #include <gcs/scp_reader.hh>
 
 #include <charconv>
+#include <optional>
 #include <utility>
 
 using std::map;
@@ -49,23 +50,29 @@ namespace
         return e.as_list();
     }
 
-    // `_<digits>` is the form Problem auto-generates for unnamed constraints; it
-    // is reserved (Problem::check_name rejects it as a user name). Re-posting
-    // such a constraint unnamed reproduces the same label in `.scp` order.
-    auto is_auto_generated_label(const string & s) -> bool
+    // If `s` is the form Problem auto-generates for unnamed constraints,
+    // `_<digits>`, return that number; otherwise nullopt.
+    auto auto_number_of(const string & s) -> std::optional<unsigned long long>
     {
         if (s.size() < 2 || s[0] != '_')
-            return false;
+            return std::nullopt;
         for (auto i = s.begin() + 1; i != s.end(); ++i)
             if (*i < '0' || *i > '9')
-                return false;
-        return true;
+                return std::nullopt;
+        unsigned long long number;
+        auto [ptr, ec] = std::from_chars(s.data() + 1, s.data() + s.size(), number);
+        if (ec != std::errc{})
+            throw ScpReadError{"constraint label '" + s + "' is out of range"};
+        return number;
     }
 
     auto post_constraint(Problem & problem, const Constraint & constraint, const string & label) -> void
     {
-        if (is_auto_generated_label(label))
-            problem.post(constraint);
+        // `_N` is reserved (post_named rejects it); reproduce it via
+        // post_autonumbered, which validates the number lines up. Anything else
+        // is a genuine name.
+        if (auto number = auto_number_of(label))
+            problem.post_autonumbered(constraint, *number);
         else
             problem.post_named(constraint, label);
     }

@@ -27,7 +27,6 @@ using std::make_optional;
 using std::move;
 using std::nullopt;
 using std::optional;
-using std::ranges::minmax_element;
 using std::regex;
 using std::regex_match;
 using std::size_t;
@@ -38,6 +37,7 @@ using std::tuple;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
+using std::ranges::minmax_element;
 
 NamingError::NamingError(const string & w) :
     _wat(w)
@@ -165,8 +165,22 @@ auto Problem::post(const Constraint & c) -> void
 auto Problem::post_named(const Constraint & c, const string & name) -> void
 {
     auto cloned = c.clone();
-    cloned->set_name(NamedConstraint{check_name(name)}); 
+    cloned->set_name(NamedConstraint{check_name(name)});
     _imp->constraints.push_back(std::move(cloned));
+}
+
+auto Problem::post_autonumbered(const Constraint & c, unsigned long long expected_number) -> void
+{
+    // Re-post a constraint that was auto-numbered `_expected_number` (e.g. when
+    // reading a .scp back in). The label is reproduced by Problem's own
+    // auto-numbering rather than passed as a name -- `_N` names are reserved, so
+    // post_named rejects them -- but we validate that the number Problem is
+    // about to assign matches, so any drift in post order fails loudly here
+    // instead of silently relabelling the constraint.
+    if (expected_number != _imp->next_constraint_number + 1)
+        throw NamingError{"asked to auto-number constraint _" + to_string(expected_number) +
+            ", but the next auto-number is _" + to_string(_imp->next_constraint_number + 1)};
+    post(c);
 }
 
 auto Problem::post(SumLessThanEqual<Weighted<IntegerVariableID>> expr) -> void
