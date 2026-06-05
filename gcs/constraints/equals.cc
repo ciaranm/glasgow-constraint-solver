@@ -146,14 +146,16 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
 {
     overloaded{
         [&](const reif::MustHold &) {
-            model.add_constraint("ReifiedEquals", "equals option",
+            // cake_pb_cp: V1 = V2 split into le (V1 <= V2) and ge (V1 >= V2).
+            model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "ReifiedEquals", "equals option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
         },
         [&](const reif::MustNotHold &) {
+            // cake_pb_cp: V1 != V2 split into gt (V1 > V2) and lt (V1 < V2).
             auto gtflag = model.create_proof_flag("gt");
-            model.add_constraint("ReifiedEquals", "greater option",
+            model.add_labelled_constraint(as_string(_constraint_id), "gt", "ReifiedEquals", "greater option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
-            model.add_constraint("ReifiedEquals", "less option",
+            model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedEquals", "less option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! gtflag}});
         },
         [&](const reif::If & reif) {
