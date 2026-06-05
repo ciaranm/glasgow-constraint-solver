@@ -1066,12 +1066,12 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
     if (_imp->verbose_names) {
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][neg]", name_of(id));
+                string name = format("i[{}][sign]", name_of(id));
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][neg]", id.index, name_of(id));
+                string name = format("p[{}_{}][sign]", id.index, name_of(id));
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             }}
