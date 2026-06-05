@@ -86,7 +86,7 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
 auto SeqPrecedeChain::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
-    print(s, "{} seq_precede_chain (", _name);
+    print(s, "{} seq_precede_chain (", _constraint_id);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ")");

@@ -145,7 +145,7 @@ auto ParityOdd::s_exprify(const innards::ProofModel * const model) const -> stri
 {
     stringstream s;
 
-    print(s, "{} xor (", _name);
+    print(s, "{} xor (", _constraint_id);
     for (const auto & lit : _lits) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
     }

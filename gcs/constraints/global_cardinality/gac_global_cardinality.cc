@@ -632,7 +632,7 @@ auto GACGlobalCardinality::s_exprify(const ProofModel * const model) const -> st
 {
     stringstream s;
 
-    print(s, "{} gacglobalcardinality{} (", _name, _closed ? "closed" : "");
+    print(s, "{} gacglobalcardinality{} (", _constraint_id, _closed ? "closed" : "");
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") (");

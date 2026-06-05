@@ -794,7 +794,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
 auto Disjunctive2D::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
-    print(s, "{} disjunctive2d{} (", _name, _strict ? "_strict" : "");
+    print(s, "{} disjunctive2d{} (", _constraint_id, _strict ? "_strict" : "");
     for (const auto & v : _xs)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     print(s, " ) ( ");

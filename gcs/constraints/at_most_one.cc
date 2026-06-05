@@ -148,7 +148,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
 auto AtMostOne::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
-    print(s, "{} at_most_one (", _name);
+    print(s, "{} at_most_one (", _constraint_id);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_val));
@@ -198,7 +198,7 @@ auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_sta
 auto AtMostOneSmartTable::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
-    print(s, "{} at_most_one_smart_table (", _name);
+    print(s, "{} at_most_one_smart_table (", _constraint_id);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_val));

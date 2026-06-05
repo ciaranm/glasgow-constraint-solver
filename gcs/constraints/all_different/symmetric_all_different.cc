@@ -31,13 +31,13 @@ using std::make_shared;
 using std::make_unique;
 using std::map;
 using std::move;
-using std::ranges::adjacent_find;
-using std::ranges::sort;
 using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -108,11 +108,9 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
     for (size_t i = 0; i < n; ++i)
         for (size_t j = i + 1; j < n; ++j) {
             model.add_constraint("SymmetricAllDifferent", "x_i = j -> x_j = i",
-                WPBSum{} + 1_i * (_vars[i] != Integer(j) + _start)
-                    + 1_i * (_vars[j] == Integer(i) + _start) >= 1_i);
+                WPBSum{} + 1_i * (_vars[i] != Integer(j) + _start) + 1_i * (_vars[j] == Integer(i) + _start) >= 1_i);
             model.add_constraint("SymmetricAllDifferent", "x_j = i -> x_i = j",
-                WPBSum{} + 1_i * (_vars[j] != Integer(i) + _start)
-                    + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
+                WPBSum{} + 1_i * (_vars[j] != Integer(i) + _start) + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
         }
 
     _duplicate_witness = define_clique_not_equals_encoding(model, _vars);
@@ -141,12 +139,10 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
                     vector<IntegerVariableCondition> xieqvs;
                     for (const auto & var : vars)
                         xieqvs.push_back(var != v);
-                    value_am1s->emplace(v, recover_am1<IntegerVariableCondition>(
-                                               *logger, ProofLevel::Top, xieqvs,
-                                               [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
-                                                   return logger->emit(RUPProofRule{},
-                                                       WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
-                                               }));
+                    value_am1s->emplace(v, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
+                        return logger->emit(RUPProofRule{},
+                            WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
+                    }));
                 }
             });
     }
@@ -185,7 +181,7 @@ auto SymmetricAllDifferent::s_exprify(const ProofModel * const model) const -> s
 {
     stringstream s;
 
-    print(s, "{} symmetric_all_different (", _name);
+    print(s, "{} symmetric_all_different (", _constraint_id);
     for (const auto & var : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     print(s, ") {}", _start);

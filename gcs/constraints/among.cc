@@ -310,7 +310,7 @@ auto Among::s_exprify(const ProofModel * const model) const -> std::string
 {
     stringstream s;
 
-    print(s, "{} among (", _name);
+    print(s, "{} among (", _constraint_id);
     for (const auto & var : _vars) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
     }

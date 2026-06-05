@@ -645,7 +645,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 auto Cumulative::s_exprify(const ProofModel * const model) const -> string
 {
     stringstream s;
-    print(s, "{} cumulative (", _name);
+    print(s, "{} cumulative (", _constraint_id);
     for (const auto & v : _starts)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
     print(s, " ) ( ");

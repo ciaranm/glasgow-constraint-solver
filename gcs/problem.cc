@@ -158,14 +158,14 @@ auto Problem::create_state_for_new_search(
 auto Problem::post(const Constraint & c) -> void
 {
     auto cloned = c.clone();
-    cloned->set_name(NumberedConstraint{++_imp->next_constraint_number});
+    cloned->set_constraint_id(NumberedConstraint{++_imp->next_constraint_number});
     _imp->constraints.push_back(std::move(cloned));
 }
 
 auto Problem::post_named(const Constraint & c, const string & name) -> void
 {
     auto cloned = c.clone();
-    cloned->set_name(NamedConstraint{check_name(name)});
+    cloned->set_constraint_id(NamedConstraint{check_name(name)});
     _imp->constraints.push_back(std::move(cloned));
 }
 
@@ -213,6 +213,10 @@ auto Problem::create_propagators(State & state, ProofModel * const optional_proo
     Propagators result;
     for (auto & c : _imp->constraints) {
         auto cc = c->clone();
+        // clone() is deliberately id-agnostic; each post/install site sets the id.
+        // post() assigns a fresh number; here we preserve the original's, since
+        // define_proof_model builds @c[id][...] labels that must match the .scp.
+        cc->set_constraint_id(c->constraint_id());
         move(*cc).install(result, state, optional_proof_model);
     }
 

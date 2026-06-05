@@ -307,7 +307,7 @@ auto NegativeTable::s_exprify(const innards::ProofModel * const model) const -> 
 {
     stringstream s;
 
-    print(s, "{} negative_table", _name);
+    print(s, "{} negative_table", _constraint_id);
     println(s, "(");
 
     println(s, "    (");

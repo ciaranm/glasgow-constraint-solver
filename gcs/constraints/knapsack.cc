@@ -663,7 +663,7 @@ auto Knapsack::s_exprify(const innards::ProofModel * const model) const -> strin
 {
     stringstream s;
 
-    print(s, "{} knapsack\n            (", _name);
+    print(s, "{} knapsack\n            (", _constraint_id);
     for (const auto & cs : _coeffs) {
         print(s, "\n                (");
         for (const auto & c : cs)

@@ -177,7 +177,7 @@ auto VCAllDifferent::s_expr(const innards::ProofModel * const model) const -> SE
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_name)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
         SExpr::atom("all_different"),
         SExpr::list(std::move(vars))});
 }

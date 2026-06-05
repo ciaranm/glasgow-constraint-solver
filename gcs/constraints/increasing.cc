@@ -143,7 +143,7 @@ auto IncreasingChain::s_exprify(const ProofModel * const model) const -> string
         ? (_descending ? "strictly_decreasing" : "strictly_increasing")
         : (_descending ? "decreasing" : "increasing");
 
-    print(s, "{} {}", _name, keyword);
+    print(s, "{} {}", _constraint_id, keyword);
     for (const auto & v : _vars)
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
 

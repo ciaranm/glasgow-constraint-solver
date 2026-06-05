@@ -238,7 +238,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_expr(const ProofModel * const model) 
         _or_equal ? "_equal" : "",
         reif_suffix);
 
-    vector<SExpr> terms{SExpr::atom(as_string(_name)), SExpr::atom(cmp)};
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cmp)};
     if (auto cond = tracker.s_expr_term_of(_reif_cond))
         terms.push_back(std::move(*cond));
     terms.push_back(tracker.s_expr_term_of(_v1));

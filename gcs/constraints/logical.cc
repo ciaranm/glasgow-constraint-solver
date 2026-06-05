@@ -259,7 +259,7 @@ auto And::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} and (", _name);
+    print(s, "{} and (", _constraint_id);
     for (const auto & lit : _lits) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
     }
@@ -326,7 +326,7 @@ auto Or::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} or (", _name);
+    print(s, "{} or (", _constraint_id);
     for (const auto & lit : _lits) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
     }

@@ -604,7 +604,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const ProofModel * 
         }
     };
 
-    print(s, "{} element (", _name);
+    print(s, "{} element (", _constraint_id);
 
     print_array(s, *_array, print_array);
 

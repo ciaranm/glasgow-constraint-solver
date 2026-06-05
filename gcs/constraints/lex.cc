@@ -638,7 +638,7 @@ auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const innards::ProofModel * co
         _or_equal ? "_equal" : "",
         reif_suffix);
 
-    print(s, "{} {}", _name, cmp);
+    print(s, "{} {}", _constraint_id, cmp);
 
     auto cond_lit = overloaded{
         [](const reif::MustHold &) -> optional<IntegerVariableCondition> { return nullopt; },

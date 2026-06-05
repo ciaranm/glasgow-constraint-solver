@@ -97,6 +97,12 @@ auto ProofModel::advance_constraint_counter() -> ProofLineNumber
     return ProofLineNumber{++_imp->number_of_constraints.number};
 }
 
+auto ProofModel::emit_constraint_label(const string & constraint_id, const string & role) -> ProofLine
+{
+    // The leading @ is added when a ProofLineLabel is written to the stream.
+    return ProofLineLabel{"c[" + constraint_id + "]" + (role.empty() ? "" : "[" + role + "]")};
+}
+
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> std::optional<ProofLine>
 {
     WPBSum sum;
@@ -172,6 +178,37 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     names_and_ids_tracker().derive_deviewed_form_for(second, eq.lhs, /*le_half=*/false);
 
     return pair{first, second};
+}
+
+auto ProofModel::add_labelled_constraint(
+    const string & constraint_id, const string & role_le, const string & role_ge,
+    const StringLiteral & constraint_name, const StringLiteral & rule,
+    const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
+    -> pair<optional<ProofLine>, optional<ProofLine>>
+{
+    names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
+    if (half_reif)
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
+
+    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
+
+    auto le = emit_constraint_label(constraint_id, role_le);
+    _imp->opb << le << " ";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
+    _imp->opb << ";\n";
+    advance_constraint_counter();
+    // LE half: emit_inequality_to negates coefficients on emit.
+    names_and_ids_tracker().derive_deviewed_form_for(le, eq.lhs, /*le_half=*/true);
+
+    auto ge = emit_constraint_label(constraint_id, role_ge);
+    _imp->opb << ge << " ";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
+    _imp->opb << ";\n";
+    advance_constraint_counter();
+    // GE half: see the unlabelled add_constraint above for the double-negation note.
+    names_and_ids_tracker().derive_deviewed_form_for(ge, eq.lhs, /*le_half=*/false);
+
+    return pair{le, ge};
 }
 
 auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)

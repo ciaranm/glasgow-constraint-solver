@@ -269,7 +269,7 @@ auto In::s_expr(const ProofModel * const model) const -> SExpr
         vals.push_back(tracker.s_expr_term_of(v));
     for (const auto & v : _val_vals)
         vals.push_back(SExpr::atom(v.to_string()));
-    return SExpr::list({SExpr::atom(as_string(_name)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
         SExpr::atom("in"),
         tracker.s_expr_term_of(_var),
         SExpr::list(std::move(vals))});

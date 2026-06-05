@@ -190,7 +190,7 @@ auto Inverse::s_exprify(const innards::ProofModel * const model) const -> std::s
 {
     stringstream s;
 
-    print(s, "{} inverse\n          (", _name);
+    print(s, "{} inverse\n          (", _constraint_id);
     for (const auto & x : _x) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(x));
     }
