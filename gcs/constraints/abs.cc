@@ -295,8 +295,11 @@ auto Abs::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Abs::s_exprify(const innards::ProofModel * const model) const -> string
+auto Abs::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    return format("{:#}", SExpr::list({SExpr::atom(as_string(_name)), SExpr::atom("abs"), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2)}));
+    return SExpr::list({SExpr::atom(as_string(_name)),
+        SExpr::atom("abs"),
+        tracker.s_expr_term_of(_v1),
+        tracker.s_expr_term_of(_v2)});
 }

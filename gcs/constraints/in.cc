@@ -261,7 +261,7 @@ auto In::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto In::s_exprify(const ProofModel * const model) const -> string
+auto In::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
     vector<SExpr> vals;
@@ -269,5 +269,8 @@ auto In::s_exprify(const ProofModel * const model) const -> string
         vals.push_back(tracker.s_expr_term_of(v));
     for (const auto & v : _val_vals)
         vals.push_back(SExpr::atom(v.to_string()));
-    return format("{:#}", SExpr::list({SExpr::atom(as_string(_name)), SExpr::atom("in"), tracker.s_expr_term_of(_var), SExpr::list(std::move(vals))}));
+    return SExpr::list({SExpr::atom(as_string(_name)),
+        SExpr::atom("in"),
+        tracker.s_expr_term_of(_var),
+        SExpr::list(std::move(vals))});
 }
