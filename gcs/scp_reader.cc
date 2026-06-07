@@ -1,6 +1,8 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/count.hh>
+#include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
@@ -298,6 +300,30 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             // ConstantIntegerVariableID, which In folds back into a constant.
             post_constraint(problem,
                 In{resolve_variable(variables, terms[2]), resolve_variable_list(variables, terms[3], "the in value list")}, label);
+        }
+        else if (op == "element") {
+            // (label element (X0 ... Xn-1) (index off) result): result = Xs[index - off].
+            if (terms.size() != 5)
+                throw ScpReadError{"element takes (label element (array...) (index off) result)"};
+            const auto & index_pair = children_of(terms[3], "the element index");
+            if (index_pair.size() != 2)
+                throw ScpReadError{"the element index must be (index off)"};
+            // Element takes an ArrayParam, so hand it the array by value: the
+            // constraint owns it (no external storage to keep alive).
+            post_constraint(problem,
+                Element{resolve_variable(variables, terms[4]),
+                    std::pair{resolve_variable(variables, index_pair[0]), as_integer(index_pair[1])},
+                    resolve_variable_list(variables, terms[2], "the element array")},
+                label);
+        }
+        else if (op == "count") {
+            // (label count (X1 ... Xn) value how_many): how_many = #{ i : Xi = value }.
+            if (terms.size() != 5)
+                throw ScpReadError{"count takes (label count (vars...) value how_many)"};
+            post_constraint(problem,
+                Count{resolve_variable_list(variables, terms[2], "the count variable list"),
+                    resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])},
+                label);
         }
         else if (op.starts_with("less_") || op.starts_with("greater_")) {
             read_comparison(problem, variables, op, terms, label);

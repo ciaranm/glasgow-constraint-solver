@@ -571,26 +571,31 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const ProofModel * 
 {
     stringstream s;
 
-    auto print_elem = [&](auto & s, const auto & elem, const auto & index) {
+    // cake_pb_cp reads the array as a bare varc list -- position is implicit, so
+    // no per-entry index -- and each index as a space-separated (variable offset)
+    // pair, then the result: "(X0 ... Xn-1) (Y0 off0) ... Z". The offset matches
+    // our _index_starts (both subtract it: the chosen entry is Xs[val(Y) - off]).
+    auto print_elem = [&](auto & s, const auto & elem) {
         if constexpr (std::is_same_v<EntryType_, IntegerVariableID>) {
-            print(s, " {},{}", model->names_and_ids_tracker().s_expr_name_of(elem), index);
+            print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(elem));
         }
         else {
-            print(s, " {},{}", elem, index);
+            print(s, " {}", elem);
         }
     };
 
     auto print_array = [&](auto & s, const auto & arr, auto self_ref) -> void {
         using ArrayType = std::decay_t<decltype(arr)>;
 
-        // Check if we're at the innermost level (vector of EntryType_)
+        // Innermost level (a vector of EntryType_): emit the entries; in a
+        // multi-dimensional array each such row is wrapped in its own parens
+        // (cake reads element_2d's array as ((row1) (row2) ...)).
         if constexpr (std::is_same_v<typename ArrayType::value_type, EntryType_>) {
-            // Base case: print elements
             if (dimensions_ > 1) {
                 print(s, " (");
             }
-            for (size_t i = 0; i < arr.size(); ++i) {
-                print_elem(s, arr[i], i);
+            for (const auto & e : arr) {
+                print_elem(s, e);
             }
             if (dimensions_ > 1) {
                 print(s, ")");
@@ -604,14 +609,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const ProofModel * 
         }
     };
 
-    print(s, "{} element (", _constraint_id);
+    print(s, "{} {} (", _constraint_id, dimensions_ == 1 ? "element" : "element_2d");
 
     print_array(s, *_array, print_array);
 
     print(s, ")");
 
     for (size_t i = 0; i < _index_vars.size(); ++i) {
-        print(s, " ({},{})",
+        print(s, " ({} {})",
             model->names_and_ids_tracker().s_expr_name_of(_index_vars[i]),
             _index_starts[i]);
     }

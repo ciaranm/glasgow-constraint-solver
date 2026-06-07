@@ -38,9 +38,10 @@ namespace gcs
      * `.scp` written by the solver and read back here re-creates an equivalent
      * Problem; constraint labels are preserved via Problem::post_named.
      *
-     * Only a starter set of constraints is supported so far (`abs`,
-     * `all_different`, `in`); an unsupported operator raises ScpReadError rather
-     * than being silently dropped. Throws ScpReadError (or SExprParseError) on
+     * Only a subset of constraints is supported so far (`abs`, `all_different`,
+     * `in`, the comparisons, the linear forms, `equals`/`not_equals`, `element`
+     * and `count`); an unsupported operator raises ScpReadError rather than
+     * being silently dropped. Throws ScpReadError (or SExprParseError) on
      * malformed input.
      *
      * \returns A map from each variable's `.scp` name to its IntegerVariableID,
