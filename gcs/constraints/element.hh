@@ -1,9 +1,11 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_ELEMENT_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_ELEMENT_HH
 
+#include <gcs/array_param.hh>
 #include <gcs/constraint.hh>
 #include <gcs/variable_id.hh>
 
+#include <utility>
 #include <vector>
 
 namespace gcs
@@ -30,7 +32,11 @@ namespace gcs
     class NDimensionalElement : public Constraint
     {
     public:
-        using Array = const innards::MakeNDVector<EntryType_, dimensions_>::Type;
+        using ArrayData = typename innards::MakeNDVector<EntryType_, dimensions_>::Type;
+        // The handle callers pass: an owned container, a shared_ptr<const ...> to
+        // reuse one array across constraints, or a borrowed pointer to storage
+        // the caller keeps alive (the latter matches the old `Array *` API).
+        using Array = ArrayParam<ArrayData>;
         using IndexVariables = std::vector<IntegerVariableID>;
         using IndexStarts = std::vector<Integer>;
 
@@ -38,7 +44,7 @@ namespace gcs
         IntegerVariableID _result_var;
         IndexVariables _index_vars;
         IndexStarts _index_starts;
-        Array * _array;
+        Array _array;
         bool _bounds_only;
         bool _array_has_nonconstants = false;
         bool _has_empty_dim = false;
@@ -49,7 +55,7 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     protected:
-        explicit NDimensionalElement(IntegerVariableID result_var, IndexVariables, IndexStarts, Array *, bool bounds_only);
+        explicit NDimensionalElement(IntegerVariableID result_var, IndexVariables, IndexStarts, Array, bool bounds_only);
 
     public:
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
@@ -60,13 +66,13 @@ namespace gcs
     class Element : public NDimensionalElement<IntegerVariableID, 1>
     {
     public:
-        explicit Element(IntegerVariableID var, IntegerVariableID zero_idx, Array * array, bool bounds_only = false) :
-            NDimensionalElement(var, {{zero_idx}}, {{0_i}}, array, bounds_only)
+        explicit Element(IntegerVariableID var, IntegerVariableID zero_idx, Array array, bool bounds_only = false) :
+            NDimensionalElement(var, {{zero_idx}}, {{0_i}}, std::move(array), bounds_only)
         {
         }
 
-        explicit Element(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx, Array * array, bool bounds_only = false) :
-            NDimensionalElement(var, {{idx.first}}, {{idx.second}}, array, bounds_only)
+        explicit Element(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx, Array array, bool bounds_only = false) :
+            NDimensionalElement(var, {{idx.first}}, {{idx.second}}, std::move(array), bounds_only)
         {
         }
     };
@@ -74,13 +80,13 @@ namespace gcs
     class Element2D : public NDimensionalElement<IntegerVariableID, 2>
     {
     public:
-        explicit Element2D(IntegerVariableID var, IntegerVariableID zero_idx_1, IntegerVariableID zero_idx_2, Array * array, bool bounds_only = false) :
-            NDimensionalElement(var, {{zero_idx_1, zero_idx_2}}, {{0_i, 0_i}}, array, bounds_only)
+        explicit Element2D(IntegerVariableID var, IntegerVariableID zero_idx_1, IntegerVariableID zero_idx_2, Array array, bool bounds_only = false) :
+            NDimensionalElement(var, {{zero_idx_1, zero_idx_2}}, {{0_i, 0_i}}, std::move(array), bounds_only)
         {
         }
 
-        explicit Element2D(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2, Array * array, bool bounds_only = false) :
-            NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, array, bounds_only)
+        explicit Element2D(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2, Array array, bool bounds_only = false) :
+            NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, std::move(array), bounds_only)
         {
         }
     };
@@ -88,13 +94,13 @@ namespace gcs
     class ElementConstantArray : public NDimensionalElement<Integer, 1>
     {
     public:
-        explicit ElementConstantArray(IntegerVariableID var, IntegerVariableID zero_idx, Array * array, bool bounds_only = true) :
-            NDimensionalElement(var, {{zero_idx}}, {{0_i}}, array, bounds_only)
+        explicit ElementConstantArray(IntegerVariableID var, IntegerVariableID zero_idx, Array array, bool bounds_only = true) :
+            NDimensionalElement(var, {{zero_idx}}, {{0_i}}, std::move(array), bounds_only)
         {
         }
 
-        explicit ElementConstantArray(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx, Array * array, bool bounds_only = true) :
-            NDimensionalElement(var, {{idx.first}}, {{idx.second}}, array, bounds_only)
+        explicit ElementConstantArray(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx, Array array, bool bounds_only = true) :
+            NDimensionalElement(var, {{idx.first}}, {{idx.second}}, std::move(array), bounds_only)
         {
         }
     };
@@ -102,13 +108,13 @@ namespace gcs
     class Element2DConstantArray : public NDimensionalElement<Integer, 2>
     {
     public:
-        explicit Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1, IntegerVariableID idx2, Array * array, bool bounds_only = true) :
-            NDimensionalElement(var, {{idx1, idx2}}, {{0_i, 0_i}}, array, bounds_only)
+        explicit Element2DConstantArray(IntegerVariableID var, IntegerVariableID idx1, IntegerVariableID idx2, Array array, bool bounds_only = true) :
+            NDimensionalElement(var, {{idx1, idx2}}, {{0_i, 0_i}}, std::move(array), bounds_only)
         {
         }
 
-        explicit Element2DConstantArray(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2, Array * array, bool bounds_only = true) :
-            NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, array, bounds_only)
+        explicit Element2DConstantArray(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2, Array array, bool bounds_only = true) :
+            NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, std::move(array), bounds_only)
         {
         }
     };
