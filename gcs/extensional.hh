@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_EXTENSIONAL_HH
 
+#include <gcs/array_param.hh>
 #include <gcs/integer.hh>
 
 #include <memory>
@@ -83,8 +84,7 @@ namespace gcs
      * \sa gcs::Table
      * \ingroup Extensional
      */
-    using ExtensionalTuples = std::variant<SimpleTuples, SharedSimpleTuples,
-        WildcardTuples, SharedWildcardTuples>;
+    using ExtensionalTuples = std::variant<ArrayParam<SimpleTuples>, ArrayParam<WildcardTuples>>;
 }
 
 #endif

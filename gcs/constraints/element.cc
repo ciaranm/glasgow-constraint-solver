@@ -72,11 +72,11 @@ namespace
 }
 
 template <typename EntryType_, unsigned dimensions_>
-NDimensionalElement<EntryType_, dimensions_>::NDimensionalElement(IntegerVariableID var, IndexVariables i, IndexStarts s, Array * a, bool b) :
+NDimensionalElement<EntryType_, dimensions_>::NDimensionalElement(IntegerVariableID var, IndexVariables i, IndexStarts s, Array a, bool b) :
     _result_var(var),
     _index_vars(move(i)),
     _index_starts(move(s)),
-    _array(a),
+    _array(move(a)),
     _bounds_only(b)
 {
     check_array_dimensions(*_array, _array->size());

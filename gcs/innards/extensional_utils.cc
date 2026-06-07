@@ -48,7 +48,7 @@ namespace
     }
 
     template <typename T_>
-    auto get_tuple_value(const std::shared_ptr<const T_> & t, unsigned tuple_idx, unsigned entry)
+    auto get_tuple_value(const ArrayParam<T_> & t, unsigned tuple_idx, unsigned entry)
     {
         return get_tuple_value(*t, tuple_idx, entry);
     }

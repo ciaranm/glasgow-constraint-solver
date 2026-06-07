@@ -87,15 +87,9 @@ namespace
     }
 
     template <typename T_>
-    auto depointinate(const std::shared_ptr<const T_> & t) -> const T_ &
+    auto depointinate(const ArrayParam<T_> & t) -> const T_ &
     {
         return *t;
-    }
-
-    template <typename T_>
-    auto depointinate(const T_ & t) -> const T_ &
-    {
-        return t;
     }
 
     auto tuple_entry_as_string(Integer i) -> string

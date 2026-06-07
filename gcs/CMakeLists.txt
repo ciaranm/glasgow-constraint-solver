@@ -132,6 +132,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(problem_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME problem_test COMMAND $<TARGET_FILE:problem_test>)
 
+    add_executable(array_param_test array_param_test.cc)
+    target_link_libraries(array_param_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME array_param_test COMMAND $<TARGET_FILE:array_param_test>)
+
     add_executable(abs_test constraints/abs_test.cc)
     add_executable(all_different_test constraints/all_different_test.cc)
     add_executable(all_different_except_test constraints/all_different/all_different_except_test.cc)
