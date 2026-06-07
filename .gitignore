@@ -11,6 +11,8 @@ Doxyfile
 *.pbp
 *.varmap
 *.scp
+# ... except the curated workflow-2 regression cases, which are source, not generated:
+!verified_encodings/scp_cases/*.scp
 *~
 XCSP3-CPP-Parser
 generator
