@@ -16,14 +16,31 @@ function(add_scp_chain_test case mode)
     set_tests_properties(scp_chain_${case} PROPERTIES SKIP_RETURN_CODE 77)
 endfunction()
 
-# strict: the solver's OPB matches cake's by label, exactly.
-add_scp_chain_test(abs_unsat            strict)
-add_scp_chain_test(equals_unsat         strict)
-add_scp_chain_test(less_equal_sat       strict)
-add_scp_chain_test(less_equal_unsat     strict)
-add_scp_chain_test(greater_equal_unsat  strict)
-add_scp_chain_test(lin_equals_unsat     strict)
-add_scp_chain_test(lin_less_equal_unsat strict)
+# strict: the solver's OPB matches cake's by label, exactly. Each family carries
+# both a refutation (UNSAT) and a complete-enumeration (SAT) case where it can,
+# since those are different proof shapes; the strict ops, multi-constraint and
+# negative-domain cases widen the encoding paths exercised.
+add_scp_chain_test(abs_unsat                strict)
+add_scp_chain_test(abs_sat                  strict)
+add_scp_chain_test(equals_unsat             strict)
+add_scp_chain_test(equals_sat               strict)
+add_scp_chain_test(less_equal_sat           strict)
+add_scp_chain_test(less_equal_unsat         strict)
+add_scp_chain_test(less_than_sat            strict)
+add_scp_chain_test(less_than_unsat          strict)
+add_scp_chain_test(greater_equal_unsat      strict)
+add_scp_chain_test(greater_equal_sat        strict)
+add_scp_chain_test(greater_than_unsat       strict)
+add_scp_chain_test(greater_equal_neg_unsat  strict)  # two's-complement negative domains
+add_scp_chain_test(lin_equals_unsat         strict)
+add_scp_chain_test(lin_equals_sat           strict)
+add_scp_chain_test(lin_equals_neg_coeff_sat strict)  # negative coefficient
+add_scp_chain_test(lin_equals_3var_sat      strict)  # wider sum (3 terms)
+add_scp_chain_test(lin_less_equal_unsat     strict)
+add_scp_chain_test(lin_less_equal_sat       strict)
+add_scp_chain_test(lin_greater_equal_unsat  strict)
+add_scp_chain_test(multi_comparison_unsat   strict)  # two interacting comparisons
+add_scp_chain_test(multi_mixed_unsat        strict)  # comparison + linear together
 
 # aux: matches modulo a constraint-local selector flag's *name* -- cake names
 # not_equals' flag b[name][ne], the solver f[N][gt], but with the same polarity,
