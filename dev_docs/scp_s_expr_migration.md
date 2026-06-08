@@ -46,9 +46,10 @@ instead of a string), then finish the cutover:
      `(name op ...)` *with* outer parens, so the writer double-wraps it to
      `((name op ...))`. The bridge preserves this faithfully today; fix it when
      migrating arithmetic (return the body, or a single list).
-   - **`element` index form `_4,0`** — the comma-joined `elem,idx` atom is
-     suspect and likely to change; decide its structured form when migrating
-     `element`.
+   - **`element`** — the old comma-joined `elem,idx` atoms (and `(var,offset)`
+     index) were wrong: `cake_pb_cp` wants a bare varc list `(X0 ... Xn-1)` and a
+     space-separated `(var offset)` index. `s_exprify()` now emits that form (and
+     `element_2d` for the 2-D case); carry it over when migrating to `s_expr()`.
    - **Multi-line tabular constraints** (`table`, `smart_table`, `regular`,
      `knapsack`, …) currently emit pretty multi-line strings; via the bridge
      these are already canonicalised to one line. Confirm that's acceptable when
@@ -70,7 +71,7 @@ instead of a string), then finish the cutover:
 
 all_different_except, symmetric_all_different, all_equal, among, arithmetic
 (Plus/Minus/Times/Div/Mod/Power — note double-paren above), at_most_one, circuit,
-count, cumulative, disjunctive, disjunctive_2d, element (comma form), equals,
+count, cumulative, disjunctive, disjunctive_2d, element, equals,
 bounds/gac global_cardinality, increasing, inverse, knapsack, lex,
 lex_smart_table, linear_equality, linear_inequality, logical, min_max, minus,
 mult_bc, n_value, parity, plus, regular, seq_precede_chain, smart_table,

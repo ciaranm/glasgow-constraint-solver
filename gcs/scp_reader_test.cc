@@ -1,6 +1,8 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/count.hh>
+#include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/linear.hh>
@@ -24,6 +26,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 using namespace gcs;
 
@@ -31,6 +34,7 @@ using std::map;
 using std::set;
 using std::string;
 using std::string_view;
+using std::vector;
 
 namespace
 {
@@ -216,6 +220,55 @@ TEST_CASE("read_scp: equals constraints survive write -> read -> write unchanged
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_eq_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: element enumerates correctly")
+{
+    const long long arr[] = {5, 7, 9, 11};
+
+    // R = arr[I], I in 0..3 (offset 0).
+    for (const auto & s : enumerate("( ( (R 0 15) (I 0 3) ) ( (_1 element (5 7 9 11) (I 0) R) ) )"))
+        CHECK(s.at("R") == arr[s.at("I")]);
+
+    // With an offset of 1, I in 1..4 selects arr[I - 1].
+    for (const auto & s : enumerate("( ( (R 0 15) (I 1 4) ) ( (_1 element (5 7 9 11) (I 1) R) ) )"))
+        CHECK(s.at("R") == arr[s.at("I") - 1]);
+
+    // A variable array: R = (I == 0 ? A : B).
+    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (R 0 2) (I 0 1) ) ( (_1 element (A B) (I 0) R) ) )"))
+        CHECK(s.at("R") == (s.at("I") == 0 ? s.at("A") : s.at("B")));
+}
+
+TEST_CASE("read_scp: count enumerates correctly")
+{
+    // K = #{ v in (A, B, C) : v == V }.
+    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) (V 0 2) (K 0 3) ) ( (_1 count (A B C) V K) ) )")) {
+        auto k = (s.at("A") == s.at("V")) + (s.at("B") == s.at("V")) + (s.at("C") == s.at("V"));
+        CHECK(s.at("K") == k);
+    }
+}
+
+TEST_CASE("read_scp: element and count survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto a = original.create_integer_variable(0_i, 2_i, "A");
+    auto b = original.create_integer_variable(0_i, 2_i, "B");
+    auto c = original.create_integer_variable(0_i, 2_i, "C");
+    auto r = original.create_integer_variable(0_i, 2_i, "R");
+    auto i = original.create_integer_variable(0_i, 2_i, "I");
+    auto v = original.create_integer_variable(0_i, 2_i, "V");
+    auto k = original.create_integer_variable(0_i, 3_i, "K");
+    vector<IntegerVariableID> arr{a, b, c};
+    original.post(Element{r, {i, 0_i}, &arr}); // arr outlives the prove below
+    original.post(Count{{a, b, c}, v, k});
+    auto scp_a = prove_to_scp(original, "scp_reader_elemcount_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_elemcount_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());
