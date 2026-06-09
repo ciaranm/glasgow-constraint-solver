@@ -584,6 +584,19 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             }
         }
     }
+
+    // Laminar containment (Phase A): symmetric to need_invar -- link this new eq atom to every
+    // existing range that contains it, so a reject of that range forward-propagates ~(id == v).
+    if (_imp->logger)
+        if (auto rit = _imp->invars_that_exist.find(id); rit != _imp->invars_that_exist.end())
+            for (const auto & range_entry : rit->second) {
+                auto [a, b] = range_entry.first;
+                if (a <= v && v <= b)
+                    visit([&](const auto & id) {
+                        _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * (id != v) + 1_i * range_entry.second.first >= 1_i, ProofLevel::Top);
+                    },
+                        id);
+            }
 }
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
@@ -762,7 +775,7 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
 
     // A range literal is a "wide equality literal": [lo, hi] <=> (id >= lo) AND NOT (id >= hi+1).
     // Ensure both order-encoding cuts exist; need_gevar also threads them into the order chain
-    // (Inv1), which is the only linking range-literal propagation needs -- no covering required.
+    // (Inv1), which gives all range<->range and range<->order RUP deductions.
     need_gevar(id, lo);
     need_gevar(id, hi + 1_i);
 
@@ -776,6 +789,28 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
             WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, flag, ProofLevel::Top);
     },
         id);
+
+    // Laminar containment (Phase A, over-linked): link this range to every existing NESTED
+    // literal, so a reject decision (~flag) forward-propagates ~(contained literal). The chain
+    // alone does not give this (a ~[range] decision does not propagate without a handle), but it
+    // is needed for backtrack clauses over interval-reject branching. Each edge is RUP from the
+    // boundary-EO + chain, so emitted as a rup line at Top. Over-linked: all nested pairs, both
+    // ranges and eq atoms (the singleton leaves); overlapping non-nested ranges get no edge.
+    for (const auto & [other_bounds, other_flag_and_lines] : for_this_var) {
+        auto [a, b] = other_bounds;
+        const auto & other_flag = other_flag_and_lines.first;
+        if (lo <= a && b <= hi) // other range is inside the new one: other -> new
+            _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * ! other_flag + 1_i * flag >= 1_i, ProofLevel::Top);
+        else if (a <= lo && hi <= b) // new range is inside the other: new -> other
+            _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * ! flag + 1_i * other_flag >= 1_i, ProofLevel::Top);
+    }
+    if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
+        for (const auto & eq_entry : eqit->second)
+            if (lo <= eq_entry.first && eq_entry.first <= hi) // eq atom inside the range: (id == v) -> flag
+                visit([&](const auto & id) {
+                    _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * (id != eq_entry.first) + 1_i * flag >= 1_i, ProofLevel::Top);
+                },
+                    id);
 
     for_this_var.emplace(pair{lo, hi}, pair{flag, lines});
     return flag;

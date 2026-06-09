@@ -235,8 +235,16 @@ namespace
                         std::swap(i, j);
                     auto lo = values.at(i);
                     auto hi = values.at(j);
-                    co_yield IntegerVariableRangeGuess{*svar, lo, hi, false};
-                    co_yield IntegerVariableRangeGuess{*svar, lo, hi, true};
+                    if (lo == hi) {
+                        // A width-1 interval is just an equality atom; branch on it directly so
+                        // the decision already lives on the atom constraints reason with.
+                        co_yield var != lo;
+                        co_yield var == lo;
+                    }
+                    else {
+                        co_yield IntegerVariableRangeGuess{*svar, lo, hi, false};
+                        co_yield IntegerVariableRangeGuess{*svar, lo, hi, true};
+                    }
                 }
                 else {
                     uniform_int_distribution<size_t> dist(0, values.size() - 1);

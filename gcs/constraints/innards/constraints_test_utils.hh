@@ -344,19 +344,17 @@ namespace gcs::test_innards
         seed_storage() = std::nullopt;
     }
 
-    /// Build the random branching pair, honouring --seed if set.
-    ///
-    /// NB: value_order::reject_random_interval cannot be the default yet. It
-    /// verifies for bound-based constraints (see range_branch_test) but breaks
-    /// backtrack-clause RUP for constraints whose conflicts depend on interior
-    /// holes (Count, among, element-var): an interval reject that moves no bound
-    /// leaves a hole that unit propagation cannot see, so the backtrack clause is
-    /// not RUP-derivable (an Inv3 violation, not fixable by covering constraints).
+    /// Build the random branching pair, honouring --seed if set. Uses
+    /// reject_random_interval so every constraint test exercises (and VeriPB-checks)
+    /// interval/range branching, including backtrack clauses over interval-reject
+    /// decisions. This relies on the laminar containment edges maintained by
+    /// need_invar so an interval reject propagates to the (eq/range) atoms a
+    /// constraint's conflict depends on.
     inline auto random_branch_with_optional_seed(const Problem & p)
     {
         if (auto seed = get_seed())
-            return branch_with(variable_order::random(p, *seed), value_order::random_out(*seed + 1));
-        return branch_with(variable_order::random(p), value_order::random_out());
+            return branch_with(variable_order::random(p, *seed), value_order::reject_random_interval(*seed + 1));
+        return branch_with(variable_order::random(p), value_order::reject_random_interval());
     }
 
     template <typename SolutionCallback_, typename TraceCallback_>
