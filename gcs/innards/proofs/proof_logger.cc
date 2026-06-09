@@ -7,6 +7,8 @@
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/state.hh>
 
+#include <cstddef>
+#include <cstdlib>
 #include <deque>
 #include <fstream>
 #include <sstream>
@@ -40,6 +42,65 @@ using namespace gcs::innards;
 namespace
 {
     const auto INDENT_WIDTH = 5;
+
+    // If `lit` is `var != v` on a plain (non-view, non-constant) integer variable,
+    // return (var, v); otherwise nullopt. Used to coalesce runs of domain holes in a
+    // reason into a single range literal.
+    [[nodiscard]] auto as_simple_not_equal(const ProofLiteralOrFlag & lit) -> std::optional<std::pair<SimpleIntegerVariableID, Integer>>
+    {
+        const auto * pl = std::get_if<ProofLiteral>(&lit);
+        if (! pl)
+            return std::nullopt;
+        const auto * l = std::get_if<Literal>(pl);
+        if (! l)
+            return std::nullopt;
+        const auto * cond = std::get_if<IntegerVariableCondition>(l);
+        if (! cond || cond->op != VariableConditionOperator::NotEqual)
+            return std::nullopt;
+        const auto * svar = std::get_if<SimpleIntegerVariableID>(&cond->var);
+        if (! svar)
+            return std::nullopt;
+        return std::pair{*svar, cond->value};
+    }
+
+    // Optionally coalesce a maximal run of `var != lo, var != lo+1, ..., var != hi` for a
+    // plain variable into a single negated range literal ~[lo,hi]. Off by default; enabled
+    // by the GCS_RANGE_REASONS environment variable. This is semantically transparent --
+    // the range literal is a wide equality literal over the same two order cuts, so every
+    // reasoned inference's RUP check is unaffected; it only shrinks the reason (and the
+    // per-value eq vars it would otherwise need). The fixed run-length threshold is a
+    // placeholder for the Stage 5 cost policy. Applied wherever a reason is resolved.
+    auto coalesce_holes_in_reason(NamesAndIDsTracker & tracker, Reason & reason) -> void
+    {
+        static const bool enabled = std::getenv("GCS_RANGE_REASONS") != nullptr;
+        static const long long min_run_to_coalesce = 3;
+        if (! enabled)
+            return;
+
+        Reason coalesced;
+        for (std::size_t i = 0; i < reason.size();) {
+            if (auto neq = as_simple_not_equal(reason[i])) {
+                auto [var, lo] = *neq;
+                auto hi = lo;
+                std::size_t j = i + 1;
+                for (; j < reason.size(); ++j) {
+                    auto next = as_simple_not_equal(reason[j]);
+                    if (next && next->first == var && next->second == hi + 1_i)
+                        hi = next->second;
+                    else
+                        break;
+                }
+                if ((hi - lo).raw_value + 1 >= min_run_to_coalesce) {
+                    coalesced.emplace_back(! tracker.need_invar(var, lo, hi));
+                    i = j;
+                    continue;
+                }
+            }
+            coalesced.emplace_back(reason[i]);
+            ++i;
+        }
+        reason = std::move(coalesced);
+    }
 
     [[nodiscard]] auto deview(const VariableConditionFrom<ViewOfIntegerVariableID> & cond) -> VariableConditionFrom<SimpleIntegerVariableID>
     {
@@ -265,6 +326,9 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 reason_literals = reason();
 
             if (reason_literals)
+                coalesce_holes_in_reason(names_and_ids_tracker(), *reason_literals);
+
+            if (reason_literals)
                 names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
             if (! is_literally_true(lit)) {
@@ -287,6 +351,9 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             optional<Reason> reason_literals;
             if (reason)
                 reason_literals = reason();
+
+            if (reason_literals)
+                coalesce_holes_in_reason(names_and_ids_tracker(), *reason_literals);
 
             HalfReifyOnConjunctionOf reif{};
             if (reason_literals) {
@@ -325,6 +392,9 @@ auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> Reason
     optional<Reason> reason_literals;
     if (reason)
         reason_literals = reason();
+
+    if (reason_literals)
+        coalesce_holes_in_reason(names_and_ids_tracker(), *reason_literals);
 
     if (reason_literals)
         names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
@@ -421,6 +491,8 @@ auto ProofLogger::emit_under_reason(
     optional<Reason> reason_literals;
     if (reason)
         reason_literals = reason();
+    if (reason_literals)
+        coalesce_holes_in_reason(names_and_ids_tracker(), *reason_literals);
     if (reason_literals)
         names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
