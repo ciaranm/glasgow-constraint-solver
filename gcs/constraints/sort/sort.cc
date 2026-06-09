@@ -158,9 +158,117 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model,
     return w;
 }
 
+auto gcs::innards::define_sort_proof_model_perm(ProofModel & model,
+    const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y) -> SortPermWitness
+{
+    auto n = x.size();
+    SortPermWitness w;
+    w.p.assign(n, vector<ProofFlag>(n));
+
+    // Permutation-based encoding using binary p[i][j] flags.
+    //
+    // p[i][j] = 1 means "x[i] is placed at sorted position j (y[j] = x[i])".
+    // The doubly-stochastic constraints make p a valid permutation, and the
+    // channel certifies the placement. The propagation proofs use p[i][j]
+    // directly via pigeonhole counting pols — no geqvar/eqvar needed.
+    //
+    // For solution verification (VeriPB solx), p must be UP-determinable from x.
+    // We achieve this via the stable-rank construction: before[ip][i] is fully
+    // reified against the x comparison, rank[i][j] = "Σ before = j" is implied
+    // by the forward constraints + at-least-one, and ~p[i][j] + rank[i][j] >= 1
+    // (the p-rank link) combined with row at-least-one forces p[i][j] = 1 iff
+    // rank[i][j] = 1. Because rank is uniquely determined by x, so is p. This
+    // is the reviewer's "define the flags before introducing the order" insight
+    // applied directly to the OPB model — no dom step required.
+
+    // y is sorted into non-decreasing order.
+    for (size_t i = 0; i + 1 < n; ++i)
+        model.add_constraint("Sort", "y non-decreasing",
+            WPBSum{} + 1_i * y[i] + -1_i * y[i + 1] <= 0_i);
+
+    // before[ip][i]: x[ip] comes before x[i] in the stable order.
+    // Fully reified against the x comparison (two-sided), so UP can pin
+    // before from x at solution-check time.
+    vector<vector<ProofFlag>> bef(n, vector<ProofFlag>(n));
+    for (size_t i = 0; i < n; ++i)
+        for (size_t ip = 0; ip < n; ++ip) {
+            if (ip == i) continue;
+            auto bound = (ip < i) ? 0_i : -1_i;
+            bef[ip][i] = model.create_proof_flag("sort_bef");
+            model.add_two_way_reified_constraint("Sort", "stable before",
+                WPBSum{} + 1_i * x[ip] + -1_i * x[i] <= bound, bef[ip][i]);
+        }
+
+    // rank[i][j]: "exactly j before-flags for row i are set" (stable rank of x[i] is j).
+    // Forward-ge and forward-le constrain rank=1 to imply Σ before = j.
+    // The at-least-one asserts that some rank is 1, which UP resolves to the
+    // unique j* satisfying Σ before = j* (once before flags are fixed from x).
+    vector<vector<ProofFlag>> rank(n, vector<ProofFlag>(n));
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            rank[i][j] = model.create_proof_flag("sort_rank");
+            // rank[i][j]=1 → Σ_{ip≠i} bef[ip][i] ≥ j
+            {
+                WPBSum s;
+                s += Integer{static_cast<long long>(n) - 1} * !rank[i][j];
+                for (size_t ip = 0; ip < n; ++ip)
+                    if (ip != i) s += 1_i * bef[ip][i];
+                model.add_constraint("Sort", "rank forward-ge",
+                    move(s) >= Integer{static_cast<long long>(j)});
+            }
+            // rank[i][j]=1 → Σ_{ip≠i} bef[ip][i] ≤ j  (equiv. Σ ~bef ≥ n-1-j)
+            {
+                WPBSum s;
+                s += Integer{static_cast<long long>(n) - 1} * !rank[i][j];
+                for (size_t ip = 0; ip < n; ++ip)
+                    if (ip != i) s += 1_i * !bef[ip][i];
+                model.add_constraint("Sort", "rank forward-le",
+                    move(s) >= Integer{static_cast<long long>(n) - 1 - static_cast<long long>(j)});
+            }
+        }
+        // At least one rank is 1 for each i. (UP resolves which one from before flags.)
+        WPBSum al1;
+        for (size_t j = 0; j < n; ++j) al1 += 1_i * rank[i][j];
+        model.add_constraint("Sort", "rank al1", move(al1) >= 1_i);
+    }
+
+    // p-rank link: if rank[i][j] = 0 (wrong rank), p[i][j] must be 0.
+    // Combined with the row at-least-one below, UP forces p[i][j*] = 1
+    // for the unique j* with rank[i][j*] = 1.
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = 0; j < n; ++j) {
+            w.p[i][j] = model.create_proof_flag("sort_p");
+            model.add_constraint("Sort", "p-rank link",
+                WPBSum{} + 1_i * !w.p[i][j] + 1_i * rank[i][j] >= 1_i);
+        }
+
+    // Doubly-stochastic: each row and column of p sums to exactly 1.
+    for (size_t i = 0; i < n; ++i) {
+        WPBSum row;
+        for (size_t j = 0; j < n; ++j) row += 1_i * w.p[i][j];
+        auto [le, ge] = model.add_constraint("Sort", "p row = 1", move(row) == 1_i);
+        w.row_al1.push_back(ge.value()); // Σ_j p[i][j] >= 1
+    }
+    for (size_t j = 0; j < n; ++j) {
+        WPBSum col;
+        for (size_t i = 0; i < n; ++i) col += 1_i * w.p[i][j];
+        auto [le, ge] = model.add_constraint("Sort", "p col = 1", move(col) == 1_i);
+        w.col_am1.push_back(le.value()); // -Σ_i p[i][j] >= -1 (at-most-one)
+    }
+
+    // Channel: p[i][j] implies x[i] = y[j].
+    for (size_t i = 0; i < n; ++i)
+        for (size_t j = 0; j < n; ++j)
+            model.add_constraint("Sort", "p channel",
+                WPBSum{} + 1_i * y[j] + -1_i * x[i] == 0_i,
+                HalfReifyOnConjunctionOf{{w.p[i][j]}});
+
+    return w;
+}
+
 auto Sort::define_proof_model(ProofModel & model) -> void
 {
-    _witness = define_sortedness_proof_model(model, _x, _y);
+    _witness = define_sort_proof_model_perm(model, _x, _y);
 }
 
 namespace
@@ -1098,9 +1206,796 @@ auto gcs::innards::install_sortedness_propagator(Propagators & propagators,
         triggers);
 }
 
+namespace
+{
+    // Propagation proof for the permutation-based Sort encoding. Uses p[i][j]
+    // binary flags directly: exclusions are channel RUPs, Hall witnesses are
+    // counting pols over the doubly-stochastic row_al1 / col_am1 lines. No
+    // pivot bridge, no before/transitivity chains, no geqvar/eqvar machinery.
+    template <typename Inference_>
+    auto propagate_sortedness_perm(
+        const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y,
+        const vector<vector<ProofFlag>> & p,
+        const vector<ProofLine> & row_al1, const vector<ProofLine> & col_am1,
+        const State & state, Inference_ & inference, ProofLogger * const logger) -> void
+    {
+        auto n = x.size();
+
+        vector<long long> lx(n), ux(n), oly(n), ouy(n), ly(n), uy(n), olx(n), oux(n);
+        for (size_t i = 0; i < n; ++i) {
+            auto [lo, hi] = state.bounds(x[i]);
+            lx[i] = olx[i] = lo.raw_value;
+            ux[i] = oux[i] = hi.raw_value;
+        }
+        for (size_t j = 0; j < n; ++j) {
+            auto [lo, hi] = state.bounds(y[j]);
+            ly[j] = oly[j] = lo.raw_value;
+            uy[j] = ouy[j] = hi.raw_value;
+        }
+
+        vector<IntegerVariableID> all_vars = x;
+        all_vars.insert(all_vars.end(), y.begin(), y.end());
+        auto reason = bounds_reason(state, all_vars);
+
+        // Normalize y ranges.
+        for (size_t j = 1; j < n; ++j)
+            ly[j] = std::max(ly[j], ly[j - 1]);
+        for (size_t j = n - 1; j-- > 0;)
+            uy[j] = std::min(uy[j], uy[j + 1]);
+        for (size_t j = 0; j < n; ++j)
+            if (ly[j] > uy[j]) {
+                size_t k1 = 0, k2 = j;
+                for (size_t k = 0; k <= j; ++k)
+                    if (oly[k] == ly[j]) { k1 = k; break; }
+                for (size_t k = j; k < n; ++k)
+                    if (ouy[k] == uy[j]) { k2 = k; break; }
+                inference.contradiction(logger,
+                    JustifyExplicitlyThenRUP{[&y, k1, k2, V = uy[j], logger](const ReasonFunction &) {
+                        for (size_t m = k1; m < k2; ++m)
+                            logger->emit(RUPProofRule{},
+                                WPBSum{} + 1_i * (y[m] < Integer{V + 1}) + 1_i * (y[m + 1] >= Integer{V + 1}) >= 1_i,
+                                ProofLevel::Temporary);
+                    }},
+                    reason);
+            }
+
+        vector<size_t> lo_i(n), hi_i(n);
+        for (size_t i = 0; i < n; ++i) {
+            lo_i[i] = static_cast<size_t>(std::lower_bound(uy.begin(), uy.end(), lx[i]) - uy.begin());
+            hi_i[i] = static_cast<size_t>(std::upper_bound(ly.begin(), ly.end(), ux[i]) - ly.begin());
+        }
+
+        // find_band: same as before.
+        auto find_band = [n](const vector<size_t> & lo, const vector<size_t> & hi)
+            -> std::tuple<vector<size_t>, long long, long long> {
+            for (long long a = 0; a <= static_cast<long long>(n); ++a)
+                for (long long b = a - 1; b < static_cast<long long>(n); ++b) {
+                    vector<size_t> cand;
+                    for (size_t i = 0; i < n; ++i)
+                        if (static_cast<long long>(lo[i]) >= a && static_cast<long long>(hi[i]) <= b + 1)
+                            cand.push_back(i);
+                    if (static_cast<long long>(cand.size()) > b - a + 1)
+                        return {move(cand), a, b};
+                }
+            return {{}, 0, -1};
+        };
+
+        // Pigeonhole contradiction: S elements into [fa,fb] band, |S| > fb-fa+1.
+        // Exclusions (RUP from channel + normalized y bounds) + restricted_al1 per
+        // i in S (RUP from row_al1 + exclusions) + counting pol vs col_am1.
+        auto fail_hall_perm = [&](const vector<size_t> & S, long long fa, long long fb,
+                                   const ReasonFunction & reason_fn, ProofLogger * logger_,
+                                   const vector<long long> & ly_, const vector<long long> & uy_,
+                                   // goal_lit: extra literal ORed into exclusion/restricted lines
+                                   // (empty literal for contradiction; goal for bound inferences)
+                                   std::optional<WPBSum> goal_prefix) {
+            // Normalized y bounds as RUPs (NUY / NLY).
+            for (size_t k = n; k-- > 0;)
+                logger_->emit_rup_proof_line_under_reason(reason_fn,
+                    WPBSum{} + 1_i * y[k] <= Integer{uy_[k]}, ProofLevel::Temporary);
+            for (size_t k = 0; k < n; ++k)
+                logger_->emit_rup_proof_line_under_reason(reason_fn,
+                    WPBSum{} + 1_i * y[k] >= Integer{ly_[k]}, ProofLevel::Temporary);
+
+            vector<ProofLine> restricted(S.size());
+            for (const auto & [idx, i] : enumerate(S)) {
+                for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                    if (k >= fa && k <= fb) continue;
+                    WPBSum excl;
+                    if (goal_prefix) excl = *goal_prefix;
+                    excl += 1_i * !p[i][static_cast<size_t>(k)];
+                    logger_->emit_rup_proof_line_under_reason(reason_fn,
+                        move(excl) >= 1_i, ProofLevel::Temporary);
+                }
+                WPBSum in_band;
+                if (goal_prefix) in_band = *goal_prefix;
+                for (long long k = fa; k <= fb; ++k)
+                    in_band += 1_i * p[i][static_cast<size_t>(k)];
+                restricted[idx] = logger_->emit_rup_proof_line_under_reason(reason_fn,
+                    move(in_band) >= 1_i, ProofLevel::Temporary);
+            }
+            if (fb >= fa) {
+                PolBuilder pol;
+                for (auto l : restricted) pol.add(l);
+                for (long long k = fa; k <= fb; ++k)
+                    pol.add(col_am1[static_cast<size_t>(k)]);
+                pol.emit(*logger_, ProofLevel::Temporary);
+            }
+        };
+
+        auto fail_hall = [&]() {
+            auto [S, fa, fb] = find_band(lo_i, hi_i);
+            if (S.empty())
+                throw UnexpectedException{"Sort: no Hall violator"};
+            inference.contradiction(logger,
+                JustifyExplicitlyThenRUP{[&, S, fa, fb](const ReasonFunction & rfn) {
+                    fail_hall_perm(S, fa, fb, rfn, logger, ly, uy, std::nullopt);
+                }},
+                reason);
+        };
+
+        // Glover down-sweep (phi) and up-sweep (phi2) -- same algorithm as before.
+        vector<size_t> by_lx(n);
+        std::iota(by_lx.begin(), by_lx.end(), size_t{0});
+        std::sort(by_lx.begin(), by_lx.end(), [&](size_t a, size_t b) { return lx[a] < lx[b]; });
+        vector<size_t> phi(n);
+        {
+            priority_queue<pair<long long, size_t>, vector<pair<long long, size_t>>, greater<>> pq;
+            size_t s = 0;
+            for (size_t j = 0; j < n; ++j) {
+                while (s < n && lx[by_lx[s]] <= uy[j]) { pq.push({ux[by_lx[s]], by_lx[s]}); ++s; }
+                if (pq.empty()) fail_hall();
+                auto [ub_i, i] = pq.top(); pq.pop();
+                if (ub_i < ly[j]) fail_hall();
+                phi[j] = i;
+            }
+        }
+        vector<size_t> by_ux(n);
+        std::iota(by_ux.begin(), by_ux.end(), size_t{0});
+        std::sort(by_ux.begin(), by_ux.end(), [&](size_t a, size_t b) { return ux[a] > ux[b]; });
+        vector<size_t> phi2(n);
+        {
+            priority_queue<pair<long long, size_t>> pq;
+            size_t s = 0;
+            for (size_t k = 0; k < n; ++k) {
+                size_t j = n - 1 - k;
+                while (s < n && ux[by_ux[s]] >= ly[j]) { pq.push({lx[by_ux[s]], by_ux[s]}); ++s; }
+                if (pq.empty()) fail_hall();
+                auto [lb_i, i] = pq.top(); pq.pop();
+                if (lb_i > uy[j]) fail_hall();
+                phi2[j] = i;
+            }
+        }
+
+        vector<long long> nly(n), nuy(n);
+        for (size_t j = 0; j < n; ++j) {
+            nuy[j] = std::min(ux[phi[j]], uy[j]);
+            nly[j] = std::max(lx[phi2[j]], ly[j]);
+        }
+
+        // SCC / x-bounds (same Tarjan as before).
+        auto N = 2 * n;
+        vector<long long> index(N, -1), lowlink(N, 0);
+        vector<char> on_stack(N, 0);
+        vector<long long> comp(N, -1);
+        vector<size_t> tarjan_stack;
+        long long next_index = 0, next_comp = 0;
+        function<void(size_t)> strong_connect = [&](size_t v) {
+            index[v] = lowlink[v] = next_index++;
+            tarjan_stack.push_back(v);
+            on_stack[v] = 1;
+            auto visit = [&](size_t w) {
+                if (index[w] == -1) { strong_connect(w); lowlink[v] = std::min(lowlink[v], lowlink[w]); }
+                else if (on_stack[w]) lowlink[v] = std::min(lowlink[v], index[w]);
+            };
+            if (v < n) { for (size_t j = lo_i[v]; j < hi_i[v]; ++j) visit(n + j); }
+            else { visit(phi[v - n]); }
+            if (lowlink[v] == index[v]) {
+                while (true) {
+                    auto w = tarjan_stack.back(); tarjan_stack.pop_back();
+                    on_stack[w] = 0; comp[w] = next_comp;
+                    if (w == v) break;
+                }
+                ++next_comp;
+            }
+        };
+        for (size_t v = 0; v < N; ++v)
+            if (index[v] == -1) strong_connect(v);
+
+        vector<long long> nlx(n), nux(n);
+        vector<size_t> jl_in(n), jh_in(n);
+        for (size_t i = 0; i < n; ++i) {
+            auto c = comp[i];
+            size_t jl = n, jh = 0; bool found = false;
+            for (size_t j = lo_i[i]; j < hi_i[i]; ++j)
+                if (comp[n + j] == c) {
+                    if (! found) { jl = j; found = true; }
+                    jh = j;
+                }
+            jl_in[i] = jl; jh_in[i] = jh;
+            nlx[i] = std::max(lx[i], ly[jl]);
+            nux[i] = std::min(ux[i], uy[jh]);
+        }
+
+        // Emit tightened bounds.
+
+        for (size_t j = 0; j < n; ++j) {
+            if (nly[j] > oly[j]) {
+                auto L = nly[j];
+                bool from_normalization = (ly[j] > oly[j]) && (ly[j] >= lx[phi2[j]]);
+                size_t forced_above = 0;
+                for (size_t i = 0; i < n; ++i) if (olx[i] >= L) ++forced_above;
+
+                if (from_normalization) {
+                    inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
+                        JustifyExplicitlyThenRUP{[&y, j, L, logger](const ReasonFunction &) {
+                            for (size_t k = 1; k <= j; ++k)
+                                logger->emit(RUPProofRule{},
+                                    WPBSum{} + 1_i * (y[k] >= Integer{L}) + 1_i * (y[k - 1] < Integer{L}) >= 1_i,
+                                    ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+                else if (forced_above >= n - j) {
+                    // ORDER STATISTIC lb(y[j]): >= n-j x's have lx >= L.
+                    // Under ¬goal (y[j] <= L-1): y[k] <= L-1 for k <= j (sortedness chain).
+                    // For each i with olx[i] >= L, for k <= j: ~p[i][k] (channel + y[k]<=L-1).
+                    // Restricted row_al1: Σ_{k>j} p[i][k] >= 1 for those i.
+                    // Counting pol vs col_am1 for k > j.
+                    inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
+                        JustifyExplicitlyThenRUP{[&x, &y, &p, &row_al1, &col_am1, &olx, n, j, L, logger](const ReasonFunction & rfn) {
+                            // BNLY: y[k] <= L-1 chain downward from j (under ¬goal y[j] <= L-1)
+                            for (size_t k = j + 1; k-- > 0;)
+                                logger->emit(RUPProofRule{},
+                                    WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * (y[k] < Integer{L}) >= 1_i,
+                                    ProofLevel::Temporary);
+                            // For each i with lx[i] >= L, for k <= j: ~p[i][k] OR goal
+                            vector<ProofLine> restricted;
+                            for (size_t i = 0; i < n; ++i) {
+                                if (olx[i] < L) continue;
+                                for (size_t k = 0; k <= j; ++k)
+                                    logger->emit_rup_proof_line_under_reason(rfn,
+                                        WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * !p[i][k] >= 1_i,
+                                        ProofLevel::Temporary);
+                                WPBSum in_band;
+                                in_band += 1_i * (y[j] >= Integer{L});
+                                for (size_t k = j + 1; k < n; ++k)
+                                    in_band += 1_i * p[i][k];
+                                restricted.push_back(logger->emit_rup_proof_line_under_reason(rfn,
+                                    move(in_band) >= 1_i, ProofLevel::Temporary));
+                            }
+                            // Counting pol: restricted (n-j terms) + col_am1 for k>j
+                            PolBuilder pol;
+                            for (auto l : restricted) pol.add(l);
+                            for (size_t k = j + 1; k < n; ++k)
+                                pol.add(col_am1[k]);
+                            pol.emit(*logger, ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+                else {
+                    // HALL lb(y[j]): find_band under shifted hi (x's with lx>=L confined above j)
+                    vector<size_t> lop(n);
+                    for (size_t i = 0; i < n; ++i)
+                        lop[i] = (lx[i] >= L) ? std::max(lo_i[i], static_cast<size_t>(j) + 1) : lo_i[i];
+                    auto [S, fa, fb] = find_band(lop, hi_i);
+                    if (S.empty())
+                        throw UnexpectedException{"Sort: no Hall band for lb(y)"};
+                    inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
+                        JustifyExplicitlyThenRUP{[&, S, fa, fb, L](const ReasonFunction & rfn) {
+                            WPBSum goal_lit;
+                            goal_lit += 1_i * (y[j] >= Integer{L});
+                            fail_hall_perm(S, fa, fb, rfn, logger, ly, uy, std::optional{goal_lit});
+                        }},
+                        reason);
+                }
+            }
+
+            if (nuy[j] < ouy[j]) {
+                auto U = nuy[j];
+                bool from_normalization = (uy[j] < ouy[j]) && (uy[j] <= ux[phi[j]]);
+                size_t forced_below = 0;
+                for (size_t i = 0; i < n; ++i) if (oux[i] <= U) ++forced_below;
+
+                if (from_normalization) {
+                    inference.infer_less_than(logger, y[j], Integer{U + 1},
+                        JustifyExplicitlyThenRUP{[&y, n, j, U, logger](const ReasonFunction &) {
+                            for (size_t k = j; k + 1 < n; ++k)
+                                logger->emit(RUPProofRule{},
+                                    WPBSum{} + 1_i * (y[k] < Integer{U + 1}) + 1_i * (y[k + 1] >= Integer{U + 1}) >= 1_i,
+                                    ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+                else if (forced_below >= j + 1) {
+                    // ORDER STATISTIC ub(y[j]).
+                    inference.infer_less_than(logger, y[j], Integer{U + 1},
+                        JustifyExplicitlyThenRUP{[&x, &y, &p, &row_al1, &col_am1, &oux, n, j, U, logger](const ReasonFunction & rfn) {
+                            // BNUY: y[k] >= U+1 chain upward from j (under ¬goal y[j] >= U+1)
+                            for (size_t k = j; k < n; ++k)
+                                logger->emit(RUPProofRule{},
+                                    WPBSum{} + 1_i * (y[j] < Integer{U + 1}) + 1_i * (y[k] >= Integer{U + 1}) >= 1_i,
+                                    ProofLevel::Temporary);
+                            // For each i with ux[i] <= U, for k >= j: ~p[i][k] OR goal
+                            vector<ProofLine> restricted;
+                            for (size_t i = 0; i < n; ++i) {
+                                if (oux[i] > U) continue;
+                                for (size_t k = j; k < n; ++k)
+                                    logger->emit_rup_proof_line_under_reason(rfn,
+                                        WPBSum{} + 1_i * (y[j] < Integer{U + 1}) + 1_i * !p[i][k] >= 1_i,
+                                        ProofLevel::Temporary);
+                                WPBSum in_band;
+                                in_band += 1_i * (y[j] < Integer{U + 1});
+                                for (size_t k = 0; k < j; ++k)
+                                    in_band += 1_i * p[i][k];
+                                restricted.push_back(logger->emit_rup_proof_line_under_reason(rfn,
+                                    move(in_band) >= 1_i, ProofLevel::Temporary));
+                            }
+                            // Counting pol: restricted + col_am1 for k < j
+                            PolBuilder pol;
+                            for (auto l : restricted) pol.add(l);
+                            for (size_t k = 0; k < j; ++k)
+                                pol.add(col_am1[k]);
+                            pol.emit(*logger, ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+                else {
+                    // HALL ub(y[j])
+                    vector<size_t> hip(n);
+                    for (size_t i = 0; i < n; ++i)
+                        hip[i] = (ux[i] <= U) ? std::min(hi_i[i], static_cast<size_t>(j)) : hi_i[i];
+                    auto [S, fa, fb] = find_band(lo_i, hip);
+                    if (S.empty())
+                        throw UnexpectedException{"Sort: no Hall band for ub(y)"};
+                    inference.infer_less_than(logger, y[j], Integer{U + 1},
+                        JustifyExplicitlyThenRUP{[&, S, fa, fb, U](const ReasonFunction & rfn) {
+                            WPBSum goal_lit;
+                            goal_lit += 1_i * (y[j] < Integer{U + 1});
+                            fail_hall_perm(S, fa, fb, rfn, logger, ly, uy, std::optional{goal_lit});
+                        }},
+                        reason);
+                }
+            }
+        }
+
+        for (size_t i = 0; i < n; ++i) {
+            if (nlx[i] > olx[i]) {
+                auto L = nlx[i];
+                if (jl_in[i] == lo_i[i]) {
+                    // INTERSECTION lb(x[i]): for each k, (pos=k → x[i]>=L) is RUP.
+                    inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
+                        JustifyExplicitlyThenRUP{[&x, &y, &p, &row_al1, n, i, L, logger](const ReasonFunction & rfn) {
+                            for (size_t k = 0; k < n; ++k)
+                                logger->emit_rup_proof_line_under_reason(rfn,
+                                    WPBSum{} + 1_i * !p[i][k] + 1_i * (x[i] >= Integer{L}) >= 1_i,
+                                    ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+                else {
+                    auto jl = jl_in[i];
+                    vector<size_t> hip = hi_i;
+                    hip[i] = jl;
+                    auto [S, fa, fb] = find_band(lo_i, hip);
+                    if (S.empty() || std::find(S.begin(), S.end(), i) == S.end())
+                        throw UnexpectedException{"Sort: no Hall band for lb(x)"};
+                    inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
+                        JustifyExplicitlyThenRUP{[&, S, fa, fb, i, L](const ReasonFunction & rfn) {
+                            // For i: ranks >= jl need the goal literal (x[i] < L → y[k] < L → excluded)
+                            for (size_t k = n; k-- > 0;)
+                                logger->emit_rup_proof_line_under_reason(rfn, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
+                            for (size_t k = 0; k < n; ++k)
+                                logger->emit_rup_proof_line_under_reason(rfn, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                            vector<ProofLine> restricted(S.size());
+                            for (const auto & [idx, m] : enumerate(S)) {
+                                for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                    if (k >= fa && k <= fb) continue;
+                                    WPBSum excl;
+                                    if (m == i && k > fb)
+                                        excl += 1_i * (x[i] >= Integer{L});
+                                    excl += 1_i * !p[m][static_cast<size_t>(k)];
+                                    logger->emit_rup_proof_line_under_reason(rfn, move(excl) >= 1_i, ProofLevel::Temporary);
+                                }
+                                WPBSum in_band;
+                                if (m == i) in_band += 1_i * (x[i] >= Integer{L});
+                                for (long long k = fa; k <= fb; ++k)
+                                    in_band += 1_i * p[m][static_cast<size_t>(k)];
+                                restricted[idx] = logger->emit_rup_proof_line_under_reason(rfn, move(in_band) >= 1_i, ProofLevel::Temporary);
+                            }
+                            PolBuilder pol;
+                            for (auto l : restricted) pol.add(l);
+                            for (long long k = fa; k <= fb; ++k)
+                                pol.add(col_am1[static_cast<size_t>(k)]);
+                            pol.emit(*logger, ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+            }
+
+            if (nux[i] < oux[i]) {
+                auto U = nux[i];
+                if (jh_in[i] + 1 == hi_i[i]) {
+                    inference.infer_less_than(logger, x[i], Integer{U + 1},
+                        JustifyExplicitlyThenRUP{[&x, &y, &p, n, i, U, logger](const ReasonFunction & rfn) {
+                            for (size_t k = 0; k < n; ++k)
+                                logger->emit_rup_proof_line_under_reason(rfn,
+                                    WPBSum{} + 1_i * !p[i][k] + 1_i * (x[i] < Integer{U + 1}) >= 1_i,
+                                    ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+                else {
+                    auto jh = jh_in[i];
+                    vector<size_t> lop = lo_i;
+                    lop[i] = jh + 1;
+                    auto [S, fa, fb] = find_band(lop, hi_i);
+                    if (S.empty() || std::find(S.begin(), S.end(), i) == S.end())
+                        throw UnexpectedException{"Sort: no Hall band for ub(x)"};
+                    inference.infer_less_than(logger, x[i], Integer{U + 1},
+                        JustifyExplicitlyThenRUP{[&, S, fa, fb, i, U](const ReasonFunction & rfn) {
+                            for (size_t k = n; k-- > 0;)
+                                logger->emit_rup_proof_line_under_reason(rfn, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
+                            for (size_t k = 0; k < n; ++k)
+                                logger->emit_rup_proof_line_under_reason(rfn, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                            vector<ProofLine> restricted(S.size());
+                            for (const auto & [idx, m] : enumerate(S)) {
+                                for (long long k = 0; k < static_cast<long long>(n); ++k) {
+                                    if (k >= fa && k <= fb) continue;
+                                    WPBSum excl;
+                                    if (m == i && k < fa)
+                                        excl += 1_i * (x[i] < Integer{U + 1});
+                                    excl += 1_i * !p[m][static_cast<size_t>(k)];
+                                    logger->emit_rup_proof_line_under_reason(rfn, move(excl) >= 1_i, ProofLevel::Temporary);
+                                }
+                                WPBSum in_band;
+                                if (m == i) in_band += 1_i * (x[i] < Integer{U + 1});
+                                for (long long k = fa; k <= fb; ++k)
+                                    in_band += 1_i * p[m][static_cast<size_t>(k)];
+                                restricted[idx] = logger->emit_rup_proof_line_under_reason(rfn, move(in_band) >= 1_i, ProofLevel::Temporary);
+                            }
+                            PolBuilder pol;
+                            for (auto l : restricted) pol.add(l);
+                            for (long long k = fa; k <= fb; ++k)
+                                pol.add(col_am1[static_cast<size_t>(k)]);
+                            pol.emit(*logger, ProofLevel::Temporary);
+                        }},
+                        reason);
+                }
+            }
+        }
+    }
+} // anonymous namespace
+
+auto gcs::innards::install_sort_propagator_perm(Propagators & propagators,
+    const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y,
+    const SortPermWitness & witness) -> void
+{
+    // The before[ip][i], rank[i][j], and p-rank link constraints are all in the
+    // OPB model (added by define_sort_proof_model_perm), so UP can determine p
+    // uniquely from x at solution-check time. No initialiser proof steps needed.
+
+    Triggers triggers;
+    triggers.on_bounds.insert(triggers.on_bounds.end(), x.begin(), x.end());
+    triggers.on_bounds.insert(triggers.on_bounds.end(), y.begin(), y.end());
+
+    propagators.install([x, y, p = witness.p, row_al1 = witness.row_al1, col_am1 = witness.col_am1](
+                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagate_sortedness_perm(x, y, p, row_al1, col_am1, state, inference, logger);
+        return PropagatorState::Enable;
+    },
+        triggers);
+}
+
+// (dead code below — left in place in case it needs to be revived)
+[[maybe_unused]] static auto install_sort_propagator_perm_with_dom(Propagators & propagators,
+    const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y,
+    const SortPermWitness & witness) -> void
+{
+    auto n = x.size();
+
+    propagators.install_initialiser(
+        [n, x, y, p = witness.p, row_al1 = witness.row_al1, col_am1 = witness.col_am1](
+        State &, auto &, ProofLogger * const logger) -> void {
+        if (! logger) return;
+
+        auto & tracker = logger->names_and_ids_tracker();
+
+        // ----------------------------------------------------------------
+        // Step 1: Introduce before[ip][i] flags as proof extension variables.
+        // These are NOT in the OPB model; they live only in the proof database.
+        // Two-sided reification so UP can determine bef from x values.
+        // ----------------------------------------------------------------
+        vector<vector<ProofFlag>> bef(n, vector<ProofFlag>(n));
+        vector<vector<string>> bef_name(n, vector<string>(n));
+        for (size_t i = 0; i < n; ++i)
+            for (size_t ip = 0; ip < n; ++ip) {
+                if (ip == i) continue;
+                auto bound = (ip < i) ? 0_i : -1_i;
+                bef[ip][i] = logger->create_proof_flag("sort_dom_bef");
+                bef_name[ip][i] = tracker.pb_file_string_for(bef[ip][i]);
+                logger->emit_red_proof_lines_forward_reifying(
+                    WPBSum{} + 1_i * x[ip] + -1_i * x[i] <= bound, bef[ip][i], ProofLevel::Top);
+                logger->emit_red_proof_lines_reverse_reifying(
+                    WPBSum{} + 1_i * x[ip] + -1_i * x[i] <= bound, bef[ip][i], ProofLevel::Top);
+            }
+
+        // ----------------------------------------------------------------
+        // Step 2: Introduce rank[i][j] flags: "rank(x[i]) = j" (exactly j
+        // of the n-1 before-flags for i are set). Forward-ge and forward-le
+        // constraints are sufficient for UP: they eliminate wrong ranks (via
+        // contradiction with fixed bef sum), and the dom step + row constraint
+        // then force the unique surviving rank to be 1.
+        // ----------------------------------------------------------------
+        vector<vector<ProofFlag>> rank(n, vector<ProofFlag>(n));
+        vector<vector<string>> rank_name(n, vector<string>(n));
+        for (size_t i = 0; i < n; ++i)
+            for (size_t j = 0; j < n; ++j) {
+                rank[i][j] = logger->create_proof_flag("sort_dom_rank");
+                rank_name[i][j] = tracker.pb_file_string_for(rank[i][j]);
+                // rank[i][j]=1 → Σ_{ip≠i} bef[ip][i] ≥ j
+                {
+                    WPBSum s;
+                    s += Integer{static_cast<long long>(n) - 1} * !rank[i][j];
+                    for (size_t ip = 0; ip < n; ++ip)
+                        if (ip != i) s += 1_i * bef[ip][i];
+                    logger->emit_red_proof_line(move(s) >= Integer{static_cast<long long>(j)},
+                        {{rank[i][j], ProofLiteralOrFlag{FalseLiteral{}}}}, ProofLevel::Top);
+                }
+                // rank[i][j]=1 → Σ_{ip≠i} bef[ip][i] ≤ j  (≡ Σ ~bef ≥ n-1-j)
+                {
+                    WPBSum s;
+                    s += Integer{static_cast<long long>(n) - 1} * !rank[i][j];
+                    for (size_t ip = 0; ip < n; ++ip)
+                        if (ip != i) s += 1_i * !bef[ip][i];
+                    logger->emit_red_proof_line(move(s) >= Integer{static_cast<long long>(n) - 1 - static_cast<long long>(j)},
+                        {{rank[i][j], ProofLiteralOrFlag{FalseLiteral{}}}}, ProofLevel::Top);
+                }
+            }
+
+        // ----------------------------------------------------------------
+        // Step 3: Build and emit the def_order block.
+        // The order is applied to z⃗ = (x bits, bef flags, rank flags, p flags).
+        // O⪯(u,v): x equality + bef-x consistency (for left) + rank-bef
+        // consistency (for left) + canonical condition (~lrank + lp + ~rp ≥ 1).
+        // Transitivity and reflexivity are left to autoprovability.
+        // ----------------------------------------------------------------
+
+        // Helper: get bits of an IntegerVariableID as (signed_coeff, actual_pb_name).
+        // Returns nullopt if the variable is a Constant (no bits) or an
+        // unsupported View form (we skip def_order/dom in those cases).
+        auto get_bits = [&](const IntegerVariableID & v)
+            -> std::optional<vector<pair<long long, string>>> {
+            return overloaded{
+                [&](const SimpleIntegerVariableID & s)
+                    -> std::optional<vector<pair<long long, string>>> {
+                    vector<pair<long long, string>> bits;
+                    for (const auto & [coeff, lit] : tracker.each_bit(s))
+                        bits.emplace_back(coeff.raw_value, tracker.pb_file_string_for(lit));
+                    return bits;
+                },
+                [&](const ViewOfIntegerVariableID & vw)
+                    -> std::optional<vector<pair<long long, string>>> {
+                    vector<pair<long long, string>> bits;
+                    for (const auto & [coeff, lit] : tracker.each_bit(vw.actual_variable)) {
+                        long long c = vw.negate_first ? -coeff.raw_value : coeff.raw_value;
+                        bits.emplace_back(c, tracker.pb_file_string_for(lit));
+                    }
+                    return bits;
+                },
+                [](const ConstantIntegerVariableID &)
+                    -> std::optional<vector<pair<long long, string>>> {
+                    return std::nullopt; // constants have no bits; skip def_order
+                }}
+                .visit(v);
+        };
+
+        // Check whether we can build the def_order (all x must have bits).
+        bool can_use_dom = true;
+        for (size_t i = 0; i < n && can_use_dom; ++i)
+            if (! get_bits(x[i])) can_use_dom = false;
+
+        if (! can_use_dom) {
+            // Skip def_order/dom steps. Propagation proofs still work because
+            // they only use the doubly-stochastic constraints and channel.
+            // Solution verification will rely on the model structure alone
+            // (p is not fully canonical but proofs are still sound).
+            return;
+        }
+
+        // Collect abstract variable names for left, right, fresh_right.
+        // Order: x bits first, then bef, then rank, then p.
+        vector<string> left_vars, right_vars, fresh_right_vars;
+        vector<string> load_actual; // actual OPB/proof names for load_order
+
+        // x bits
+        for (size_t i = 0; i < n; ++i) {
+            int bidx = 0;
+            auto xi_bits = *get_bits(x[i]);
+            for (const auto & [coeff, actual_name] : xi_bits) {
+                string abs_l = "lx_" + std::to_string(i) + "_b" + std::to_string(bidx);
+                string abs_r = "rx_" + std::to_string(i) + "_b" + std::to_string(bidx);
+                string abs_w = "wx_" + std::to_string(i) + "_b" + std::to_string(bidx);
+                left_vars.push_back(abs_l);
+                right_vars.push_back(abs_r);
+                fresh_right_vars.push_back(abs_w);
+                load_actual.push_back(actual_name);
+                ++bidx;
+            }
+        }
+        // bef flags
+        for (size_t i = 0; i < n; ++i)
+            for (size_t ip = 0; ip < n; ++ip) {
+                if (ip == i) continue;
+                string abs_l = "lbef_" + std::to_string(ip) + "_" + std::to_string(i);
+                string abs_r = "rbef_" + std::to_string(ip) + "_" + std::to_string(i);
+                string abs_w = "wbef_" + std::to_string(ip) + "_" + std::to_string(i);
+                left_vars.push_back(abs_l);
+                right_vars.push_back(abs_r);
+                fresh_right_vars.push_back(abs_w);
+                load_actual.push_back(bef_name[ip][i]);
+            }
+        // rank flags
+        for (size_t i = 0; i < n; ++i)
+            for (size_t j = 0; j < n; ++j) {
+                string abs_l = "lrank_" + std::to_string(i) + "_" + std::to_string(j);
+                string abs_r = "rrank_" + std::to_string(i) + "_" + std::to_string(j);
+                string abs_w = "wrank_" + std::to_string(i) + "_" + std::to_string(j);
+                left_vars.push_back(abs_l);
+                right_vars.push_back(abs_r);
+                fresh_right_vars.push_back(abs_w);
+                load_actual.push_back(rank_name[i][j]);
+            }
+        // p flags
+        for (size_t i = 0; i < n; ++i)
+            for (size_t j = 0; j < n; ++j) {
+                string abs_l = "lp_" + std::to_string(i) + "_" + std::to_string(j);
+                string abs_r = "rp_" + std::to_string(i) + "_" + std::to_string(j);
+                string abs_w = "wp_" + std::to_string(i) + "_" + std::to_string(j);
+                left_vars.push_back(abs_l);
+                right_vars.push_back(abs_r);
+                fresh_right_vars.push_back(abs_w);
+                load_actual.push_back(tracker.pb_file_string_for(p[i][j]));
+            }
+
+        // Build bit-coefficient map: for each x[i], list of (signed_coeff, abstract_name).
+        // Needed for bef-consistency O⪯ constraints.
+        vector<vector<pair<long long, string>>> x_bits_left(n), x_bits_right(n);
+        for (size_t i = 0; i < n; ++i) {
+            int bidx = 0;
+            auto xi_bits2 = *get_bits(x[i]);
+            for (const auto & [coeff, _actual] : xi_bits2) {
+                x_bits_left[i].emplace_back(coeff, "lx_" + std::to_string(i) + "_b" + std::to_string(bidx));
+                x_bits_right[i].emplace_back(coeff, "rx_" + std::to_string(i) + "_b" + std::to_string(bidx));
+                ++bidx;
+            }
+        }
+
+        // Compute big-M for each x[i]: sum of bit coefficients.
+        auto big_m = [&](size_t i) {
+            long long m = 0;
+            for (auto & [c, _] : x_bits_left[i]) m += c;
+            return m;
+        };
+
+        // Build the def_order block as a string.
+        stringstream def;
+        def << "def_order sort_canon\nvars\nleft";
+        for (auto & v : left_vars) def << " " << v;
+        def << " ;\nright";
+        for (auto & v : right_vars) def << " " << v;
+        def << " ;\nend;\ndef\n";
+
+        // 1. x equality: lx_i_b = rx_i_b (two constraints per bit)
+        for (size_t i = 0; i < n; ++i)
+            for (size_t b = 0; b < x_bits_left[i].size(); ++b) {
+                auto [c, ln] = x_bits_left[i][b];
+                auto [cr, rn] = x_bits_right[i][b];
+                def << "+" << c << " " << ln << " -" << c << " " << rn << " >= 0 ;\n";
+                def << "+" << c << " " << rn << " -" << c << " " << ln << " >= 0 ;\n";
+            }
+
+        // 2. bef consistency (forward + reverse using left x vars)
+        for (size_t i = 0; i < n; ++i)
+            for (size_t ip = 0; ip < n; ++ip) {
+                if (ip == i) continue;
+                long long bound_val = (ip < i) ? 0 : 1; // comparison: lx[ip] - lx[i] <= -bound_val+something...
+                // comparison: lx[i] - lx[ip] >= (ip < i ? 0 : 1) meaning lx[ip] <= lx[i] or lx[ip] < lx[i]
+                // In bits: Σ c*(lx_i_b - lx_ip_b) >= bound_val
+                long long M = big_m(ip) + big_m(i) + 1;
+                string lbef = "lbef_" + std::to_string(ip) + "_" + std::to_string(i);
+                // Forward: M * ~lbef + comparison >= bound_val
+                def << "+" << M << " ~" << lbef;
+                for (auto & [c, nm] : x_bits_left[i]) def << " +" << c << " " << nm;
+                for (auto & [c, nm] : x_bits_left[ip]) def << " -" << c << " " << nm;
+                def << " >= " << bound_val << " ;\n";
+                // Reverse: M * lbef + ~comparison >= M - bound_val + 1
+                // ~comparison: Σ c*(lx_ip_b - lx_i_b) >= bound_val means negation is Σ c*(lx_i_b - lx_ip_b) <= bound_val-1
+                // i.e., Σ c*(lx_ip_b - lx_i_b) >= -(bound_val-1) = 1-bound_val
+                // Reverse: M * lbef + (1 - bound_val - (comparison)) >= 1 - bound_val  ...hmm
+                // Actually: ~(lx[i] - lx[ip] >= bound_val) means lx[i] - lx[ip] <= bound_val - 1
+                // i.e., lx[ip] - lx[i] >= 1 - bound_val
+                // Forward-lbef (if lbef=0 then comparison fails): M * lbef + (lx[ip] - lx[i] - (1-bound_val)) >= 0
+                // i.e., M * lbef + lx[ip] - lx[i] >= 1 - bound_val
+                def << "+" << M << " " << lbef;
+                for (auto & [c, nm] : x_bits_left[ip]) def << " +" << c << " " << nm;
+                for (auto & [c, nm] : x_bits_left[i]) def << " -" << c << " " << nm;
+                def << " >= " << (1 - bound_val) << " ;\n";
+            }
+
+        // 3. rank consistency (forward-ge + forward-le using left bef vars)
+        for (size_t i = 0; i < n; ++i)
+            for (size_t j = 0; j < n; ++j) {
+                string lrank = "lrank_" + std::to_string(i) + "_" + std::to_string(j);
+                long long n1 = static_cast<long long>(n) - 1;
+                // rank=1 → Σ lbef ≥ j: (n-1)*~lrank + Σ lbef_{ip}_{i} >= j
+                def << "+" << n1 << " ~" << lrank;
+                for (size_t ip = 0; ip < n; ++ip)
+                    if (ip != i) def << " +1 lbef_" << ip << "_" << i;
+                def << " >= " << j << " ;\n";
+                // rank=1 → Σ ~lbef ≥ n-1-j: (n-1)*~lrank + Σ ~lbef >= n-1-j
+                def << "+" << n1 << " ~" << lrank;
+                for (size_t ip = 0; ip < n; ++ip)
+                    if (ip != i) def << " +1 ~lbef_" << ip << "_" << i;
+                def << " >= " << (n1 - static_cast<long long>(j)) << " ;\n";
+            }
+
+        // 4. Canonical condition: ~lrank_i_j + lp_i_j + ~rp_i_j >= 1
+        for (size_t i = 0; i < n; ++i)
+            for (size_t j = 0; j < n; ++j)
+                def << "+1 ~lrank_" << i << "_" << j
+                    << " +1 lp_" << i << "_" << j
+                    << " +1 ~rp_" << i << "_" << j << " >= 1 ;\n";
+
+        def << "end;\n";
+
+        // Transitivity: rely on augmented-format autoprovability.
+        def << "transitivity\nvars\nfresh_right";
+        for (auto & v : fresh_right_vars) def << " " << v;
+        def << " ;\nend;\nproof\nqed;\nend;\n";
+
+        // Reflexivity: trivially autoproven (each O⪯ constraint is tautological when left=right).
+        // (Augmented format makes this optional if proofgoals are trivial.)
+
+        def << "end;\n";
+        logger->write_raw_to_proof(def.str());
+
+        // ----------------------------------------------------------------
+        // Step 4: load_order, then n² dom steps.
+        // load_order moves derived constraints to core.
+        // ----------------------------------------------------------------
+        logger->emit_load_order("sort_canon", load_actual);
+
+        // For each (i,j): derive ~p[i][j] + rank[i][j] >= 1 via dominance.
+        // Witness: p[i][j] -> rank[i][j] (proof variable, not $-prefixed aux).
+        // After all n² dom steps, combined with row_al1 and the rank forward
+        // constraints, UP determines p uniquely from x for solution verification.
+        for (size_t i = 0; i < n; ++i)
+            for (size_t j = 0; j < n; ++j) {
+                string p_name = tracker.pb_file_string_for(p[i][j]);
+                string r_name = rank_name[i][j];
+                logger->emit_dom_step(
+                    WPBSum{} + 1_i * !p[i][j] + 1_i * rank[i][j] >= 1_i,
+                    {{p_name, r_name}},
+                    ProofLevel::Top);
+            }
+    });
+
+    Triggers triggers;
+    triggers.on_bounds.insert(triggers.on_bounds.end(), x.begin(), x.end());
+    triggers.on_bounds.insert(triggers.on_bounds.end(), y.begin(), y.end());
+
+    propagators.install([x, y, p = witness.p, row_al1 = witness.row_al1, col_am1 = witness.col_am1](
+                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagate_sortedness_perm(x, y, p, row_al1, col_am1, state, inference, logger);
+        return PropagatorState::Enable;
+    },
+        triggers);
+}
+
 auto Sort::install_propagators(Propagators & propagators) -> void
 {
-    install_sortedness_propagator(propagators, _x, _y, _witness);
+    install_sort_propagator_perm(propagators, _x, _y, _witness);
 }
 
 auto Sort::s_exprify(const ProofModel * const model) const -> string

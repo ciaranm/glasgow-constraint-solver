@@ -671,3 +671,33 @@ auto ProofLogger::write_indent() -> void
         _imp->proof << ' ';
     }
 }
+
+auto ProofLogger::write_raw_to_proof(const string & s) -> void
+{
+    _imp->proof << s;
+}
+
+auto ProofLogger::emit_dom_step(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & C,
+    const vector<pair<string, string>> & witness,
+    ProofLevel level) -> ProofLine
+{
+    names_and_ids_tracker().need_all_proof_names_in(C.lhs);
+    log_stacktrace();
+    write_indent();
+    _imp->proof << "dom ";
+    emit_inequality_to(names_and_ids_tracker(), C, _imp->proof);
+    _imp->proof << " :";
+    for (auto & [from, to] : witness)
+        _imp->proof << " " << from << " -> " << to;
+    _imp->proof << " ;\n";
+    return record_proof_line(advance_proof_line_number(), level);
+}
+
+auto ProofLogger::emit_load_order(const string & order_name,
+    const vector<string> & vars) -> void
+{
+    _imp->proof << "load_order " << order_name;
+    for (auto & v : vars)
+        _imp->proof << " " << v;
+    _imp->proof << " ;\n";
+}

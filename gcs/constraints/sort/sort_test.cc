@@ -135,6 +135,8 @@ auto main(int argc, char * argv[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
 
+        // all equal
+        run_sort_test(proofs, {{2, 2}, {2, 2}}, {{2, 2}, {2, 2}});
         // Pairs.
         run_sort_test(proofs, {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}});
         // Triples, full domains -> exercises duplicate values in the sorted output.
@@ -185,8 +187,9 @@ auto main(int argc, char * argv[]) -> int
 
         // NB: the large-count order-statistic case (verifying that the count
         // line stays RUP at high degree, over non-fixed x with upper bounds
-        // strictly below the threshold) is NOT exercised here -- the
-        // enumerate-and-compare harness can't take the wide domains it needs.
+        // strictly below the threshold) is NOT here -- the enumerate-and-compare
+        // harness can't take wide domains. It lives as a standalone proof-only
+        // probe: examples/sort_count_probe.
     }
 
     // Seeded randomized batch: sizes up to 5, a mix of wide y-windows (exercising

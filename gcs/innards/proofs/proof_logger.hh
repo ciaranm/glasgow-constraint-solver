@@ -324,6 +324,29 @@ namespace gcs::innards
          * Write a number of spaces equal to current_indent.
          */
         auto write_indent() -> void;
+
+        /**
+         * Write raw text directly to the proof file without incrementing the line counter.
+         * Used for structural blocks like def_order that have their own internal line numbering.
+         */
+        auto write_raw_to_proof(const std::string &) -> void;
+
+        /**
+         * Emit a DOM proof step: dom C : v1 -> l1 v2 -> l2 ... ;
+         * Witness maps problem-variable name strings to literal name strings.
+         * Increments the proof line counter.
+         */
+        auto emit_dom_step(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & C,
+            const std::vector<std::pair<std::string, std::string>> & witness,
+            ProofLevel level) -> ProofLine;
+
+        /**
+         * Emit a load_order command. Moves all derived constraints to core.
+         * vars is the ordered list of actual problem-variable name strings that instantiate
+         * the order's left (and right) variable lists.
+         */
+        auto emit_load_order(const std::string & order_name,
+            const std::vector<std::string> & vars) -> void;
     };
 }
 

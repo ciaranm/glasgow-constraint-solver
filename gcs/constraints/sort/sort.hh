@@ -26,8 +26,8 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _x, _y;
         // Proof-only witness, populated by define_proof_model and read by the
-        // propagator's justifications. See innards::SortednessWitness.
-        innards::SortednessWitness _witness;
+        // propagator's justifications. See innards::SortPermWitness.
+        innards::SortPermWitness _witness;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
