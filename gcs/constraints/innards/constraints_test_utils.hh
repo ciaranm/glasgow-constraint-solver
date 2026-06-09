@@ -29,7 +29,8 @@
 #include <variant>
 
 template <typename... Ts_>
-struct std::formatter<std::variant<Ts_...>> : std::formatter<std::string> {
+struct std::formatter<std::variant<Ts_...>> : std::formatter<std::string>
+{
     template <typename FormatContext_>
     auto format(const std::variant<Ts_...> & v, FormatContext_ & ctx) const
     {
@@ -344,6 +345,13 @@ namespace gcs::test_innards
     }
 
     /// Build the random branching pair, honouring --seed if set.
+    ///
+    /// NB: value_order::reject_random_interval cannot be the default yet. It
+    /// verifies for bound-based constraints (see range_branch_test) but breaks
+    /// backtrack-clause RUP for constraints whose conflicts depend on interior
+    /// holes (Count, among, element-var): an interval reject that moves no bound
+    /// leaves a hole that unit propagation cannot see, so the backtrack clause is
+    /// not RUP-derivable (an Inv3 violation, not fixable by covering constraints).
     inline auto random_branch_with_optional_seed(const Problem & p)
     {
         if (auto seed = get_seed())
@@ -740,17 +748,29 @@ namespace gcs::test_innards
     };
 
     /// No wrap: hand the test a bare SimpleIntegerVariableID.
-    [[nodiscard]] constexpr inline auto view_none() -> ViewWrap { return {true, false, 0}; }
+    [[nodiscard]] constexpr inline auto view_none() -> ViewWrap
+    {
+        return {true, false, 0};
+    }
 
     /// Wrap as `var + k`. With k = 0 this still constructs a
     /// ViewOfIntegerVariableID, exercising the view layer transparently.
-    [[nodiscard]] constexpr inline auto view_offset(int k) -> ViewWrap { return {false, false, k}; }
+    [[nodiscard]] constexpr inline auto view_offset(int k) -> ViewWrap
+    {
+        return {false, false, k};
+    }
 
     /// Wrap as `-var`.
-    [[nodiscard]] constexpr inline auto view_neg() -> ViewWrap { return {false, true, 0}; }
+    [[nodiscard]] constexpr inline auto view_neg() -> ViewWrap
+    {
+        return {false, true, 0};
+    }
 
     /// Wrap as `-var + k`.
-    [[nodiscard]] constexpr inline auto view_neg_offset(int k) -> ViewWrap { return {false, true, k}; }
+    [[nodiscard]] constexpr inline auto view_neg_offset(int k) -> ViewWrap
+    {
+        return {false, true, k};
+    }
 
     /**
      * \brief The canonical sweep over view forms for the proof-view audit.
@@ -780,15 +800,23 @@ namespace gcs::test_innards
         return {
             view_none(),
             view_offset(0),
-            view_offset(1), view_offset(-1),
-            view_offset(5), view_offset(-5),
-            view_offset(6), view_offset(-6),
-            view_offset(17), view_offset(-17),
+            view_offset(1),
+            view_offset(-1),
+            view_offset(5),
+            view_offset(-5),
+            view_offset(6),
+            view_offset(-6),
+            view_offset(17),
+            view_offset(-17),
             view_neg(),
-            view_neg_offset(1), view_neg_offset(-1),
-            view_neg_offset(5), view_neg_offset(-5),
-            view_neg_offset(6), view_neg_offset(-6),
-            view_neg_offset(17), view_neg_offset(-17),
+            view_neg_offset(1),
+            view_neg_offset(-1),
+            view_neg_offset(5),
+            view_neg_offset(-5),
+            view_neg_offset(6),
+            view_neg_offset(-6),
+            view_neg_offset(17),
+            view_neg_offset(-17),
         };
     }
 

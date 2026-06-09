@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_LOGGER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_LOGGER_HH
 
+#include <gcs/branch_guess.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_line.hh>
@@ -93,7 +94,7 @@ namespace gcs::innards
         /**
          * Log that we are backtracking.
          */
-        auto backtrack(const std::vector<Literal> & guesses) -> void;
+        auto backtrack(const std::vector<BranchGuess> & guesses) -> void;
 
         /**
          * Log that we have reached an unsatisfiable conclusion at the end of the proof.

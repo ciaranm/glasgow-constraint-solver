@@ -30,7 +30,7 @@ using std::chrono::steady_clock;
 namespace
 {
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem,
-        Propagators & propagators, State & state, const optional<Literal> & this_branch_guess,
+        Propagators & propagators, State & state, const optional<BranchGuess> & this_branch_guess,
         SolveCallbacks & callbacks,
         ProofLogger * const logger,
         bool & this_subtree_contains_solution,
@@ -84,7 +84,7 @@ namespace
                 if (optional_abort_flag && optional_abort_flag->load())
                     return false;
 
-                auto recurse = [&](const Literal & guess) -> bool {
+                auto recurse = [&](const BranchGuess & guess) -> bool {
                     if (optional_abort_flag && optional_abort_flag->load())
                         return false;
 
@@ -115,9 +115,9 @@ namespace
 
         if (logger) {
             logger->enter_proof_level(depth);
-            vector<Literal> guesses;
-            for (const auto & lit : state.guesses())
-                guesses.push_back(lit);
+            vector<BranchGuess> guesses;
+            for (const auto & g : state.guesses())
+                guesses.push_back(g);
             logger->backtrack(guesses);
             logger->forget_proof_level(depth + 1);
         }

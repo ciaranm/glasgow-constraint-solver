@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 
+#include <gcs/branch_guess.hh>
 #include <gcs/current_state.hh>
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/literal.hh>
@@ -203,12 +204,12 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Guess that the specified Literal holds. Does not deal with
-         * backtracking directly.
+         * Guess that the specified branch decision holds (a variable condition,
+         * or an interval accept/reject). Does not deal with backtracking directly.
          *
          * \sa State::new_epoch()
          */
-        auto guess(const Literal & lit) -> void;
+        auto guess(const BranchGuess & guess) -> void;
 
         /**
          * Add an additional proof condition, similar to guess except that it
@@ -223,7 +224,7 @@ namespace gcs::innards
          *
          * \sa State::guess()
          */
-        auto guesses() const -> std::generator<Literal>;
+        auto guesses() const -> std::generator<BranchGuess>;
 
         /**
          * Create a new epoch, that can be backtracked to. Only legal if we are in a fully

@@ -92,7 +92,7 @@ struct State::Imp
     list<vector<ConstraintState>> constraint_states{};
     vector<ConstraintState> persistent_constraint_states{};
     list<vector<function<auto()->void>>> on_backtracks{};
-    vector<Literal> guesses{};
+    vector<BranchGuess> guesses{};
     vector<Literal> extra_proof_conditions{};
 
     optional<IntegerVariableID> optional_minimise_variable{};
@@ -301,19 +301,35 @@ auto State::infer_greater_than_or_equal(const VarType_ & var, Integer value) -> 
     }
 }
 
-auto State::guess(const Literal & lit) -> void
+auto State::guess(const BranchGuess & guess) -> void
 {
-    switch (infer(lit)) {
-    case Inference::NoChange:
-    case Inference::BoundsChanged:
-    case Inference::InteriorValuesChanged:
-    case Inference::Instantiated:
-        _imp->guesses.push_back(lit);
-        return;
+    auto contradicted = false;
+    auto note = [&](Inference inf) {
+        if (inf == Inference::Contradiction)
+            contradicted = true;
+    };
 
-    case Inference::Contradiction:
+    overloaded{
+        [&](const Literal & lit) { note(infer(lit)); },
+        [&](const IntegerVariableRangeGuess & r) {
+            // Accept [lo,hi] = (var >= lo) and (var <= hi); reject [lo,hi] = remove
+            // each value in turn. The reject branch is the genuinely disjunctive one;
+            // its proof is handled at backtrack via the range literal, not here.
+            if (r.within) {
+                note(infer(r.var >= r.lower));
+                note(infer(r.var < r.upper + 1_i));
+            }
+            else {
+                for (auto v = r.lower; v <= r.upper; ++v)
+                    note(infer(r.var != v));
+            }
+        }}
+        .visit(guess);
+
+    if (contradicted)
         throw UnexpectedException{"couldn't infer a branch variable"};
-    }
+
+    _imp->guesses.push_back(guess);
 }
 
 auto State::add_extra_proof_condition(const Literal & lit) -> void
@@ -581,9 +597,9 @@ auto State::backtrack(Timestamp t) -> void
     }
 }
 
-auto State::guesses() const -> generator<Literal>
+auto State::guesses() const -> generator<BranchGuess>
 {
-    return [](const auto & extra_proof_conditions, const auto & guesses) -> generator<Literal> {
+    return [](const auto & extra_proof_conditions, const auto & guesses) -> generator<BranchGuess> {
         for (auto & g : extra_proof_conditions)
             co_yield g;
         for (auto & g : guesses)

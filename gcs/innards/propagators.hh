@@ -1,13 +1,14 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 
+#include <gcs/branch_guess.hh>
 #include <gcs/expression.hh>
 #include <gcs/extensional.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/literal.hh>
-#include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
@@ -253,7 +254,7 @@ namespace gcs::innards
          * Propagate every constraint, until either a fixed point or a contradiction is reached. If no guess
          * is supplied, requeue every constraint before we start.
          */
-        [[nodiscard]] auto propagate(const std::optional<Literal> & guess,
+        [[nodiscard]] auto propagate(const std::optional<BranchGuess> & guess,
             State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         /**

@@ -239,12 +239,20 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             optional_minimise_variable_and_value->first);
 }
 
-auto ProofLogger::backtrack(const vector<Literal> & lits) -> void
+auto ProofLogger::backtrack(const vector<BranchGuess> & guesses) -> void
 {
     _imp->proof << "% backtracking\n";
     WPBSum backtrack;
-    for (const auto & lit : lits)
-        backtrack += 1_i * ! lit;
+    for (const auto & guess : guesses)
+        overloaded{
+            [&](const Literal & lit) { backtrack += 1_i * ! lit; },
+            [&](const IntegerVariableRangeGuess & r) {
+                // ~guess as a single range ("in") literal: need_invar gives the flag
+                // meaning var in [lo,hi]; negate it iff the guess was the accept branch.
+                auto flag = names_and_ids_tracker().need_invar(r.var, r.lower, r.upper);
+                backtrack += 1_i * (r.within ? ! flag : flag);
+            }}
+            .visit(guess);
     emit_rup_proof_line(move(backtrack) >= 1_i, ProofLevel::Current);
 }
 
