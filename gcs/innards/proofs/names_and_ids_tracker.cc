@@ -585,18 +585,9 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         }
     }
 
-    // Laminar containment (Phase A): symmetric to need_invar -- link this new eq atom to every
-    // existing range that contains it, so a reject of that range forward-propagates ~(id == v).
-    if (_imp->logger)
-        if (auto rit = _imp->invars_that_exist.find(id); rit != _imp->invars_that_exist.end())
-            for (const auto & range_entry : rit->second) {
-                auto [a, b] = range_entry.first;
-                if (a <= v && v <= b)
-                    visit([&](const auto & id) {
-                        _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * (id != v) + 1_i * range_entry.second.first >= 1_i, ProofLevel::Top);
-                    },
-                        id);
-            }
+    // Laminar containment: symmetric to need_invar -- link this new eq atom (a singleton [v, v])
+    // to its immediate range containers so a reject of one forward-propagates ~(id == v).
+    link_immediate_containment(id, v, v, v);
 }
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
@@ -767,6 +758,71 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     }
 }
 
+auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id,
+    Integer lo, Integer hi, const variant<ProofFlag, Integer> & self_term) -> void
+{
+    if (! _imp->logger)
+        return;
+
+    auto strictly_contains = [](Integer alo, Integer ahi, Integer blo, Integer bhi) {
+        return alo <= blo && bhi <= ahi && (alo < blo || bhi < ahi);
+    };
+
+    // Existing range/eq literals on id as intervals with their (negatable) proof term. An eq
+    // atom is the singleton [v, v]; a range container is always a range (an eq can't strictly
+    // contain anything), so a parent term is always a ProofFlag.
+    struct ExistingLit
+    {
+        Integer lo, hi;
+        variant<ProofFlag, Integer> term;
+    };
+    vector<ExistingLit> existing;
+    if (auto rit = _imp->invars_that_exist.find(id); rit != _imp->invars_that_exist.end())
+        for (const auto & e : rit->second)
+            existing.push_back({e.first.first, e.first.second, e.second.first});
+    if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
+        for (const auto & e : eqit->second)
+            existing.push_back({e.first, e.first, e.first});
+
+    // Emit a child -> parent containment edge (~child OR parent_flag) as a rup line at Top.
+    auto emit_edge = [&](const variant<ProofFlag, Integer> & child, const ProofFlag & parent_flag) {
+        overloaded{
+            [&](const ProofFlag & cf) {
+                _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * ! cf + 1_i * parent_flag >= 1_i, ProofLevel::Top);
+            },
+            [&](const Integer & v) {
+                visit([&](const auto & id) {
+                    _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * (id != v) + 1_i * parent_flag >= 1_i, ProofLevel::Top);
+                },
+                    id);
+            }}
+            .visit(child);
+    };
+
+    // self -> minimal (immediate) range containers
+    for (const auto & p : existing) {
+        if (! strictly_contains(p.lo, p.hi, lo, hi))
+            continue;
+        auto is_minimal = none_of(existing.begin(), existing.end(), [&](const ExistingLit & q) {
+            return strictly_contains(p.lo, p.hi, q.lo, q.hi) && strictly_contains(q.lo, q.hi, lo, hi);
+        });
+        if (is_minimal)
+            emit_edge(self_term, std::get<ProofFlag>(p.term));
+    }
+
+    // maximal (immediate) contained literals -> self, only when self is a range (a flag).
+    if (auto self_flag = std::get_if<ProofFlag>(&self_term))
+        for (const auto & c : existing) {
+            if (! strictly_contains(lo, hi, c.lo, c.hi))
+                continue;
+            auto is_maximal = none_of(existing.begin(), existing.end(), [&](const ExistingLit & m) {
+                return strictly_contains(lo, hi, m.lo, m.hi) && strictly_contains(m.lo, m.hi, c.lo, c.hi);
+            });
+            if (is_maximal)
+                emit_edge(c.term, *self_flag);
+        }
+}
+
 auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofFlag
 {
     auto & for_this_var = _imp->invars_that_exist[id];
@@ -790,27 +846,12 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
     },
         id);
 
-    // Laminar containment (Phase A, over-linked): link this range to every existing NESTED
-    // literal, so a reject decision (~flag) forward-propagates ~(contained literal). The chain
-    // alone does not give this (a ~[range] decision does not propagate without a handle), but it
-    // is needed for backtrack clauses over interval-reject branching. Each edge is RUP from the
-    // boundary-EO + chain, so emitted as a rup line at Top. Over-linked: all nested pairs, both
-    // ranges and eq atoms (the singleton leaves); overlapping non-nested ranges get no edge.
-    for (const auto & [other_bounds, other_flag_and_lines] : for_this_var) {
-        auto [a, b] = other_bounds;
-        const auto & other_flag = other_flag_and_lines.first;
-        if (lo <= a && b <= hi) // other range is inside the new one: other -> new
-            _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * ! other_flag + 1_i * flag >= 1_i, ProofLevel::Top);
-        else if (a <= lo && hi <= b) // new range is inside the other: new -> other
-            _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * ! flag + 1_i * other_flag >= 1_i, ProofLevel::Top);
-    }
-    if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
-        for (const auto & eq_entry : eqit->second)
-            if (lo <= eq_entry.first && eq_entry.first <= hi) // eq atom inside the range: (id == v) -> flag
-                visit([&](const auto & id) {
-                    _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * (id != eq_entry.first) + 1_i * flag >= 1_i, ProofLevel::Top);
-                },
-                    id);
+    // Laminar containment: link this range to its immediate neighbours so a reject decision
+    // (~flag) forward-propagates ~(contained literal). The chain alone does not give this (a
+    // ~[range] decision does not propagate without a handle), but it is needed for backtrack
+    // clauses over interval-reject branching. (Note: call before the emplace below so the new
+    // range is not in invars_that_exist yet.)
+    link_immediate_containment(id, lo, hi, flag);
 
     for_this_var.emplace(pair{lo, hi}, pair{flag, lines});
     return flag;

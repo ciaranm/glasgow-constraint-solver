@@ -72,6 +72,14 @@ namespace gcs::innards
 
         auto emit_proof_line_now_or_at_start(const std::function<auto(ProofLogger * const)->void> &) -> void;
 
+        // Emit laminar containment edges between a newly-introduced literal [lo, hi] (a range
+        // flag, or an eq atom passed as its Integer value) and the IMMEDIATE neighbours in the
+        // containment order among existing range/eq literals on `id`: minimal range containers
+        // above (self -> parent) and, when self is a range, maximal contained literals below
+        // (child -> self). Skip-level edges are left to transitivity. Each edge is a rup line.
+        auto link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi,
+            const std::variant<ProofFlag, Integer> & self_term) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
