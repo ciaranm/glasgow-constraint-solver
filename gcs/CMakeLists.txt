@@ -371,6 +371,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(reification_test PRIVATE glasgow_constraint_solver)
     add_test(NAME reification_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:reification_test>)
 
+    add_executable(invar_test innards/proofs/invar_test.cc)
+    target_link_libraries(invar_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME invar_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_test>)
+
     add_executable(interval_set_test innards/interval_set_test.cc)
     target_link_libraries(interval_set_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)

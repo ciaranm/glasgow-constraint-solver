@@ -192,6 +192,24 @@ namespace gcs::innards
         auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
 
         /**
+         * Say that we will need the range ("in") literal [lo, hi] for a variable: a
+         * single proof-only Boolean flag meaning `lo <= var <= hi`. Returns that flag,
+         * idempotent on (id, lo, hi).
+         *
+         * The range literal is a "wide equality literal", defined as
+         * `flag <=> (var >= lo) AND NOT (var >= hi+1)`, reified against the variable's
+         * own two order-encoding cuts. Ensures those cuts exist via need_gevar, which
+         * also threads them into the order chain (Inv1). That chain alone is what makes
+         * range-literal propagation complete — no covering/containment constraints are
+         * needed (established by the Stage-0 spike; range literals behave exactly like
+         * equality literals with a wider gap, so Theorem 3.3 carries over).
+         *
+         * Currently only implemented during the proof-logging phase; throws
+         * UnimplementedException if called during model writing, until a caller needs it.
+         */
+        [[nodiscard]] auto need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofFlag;
+
+        /**
          * Say that we are going to need an at-least-one constraint for a
          * variable.
          */
