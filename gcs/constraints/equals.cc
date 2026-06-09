@@ -9,7 +9,9 @@
 
 #include <util/overloaded.hh>
 
+#include <cstdlib>
 #include <sstream>
+#include <variant>
 #include <vector>
 
 #include <version>
@@ -57,20 +59,56 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         // Symmetric difference: remove from each side anything not present in
         // the other. Materialise both domains once and walk via merge —
         // O(intervals(v1) + intervals(v2) + |output|) instead of the
-        // O(|domain| × intervals(other)) per-value membership scan. The
-        // per-value loop inside the yielded interval still fires one
-        // infer_not_equal per value (same as before); a future
-        // infer_not_in_interval primitive could collapse it further.
+        // O(|domain| × intervals(other)) per-value membership scan.
         auto v1_set = state.copy_of_values(v1);
         auto v2_set = state.copy_of_values(v2);
 
-        for (auto [lo, hi] : v1_set.each_interval_minus(v2_set))
-            for (Integer val = lo; val <= hi; ++val)
-                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 != val); return reason; }});
+        // Stage-3 experiment, off by default (GCS_RANGE_INFERENCES). Default path is
+        // the per-value loop: one infer_not_equal per removed value, each RUP.
+        //
+        // When enabled, collapse each contiguous removed interval into ONE
+        // ~[pruned in lo..hi] proof line. RUP alone cannot do this across the bit-sum
+        // equality v1=v2 (a range flag pins only the variable's order atoms, never its
+        // bits, so it can't cross the equality), so we first emit two bound-lemmas
+        // [pruned in lo..hi] -> other>=lo and -> other<=hi. Each lemma IS RUP: its
+        // negation supplies an opposing bound that, together with the equality, is the
+        // Theorem 2.9 (contradictory binary sums) configuration -- this is exactly
+        // Justification Procedure 3.2 (Comparison) materialising a bound across the
+        // equality. The conclusion ~[pruned in lo..hi] then follows by RUP from the two
+        // lemmas plus the (disjunctive) reason. The inference is width-independent (two
+        // lemmas + one conclusion regardless of |lo..hi|); see dev_docs/range_literals.md
+        // for the proof-size characterisation. Range literals exist only for plain
+        // integer variables, so views/constants always take the per-value path.
+        static const bool range_inferences = std::getenv("GCS_RANGE_INFERENCES") != nullptr;
+        auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
+            std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});
+        auto use_range = range_inferences && logger != nullptr && both_simple;
 
-        for (auto [lo, hi] : v2_set.each_interval_minus(v1_set))
-            for (Integer val = lo; val <= hi; ++val)
-                inference.infer_not_equal(logger, v2, val, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 != val); return reason; }});
+        auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonFunction & r) {
+            auto flag = logger->names_and_ids_tracker().need_invar(std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi);
+            logger->emit_rup_proof_line_under_reason(r, WPBSum{} + 1_i * ! flag + 1_i * (other >= lo) >= 1_i, ProofLevel::Temporary);
+            logger->emit_rup_proof_line_under_reason(r, WPBSum{} + 1_i * ! flag + 1_i * (other < hi + 1_i) >= 1_i, ProofLevel::Temporary);
+        };
+
+        auto prune = [&](const auto & pruned, const auto & other, const IntervalSet<Integer> & pruned_set, const IntervalSet<Integer> & other_set) {
+            for (auto [lo, hi] : pruned_set.each_interval_minus(other_set)) {
+                if (use_range)
+                    inference.infer_not_in_range(logger, pruned, lo, hi,
+                        JustifyExplicitlyThenRUP{[=](const ReasonFunction & r) { bridge(pruned, other, lo, hi, r); }},
+                        ReasonFunction{[=, reason = reason]() mutable {
+                            for (Integer val = lo; val <= hi; ++val)
+                                reason.emplace_back(other != val);
+                            return reason;
+                        }});
+                else
+                    for (Integer val = lo; val <= hi; ++val)
+                        inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{},
+                            ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(other != val); return reason; }});
+            }
+        };
+
+        prune(v1, v2, v1_set, v2_set);
+        prune(v2, v1, v2_set, v1_set);
     }
     else {
         auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);

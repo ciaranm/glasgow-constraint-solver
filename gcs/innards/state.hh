@@ -100,6 +100,10 @@ namespace gcs::innards
             const SimpleIntegerVariableID & var,
             Integer value) -> Inference;
 
+        [[nodiscard]] auto change_state_for_not_in_range(
+            const SimpleIntegerVariableID & var,
+            Integer lo, Integer hi) -> Inference;
+
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) -> IntervalSet<Integer> &;
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const IntervalSet<Integer> &;
 
@@ -195,6 +199,17 @@ namespace gcs::innards
          */
         template <IntegerVariableIDLike VarType_>
         [[nodiscard]] auto infer_greater_than_or_equal(const VarType_ &, Integer value) -> Inference;
+
+        /**
+         * Infer that a given IntegerVariableID or more specific type must not take
+         * any value in the closed interval [lo, hi]. The whole contiguous range is
+         * removed in a single pass (see IntervalSet::erase_range). Performance and
+         * clarity overload for a run of infer_not_equal() calls over a contiguous
+         * range; see InferenceTracker::infer_not_in_range for the matching
+         * single-proof-line range inference. A range with lo > hi is a no-op.
+         */
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer_not_in_range(const VarType_ &, Integer lo, Integer hi) -> Inference;
 
         ///@}
 

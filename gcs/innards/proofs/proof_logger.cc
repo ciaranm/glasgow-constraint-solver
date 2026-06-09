@@ -395,6 +395,76 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         .visit(why);
 }
 
+auto ProofLogger::infer_not_in_range(const IntegerVariableID & var, Integer lo, Integer hi,
+    const Justification & why, const ReasonFunction & reason) -> void
+{
+    if (lo > hi)
+        return;
+
+    // Only a plain integer variable has a single range ("in") literal to negate.
+    // Views and constants fall back to per-value removal: each `var != val` is still
+    // RUP from the same reason (via the laminar containment edges down to the eq
+    // atoms), it is just not coalesced into one line.
+    const auto * simple = std::get_if<SimpleIntegerVariableID>(&var);
+    if (! simple) {
+        for (Integer val = lo; val <= hi; ++val)
+            infer(var != val, why, reason);
+        return;
+    }
+
+    // Emit the single conclusion line `~[var in lo..hi] >= 1`, reified on the
+    // (coalesced) reason, with the requested proof rule. Mirrors the rup / assert
+    // branches of infer(), but the conclusion is the negation of the range flag.
+    auto emit_negated_range = [&](const string & rule) {
+        log_stacktrace();
+        optional<Reason> reason_literals;
+        if (reason)
+            reason_literals = reason();
+
+        if (reason_literals)
+            coalesce_holes_in_reason(names_and_ids_tracker(), *reason_literals);
+
+        if (reason_literals)
+            names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
+
+        auto flag = names_and_ids_tracker().need_invar(*simple, lo, hi);
+
+        WPBSum terms;
+        terms += 1_i * ! flag;
+        HalfReifyOnConjunctionOf reif{};
+        if (reason_literals)
+            reif = *reason_literals;
+
+        write_indent();
+        _imp->proof << rule;
+        emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
+        _imp->proof << ";\n";
+        record_proof_line(advance_proof_line_number(), ProofLevel::Current);
+    };
+
+    overloaded{
+        [&](const JustifyUsingRUP &) {
+            emit_negated_range("rup ");
+        },
+        [&](const AssertRatherThanJustifying &) {
+            emit_negated_range("a ");
+        },
+        [&](const JustifyExplicitlyOnly & x) {
+            auto t = temporary_proof_level();
+            x.add_proof_steps(reason);
+            forget_proof_level(t);
+        },
+        [&](const JustifyExplicitlyThenRUP & x) {
+            auto t = temporary_proof_level();
+            x.add_proof_steps(reason);
+            infer_not_in_range(var, lo, hi, JustifyUsingRUP{}, reason);
+            forget_proof_level(t);
+        },
+        [&](const NoJustificationNeeded &) {
+        }}
+        .visit(why);
+}
+
 auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> Reason
 {
     optional<Reason> reason_literals;

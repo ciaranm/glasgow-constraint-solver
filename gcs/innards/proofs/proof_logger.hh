@@ -132,6 +132,19 @@ namespace gcs::innards
         auto infer(const Literal & lit, const Justification & why, const ReasonFunction & reason) -> void;
 
         /**
+         * Log, if necessary, that we have inferred that \p var takes no value in the
+         * closed interval [lo, hi]. For a plain integer variable this is a single
+         * proof line `~[var in lo..hi] >= 1` (the negation of the range "in" literal;
+         * see NamesAndIDsTracker::need_invar) emitted under the reason, in place of
+         * one `var != v` line per removed value: the per-value facts follow from it by
+         * RUP via the laminar containment edges, so they need not be written out. Views
+         * and constants fall back to per-value emission (still correct, not coalesced).
+         * Justification handling mirrors infer().
+         */
+        auto infer_not_in_range(const IntegerVariableID & var, Integer lo, Integer hi,
+            const Justification & why, const ReasonFunction & reason) -> void;
+
+        /**
          * \brief Return the current <em>active proof level</em> &mdash; the
          * integer depth used to tag proof lines.
          *

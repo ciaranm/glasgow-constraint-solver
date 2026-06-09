@@ -1,7 +1,11 @@
 # Range / interval literals — design and status
 
-Status: foundation **done and green**. The whole constraint test suite (225 tests) verifies
-under `reject_random_interval` branching. Branch `range-literals`, draft PR #281.
+Status: foundation **done and green** (reasons + `reject_random_interval` branching; full suite
+verifies). Stage-3 **`infer_not_in_range` primitives built and committed** (green, unused by
+default); the single-line range *inference* itself is behind `GCS_RANGE_INFERENCES` (default
+off) pending productionisation — see "Stage 3" below for the key finding (interval inferences
+across a bit-sum equality need an explicit bridge proof, not RUP). Branch `range-literals`,
+draft PR #281.
 
 This document is the authoritative current-state summary. The git history and PR have the
 blow-by-blow; this is the settled picture so we don't re-derive it.
@@ -58,28 +62,134 @@ keep them separate.
 - Proof tests: `invar_test`, `range_reason_test`, `range_branch_test`
   (`gcs/innards/proofs/`).
 
-## What is left (productionization, no unknowns)
+## Stage 3 — `infer_not_in_range` (issue #144): status and the key finding
 
-- **Stage 3 — `infer_not_in_range` / `infer_in_range` (issue #144).** A range removal is ONE
-  emitted proof line `~[lo,hi]` (the per-value `x != v` follow by RUP, free) — overturning
-  #144's "must emit per-value", which assumed an *unreified* range Boolean. Plan: add
-  `IntervalSet::erase_range`; `State::infer_not_in_range` (erase + emit one `~need_invar` step
-  via `emit_rup_proof_line_under_reason` — needs InferenceTracker support for a range-flag
-  inference, which is not a standard `Literal` infer); trivial `infer_in_range` (two bound
-  infers); apply at `equals.cc:65`, `min_max.cc:179`, `element.cc:477` (at equals the per-value
-  reason `(v2 != val)` coalesces to `~[v2 in lo..hi]`, a range-to-range inference); bench proof
-  size. Soundness in search relies on the containment from axis 2.
-- **Stage 6 — generality.** Fold ranges into `IntegerVariableCondition` / make them
-  user-facing, retiring the dev-time `BranchGuess`-only scope.
+**Built and committed (general, view-safe, green; unused by default):**
 
-## Dead ends — do NOT revisit
+- **`IntervalSet::erase_range(lo, hi)`** — closed-range removal in one merge-walk pass, with
+  unit tests. (`gcs/innards/interval_set.hh`, `interval_set_test.cc`.)
+- **`State::infer_not_in_range` + `change_state_for_not_in_range`** — view-aware single-pass
+  domain mutation, returns the right `Inference`. A genuine win on the **non-proof** solve
+  path (one `erase_range` instead of N `erase`s). (`state.hh/.cc`.)
+- **`InferenceTracker::infer_not_in_range` + `track_range_impl`** (both tracker classes) and
+  **`ProofLogger::infer_not_in_range`** — proof-side plumbing for a *range-flag* inference
+  (a `~need_invar` conclusion, not a standard `Literal` infer). Plain simple vars get the
+  single-line conclusion; views/constants fall back to per-value. (`inference_tracker.hh`,
+  `proof_logger.hh/.cc`.)
+
+### THE KEY FINDING: inferring an interval needs its *own* proof — RUP alone is not enough
+
+The Stage-3 plan above (now corrected) claimed a range removal is ONE proof line `~[lo,hi]`
+**by RUP**, the per-value `x != v` following free from the chain. **This is false for the
+constraints that actually do interval removals.** Empirically (VeriPB `--trace-failed`) and
+from McIlree's thesis:
+
+- A range flag `[X in lo..hi]` asserts only X's **order atoms** (`X>=lo ∧ ¬(X>=hi+1)`). With
+  `lo<hi`, **Theorem 2.8 never fires** (it pins bits only for `sum=A ∧ sum<=A`, a single
+  value), so a range assertion **never pins X's bits**.
+- Constraints that prune an interval do so *across a cross-variable link*. If that link is a
+  **bit-sum equality** `X−Y==0`, the range flag's order atoms can't cross it (UP can't do the
+  cross-variable linear step), so `~[X in lo..hi]` is **not RUP**. The per-value version works
+  only because asserting `X=v` (an *eq* atom) pins X's bits via Thm 2.8, which then channel to Y.
+
+**Audit of scope (who is affected).** The break is exactly: *constraints that prune an interior
+interval across a primary bit-sum equality.* These are:
+
+| Constraint | Link | Notes |
+|---|---|---|
+| `Equals` / `ReifiedEquals` | `v1−v2==0` (via `enforce_equality`) | the canonical case |
+| `Element` (index fixed) | `result−array_var==0` (via `enforce_equality`) | same helper |
+| `AllEqual` | `vars[i]−vars[i+1]==0` (witness) | each_interval_minus |
+| `Abs` | `v2∓v1==0` reified on sign | also needs a sign case-split; `justify_abs_hole` already does the per-value version |
+
+Everything else is fine: constraints that channel via **eq-atoms / selectors** (Table, Regular,
+GCC, Count, Among, In, Inverse, MinMax, AtMostOne, ValuePrecede, Circuit, AllDifferent) have
+reasons that *forward-propagate* `X≠v`, so their interval removals **are** RUP as a single line
+(consistent with thesis Justification Procedure 3.3). The bit-*arithmetic* constraints that
+can't channel cheaply (Linear, Comparison, Plus, …) are bounds-consistent and never do interior
+removals, so the question doesn't arise. (Note: `Abs` *does* do interior removal — earlier audit
+said otherwise and was wrong; ArgSort/SmartTable have bit-sum equalities but reified *behind
+selectors*, so they forward-propagate and are fine.)
+
+### The fix that works: an explicit bridge (case-split, each case RUP)
+
+RUP-as-a-single-*line* was the wrong bar. A short **explicit** justification collapses the
+interval into one conclusion, on the **unmodified** bit-sum model — no re-encoding. To remove
+`[lo,hi]` from `v1` because `v2` lacks it (`v1=v2`):
+
+```
+flag := [v1 in lo..hi]
+1)  ~flag ∨ (v2 ≥ lo)        # RUP: ¬ gives flag ∧ v2≤lo−1; with v1=v2 this is the
+2)  ~flag ∨ ¬(v2 ≥ hi+1)     #      Theorem 2.9 (contradictory binary sums) configuration
+⇒  ~flag                     # RUP from (1),(2) + the disjunctive reason ~[v2 in lo..hi]
+```
+
+The case-split is the point: the *disjunctive* reason never hands UP an opposing bound, but each
+lemma's negation does, triggering Thm 2.9. This is literally Justification Procedure 3.2
+(Comparison) materialising each bound across the equality; `justify_abs_hole` is the per-value
+sign-split form of the same idea. **Verified** end-to-end with VeriPB: full `equals_test` (plain
++ reified) passes with the bridge wired in.
+
+This is exercised behind an env flag, **`GCS_RANGE_INFERENCES` (default off)**, in `equals.cc`
+(simple vars only; views/constants stay per-value), with a dedicated proof test
+`range_infer_test`. Default behaviour is byte-identical to before.
+
+### Proof-size: width-independent inference, win for *wide* intervals (with caveats)
+
+The inference is 3 lines (2 lemmas + conclusion) regardless of interval width. Measured
+(VeriPB line counts, `Equals` with a hole):
+
+- narrow ranges (widths 1–7, `equals_test`): **1306 vs 1269** — slight *loss*.
+- one wide hole (width 21): **445 vs 582** — ~24% *win*.
+
+The catch is a per-flag fixed cost: `need_invar` emits the reification + **O(width) laminar
+containment edges** (the axis-2 backtrack machinery). So it's break-even for narrow intervals,
+a win for wide ones. **But** that fixed cost amortises: in the `equals_test` proof, 23 distinct
+range flags carry **932 references (~40× reuse each)** — mostly from `reject_random_interval`
+branching, which mints and reuses the same flags. So the realistic marginal cost of a range
+removal (reusing an existing flag) is ~3 lines vs O(width) per-value. The one-shot probe above
+is the un-amortised worst case. **Not yet measured:** a realistic instance with recurring *wide*
+removals; the effect of hoisting the bridge lemmas to `Top` (they are search-independent facts,
+so they would amortise too, dropping the marginal cost toward 1 line); and **verify time** (a
+larger constraint DB vs faster RUP — entirely unmeasured).
+
+### What is left to productionise
+
+1. **Generalise the bridge** to the rest of the family (`Element` index-fixed, `AllEqual`,
+   `Abs`+sign-split) and decide the home for it — a shared `enforce_equality` justification.
+2. **Views.** `infer_not_in_range`'s single-line path is simple-var only; generalise (deview
+   the range, or fall back cleanly). Relates to Stage 6.
+3. **Cost policy (Stage 5).** A width threshold (cf. `min_run_to_coalesce` for reasons) to pick
+   range-vs-per-value, since narrow ranges are break-even. Then the gate can come off.
+4. **Hoist the bridge lemmas to `Top`** so they amortise across reuse; measure proof-size AND
+   verify-time on a structured benchmark.
+5. **Reason side is also an interval.** The reason `v2 != lo..hi` is the symmetric half; the
+   Stage-2 `coalesce_holes_in_reason` already rewrites it to `~[v2 in lo..hi]` (gated by
+   `GCS_RANGE_REASONS`). Building it as a native range literal (no loop, no coalescing pass)
+   is the Stage-6 generality.
+6. **`infer_in_range`** (issue #144's companion) — two bound infers; deferred, no clean caller
+   after line drift. Add only when a real consumer appears.
+
+## Stage 6 — generality
+
+Fold ranges into `IntegerVariableCondition` / make them user-facing, retiring the dev-time
+`BranchGuess`-only scope. This is the unifying step: one range-literal abstraction shared by
+reasons, inferences, AND branching (today reasons and branching use it; inferences are the new
+`GCS_RANGE_INFERENCES` path).
+
+## Dead ends / corrected claims — do NOT revisit
 
 - "The order chain alone is enough, no covering needed." True only for axis 1. The hole/
-  backtrack axis genuinely needs containment; this was proven by `reject_random_interval`
-  failing on Count/among/element before containment was added.
+  backtrack axis genuinely needs containment; proven by `reject_random_interval` failing on
+  Count/among/element before containment was added.
 - For the branching wall, none of these is the fix: per-propagator explicit conflict
   justification; a bound-touching branching discipline; "it's a fundamental UP limitation".
   The fix is the containment edges (axis 2).
 - Covering edges *between range literals* (`parent -> OR children`) are unnecessary — the chain
   gives those deductions. Only *containment* (`child -> parent`) is needed, and only on axis 2.
-- The #144 overturn is delivered by the **reification + chain**, not by the containment.
+- **CORRECTED:** the old claim "a range *inference* is ONE line by RUP, overturning #144" is
+  **wrong** for the bit-sum-equality family (Equals/AllEqual/Abs/Element-index-fixed). RUP
+  suffices only when the constraint's link forward-propagates `X≠v` (eq-atom/selector channelled
+  constraints). For the equality family, the single line needs the **explicit bridge** above.
+  #144's "the proof is per-value" instinct was right for those constraints, but the proof can
+  still be made width-independent (constant lines) with the bridge — just not pure RUP.
