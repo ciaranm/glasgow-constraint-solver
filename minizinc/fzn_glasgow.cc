@@ -90,12 +90,11 @@ public:
 
 namespace
 {
-    static atomic<bool> abort_flag{false}, was_terminated{false};
+    static atomic<bool> abort_flag{false};
 
     auto sig_int_or_term_handler(int) -> void
     {
         abort_flag.store(true);
-        was_terminated.store(true);
     }
 
     struct ExtractedData
@@ -306,6 +305,8 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (var_type == "int") {
                 if (! vardata.contains("domain")) {
+                    // Halve the bounds so there is headroom for sums and products of
+                    // unbounded variables to stay within Integer without overflowing.
                     auto var = problem.create_integer_variable(Integer::min_value() / 2_i, Integer::max_value() / 2_i, name);
                     data.integer_variables.emplace(name, pair{var, false});
                     if ((! vardata.contains("defined")) || (! vardata["defined"].get<bool>()))
