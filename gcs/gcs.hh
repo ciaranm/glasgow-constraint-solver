@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_GCS_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_GCS_HH 1
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_GCS_HH
 
+#include <gcs/array_param.hh>
 #include <gcs/constraint.hh>
 #include <gcs/current_state.hh>
 #include <gcs/exception.hh>
@@ -9,6 +10,7 @@
 #include <gcs/integer.hh>
 #include <gcs/problem.hh>
 #include <gcs/proof.hh>
+#include <gcs/reification.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 #include <gcs/stats.hh>

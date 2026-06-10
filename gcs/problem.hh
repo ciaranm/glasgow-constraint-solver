@@ -195,7 +195,7 @@ namespace gcs
 
         [[nodiscard]] auto each_presolver() const -> std::generator<Presolver &>;
 
-        auto all_normal_variables() const -> const std::vector<IntegerVariableID> &;
+        [[nodiscard]] auto all_normal_variables() const -> const std::vector<IntegerVariableID> &;
 
         [[nodiscard]] auto each_constraint() const -> std::generator<const Constraint &>;
 

@@ -136,7 +136,7 @@ namespace gcs
         /**
          * \brief Returns a generator that gives each value in the variable's domain.
          */
-        auto each_value(const IntegerVariableID) const -> std::generator<Integer>;
+        [[nodiscard]] auto each_value(const IntegerVariableID) const -> std::generator<Integer>;
 
         /**
          * \brief Returns a generator that gives each value in the variable's
@@ -144,7 +144,7 @@ namespace gcs
          *
          * \sa CurrentState::each_value()
          */
-        auto each_value_reversed(const IntegerVariableID) const -> std::generator<Integer>;
+        [[nodiscard]] auto each_value_reversed(const IntegerVariableID) const -> std::generator<Integer>;
 
         /**
          * \brief Returns the values in a variable's domain, in an interval set representation. Usually
@@ -152,7 +152,7 @@ namespace gcs
          *
          * \sa CurrentState::each_value()
          */
-        auto copy_of_values(const IntegerVariableID) const -> innards::IntervalSet<Integer>;
+        [[nodiscard]] auto copy_of_values(const IntegerVariableID) const -> innards::IntervalSet<Integer>;
 
         ///@}
     };
