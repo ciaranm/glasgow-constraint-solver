@@ -160,6 +160,12 @@ set_tests_properties(minizinc-setinreif PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-sets COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ sets true true)
 set_tests_properties(minizinc-sets PROPERTIES SKIP_RETURN_CODE 66)
 
+# Empty-set set_in / set_in_reif: MiniZinc folds `x in {}` to false before it
+# reaches the solver, so these feed hand-written JSON FlatZinc to fzn-glasgow
+# directly to exercise the empty-set frontend guards.
+add_test(NAME minizinc-emptysetin COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ empty_set_in)
+add_test(NAME minizinc-emptysetinreif COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ empty_set_in_reif)
+
 add_test(NAME minizinc-small COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ small true true)
 set_tests_properties(minizinc-small PROPERTIES SKIP_RETURN_CODE 66)
 

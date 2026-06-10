@@ -525,13 +525,20 @@ auto main(int argc, char * argv[]) -> int
                 const auto & var = arg_as_var(data, args, 0);
                 const auto & set = arg_as_set_of_integer(data, args, 1);
 
-                // var is inside the range as a whole
-                problem.post(WeightedSum{} + 1_i * var >= set.lower());
-                problem.post(WeightedSum{} + 1_i * var <= set.upper());
+                if (set.empty()) {
+                    // var is in the empty set: unsatisfiable. (lower()/upper()
+                    // below have a non-empty precondition, so guard this here.)
+                    problem.post(In{var, vector<Integer>{}});
+                }
+                else {
+                    // var is inside the range as a whole
+                    problem.post(WeightedSum{} + 1_i * var >= set.lower());
+                    problem.post(WeightedSum{} + 1_i * var <= set.upper());
 
-                // var isn't inside any of the gaps between ranges
-                for (auto [l, u] : set.each_gap_interval())
-                    problem.post(Or{{var < l, var >= u}, TrueLiteral{}});
+                    // var isn't inside any of the gaps between ranges
+                    for (auto [l, u] : set.each_gap_interval())
+                        problem.post(Or{{var < l, var >= u}, TrueLiteral{}});
+                }
             }
             else if (id == "array_bool_and") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);
@@ -593,17 +600,25 @@ auto main(int argc, char * argv[]) -> int
                 const auto & set = arg_as_set_of_integer(data, args, 1);
                 const auto & reif = arg_as_var(data, args, 2);
 
-                // reif -> var is inside the range as a whole
-                problem.post(Or{{reif != 1_i, var >= set.lower()}, TrueLiteral{}});
-                problem.post(Or{{reif != 1_i, var <= set.upper()}, TrueLiteral{}});
+                if (set.empty()) {
+                    // var being in the empty set is always false, so reif must
+                    // be false. (lower()/upper() below have a non-empty
+                    // precondition, so guard this here.)
+                    problem.post(WeightedSum{} + 1_i * reif <= 0_i);
+                }
+                else {
+                    // reif -> var is inside the range as a whole
+                    problem.post(Or{{reif != 1_i, var >= set.lower()}, TrueLiteral{}});
+                    problem.post(Or{{reif != 1_i, var <= set.upper()}, TrueLiteral{}});
 
-                // reif -> var isn't inside any of the gaps between ranges
-                for (auto [l, u] : set.each_gap_interval())
-                    problem.post(Or{{reif != 1_i, var < l, var >= u}, TrueLiteral{}});
+                    // reif -> var isn't inside any of the gaps between ranges
+                    for (auto [l, u] : set.each_gap_interval())
+                        problem.post(Or{{reif != 1_i, var < l, var >= u}, TrueLiteral{}});
 
-                // ! reif -> var isn't inside this range
-                for (auto [l, u] : set.each_interval())
-                    problem.post(Or{{reif == 1_i, var<l, var> u}, TrueLiteral{}});
+                    // ! reif -> var isn't inside this range
+                    for (auto [l, u] : set.each_interval())
+                        problem.post(Or{{reif == 1_i, var<l, var> u}, TrueLiteral{}});
+                }
             }
             else if (id == "glasgow_alldifferent") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);

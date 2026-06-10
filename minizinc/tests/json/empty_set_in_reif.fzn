@@ -1,0 +1,13 @@
+{
+    "variables": {
+        "x": { "type": "int", "domain": [[1, 3]] },
+        "c": { "type": "bool" }
+    },
+    "arrays": {},
+    "constraints": [
+        { "id": "set_in_reif", "args": ["x", {"set": []}, "c"] }
+    ],
+    "output": ["x", "c"],
+    "solve": { "method": "satisfy" },
+    "version": "1.0"
+}
