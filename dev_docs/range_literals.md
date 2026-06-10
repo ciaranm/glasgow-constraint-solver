@@ -257,3 +257,17 @@ reasons, inferences, AND branching (today reasons and branching use it; inferenc
   verification is manual per constraint. An earlier note that Element was "proven by the suite"
   was unsubstantiated until checked directly (it does pass: `element_test <mode> --prove` with
   `GCS_RANGE_INFERENCES=1`).
+- **Two refuted "more elaborate proof" attempts for AllEqual n≥3** (the OPB is a *line* of n-1
+  consecutive `vars[i]=vars[i+1]`, not a star):
+  1. **Full pairwise (n²/2) OPB instead of the line** — *does not help* (10/40 still fail). The
+     failing backtrack step (`i₂≤4 ⟹ i₃≤4`) is across an equality that is *already adjacent* in
+     the line; UP can't cross it, and adding the other pairs doesn't change that. Not a
+     connectivity problem.
+  2. **Bridge lemmas durable at `Top` (unconditional) instead of `Temporary`** — *necessary but
+     insufficient* (13/40 still fail). They fire and resolve flags (the trail gets much further),
+     and are RUP-derivable at `Top` for a direct equality, but the residual failures are raw
+     var-to-var bound propagations *not mediated by any flag* (the solver's backtrack clauses,
+     e.g. `i₂==5 ∨ i₃==3`).
+  The only thing that would close it is durably materialising the order-atom covering of the
+  equalities (`(vᵢ≥k) ⟺ (vⱼ≥k)`) — exactly the O(width) covering range literals exist to avoid.
+  So for a multi-hop chain, "coalesce the inference" and "keep the proof cheap" are in tension.
