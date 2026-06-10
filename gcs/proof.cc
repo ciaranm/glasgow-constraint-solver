@@ -6,6 +6,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_unique;
 using std::string;
 
 ProofFileNames::ProofFileNames(const std::string & s) :
@@ -43,7 +44,7 @@ struct Proof::Imp
 };
 
 Proof::Proof(const ProofOptions & o) :
-    _imp(new Imp{o})
+    _imp(make_unique<Imp>(o))
 {
     _imp->tracker.start_writing_model(model());
 }

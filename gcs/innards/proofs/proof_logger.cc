@@ -24,6 +24,7 @@ using std::flush;
 using std::fstream;
 using std::ios;
 using std::ios_base;
+using std::make_unique;
 using std::map;
 using std::optional;
 using std::ostream;
@@ -103,7 +104,7 @@ struct ProofLogger::Imp
 };
 
 ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker & t) :
-    _imp(new Imp{t})
+    _imp(make_unique<Imp>(t))
 {
     _imp->proof_file = proof_options.proof_file_names.proof_file;
     _imp->proof_lines_by_level.resize(2);
