@@ -404,6 +404,13 @@ TEST_CASE("Each reversed empty set")
 
 TEST_CASE("Each gap")
 {
+    // empty set — no gaps (and must not underflow on intervals.size() - 1)
+    IntervalSet<int> empty;
+    vector<int> empty_gaps;
+    for (auto v : empty.each_gap())
+        empty_gaps.push_back(v);
+    CHECK(empty_gaps.empty());
+
     IntervalSet<int> set(1, 10);
 
     // single interval — no gaps
@@ -424,6 +431,13 @@ TEST_CASE("Each gap")
 
 TEST_CASE("Each gap interval")
 {
+    // empty set — no gap intervals (and must not underflow on intervals.size() - 1)
+    IntervalSet<int> empty;
+    vector<pair<int, int>> empty_gap_intervals;
+    for (auto v : empty.each_gap_interval())
+        empty_gap_intervals.push_back(v);
+    CHECK(empty_gap_intervals.empty());
+
     IntervalSet<int> set(1, 10);
 
     // single interval — no gap intervals

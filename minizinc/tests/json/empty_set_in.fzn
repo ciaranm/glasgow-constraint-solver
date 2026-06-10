@@ -1,0 +1,10 @@
+{
+    "variables": { "x": { "type": "int", "domain": [[1, 10]] } },
+    "arrays": {},
+    "constraints": [
+        { "id": "set_in", "args": ["x", {"set": []}] }
+    ],
+    "output": ["x"],
+    "solve": { "method": "satisfy" },
+    "version": "1.0"
+}
