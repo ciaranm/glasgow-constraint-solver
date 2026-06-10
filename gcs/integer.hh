@@ -100,12 +100,12 @@ namespace gcs
 
         ///@}
 
-        static inline constexpr auto min_value() -> const Integer
+        static inline constexpr auto min_value() -> Integer
         {
             return Integer(std::numeric_limits<decltype(raw_value)>::min());
         }
 
-        static inline constexpr auto max_value() -> const Integer
+        static inline constexpr auto max_value() -> Integer
         {
             return Integer(std::numeric_limits<decltype(raw_value)>::max());
         }

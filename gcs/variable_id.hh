@@ -194,7 +194,8 @@ struct std::hash<gcs::ViewOfIntegerVariableID>
     [[nodiscard]] inline auto operator()(const gcs::ViewOfIntegerVariableID & v) const -> std::size_t
     {
         return hash<gcs::SimpleIntegerVariableID>{}(v.actual_variable) ^
-            hash<gcs::Integer>{}(v.then_add);
+            hash<gcs::Integer>{}(v.then_add) ^
+            hash<bool>{}(v.negate_first);
     }
 };
 
