@@ -7,14 +7,20 @@ off) pending productionisation — see "Stage 3" below for the key finding (inte
 across a bit-sum equality need an explicit bridge proof, not RUP). The bridge now lives in a
 reusable free helper `justify_not_in_range_across_equality`
 (`gcs/constraints/innards/justify_not_in_range.{hh,cc}`) and is wired into `enforce_equality`,
-so **`Equals` and `Element` (index-fixed) both verify it gate-on**. Attempting to extend it to
-**`AllEqual` surfaced an axis-1/axis-2 coupling**: the bridge *inference* is sound, but
-coalescing a multi-variable chain's per-value removals into one range flag breaks *backtrack-
-clause* reconstruction (n≥3 fails; n==2 works) — see "Generalising across the family" below.
-Branch `range-literals`, draft PR #281.
+so `Equals` and `Element` (index-fixed) verify it gate-on **in isolation**. **CORRECTED (and
+the headline): this does NOT compose.** A star of plain `Equals` over three transitively-linked
+variables — no `AllEqual` involved — breaks gate-on identically. So interval *inference* across
+a bit-sum equality is a **general** limitation of the equality family, not an `AllEqual` bug:
+the moment ≥3 variables share an equality class, the backtracking invariant needs a *bound*
+threaded across the equality, which unit propagation cannot do. The two-variable tests pass only
+because two variables in isolation never raise that obligation. The full thesis-grounded
+explanation (which thesis properties we preserve vs lose, and why) is in
+**[`range_literals_theory.md`](range_literals_theory.md)** — read that first. Branch
+`range-literals`, draft PR #281.
 
 This document is the authoritative current-state summary. The git history and PR have the
-blow-by-blow; this is the settled picture so we don't re-derive it.
+blow-by-blow; this is the settled picture so we don't re-derive it. For the *theory* of why the
+equality family breaks, see [`range_literals_theory.md`](range_literals_theory.md).
 
 ## What a range literal is
 
@@ -103,9 +109,9 @@ interval across a primary bit-sum equality.* These are:
 
 | Constraint | Link | Bridge status (gate-on) |
 |---|---|---|
-| `Equals` / `ReifiedEquals` | `v1−v2==0` (via `enforce_equality`) | **works, verified** (the canonical case) |
-| `Element` (index fixed) | `result−array_var==0` (via `enforce_equality`) | **works, verified** (var/const/const2d/var2d, 61 instances) — shares `enforce_equality` |
-| `AllEqual` | `vars[i]−vars[i+1]==0` chain (witness) | **n==2 works; n≥3 breaks** on the axis-2 wall below |
+| `Equals` / `ReifiedEquals` | `v1−v2==0` (via `enforce_equality`) | verifies gate-on **in isolation only** (2 vars); breaks once 3+ vars are transitively linked (see [`range_literals_theory.md`](range_literals_theory.md)) |
+| `Element` (index fixed) | `result−array_var==0` (via `enforce_equality`) | same — verifies in isolation (61 instances), composes no better than `Equals` |
+| `AllEqual` | star `vars[0]−vars[i]==0` (via `enforce_equality`) | breaks gate-on for ≥3 vars — but this is the **general** equality-family limitation, *not* `AllEqual`-specific (a star of plain `Equals` breaks identically) |
 | `Abs` | `v2∓v1==0` reified on sign | not yet wired; needs a sign case-split + (image direction) two-sided exclusion — `justify_abs_hole` is the per-value form |
 
 Everything else is fine: constraints that channel via **eq-atoms / selectors** (Table, Regular,
@@ -148,37 +154,41 @@ The two bound-lemmas are now a reusable free helper,
 layer rather than baking into `ProofLogger`. It takes `(pruned, lo, hi, other, other_lo,
 other_hi)` so a sign-flipped link passes `[-hi, -lo]` — ready for `Abs`.
 
-### Generalising across the family: where it holds, and the axis-2 wall
+### Why interval inference does not compose across the equality family
 
-The bridge lives in `enforce_equality`, so **`Equals` and `Element` (index-fixed) both inherit
-it** and both verify gate-on (`Element`: var/const/const2d/var2d, 61 proof instances). Note the
-constraint tests are registered with `run_test_only.bash` — they do **not** run VeriPB in
-`ctest` — so gate-on verification is done by hand per constraint (`<test> <mode> --prove` with
-`GCS_RANGE_INFERENCES=1`); the green 324/324 `ctest` run is the gate-**off** default.
+> The full, thesis-grounded version of this is **[`range_literals_theory.md`](range_literals_theory.md)**.
+> This is the short operational summary.
 
-Extending to **`AllEqual` does not just work**, and the reason is instructive. The bridge
-*inference* (axis 1) is sound: with the chain reduced to a single equality (n==2) it verifies
-(0/40 stress runs). But for **n≥3 it fails intermittently** (random domains; reproduced on
-`domains=[(1,5),(2,6),(3,7)]`). The failing line is **not** the inference — it is a later
-**backtrack clause** (`i₃==4 ∨ i₂==5`). Its RUP needs unit propagation to chain a bound across
-the chain equalities (here `i₂≤4 ⟹ i₃≤4` across `i₂−i₃==0`). VeriPB's UP does **not** cross a
-bit-sum equality for free; it only does so via explicit binary channelling clauses. The
-gate-off per-value path leaves enough of those clauses behind (each `vars[i] != v ← witness != v`
-survives at `Current`); coalescing N removals into **one** range-flag conclusion plus
-**`Temporary`** bridge lemmas (deleted on backtrack) removes exactly the channelling the
-backtrack reconstruction relied on. `Equals`/`Element`/n==2-`AllEqual` survive because the
-pruned↔witness link is a **single direct equality** in the OPB, always available to RUP; a
-multi-hop chain's link is not.
+The bridge lives in `enforce_equality`, so `Equals` and `Element` (index-fixed) inherit it and
+both verify gate-on **when posted in isolation** (`Element`: var/const/const2d/var2d, 61 proof
+instances). Note the constraint tests are registered with `run_test_only.bash` — they do **not**
+run VeriPB in `ctest` — so gate-on verification is by hand per constraint; the green 324/324
+`ctest` run is the gate-**off** default.
 
-**The criterion, refined.** The bridge generalises wherever the interval removal crosses a
-*single direct equality* to the witness. It does **not** generalise for free across a *multi-hop
-equality chain*, because the coalesced inference (axis 1) starves the backtrack/hole machinery
-(axis 2) of the per-value channelling it implicitly used. This **couples** the two axes that the
-"two independent axes" model (above) treats as separate: independence holds for plain RUP
-inferences, but coalescing an inference can change which clauses survive into axis-2
-reconstruction. Making AllEqual (n≥3) work would need that cross-chain channelling preserved
-durably (e.g. emit the needed bound-implication clauses at a surviving level, or fall back to
-per-value when the witness is non-adjacent) — left as future work, not a quick recipe.
+**That isolation is load-bearing, and it was a trap.** Earlier drafts of this section concluded
+the break was `AllEqual`-specific (a "multi-hop chain" vs "single direct equality" distinction).
+That is **wrong**, and the experiments that disproved it:
+
+- Reducing `AllEqual` to a star of single-edge `enforce_equality` calls (every inference one
+  direct equality, exactly the `Equals` case) — still breaks gate-on.
+- Posting a **star of plain `Equals` constraints** over three transitively-linked variables, with
+  no `AllEqual` anywhere — breaks gate-on identically (same rate, same instances).
+
+So the limitation is **general to the equality family**: as soon as ≥3 variables share an
+equality class (via `AllEqual`, a chain/star of `Equals`, or `Equals`+`Element`), the solver's
+**backtracking justification** needs unit propagation to thread a *bound* from one variable to
+another across a bit-sum equality (e.g. `i₃≥3 ⟹ i₂≥3`). Unit propagation across a bit-sum
+equality moves **values** (Thm 2.8, bit-pinning) and **contradictions** (Thm 2.7/2.9), but
+**never a lone bound** — there is no theorem for it. The per-value world never needs the step
+(every obligation is a single value → 2.8); a wide interval literal asserts only order atoms,
+never pins bits, so its obligation is a bound and the step is required and missing. Two variables
+in isolation never raise it, which is the *only* reason `Equals`/`Element` pass their tests.
+
+In thesis terms (see the theory doc): we **preserve** Theorem 3.3 (intra-variable completeness,
+extended to interval literals) but **lose** Inv2 / Theorem 3.4 (the backtracking-RUP invariant)
+for any constraint that channels across a bit-sum equality. Restoring it needs a cross-variable
+Inv1 — `(x≥k) ⇔ (y≥k)` logged per equality at the boundary values in play — i.e. a *covering*,
+the per-value work interval literals exist to avoid, now needed globally across the family.
 
 ### Proof-size: width-independent inference, win for *wide* intervals (with caveats)
 
@@ -201,15 +211,17 @@ larger constraint DB vs faster RUP — entirely unmeasured).
 
 ### What is left to productionise
 
-1. **Generalise the bridge.** *Done:* home decided (free helper
-   `justify_not_in_range_across_equality` in `constraints/innards/`), wired via
-   `enforce_equality`, so `Equals` and `Element` (index-fixed) verify gate-on. *Blocked:*
-   `AllEqual` n≥3 hits the axis-2 wall (see "Generalising across the family") — needs durable
-   cross-chain channelling or a per-value fallback for non-adjacent witnesses. *Not started:*
-   `Abs` — the helper is sign-flip-ready (pass `[-hi, -lo]`), but Abs needs (a) the v2→v1
-   direction conditioned on the sign reification (only one of `v2=v1` / `v2=-v1` holds per
-   branch, like `justify_abs_hole`), and (b) the v1→v2 image direction's *two-sided* exclusion
-   (`v2∈[lo,hi]` ⟹ `v1∈[lo,hi]∪[-hi,-lo]`, so two bridge applications across the two preimages).
+1. **The equality family does not compose — design decision required, not a code task.** The
+   bridge helper is built and wired (`Equals`/`Element` verify in isolation), but interval
+   inference across a bit-sum equality is **unsafe for the whole equality family** once ≥3
+   variables share an equality class (general, not `AllEqual`-specific — see
+   [`range_literals_theory.md`](range_literals_theory.md)). The only known fix is a cross-variable
+   Inv1 (`(x≥k) ⇔ (y≥k)` per equality at boundary values) — a covering applied globally to the
+   family, the cost interval literals were meant to avoid. Until that's decided, `Equals` /
+   `Element` / `AllEqual` should keep `GCS_RANGE_INFERENCES` **off**, and interval inference
+   should target only the **eq-atom/selector-channelled** family (Table, Regular, GCC, Count, …),
+   where every cross-variable obligation stays a single value (2.8) and the problem never arises.
+   (`Abs` was the would-be next equality-family member; it is moot until this is resolved.)
 2. **Views.** `infer_not_in_range`'s single-line path is simple-var only; generalise (deview
    the range, or fall back cleanly). Relates to Stage 6.
 3. **Cost policy (Stage 5).** A width threshold (cf. `min_run_to_coalesce` for reasons) to pick
@@ -246,12 +258,19 @@ reasons, inferences, AND branching (today reasons and branching use it; inferenc
   constraints). For the equality family, the single line needs the **explicit bridge** above.
   #144's "the proof is per-value" instinct was right for those constraints, but the proof can
   still be made width-independent (constant lines) with the bridge — just not pure RUP.
-- **CORRECTED:** "the bridge generalises to the whole equality family by sharing
-  `enforce_equality`." Only the **single-direct-equality** members do (Equals, Element-index-
-  fixed, n==2 AllEqual). `AllEqual` n≥3 breaks — not in the inference, but because coalescing
-  couples axis 1 and axis 2 (see "Generalising across the family"). Do not assume a constraint
-  with interval-removal-across-equality is bridge-ready without checking its *backtrack* clauses
-  gate-on, not just the inference.
+- **CORRECTED (twice — note the trajectory, it's a cautionary tale):** first we thought "the
+  bridge generalises to the whole equality family"; then, after `AllEqual` n≥3 broke, we thought
+  it was a *single-direct-equality vs multi-hop-chain* distinction (Equals/Element/n==2 fine,
+  longer chains not). **Both wrong.** A star of single-edge `Equals` calls breaks; a star of
+  *plain `Equals` constraints* with no `AllEqual` breaks identically. The real boundary is
+  **2 variables vs ≥3 in an equality class**, and it is a *general* property of interval
+  inference across a bit-sum equality, not a chain/witness/coalescing artifact. The earlier
+  "axis-2 coupling" / "multi-hop" framing was a wrong turn — the cause is that UP cannot thread
+  a bound across a bit-sum equality (Thms 2.7/2.8/2.9 give value-crossings and contradictions,
+  not bound propagation), so the backtracking invariant (Inv2 / Thm 3.4) cannot hold. See
+  [`range_literals_theory.md`](range_literals_theory.md). **Lesson:** an interval inference that
+  verifies for an isolated 2-variable constraint tells you *nothing* about composition; check ≥3
+  variables in one equality class.
 - **CORRECTED:** "the constraint suite (324/324) verifies the bridge." The constraint tests use
   `run_test_only.bash` (no VeriPB) and the suite default is gate-**off**; gate-on bridge
   verification is manual per constraint. An earlier note that Element was "proven by the suite"
@@ -268,6 +287,13 @@ reasons, inferences, AND branching (today reasons and branching use it; inferenc
      and are RUP-derivable at `Top` for a direct equality, but the residual failures are raw
      var-to-var bound propagations *not mediated by any flag* (the solver's backtrack clauses,
      e.g. `i₂==5 ∨ i₃==3`).
-  The only thing that would close it is durably materialising the order-atom covering of the
-  equalities (`(vᵢ≥k) ⟺ (vⱼ≥k)`) — exactly the O(width) covering range literals exist to avoid.
-  So for a multi-hop chain, "coalesce the inference" and "keep the proof cheap" are in tension.
+  3. **Star OPB + funnel every inference single-hop through the hub** (`AllEqual` rewritten as
+     n−1 single-edge `enforce_equality` calls, cost-neutral on the default path) — *does not help*
+     (9/40 still fail), and crucially it reduces `AllEqual` to *literally* the `Equals` code, so
+     it proved the inference justification was never the problem.
+  All three confirm the same thing the theory doc explains: it is not connectivity, not durability,
+  not how the inference is justified. UP cannot thread a bound across a bit-sum equality at all
+  (Thms 2.7/2.8/2.9 give value-crossings and contradictions, never a lone bound), so the
+  backtracking invariant cannot hold once ≥3 variables share an equality class. The only known fix
+  is the cross-variable covering `(vᵢ≥k) ⟺ (vⱼ≥k)` — applied across the whole equality family, not
+  just `AllEqual`.
