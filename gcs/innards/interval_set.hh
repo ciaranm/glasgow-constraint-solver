@@ -390,11 +390,17 @@ namespace gcs::innards
          * \brief Returns a generator that yields each integer strictly between lower()
          * and upper() that is not a member of the set, in ascending order.
          *
+         * An empty or single-interval set has no gaps and yields nothing.
+         *
          * \sa each_gap_interval(), has_holes()
          */
         [[nodiscard]] auto each_gap() const -> std::generator<Int_>
         {
             return [](const Intervals & intervals) -> std::generator<Int_> {
+                // Guard the empty case explicitly: intervals.size() is unsigned, so
+                // size() - 1 would wrap to SIZE_MAX and read out of bounds.
+                if (intervals.size() < 2)
+                    co_return;
                 for (std::size_t p = 0; p < intervals.size() - 1; ++p)
                     for (Int_ i = intervals[p].second + Int_{1}; i != intervals[p + 1].first; ++i)
                         co_yield i;
@@ -410,11 +416,17 @@ namespace gcs::innards
          * interval (the first present value after the gap). This is consistent with
          * each_gap(), which iterates <code>i = a; i != b; ++i</code>.
          *
+         * An empty or single-interval set has no gaps and yields nothing.
+         *
          * \sa each_gap(), has_holes()
          */
         [[nodiscard]] auto each_gap_interval() const -> std::generator<std::pair<Int_, Int_>>
         {
             return [](const Intervals & intervals) -> std::generator<std::pair<Int_, Int_>> {
+                // Guard the empty case explicitly: intervals.size() is unsigned, so
+                // size() - 1 would wrap to SIZE_MAX and read out of bounds.
+                if (intervals.size() < 2)
+                    co_return;
                 for (std::size_t p = 0; p < intervals.size() - 1; ++p)
                     co_yield std::pair{intervals[p].second + Int_{1}, intervals[p + 1].first};
             }(intervals);
