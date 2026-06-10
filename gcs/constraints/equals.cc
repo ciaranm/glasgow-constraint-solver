@@ -1,4 +1,5 @@
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/innards/justify_not_in_range.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -85,9 +86,10 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         auto use_range = range_inferences && logger != nullptr && both_simple;
 
         auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonFunction & r) {
-            auto flag = logger->names_and_ids_tracker().need_invar(std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi);
-            logger->emit_rup_proof_line_under_reason(r, WPBSum{} + 1_i * ! flag + 1_i * (other >= lo) >= 1_i, ProofLevel::Temporary);
-            logger->emit_rup_proof_line_under_reason(r, WPBSum{} + 1_i * ! flag + 1_i * (other < hi + 1_i) >= 1_i, ProofLevel::Temporary);
+            // Plain equality pruned = other, so the flag forces other into the same [lo, hi].
+            justify_not_in_range_across_equality(*logger, r,
+                std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi,
+                IntegerVariableID{other}, lo, hi);
         };
 
         auto prune = [&](const auto & pruned, const auto & other, const IntervalSet<Integer> & pruned_set, const IntervalSet<Integer> & other_set) {

@@ -38,6 +38,7 @@ add_library(glasgow_constraint_solver
         constraints/global_cardinality/justify.cc
         constraints/in.cc
         constraints/increasing.cc
+        constraints/innards/justify_not_in_range.cc
         constraints/innards/recover_am1.cc
         constraints/innards/reified_state.cc
         constraints/innards/triggers.cc

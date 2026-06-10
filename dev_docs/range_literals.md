@@ -4,8 +4,14 @@ Status: foundation **done and green** (reasons + `reject_random_interval` branch
 verifies). Stage-3 **`infer_not_in_range` primitives built and committed** (green, unused by
 default); the single-line range *inference* itself is behind `GCS_RANGE_INFERENCES` (default
 off) pending productionisation — see "Stage 3" below for the key finding (interval inferences
-across a bit-sum equality need an explicit bridge proof, not RUP). Branch `range-literals`,
-draft PR #281.
+across a bit-sum equality need an explicit bridge proof, not RUP). The bridge now lives in a
+reusable free helper `justify_not_in_range_across_equality`
+(`gcs/constraints/innards/justify_not_in_range.{hh,cc}`) and is wired into `enforce_equality`,
+so **`Equals` and `Element` (index-fixed) both verify it gate-on**. Attempting to extend it to
+**`AllEqual` surfaced an axis-1/axis-2 coupling**: the bridge *inference* is sound, but
+coalescing a multi-variable chain's per-value removals into one range flag breaks *backtrack-
+clause* reconstruction (n≥3 fails; n==2 works) — see "Generalising across the family" below.
+Branch `range-literals`, draft PR #281.
 
 This document is the authoritative current-state summary. The git history and PR have the
 blow-by-blow; this is the settled picture so we don't re-derive it.
@@ -95,12 +101,12 @@ from McIlree's thesis:
 **Audit of scope (who is affected).** The break is exactly: *constraints that prune an interior
 interval across a primary bit-sum equality.* These are:
 
-| Constraint | Link | Notes |
+| Constraint | Link | Bridge status (gate-on) |
 |---|---|---|
-| `Equals` / `ReifiedEquals` | `v1−v2==0` (via `enforce_equality`) | the canonical case |
-| `Element` (index fixed) | `result−array_var==0` (via `enforce_equality`) | same helper |
-| `AllEqual` | `vars[i]−vars[i+1]==0` (witness) | each_interval_minus |
-| `Abs` | `v2∓v1==0` reified on sign | also needs a sign case-split; `justify_abs_hole` already does the per-value version |
+| `Equals` / `ReifiedEquals` | `v1−v2==0` (via `enforce_equality`) | **works, verified** (the canonical case) |
+| `Element` (index fixed) | `result−array_var==0` (via `enforce_equality`) | **works, verified** (var/const/const2d/var2d, 61 instances) — shares `enforce_equality` |
+| `AllEqual` | `vars[i]−vars[i+1]==0` chain (witness) | **n==2 works; n≥3 breaks** on the axis-2 wall below |
+| `Abs` | `v2∓v1==0` reified on sign | not yet wired; needs a sign case-split + (image direction) two-sided exclusion — `justify_abs_hole` is the per-value form |
 
 Everything else is fine: constraints that channel via **eq-atoms / selectors** (Table, Regular,
 GCC, Count, Among, In, Inverse, MinMax, AtMostOne, ValuePrecede, Circuit, AllDifferent) have
@@ -130,9 +136,49 @@ lemma's negation does, triggering Thm 2.9. This is literally Justification Proce
 sign-split form of the same idea. **Verified** end-to-end with VeriPB: full `equals_test` (plain
 + reified) passes with the bridge wired in.
 
-This is exercised behind an env flag, **`GCS_RANGE_INFERENCES` (default off)**, in `equals.cc`
-(simple vars only; views/constants stay per-value), with a dedicated proof test
-`range_infer_test`. Default behaviour is byte-identical to before.
+This is exercised behind an env flag, **`GCS_RANGE_INFERENCES` (default off)**, in
+`enforce_equality` (simple vars only; views/constants stay per-value), with a dedicated proof
+test `range_infer_test`. Default behaviour is byte-identical to before (the bridge lambda is
+only reached when the gate is on).
+
+The two bound-lemmas are now a reusable free helper,
+`gcs::innards::justify_not_in_range_across_equality`
+(`gcs/constraints/innards/justify_not_in_range.{hh,cc}`): `ProofLogger &` first, matching the
+`abs/justify`, `linear/justify`, … convention, so it travels with the scoopable proof-pattern
+layer rather than baking into `ProofLogger`. It takes `(pruned, lo, hi, other, other_lo,
+other_hi)` so a sign-flipped link passes `[-hi, -lo]` — ready for `Abs`.
+
+### Generalising across the family: where it holds, and the axis-2 wall
+
+The bridge lives in `enforce_equality`, so **`Equals` and `Element` (index-fixed) both inherit
+it** and both verify gate-on (`Element`: var/const/const2d/var2d, 61 proof instances). Note the
+constraint tests are registered with `run_test_only.bash` — they do **not** run VeriPB in
+`ctest` — so gate-on verification is done by hand per constraint (`<test> <mode> --prove` with
+`GCS_RANGE_INFERENCES=1`); the green 324/324 `ctest` run is the gate-**off** default.
+
+Extending to **`AllEqual` does not just work**, and the reason is instructive. The bridge
+*inference* (axis 1) is sound: with the chain reduced to a single equality (n==2) it verifies
+(0/40 stress runs). But for **n≥3 it fails intermittently** (random domains; reproduced on
+`domains=[(1,5),(2,6),(3,7)]`). The failing line is **not** the inference — it is a later
+**backtrack clause** (`i₃==4 ∨ i₂==5`). Its RUP needs unit propagation to chain a bound across
+the chain equalities (here `i₂≤4 ⟹ i₃≤4` across `i₂−i₃==0`). VeriPB's UP does **not** cross a
+bit-sum equality for free; it only does so via explicit binary channelling clauses. The
+gate-off per-value path leaves enough of those clauses behind (each `vars[i] != v ← witness != v`
+survives at `Current`); coalescing N removals into **one** range-flag conclusion plus
+**`Temporary`** bridge lemmas (deleted on backtrack) removes exactly the channelling the
+backtrack reconstruction relied on. `Equals`/`Element`/n==2-`AllEqual` survive because the
+pruned↔witness link is a **single direct equality** in the OPB, always available to RUP; a
+multi-hop chain's link is not.
+
+**The criterion, refined.** The bridge generalises wherever the interval removal crosses a
+*single direct equality* to the witness. It does **not** generalise for free across a *multi-hop
+equality chain*, because the coalesced inference (axis 1) starves the backtrack/hole machinery
+(axis 2) of the per-value channelling it implicitly used. This **couples** the two axes that the
+"two independent axes" model (above) treats as separate: independence holds for plain RUP
+inferences, but coalescing an inference can change which clauses survive into axis-2
+reconstruction. Making AllEqual (n≥3) work would need that cross-chain channelling preserved
+durably (e.g. emit the needed bound-implication clauses at a surviving level, or fall back to
+per-value when the witness is non-adjacent) — left as future work, not a quick recipe.
 
 ### Proof-size: width-independent inference, win for *wide* intervals (with caveats)
 
@@ -155,8 +201,15 @@ larger constraint DB vs faster RUP — entirely unmeasured).
 
 ### What is left to productionise
 
-1. **Generalise the bridge** to the rest of the family (`Element` index-fixed, `AllEqual`,
-   `Abs`+sign-split) and decide the home for it — a shared `enforce_equality` justification.
+1. **Generalise the bridge.** *Done:* home decided (free helper
+   `justify_not_in_range_across_equality` in `constraints/innards/`), wired via
+   `enforce_equality`, so `Equals` and `Element` (index-fixed) verify gate-on. *Blocked:*
+   `AllEqual` n≥3 hits the axis-2 wall (see "Generalising across the family") — needs durable
+   cross-chain channelling or a per-value fallback for non-adjacent witnesses. *Not started:*
+   `Abs` — the helper is sign-flip-ready (pass `[-hi, -lo]`), but Abs needs (a) the v2→v1
+   direction conditioned on the sign reification (only one of `v2=v1` / `v2=-v1` holds per
+   branch, like `justify_abs_hole`), and (b) the v1→v2 image direction's *two-sided* exclusion
+   (`v2∈[lo,hi]` ⟹ `v1∈[lo,hi]∪[-hi,-lo]`, so two bridge applications across the two preimages).
 2. **Views.** `infer_not_in_range`'s single-line path is simple-var only; generalise (deview
    the range, or fall back cleanly). Relates to Stage 6.
 3. **Cost policy (Stage 5).** A width threshold (cf. `min_run_to_coalesce` for reasons) to pick
@@ -193,3 +246,14 @@ reasons, inferences, AND branching (today reasons and branching use it; inferenc
   constraints). For the equality family, the single line needs the **explicit bridge** above.
   #144's "the proof is per-value" instinct was right for those constraints, but the proof can
   still be made width-independent (constant lines) with the bridge — just not pure RUP.
+- **CORRECTED:** "the bridge generalises to the whole equality family by sharing
+  `enforce_equality`." Only the **single-direct-equality** members do (Equals, Element-index-
+  fixed, n==2 AllEqual). `AllEqual` n≥3 breaks — not in the inference, but because coalescing
+  couples axis 1 and axis 2 (see "Generalising across the family"). Do not assume a constraint
+  with interval-removal-across-equality is bridge-ready without checking its *backtrack* clauses
+  gate-on, not just the inference.
+- **CORRECTED:** "the constraint suite (324/324) verifies the bridge." The constraint tests use
+  `run_test_only.bash` (no VeriPB) and the suite default is gate-**off**; gate-on bridge
+  verification is manual per constraint. An earlier note that Element was "proven by the suite"
+  was unsubstantiated until checked directly (it does pass: `element_test <mode> --prove` with
+  `GCS_RANGE_INFERENCES=1`).
