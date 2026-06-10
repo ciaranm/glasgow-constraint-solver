@@ -24,6 +24,7 @@ using namespace gcs::innards;
 using std::deque;
 using std::generator;
 using std::make_optional;
+using std::make_unique;
 using std::move;
 using std::nullopt;
 using std::optional;
@@ -63,7 +64,7 @@ struct Problem::Imp
 };
 
 Problem::Problem() :
-    _imp(new Imp{})
+    _imp(make_unique<Imp>())
 {
 }
 

@@ -17,6 +17,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
+using std::make_unique;
 using std::move;
 using std::optional;
 using std::pair;
@@ -52,7 +53,7 @@ struct Propagators::Imp
 };
 
 Propagators::Propagators() :
-    _imp(new Imp())
+    _imp(make_unique<Imp>())
 {
 }
 

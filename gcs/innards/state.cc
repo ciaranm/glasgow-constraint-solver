@@ -19,6 +19,7 @@ using std::function;
 using std::generator;
 using std::list;
 using std::make_optional;
+using std::make_unique;
 using std::move;
 using std::nullopt;
 using std::optional;
@@ -100,7 +101,7 @@ struct State::Imp
 };
 
 State::State() :
-    _imp(new Imp{})
+    _imp(make_unique<Imp>())
 {
     _imp->integer_variable_states.emplace_back();
     _imp->constraint_states.emplace_back();

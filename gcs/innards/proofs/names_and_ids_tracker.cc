@@ -41,6 +41,7 @@ using std::generator;
 using std::ios;
 using std::ios_base;
 using std::list;
+using std::make_unique;
 using std::map;
 using std::max;
 using std::min;
@@ -115,7 +116,7 @@ struct NamesAndIDsTracker::Imp
 };
 
 NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) :
-    _imp(new Imp{})
+    _imp(make_unique<Imp>())
 {
     _imp->verbose_names = proof_options.verbose_names;
 

@@ -35,6 +35,7 @@ using std::fstream;
 using std::ios;
 using std::ios_base;
 using std::istreambuf_iterator;
+using std::make_unique;
 using std::nullopt;
 using std::ofstream;
 using std::optional;
@@ -78,7 +79,7 @@ struct ProofModel::Imp
 };
 
 ProofModel::ProofModel(const ProofOptions & proof_options, NamesAndIDsTracker & t) :
-    _imp(new Imp{t})
+    _imp(make_unique<Imp>(t))
 {
     _imp->opb_file = proof_options.proof_file_names.opb_file;
     _imp->always_use_full_encoding = proof_options.always_use_full_encoding;
