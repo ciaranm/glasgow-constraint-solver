@@ -34,7 +34,7 @@ namespace gcs::innards
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
         bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
 
-        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason, const std::optional<AssertionAnnotation> assertion_hints = std::nullopt) -> void
+        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason, assertion_hints);
         }
@@ -51,12 +51,12 @@ namespace gcs::innards
 
         auto operator=(const InferenceTrackerBase &) -> InferenceTrackerBase & = delete;
 
-        auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> assertion_hints = std::nullopt) -> void
+        auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             track(logger, _state.infer(lit), lit, why, reason, assertion_hints);
         }
 
-        [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> assertion_hints = std::nullopt) -> void
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             if (logger)
                 logger->infer(FalseLiteral{}, why, reason, assertion_hints);
@@ -64,53 +64,53 @@ namespace gcs::innards
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why, const ReasonFunction & reason) -> void
+        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            track(logger, _state.infer(lit), lit, why, reason);
+            track(logger, _state.infer(lit), lit, why, reason, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason) -> void
+        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            track(logger, _state.infer_equal(var, value), var == value, why, reason);
+            track(logger, _state.infer_equal(var, value), var == value, why, reason, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason) -> void
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            track(logger, _state.infer_not_equal(var, value), var != value, why, reason);
+            track(logger, _state.infer_not_equal(var, value), var != value, why, reason, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason) -> void
+        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            track(logger, _state.infer_less_than(var, value), var < value, why, reason);
+            track(logger, _state.infer_less_than(var, value), var < value, why, reason, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason) -> void
+        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, reason);
+            track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, reason, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const Justification & why, const ReasonFunction & reason) -> void
+        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             // The conclusion is the ordinary range condition; the state update
             // batches the whole removal into one erase_range pass.
             if (lo > hi)
                 return;
-            track(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, reason);
+            track(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, reason, assertion_hints);
         }
 
-        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const ReasonFunction & reason) -> void
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             // For JustifyExplicitlyThenRUP: enter the temporary proof level once,
             // run the explicit scaffolding once, then RUP each inference under the
             // shared scaffolding. Without this, each infer() would enter and exit
             // its own temporary level, wiping the scaffolding before subsequent
             // inferences can use it.
-            if (logger && std::holds_alternative<JustifyExplicitlyThenRUP>(why)) {
+            if (logger && ! logger->using_assertions() && std::holds_alternative<JustifyExplicitlyThenRUP>(why)) {
                 // The scaffolding is shared across the batch, but each inference's
                 // RUP is only emitted if it actually changes something (track_impl
                 // drops NoChange). If *every* inference is already entailed, no RUP
@@ -137,7 +137,7 @@ namespace gcs::innards
             }
             else {
                 for (const auto & lit : lits)
-                    infer(logger, lit, why, reason);
+                    infer(logger, lit, why, reason, assertion_hints);
             }
         }
 

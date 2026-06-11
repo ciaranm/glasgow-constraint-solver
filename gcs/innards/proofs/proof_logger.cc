@@ -722,3 +722,8 @@ auto ProofLogger::write_indent() -> void
         _imp->proof << ' ';
     }
 }
+
+auto ProofLogger::using_assertions() -> bool
+{
+    return _imp->use_annotated_assertions;
+}

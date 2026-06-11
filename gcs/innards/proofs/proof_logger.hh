@@ -329,6 +329,11 @@ namespace gcs::innards
          * Write a number of spaces equal to current_indent.
          */
         auto write_indent() -> void;
+
+        /**
+         * Get whether the logger is using annotated assertions instead of full justifications.
+         */
+        auto using_assertions() -> bool;
     };
 }
 

@@ -13,10 +13,13 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa AssertionAnnotation
      */
-    enum AssertionHintName
+    enum class AssertionHintName
     {
         None,
-        AllDifferent
+        AllDifferent,
+        ReifiedEquals,
+        Abs,
+        ReifiedLinearEquality
     };
 
     /**

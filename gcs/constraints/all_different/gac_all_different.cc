@@ -2,6 +2,7 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/all_different/justify.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -419,7 +420,7 @@ auto gcs::innards::propagate_gac_all_different(
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
         auto [just, reason] = prove_matching_is_too_small(vars, vals, excluded, n_right, value_am1_constraint_numbers, state, *logger, edges, left_covered, matching);
-        return tracker.infer(logger, FalseLiteral{}, just, reason);
+        return tracker.infer(logger, FalseLiteral{}, just, reason, AssertionAnnotation{.hint_name = AssertionHintName::AllDifferent});
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -587,7 +588,7 @@ auto gcs::innards::propagate_gac_all_different(
 
         auto [just, reason] = prove_deletion_using_sccs(vars, vals, excluded, n_right, value_am1_constraint_numbers, state, *logger,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        tracker.infer_all(logger, deletions_by_scc[scc], just, reason);
+        tracker.infer_all(logger, deletions_by_scc[scc], just, reason, AssertionAnnotation{.hint_name = AssertionHintName::AllDifferent});
     }
 }
 
