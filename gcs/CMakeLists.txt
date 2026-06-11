@@ -384,6 +384,15 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(range_infer_test PRIVATE glasgow_constraint_solver)
     add_test(NAME range_infer_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_infer_test>)
 
+    # The range-literal witness suite (dev_docs/range_literals_spec.md §8): each test
+    # fails VeriPB within milliseconds if its clause family is removed or weakened.
+    # W4 is range_branch_test above plus the suite-wide interval-reject branching.
+    foreach(witness w1 w2 w3 w5)
+        add_executable(range_witness_${witness}_test innards/proofs/range_witness_${witness}_test.cc)
+        target_link_libraries(range_witness_${witness}_test PRIVATE glasgow_constraint_solver)
+        add_test(NAME range_witness_${witness}_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_witness_${witness}_test>)
+    endforeach()
+
     add_executable(interval_set_test innards/interval_set_test.cc)
     target_link_libraries(interval_set_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)
