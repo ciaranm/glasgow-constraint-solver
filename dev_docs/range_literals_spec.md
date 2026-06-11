@@ -81,6 +81,15 @@ The interval literals on each variable are maintained so that, at all times:
    lb/ub axioms). This is the flag-level analogue of the direct encoding's
    at-least-one clause, and gives wipeout detection (Theorem 3.2 analogue)
    without descending to the bits.
+
+   *Decided (2026-06-11 review):* conceptually this is the covering of the
+   whole-variable literal `[x in lb..ub]`, so the covering rule is uniform
+   with no special root case — but that literal is **never materialised**.
+   The clause over the top-level partition is emitted directly: it has the
+   same propagation power given the root bound units, positively asserts the
+   last surviving piece without a detour through a root reification (which is
+   what feeds Theorem 2.8 value-crossing), and avoids minting a literal
+   nothing else references.
 5. **Containment (P2).** Child → parent edges (`¬C ∨ F` for C immediately
    inside F), as in the current implementation. Needed so a *rejected*
    literal (`¬F` as a branching decision or derived fact) pushes down to the
@@ -206,7 +215,20 @@ Sound under this spec, and either already correct or a strict subset of §3:
   `ProofLogger::infer_not_in_range` (single-line conclusion, simple vars).
 - `justify_not_in_range_across_equality` — the Theorem-2.9 bound-lemma bridge
   for interval pruning across a bit-sum equality (P1 machinery; correct and
-  validated; unchanged by this spec).
+  validated). *Re-factored per the 2026-06-11 review (Matthew)* from
+  flag-conditioned lemmas to pure ge-layer lemmas:
+
+      pruned >= lo          ->  other >= other_lo
+      other >= other_hi + 1 ->  pruned >= hi + 1
+
+  Each is RUP via the opposing-bounds (2.9) configuration. The lemmas mention
+  no flag, so they are reusable by any literal sharing those endpoints, and
+  they make explicit that the bridge *is* the cross-variable Inv1 link at
+  exactly the boundary values in play, materialised locally per inference —
+  the corrected form of what the superseded analysis believed had to be a
+  per-equality global covering. Caveat: this pairing is orientation-sensitive
+  (same-sign links only, which is all current callers); a sign-flipped link
+  (Abs) needs the mirrored pairing — see the header comment.
 - The gated consumer in `enforce_equality` (`GCS_RANGE_INFERENCES`, default
   off) with the width-1 guard.
 
@@ -272,6 +294,16 @@ and which branching were active.
    creates the holes. Under this spec its removals go through
    `infer_not_in_range` like everyone else's (this was the hidden per-value
    eq-atom factory the first time round).
+
+   *Open decision (revisit alongside the CakePB OPB-conformance work):*
+   whether initial-domain gaps may instead be stated as interval literals in
+   the OPB itself (e.g. `~[b in 1..3] >= 1` as part of the domain
+   definition). That formulation is equally definitional and slightly more
+   direct, but requires model-phase `need_invar` support (currently throws)
+   and changes the OPB encoding surface that the CakePB verified-encoding
+   pipeline conforms against. Until that decision is made, gaps are
+   root-derived in the proof as specified here, and the OPB encoding is
+   unchanged.
 4. **Proof-level discipline**: justification scaffolding (bridge lemmas) is
    `Temporary` and deleted immediately after the conclusion; conclusions are
    `Current` and live until their level is forgotten at backtrack; §3's
