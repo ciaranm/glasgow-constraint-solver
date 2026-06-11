@@ -30,7 +30,7 @@ AutoTable::AutoTable(const vector<IntegerVariableID> & v) :
 namespace
 {
     auto solve_subproblem(unsigned depth, SimpleTuples & tuples, const vector<IntegerVariableID> & vars,
-        Propagators & propagators, State & state, const optional<Literal> & this_branch_guess,
+        Propagators & propagators, State & state, const optional<BranchGuess> & this_branch_guess,
         ProofLogger * const logger, SimpleIntegerVariableID selector_var_id) -> void
     {
         if (logger)
@@ -81,9 +81,9 @@ namespace
 
         if (logger) {
             logger->enter_proof_level(depth);
-            vector<Literal> guesses;
-            for (const auto & lit : state.guesses())
-                guesses.push_back(lit);
+            vector<BranchGuess> guesses;
+            for (const auto & g : state.guesses())
+                guesses.push_back(g);
             logger->backtrack(guesses);
             logger->forget_proof_level(depth + 1);
         }

@@ -42,22 +42,22 @@ using namespace gcs;
 
 auto gcs::branch_with(BranchVariableSelector var, BranchValueGenerator val) -> BranchCallback
 {
-    return [var = move(var), val = move(val)](const CurrentState & s, const innards::Propagators & p) -> generator<IntegerVariableCondition> {
+    return [var = move(var), val = move(val)](const CurrentState & s, const innards::Propagators & p) -> generator<BranchGuess> {
         return [](const CurrentState & s, const innards::Propagators & p,
-                   BranchVariableSelector select_var, BranchValueGenerator make_val_gen) -> generator<IntegerVariableCondition> {
+                   BranchVariableSelector select_var, BranchValueGenerator make_val_gen) -> generator<BranchGuess> {
             auto branch_var = select_var(s, p);
             if (branch_var)
                 return make_val_gen(s, p, *branch_var);
             else
-                return []() -> generator<IntegerVariableCondition> { co_return; }();
+                return []() -> generator<BranchGuess> { co_return; }();
         }(s, p, move(var), move(val));
     };
 }
 
 auto gcs::branch_sequence(BranchCallback a, BranchCallback b) -> BranchCallback
 {
-    return [a = move(a), b = move(b)](const CurrentState & s, const innards::Propagators & p) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, const innards::Propagators & p, BranchCallback a, BranchCallback b) -> generator<IntegerVariableCondition> {
+    return [a = move(a), b = move(b)](const CurrentState & s, const innards::Propagators & p) -> generator<BranchGuess> {
+        return [](const CurrentState & s, const innards::Propagators & p, BranchCallback a, BranchCallback b) -> generator<BranchGuess> {
             auto gen_a = a(s, p);
             auto iter_a = gen_a.begin();
             if (iter_a != gen_a.end()) {
@@ -189,8 +189,8 @@ namespace
 {
     auto random_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
     {
-        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
                 vector<Integer> values;
                 for (auto v : s.each_value(var))
                     values.push_back(v);
@@ -203,8 +203,8 @@ namespace
 
     auto random_out_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
     {
-        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
                 vector<Integer> values;
                 for (auto v : s.each_value(var))
                     values.push_back(v);
@@ -212,6 +212,46 @@ namespace
                 auto val = values.at(dist(*rand));
                 co_yield var != val;
                 co_yield var == val;
+            }(rand, s, var);
+        };
+    }
+
+    auto reject_random_interval_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
+    {
+        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
+                vector<Integer> values;
+                for (auto v : s.each_value(var))
+                    values.push_back(v);
+                // An interior interval needs a plain variable and at least three
+                // values (so lo/hi can both be strictly inside the bounds, making the
+                // reject branch a genuine hole). Otherwise fall back to a value reject.
+                const auto * svar = std::get_if<SimpleIntegerVariableID>(&var);
+                if (svar && values.size() >= 3) {
+                    uniform_int_distribution<size_t> dist(1, values.size() - 2);
+                    auto i = dist(*rand);
+                    auto j = dist(*rand);
+                    if (i > j)
+                        std::swap(i, j);
+                    auto lo = values.at(i);
+                    auto hi = values.at(j);
+                    if (lo == hi) {
+                        // A width-1 interval is just an equality atom; branch on it directly so
+                        // the decision already lives on the atom constraints reason with.
+                        co_yield var != lo;
+                        co_yield var == lo;
+                    }
+                    else {
+                        co_yield IntegerVariableRangeGuess{*svar, lo, hi, false};
+                        co_yield IntegerVariableRangeGuess{*svar, lo, hi, true};
+                    }
+                }
+                else {
+                    uniform_int_distribution<size_t> dist(0, values.size() - 1);
+                    auto val = values.at(dist(*rand));
+                    co_yield var != val;
+                    co_yield var == val;
+                }
             }(rand, s, var);
         };
     }
@@ -237,10 +277,20 @@ auto gcs::value_order::random_out(uint_fast32_t seed) -> BranchValueGenerator
     return random_out_value_generator(make_shared_rng(seed));
 }
 
+auto gcs::value_order::reject_random_interval() -> BranchValueGenerator
+{
+    return reject_random_interval_value_generator(make_shared_rng());
+}
+
+auto gcs::value_order::reject_random_interval(uint_fast32_t seed) -> BranchValueGenerator
+{
+    return reject_random_interval_value_generator(make_shared_rng(seed));
+}
+
 auto gcs::value_order::smallest_in() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
             auto value = s.lower_bound(var);
             co_yield var == value;
             co_yield var != value;
@@ -250,8 +300,8 @@ auto gcs::value_order::smallest_in() -> BranchValueGenerator
 
 auto gcs::value_order::smallest_out() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
             auto value = s.lower_bound(var);
             co_yield var != value;
             co_yield var == value;
@@ -261,8 +311,8 @@ auto gcs::value_order::smallest_out() -> BranchValueGenerator
 
 auto gcs::value_order::smallest_first() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
             for (auto v : s.each_value(var))
                 co_yield var == v;
         }(s, var);
@@ -271,8 +321,8 @@ auto gcs::value_order::smallest_first() -> BranchValueGenerator
 
 auto gcs::value_order::split_smallest_first() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
             auto mid = s.domain_size(var) / 2_i;
             auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
             co_yield var <= v;
@@ -283,8 +333,8 @@ auto gcs::value_order::split_smallest_first() -> BranchValueGenerator
 
 auto gcs::value_order::split_largest_first() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
             auto mid = s.domain_size(var) / 2_i;
             auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
             co_yield var > v;
@@ -297,8 +347,8 @@ namespace
 {
     auto split_random_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
     {
-        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
                 auto mid = s.domain_size(var) / 2_i;
                 auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
                 if (uniform_int_distribution(0, 1)(*rand) == 0) {
@@ -326,8 +376,8 @@ auto gcs::value_order::split_random(uint_fast32_t seed) -> BranchValueGenerator
 
 auto gcs::value_order::largest_in() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
             auto value = s.upper_bound(var);
             co_yield var == value;
             co_yield var != value;
@@ -337,8 +387,8 @@ auto gcs::value_order::largest_in() -> BranchValueGenerator
 
 auto gcs::value_order::largest_out() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
             auto value = s.upper_bound(var);
             co_yield var != value;
             co_yield var == value;
@@ -348,8 +398,8 @@ auto gcs::value_order::largest_out() -> BranchValueGenerator
 
 auto gcs::value_order::largest_first() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
             for (auto v : s.each_value_reversed(var))
                 co_yield var == v;
         }(s, var);
@@ -358,8 +408,8 @@ auto gcs::value_order::largest_first() -> BranchValueGenerator
 
 auto gcs::value_order::median() -> BranchValueGenerator
 {
-    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+    return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchGuess> {
+        return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchGuess> {
             vector<Integer> values;
             for (auto v : s.each_value(var))
                 values.push_back(v);

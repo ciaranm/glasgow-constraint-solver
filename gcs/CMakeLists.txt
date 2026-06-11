@@ -38,6 +38,7 @@ add_library(glasgow_constraint_solver
         constraints/global_cardinality/justify.cc
         constraints/in.cc
         constraints/increasing.cc
+        constraints/innards/justify_not_in_range.cc
         constraints/innards/recover_am1.cc
         constraints/innards/reified_state.cc
         constraints/innards/triggers.cc
@@ -370,6 +371,18 @@ if(GCS_BUILD_TESTS)
     add_executable(reification_test innards/proofs/reification_test.cc)
     target_link_libraries(reification_test PRIVATE glasgow_constraint_solver)
     add_test(NAME reification_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:reification_test>)
+
+    add_executable(invar_test innards/proofs/invar_test.cc)
+    target_link_libraries(invar_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME invar_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_test>)
+
+    add_executable(range_branch_test innards/proofs/range_branch_test.cc)
+    target_link_libraries(range_branch_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME range_branch_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_branch_test>)
+
+    add_executable(range_infer_test innards/proofs/range_infer_test.cc)
+    target_link_libraries(range_infer_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME range_infer_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_infer_test>)
 
     add_executable(interval_set_test innards/interval_set_test.cc)
     target_link_libraries(interval_set_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

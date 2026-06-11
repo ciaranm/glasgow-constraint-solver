@@ -7,6 +7,8 @@
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/state.hh>
 
+#include <cstddef>
+#include <cstdlib>
 #include <deque>
 #include <fstream>
 #include <sstream>
@@ -179,12 +181,20 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             optional_minimise_variable_and_value->first);
 }
 
-auto ProofLogger::backtrack(const vector<Literal> & lits) -> void
+auto ProofLogger::backtrack(const vector<BranchGuess> & guesses) -> void
 {
     _imp->proof << "% backtracking\n";
     WPBSum backtrack;
-    for (const auto & lit : lits)
-        backtrack += 1_i * ! lit;
+    for (const auto & guess : guesses)
+        overloaded{
+            [&](const Literal & lit) { backtrack += 1_i * ! lit; },
+            [&](const IntegerVariableRangeGuess & r) {
+                // ~guess as a single range ("in") literal: need_invar gives the flag
+                // meaning var in [lo,hi]; negate it iff the guess was the accept branch.
+                auto flag = names_and_ids_tracker().need_invar(r.var, r.lower, r.upper);
+                backtrack += 1_i * (r.within ? ! flag : flag);
+            }}
+            .visit(guess);
     emit_rup_proof_line(move(backtrack) >= 1_i, ProofLevel::Current);
 }
 
@@ -314,6 +324,73 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             auto t = temporary_proof_level();
             x.add_proof_steps(reason);
             infer(lit, JustifyUsingRUP{}, reason);
+            forget_proof_level(t);
+        },
+        [&](const NoJustificationNeeded &) {
+        }}
+        .visit(why);
+}
+
+auto ProofLogger::infer_not_in_range(const IntegerVariableID & var, Integer lo, Integer hi,
+    const Justification & why, const ReasonFunction & reason) -> void
+{
+    if (lo > hi)
+        return;
+
+    // Only a plain integer variable has a single range ("in") literal to negate.
+    // Views and constants fall back to per-value removal: each `var != val` is still
+    // RUP from the same reason (via the laminar containment edges down to the eq
+    // atoms), it is just not coalesced into one line.
+    const auto * simple = std::get_if<SimpleIntegerVariableID>(&var);
+    if (! simple) {
+        for (Integer val = lo; val <= hi; ++val)
+            infer(var != val, why, reason);
+        return;
+    }
+
+    // Emit the single conclusion line `~[var in lo..hi] >= 1`, reified on the
+    // reason, with the requested proof rule. Mirrors the rup / assert
+    // branches of infer(), but the conclusion is the negation of the range flag.
+    auto emit_negated_range = [&](const string & rule) {
+        log_stacktrace();
+        optional<Reason> reason_literals;
+        if (reason)
+            reason_literals = reason();
+
+        if (reason_literals)
+            names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
+
+        auto flag = names_and_ids_tracker().need_invar(*simple, lo, hi);
+
+        WPBSum terms;
+        terms += 1_i * ! flag;
+        HalfReifyOnConjunctionOf reif{};
+        if (reason_literals)
+            reif = *reason_literals;
+
+        write_indent();
+        _imp->proof << rule;
+        emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
+        _imp->proof << ";\n";
+        record_proof_line(advance_proof_line_number(), ProofLevel::Current);
+    };
+
+    overloaded{
+        [&](const JustifyUsingRUP &) {
+            emit_negated_range("rup ");
+        },
+        [&](const AssertRatherThanJustifying &) {
+            emit_negated_range("a ");
+        },
+        [&](const JustifyExplicitlyOnly & x) {
+            auto t = temporary_proof_level();
+            x.add_proof_steps(reason);
+            forget_proof_level(t);
+        },
+        [&](const JustifyExplicitlyThenRUP & x) {
+            auto t = temporary_proof_level();
+            x.add_proof_steps(reason);
+            infer_not_in_range(var, lo, hi, JustifyUsingRUP{}, reason);
             forget_proof_level(t);
         },
         [&](const NoJustificationNeeded &) {

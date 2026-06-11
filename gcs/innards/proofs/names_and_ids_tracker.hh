@@ -72,6 +72,14 @@ namespace gcs::innards
 
         auto emit_proof_line_now_or_at_start(const std::function<auto(ProofLogger * const)->void> &) -> void;
 
+        // Emit laminar containment edges between a newly-introduced literal [lo, hi] (a range
+        // flag, or an eq atom passed as its Integer value) and the IMMEDIATE neighbours in the
+        // containment order among existing range/eq literals on `id`: minimal range containers
+        // above (self -> parent) and, when self is a range, maximal contained literals below
+        // (child -> self). Skip-level edges are left to transitivity. Each edge is a rup line.
+        auto link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi,
+            const std::variant<ProofFlag, Integer> & self_term) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -190,6 +198,24 @@ namespace gcs::innards
          * Say that we will need the diect encoding to exist for a given variable.
          */
         auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
+
+        /**
+         * Say that we will need the range ("in") literal [lo, hi] for a variable: a
+         * single proof-only Boolean flag meaning `lo <= var <= hi`. Returns that flag,
+         * idempotent on (id, lo, hi).
+         *
+         * The range literal is a "wide equality literal", defined as
+         * `flag <=> (var >= lo) AND NOT (var >= hi+1)`, reified against the variable's
+         * own two order-encoding cuts. Ensures those cuts exist via need_gevar, which
+         * also threads them into the order chain (Inv1). That chain alone is what makes
+         * range-literal propagation complete — no covering/containment constraints are
+         * needed (established by the Stage-0 spike; range literals behave exactly like
+         * equality literals with a wider gap, so Theorem 3.3 carries over).
+         *
+         * Currently only implemented during the proof-logging phase; throws
+         * UnimplementedException if called during model writing, until a caller needs it.
+         */
+        [[nodiscard]] auto need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofFlag;
 
         /**
          * Say that we are going to need an at-least-one constraint for a

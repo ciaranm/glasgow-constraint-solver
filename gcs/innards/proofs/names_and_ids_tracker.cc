@@ -74,6 +74,10 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
+    // Range ("in") literals [lo, hi]: a proof-only flag meaning lo <= var <= hi,
+    // keyed by (lo, hi). Defined as a "wide equality literal" reified against the
+    // variable's own two order cuts; see need_invar.
+    map<SimpleOrProofOnlyIntegerVariableID, map<pair<Integer, Integer>, pair<ProofFlag, pair<ProofLine, ProofLine>>>> invars_that_exist;
 
     map<ViewOfIntegerVariableID, ProofOnlySimpleIntegerVariableID> view_proof_only_vars;
     map<ProofOnlySimpleIntegerVariableID, ViewOfIntegerVariableID> view_proof_only_to_view;
@@ -581,6 +585,10 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             }
         }
     }
+
+    // Laminar containment: symmetric to need_invar -- link this new eq atom (a singleton [v, v])
+    // to its immediate range containers so a reject of one forward-propagates ~(id == v).
+    link_immediate_containment(id, v, v, v);
 }
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
@@ -749,6 +757,105 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             }
         }
     }
+}
+
+auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id,
+    Integer lo, Integer hi, const variant<ProofFlag, Integer> & self_term) -> void
+{
+    if (! _imp->logger)
+        return;
+
+    auto strictly_contains = [](Integer alo, Integer ahi, Integer blo, Integer bhi) {
+        return alo <= blo && bhi <= ahi && (alo < blo || bhi < ahi);
+    };
+
+    // Existing range/eq literals on id as intervals with their (negatable) proof term. An eq
+    // atom is the singleton [v, v]; a range container is always a range (an eq can't strictly
+    // contain anything), so a parent term is always a ProofFlag.
+    struct ExistingLit
+    {
+        Integer lo, hi;
+        variant<ProofFlag, Integer> term;
+    };
+    vector<ExistingLit> existing;
+    if (auto rit = _imp->invars_that_exist.find(id); rit != _imp->invars_that_exist.end())
+        for (const auto & e : rit->second)
+            existing.push_back({e.first.first, e.first.second, e.second.first});
+    if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
+        for (const auto & e : eqit->second)
+            existing.push_back({e.first, e.first, e.first});
+
+    // Emit a child -> parent containment edge (~child OR parent_flag) as a rup line at Top.
+    auto emit_edge = [&](const variant<ProofFlag, Integer> & child, const ProofFlag & parent_flag) {
+        overloaded{
+            [&](const ProofFlag & cf) {
+                _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * ! cf + 1_i * parent_flag >= 1_i, ProofLevel::Top);
+            },
+            [&](const Integer & v) {
+                visit([&](const auto & id) {
+                    _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * (id != v) + 1_i * parent_flag >= 1_i, ProofLevel::Top);
+                },
+                    id);
+            }}
+            .visit(child);
+    };
+
+    // self -> minimal (immediate) range containers
+    for (const auto & p : existing) {
+        if (! strictly_contains(p.lo, p.hi, lo, hi))
+            continue;
+        auto is_minimal = none_of(existing.begin(), existing.end(), [&](const ExistingLit & q) {
+            return strictly_contains(p.lo, p.hi, q.lo, q.hi) && strictly_contains(q.lo, q.hi, lo, hi);
+        });
+        if (is_minimal)
+            emit_edge(self_term, std::get<ProofFlag>(p.term));
+    }
+
+    // maximal (immediate) contained literals -> self, only when self is a range (a flag).
+    if (auto self_flag = std::get_if<ProofFlag>(&self_term))
+        for (const auto & c : existing) {
+            if (! strictly_contains(lo, hi, c.lo, c.hi))
+                continue;
+            auto is_maximal = none_of(existing.begin(), existing.end(), [&](const ExistingLit & m) {
+                return strictly_contains(lo, hi, m.lo, m.hi) && strictly_contains(m.lo, m.hi, c.lo, c.hi);
+            });
+            if (is_maximal)
+                emit_edge(c.term, *self_flag);
+        }
+}
+
+auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofFlag
+{
+    auto & for_this_var = _imp->invars_that_exist[id];
+    if (auto it = for_this_var.find(pair{lo, hi}); it != for_this_var.end())
+        return it->second.first;
+
+    // A range literal is a "wide equality literal": [lo, hi] <=> (id >= lo) AND NOT (id >= hi+1).
+    // Ensure both order-encoding cuts exist; need_gevar also threads them into the order chain
+    // (Inv1), which gives all range<->range and range<->order RUP deductions.
+    need_gevar(id, lo);
+    need_gevar(id, hi + 1_i);
+
+    auto flag = create_proof_flag("in_" + name_of(id) + "_" + to_string(lo.raw_value) + "_" + to_string(hi.raw_value));
+
+    if (! _imp->logger)
+        throw UnimplementedException{"range literals during model writing are not yet supported"};
+
+    auto lines = visit([&](const auto & id) {
+        return _imp->logger->emit_red_proof_lines_reifying(
+            WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, flag, ProofLevel::Top);
+    },
+        id);
+
+    // Laminar containment: link this range to its immediate neighbours so a reject decision
+    // (~flag) forward-propagates ~(contained literal). The chain alone does not give this (a
+    // ~[range] decision does not propagate without a handle), but it is needed for backtrack
+    // clauses over interval-reject branching. (Note: call before the emplace below so the new
+    // range is not in invars_that_exist yet.)
+    link_immediate_containment(id, lo, hi, flag);
+
+    for_this_var.emplace(pair{lo, hi}, pair{flag, lines});
+    return flag;
 }
 
 auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID

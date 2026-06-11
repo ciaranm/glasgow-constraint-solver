@@ -8,8 +8,8 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::pair;
-using std::ranges::reverse;
 using std::vector;
+using std::ranges::reverse;
 
 namespace
 {
@@ -156,6 +156,101 @@ TEST_CASE("Poking more holes")
         CHECK(set.contains(i) == (i == 1 || i == 2 || i == 4 || i == 5));
 }
 
+TEST_CASE("Erase range interior split")
+{
+    IntervalSet<int> set(5, 10);
+    set.erase_range(7, 8);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{5, 6}, {9, 10}});
+    for (int i = 5; i <= 10; ++i)
+        CHECK(set.contains(i) == (i != 7 && i != 8));
+}
+
+TEST_CASE("Erase range trims left")
+{
+    IntervalSet<int> set(5, 10);
+    set.erase_range(3, 7);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{8, 10}});
+}
+
+TEST_CASE("Erase range trims right")
+{
+    IntervalSet<int> set(5, 10);
+    set.erase_range(8, 12);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{5, 7}});
+}
+
+TEST_CASE("Erase range exactly the interval")
+{
+    IntervalSet<int> set(5, 10);
+    set.erase_range(5, 10);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{});
+}
+
+TEST_CASE("Erase range covering the interval")
+{
+    IntervalSet<int> set(5, 10);
+    set.erase_range(3, 12);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{});
+}
+
+TEST_CASE("Erase singleton range matches erase")
+{
+    IntervalSet<int> set(5, 10);
+    set.erase_range(7, 7);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{5, 6}, {8, 10}});
+}
+
+TEST_CASE("Erase range entirely below or above is a no-op")
+{
+    IntervalSet<int> below(5, 10), above(5, 10), inverted(5, 10);
+    below.erase_range(1, 3);
+    above.erase_range(12, 15);
+    inverted.erase_range(8, 6); // lo > hi
+    CHECK(intervals_of(below) == vector<pair<int, int>>{{5, 10}});
+    CHECK(intervals_of(above) == vector<pair<int, int>>{{5, 10}});
+    CHECK(intervals_of(inverted) == vector<pair<int, int>>{{5, 10}});
+}
+
+TEST_CASE("Erase range falling in a gap is a no-op")
+{
+    IntervalSet<int> set;
+    set.insert_at_end(1, 4);
+    set.insert_at_end(8, 10);
+    set.erase_range(5, 7);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 4}, {8, 10}});
+}
+
+TEST_CASE("Erase range spanning multiple intervals")
+{
+    IntervalSet<int> set;
+    set.insert_at_end(1, 4);
+    set.insert_at_end(8, 10);
+    set.insert_at_end(14, 20);
+    set.erase_range(3, 15);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 2}, {16, 20}});
+    for (int i = 1; i <= 20; ++i)
+        CHECK(set.contains(i) == (i == 1 || i == 2 || (i >= 16 && i <= 20)));
+}
+
+TEST_CASE("Erase range dropping whole intervals and trimming ends")
+{
+    IntervalSet<int> set;
+    set.insert_at_end(1, 4);
+    set.insert_at_end(8, 10);
+    set.insert_at_end(14, 20);
+    set.erase_range(2, 18);
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 1}, {19, 20}});
+}
+
+TEST_CASE("Erase range ending exactly in a gap leaves later intervals")
+{
+    IntervalSet<int> set;
+    set.insert_at_end(1, 4);
+    set.insert_at_end(8, 10);
+    set.erase_range(3, 6); // ends at 6, in the gap before 8..10
+    CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 2}, {8, 10}});
+}
+
 TEST_CASE("Wipeout from below")
 {
     IntervalSet<int> set(5, 10);
@@ -255,8 +350,8 @@ TEST_CASE("Size across multiple intervals")
 TEST_CASE("Contains out-of-range values")
 {
     IntervalSet<int> set(5, 10);
-    CHECK(! set.contains(4));   // before lower(), hits u > value early exit
-    CHECK(! set.contains(11));  // after upper(), falls through loop
+    CHECK(! set.contains(4));  // before lower(), hits u > value early exit
+    CHECK(! set.contains(11)); // after upper(), falls through loop
 }
 
 TEST_CASE("Contains in a gap")
@@ -275,10 +370,10 @@ TEST_CASE("Erase value not in set")
     IntervalSet<int> set(1, 10);
     set.erase(3); // {[1,2],[4,10]}
 
-    set.erase(0);  // before lower() — hits iter->first > value on first interval
+    set.erase(0); // before lower() — hits iter->first > value on first interval
     CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 2}, {4, 10}});
 
-    set.erase(3);  // in the gap — hits iter->first > value when reaching [4,10]
+    set.erase(3); // in the gap — hits iter->first > value when reaching [4,10]
     CHECK(intervals_of(set) == vector<pair<int, int>>{{1, 2}, {4, 10}});
 
     set.erase(11); // after upper() — loop falls through
@@ -385,8 +480,10 @@ TEST_CASE("Each reversed")
     // {[1,3],[6,10]}
 
     vector<int> fwd, rev;
-    for (auto v : set.each()) fwd.push_back(v);
-    for (auto v : set.each_reversed()) rev.push_back(v);
+    for (auto v : set.each())
+        fwd.push_back(v);
+    for (auto v : set.each_reversed())
+        rev.push_back(v);
 
     auto expected = fwd;
     reverse(expected);

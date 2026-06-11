@@ -221,6 +221,59 @@ namespace gcs::innards
         }
 
         /**
+         * \brief Removes every value in the closed interval [\p lo, \p hi].
+         *
+         * The whole contiguous range is removed in a single merge-walk over the
+         * stored intervals: <code>O(intervals)</code> with at most one insertion
+         * (when the range falls in the interior of a single interval, splitting
+         * it in two). This is the range analogue of erase(): erasing a singleton
+         * [v, v] is equivalent to erase(v).
+         *
+         * If \p lo > \p hi, or the range is disjoint from the set, does nothing.
+         *
+         * \sa erase(), erase_less_than(), erase_greater_than()
+         */
+        auto erase_range(Int_ lo, Int_ hi) -> void
+        {
+            if (lo > hi)
+                return;
+
+            for (auto iter = intervals.begin(); iter != intervals.end();) {
+                if (iter->second < lo) {
+                    // Entirely below the range; nothing to remove here.
+                    ++iter;
+                }
+                else if (iter->first > hi) {
+                    // This and every later interval are entirely above the range.
+                    return;
+                }
+                else {
+                    bool keep_left = iter->first < lo;   // [first, lo-1] survives
+                    bool keep_right = iter->second > hi; // [hi+1, second] survives
+                    if (keep_left && keep_right) {
+                        // 4..9 erase 6..7 -> 4..5 8..9
+                        auto right = std::pair{hi + Int_(1), iter->second};
+                        iter->second = lo - Int_(1);
+                        intervals.insert(next(iter), right);
+                        return;
+                    }
+                    else if (keep_left) {
+                        iter->second = lo - Int_(1);
+                        ++iter;
+                    }
+                    else if (keep_right) {
+                        iter->first = hi + Int_(1);
+                        return;
+                    }
+                    else {
+                        // Fully covered by the range; drop it.
+                        iter = intervals.erase(iter);
+                    }
+                }
+            }
+        }
+
+        /**
          * \brief Removes all values strictly less than \p value.
          *
          * Equivalent to intersecting the set with [value, +inf).

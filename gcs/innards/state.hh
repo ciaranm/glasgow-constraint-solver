@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 
+#include <gcs/branch_guess.hh>
 #include <gcs/current_state.hh>
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/literal.hh>
@@ -99,6 +100,10 @@ namespace gcs::innards
             const SimpleIntegerVariableID & var,
             Integer value) -> Inference;
 
+        [[nodiscard]] auto change_state_for_not_in_range(
+            const SimpleIntegerVariableID & var,
+            Integer lo, Integer hi) -> Inference;
+
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) -> IntervalSet<Integer> &;
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const IntervalSet<Integer> &;
 
@@ -195,6 +200,17 @@ namespace gcs::innards
         template <IntegerVariableIDLike VarType_>
         [[nodiscard]] auto infer_greater_than_or_equal(const VarType_ &, Integer value) -> Inference;
 
+        /**
+         * Infer that a given IntegerVariableID or more specific type must not take
+         * any value in the closed interval [lo, hi]. The whole contiguous range is
+         * removed in a single pass (see IntervalSet::erase_range). Performance and
+         * clarity overload for a run of infer_not_equal() calls over a contiguous
+         * range; see InferenceTracker::infer_not_in_range for the matching
+         * single-proof-line range inference. A range with lo > hi is a no-op.
+         */
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer_not_in_range(const VarType_ &, Integer lo, Integer hi) -> Inference;
+
         ///@}
 
         /**
@@ -203,12 +219,12 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Guess that the specified Literal holds. Does not deal with
-         * backtracking directly.
+         * Guess that the specified branch decision holds (a variable condition,
+         * or an interval accept/reject). Does not deal with backtracking directly.
          *
          * \sa State::new_epoch()
          */
-        auto guess(const Literal & lit) -> void;
+        auto guess(const BranchGuess & guess) -> void;
 
         /**
          * Add an additional proof condition, similar to guess except that it
@@ -223,7 +239,7 @@ namespace gcs::innards
          *
          * \sa State::guess()
          */
-        auto guesses() const -> std::generator<Literal>;
+        auto guesses() const -> std::generator<BranchGuess>;
 
         /**
          * Create a new epoch, that can be backtracked to. Only legal if we are in a fully
