@@ -77,7 +77,7 @@ namespace
                     // line — need_pol_item_defining_literal would throw on it.
                     // Issue #166.
                     for (size_t i = 0; i < 2; ++i) {
-                        auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(i))));
+                        auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(get<ProofLiteralOrFlag>(reason().at(i)))));
                         if (holds_alternative<ConstantIntegerVariableID>(lit.var))
                             continue;
                         b.add_for_literal(logger->names_and_ids_tracker(), lit);

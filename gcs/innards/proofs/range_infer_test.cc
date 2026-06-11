@@ -3,25 +3,22 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
-#include <cstdlib>
 #include <vector>
 
 using namespace gcs;
 using std::vector;
 
-// Stage-3 check for the single-line range inference (GCS_RANGE_INFERENCES). A plain
-// Equals(x, y) where each side carries a contiguous hole, so the propagator removes the
-// non-shared interval from each. With the range-inference path enabled this removal is a
-// single ~[x in lo..hi] proof line, justified across the *unmodified* bit-sum equality by
-// two bound-lemmas (each RUP via Theorem 2.9 / Justification Procedure 3.2) plus an RUP
-// conclusion -- demonstrating that an interval of infer_not_equal can be collapsed into a
-// single infer_not_in_range without re-encoding Equals. run_test_and_verify then has
-// VeriPB check the whole proof. The hole on x is deliberately wide so the inference's
-// width-independence is exercised on a non-trivial interval.
+// Check for the single-line range inference. A plain Equals(x, y) where each side
+// carries a contiguous hole, so the propagator removes the non-shared interval from
+// each. This removal is a single ~[x in lo..hi] proof line, justified across the
+// *unmodified* bit-sum equality by two bound-lemmas (each RUP via Theorem 2.9 /
+// Justification Procedure 3.2) plus an RUP conclusion -- demonstrating that an
+// interval of infer_not_equal can be collapsed into a single infer_not_in_range
+// without re-encoding Equals. run_test_and_verify then has VeriPB check the whole
+// proof. The hole on x is deliberately wide so the inference's width-independence is
+// exercised on a non-trivial interval.
 auto main() -> int
 {
-    ::setenv("GCS_RANGE_INFERENCES", "1", 1);
-
     Problem p;
 
     // x misses the wide block [10..30]; y misses [3..6]. Each side loses an interval to

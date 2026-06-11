@@ -10,15 +10,35 @@
 
 #include <functional>
 #include <optional>
+#include <variant>
 #include <vector>
 
 namespace gcs::innards
 {
+    /**
+     * \brief A reason element saying `var` takes no value in [lo, hi], as a
+     * first-class interval fact (dev_docs/range_literals_spec.md §4).
+     *
+     * Propagators put this in a Reason directly; it is resolved to the negated
+     * range ("in") literal by NamesAndIDsTracker::resolve_reason at the
+     * proof-logging sites (or to per-value `var != v` literals for views,
+     * constants and direct-only-encoded variables, which have no range
+     * literals). There is no per-value reason loop and no after-the-fact
+     * coalescing pass: an interval-shaped fact is stated as an interval.
+     */
+    struct VariableNotInRange final
+    {
+        IntegerVariableID var;
+        Integer lo;
+        Integer hi;
+    };
+
     // Reason values are produced eagerly per inference (when proofs are on).
     // Typical sizes are 1 (singleton_reason for reified flags) to a handful
     // (bounds_reason / generic_reason over a small set of variables). Inline
     // capacity 2 keeps the common 1- and 2-element cases off the heap.
-    using Reason = gch::small_vector<ProofLiteralOrFlag, 2>;
+    using ReasonElement = std::variant<ProofLiteralOrFlag, VariableNotInRange>;
+    using Reason = gch::small_vector<ReasonElement, 2>;
     using ReasonFunction = std::function<auto()->Reason>;
 
     /**

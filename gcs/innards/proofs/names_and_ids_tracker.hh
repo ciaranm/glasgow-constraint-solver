@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/proof.hh>
 #include <gcs/reification.hh>
@@ -79,6 +80,32 @@ namespace gcs::innards
         // (child -> self). Skip-level edges are left to transitivity. Each edge is a rup line.
         auto link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi,
             const std::variant<ProofFlag, Integer> & self_term) -> void;
+
+        // Mint the bare range flag [lo, hi] (lo < hi): the red reification pair against the
+        // variable's two order cuts, plus containment edges, registered in the range-literal
+        // map. No partition maintenance and no covering — this is the building block that
+        // need_invar and the partition-split path share; everyone else goes through need_invar.
+        [[nodiscard]] auto mint_plain_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofFlag;
+
+        // Append the positive literal for the partition cell [lo, hi] to a sum being built
+        // (a covering or the root covering): the eq atom for a width-1 cell, the range flag
+        // otherwise. The cell's literal must already exist.
+        auto append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
+
+        // Make `p` a cell boundary in id's interval partition, splitting the cell it falls
+        // strictly inside (no-op if already a boundary): mint the two halves and emit the
+        // split covering `cell -> left OR right` at ProofLevel::Top. Requires the partition
+        // to exist and lb <= p <= ub+1.
+        auto ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID id, Integer p) -> void;
+
+        // First interval request for `id`: set up the always-covered partition (spec §3).
+        // Boundaries are the variable's definition bounds, a singleton cell for every
+        // pre-existing eq atom (per-value conclusions may already have been logged over
+        // them, so coverings must be able to ground out there), and the request's two
+        // cuts. Mints a literal for every cell, then emits the root covering — one clause
+        // over the top-level partition, RUP from the bound axioms; the whole-variable
+        // literal itself is never materialised (decided 2026-06-11).
+        auto init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void;
 
     public:
         /**
@@ -200,22 +227,55 @@ namespace gcs::innards
         auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
 
         /**
-         * Say that we will need the range ("in") literal [lo, hi] for a variable: a
-         * single proof-only Boolean flag meaning `lo <= var <= hi`. Returns that flag,
-         * idempotent on (id, lo, hi).
+         * Say that we will need the range ("in") literal [lo, hi] for a variable,
+         * meaning `lo <= var <= hi`. Returns that literal, idempotent on (id, lo, hi)
+         * after clamping [lo, hi] to the variable's definition bounds (the clamped
+         * literal is the same solver fact, given the bound axioms). A width-1 interval
+         * IS the eq atom: `need_invar(id, v, v)` returns the direct-encoding literal
+         * `id == v`, never a separate flag (spec §2, witness W1); wider intervals
+         * return a ProofFlag.
          *
-         * The range literal is a "wide equality literal", defined as
+         * A range literal is a "wide equality literal", defined as
          * `flag <=> (var >= lo) AND NOT (var >= hi+1)`, reified against the variable's
-         * own two order-encoding cuts. Ensures those cuts exist via need_gevar, which
-         * also threads them into the order chain (Inv1). That chain alone is what makes
-         * range-literal propagation complete — no covering/containment constraints are
-         * needed (established by the Stage-0 spike; range literals behave exactly like
-         * equality literals with a wider gap, so Theorem 3.3 carries over).
+         * own two order-encoding cuts (need_gevar threads them into the Inv1 chain).
+         * The reification alone is NOT enough for replay-completeness (P2; see
+         * dev_docs/range_literals_spec.md §1 and Appendix B): this call also maintains
+         * the always-covered partition invariant of spec §3 — the request's endpoints
+         * split existing cells (emitting split coverings), the requested literal gets a
+         * covering over the cells it spans, containment edges link it to its immediate
+         * neighbours, and the variable's first request sets up the partition and emits
+         * the root covering. All of that linking is state-independent and emitted at
+         * ProofLevel::Top.
          *
-         * Currently only implemented during the proof-logging phase; throws
-         * UnimplementedException if called during model writing, until a caller needs it.
+         * Requires a bits-encoded variable. Currently only implemented during the
+         * proof-logging phase; throws UnimplementedException if called during model
+         * writing, until a caller needs it (see spec §9.3's open decision).
          */
-        [[nodiscard]] auto need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofFlag;
+        [[nodiscard]] auto need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteralOrFlag;
+
+        /**
+         * Does this variable have a bits encoding? Zero-one variables default to the
+         * direct-only encoding, which cannot support order cuts or range literals;
+         * callers minting range literals must fall back to per-value reasoning when
+         * this is false.
+         */
+        [[nodiscard]] auto has_bit_representation(const SimpleOrProofOnlyIntegerVariableID &) const -> bool;
+
+        /**
+         * Resolve a propagator-supplied Reason into the conjunction of proof literals
+         * it reifies on. Plain literals and flags pass through; a VariableNotInRange
+         * element becomes the negated range ("in") literal, minted via need_invar
+         * (with everything that entails: partition splits, coverings, containment).
+         * Views, constants and direct-only-encoded variables take the per-value
+         * fallback `var != v`. The part of an element's range outside the variable's
+         * definition bounds is dropped: it is unit-propagation-given by the bound
+         * axioms, so the reified inference stays RUP without it.
+         *
+         * This is THE reason-vocabulary resolution point; every proof-logging site
+         * that turns a ReasonFunction's result into emitted literals must go through
+         * it (spec §9.2 — missing a site no-ops silently).
+         */
+        [[nodiscard]] auto resolve_reason(const Reason &) -> HalfReifyOnConjunctionOf;
 
         /**
          * Say that we are going to need an at-least-one constraint for a

@@ -64,27 +64,23 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         auto v1_set = state.copy_of_values(v1);
         auto v2_set = state.copy_of_values(v2);
 
-        // Stage-3 experiment, off by default (GCS_RANGE_INFERENCES). Default path is
-        // the per-value loop: one infer_not_equal per removed value, each RUP.
-        //
-        // When enabled, collapse each contiguous removed interval into ONE
-        // ~[pruned in lo..hi] proof line. RUP alone cannot do this across the bit-sum
-        // equality v1=v2 (a range flag pins only the variable's order atoms, never its
-        // bits, so it can't cross the equality), so we first emit two bound-lemmas
-        // [pruned in lo..hi] -> other>=lo and -> other<=hi. Each lemma IS RUP: its
-        // negation supplies an opposing bound that, together with the equality, is the
-        // Theorem 2.9 (contradictory binary sums) configuration -- this is exactly
-        // Justification Procedure 3.2 (Comparison) materialising a bound across the
-        // equality. The conclusion ~[pruned in lo..hi] then follows by RUP from the two
-        // lemmas plus the (disjunctive) reason. The inference is width-independent (two
-        // lemmas + one conclusion regardless of |lo..hi|); see
-        // dev_docs/range_literals_spec.md for the proof-size characterisation. Range
-        // literals exist only for plain integer variables, so views/constants always
-        // take the per-value path.
-        static const bool range_inferences = std::getenv("GCS_RANGE_INFERENCES") != nullptr;
+        // Collapse each contiguous removed interval into ONE ~[pruned in lo..hi] proof
+        // line, with the matching first-class interval reason `other not in [lo, hi]`
+        // (a width-1 interval is the eq atom end to end, so no special case). RUP alone
+        // cannot reach the conclusion across the bit-sum equality v1=v2 (a range flag
+        // pins only the variable's order atoms, never its bits, so it can't cross the
+        // equality), so we first emit two bound-lemmas pruned>=lo -> other>=lo and
+        // other>=hi+1 -> pruned>=hi+1. Each lemma IS RUP: its negation supplies an
+        // opposing bound that, together with the equality, is the Theorem 2.9
+        // (contradictory binary sums) configuration -- this is exactly Justification
+        // Procedure 3.2 (Comparison) materialising a bound across the equality. The
+        // conclusion ~[pruned in lo..hi] then follows by RUP from the two lemmas plus
+        // the reason. The inference is width-independent (two lemmas + one conclusion
+        // regardless of |lo..hi|); see dev_docs/range_literals_spec.md. Range literals
+        // exist only for plain integer variables, so views/constants always take the
+        // per-value path.
         auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
             std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});
-        auto use_range = range_inferences && logger != nullptr && both_simple;
 
         auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonFunction & r) {
             // Plain equality pruned = other, so the flag forces other into the same [lo, hi].
@@ -95,17 +91,16 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 
         auto prune = [&](const auto & pruned, const auto & other, const IntervalSet<Integer> & pruned_set, const IntervalSet<Integer> & other_set) {
             for (auto [lo, hi] : pruned_set.each_interval_minus(other_set)) {
-                // A width-1 "range" flag would be an unlinked doppelganger of the eq
-                // atom (same boundary cuts, different Boolean): downstream reasons
-                // written over eq atoms can never unit-propagate through it. Mirror
-                // reject_random_interval and only take the range path for hi > lo.
-                if (use_range && hi > lo)
+                if (both_simple)
                     inference.infer_not_in_range(logger, pruned, lo, hi,
                         JustifyExplicitlyThenRUP{[=](const ReasonFunction & r) { bridge(pruned, other, lo, hi, r); }},
-                        ReasonFunction{[=, reason = reason]() mutable {
-                            for (Integer val = lo; val <= hi; ++val)
-                                reason.emplace_back(other != val);
-                            return reason;
+                        // Build afresh per call: the justification calls the reason once
+                        // per bridge lemma plus once for the conclusion, so a mutable
+                        // accumulating lambda would duplicate the element on each call.
+                        ReasonFunction{[=, base = reason]() {
+                            auto r = base;
+                            r.emplace_back(VariableNotInRange{IntegerVariableID{other}, lo, hi});
+                            return r;
                         }});
                 else
                     for (Integer val = lo; val <= hi; ++val)

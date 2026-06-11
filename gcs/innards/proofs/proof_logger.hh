@@ -133,13 +133,14 @@ namespace gcs::innards
 
         /**
          * Log, if necessary, that we have inferred that \p var takes no value in the
-         * closed interval [lo, hi]. For a plain integer variable this is a single
-         * proof line `~[var in lo..hi] >= 1` (the negation of the range "in" literal;
-         * see NamesAndIDsTracker::need_invar) emitted under the reason, in place of
-         * one `var != v` line per removed value: the per-value facts follow from it by
-         * RUP via the laminar containment edges, so they need not be written out. Views
-         * and constants fall back to per-value emission (still correct, not coalesced).
-         * Justification handling mirrors infer().
+         * closed interval [lo, hi]. For a plain, bits-encoded integer variable this is
+         * a single proof line `~[var in lo..hi] >= 1` (the negation of the range "in"
+         * literal; see NamesAndIDsTracker::need_invar) emitted under the reason, in
+         * place of one `var != v` line per removed value. A width-1 interval is
+         * concluded as the ordinary `var != lo` (the eq atom IS the width-1 interval
+         * literal); views, constants and direct-only-encoded variables fall back to
+         * per-value emission (still correct, not coalesced). Justification handling
+         * mirrors infer().
          */
         auto infer_not_in_range(const IntegerVariableID & var, Integer lo, Integer hi,
             const Justification & why, const ReasonFunction & reason) -> void;
@@ -227,9 +228,11 @@ namespace gcs::innards
         auto emit_proof_comment(const std::string &) -> void;
 
         /**
-         * Given a reason, return the vector of literals in the conjunction.
+         * Given a reason, return the resolved conjunction of proof literals it
+         * reifies on (interval elements become negated range literals; see
+         * NamesAndIDsTracker::resolve_reason).
          */
-        auto reason_to_lits(const ReasonFunction & reason) -> Reason;
+        auto reason_to_lits(const ReasonFunction & reason) -> HalfReifyOnConjunctionOf;
 
         /**
          * Given a PB constraint C and a conjunction of literals L, return the native

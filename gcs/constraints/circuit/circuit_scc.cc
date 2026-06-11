@@ -1198,7 +1198,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
             if (logger && options.short_reasons) {
                 auto reason_sum = WPBSum{};
                 for (const auto & lit : reason()) {
-                    reason_sum += 1_i * get<ProofLiteral>(lit);
+                    reason_sum += 1_i * get<ProofLiteral>(get<ProofLiteralOrFlag>(lit));
                 }
                 // We will manually delete this later.
                 auto [_reason_short, _line1, _line2] =
