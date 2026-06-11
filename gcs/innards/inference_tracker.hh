@@ -1,14 +1,14 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_INFERENCE_TRACKER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_INFERENCE_TRACKER_HH
 
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 
-#include <algorithm>
 #include <deque>
-#include <type_traits>
+#include <optional>
 #include <utility>
 #include <version>
 
@@ -34,9 +34,9 @@ namespace gcs::innards
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
         bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
 
-        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason) -> void
+        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason, const std::optional<AssertionAnnotation> assertion_hints = std::nullopt) -> void
         {
-            return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason);
+            return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason, assertion_hints);
         }
 
     public:
@@ -51,15 +51,15 @@ namespace gcs::innards
 
         auto operator=(const InferenceTrackerBase &) -> InferenceTrackerBase & = delete;
 
-        auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const ReasonFunction & reason) -> void
+        auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> assertion_hints = std::nullopt) -> void
         {
-            track(logger, _state.infer(lit), lit, why, reason);
+            track(logger, _state.infer(lit), lit, why, reason, assertion_hints);
         }
 
-        [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const ReasonFunction & reason) -> void
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> assertion_hints = std::nullopt) -> void
         {
             if (logger)
-                logger->infer(FalseLiteral{}, why, reason);
+                logger->infer(FalseLiteral{}, why, reason, assertion_hints);
             throw TrackedPropagationFailed{};
         }
 
@@ -172,7 +172,7 @@ namespace gcs::innards
     public:
         using InferenceTrackerBase::InferenceTrackerBase;
 
-        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const ReasonFunction &) -> void
+        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const ReasonFunction &, const std::optional<AssertionAnnotation> &) -> void
         {
             switch (inf) {
             case Inference::NoChange:
@@ -214,7 +214,7 @@ namespace gcs::innards
     public:
         using InferenceTrackerBase::InferenceTrackerBase;
 
-        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason) -> void
+        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             switch (inf) {
             case Inference::NoChange:
@@ -224,7 +224,7 @@ namespace gcs::innards
             case Inference::BoundsChanged:
             case Inference::Instantiated:
                 if (logger)
-                    logger->infer(lit, just, reason);
+                    logger->infer(lit, just, reason, assertion_hints);
 
                 overloaded{
                     [&](const TrueLiteral &) {},
