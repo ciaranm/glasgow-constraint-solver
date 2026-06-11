@@ -24,8 +24,8 @@ namespace
     // through to the default heuristic via branch_sequence.
     auto scripted_neq_then_eq_zero(IntegerVariableID var) -> BranchCallback
     {
-        return [var](const CurrentState & state, const innards::Propagators &) -> std::generator<BranchGuess> {
-            return [](const CurrentState & state, IntegerVariableID var) -> std::generator<BranchGuess> {
+        return [var](const CurrentState & state, const innards::Propagators &) -> std::generator<IntegerVariableCondition> {
+            return [](const CurrentState & state, IntegerVariableID var) -> std::generator<IntegerVariableCondition> {
                 if (state.domain_size(var) >= 2_i && state.in_domain(var, 0_i)) {
                     co_yield var != 0_i;
                     co_yield var == 0_i;

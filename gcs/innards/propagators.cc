@@ -142,7 +142,7 @@ auto Propagators::initialise(State & state, ProofLogger * const logger) const ->
     return true;
 }
 
-auto Propagators::propagate(const optional<BranchGuess> & lit, State & state, ProofLogger * const logger, atomic<bool> * optional_abort_flag) const -> bool
+auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofLogger * const logger, atomic<bool> * optional_abort_flag) const -> bool
 {
     auto requeue = [&](const SimpleIntegerVariableID & v, const Inference inf) {
         if (v.index < _imp->iv_triggers.size()) {
@@ -178,28 +178,21 @@ auto Propagators::propagate(const optional<BranchGuess> & lit, State & state, Pr
     else {
         _imp->enqueued_end = 0;
         overloaded{
-            [&](const Literal & l) {
+            [&](const TrueLiteral &) {},
+            [&](const FalseLiteral &) {},
+            [&](const IntegerVariableCondition & cond) {
                 overloaded{
-                    [&](const TrueLiteral &) {},
-                    [&](const FalseLiteral &) {},
-                    [&](const IntegerVariableCondition & cond) {
-                        overloaded{
-                            [&](const SimpleIntegerVariableID & var) {
-                                // trigger all propagators on this var, even if we might not actually
-                                // have instantiated it. bit ugly but easier than tracking.
-                                requeue(var, Inference::Instantiated);
-                            },
-                            [&](const ConstantIntegerVariableID &) {
-                            },
-                            [&](const ViewOfIntegerVariableID & var) {
-                                requeue(var.actual_variable, Inference::Instantiated);
-                            }}
-                            .visit(cond.var);
+                    [&](const SimpleIntegerVariableID & var) {
+                        // trigger all propagators on this var, even if we might not actually
+                        // have instantiated it. bit ugly but easier than tracking.
+                        requeue(var, Inference::Instantiated);
+                    },
+                    [&](const ConstantIntegerVariableID &) {
+                    },
+                    [&](const ViewOfIntegerVariableID & var) {
+                        requeue(var.actual_variable, Inference::Instantiated);
                     }}
-                    .visit(l);
-            },
-            [&](const IntegerVariableRangeGuess & r) {
-                requeue(r.var, Inference::Instantiated);
+                    .visit(cond.var);
             }}
             .visit(*lit);
     }

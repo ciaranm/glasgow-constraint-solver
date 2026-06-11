@@ -13,7 +13,7 @@ auto gcs::innards::justify_not_in_range_across_equality(
     Integer other_lo,
     Integer other_hi) -> void
 {
-    // pruned >= lo -> other >= other_lo. Negation is pruned >= lo /\
+    // pruned >= lo -> other >= other_lo. Negation is pruned >= lo AND
     // other <= other_lo - 1; with the equality linking pruned and other these
     // are the opposing bounds of the Theorem 2.9 configuration, so the lemma
     // is RUP. No flag appears: see the header for why the ge-layer factoring

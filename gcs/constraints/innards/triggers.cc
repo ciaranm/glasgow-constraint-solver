@@ -13,6 +13,8 @@ auto gcs::innards::add_trigger_for(Triggers & triggers, const Literal & lit) -> 
                 using enum VariableConditionOperator;
             case Equal:
             case NotEqual:
+            case InRange:
+            case NotInRange:
                 triggers.on_change.push_back(cond.var);
                 break;
             case Less:

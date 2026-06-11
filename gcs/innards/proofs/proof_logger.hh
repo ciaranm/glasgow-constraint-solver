@@ -1,7 +1,6 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_LOGGER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_LOGGER_HH
 
-#include <gcs/branch_guess.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_line.hh>
@@ -94,7 +93,7 @@ namespace gcs::innards
         /**
          * Log that we are backtracking.
          */
-        auto backtrack(const std::vector<BranchGuess> & guesses) -> void;
+        auto backtrack(const std::vector<Literal> & guesses) -> void;
 
         /**
          * Log that we have reached an unsatisfiable conclusion at the end of the proof.
@@ -127,23 +126,15 @@ namespace gcs::innards
         auto conclude_none() -> void;
 
         /**
-         * Log, if necessary, that we have inferred a particular literal.
+         * Log, if necessary, that we have inferred a particular literal. A range
+         * conclusion (a NotInRange condition) on a plain, bits-encoded integer
+         * variable is a single proof line `~[var in lo..hi] >= 1` (the negation of
+         * the range "in" literal; see NamesAndIDsTracker::need_invar) emitted under
+         * the reason, in place of one `var != v` line per removed value; a width-1
+         * interval is the ordinary eq atom, and direct-only-encoded variables fall
+         * back to per-value emission (still correct, not coalesced).
          */
         auto infer(const Literal & lit, const Justification & why, const ReasonFunction & reason) -> void;
-
-        /**
-         * Log, if necessary, that we have inferred that \p var takes no value in the
-         * closed interval [lo, hi]. For a plain, bits-encoded integer variable this is
-         * a single proof line `~[var in lo..hi] >= 1` (the negation of the range "in"
-         * literal; see NamesAndIDsTracker::need_invar) emitted under the reason, in
-         * place of one `var != v` line per removed value. A width-1 interval is
-         * concluded as the ordinary `var != lo` (the eq atom IS the width-1 interval
-         * literal); views, constants and direct-only-encoded variables fall back to
-         * per-value emission (still correct, not coalesced). Justification handling
-         * mirrors infer().
-         */
-        auto infer_not_in_range(const IntegerVariableID & var, Integer lo, Integer hi,
-            const Justification & why, const ReasonFunction & reason) -> void;
 
         /**
          * \brief Return the current <em>active proof level</em> &mdash; the
@@ -228,11 +219,9 @@ namespace gcs::innards
         auto emit_proof_comment(const std::string &) -> void;
 
         /**
-         * Given a reason, return the resolved conjunction of proof literals it
-         * reifies on (interval elements become negated range literals; see
-         * NamesAndIDsTracker::resolve_reason).
+         * Given a reason, return the vector of literals in the conjunction.
          */
-        auto reason_to_lits(const ReasonFunction & reason) -> HalfReifyOnConjunctionOf;
+        auto reason_to_lits(const ReasonFunction & reason) -> Reason;
 
         /**
          * Given a PB constraint C and a conjunction of literals L, return the native

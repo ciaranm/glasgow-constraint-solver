@@ -62,6 +62,16 @@ namespace
                 return cond.var.actual_variable < cond.value - cond.var.then_add + 1_i;
             else
                 return cond.var.actual_variable >= (cond.value - cond.var.then_add);
+        case VariableConditionOperator::InRange:
+        case VariableConditionOperator::NotInRange:
+            // A negated view reverses the order, so the endpoints swap; the result
+            // is still a contiguous closed interval.
+            if (cond.var.negate_first)
+                return VariableConditionFrom<SimpleIntegerVariableID>{cond.var.actual_variable, cond.op,
+                    cond.var.then_add - cond.upper_value, cond.var.then_add - cond.value};
+            else
+                return VariableConditionFrom<SimpleIntegerVariableID>{cond.var.actual_variable, cond.op,
+                    cond.value - cond.var.then_add, cond.upper_value - cond.var.then_add};
         }
         throw NonExhaustiveSwitch{};
     }
@@ -182,21 +192,12 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             optional_minimise_variable_and_value->first);
 }
 
-auto ProofLogger::backtrack(const vector<BranchGuess> & guesses) -> void
+auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
 {
     _imp->proof << "% backtracking\n";
     WPBSum backtrack;
     for (const auto & guess : guesses)
-        overloaded{
-            [&](const Literal & lit) { backtrack += 1_i * ! lit; },
-            [&](const IntegerVariableRangeGuess & r) {
-                // ~guess as a single range ("in") literal: need_invar gives the literal
-                // meaning var in [lo,hi] (the eq atom if the range is width 1); negate it
-                // iff the guess was the accept branch.
-                auto lit = names_and_ids_tracker().need_invar(r.var, r.lower, r.upper);
-                visit([&](const auto & l) { backtrack += 1_i * (r.within ? ! l : l); }, lit);
-            }}
-            .visit(guess);
+        backtrack += 1_i * ! guess;
     emit_rup_proof_line(move(backtrack) >= 1_i, ProofLevel::Current);
 }
 
@@ -261,6 +262,27 @@ auto ProofLogger::conclude_none() -> void
 auto ProofLogger::infer(const Literal & lit, const Justification & why,
     const ReasonFunction & reason) -> void
 {
+    // A range conclusion on a view (spec §9.1: folding views into the interval
+    // machinery is deferred) or on a plain variable without a bits encoding (no
+    // order cuts to reify against) cannot become a single range ("in") literal;
+    // fall back to one per-value line each (still correct, just not coalesced).
+    // Every other range conclusion rides the standard machinery: the condition's
+    // proof name is the range literal (the eq atom for width 1), and
+    // simplify_literal constant-folds / clamps it first.
+    if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
+        if (cond->op == VariableConditionOperator::NotInRange) {
+            auto needs_per_value_fallback = overloaded{
+                [&](const SimpleIntegerVariableID & v) { return ! names_and_ids_tracker().has_bit_representation(v); },
+                [&](const ViewOfIntegerVariableID &) { return true; },
+                [&](const ConstantIntegerVariableID &) { return false; }}
+                                                .visit(cond->var);
+            if (needs_per_value_fallback) {
+                for (Integer val = cond->value; val <= cond->upper_value; ++val)
+                    infer(cond->var != val, why, reason);
+                return;
+            }
+        }
+
     auto need_lit = [&]() {
         overloaded{
             [&](const TrueLiteral &) {},
@@ -273,9 +295,9 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
             log_stacktrace();
             need_lit();
-            optional<HalfReifyOnConjunctionOf> reason_literals;
+            optional<Reason> reason_literals;
             if (reason)
-                reason_literals = names_and_ids_tracker().resolve_reason(reason());
+                reason_literals = reason();
 
             if (reason_literals)
                 names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
@@ -297,9 +319,9 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
             log_stacktrace();
             need_lit();
-            optional<HalfReifyOnConjunctionOf> reason_literals;
+            optional<Reason> reason_literals;
             if (reason)
-                reason_literals = names_and_ids_tracker().resolve_reason(reason());
+                reason_literals = reason();
 
             HalfReifyOnConjunctionOf reif{};
             if (reason_literals) {
@@ -333,86 +355,11 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         .visit(why);
 }
 
-auto ProofLogger::infer_not_in_range(const IntegerVariableID & var, Integer lo, Integer hi,
-    const Justification & why, const ReasonFunction & reason) -> void
+auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> Reason
 {
-    if (lo > hi)
-        return;
-
-    // Only a plain, bits-encoded integer variable has a single range ("in") literal
-    // to negate. Views, constants, and direct-only-encoded variables fall back to
-    // per-value removal: each `var != val` is still RUP from the same reason (via the
-    // laminar containment edges down to the eq atoms), it is just not coalesced into
-    // one line.
-    const auto * simple = std::get_if<SimpleIntegerVariableID>(&var);
-    if (! simple || ! names_and_ids_tracker().has_bit_representation(*simple)) {
-        for (Integer val = lo; val <= hi; ++val)
-            infer(var != val, why, reason);
-        return;
-    }
-
-    // A width-1 interval IS the eq atom (spec §2, witness W1): the conclusion is the
-    // ordinary per-value one, in the vocabulary everything else reasons over.
-    if (lo == hi) {
-        infer(var != lo, why, reason);
-        return;
-    }
-
-    // Emit the single conclusion line `~[var in lo..hi] >= 1`, reified on the
-    // reason, with the requested proof rule. Mirrors the rup / assert
-    // branches of infer(), but the conclusion is the negation of the range literal.
-    auto emit_negated_range = [&](const string & rule) {
-        log_stacktrace();
-        optional<HalfReifyOnConjunctionOf> reason_literals;
-        if (reason)
-            reason_literals = names_and_ids_tracker().resolve_reason(reason());
-
-        if (reason_literals)
-            names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
-
-        auto lit = names_and_ids_tracker().need_invar(*simple, lo, hi);
-
-        WPBSum terms;
-        visit([&](const auto & l) { terms += 1_i * ! l; }, lit);
-        HalfReifyOnConjunctionOf reif{};
-        if (reason_literals)
-            reif = *reason_literals;
-
-        write_indent();
-        _imp->proof << rule;
-        emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
-        _imp->proof << ";\n";
-        record_proof_line(advance_proof_line_number(), ProofLevel::Current);
-    };
-
-    overloaded{
-        [&](const JustifyUsingRUP &) {
-            emit_negated_range("rup ");
-        },
-        [&](const AssertRatherThanJustifying &) {
-            emit_negated_range("a ");
-        },
-        [&](const JustifyExplicitlyOnly & x) {
-            auto t = temporary_proof_level();
-            x.add_proof_steps(reason);
-            forget_proof_level(t);
-        },
-        [&](const JustifyExplicitlyThenRUP & x) {
-            auto t = temporary_proof_level();
-            x.add_proof_steps(reason);
-            infer_not_in_range(var, lo, hi, JustifyUsingRUP{}, reason);
-            forget_proof_level(t);
-        },
-        [&](const NoJustificationNeeded &) {
-        }}
-        .visit(why);
-}
-
-auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> HalfReifyOnConjunctionOf
-{
-    optional<HalfReifyOnConjunctionOf> reason_literals;
+    optional<Reason> reason_literals;
     if (reason)
-        reason_literals = names_and_ids_tracker().resolve_reason(reason());
+        reason_literals = reason();
 
     if (reason_literals)
         names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
@@ -500,9 +447,9 @@ auto ProofLogger::emit_under_reason(
     const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level, const ReasonFunction & reason) -> ProofLine
 {
-    optional<HalfReifyOnConjunctionOf> reason_literals;
+    optional<Reason> reason_literals;
     if (reason)
-        reason_literals = names_and_ids_tracker().resolve_reason(reason());
+        reason_literals = reason();
     if (reason_literals)
         names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 

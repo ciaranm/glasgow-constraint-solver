@@ -236,18 +236,31 @@ To be implemented fresh: partition + splits + coverings + root covering in
 `need_invar` (§3.1–3.4), `need_invar(v,v)` returning the eq atom, first-class
 interval reason elements (§4), retiring the env gates once §8 is in place.
 
-*Status (2026-06-11): all of the above implemented. `need_invar` returns
-`ProofLiteralOrFlag` (the eq atom for width 1) and maintains §3 in full;
-`need_direct_encoding_for` performs the singleton splits; reasons carry
-`VariableNotInRange` elements resolved by `NamesAndIDsTracker::resolve_reason`
-at all four §9.2 sites; `generic_reason` states hole runs as interval
-elements; `In` over constants batches initial-domain gaps (§9.3);
+*Status (2026-06-11, revised same day): all of the above implemented.
+`need_invar` returns `ProofLiteralOrFlag` (the eq atom for width 1) and
+maintains §3 in full; `need_direct_encoding_for` performs the singleton
+splits; `In` over constants batches initial-domain gaps (§9.3);
 `GCS_RANGE_INFERENCES` is retired and the Equals holes path is interval-based
-unconditionally for simple variables. One addition the spec did not call out:
-requests are clamped to the variable's definition bounds at `need_invar`
-(same solver fact given the bound axioms, and required so requests stay
-unions of cells), and reason elements drop their out-of-bounds part for the
-same reason.*
+unconditionally for simple variables.*
+
+*The interval vocabulary is carried by ordinary variable conditions, not a
+separate reason-element type: `VariableConditionOperator` gained `InRange` /
+`NotInRange` (closed interval `[value, upper_value]`), constructed via
+`in_range()` / `not_in_range()`, which canonicalise width-1 to the equality at
+construction. A range condition's proof name IS the range literal:
+`simplify_literal` deviews / constant-folds / clamps to the definition bounds
+/ width-1-canonicalises (vacuous and whole-range conditions fold to constants,
+so the whole-variable literal is never materialised), then `need_proof_name`
+mints via `need_invar` and registers the condition pair against the flag's
+xliteral. The §9.2 four-site resolution worry has structurally dissolved:
+there is no separate resolution pass to forget, because conditions resolve in
+the same `need_all_proof_names_in` / `xliteral_for` pipeline as eq and order
+atoms. `generic_reason` states hole runs as range conditions; branching yields
+them as plain `IntegerVariableCondition` guesses (the `BranchGuess` channel is
+gone); conclusions are range conditions through the ordinary
+`InferenceTracker::infer` path. One addition the spec did not call out:
+clamping to the definition bounds (same solver fact given the bound axioms,
+and required so requests stay unions of cells).*
 
 ## 8. The witness suite — the actual defence against re-simplification
 

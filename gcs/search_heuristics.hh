@@ -38,7 +38,7 @@ namespace gcs
      *
      * \ingroup SearchHeuristics
      */
-    using BranchValueGenerator = std::function<std::generator<BranchGuess>(
+    using BranchValueGenerator = std::function<std::generator<IntegerVariableCondition>(
         const CurrentState &, const innards::Propagators &, const IntegerVariableID &)>;
 
     /**

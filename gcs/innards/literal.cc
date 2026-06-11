@@ -52,6 +52,10 @@ auto gcs::innards::debug_string(const Literal & lit) -> string
                 return format("intvars[{}] >= {}", debug_string(ilit.var), ilit.value);
             case Less:
                 return format("intvars[{}] < {}", debug_string(ilit.var), ilit.value);
+            case InRange:
+                return format("intvars[{}] in {}..{}", debug_string(ilit.var), ilit.value, ilit.upper_value);
+            case NotInRange:
+                return format("intvars[{}] notin {}..{}", debug_string(ilit.var), ilit.value, ilit.upper_value);
             }
             throw NonExhaustiveSwitch{};
         },
@@ -87,6 +91,8 @@ auto gcs::innards::is_literally_true_or_false(const Literal & lit) -> optional<b
                     case NotEqual: return x.const_value != ilit.value;
                     case GreaterEqual: return x.const_value >= ilit.value;
                     case Less: return x.const_value < ilit.value;
+                    case InRange: return x.const_value >= ilit.value && x.const_value <= ilit.upper_value;
+                    case NotInRange: return x.const_value < ilit.value || x.const_value > ilit.upper_value;
                     }
                     throw NonExhaustiveSwitch{};
                 }}

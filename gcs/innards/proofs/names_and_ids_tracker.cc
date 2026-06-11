@@ -274,6 +274,10 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             case NotEqual:
                 need_direct_encoding_for(var, cond.value);
                 return _imp->eqvars_that_exist.at(var).at(cond.value).second;
+            case InRange:
+            case NotInRange:
+                // no pol consumer references a range literal's reification lines yet
+                throw UnimplementedException{};
             }
             throw NonExhaustiveSwitch{};
         },
@@ -297,6 +301,9 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
                 case NotEqual:
                     need_direct_encoding_for(*v_id, cond.value);
                     return _imp->eqvars_that_exist.at(*v_id).at(cond.value).second;
+                case InRange:
+                case NotInRange:
+                    throw UnimplementedException{};
                 }
                 throw NonExhaustiveSwitch{};
             }
@@ -315,6 +322,9 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             case Equal:
                 throw UnimplementedException{};
             case NotEqual:
+                throw UnimplementedException{};
+            case InRange:
+            case NotInRange:
                 throw UnimplementedException{};
             }
             throw NonExhaustiveSwitch{};
@@ -343,6 +353,30 @@ auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrPro
     case GreaterEqual:
         need_gevar(cond.var, cond.value);
         break;
+    case InRange:
+    case NotInRange: {
+        // The proof name for a range condition is the range ("in") literal,
+        // minted via need_invar with everything spec §3 entails (partition
+        // splits, coverings, containment). simplify_literal has already
+        // deviewed, constant-folded, clamped to the definition bounds, and
+        // canonicalised width-1 to an equality, so this must be an interior
+        // multi-width range on a bits-encoded variable.
+        if (_imp->variable_conditions_to_x.contains(cond))
+            break;
+        if (! has_bit_representation(cond.var))
+            throw ProofError{"range condition on a variable without a bits encoding"};
+        auto lit = need_invar(cond.var, cond.value, cond.upper_value);
+        const auto * flag = std::get_if<ProofFlag>(&lit);
+        if (! flag)
+            throw ProofError{"range condition was not canonicalised before need_proof_name"};
+        auto x = xliteral_for(*flag);
+        auto in_cond = cond, not_in_cond = cond;
+        in_cond.op = InRange;
+        not_in_cond.op = NotInRange;
+        _imp->variable_conditions_to_x.emplace(in_cond, x);
+        _imp->variable_conditions_to_x.emplace(not_in_cond, ! x);
+        break;
+    }
     }
 }
 
@@ -903,7 +937,7 @@ auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID
         if (cell_lo == cell_hi)
             need_direct_encoding_for(id, cell_lo);
         else
-            mint_plain_invar(id, cell_lo, cell_hi);
+            static_cast<void>(mint_plain_invar(id, cell_lo, cell_hi));
     };
     mint_cell(a, p - 1_i);
     mint_cell(p, b);
@@ -951,7 +985,7 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
         if (cell_lo == cell_hi)
             need_direct_encoding_for(id, cell_lo);
         else
-            mint_plain_invar(id, cell_lo, cell_hi);
+            static_cast<void>(mint_plain_invar(id, cell_lo, cell_hi));
         append_cell_literal_to(root_covering, id, cell_lo, cell_hi);
     }
     _imp->logger->emit_rup_proof_line(move(root_covering) >= 1_i, ProofLevel::Top);
@@ -1015,33 +1049,11 @@ auto NamesAndIDsTracker::has_bit_representation(const SimpleOrProofOnlyIntegerVa
     return _imp->integer_variable_bits_to_size_and_proof_vars.contains(id);
 }
 
-auto NamesAndIDsTracker::resolve_reason(const Reason & reason) -> HalfReifyOnConjunctionOf
+auto NamesAndIDsTracker::find_definition_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> optional<pair<Integer, Integer>>
 {
-    HalfReifyOnConjunctionOf result;
-    for (const auto & elem : reason)
-        overloaded{
-            [&](const ProofLiteralOrFlag & lit) { result.push_back(lit); },
-            [&](const VariableNotInRange & r) {
-                auto per_value_fallback = [&](Integer lo, Integer hi) {
-                    for (Integer v = lo; v <= hi; ++v)
-                        result.push_back(ProofLiteral{r.var != v});
-                };
-                const auto * simple = std::get_if<SimpleIntegerVariableID>(&r.var);
-                if (! simple || ! has_bit_representation(*simple)) {
-                    per_value_fallback(r.lo, r.hi);
-                    return;
-                }
-                // Drop the out-of-bounds part: the bound axioms make it UP-given, so
-                // the reified inference stays RUP under the stronger (smaller) reason.
-                auto [lb, ub] = _imp->integer_variable_definition_bounds.at(*simple);
-                auto lo = max(r.lo, lb), hi = min(r.hi, ub);
-                if (lo > hi)
-                    return;
-                auto lit = need_invar(*simple, lo, hi);
-                result.push_back(! lit);
-            }}
-            .visit(elem);
-    return result;
+    if (auto it = _imp->integer_variable_definition_bounds.find(id); it != _imp->integer_variable_definition_bounds.end())
+        return it->second;
+    return nullopt;
 }
 
 auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
@@ -1530,6 +1542,11 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
     case NotEqual: return "!=";
     case GreaterEqual: return ">=";
     case Less: return "<";
+    case InRange:
+    case NotInRange:
+        // cake_pb_cp has no range-condition spelling yet, and range conditions
+        // cannot appear in reified constraints (model-phase need_invar throws)
+        throw UnimplementedException{};
     }
 
     throw NonExhaustiveSwitch{};

@@ -1,11 +1,11 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SOLVE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SOLVE_HH
 
-#include <gcs/branch_guess.hh>
 #include <gcs/current_state.hh>
 #include <gcs/problem.hh>
 #include <gcs/proof.hh>
 #include <gcs/stats.hh>
+#include <gcs/variable_condition.hh>
 
 #include <atomic>
 #include <functional>
@@ -43,15 +43,15 @@ namespace gcs
 
     /**
      * \brief Called by gcs::solve_with() to determine branching when
-     * searching, should return a generator of BranchGuess instances (each an
-     * IntegerVariableCondition or an interval accept/reject) that corresponds to a
-     * complete branching choice, or that yields nothing if every variable is
-     * instantiated.
+     * searching, should return a generator of IntegerVariableCondition
+     * instances (which may be range conditions, for interval accept/reject
+     * branching) that corresponds to a complete branching choice, or that
+     * yields nothing if every variable is instantiated.
      *
      * \ingroup SolveCallbacks
      * \sa SearchHeuristics
      */
-    using BranchCallback = std::function<std::generator<BranchGuess>(const CurrentState &, const innards::Propagators &)>;
+    using BranchCallback = std::function<std::generator<IntegerVariableCondition>(const CurrentState &, const innards::Propagators &)>;
 
     /**
      * \brief Called by gcs::solve_with() after the proof has been started.

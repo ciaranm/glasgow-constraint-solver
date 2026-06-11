@@ -262,20 +262,13 @@ namespace gcs::innards
         [[nodiscard]] auto has_bit_representation(const SimpleOrProofOnlyIntegerVariableID &) const -> bool;
 
         /**
-         * Resolve a propagator-supplied Reason into the conjunction of proof literals
-         * it reifies on. Plain literals and flags pass through; a VariableNotInRange
-         * element becomes the negated range ("in") literal, minted via need_invar
-         * (with everything that entails: partition splits, coverings, containment).
-         * Views, constants and direct-only-encoded variables take the per-value
-         * fallback `var != v`. The part of an element's range outside the variable's
-         * definition bounds is dropped: it is unit-propagation-given by the bound
-         * axioms, so the reified inference stays RUP without it.
-         *
-         * This is THE reason-vocabulary resolution point; every proof-logging site
-         * that turns a ReasonFunction's result into emitted literals must go through
-         * it (spec §9.2 — missing a site no-ops silently).
+         * The bounds this variable was defined with, if it has been set up.
+         * Used by simplify_literal to canonicalise range conditions (clamping
+         * them to the definition bounds: the bound axioms make the clamped
+         * condition the same fact, and the always-covered partition's cells
+         * only span the definition range).
          */
-        [[nodiscard]] auto resolve_reason(const Reason &) -> HalfReifyOnConjunctionOf;
+        [[nodiscard]] auto find_definition_bounds(const SimpleOrProofOnlyIntegerVariableID &) const -> std::optional<std::pair<Integer, Integer>>;
 
         /**
          * Say that we are going to need an at-least-one constraint for a

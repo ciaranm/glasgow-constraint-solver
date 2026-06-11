@@ -39,18 +39,6 @@ namespace gcs::innards
             return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason);
         }
 
-        // Record a range inference's variable in the propagation queue. Mirrors the
-        // per-variable bookkeeping in track_impl, but takes the variable directly
-        // (a range conclusion has no Literal to read it back from).
-        auto record_range_var(const IntegerVariableID & var, const Inference inf) -> void
-        {
-            overloaded{
-                [&](const SimpleIntegerVariableID & v) { _inferences.emplace_back(v, inf); },
-                [&](const ViewOfIntegerVariableID & v) { _inferences.emplace_back(v.actual_variable, inf); },
-                [&](const ConstantIntegerVariableID &) {}}
-                .visit(var);
-        }
-
     public:
         explicit InferenceTrackerBase(State & s) :
             _state(s),
@@ -108,11 +96,12 @@ namespace gcs::innards
         template <IntegerVariableIDLike VarType_>
         auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const Justification & why, const ReasonFunction & reason) -> void
         {
-            // The conclusion `var not in [lo, hi]` has no single Literal, so this does
-            // not go through track()/logger->infer(); the derived track_range_impl
-            // records the queue entry and (for proof logging) emits the one-line
-            // range conclusion via logger->infer_not_in_range.
-            static_cast<Actual_ *>(this)->track_range_impl(logger, _state.infer_not_in_range(var, lo, hi), IntegerVariableID{var}, lo, hi, why, reason);
+            // The conclusion is the ordinary range condition (the eq atom for a
+            // width-1 interval, via not_in_range()'s canonicalisation); the state
+            // update batches the whole removal into one erase_range pass.
+            if (lo > hi)
+                return;
+            track(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, reason);
         }
 
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const ReasonFunction & reason) -> void
@@ -202,27 +191,6 @@ namespace gcs::innards
                 throw TrackedPropagationFailed{};
             }
         }
-
-        auto track_range_impl(ProofLogger * const, const Inference inf, const IntegerVariableID & var, Integer, Integer, const Justification &, const ReasonFunction &) -> void
-        {
-            switch (inf) {
-            case Inference::NoChange:
-                break;
-
-            case Inference::InteriorValuesChanged:
-            case Inference::BoundsChanged:
-            case Inference::Instantiated:
-                record_range_var(var, inf);
-                _did_anything_since_last_call_by_propagation_queue = true;
-                _did_anything_since_last_call_inside_propagator = true;
-                break;
-
-            [[unlikely]] case Inference::Contradiction:
-                _did_anything_since_last_call_by_propagation_queue = true;
-                _did_anything_since_last_call_inside_propagator = true;
-                throw TrackedPropagationFailed{};
-            }
-        }
     };
 
     class EagerProofLoggingInferenceTracker : public InferenceTrackerBase<EagerProofLoggingInferenceTracker>
@@ -265,31 +233,6 @@ namespace gcs::innards
             [[unlikely]] case Inference::Contradiction:
                 if (logger)
                     logger->infer(lit, just, reason);
-                _did_anything_since_last_call_by_propagation_queue = true;
-                _did_anything_since_last_call_inside_propagator = true;
-                throw TrackedPropagationFailed{};
-            }
-        }
-
-        auto track_range_impl(ProofLogger * const logger, const Inference inf, const IntegerVariableID & var, Integer lo, Integer hi, const Justification & just, const ReasonFunction & reason) -> void
-        {
-            switch (inf) {
-            case Inference::NoChange:
-                break;
-
-            case Inference::InteriorValuesChanged:
-            case Inference::BoundsChanged:
-            case Inference::Instantiated:
-                if (logger)
-                    logger->infer_not_in_range(var, lo, hi, just, reason);
-                record_range_var(var, inf);
-                _did_anything_since_last_call_by_propagation_queue = true;
-                _did_anything_since_last_call_inside_propagator = true;
-                break;
-
-            [[unlikely]] case Inference::Contradiction:
-                if (logger)
-                    logger->infer_not_in_range(var, lo, hi, just, reason);
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};

@@ -98,7 +98,7 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
                         // accumulating lambda would duplicate the element on each call.
                         ReasonFunction{[=, base = reason]() {
                             auto r = base;
-                            r.emplace_back(VariableNotInRange{IntegerVariableID{other}, lo, hi});
+                            r.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
                             return r;
                         }});
                 else

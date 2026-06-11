@@ -144,6 +144,10 @@ namespace
                         case VariableConditionOperator::GreaterEqual:
                         case VariableConditionOperator::Less:
                             break;
+                        case VariableConditionOperator::InRange:
+                        case VariableConditionOperator::NotInRange:
+                            // MultBC's reasons and reifications are bounds and equalities only
+                            throw UnimplementedException{};
                         }
                         rup_hints.emplace_back(
                             *get_def_line_for_lit(logger, *cond));
@@ -272,7 +276,7 @@ namespace
         // logger.emit_proof_comment("Chanelling RUP");
         // This might be a horribly bad idea...
         for (const auto & lit : reason()) {
-            auto cond = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(get<ProofLiteralOrFlag>(lit))));
+            auto cond = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(lit)));
             auto line = get_def_line_for_lit(logger, cond);
             if (line) {
                 rup_hints.emplace_back(*line);
@@ -381,7 +385,7 @@ namespace
         auto channel_sum = WPBSum{} + constr.sum.terms[0].coefficient * (z_negative ? -1_i : 1_i) * z;
         vector<ProofLine> rup_hints = {result};
         for (const auto & lit : reason()) {
-            auto cond = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(get<ProofLiteralOrFlag>(lit))));
+            auto cond = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(lit)));
             auto line = get_def_line_for_lit(logger, cond);
             if (line) {
                 rup_hints.emplace_back(*line);
