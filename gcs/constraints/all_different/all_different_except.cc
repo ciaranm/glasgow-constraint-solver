@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <iterator>
 #include <map>
-#include <optional>
 #include <sstream>
 #include <string>
 
@@ -129,16 +128,7 @@ auto AllDifferentExcept::define_proof_model(ProofModel & model) -> void
 auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
 {
     if (_has_duplicates && _sanitised_excluded.empty()) {
-        // Same shape as plain AllDifferent on duplicates: with empty excluded,
-        // the encoding's half-reified relaxation terms disappear and the
-        // duplicate pair's two constraints jointly force selector and
-        // !selector simultaneously. Install the shared clique-contradiction
-        // initialiser instead of the per-value path below; the propagator
-        // also can't run, so we early-return.
-        auto witness = _duplicate_selectors.empty()
-            ? std::nullopt
-            : std::optional{*_duplicate_selectors.begin()};
-        install_clique_duplicate_contradiction_initialiser(propagators, move(witness));
+        install_clique_duplicate_contradiction_initialiser(propagators);
         return;
     }
 

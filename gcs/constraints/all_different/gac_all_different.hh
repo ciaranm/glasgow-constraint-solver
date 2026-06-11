@@ -39,7 +39,6 @@ namespace gcs
         std::vector<IntegerVariableID> _sanitised_vars;
         std::vector<Integer> _compressed_vals;
         bool _has_duplicate_vars = false;
-        std::optional<std::pair<IntegerVariableID, innards::ProofFlag>> _duplicate_witness;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;

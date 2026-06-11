@@ -86,7 +86,7 @@ auto run_all_different_test(bool proofs, const ViewWrapConfig & view_cfg,
 // flavours: the consequence-contradiction path runs the standard
 // clique-of-not-equals encoding (which emits a self-contradicting
 // half-reified pair for the duplicated variable) and a contradiction
-// initialiser that cites one duplicated pair's selector flag.
+// initialiser that derives false by plain RUP.
 template <typename AllDifferentVariant_>
 auto run_alldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domains,
     const vector<int> & positions, const string & flavour) -> void
