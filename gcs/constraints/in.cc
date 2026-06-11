@@ -13,10 +13,12 @@
 #include <util/enumerate.hh>
 
 #include <algorithm>
+#include <cstdlib>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -154,6 +156,33 @@ auto In::install_propagators(Propagators & propagators) -> void
     propagators.install(
         [var = _var, var_vals = _var_vals, val_vals = _val_vals, selectors = _selectors](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // THROWAWAY EXPERIMENT (range-literal design exploration, see equals.cc):
+            // for a pure value-list In on a plain variable, conclude each contiguous
+            // unsupported run as a single ~[var in lo..hi] flag instead of per-value
+            // var != v inferences, so the per-value eq atoms never come into
+            // existence. Width-1 runs keep the eq-atom path.
+            static const bool range_inferences = std::getenv("GCS_RANGE_INFERENCES") != nullptr;
+            const auto * simple_var = std::get_if<SimpleIntegerVariableID>(&var);
+            if (range_inferences && logger != nullptr && simple_var && var_vals.empty() && selectors.empty()) {
+                vector<Integer> drop;
+                for (auto v : state.each_value_immutable(var))
+                    if (! binary_search(val_vals, v))
+                        drop.push_back(v);
+                for (size_t i = 0; i < drop.size();) {
+                    auto j = i;
+                    while (j + 1 < drop.size() && drop[j + 1] == drop[j] + 1_i)
+                        ++j;
+                    if (j > i)
+                        inference.infer_not_in_range(logger, *simple_var, drop[i], drop[j],
+                            JustifyUsingRUP{}, ReasonFunction{});
+                    else
+                        inference.infer_not_equal(logger, var, drop[i], JustifyUsingRUP{},
+                            ReasonFunction{[]() { return Reason{}; }});
+                    i = j + 1;
+                }
+                return PropagatorState::Enable;
+            }
+
             // Step 1: filter dom(var) — drop any value that no source supports.
             for (auto v : state.each_value_mutable(var)) {
                 if (binary_search(val_vals, v))

@@ -81,6 +81,14 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         // for the proof-size characterisation. Range literals exist only for plain
         // integer variables, so views/constants always take the per-value path.
         static const bool range_inferences = std::getenv("GCS_RANGE_INFERENCES") != nullptr;
+        // THROWAWAY EXPERIMENT (design exploration for the range-literal rewrite):
+        // with GCS_RANGE_REASONS also set, build the reason as ONE native
+        // ~[other in lo..hi] flag instead of a per-value run of other != val.
+        // The per-value eq atoms for the covered values then never come into
+        // existence at all -- previously they were materialised by proof-naming
+        // the reason literals, and the reason-resolution coalescer (which this
+        // path now bypasses) merely rewrote the emitted lines after the fact.
+        static const bool native_range_reasons = std::getenv("GCS_RANGE_REASONS") != nullptr;
         auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
             std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});
         auto use_range = range_inferences && logger != nullptr && both_simple;
@@ -94,14 +102,25 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 
         auto prune = [&](const auto & pruned, const auto & other, const IntervalSet<Integer> & pruned_set, const IntervalSet<Integer> & other_set) {
             for (auto [lo, hi] : pruned_set.each_interval_minus(other_set)) {
-                if (use_range)
+                // A width-1 "range" flag would be an unlinked doppelganger of the eq
+                // atom (same boundary cuts, different Boolean): downstream reasons
+                // written over eq atoms can never unit-propagate through it. Mirror
+                // reject_random_interval and only take the range path for hi > lo.
+                if (use_range && hi > lo) {
+                    auto per_value_reason = ReasonFunction{[=, reason = reason]() mutable {
+                        for (Integer val = lo; val <= hi; ++val)
+                            reason.emplace_back(other != val);
+                        return reason;
+                    }};
+                    auto interval_reason = ReasonFunction{[=, reason = reason]() mutable {
+                        reason.emplace_back(! logger->names_and_ids_tracker().need_invar(
+                            std::get<SimpleIntegerVariableID>(IntegerVariableID{other}), lo, hi));
+                        return reason;
+                    }};
                     inference.infer_not_in_range(logger, pruned, lo, hi,
                         JustifyExplicitlyThenRUP{[=](const ReasonFunction & r) { bridge(pruned, other, lo, hi, r); }},
-                        ReasonFunction{[=, reason = reason]() mutable {
-                            for (Integer val = lo; val <= hi; ++val)
-                                reason.emplace_back(other != val);
-                            return reason;
-                        }});
+                        native_range_reasons ? interval_reason : per_value_reason);
+                }
                 else
                     for (Integer val = lo; val <= hi; ++val)
                         inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{},
