@@ -16,9 +16,27 @@ auto gcs::innards::generic_reason(const State & state, const std::vector<Integer
             reason.push_back(var >= bounds.first);
             reason.push_back(var <= bounds.second);
             if (state.domain_has_holes(var)) {
-                for (auto v = bounds.first + 1_i; v < bounds.second; ++v)
-                    if (! state.in_domain(var, v))
-                        reason.push_back(var != v);
+                // Each maximal run of missing values is one first-class interval
+                // element (dev_docs/range_literals_spec.md §4): a hole is an
+                // interval fact, not one eq fact per missing value. Resolution
+                // turns a width-1 run into the eq atom, and falls back to
+                // per-value literals for views and direct-only variables.
+                std::optional<std::pair<Integer, Integer>> run;
+                auto flush = [&]() {
+                    if (run) {
+                        reason.push_back(VariableNotInRange{var, run->first, run->second});
+                        run.reset();
+                    }
+                };
+                for (auto v = bounds.first + 1_i; v < bounds.second; ++v) {
+                    if (state.in_domain(var, v))
+                        flush();
+                    else if (run)
+                        run->second = v;
+                    else
+                        run = std::pair{v, v};
+                }
+                flush();
             }
         }
     }

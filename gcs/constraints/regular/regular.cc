@@ -44,6 +44,7 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+using std::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
@@ -290,9 +291,11 @@ namespace
         ProofLine reason_definition_1, reason_definition_2;
 
         if (logger && short_reasons) {
+            // Resolve first: hole runs in the reason are interval elements, which
+            // become negated range flags rather than per-value literals.
             auto reason_sum = WPBSum{};
-            for (const auto & lit : gen_reason()) {
-                reason_sum += 1_i * get<ProofLiteral>(get<ProofLiteralOrFlag>(lit));
+            for (const auto & lit : logger->names_and_ids_tracker().resolve_reason(gen_reason())) {
+                visit([&](const auto & l) { reason_sum += 1_i * l; }, lit);
             }
             // We will manually delete this later.
             auto [_reason_short, _line1, _line2] =

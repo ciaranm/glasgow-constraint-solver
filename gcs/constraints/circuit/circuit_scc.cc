@@ -42,6 +42,7 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::visit;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -1196,9 +1197,11 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
             auto reason = generic_reason(state, succ);
 
             if (logger && options.short_reasons) {
+                // Resolve first: hole runs in the reason are interval elements, which
+                // become negated range flags rather than per-value literals.
                 auto reason_sum = WPBSum{};
-                for (const auto & lit : reason()) {
-                    reason_sum += 1_i * get<ProofLiteral>(get<ProofLiteralOrFlag>(lit));
+                for (const auto & lit : logger->names_and_ids_tracker().resolve_reason(reason())) {
+                    visit([&](const auto & l) { reason_sum += 1_i * l; }, lit);
                 }
                 // We will manually delete this later.
                 auto [_reason_short, _line1, _line2] =

@@ -236,6 +236,19 @@ To be implemented fresh: partition + splits + coverings + root covering in
 `need_invar` (§3.1–3.4), `need_invar(v,v)` returning the eq atom, first-class
 interval reason elements (§4), retiring the env gates once §8 is in place.
 
+*Status (2026-06-11): all of the above implemented. `need_invar` returns
+`ProofLiteralOrFlag` (the eq atom for width 1) and maintains §3 in full;
+`need_direct_encoding_for` performs the singleton splits; reasons carry
+`VariableNotInRange` elements resolved by `NamesAndIDsTracker::resolve_reason`
+at all four §9.2 sites; `generic_reason` states hole runs as interval
+elements; `In` over constants batches initial-domain gaps (§9.3);
+`GCS_RANGE_INFERENCES` is retired and the Equals holes path is interval-based
+unconditionally for simple variables. One addition the spec did not call out:
+requests are clamped to the variable's definition bounds at `need_invar`
+(same solver fact given the bound axioms, and required so requests stay
+unions of cells), and reason elements drop their out-of-bounds part for the
+same reason.*
+
 ## 8. The witness suite — the actual defence against re-simplification
 
 Each clause family has a deterministic counterexample that fails veripb
@@ -273,6 +286,39 @@ expensive way.
 - **W5 — root covering / wipeout** (to be written with the implementation):
   a variable whose cells are all excluded must reach contradiction by UP at
   the flag level.
+
+### 8.1 Implementation notes (2026-06-11, first full implementation)
+
+The suite is checked in as `range_witness_w{1,2,3,5}_test` (W4 = the existing
+`range_branch_test` plus the suite-wide interval-reject branching), each
+veripb-gated. Each was validated by temporary ablation knobs before the knobs
+were removed:
+
+- **W1 bites harder than predicted.** With width-1 flags minted instead of eq
+  atoms, W1 fails *even with the coverings and containment intact* (the
+  pre-implementation UP analysis predicted the covering `flag ↔ eq-atom` link
+  would rescue it; it does not). A fresh confirmation of §1's warning that
+  hand UP-analyses of P2 are unreliable in both directions.
+- **W3 bites on two families**: removing either the request covering or the
+  containment edges fails it within milliseconds.
+- **W2 and W5 are currently structural**: no *single*-family ablation makes
+  them fail. W2's failure mode needs per-value `In` conclusions *and* no
+  covering simultaneously (under §3 the vocabulary always matches or grounds
+  out); W5's wipeout is also derivable by the bound-axiom walk through
+  reverse reifications and the order chain, independent of the root covering.
+  They stay in the suite as composed end-to-end regression nets.
+- **Observation, not a proposal**: the root covering (§3.4) appears
+  forward-UP-redundant given the bound-axiom units, the reverse reifications,
+  and the Inv1 chain (the walk derives both wipeout and the positive "last
+  surviving piece"). Per the change protocol this is recorded for review, not
+  acted on — the W1 result above is exactly why such an analysis is not
+  trusted as grounds for removal.
+- **Known witness gap**: there is no deterministic witness yet for split
+  coverings composing across refinements (a literal whose covering names a
+  cell that is *later* split, with the cell's exclusion arriving only
+  piecewise and no bound anchor). Constructing one needs a contrived
+  propagation order; the W4 net covers the shape randomly. To be added if a
+  natural trigger is found.
 
 Testing doctrine learned at cost, for the suite around these: a capped or
 gate-off green run certifies nothing about P2; two-variable instances
