@@ -85,8 +85,9 @@ auto main(int argc, char * argv[]) -> int
             },
         },
         options_vars.contains("prove")
-            ? make_optional<ProofOptions>(ProofFileNames{options_vars["proof-files-basename"].as<string>()},
-                  true, options_vars.count("full-proof-encoding"))
+            ? make_optional(options_vars.count("full-proof-encoding")
+                      ? ProofOptions{ProofFileNames{options_vars["proof-files-basename"].as<string>()}}.enable_full_encoding()
+                      : ProofOptions{ProofFileNames{options_vars["proof-files-basename"].as<string>()}})
             : nullopt);
 
     if (options_vars.contains("stats"))

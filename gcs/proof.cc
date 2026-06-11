@@ -22,10 +22,8 @@ ProofOptions::ProofOptions(const std::string & f) :
 {
 }
 
-ProofOptions::ProofOptions(const ProofFileNames & f, bool v, bool a) :
-    proof_file_names(f),
-    verbose_names(v),
-    always_use_full_encoding(a)
+ProofOptions::ProofOptions(const ProofFileNames & f) :
+    proof_file_names(f)
 {
 }
 

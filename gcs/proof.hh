@@ -38,13 +38,32 @@ namespace gcs
     struct ProofOptions final
     {
         explicit ProofOptions(const std::string &);
-        explicit ProofOptions(const ProofFileNames &, bool, bool);
+        explicit ProofOptions(const ProofFileNames &);
         ProofOptions(const ProofOptions &) = default;
 
         ProofFileNames proof_file_names;       ///< Filenames for OPB, proof, and mapping files
         bool verbose_names = true;             ///< Use verbose names in proofs?
         bool always_use_full_encoding = false; ///< Always write the full variable encoding to the OPB file
         bool use_annotated_assertions = false; ///< Only write annotated assertions instead of full justifications.
+
+        /// Write annotated assertions instead of full justifications.
+        ProofOptions & enable_assertions()
+        {
+            use_annotated_assertions = true;
+            return *this;
+        }
+        /// Always write the full variable encoding to the OPB file.
+        ProofOptions & enable_full_encoding()
+        {
+            always_use_full_encoding = true;
+            return *this;
+        }
+        /// Set whether to use verbose names in proofs.
+        ProofOptions & set_verbose_names(bool v)
+        {
+            verbose_names = v;
+            return *this;
+        }
     };
 
     class Proof
