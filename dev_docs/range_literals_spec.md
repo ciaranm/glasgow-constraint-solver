@@ -152,6 +152,14 @@ encoding layer, never by propagator authors:
 Propagator authors see exactly two things: `infer_not_in_range` and interval
 reason elements. Everything in §3 happens inside `need_invar`.
 
+*Decided (2026-06-13, Ciaran):* a reason a propagator constructs is never
+rewritten — only `generic_reason`, which derives a reason from the current
+domains rather than receiving one, chooses the interval spelling for hole
+runs, because the representation of "the domains, as a reason" belongs to
+it. Revisit only if a propagator's explicit scaffolding turns out to need
+the per-value spelling (it can always construct its reason explicitly), or
+if the small-interval overhead grows beyond the noise it currently is.
+
 ## 5. Why this is believed complete (and what still needs proving)
 
 Intra-variable falsification induction: if interval F is truly excluded by
