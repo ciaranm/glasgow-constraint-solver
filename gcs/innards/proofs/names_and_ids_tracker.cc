@@ -624,9 +624,11 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     }
 
     // Link this new eq atom (a singleton [v, v]) to its immediate range containers,
-    // so a rejected container propagates ~(id == v).
+    // so a rejected container propagates ~(id == v). Most variables never have any
+    // range literals, so the containment tree is only maintained once one exists.
     link_immediate_containment(id, v, v);
-    _imp->containment_trees[id].insert(v, v);
+    if (auto tree = _imp->containment_trees.find(id); tree != _imp->containment_trees.end())
+        tree->second.insert(v, v);
 
     // On a partitioned variable, every eq atom is a singleton cell: split the
     // containing cell, so that interval coverings reach the atoms that per-value
@@ -889,7 +891,15 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
         id);
 
     // Containment edges let a rejected literal propagate down to the literals a
-    // conflict is written over; the order chain alone does not give this.
+    // conflict is written over; the order chain alone does not give this. The
+    // variable's first range literal creates its containment tree, seeded with
+    // the eq atoms that already exist.
+    if (! _imp->containment_trees.contains(id)) {
+        auto & tree = _imp->containment_trees[id];
+        if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
+            for (const auto & [v, _] : eqit->second)
+                tree.insert(v, v);
+    }
     link_immediate_containment(id, lo, hi);
     _imp->containment_trees[id].insert(lo, hi);
 
