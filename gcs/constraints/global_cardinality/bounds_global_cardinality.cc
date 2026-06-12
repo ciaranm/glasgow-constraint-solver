@@ -115,6 +115,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
     all_vars.insert(all_vars.end(), _counts.begin(), _counts.end());
 
     propagators.install(
+        constraint_id(),
         [vars = _vars, values = _values, counts = _counts, count_lines = _count_lines, all_vars = move(all_vars)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto m = values.size();

@@ -190,11 +190,7 @@ auto Table::install_propagators(Propagators & propagators) -> void
             triggers.on_change.push_back(v);
         triggers.on_change.push_back(_selector);
 
-        propagators.install([table = ExtensionalData{_selector, move(_vars), move(tuples)}](
-                                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            return propagate_extensional(table, state, inference, logger);
-        },
-            triggers);
+        propagators.install(constraint_id(), [table = ExtensionalData{_selector, move(_vars), move(tuples)}](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState { return propagate_extensional(table, state, inference, logger); }, triggers);
     },
         move(_tuples));
 }

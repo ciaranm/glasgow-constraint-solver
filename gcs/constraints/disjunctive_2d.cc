@@ -368,6 +368,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
     }
 
     propagators.install(
+        constraint_id(),
         [xs = move(_xs), ys = move(_ys), width_var = move(_widths), height_var = move(_heights),
             active_rects = move(_active_rects), before_x = move(_before_x), before_y = move(_before_y),
             clause_lines = move(_clause_lines), end_x = move(_end_x), end_y = move(_end_y),

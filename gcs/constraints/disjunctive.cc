@@ -223,6 +223,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
         triggers.on_bounds.emplace_back(_starts[i]);
 
     propagators.install(
+        constraint_id(),
         [starts = move(_starts), lengths = move(_lengths),
             active_tasks = move(_active_tasks),
             before_flags = move(_before_flags), clause_lines = move(_clause_lines),

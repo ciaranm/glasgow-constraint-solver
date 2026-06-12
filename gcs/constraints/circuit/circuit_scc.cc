@@ -669,8 +669,7 @@ namespace
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
             add_sat(temp_p_line, leq_and_geq);
-            add_sat(temp_p_line, ctx.logger.emit_rup_proof_line(
-                WPBSum{} + -1_i * ctx.pos_var_data.at(next_node).var + 1_i * ctx.pos_var_data.at(middle).var >= Integer{-n + 1}, ProofLevel::Temporary));
+            add_sat(temp_p_line, ctx.logger.emit_rup_proof_line(WPBSum{} + -1_i * ctx.pos_var_data.at(next_node).var + 1_i * ctx.pos_var_data.at(middle).var >= Integer{-n + 1}, ProofLevel::Temporary));
             ctx.logger.emit_proof_comment("Step 4");
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
@@ -698,8 +697,7 @@ namespace
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
             add_sat(temp_p_line, geq_and_leq);
-            add_sat(temp_p_line, ctx.logger.emit_rup_proof_line(
-                WPBSum{} + -1_i * ctx.pos_var_data.at(middle).var + 1_i * ctx.pos_var_data.at(next_node).var >= Integer{-n + 1}, ProofLevel::Temporary));
+            add_sat(temp_p_line, ctx.logger.emit_rup_proof_line(WPBSum{} + -1_i * ctx.pos_var_data.at(middle).var + 1_i * ctx.pos_var_data.at(next_node).var >= Integer{-n + 1}, ProofLevel::Temporary));
             ctx.logger.emit_proof_comment("Step 7");
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
@@ -760,9 +758,7 @@ namespace
             add_sat(p_line, shifted_pos_geq[last][count].backwards_reif_line);
             add_sat(p_line, ctx.flag_data[mid].greater_than[last].backwards_reif_line);
 
-            add_sat(p_line, ctx.logger.emit_rup_proof_line(
-                WPBSum{} + 1_i * ctx.flag_data[root].greater_than[last].flag + 1_i * ctx.flag_data[last].greater_than[root].flag >= 1_i,
-                ProofLevel::Temporary));
+            add_sat(p_line, ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * ctx.flag_data[root].greater_than[last].flag + 1_i * ctx.flag_data[last].greater_than[root].flag >= 1_i, ProofLevel::Temporary));
 
             p_line.emit(ctx.logger, ProofLevel::Temporary);
             exclusion_line = ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
@@ -1187,6 +1183,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
     Triggers triggers;
     triggers.on_change = {_succ.begin(), _succ.end()};
     propagators.install(
+        constraint_id(),
         [succ = _succ,
             pos_var_data_handle = pos_var_data_handle,
             proof_flag_data_handle = proof_flag_data_handle,

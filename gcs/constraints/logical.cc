@@ -48,7 +48,7 @@ namespace
         return result;
     }
 
-    auto install_propagators_logical(Propagators & propagators, const Literals & lits,
+    auto install_propagators_logical(Propagators & propagators, const ConstraintID & constraint_id, const Literals & lits,
         const Literal & full_reif, LiteralIs reif_state) -> void
     {
         using enum LiteralIs;
@@ -81,8 +81,7 @@ namespace
             return;
         }
 
-        propagators.install([lits = lits, full_reif = full_reif](
-                                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id, [lits = lits, full_reif = full_reif](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             switch (state.test_literal(full_reif)) {
             case DefinitelyTrue: {
                 for (auto & l : lits)
@@ -164,9 +163,7 @@ namespace
             }
             }
 
-            throw NonExhaustiveSwitch{};
-        },
-            triggers);
+            throw NonExhaustiveSwitch{}; }, triggers);
     }
 
     auto define_proof_model_logical(ProofModel & model, const Literals & lits,
@@ -252,7 +249,7 @@ auto And::define_proof_model(ProofModel & model) -> void
 
 auto And::install_propagators(Propagators & propagators) -> void
 {
-    install_propagators_logical(propagators, _lits, _full_reif, _reif_state);
+    install_propagators_logical(propagators, constraint_id(), _lits, _full_reif, _reif_state);
 }
 
 auto And::s_exprify(const innards::ProofModel * const model) const -> string
@@ -319,7 +316,7 @@ auto Or::install_propagators(Propagators & propagators) -> void
     Literals lits = _lits;
     for (auto & l : lits)
         l = ! l;
-    install_propagators_logical(propagators, move(lits), ! _full_reif, _reif_state);
+    install_propagators_logical(propagators, constraint_id(), move(lits), ! _full_reif, _reif_state);
 }
 
 auto Or::s_exprify(const innards::ProofModel * const model) const -> string

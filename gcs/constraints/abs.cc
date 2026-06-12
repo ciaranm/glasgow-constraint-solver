@@ -174,6 +174,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
     // pruning, but the iteration is over gaps, not values.
     Triggers triggers{.on_change = {_v1, _v2}};
     propagators.install(
+        constraint_id(),
         [v1 = _v1, v2 = _v2,
             abs_nonneg_le = _abs_nonneg_lines.first,
             abs_nonneg_ge = _abs_nonneg_lines.second,

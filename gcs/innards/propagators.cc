@@ -11,6 +11,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <functional>
+#include <string>
+#include <unordered_map>
 #include <utility>
 
 using namespace gcs;
@@ -33,6 +37,18 @@ namespace
     {
         vector<pair<int, int>> ids_and_masks;
     };
+
+    // ConstraintID structural equality (CurrentlyUnnamedConstraint,
+    // NumberedConstraint, NamedConstraint all compare) backs the dense-index
+    // map below; hashing its string form is enough, since equality is checked
+    // structurally on the variant.
+    struct ConstraintIDHash
+    {
+        auto operator()(const ConstraintID & id) const -> std::size_t
+        {
+            return std::hash<std::string>{}(as_string(id));
+        }
+    };
 }
 
 struct Propagators::Imp
@@ -50,6 +66,14 @@ struct Propagators::Imp
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
     vector<TriggerIDs> iv_triggers;
     vector<long> degrees;
+
+    // The constraint each propagator belongs to. propagator_constraint_index is
+    // indexed by propagator id and gives a dense constraint index; constraint_ids
+    // is the inverse (dense index -> ConstraintID); constraint_index_of_id assigns
+    // a fresh dense index on first sight of each ConstraintID.
+    vector<int> propagator_constraint_index;
+    vector<ConstraintID> constraint_ids;
+    std::unordered_map<ConstraintID, int, ConstraintIDHash> constraint_index_of_id;
 };
 
 Propagators::Propagators() :
@@ -90,10 +114,15 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
     }
 }
 
-auto Propagators::install(PropagationFunction && f, const Triggers & triggers) -> void
+auto Propagators::install(const ConstraintID & constraint_id, PropagationFunction && f, const Triggers & triggers) -> void
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
+
+    auto [it, inserted] = _imp->constraint_index_of_id.try_emplace(constraint_id, static_cast<int>(_imp->constraint_ids.size()));
+    if (inserted)
+        _imp->constraint_ids.push_back(constraint_id);
+    _imp->propagator_constraint_index.push_back(it->second);
 
     for (const auto & v : triggers.on_change) {
         trigger_on_change(v, id);
@@ -338,4 +367,19 @@ auto Propagators::degree_of(IntegerVariableID var) const -> long
             return 0;
         }}
         .visit(var);
+}
+
+auto Propagators::number_of_constraints() const -> std::size_t
+{
+    return _imp->constraint_ids.size();
+}
+
+auto Propagators::constraint_index_of_propagator(int propagator_id) const -> int
+{
+    return _imp->propagator_constraint_index[propagator_id];
+}
+
+auto Propagators::constraint_id_for_index(int constraint_index) const -> const ConstraintID &
+{
+    return _imp->constraint_ids[constraint_index];
 }

@@ -83,8 +83,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_bounds.insert(triggers.on_bounds.end(), _ordered_vars.begin(), _ordered_vars.end());
 
-    propagators.install([vars = move(_ordered_vars), step](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [vars = move(_ordered_vars), step](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         auto n = vars.size();
 
         // Forward sweep: lb(vars[i]) >= lb(vars[i-1]) + step.
@@ -130,9 +129,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
                 break;
             }
         }
-        return entailed ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
-    },
-        triggers);
+        return entailed ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable; }, triggers);
 }
 
 auto IncreasingChain::s_exprify(const ProofModel * const model) const -> string

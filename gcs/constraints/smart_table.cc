@@ -939,6 +939,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
     vector<Forest> forests = build_forests(_tuples);
 
     propagators.install(
+        constraint_id(),
         [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors), short_reasons = _short_reasons](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = generic_reason(state, vars);

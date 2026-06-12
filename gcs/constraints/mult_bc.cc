@@ -1243,10 +1243,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
     ConstraintStateHandle bit_products_handle = initial_state.add_persistent_constraint_state(bit_products);
 
-    propagators.install([v1 = _v1, v2 = _v2, v3 = _v3, bit_products_h = bit_products_handle,
-                            channelling_constraints = channelling_constraints,
-                            mag_var = mag_var, v3_eq_product_lines = v3_eq_product_lines, sign_lines = sign_lines](const State & state, auto & inference,
-                            ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [v1 = _v1, v2 = _v2, v3 = _v3, bit_products_h = bit_products_handle, channelling_constraints = channelling_constraints, mag_var = mag_var, v3_eq_product_lines = v3_eq_product_lines, sign_lines = sign_lines](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         vector<IntegerVariableID> all_vars = {v1, v2, v3};
 
         do {
@@ -1278,9 +1275,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 channelling_constraints, mag_var, v3_eq_product_lines, logger, bit_products, false, sign_lines);
         } while (inference.did_anything_since_last_call_inside_propagator());
 
-        return PropagatorState::Enable;
-    },
-        triggers);
+        return PropagatorState::Enable; }, triggers);
 }
 
 auto MultBC::s_exprify(const innards::ProofModel * const model) const -> string

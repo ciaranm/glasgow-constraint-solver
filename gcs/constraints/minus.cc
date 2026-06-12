@@ -160,6 +160,7 @@ auto Minus::install_propagators(Propagators & propagators) -> void
     triggers.on_bounds.insert(triggers.on_bounds.end(), {_a, _b, _result});
 
     propagators.install(
+        constraint_id(),
         [a = _a, b = _b, result = _result, sum_line = _sum_line](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return propagate_minus(a, b, result, state, inference, logger, sum_line);

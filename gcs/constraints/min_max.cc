@@ -102,8 +102,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
     for (const auto & v : _vars)
         triggers.on_change.emplace_back(v);
 
-    propagators.install([vars = _vars, result = _result, min = _min, selectors = _selectors](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [vars = _vars, result = _result, min = _min, selectors = _selectors](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         // result <= upper bound of each vars
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);
@@ -196,9 +195,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                         ReasonFunction{[=]() { return reason; }});
         }
 
-        return PropagatorState::Enable;
-    },
-        triggers);
+        return PropagatorState::Enable; }, triggers);
 }
 
 auto ArrayMinMax::s_exprify(const innards::ProofModel * const model) const -> string

@@ -304,6 +304,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             triggers.on_bounds.emplace_back(_lengths[i]);
 
     propagators.install(
+        constraint_id(),
         [starts = move(_starts), lengths_var = move(_lengths), heights_var = move(_heights),
             capacity_var = _capacity, active_tasks = move(_active_tasks),
             before_flags = move(_before_flags), after_flags = move(_after_flags),

@@ -230,13 +230,11 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
-        propagators.install([succ = _succ](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [succ = _succ](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             for (auto [idx, s] : enumerate(succ)) {
                 inference.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{}, generic_reason(state, succ));
             }
-            return PropagatorState::DisableUntilBacktrack;
-        },
-            Triggers{});
+            return PropagatorState::DisableUntilBacktrack; }, Triggers{});
     }
 
     return pos_var_data;

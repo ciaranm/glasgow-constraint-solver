@@ -157,6 +157,7 @@ auto VCAllDifferent::install_propagators(Propagators & propagators) -> void
     triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
 
     propagators.install(
+        constraint_id(),
         [unassigned_handle = _unassigned_handle](const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
             propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger);
             return PropagatorState::Enable;

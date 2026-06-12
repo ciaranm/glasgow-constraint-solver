@@ -225,6 +225,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
             });
 
         propagators.install(
+            constraint_id(),
             [vars = move(_vars), tuples = move(tuples), watches = watches](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 const auto & tuple_data = depointinate(tuples);

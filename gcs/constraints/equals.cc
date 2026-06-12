@@ -263,7 +263,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
 
     Triggers triggers;
     triggers.on_change = {_v1, _v2};
-    install_reified_dispatcher(propagators, _evaluated_cond, _cond, triggers,
+    install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _cond, triggers,
         std::move(enforce_constraint_must_hold),
         std::move(enforce_constraint_must_not_hold),
         std::move(infer_cond_when_undecided));

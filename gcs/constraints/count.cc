@@ -99,6 +99,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
     all_vars.push_back(_how_many);
 
     propagators.install(
+        constraint_id(),
         [vars = _vars, value_of_interest = _value_of_interest, how_many = _how_many, flags = _flags, all_vars = move(all_vars)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // check support for how many by seeing how many array values
