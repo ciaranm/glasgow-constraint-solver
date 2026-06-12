@@ -1,3 +1,0 @@
-add_executable(break_table break_table.cc)
-target_link_libraries(break_table PRIVATE glasgow_constraint_solver)
-

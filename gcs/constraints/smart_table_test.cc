@@ -7,16 +7,38 @@
 #include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
+#include <version>
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
+#include <fmt/core.h>
+#include <fmt/ranges.h>
+#endif
+
+using std::cerr;
 using std::cout;
+using std::flush;
 using std::make_optional;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::set;
 using std::string;
+using std::tuple;
 using std::vector;
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+using std::println;
+#else
+using fmt::print;
+using fmt::println;
+#endif
 
 using namespace gcs;
 using namespace gcs::test_innards;
@@ -198,6 +220,145 @@ auto run_at_most_1_test(bool proofs, const string & mode, int length, vector<pai
     return ! proofs || run_veripb(proof_basename + ".opb", proof_basename + ".pbp");
 }
 
+// One tuple using the same variable in several entries at once, mixing
+// binary and unary SmartEntries: y appears in a not-equals, an in-set, and
+// a greater-than. The PB encoding must combine the per-entry supports for
+// y rather than treating each entry independently.
+auto run_mixed_same_var_test(bool proofs, const string & mode) -> void
+{
+    auto proof_basename = "smart_table_test_" + mode;
+    for (const auto & [lower, upper] : vector<pair<int, int>>{{-1, 3}, {-2, 2}, {0, 4}}) {
+        print(cerr, "smart table {} over {}..{}{}", mode, lower, upper, proofs ? " with proofs:" : ":");
+        cerr << flush;
+        set<tuple<int, int, int>> expected, actual;
+
+        build_expected(
+            expected, [&](int x, int y, int z) {
+                return y != x && (y == -1 || y == 2 || y == 3) && (z == -1 || z == 0 || z == 1) && z > y;
+            },
+            pair{lower, upper}, pair{lower, upper}, pair{lower, upper});
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        auto x = p.create_integer_variable(Integer{lower}, Integer{upper}, "x");
+        auto y = p.create_integer_variable(Integer{lower}, Integer{upper}, "y");
+        auto z = p.create_integer_variable(Integer{lower}, Integer{upper}, "z");
+        auto tuples = SmartTuples{{SmartTable::not_equals(y, x), SmartTable::in_set(y, {-1_i, 2_i, 3_i}),
+            SmartTable::in_set(z, {-1_i, 0_i, 1_i}), SmartTable::greater_than(z, y)}};
+        p.post(SmartTable{{x, y, z}, tuples});
+
+        auto proof_name = proofs ? make_optional(proof_basename) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{x, y, z});
+        check_results(proof_name, expected, actual);
+    }
+}
+
+// Several unary entries restricting the same variable inside one tuple
+// must be consolidated into a single restriction in the PB encoding, or
+// unsupported values fail to unit propagate. The first instance is an
+// originally-failing case found by random testing (issue #40, from
+// random_smart_table seed 792395939); it has no solutions. The second
+// mixes stacked unary entries with binary entries and has solutions.
+auto run_stacked_unary_test(bool proofs, const string & mode) -> void
+{
+    auto proof_basename = "smart_table_test_" + mode;
+    {
+        print(cerr, "smart table {} unsat instance{}", mode, proofs ? " with proofs:" : ":");
+        cerr << flush;
+        set<tuple<int, int, int, int>> expected, actual;
+
+        build_expected(
+            expected, [&](int x0, int x1, int x2, int x3) {
+                bool t1 = x2 < 1 && x3 != 1 && x1 > 0 && x0 == 1 &&
+                    (x3 == 3 || x3 == 1 || x3 == 2 || x3 == -1) && x2 != 2 && x2 != 0 && x1 > 1 && x2 == 0;
+                bool t2 = x3 >= 1 && (x2 == 0 || x2 == 3 || x2 == 1) && (x3 == 4 || x3 == 1) && x3 == 2;
+                bool t3 = x1 == x0 && x3 <= 2 && x2 < 3 && x3 < 0 &&
+                    (x1 == 3 || x1 == -1 || x1 == 2) && x1 > 3 && x0 != 0 && x0 != 1;
+                return t1 || t2 || t3;
+            },
+            pair{-1, 4}, pair{-1, 4}, pair{-1, 4}, pair{-1, 4});
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        auto x = p.create_integer_variable_vector(4, -1_i, 4_i, "x");
+        auto tuples = SmartTuples{
+            {SmartTable::less_than(x[2], 1_i), SmartTable::not_equals(x[3], 1_i), SmartTable::greater_than(x[1], 0_i), SmartTable::equals(x[0], 1_i),
+                SmartTable::in_set(x[3], {3_i, 1_i, 2_i, -1_i}), SmartTable::not_in_set(x[2], {2_i, 0_i}), SmartTable::greater_than(x[1], 1_i), SmartTable::equals(x[2], 0_i)},
+            {SmartTable::greater_than_equal(x[3], 1_i), SmartTable::in_set(x[2], {0_i, 3_i, 1_i}), SmartTable::in_set(x[3], {4_i, 1_i}), SmartTable::equals(x[3], 2_i)},
+            {SmartTable::equals(x[1], x[0]), SmartTable::less_than_equal(x[3], 2_i), SmartTable::less_than(x[2], 3_i), SmartTable::less_than(x[3], 0_i),
+                SmartTable::in_set(x[1], {3_i, -1_i, 2_i}), SmartTable::greater_than(x[1], 3_i), SmartTable::not_in_set(x[0], {0_i, 1_i})}};
+        p.post(SmartTable{x, tuples});
+
+        auto proof_name = proofs ? make_optional(proof_basename) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{x[0], x[1], x[2], x[3]});
+        check_results(proof_name, expected, actual);
+    }
+    {
+        print(cerr, "smart table {} sat instance{}", mode, proofs ? " with proofs:" : ":");
+        cerr << flush;
+        set<tuple<int, int>> expected, actual;
+
+        build_expected(
+            expected, [&](int a, int b) {
+                bool t1 = a < 3 && a != 1 && a != 0 && b >= a;
+                bool t2 = a >= 3 && (b == 4 || b == 1) && b != 4;
+                return t1 || t2;
+            },
+            pair{-1, 4}, pair{-1, 4});
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        auto a = p.create_integer_variable(-1_i, 4_i, "a");
+        auto b = p.create_integer_variable(-1_i, 4_i, "b");
+        auto tuples = SmartTuples{
+            {SmartTable::less_than(a, 3_i), SmartTable::not_equals(a, 1_i), SmartTable::not_in_set(a, {0_i}), SmartTable::greater_than_equal(b, a)},
+            {SmartTable::greater_than_equal(a, 3_i), SmartTable::in_set(b, {4_i, 1_i}), SmartTable::not_equals(b, 4_i)}};
+        p.post(SmartTable{{a, b}, tuples});
+
+        auto proof_name = proofs ? make_optional(proof_basename) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{a, b});
+        check_results(proof_name, expected, actual);
+    }
+}
+
+// Unary constant comparisons combined with a variable-variable binary
+// entry over wide, negative-heavy bounds, with the constant at the lower
+// bound, the upper bound, and mid-range of its variable. The largest
+// instance exceeds the default solution cap, so completeness on it is
+// only checked in caps-off builds; the others stay under the cap.
+auto run_wide_constants_test(bool proofs, const string & mode) -> void
+{
+    auto proof_basename = "smart_table_test_" + mode;
+    struct Instance
+    {
+        pair<int, int> x_range;
+        pair<int, int> y_range;
+        int c;
+    };
+    for (const auto & [x_range, y_range, c] : vector<Instance>{
+             {{-59, 58}, {-18, 17}, -18},
+             {{-59, 58}, {-18, 17}, 17},
+             {{-15, 14}, {-9, 8}, -9}}) {
+        print(cerr, "smart table {} x in {}, y in {}, y >= {}{}", mode, x_range, y_range, c, proofs ? " with proofs:" : ":");
+        cerr << flush;
+        set<tuple<int, int>> expected, actual;
+
+        build_expected(
+            expected, [&](int x, int y) { return y >= c && x > y; }, x_range, y_range);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        auto x = p.create_integer_variable(Integer{x_range.first}, Integer{x_range.second}, "x");
+        auto y = p.create_integer_variable(Integer{y_range.first}, Integer{y_range.second}, "y");
+        auto tuples = SmartTuples{{SmartTable::greater_than_equal(y, Integer{c}), SmartTable::greater_than(x, y)}};
+        p.post(SmartTable{{x, y}, tuples});
+
+        auto proof_name = proofs ? make_optional(proof_basename) : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{x, y});
+        check_results(proof_name, expected, actual);
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     if (argc != 2)
@@ -213,6 +374,22 @@ auto main(int argc, char * argv[]) -> int
         {5, {{1, 1}, {2, 2}, {3, 3}, {4, 4}, {1, 10}}}};
 
     string mode{argv[1]};
+
+    // These modes carry their own instances rather than using the
+    // length/ranges table below.
+    if (mode == "mixed_same_var" || mode == "stacked_unary" || mode == "wide_constants") {
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                continue;
+            if (mode == "mixed_same_var")
+                run_mixed_same_var_test(proofs, mode);
+            else if (mode == "stacked_unary")
+                run_stacked_unary_test(proofs, mode);
+            else
+                run_wide_constants_test(proofs, mode);
+        }
+        return EXIT_SUCCESS;
+    }
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())

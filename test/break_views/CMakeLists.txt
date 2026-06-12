@@ -1,3 +1,0 @@
-add_executable(break_views break_views.cc)
-target_link_libraries(break_views PRIVATE glasgow_constraint_solver)
-
