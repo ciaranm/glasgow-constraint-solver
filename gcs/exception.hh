@@ -12,20 +12,43 @@
 namespace gcs
 {
     /**
+     * \brief Base class for every exception this library throws, holding the
+     * message returned by what().
+     *
+     * Cannot be thrown directly: catch one of the concrete types where
+     * possible, or this to handle any solver-related failure uniformly.
+     *
+     * \sa UnexpectedException
+     * \sa InvalidProblemDefinitionException
+     * \sa NamingError
+     * \sa VariableDoesNotHaveUniqueValue
+     * \sa ScpReadError
+     * \sa innards::ProofError
+     *
+     * \ingroup Core
+     */
+    class MessageException : public std::exception
+    {
+    private:
+        std::string _wat;
+
+    protected:
+        explicit MessageException(std::string);
+
+    public:
+        [[nodiscard]] virtual auto what() const noexcept -> const char * override;
+    };
+
+    /**
      * \brief Thrown if something has gone wrong. This usually indicates a bug
      * in the solver.
      *
      * \ingroup Core
      */
-    class UnexpectedException : public std::exception
+    class UnexpectedException : public MessageException
     {
-    private:
-        std::string _wat;
-
     public:
         explicit UnexpectedException(const std::string &);
-
-        virtual auto what() const noexcept -> const char * override;
     };
 
     /**
@@ -36,15 +59,10 @@ namespace gcs
      *
      * \ingroup Core
      */
-    class InvalidProblemDefinitionException : public std::exception
+    class InvalidProblemDefinitionException : public MessageException
     {
-    private:
-        std::string _wat;
-
     public:
         explicit InvalidProblemDefinitionException(const std::string &);
-
-        virtual auto what() const noexcept -> const char * override;
     };
 
     /**

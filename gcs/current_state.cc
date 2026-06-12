@@ -11,13 +11,8 @@ using std::string;
 using std::vector;
 
 VariableDoesNotHaveUniqueValue::VariableDoesNotHaveUniqueValue(const string & w) :
-    _wat(w + " does not have a unique value")
+    MessageException(w + " does not have a unique value")
 {
-}
-
-auto VariableDoesNotHaveUniqueValue::what() const noexcept -> const char *
-{
-    return _wat.c_str();
 }
 
 CurrentState::CurrentState(State & state) :

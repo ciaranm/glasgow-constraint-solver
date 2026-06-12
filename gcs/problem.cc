@@ -41,13 +41,8 @@ using std::vector;
 using std::ranges::minmax_element;
 
 NamingError::NamingError(const string & w) :
-    _wat(w)
+    MessageException(w)
 {
-}
-
-auto NamingError::what() const noexcept -> const char *
-{
-    return _wat.c_str();
 }
 
 struct Problem::Imp

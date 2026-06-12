@@ -1,12 +1,12 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CURRENT_STATE_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CURRENT_STATE_HH
 
+#include <gcs/exception.hh>
 #include <gcs/innards/interval_set-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
-#include <exception>
 #include <functional>
 #include <memory>
 #include <version>
@@ -29,15 +29,10 @@ namespace gcs
      *
      * \ingroup Core
      */
-    class VariableDoesNotHaveUniqueValue : public std::exception
+    class VariableDoesNotHaveUniqueValue : public MessageException
     {
-    private:
-        std::string _wat;
-
     public:
         explicit VariableDoesNotHaveUniqueValue(const std::string &);
-
-        virtual auto what() const noexcept -> const char * override;
     };
 
     /**

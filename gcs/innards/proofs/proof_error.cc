@@ -6,11 +6,6 @@ using namespace gcs::innards;
 using std::string;
 
 ProofError::ProofError(const string & w) :
-    _wat("unexpected problem: " + w)
+    MessageException("unexpected problem: " + w)
 {
-}
-
-auto ProofError::what() const noexcept -> const char *
-{
-    return _wat.c_str();
 }

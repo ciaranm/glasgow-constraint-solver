@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROBLEM_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/exception.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
@@ -38,15 +39,10 @@ namespace gcs
      *
      * \ingroup Core
      */
-    class NamingError : public std::exception
+    class NamingError : public MessageException
     {
-    private:
-        std::string _wat;
-
     public:
         explicit NamingError(const std::string &);
-
-        virtual auto what() const noexcept -> const char * override;
     };
 
     /**

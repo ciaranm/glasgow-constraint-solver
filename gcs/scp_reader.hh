@@ -1,10 +1,10 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SCP_READER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SCP_READER_HH
 
+#include <gcs/exception.hh>
 #include <gcs/problem-fwd.hh>
 #include <gcs/variable_id.hh>
 
-#include <exception>
 #include <map>
 #include <string>
 #include <string_view>
@@ -18,15 +18,10 @@ namespace gcs
      *
      * \ingroup Core
      */
-    class ScpReadError : public std::exception
+    class ScpReadError : public MessageException
     {
-    private:
-        std::string _wat;
-
     public:
         explicit ScpReadError(const std::string &);
-
-        [[nodiscard]] virtual auto what() const noexcept -> const char * override;
     };
 
     /**

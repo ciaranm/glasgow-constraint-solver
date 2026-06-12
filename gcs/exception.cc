@@ -12,29 +12,30 @@ using fmt::format;
 
 using namespace gcs;
 
+using std::move;
 #if __has_include(<source_location>) && __cpp_lib_source_location
 using std::source_location;
 #endif
 using std::string;
 
-UnexpectedException::UnexpectedException(const string & w) :
-    _wat("unexpected problem: " + w)
+MessageException::MessageException(string wat) :
+    _wat(move(wat))
 {
 }
 
-auto UnexpectedException::what() const noexcept -> const char *
+auto MessageException::what() const noexcept -> const char *
 {
     return _wat.c_str();
+}
+
+UnexpectedException::UnexpectedException(const string & w) :
+    MessageException("unexpected problem: " + w)
+{
 }
 
 InvalidProblemDefinitionException::InvalidProblemDefinitionException(const string & w) :
-    _wat("invalid problem definition: " + w)
+    MessageException("invalid problem definition: " + w)
 {
-}
-
-auto InvalidProblemDefinitionException::what() const noexcept -> const char *
-{
-    return _wat.c_str();
 }
 
 #if __has_include(<source_location>) && __cpp_lib_source_location

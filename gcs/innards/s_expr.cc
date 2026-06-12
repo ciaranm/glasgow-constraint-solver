@@ -12,13 +12,8 @@ using std::vector;
 using namespace gcs::innards;
 
 SExprParseError::SExprParseError(const string & w) :
-    _wat("S-expression error: " + w)
+    MessageException("S-expression error: " + w)
 {
-}
-
-auto SExprParseError::what() const noexcept -> const char *
-{
-    return _wat.c_str();
 }
 
 SExpr::SExpr(string atom) :
