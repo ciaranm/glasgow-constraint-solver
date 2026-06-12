@@ -28,13 +28,8 @@ using namespace gcs;
 using namespace gcs::innards;
 
 ScpReadError::ScpReadError(const string & w) :
-    _wat("Error reading .scp: " + w)
+    MessageException("Error reading .scp: " + w)
 {
-}
-
-auto ScpReadError::what() const noexcept -> const char *
-{
-    return _wat.c_str();
 }
 
 namespace

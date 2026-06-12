@@ -12,15 +12,10 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    class ProofError : public std::exception
+    class ProofError : public MessageException
     {
-    private:
-        std::string _wat;
-
     public:
         explicit ProofError(const std::string &);
-
-        virtual auto what() const noexcept -> const char * override;
     };
 }
 
