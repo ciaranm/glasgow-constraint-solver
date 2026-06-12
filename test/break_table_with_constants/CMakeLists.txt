@@ -1,3 +1,0 @@
-add_executable(break_table_with_constants break_table_with_constants.cc)
-target_link_libraries(break_table_with_constants PRIVATE glasgow_constraint_solver)
-

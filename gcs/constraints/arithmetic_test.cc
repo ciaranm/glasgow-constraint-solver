@@ -171,6 +171,32 @@ auto run_power_pinned_test(bool proofs, Integer base, Integer exp, pair<long lon
             throw UnexpectedException{"veripb verification failed"};
 }
 
+// A ConstantIntegerVariableID base and a ViewOfIntegerVariableID exponent
+// take different paths through the encoding than the singleton variables
+// used elsewhere in this file, and the result must still unit-propagate
+// in the proof.
+auto run_power_const_base_view_exp_test(bool proofs, int base, pair<int, int> exp_range, int exp_offset, pair<int, int> result_range) -> void
+{
+    print(cerr, "arithmetic power constant base {} view exponent {}+{} result {} {}", base, exp_range, exp_offset, result_range, proofs ? " with proofs:" : ":");
+    cerr << flush;
+    set<tuple<int, int>> expected, actual;
+
+    build_expected(
+        expected, [&](int e, int r) { return power_is_satisfying(base, e + exp_offset, r); },
+        exp_range, result_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto e = p.create_integer_variable(Integer(exp_range.first), Integer(exp_range.second));
+    auto r = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second));
+    p.post(Power{ConstantIntegerVariableID{Integer{base}}, e + Integer{exp_offset}, r});
+
+    auto proof_name = proofs ? make_optional("arithmetic_test") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{e, r});
+
+    check_results(proof_name, expected, actual);
+}
+
 // Dup-variable tests: post a GACArithmetic constraint with the same handle
 // in two (or all three) slots. The GAC algorithm operates over a tuple
 // table that doesn't know two slots alias, so consistency on alias drops
@@ -285,6 +311,17 @@ auto main(int, char *[]) -> int
 
         // 0^0 = 1 by convention.
         run_power_pinned_test(proofs, 0_i, 0_i, {-2, 2}, make_optional(1_i));
+
+        // 2^(e+1) for e in 0..5, with the full result range supported.
+        run_power_const_base_view_exp_test(proofs, 2, {0, 5}, 1, {0, 64});
+
+        // Unshifted view, result range clipped so the larger exponents are
+        // unsupported.
+        run_power_const_base_view_exp_test(proofs, 2, {0, 5}, 0, {0, 20});
+
+        // A negative offset takes the exponent below zero: 2^(e-2) has no
+        // integer value for e < 2.
+        run_power_const_base_view_exp_test(proofs, 2, {0, 5}, -2, {-2, 8});
 
         // Dup-variable cases for the GAC-via-Table specialisations. Domains
         // are kept small because the underlying tuple table is materialised.
