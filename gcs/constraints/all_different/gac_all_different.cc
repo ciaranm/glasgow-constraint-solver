@@ -641,6 +641,7 @@ auto GACAllDifferent::install_propagators(Propagators & propagators) -> void
 
     auto value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
     propagators.install(
+        constraint_id(),
         [vars = move(_sanitised_vars),
             vals = move(_compressed_vals),
             value_am1_constraint_numbers = move(value_am1_constraint_numbers)](const State & state, auto & inference,

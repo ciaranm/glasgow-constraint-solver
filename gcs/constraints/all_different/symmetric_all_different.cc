@@ -158,6 +158,7 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
         values.push_back(start + Integer(i));
 
     propagators.install(
+        constraint_id(),
         [vars, start, values = move(values), value_am1s = _value_am1s](
             const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
             // Channeling: x_i = v  =>  x_v = i. If i is not in D(x_v), prune

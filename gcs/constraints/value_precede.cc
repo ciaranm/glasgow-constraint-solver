@@ -168,6 +168,7 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
             triggers.on_change.push_back(v);
 
         propagators.install(
+            constraint_id(),
             [vars = _vars, s, t](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 auto n = vars.size();

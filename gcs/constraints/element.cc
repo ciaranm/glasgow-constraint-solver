@@ -264,9 +264,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             if (idx != fixed_dim)
                 index_triggers.on_change.emplace_back(var);
 
-        propagators.install([array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, fixed_dim = fixed_dim,
-                                array_has_nonconstants = array_has_nonconstants, bounds_only = _bounds_only](
-                                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, fixed_dim = fixed_dim, array_has_nonconstants = array_has_nonconstants, bounds_only = _bounds_only](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // for each index variable, update it to only contain values where
             // there's at least one supporting option. result_var's domain is
             // not modified by anything inside the loop body (the only infer_*
@@ -369,9 +367,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 }
             }
 
-            return PropagatorState::Enable;
-        },
-            index_triggers);
+            return PropagatorState::Enable; }, index_triggers);
     }
 
     if (_bounds_only) {
@@ -381,8 +377,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
         result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
         result_triggers.on_bounds.emplace_back(_result_var);
 
-        propagators.install([array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants](
-                                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // bounds only, so the result variable has to be in the range
             // (rather than the union) of possible values
             vector<size_t> elem;
@@ -455,9 +450,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             if (highest_found && *highest_found < current_bounds.second)
                 infer_bound(*highest_found, false);
 
-            return PropagatorState::Enable;
-        },
-            result_triggers);
+            return PropagatorState::Enable; }, result_triggers);
     }
     else {
         Triggers result_triggers;
@@ -465,8 +458,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             result_triggers.on_change.insert(result_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
         result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
 
-        propagators.install([array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants](
-                                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // the result variable has to be in the union of possible values
             vector<size_t> elem;
             IntervalSet<Integer> still_to_find_support_for = state.copy_of_values(result_var);
@@ -523,17 +515,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                     ReasonFunction{[=]() { return reason; }});
             }
 
-            return PropagatorState::Enable;
-        },
-            result_triggers);
+            return PropagatorState::Enable; }, result_triggers);
     }
 
     if (array_has_nonconstants) {
         Triggers equality_triggers;
         equality_triggers.on_change.insert(equality_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
         equality_triggers.on_change.emplace_back(_result_var);
-        propagators.install([array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var](
-                                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // if there's only a single possible array variable left, it can only take values
             // that are present in the result variable
             bool index_is_fully_defined = true;
@@ -554,9 +543,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 enforce_equality(logger, result_var, array_var, state, inference, index_reason);
             }
 
-            return PropagatorState::Enable;
-        },
-            equality_triggers);
+            return PropagatorState::Enable; }, equality_triggers);
     }
 }
 

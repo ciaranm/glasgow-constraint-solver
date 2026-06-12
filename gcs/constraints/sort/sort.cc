@@ -957,7 +957,7 @@ namespace
     }
 }
 
-auto gcs::innards::install_sortedness_propagator(Propagators & propagators,
+auto gcs::innards::install_sortedness_propagator(Propagators & propagators, const ConstraintID & constraint_id,
     const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y,
     const SortednessWitness & witness) -> void
 {
@@ -1088,19 +1088,15 @@ auto gcs::innards::install_sortedness_propagator(Propagators & propagators,
     triggers.on_bounds.insert(triggers.on_bounds.end(), x.begin(), x.end());
     triggers.on_bounds.insert(triggers.on_bounds.end(), y.begin(), y.end());
 
-    propagators.install([x, y, before = witness.before, pos = witness.pos, rank_lines = witness.rank_ge,
-                            rank_le_lines = witness.rank_le, inj_lines, al1_lines, anti_lines](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id, [x, y, before = witness.before, pos = witness.pos, rank_lines = witness.rank_ge, rank_le_lines = witness.rank_le, inj_lines, al1_lines, anti_lines](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         propagate_sortedness(x, y, before, pos, rank_lines, rank_le_lines, *inj_lines, *al1_lines, *anti_lines,
             state, inference, logger);
-        return PropagatorState::Enable;
-    },
-        triggers);
+        return PropagatorState::Enable; }, triggers);
 }
 
 auto Sort::install_propagators(Propagators & propagators) -> void
 {
-    install_sortedness_propagator(propagators, _x, _y, _witness);
+    install_sortedness_propagator(propagators, constraint_id(), _x, _y, _witness);
 }
 
 auto Sort::s_exprify(const ProofModel * const model) const -> string

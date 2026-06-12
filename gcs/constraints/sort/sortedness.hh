@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_SORT_SORTEDNESS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_SORT_SORTEDNESS_HH
 
+#include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
@@ -45,7 +46,7 @@ namespace gcs::innards
      * \brief Install the Mehlhorn-Thiel bounds-consistency propagator for
      * `y = sort(x)`, using the witness from define_sortedness_proof_model.
      */
-    auto install_sortedness_propagator(Propagators & propagators,
+    auto install_sortedness_propagator(Propagators & propagators, const ConstraintID & constraint_id,
         const std::vector<IntegerVariableID> & x, const std::vector<IntegerVariableID> & y,
         const SortednessWitness & witness) -> void;
 }

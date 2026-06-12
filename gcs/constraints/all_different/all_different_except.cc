@@ -181,6 +181,7 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
         _value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
 
     propagators.install(
+        constraint_id(),
         [vars = move(_sanitised_vars),
             vals = move(_compressed_vals),
             excluded = move(_sanitised_excluded),

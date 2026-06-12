@@ -73,6 +73,10 @@ namespace gcs::innards
      * is now forced. This helper takes three callables and wires up the
      * dispatch and triggers.
      *
+     * `constraint_id` identifies the owning constraint (pass its
+     * `constraint_id()`), so the single installed dispatcher propagator is
+     * attributed to that constraint.
+     *
      * `enforce_constraint_must_hold(state, inference, logger, cond_lit)` and
      * `enforce_constraint_must_not_hold(state, inference, logger, cond_lit)`
      * each return a PropagatorState; they receive the cond literal (a
@@ -102,6 +106,7 @@ namespace gcs::innards
     template <typename EnforceMustHold_, typename EnforceMustNotHold_, typename InferCondWhenUndecided_>
     auto install_reified_dispatcher(
         Propagators & propagators,
+        const ConstraintID & constraint_id,
         const EvaluatedReificationCondition & initial_evaluated,
         const ReificationCondition & reif_cond,
         Triggers triggers,
@@ -117,6 +122,7 @@ namespace gcs::innards
         }
 
         propagators.install(
+            constraint_id,
             [reif_cond,
                 enforce_constraint_must_hold = std::move(enforce_constraint_must_hold),
                 enforce_constraint_must_not_hold = std::move(enforce_constraint_must_not_hold),

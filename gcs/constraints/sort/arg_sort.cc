@@ -80,7 +80,7 @@ auto ArgSort::install(Propagators & propagators, State & initial_state, ProofMod
         _witness = define_sortedness_proof_model(*optional_model, _x, y_ids);
     }
 
-    install_sortedness_propagator(propagators, _x, y_ids, _witness);
+    install_sortedness_propagator(propagators, constraint_id(), _x, y_ids, _witness);
 
     if (optional_model)
         define_proof_model(*optional_model);
@@ -195,8 +195,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     channel_triggers.on_bounds.insert(channel_triggers.on_bounds.end(), y_ids.begin(), y_ids.end());
     channel_triggers.on_change.insert(channel_triggers.on_change.end(), _p.begin(), _p.end());
 
-    propagators.install([x = _x, y = y_ids, p = _p, offset = _offset, n](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [x = _x, y = y_ids, p = _p, offset = _offset, n](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         for (size_t j = 0; j < n; ++j) {
             auto [ylo, yhi] = state.bounds(y[j]);
 
@@ -235,9 +234,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
             }
         }
 
-        return PropagatorState::Enable;
-    },
-        channel_triggers);
+        return PropagatorState::Enable; }, channel_triggers);
 
     // Achievable-rank-set propagator: gives bounds(Z) consistency on p. Element
     // k's stable rank pos[k] (the number of elements before it) lies in
@@ -250,8 +247,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     rank_triggers.on_bounds.insert(rank_triggers.on_bounds.end(), _x.begin(), _x.end());
     rank_triggers.on_change.insert(rank_triggers.on_change.end(), _p.begin(), _p.end());
 
-    propagators.install([x = _x, p = _p, offset = _offset, n, witness = _witness](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [x = _x, p = _p, offset = _offset, n, witness = _witness](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         for (size_t k = 0; k < n; ++k) {
             auto [lk, uk] = state.bounds(x[k]);
 
@@ -423,9 +419,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
             }
         }
 
-        return PropagatorState::Enable;
-    },
-        rank_triggers);
+        return PropagatorState::Enable; }, rank_triggers);
 
     // GAC on the all_different aspect of p (it is a permutation of the n
     // positions). Reuses the framework's matching/Hall propagator and its
@@ -440,12 +434,9 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     Triggers ad_triggers;
     ad_triggers.on_change.insert(ad_triggers.on_change.end(), _p.begin(), _p.end());
 
-    propagators.install([p = _p, vals = move(p_vals), am1_lines](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [p = _p, vals = move(p_vals), am1_lines](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         propagate_gac_all_different(p, vals, vector<Integer>{}, *am1_lines, state, inference, logger);
-        return PropagatorState::Enable;
-    },
-        ad_triggers);
+        return PropagatorState::Enable; }, ad_triggers);
 
     // No leaf-checking propagator is needed: once every x is fixed, each
     // element k's reachable-rank set collapses to the single stable rank, so the

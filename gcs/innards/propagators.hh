@@ -1,13 +1,14 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROPAGATORS_HH
 
+#include <gcs/constraint.hh>
 #include <gcs/expression.hh>
 #include <gcs/extensional.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/literal.hh>
-#include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
@@ -203,8 +204,16 @@ namespace gcs::innards
          * constraints are called at least once when search starts, even if no
          * Triggers are specified, and a constraint may be called even if its
          * trigger condition is not met.
+         *
+         * The ConstraintID identifies which posted constraint this propagator
+         * belongs to (the same identity the proof log uses); pass the owning
+         * Constraint's constraint_id(). Several propagators may share one
+         * ConstraintID. This is recorded so that, for example, a search
+         * heuristic can attribute a domain wipeout back to a constraint. It is
+         * passed explicitly rather than held as mutable "current constraint"
+         * state so it cannot be mis-sequenced.
          */
-        auto install(PropagationFunction &&, const Triggers & trigger_vars) -> void;
+        auto install(const ConstraintID & constraint_id, PropagationFunction &&, const Triggers & trigger_vars) -> void;
 
         /**
          * Install an initialiser, which will be called once just before search
@@ -286,6 +295,28 @@ namespace gcs::innards
          * How many constraints is this variable involved in?
          */
         auto degree_of(IntegerVariableID) const -> long;
+
+        /**
+         * How many distinct constraints (by ConstraintID) installed at least
+         * one propagator? Equivalently, the number of valid dense constraint
+         * indices, which run from zero to this minus one.
+         */
+        [[nodiscard]] auto number_of_constraints() const -> std::size_t;
+
+        /**
+         * The dense constraint index of the propagator with the given id (as
+         * supplied to a propagation function and used internally by propagate).
+         * Propagators sharing a ConstraintID share an index; indices are
+         * assigned densely in order of first sight of each ConstraintID.
+         */
+        [[nodiscard]] auto constraint_index_of_propagator(int propagator_id) const -> int;
+
+        /**
+         * The ConstraintID for a dense constraint index, as returned by
+         * constraint_index_of_propagator. The inverse of the first-sight
+         * indexing.
+         */
+        [[nodiscard]] auto constraint_id_for_index(int constraint_index) const -> const ConstraintID &;
 
         ///@}
     };

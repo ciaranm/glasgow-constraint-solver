@@ -93,6 +93,7 @@ auto CircuitPrevent::install(innards::Propagators & propagators, innards::State 
     Triggers triggers;
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
     propagators.install(
+        constraint_id(),
         [succ = _succ, pvd = pos_var_data,
             unassigned_handle = unassigned_handle](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state, inference, logger);

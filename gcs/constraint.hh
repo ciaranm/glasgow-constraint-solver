@@ -25,6 +25,7 @@ namespace gcs
 
     struct CurrentlyUnnamedConstraint final
     {
+        [[nodiscard]] auto operator<=>(const CurrentlyUnnamedConstraint &) const = default;
         [[nodiscard]] auto as_string() const -> std::string
         {
             return "unnamed";

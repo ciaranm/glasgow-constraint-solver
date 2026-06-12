@@ -652,6 +652,7 @@ auto Knapsack::install_propagators(Propagators & propagators) -> void
     triggers.on_change.insert(triggers.on_change.end(), _totals.begin(), _totals.end());
 
     propagators.install(
+        constraint_id(),
         [coeffs = move(_coeffs), vars = move(_vars), totals = move(_totals), eqns_lines = move(_eqns_lines)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             return knapsack(state, logger, inference, coeffs, vars, totals, eqns_lines);

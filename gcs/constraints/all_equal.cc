@@ -72,8 +72,7 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
 
-    propagators.install([vars = move(_vars)](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [vars = move(_vars)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         auto n = vars.size();
 
         // Tighten each var to [lo, hi] where lo is the largest lower bound
@@ -145,9 +144,7 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
         if (state.has_single_value(vars[0]))
             return PropagatorState::DisableUntilBacktrack;
 
-        return PropagatorState::Enable;
-    },
-        triggers);
+        return PropagatorState::Enable; }, triggers);
 }
 
 auto AllEqual::s_exprify(const ProofModel * const model) const -> string

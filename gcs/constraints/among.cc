@@ -124,6 +124,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
     });
 
     propagators.install(
+        constraint_id(),
         [vars = _vars, values_of_interest = _values_of_interest, how_many = _how_many, sum_line = _sum_line, am1_lines = am1_lines](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // partition variables to be 1) those that must not match, 2) those that must match, and 3) those

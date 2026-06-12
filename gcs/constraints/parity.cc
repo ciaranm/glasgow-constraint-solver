@@ -95,8 +95,7 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
     for (const auto & l : _lits)
         add_trigger_for(triggers, l);
 
-    propagators.install([lits = _lits](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [lits = _lits](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         long how_many_0 = 0, how_many_1 = 0, how_many_unknown = 0;
         optional<Literal> an_unknown;
         Reason reason;
@@ -137,9 +136,7 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
                 inference.infer(logger, *an_unknown, JustifyUsingRUP{}, ReasonFunction{[=]() { return reason; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
-        }
-    },
-        triggers);
+        } }, triggers);
 }
 auto ParityOdd::s_exprify(const innards::ProofModel * const model) const -> string
 {

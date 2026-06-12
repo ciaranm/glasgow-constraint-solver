@@ -99,6 +99,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
     all_vars.push_back(_val);
 
     propagators.install(
+        constraint_id(),
         [vars = _vars, val = _val, all_vars = move(all_vars)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // For each candidate value v of `val`: if two or more vars

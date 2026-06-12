@@ -152,6 +152,7 @@ auto In::install_propagators(Propagators & propagators) -> void
         triggers.on_change.emplace_back(V);
 
     propagators.install(
+        constraint_id(),
         [var = _var, var_vals = _var_vals, val_vals = _val_vals, selectors = _selectors](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Step 1: filter dom(var) — drop any value that no source supports.

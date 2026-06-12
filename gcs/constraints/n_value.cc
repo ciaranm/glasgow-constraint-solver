@@ -108,8 +108,7 @@ auto NValue::install_propagators(Propagators & propagators) -> void
     vector<IntegerVariableID> all_vars = _vars;
     all_vars.push_back(_n_values);
 
-    propagators.install([all_vars = move(all_vars), n_values = _n_values, vars = _vars](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [all_vars = move(all_vars), n_values = _n_values, vars = _vars](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
             for (auto v : state.each_value_immutable(var))
@@ -131,9 +130,7 @@ auto NValue::install_propagators(Propagators & propagators) -> void
         auto distinct_floor = vars.empty() ? 0_i : 1_i;
         inference.infer(logger, n_values >= max(distinct_floor, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars));
 
-        return PropagatorState::Enable;
-    },
-        triggers);
+        return PropagatorState::Enable; }, triggers);
 }
 
 auto NValue::s_exprify(const innards::ProofModel * const model) const -> string

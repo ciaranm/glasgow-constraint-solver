@@ -537,12 +537,9 @@ auto Regular::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
-    propagators.install([v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = _graph_idx, flags = move(_state_at_pos_flags), sr = _short_reasons](
-                            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = _graph_idx, flags = move(_state_at_pos_flags), sr = _short_reasons](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         propagate_regular(v, n, t, f, flags, g, state, inference, logger, sr);
-        return PropagatorState::Enable;
-    },
-        triggers);
+        return PropagatorState::Enable; }, triggers);
 }
 
 auto Regular::s_exprify(const ProofModel * const model) const -> string
