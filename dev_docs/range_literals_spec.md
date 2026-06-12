@@ -152,7 +152,7 @@ encoding layer, never by propagator authors:
 Propagator authors see exactly two things: `infer_not_in_range` and interval
 reason elements. Everything in §3 happens inside `need_invar`.
 
-*Decided (2026-06-13, Ciaran):* a reason a propagator constructs is never
+*Decided (2026-06-12, Ciaran):* a reason a propagator constructs is never
 rewritten — only `generic_reason`, which derives a reason from the current
 domains rather than receiving one, chooses the interval spelling for hole
 runs, because the representation of "the domains, as a reason" belongs to
