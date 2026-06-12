@@ -318,6 +318,22 @@ namespace gcs::innards
          */
         [[nodiscard]] auto constraint_id_for_index(int constraint_index) const -> const ConstraintID &;
 
+        /**
+         * The scope of the propagator with the given id: its trigger variables
+         * (across all trigger kinds) with views resolved to their underlying
+         * simple variable and duplicates removed. Indexed by propagator id.
+         */
+        [[nodiscard]] auto scope_of_propagator(int propagator_id) const -> const std::vector<SimpleIntegerVariableID> &;
+
+        /**
+         * The dense constraint indices of every constraint the given variable
+         * participates in (it appears in the scope of one of that constraint's
+         * propagators), deduplicated. Empty for a variable that no propagator
+         * triggers on. This is scope_of_propagator transposed and aggregated by
+         * constraint — the adjacency a weighted-degree heuristic sums over.
+         */
+        [[nodiscard]] auto constraint_indices_of_variable(SimpleIntegerVariableID) const -> const std::vector<int> &;
+
         ///@}
     };
 }
