@@ -15,7 +15,8 @@ namespace gcs::innards
      */
     enum AssertionHintName
     {
-        // Hint names types will go here
+        None,
+        AllDifferent
     };
 
     /**
@@ -37,9 +38,9 @@ namespace gcs::innards
      */
     struct AssertionAnnotation
     {
-        std::vector<ProofLineLabel> derivable_from;
-        AssertionHintName hint_name;
-        std::vector<AssertionHintField> hint_fields;
+        std::vector<ProofLineLabel> derivable_from = {};
+        AssertionHintName hint_name = AssertionHintName::None;
+        std::vector<AssertionHintField> hint_fields = {};
     };
 
 } // namespace gcs::innards
