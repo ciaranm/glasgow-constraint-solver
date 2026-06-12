@@ -1,3 +1,4 @@
+#include <gcs/innards/interval_tree.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
@@ -55,6 +56,7 @@ using std::to_string;
 using std::variant;
 using std::vector;
 using std::visit;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
@@ -81,6 +83,10 @@ struct NamesAndIDsTracker::Imp
     // conditions, just like the eq and order atoms. A width-1 interval IS the eq
     // atom and is never entered here.
     map<SimpleOrProofOnlyIntegerVariableID, map<pair<Integer, Integer>, pair<ProofLine, ProofLine>>> invars_that_exist;
+
+    // Every range and eq literal on each variable, as intervals, for finding a new
+    // literal's immediate neighbours in the containment order.
+    map<SimpleOrProofOnlyIntegerVariableID, IntervalTree> containment_trees;
 
     // The always-covered partition for each variable with interval literals: the
     // sorted cell start points, always containing the definition lower bound and
@@ -617,6 +623,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     // Link this new eq atom (a singleton [v, v]) to its immediate range containers,
     // so a rejected container propagates ~(id == v).
     link_immediate_containment(id, v, v);
+    _imp->containment_trees[id].insert(v, v);
 
     // On a partitioned variable, every eq atom is a singleton cell (spec §4): split the
     // containing cell, so interval coverings ground out at this atom -- the vocabulary
@@ -804,25 +811,14 @@ auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVari
     if (! _imp->logger)
         return;
 
-    auto strictly_contains = [](Integer alo, Integer ahi, Integer blo, Integer bhi) {
-        return alo <= blo && bhi <= ahi && (alo < blo || bhi < ahi);
-    };
+    auto tree_it = _imp->containment_trees.find(id);
+    if (tree_it == _imp->containment_trees.end())
+        return;
+    const auto & tree = tree_it->second;
 
-    struct ExistingLit
-    {
-        Integer lo, hi;
-    };
-    vector<ExistingLit> existing;
-    if (auto rit = _imp->invars_that_exist.find(id); rit != _imp->invars_that_exist.end())
-        for (const auto & e : rit->second)
-            existing.push_back({e.first.first, e.first.second});
-    if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
-        for (const auto & e : eqit->second)
-            existing.push_back({e.first, e.first});
-
-    // Emit a child -> parent containment edge (~child OR parent) as a rup line. A
-    // width-1 literal is its eq atom; nothing fits strictly inside a width-1 literal,
-    // so a parent is always a range.
+    // A child -> parent containment edge (~child OR parent) as a rup line. A width-1
+    // literal is its eq atom; nothing fits strictly inside a width-1 literal, so a
+    // parent is always a range.
     auto emit_edge = [&](Integer clo, Integer chi, Integer plo, Integer phi) {
         visit([&](const auto & id) {
             WPBSum edge;
@@ -836,28 +832,41 @@ auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVari
             id);
     };
 
-    // self -> minimal (immediate) containers
-    for (const auto & q : existing) {
-        if (! strictly_contains(q.lo, q.hi, lo, hi))
-            continue;
-        auto is_minimal = none_of(existing.begin(), existing.end(), [&](const ExistingLit & r) {
-            return strictly_contains(q.lo, q.hi, r.lo, r.hi) && strictly_contains(r.lo, r.hi, lo, hi);
-        });
-        if (is_minimal)
-            emit_edge(lo, hi, q.lo, q.hi);
-    }
-
-    // maximal (immediate) contained literals -> self
-    if (lo != hi)
-        for (const auto & c : existing) {
-            if (! strictly_contains(lo, hi, c.lo, c.hi))
-                continue;
-            auto is_maximal = none_of(existing.begin(), existing.end(), [&](const ExistingLit & m) {
-                return strictly_contains(lo, hi, m.lo, m.hi) && strictly_contains(m.lo, m.hi, c.lo, c.hi);
-            });
-            if (is_maximal)
-                emit_edge(c.lo, c.hi, lo, hi);
+    // self -> minimal containers: walking candidates by decreasing lo (ties:
+    // increasing hi), a candidate is minimal exactly when its hi is strictly below
+    // every hi seen so far, since everything seen so far has a lo at least as big.
+    vector<pair<Integer, Integer>> found;
+    tree.for_each_containing(lo, hi, [&](Integer c, Integer d) {
+        if (c != lo || d != hi)
+            found.emplace_back(c, d);
+    });
+    sort(found, [](const pair<Integer, Integer> & x, const pair<Integer, Integer> & y) {
+        return x.first == y.first ? x.second < y.second : x.first > y.first;
+    });
+    optional<Integer> least_hi;
+    for (const auto & [c, d] : found)
+        if (! least_hi || d < *least_hi) {
+            emit_edge(lo, hi, c, d);
+            least_hi = d;
         }
+
+    // maximal contained literals -> self, by the mirrored argument.
+    if (lo != hi) {
+        found.clear();
+        tree.for_each_contained_in(lo, hi, [&](Integer c, Integer d) {
+            if (c != lo || d != hi)
+                found.emplace_back(c, d);
+        });
+        sort(found, [](const pair<Integer, Integer> & x, const pair<Integer, Integer> & y) {
+            return x.first == y.first ? x.second > y.second : x.first < y.first;
+        });
+        optional<Integer> greatest_hi;
+        for (const auto & [c, d] : found)
+            if (! greatest_hi || d > *greatest_hi) {
+                emit_edge(c, d, lo, hi);
+                greatest_hi = d;
+            }
+    }
 }
 
 auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
@@ -880,6 +889,7 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     // Containment edges let a rejected literal propagate down to the literals a
     // conflict is written over; the order chain alone does not give this.
     link_immediate_containment(id, lo, hi);
+    _imp->containment_trees[id].insert(lo, hi);
 
     _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
 }
