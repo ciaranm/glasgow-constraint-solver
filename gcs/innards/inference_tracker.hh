@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <deque>
+#include <optional>
 #include <type_traits>
 #include <utility>
 #include <version>
@@ -34,6 +35,13 @@ namespace gcs::innards
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
         bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
 
+        // The reason supplied with the contradiction that ended this tracker's
+        // life, stashed before the throw so it is reachable at the catch site
+        // (a conflict observer may want to know which literals were implicated).
+        // Engaged whenever a contradiction has been raised; the ReasonFunction
+        // it holds may itself be empty if the caller supplied no reason.
+        std::optional<ReasonFunction> _last_contradiction_reason;
+
         auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason) -> void
         {
             return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason);
@@ -58,6 +66,7 @@ namespace gcs::innards
 
         [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const ReasonFunction & reason) -> void
         {
+            _last_contradiction_reason = reason;
             if (logger)
                 logger->infer(FalseLiteral{}, why, reason);
             throw TrackedPropagationFailed{};
@@ -135,8 +144,18 @@ namespace gcs::innards
         auto reset() -> void
         {
             _inferences.clear();
+            _last_contradiction_reason.reset();
             _did_anything_since_last_call_inside_propagator = false;
             _did_anything_since_last_call_by_propagation_queue = false;
+        }
+
+        // The reason of the contradiction that ended this tracker's life, valid
+        // at the catch site after propagate() unwinds a TrackedPropagationFailed.
+        // Has no value if no contradiction was raised; the held ReasonFunction
+        // may be empty if the caller supplied none.
+        [[nodiscard]] auto last_contradiction_reason() const -> const std::optional<ReasonFunction> &
+        {
+            return _last_contradiction_reason;
         }
 
         auto did_anything_since_last_call_by_propagation_queue() -> bool
@@ -155,7 +174,7 @@ namespace gcs::innards
     public:
         using InferenceTrackerBase::InferenceTrackerBase;
 
-        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const ReasonFunction &) -> void
+        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const ReasonFunction & reason) -> void
         {
             switch (inf) {
             case Inference::NoChange:
@@ -185,6 +204,7 @@ namespace gcs::innards
                 break;
 
             [[unlikely]] case Inference::Contradiction:
+                _last_contradiction_reason = reason;
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};
@@ -230,6 +250,7 @@ namespace gcs::innards
                 break;
 
             [[unlikely]] case Inference::Contradiction:
+                _last_contradiction_reason = reason;
                 if (logger)
                     logger->infer(lit, just, reason);
                 _did_anything_since_last_call_by_propagation_queue = true;
