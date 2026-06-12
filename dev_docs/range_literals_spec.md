@@ -142,8 +142,8 @@ encoding layer, never by propagator authors:
   It introduced flags that nothing could falsify (Appendix B4/B5); under this
   spec the covering makes any defined literal falsifiable, and the reason
   never materialises per-value eq atoms.
-- **Branching.** Range guesses map to the same literals (as now, via the
-  `BranchGuess` channel).
+- **Branching.** Range guesses are ordinary range conditions, mapping to the
+  same literals.
 - **Per-value consumers** (Table-style reasons saying `x ≠ v`) keep working
   untouched: eq atoms are cells (or get created and linked into the partition
   as singleton splits), so `¬F` reaches them by containment and they reach
