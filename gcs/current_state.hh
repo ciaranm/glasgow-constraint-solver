@@ -9,7 +9,6 @@
 #include <exception>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <version>
 
 #ifdef __cpp_lib_generator
@@ -53,10 +52,10 @@ namespace gcs
     class CurrentState
     {
     private:
-        std::unique_ptr<std::optional<innards::State>> _state_copy;
+        std::unique_ptr<innards::State> _state_copy;
         innards::State & _full_state;
 
-        explicit CurrentState(std::optional<innards::State> &&);
+        explicit CurrentState(innards::State &&);
 
     public:
         /**

@@ -5,9 +5,8 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::generator;
-using std::make_optional;
+using std::make_unique;
 using std::move;
-using std::optional;
 using std::string;
 using std::vector;
 
@@ -26,9 +25,9 @@ CurrentState::CurrentState(State & state) :
 {
 }
 
-CurrentState::CurrentState(optional<State> && s) :
-    _state_copy(make_unique<optional<State>>(move(s))),
-    _full_state(**_state_copy)
+CurrentState::CurrentState(State && s) :
+    _state_copy(make_unique<State>(move(s))),
+    _full_state(*_state_copy)
 {
 }
 
@@ -38,7 +37,7 @@ CurrentState::CurrentState(CurrentState &&) = default;
 
 auto CurrentState::clone() const -> CurrentState
 {
-    return CurrentState{make_optional(_full_state.clone())};
+    return CurrentState{_full_state.clone()};
 }
 
 auto CurrentState::operator()(const IntegerVariableID & v) const -> Integer
