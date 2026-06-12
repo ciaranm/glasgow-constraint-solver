@@ -5,8 +5,6 @@
 
 #include <algorithm>
 
-using std::max;
-using std::min;
 using std::variant;
 
 using namespace gcs;
@@ -28,25 +26,15 @@ namespace
             .visit(lit);
     }
 
-    // Canonicalise a range condition (dev_docs/range_literals_spec.md §2): clamp
-    // it to the variable's definition bounds (the bound axioms make the clamped
-    // condition the same fact, and the partition's cells only span the definition
-    // range), so a vacuous range folds to a constant, the whole range folds to a
-    // constant (the whole-variable interval literal is never materialised), and a
-    // width-1 range IS the eq atom. Everything downstream (need_proof_name,
-    // xliteral_for) sees only interior, multi-width range conditions.
+    // Canonicalise a range condition: a vacuous range folds to a constant, and a
+    // width-1 range IS the eq atom, so everything downstream sees only ranges of
+    // width at least two.
     template <typename VarType_>
-    auto canonicalise_range(const NamesAndIDsTracker & tracker, VariableConditionFrom<VarType_> cond) -> SimpleLiteral
+    auto canonicalise_range(VariableConditionFrom<VarType_> cond) -> SimpleLiteral
     {
         bool in = (VariableConditionOperator::InRange == cond.op);
-        if (auto bounds = tracker.find_definition_bounds(cond.var)) {
-            cond.value = max(cond.value, bounds->first);
-            cond.upper_value = min(cond.upper_value, bounds->second);
-            if (cond.value > cond.upper_value)
-                return in ? SimpleLiteral{FalseLiteral{}} : SimpleLiteral{TrueLiteral{}};
-            if (cond.value == bounds->first && cond.upper_value == bounds->second)
-                return in ? SimpleLiteral{TrueLiteral{}} : SimpleLiteral{FalseLiteral{}};
-        }
+        if (cond.value > cond.upper_value)
+            return in ? SimpleLiteral{FalseLiteral{}} : SimpleLiteral{TrueLiteral{}};
         if (cond.value == cond.upper_value)
             return VariableConditionFrom<VarType_>{cond.var,
                 in ? VariableConditionOperator::Equal : VariableConditionOperator::NotEqual, cond.value};
@@ -69,7 +57,7 @@ auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const Pr
                 [&](const SimpleIntegerVariableID & var) -> SimpleLiteral {
                     auto cond = VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value, lit.upper_value};
                     if (is_range_op(lit.op))
-                        return canonicalise_range(tracker, cond);
+                        return canonicalise_range(cond);
                     return cond;
                 },
                 [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
@@ -145,7 +133,7 @@ auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const Pr
         [&](const ProofVariableCondition & cond) -> SimpleLiteral {
             auto result = VariableConditionFrom<ProofOnlySimpleIntegerVariableID>{cond.var, cond.op, cond.value, cond.upper_value};
             if (is_range_op(cond.op))
-                return canonicalise_range(tracker, result);
+                return canonicalise_range(result);
             return result;
         }}
         .visit(flatten(lit));

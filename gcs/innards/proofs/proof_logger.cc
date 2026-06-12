@@ -262,13 +262,12 @@ auto ProofLogger::conclude_none() -> void
 auto ProofLogger::infer(const Literal & lit, const Justification & why,
     const ReasonFunction & reason) -> void
 {
-    // A range conclusion on a view (spec §9.1: folding views into the interval
-    // machinery is deferred) or on a plain variable without a bits encoding (no
-    // order cuts to reify against) cannot become a single range ("in") literal;
-    // fall back to one per-value line each (still correct, just not coalesced).
-    // Every other range conclusion rides the standard machinery: the condition's
-    // proof name is the range literal (the eq atom for width 1), and
-    // simplify_literal constant-folds / clamps it first.
+    // A range conclusion on a view (folding views into the interval machinery is
+    // deferred) or on a plain variable without a bits encoding (no order cuts to
+    // reify against) cannot become a single range ("in") literal; fall back to one
+    // per-value line each, which is still correct, just not coalesced. Every other
+    // range conclusion rides the standard machinery: the condition's proof name is
+    // the range literal, or the eq atom for width 1.
     if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
         if (cond->op == VariableConditionOperator::NotInRange) {
             auto needs_per_value_fallback = overloaded{

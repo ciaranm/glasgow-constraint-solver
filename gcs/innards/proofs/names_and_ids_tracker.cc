@@ -75,19 +75,19 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
-    // Range ("in") literals [lo, hi]: a proof-only flag meaning lo <= var <= hi,
-    // keyed by (lo, hi). Defined as a "wide equality literal" reified against the
-    // variable's own two order cuts; see need_invar. Width-1 intervals are never
-    // entered here: a width-1 interval IS the eq atom, in eqvars_that_exist.
-    map<SimpleOrProofOnlyIntegerVariableID, map<pair<Integer, Integer>, pair<ProofFlag, pair<ProofLine, ProofLine>>>> invars_that_exist;
+    // Range ("in") literals [lo, hi], keyed by (lo, hi): the forward and reverse
+    // lines of the reification against the variable's two order cuts. The literal
+    // itself lives in variable_conditions_to_x, keyed by the InRange / NotInRange
+    // conditions, just like the eq and order atoms. A width-1 interval IS the eq
+    // atom and is never entered here.
+    map<SimpleOrProofOnlyIntegerVariableID, map<pair<Integer, Integer>, pair<ProofLine, ProofLine>>> invars_that_exist;
 
-    // The always-covered partition (spec §3) for each variable with interval
-    // literals: the sorted cell start points, always containing the definition
-    // lower bound and ub+1 as a sentinel, so the cells are the intervals between
-    // consecutive boundaries. Invariants: every cell has a literal (an eq atom if
-    // width 1, a range flag otherwise); every eq atom on a partitioned variable is
-    // a singleton cell; every requested interval is a union of adjacent cells.
-    // Absent until the variable's first interval request.
+    // The always-covered partition for each variable with interval literals: the
+    // sorted cell start points, always containing the definition lower bound and
+    // ub+1 as a sentinel, so the cells are the intervals between consecutive
+    // boundaries. Every cell has a literal, every eq atom on a partitioned
+    // variable is a singleton cell, and every requested interval is a union of
+    // adjacent cells. Absent until the first interval request.
     map<SimpleOrProofOnlyIntegerVariableID, std::set<Integer>> interval_partitions;
 
     map<ViewOfIntegerVariableID, ProofOnlySimpleIntegerVariableID> view_proof_only_vars;
@@ -275,9 +275,11 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
                 need_direct_encoding_for(var, cond.value);
                 return _imp->eqvars_that_exist.at(var).at(cond.value).second;
             case InRange:
+                static_cast<void>(need_invar(var, cond.value, cond.upper_value));
+                return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).first;
             case NotInRange:
-                // no pol consumer references a range literal's reification lines yet
-                throw UnimplementedException{};
+                static_cast<void>(need_invar(var, cond.value, cond.upper_value));
+                return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).second;
             }
             throw NonExhaustiveSwitch{};
         },
@@ -354,29 +356,10 @@ auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrPro
         need_gevar(cond.var, cond.value);
         break;
     case InRange:
-    case NotInRange: {
-        // The proof name for a range condition is the range ("in") literal,
-        // minted via need_invar with everything spec §3 entails (partition
-        // splits, coverings, containment). simplify_literal has already
-        // deviewed, constant-folded, clamped to the definition bounds, and
-        // canonicalised width-1 to an equality, so this must be an interior
-        // multi-width range on a bits-encoded variable.
-        if (_imp->variable_conditions_to_x.contains(cond))
-            break;
-        if (! has_bit_representation(cond.var))
-            throw ProofError{"range condition on a variable without a bits encoding"};
-        auto lit = need_invar(cond.var, cond.value, cond.upper_value);
-        const auto * flag = std::get_if<ProofFlag>(&lit);
-        if (! flag)
-            throw ProofError{"range condition was not canonicalised before need_proof_name"};
-        auto x = xliteral_for(*flag);
-        auto in_cond = cond, not_in_cond = cond;
-        in_cond.op = InRange;
-        not_in_cond.op = NotInRange;
-        _imp->variable_conditions_to_x.emplace(in_cond, x);
-        _imp->variable_conditions_to_x.emplace(not_in_cond, ! x);
+    case NotInRange:
+        if (! _imp->variable_conditions_to_x.contains(cond))
+            static_cast<void>(need_invar(cond.var, cond.value, cond.upper_value));
         break;
-    }
     }
 }
 
@@ -631,9 +614,9 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         }
     }
 
-    // Laminar containment: symmetric to need_invar -- link this new eq atom (a singleton [v, v])
-    // to its immediate range containers so a reject of one forward-propagates ~(id == v).
-    link_immediate_containment(id, v, v, v);
+    // Link this new eq atom (a singleton [v, v]) to its immediate range containers,
+    // so a rejected container propagates ~(id == v).
+    link_immediate_containment(id, v, v);
 
     // On a partitioned variable, every eq atom is a singleton cell (spec §4): split the
     // containing cell, so interval coverings ground out at this atom -- the vocabulary
@@ -816,8 +799,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     }
 }
 
-auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id,
-    Integer lo, Integer hi, const variant<ProofFlag, Integer> & self_term) -> void
+auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
 {
     if (! _imp->logger)
         return;
@@ -826,50 +808,47 @@ auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVari
         return alo <= blo && bhi <= ahi && (alo < blo || bhi < ahi);
     };
 
-    // Existing range/eq literals on id as intervals with their (negatable) proof term. An eq
-    // atom is the singleton [v, v]; a range container is always a range (an eq can't strictly
-    // contain anything), so a parent term is always a ProofFlag.
     struct ExistingLit
     {
         Integer lo, hi;
-        variant<ProofFlag, Integer> term;
     };
     vector<ExistingLit> existing;
     if (auto rit = _imp->invars_that_exist.find(id); rit != _imp->invars_that_exist.end())
         for (const auto & e : rit->second)
-            existing.push_back({e.first.first, e.first.second, e.second.first});
+            existing.push_back({e.first.first, e.first.second});
     if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
         for (const auto & e : eqit->second)
-            existing.push_back({e.first, e.first, e.first});
+            existing.push_back({e.first, e.first});
 
-    // Emit a child -> parent containment edge (~child OR parent_flag) as a rup line at Top.
-    auto emit_edge = [&](const variant<ProofFlag, Integer> & child, const ProofFlag & parent_flag) {
-        overloaded{
-            [&](const ProofFlag & cf) {
-                _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * ! cf + 1_i * parent_flag >= 1_i, ProofLevel::Top);
-            },
-            [&](const Integer & v) {
-                visit([&](const auto & id) {
-                    _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * (id != v) + 1_i * parent_flag >= 1_i, ProofLevel::Top);
-                },
-                    id);
-            }}
-            .visit(child);
+    // Emit a child -> parent containment edge (~child OR parent) as a rup line. A
+    // width-1 literal is its eq atom; nothing fits strictly inside a width-1 literal,
+    // so a parent is always a range.
+    auto emit_edge = [&](Integer clo, Integer chi, Integer plo, Integer phi) {
+        visit([&](const auto & id) {
+            WPBSum edge;
+            if (clo == chi)
+                edge += 1_i * (id != clo);
+            else
+                edge += 1_i * not_in_range(id, clo, chi);
+            edge += 1_i * in_range(id, plo, phi);
+            _imp->logger->emit_rup_proof_line(move(edge) >= 1_i, ProofLevel::Top);
+        },
+            id);
     };
 
-    // self -> minimal (immediate) range containers
-    for (const auto & p : existing) {
-        if (! strictly_contains(p.lo, p.hi, lo, hi))
+    // self -> minimal (immediate) containers
+    for (const auto & q : existing) {
+        if (! strictly_contains(q.lo, q.hi, lo, hi))
             continue;
-        auto is_minimal = none_of(existing.begin(), existing.end(), [&](const ExistingLit & q) {
-            return strictly_contains(p.lo, p.hi, q.lo, q.hi) && strictly_contains(q.lo, q.hi, lo, hi);
+        auto is_minimal = none_of(existing.begin(), existing.end(), [&](const ExistingLit & r) {
+            return strictly_contains(q.lo, q.hi, r.lo, r.hi) && strictly_contains(r.lo, r.hi, lo, hi);
         });
         if (is_minimal)
-            emit_edge(self_term, std::get<ProofFlag>(p.term));
+            emit_edge(lo, hi, q.lo, q.hi);
     }
 
-    // maximal (immediate) contained literals -> self, only when self is a range (a flag).
-    if (auto self_flag = std::get_if<ProofFlag>(&self_term))
+    // maximal (immediate) contained literals -> self
+    if (lo != hi)
         for (const auto & c : existing) {
             if (! strictly_contains(lo, hi, c.lo, c.hi))
                 continue;
@@ -877,43 +856,43 @@ auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVari
                 return strictly_contains(lo, hi, m.lo, m.hi) && strictly_contains(m.lo, m.hi, c.lo, c.hi);
             });
             if (is_maximal)
-                emit_edge(c.term, *self_flag);
+                emit_edge(c.lo, c.hi, lo, hi);
         }
 }
 
-auto NamesAndIDsTracker::mint_plain_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofFlag
+auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
 {
-    // A range literal is a "wide equality literal": [lo, hi] <=> (id >= lo) AND NOT (id >= hi+1).
-    // Ensure both order-encoding cuts exist; need_gevar also threads them into the order chain
-    // (Inv1), which gives all range<->range and range<->order RUP deductions.
+    // Both order-encoding cuts; need_gevar threads them into the order chain, and
+    // emits the bound-axiom units for any cut outside the definition bounds.
     need_gevar(id, lo);
     need_gevar(id, hi + 1_i);
 
-    auto flag = create_proof_flag("in_" + name_of(id) + "_" + to_string(lo.raw_value) + "_" + to_string(hi.raw_value));
+    auto x = allocate_xliteral_meaning(id, lo, hi);
+    _imp->variable_conditions_to_x.emplace(in_range(id, lo, hi), x);
+    _imp->variable_conditions_to_x.emplace(not_in_range(id, lo, hi), ! x);
 
     auto lines = visit([&](const auto & id) {
         return _imp->logger->emit_red_proof_lines_reifying(
-            WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, flag, ProofLevel::Top);
+            WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::Top);
     },
         id);
 
-    // Laminar containment (P2): link this range to its immediate neighbours so a rejected
-    // literal (~flag, as a branching decision or derived fact) forward-propagates down to
-    // the literals a conflict is written over. The chain alone does not give this (a
-    // ~[range] fact does not propagate without a handle); witness W4. (Note: call before
-    // the emplace below so the new range is not in invars_that_exist yet.)
-    link_immediate_containment(id, lo, hi, flag);
+    // Containment edges let a rejected literal propagate down to the literals a
+    // conflict is written over; the order chain alone does not give this.
+    link_immediate_containment(id, lo, hi);
 
-    _imp->invars_that_exist[id].emplace(pair{lo, hi}, pair{flag, lines});
-    return flag;
+    _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
 }
 
 auto NamesAndIDsTracker::append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
 {
-    if (lo == hi)
-        visit([&](const auto & id) { sum += 1_i * (id == lo); }, id);
-    else
-        sum += 1_i * _imp->invars_that_exist.at(id).at(pair{lo, hi}).first;
+    visit([&](const auto & id) {
+        if (lo == hi)
+            sum += 1_i * (id == lo);
+        else
+            sum += 1_i * in_range(id, lo, hi);
+    },
+        id);
 }
 
 auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID id, Integer p) -> void
@@ -922,32 +901,29 @@ auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID
     if (boundaries.contains(p))
         return;
 
-    // p falls strictly inside the cell [a, b]; that cell is wide enough to contain an
-    // interior point, so its literal is a flag.
+    // p falls strictly inside the cell [a, b].
     auto above = boundaries.upper_bound(p);
     auto a = *prev(above), b = *above - 1_i;
-    auto cell_flag = _imp->invars_that_exist.at(id).at(pair{a, b}).first;
 
-    // Insert the boundary before minting the halves: a width-1 half is minted through
-    // need_direct_encoding_for, whose partition maintenance re-enters here and must see
-    // both of its cuts already present (making the re-entry a no-op).
+    // Insert the boundary before defining the halves: a width-1 half goes through
+    // need_direct_encoding_for, whose partition maintenance re-enters here and must
+    // see both of its cuts already present (making the re-entry a no-op).
     boundaries.insert(p);
 
-    auto mint_cell = [&](Integer cell_lo, Integer cell_hi) {
+    auto define_cell = [&](Integer cell_lo, Integer cell_hi) {
         if (cell_lo == cell_hi)
             need_direct_encoding_for(id, cell_lo);
         else
-            static_cast<void>(mint_plain_invar(id, cell_lo, cell_hi));
+            define_plain_invar(id, cell_lo, cell_hi);
     };
-    mint_cell(a, p - 1_i);
-    mint_cell(p, b);
+    define_cell(a, p - 1_i);
+    define_cell(p, b);
 
-    // The split covering (P2, spec §3.3): the split cell is no longer a leaf, so to
-    // falsify it, unit propagation falsifies its two halves. Coverings compose through
-    // UP across refinements, so the split cell's own appearances in earlier coverings
-    // are never revisited.
+    // The split covering: the split cell is no longer a leaf, so unit propagation
+    // falsifies it through its two halves. Coverings compose across refinements, so
+    // the split cell's appearances in earlier coverings are never revisited.
     WPBSum covering;
-    covering += 1_i * ! cell_flag;
+    visit([&](const auto & id) { covering += 1_i * not_in_range(id, a, b); }, id);
     append_cell_literal_to(covering, id, a, p - 1_i);
     append_cell_literal_to(covering, id, p, b);
     _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top);
@@ -960,9 +936,8 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
     boundaries.insert(lb);
     boundaries.insert(ub + 1_i);
 
-    // Every pre-existing eq atom becomes a singleton cell: per-value conclusions may
-    // already have been logged over those atoms, and coverings must be able to ground
-    // out at the vocabulary the conclusions are written in (spec §4).
+    // Every pre-existing eq atom becomes a singleton cell, so that coverings can
+    // reach conclusions already logged over those atoms.
     if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
         for (const auto & [v, _] : eqit->second)
             if (lb <= v && v <= ub) {
@@ -973,87 +948,87 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
     boundaries.insert(request_lo);
     boundaries.insert(request_hi + 1_i);
 
-    // Mint a literal for every cell, then the root covering (P2, spec §3.4) over the
-    // top-level partition: the flag-level at-least-one that gives wipeout detection.
-    // Conceptually this is the covering of the whole-variable literal [id in lb..ub],
-    // but that literal is never materialised; the clause is emitted directly, and is
-    // RUP because the bound axioms walk a bound through the dead pieces' reverse
-    // reifications via the order chain.
+    // Define a literal for every cell, then emit the at-least-one clause over the
+    // top-level partition, which gives wipeout detection at the literal level. It is
+    // RUP from the bound axioms via the cells' reverse reifications and the order
+    // chain.
     WPBSum root_covering;
     for (auto it = boundaries.begin(); next(it) != boundaries.end(); ++it) {
         auto cell_lo = *it, cell_hi = *next(it) - 1_i;
         if (cell_lo == cell_hi)
             need_direct_encoding_for(id, cell_lo);
         else
-            static_cast<void>(mint_plain_invar(id, cell_lo, cell_hi));
+            define_plain_invar(id, cell_lo, cell_hi);
         append_cell_literal_to(root_covering, id, cell_lo, cell_hi);
     }
     _imp->logger->emit_rup_proof_line(move(root_covering) >= 1_i, ProofLevel::Top);
 }
 
-auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteralOrFlag
+auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteral
 {
-    // Clamp to the definition bounds: values outside them are excluded by the bound
-    // axioms, so the clamped literal is the same solver fact, and clamping keeps the
-    // partition invariant (cells partition [lb, ub]) intact.
-    auto bounds_it = _imp->integer_variable_definition_bounds.find(id);
-    if (bounds_it == _imp->integer_variable_definition_bounds.end())
-        throw ProofError{"need_invar: variable's bounds are not registered"};
-    auto [lb, ub] = bounds_it->second;
-    lo = max(lo, lb);
-    hi = min(hi, ub);
     if (lo > hi)
-        throw ProofError{"need_invar: range lies entirely outside the variable's bounds"};
+        return FalseLiteral{};
 
-    // A width-1 interval IS the eq atom (spec §2, witness W1): a separate flag would be
-    // an unlinked doppelganger that per-value reasoning can never unit-propagate through.
+    // A width-1 interval IS the eq atom.
     if (lo == hi) {
         need_direct_encoding_for(id, lo);
-        return visit([&](const auto & id) -> ProofLiteralOrFlag { return id == lo; }, id);
+        return visit([&](const auto & id) -> ProofLiteral { return id == lo; }, id);
     }
 
+    auto as_literal = [&]() {
+        return visit([&](const auto & id) -> ProofLiteral { return in_range(id, lo, hi); }, id);
+    };
+
     auto & for_this_var = _imp->invars_that_exist[id];
-    if (auto it = for_this_var.find(pair{lo, hi}); it != for_this_var.end())
-        return it->second.first;
+    if (for_this_var.contains(pair{lo, hi}))
+        return as_literal();
 
     if (! _imp->logger)
         throw UnimplementedException{"range literals during model writing are not yet supported"};
+    if (! has_bit_representation(id))
+        throw ProofError{"range literal requested for a variable without a bits encoding"};
+
+    // The literal is defined over its own two cuts even when they lie outside the
+    // definition bounds; the bound-axiom units falsify the out-of-bounds part by
+    // unit propagation. The partition only spans the definition range, so the
+    // covering is over the cells of the in-bounds intersection.
+    auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
+    auto span_lo = max(lo, lb), span_hi = min(hi, ub);
+
+    if (span_lo > span_hi) {
+        // Entirely outside: the reification plus the bound axioms already falsify
+        // it, so there is nothing to cover.
+        define_plain_invar(id, lo, hi);
+        return as_literal();
+    }
 
     if (! _imp->interval_partitions.contains(id)) {
-        init_interval_partition(id, lo, hi);
+        init_interval_partition(id, span_lo, span_hi);
     }
     else {
-        // An endpoint strictly inside an existing cell splits that cell (spec §3.2).
-        ensure_partition_cut(id, lo);
-        ensure_partition_cut(id, hi + 1_i);
+        ensure_partition_cut(id, span_lo);
+        ensure_partition_cut(id, span_hi + 1_i);
     }
 
-    // The request may have been minted just now, as a cell.
-    if (auto it = for_this_var.find(pair{lo, hi}); it != for_this_var.end())
-        return it->second.first;
-
-    // A non-leaf request: mint it and emit its covering (P2, spec §3.3) over the cells
-    // it spans, so that falsifying those pieces falsifies it by unit propagation.
-    auto flag = mint_plain_invar(id, lo, hi);
+    // If the request is exactly one cell, it was defined just now.
     const auto & boundaries = _imp->interval_partitions.at(id);
+    if (lo == span_lo && hi == span_hi && *next(boundaries.find(span_lo)) == span_hi + 1_i)
+        return as_literal();
+
+    // Otherwise define it, with a covering over the in-bounds cells it spans, so
+    // that falsifying those pieces falsifies it by unit propagation.
+    define_plain_invar(id, lo, hi);
     WPBSum covering;
-    covering += 1_i * ! flag;
-    for (auto it = boundaries.find(lo); *it != hi + 1_i; ++it)
+    visit([&](const auto & id) { covering += 1_i * not_in_range(id, lo, hi); }, id);
+    for (auto it = boundaries.find(span_lo); *it != span_hi + 1_i; ++it)
         append_cell_literal_to(covering, id, *it, *next(it) - 1_i);
     _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top);
-    return flag;
+    return as_literal();
 }
 
 auto NamesAndIDsTracker::has_bit_representation(const SimpleOrProofOnlyIntegerVariableID & id) const -> bool
 {
     return _imp->integer_variable_bits_to_size_and_proof_vars.contains(id);
-}
-
-auto NamesAndIDsTracker::find_definition_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> optional<pair<Integer, Integer>>
-{
-    if (auto it = _imp->integer_variable_definition_bounds.find(id); it != _imp->integer_variable_definition_bounds.end())
-        return it->second;
-    return nullopt;
 }
 
 auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
@@ -1341,6 +1316,59 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
             data["name"] = name_of(id);
             data["operator"] = (op == EqualsOrGreaterEqual::Equals ? "=" : ">=");
             data["value"] = value.raw_value;
+
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        }
+        catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
+    }
+
+    return result;
+}
+
+auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> XLiteral
+{
+    auto result = XLiteral{++_imp->next_xliteral_nr, false};
+
+    if (_imp->verbose_names) {
+        auto value_name = [](Integer v) {
+            return v < 0_i ? "minus" + abs(v).to_string() : v.to_string();
+        };
+
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) -> void {
+                string name = format("i[{}][in{}_{}]", name_of(id), value_name(lo), value_name(hi));
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                string name = format("p[{}_{}][in{}_{}]", id.index, name_of(id), value_name(lo), value_name(hi));
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            }}
+            .visit(id);
+    }
+
+    if (_imp->variables_map_file) {
+        try {
+            nlohmann::json data;
+            data["type"] = "condition";
+            overloaded{
+                [&](const SimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "intvar";
+                    data["cpvarid"] = id.index;
+                },
+                [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "proofintvar";
+                    data["cpvarid"] = id.index;
+                }}
+                .visit(id);
+
+            data["name"] = name_of(id);
+            data["operator"] = "in";
+            data["value"] = lo.raw_value;
+            data["upper_value"] = hi.raw_value;
 
             write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
         }

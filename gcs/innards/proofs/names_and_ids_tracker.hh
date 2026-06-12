@@ -73,38 +73,34 @@ namespace gcs::innards
 
         auto emit_proof_line_now_or_at_start(const std::function<auto(ProofLogger * const)->void> &) -> void;
 
-        // Emit laminar containment edges between a newly-introduced literal [lo, hi] (a range
-        // flag, or an eq atom passed as its Integer value) and the IMMEDIATE neighbours in the
-        // containment order among existing range/eq literals on `id`: minimal range containers
-        // above (self -> parent) and, when self is a range, maximal contained literals below
-        // (child -> self). Skip-level edges are left to transitivity. Each edge is a rup line.
-        auto link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi,
-            const std::variant<ProofFlag, Integer> & self_term) -> void;
+        // Emit containment edges between a newly-introduced literal [lo, hi] and its
+        // immediate neighbours in the containment order among the existing range and eq
+        // literals on `id`: minimal containers above (self -> parent) and, when self is
+        // wider than one value, maximal contained literals below (child -> self).
+        // Skip-level edges are left to transitivity. Each edge is a rup line.
+        auto link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
 
-        // Mint the bare range flag [lo, hi] (lo < hi): the red reification pair against the
-        // variable's two order cuts, plus containment edges, registered in the range-literal
-        // map. No partition maintenance and no covering — this is the building block that
-        // need_invar and the partition-split path share; everyone else goes through need_invar.
-        [[nodiscard]] auto mint_plain_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofFlag;
+        // Define the bare range literal [lo, hi] (lo < hi): allocate its xliteral,
+        // register the InRange / NotInRange condition pair, emit the red reification pair
+        // against the variable's two order cuts, and add containment edges. No partition
+        // maintenance and no covering; everyone other than the partition machinery goes
+        // through need_invar.
+        auto define_plain_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
 
-        // Append the positive literal for the partition cell [lo, hi] to a sum being built
-        // (a covering or the root covering): the eq atom for a width-1 cell, the range flag
-        // otherwise. The cell's literal must already exist.
+        // Append the positive literal for the partition cell [lo, hi] to a covering
+        // being built: the eq atom for a width-1 cell, the range literal otherwise.
         auto append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void;
 
-        // Make `p` a cell boundary in id's interval partition, splitting the cell it falls
-        // strictly inside (no-op if already a boundary): mint the two halves and emit the
-        // split covering `cell -> left OR right` at ProofLevel::Top. Requires the partition
-        // to exist and lb <= p <= ub+1.
+        // Make `p` a cell boundary in id's interval partition, splitting the cell it
+        // falls strictly inside (no-op if already a boundary): define the two halves and
+        // emit the split covering `cell -> left OR right`. Requires the partition to
+        // exist and lb <= p <= ub+1.
         auto ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID id, Integer p) -> void;
 
-        // First interval request for `id`: set up the always-covered partition (spec §3).
-        // Boundaries are the variable's definition bounds, a singleton cell for every
-        // pre-existing eq atom (per-value conclusions may already have been logged over
-        // them, so coverings must be able to ground out there), and the request's two
-        // cuts. Mints a literal for every cell, then emits the root covering — one clause
-        // over the top-level partition, RUP from the bound axioms; the whole-variable
-        // literal itself is never materialised (decided 2026-06-11).
+        // First interval request for `id`: set up the always-covered partition, with a
+        // singleton cell for every pre-existing eq atom (earlier per-value conclusions
+        // must be reachable from later coverings), define a literal for every cell, and
+        // emit the at-least-one clause over the top-level partition.
         auto init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void;
 
     public:
@@ -228,30 +224,24 @@ namespace gcs::innards
 
         /**
          * Say that we will need the range ("in") literal [lo, hi] for a variable,
-         * meaning `lo <= var <= hi`. Returns that literal, idempotent on (id, lo, hi)
-         * after clamping [lo, hi] to the variable's definition bounds (the clamped
-         * literal is the same solver fact, given the bound axioms). A width-1 interval
-         * IS the eq atom: `need_invar(id, v, v)` returns the direct-encoding literal
-         * `id == v`, never a separate flag (spec §2, witness W1); wider intervals
-         * return a ProofFlag.
+         * meaning `lo <= var <= hi`, and return it. Idempotent on (id, lo, hi). A
+         * width-1 interval IS the eq atom: `need_invar(id, v, v)` returns the
+         * direct-encoding literal `id == v`, never a separate literal.
          *
-         * A range literal is a "wide equality literal", defined as
-         * `flag <=> (var >= lo) AND NOT (var >= hi+1)`, reified against the variable's
-         * own two order-encoding cuts (need_gevar threads them into the Inv1 chain).
-         * The reification alone is NOT enough for replay-completeness (P2; see
-         * dev_docs/range_literals_spec.md §1 and Appendix B): this call also maintains
-         * the always-covered partition invariant of spec §3 — the request's endpoints
-         * split existing cells (emitting split coverings), the requested literal gets a
-         * covering over the cells it spans, containment edges link it to its immediate
-         * neighbours, and the variable's first request sets up the partition and emits
-         * the root covering. All of that linking is state-independent and emitted at
+         * A range literal is reified against the variable's own two order-encoding
+         * cuts, `lit <=> (var >= lo) AND NOT (var >= hi+1)`. The reification alone
+         * does not keep unit propagation strong enough for later proof steps (see
+         * dev_docs/range_literals_spec.md): this call also maintains the
+         * always-covered partition — the request's endpoints split existing cells,
+         * the requested literal gets a covering over the cells it spans, containment
+         * edges link it to its immediate neighbours, and the variable's first request
+         * sets up the partition. All linking is state-independent, at
          * ProofLevel::Top.
          *
-         * Requires a bits-encoded variable. Currently only implemented during the
-         * proof-logging phase; throws UnimplementedException if called during model
-         * writing, until a caller needs it (see spec §9.3's open decision).
+         * Requires a bits-encoded variable, and currently the proof-logging phase
+         * (throws UnimplementedException during model writing).
          */
-        [[nodiscard]] auto need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteralOrFlag;
+        [[nodiscard]] auto need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteral;
 
         /**
          * Does this variable have a bits encoding? Zero-one variables default to the
@@ -260,15 +250,6 @@ namespace gcs::innards
          * this is false.
          */
         [[nodiscard]] auto has_bit_representation(const SimpleOrProofOnlyIntegerVariableID &) const -> bool;
-
-        /**
-         * The bounds this variable was defined with, if it has been set up.
-         * Used by simplify_literal to canonicalise range conditions (clamping
-         * them to the definition bounds: the bound axioms make the clamped
-         * condition the same fact, and the always-covered partition's cells
-         * only span the definition range).
-         */
-        [[nodiscard]] auto find_definition_bounds(const SimpleOrProofOnlyIntegerVariableID &) const -> std::optional<std::pair<Integer, Integer>>;
 
         /**
          * Say that we are going to need an at-least-one constraint for a
@@ -418,6 +399,11 @@ namespace gcs::innards
          * Allocate an XLiteral with the given semantic meaning.
          */
         [[nodiscard]] auto allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id, const EqualsOrGreaterEqual & op, Integer value) -> XLiteral;
+
+        /**
+         * Allocate an XLiteral meaning `lo <= id <= hi`.
+         */
+        [[nodiscard]] auto allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> XLiteral;
 
         /**
          * Allocate an XLiteral with the given semantic meaning.
