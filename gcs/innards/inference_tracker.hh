@@ -96,9 +96,8 @@ namespace gcs::innards
         template <IntegerVariableIDLike VarType_>
         auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const Justification & why, const ReasonFunction & reason) -> void
         {
-            // The conclusion is the ordinary range condition (the eq atom for a
-            // width-1 interval, via not_in_range()'s canonicalisation); the state
-            // update batches the whole removal into one erase_range pass.
+            // The conclusion is the ordinary range condition; the state update
+            // batches the whole removal into one erase_range pass.
             if (lo > hi)
                 return;
             track(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, reason);

@@ -9,7 +9,7 @@
 using namespace gcs;
 using std::vector;
 
-// Witness W1 (dev_docs/range_literals_spec.md §8): width-1 unification. Equals(a,b)
+// Witness W1 (see dev_docs/range_literals_spec.md): width-1 unification. Equals(a,b)
 // removes the single value 1 from b; that removal and its reason must live on the eq
 // atom `b = 1`, never on a width-1 range flag. A width-1 flag is an unlinked
 // doppelganger of the eq atom (same boundary cuts, different Boolean, nothing

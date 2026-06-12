@@ -226,9 +226,6 @@ namespace
                 // An interior interval needs a plain variable and at least three
                 // values (so lo/hi can both be strictly inside the bounds, making the
                 // reject branch a genuine hole). Otherwise fall back to a value reject.
-                // A width-1 interval is just an equality: not_in_range / in_range
-                // canonicalise it, so the decision lives on the atom constraints
-                // reason with.
                 const auto * svar = std::get_if<SimpleIntegerVariableID>(&var);
                 if (svar && values.size() >= 3) {
                     uniform_int_distribution<size_t> dist(1, values.size() - 2);

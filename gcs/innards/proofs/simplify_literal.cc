@@ -62,12 +62,10 @@ auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const Pr
                 },
                 [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
                     // Range conditions on views take the per-value fallback at the
-                    // producing sites (spec §9.1: folding views into the interval
-                    // machinery is deferred), so none should reach the literal
-                    // layer. A range literal on the view's proof-only variable
-                    // would be an interval vocabulary unlinked to the underlying
-                    // variable's, which is a silent replay-completeness hole; throw
-                    // rather than risk it.
+                    // producing sites, so none should reach the literal layer: a
+                    // range literal over the view's proof-only variable would be
+                    // unlinked to the underlying variable's interval literals, and
+                    // unit propagation could not connect facts across the two.
                     if (is_range_op(lit.op))
                         throw UnimplementedException{"range conditions on views are not yet supported"};
 

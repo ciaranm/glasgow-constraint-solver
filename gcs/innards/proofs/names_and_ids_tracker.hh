@@ -246,7 +246,7 @@ namespace gcs::innards
         /**
          * Does this variable have a bits encoding? Zero-one variables default to the
          * direct-only encoding, which cannot support order cuts or range literals;
-         * callers minting range literals must fall back to per-value reasoning when
+         * callers wanting range literals must fall back to per-value reasoning when
          * this is false.
          */
         [[nodiscard]] auto has_bit_representation(const SimpleOrProofOnlyIntegerVariableID &) const -> bool;

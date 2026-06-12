@@ -158,12 +158,11 @@ auto In::install_propagators(Propagators & propagators) -> void
             // Step 1: filter dom(var) — drop any value that no source supports.
             if (var_vals.empty()) {
                 // The initial-domain shape (create_integer_variable(vector) posts In
-                // over constants): batch each contiguous run of unsupported values
-                // into one interval conclusion (spec §9.3), rather than one eq-atom
-                // removal per value. The conclusion is RUP with no reason: asserting
-                // var in [lo, hi] walks the order chain past every supported value,
-                // contradicting the model's at-least-one. Collect the runs first so
-                // the domain is not mutated mid-iteration.
+                // over constants): each contiguous run of unsupported values is one
+                // interval conclusion, RUP with no reason since asserting var in
+                // [lo, hi] walks the order chain past every supported value into the
+                // at-least-one. Collect the runs first so the domain is not mutated
+                // mid-iteration.
                 vector<pair<Integer, Integer>> runs;
                 for (auto v : state.each_value_immutable(var)) {
                     if (binary_search(val_vals, v))

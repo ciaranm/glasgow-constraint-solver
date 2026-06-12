@@ -8,7 +8,7 @@
 using namespace gcs;
 using std::vector;
 
-// Witness W5 (dev_docs/range_literals_spec.md §8): root covering / wipeout. Every
+// Witness W5 (see dev_docs/range_literals_spec.md): root covering / wipeout. Every
 // cell of x's partition is excluded by interval conclusions (x loses [0,2] and
 // [5,7] through Equals(x,y), then [3,4] through Equals(x,w), wiping the domain at
 // the root), and the final contradiction must be reachable by unit propagation at

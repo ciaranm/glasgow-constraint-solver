@@ -197,8 +197,8 @@ namespace gcs
      * \brief Create an IntegerVariableCondition that the specified IntegerVariableID takes a
      * value inside the closed interval [lo, hi].
      *
-     * A width-1 interval IS the equality (see dev_docs/range_literals_spec.md §2), so
-     * `in_range(var, v, v)` canonicalises to `var == v`. Throws if lo > hi.
+     * A width-1 interval is the same thing as an equality, so `in_range(var, v, v)`
+     * canonicalises to `var == v`. Throws if lo > hi.
      *
      * \ingroup Literals
      * \see IntegerVariableCondition
@@ -218,8 +218,8 @@ namespace gcs
      * \brief Create an IntegerVariableCondition that the specified IntegerVariableID takes no
      * value inside the closed interval [lo, hi].
      *
-     * A width-1 interval IS the equality (see dev_docs/range_literals_spec.md §2), so
-     * `not_in_range(var, v, v)` canonicalises to `var != v`. Throws if lo > hi.
+     * A width-1 interval is the same thing as an equality, so `not_in_range(var, v,
+     * v)` canonicalises to `var != v`. Throws if lo > hi.
      *
      * \ingroup Literals
      * \see IntegerVariableCondition

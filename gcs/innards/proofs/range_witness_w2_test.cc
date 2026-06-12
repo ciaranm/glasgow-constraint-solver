@@ -9,7 +9,7 @@
 using namespace gcs;
 using std::vector;
 
-// Witness W2 (dev_docs/range_literals_spec.md §8): reason falsifiability, exact
+// Witness W2 (see dev_docs/range_literals_spec.md): reason falsifiability, exact
 // match. The In constraint concludes b's initial-domain hole as one interval fact
 // ~[b in 1..3]; Equals(a,b) then prunes a with a reason naming exactly that
 // literal. If the reason's literal cannot be made true by unit propagation (no

@@ -128,11 +128,9 @@ namespace gcs::innards
         /**
          * Log, if necessary, that we have inferred a particular literal. A range
          * conclusion (a NotInRange condition) on a plain, bits-encoded integer
-         * variable is a single proof line `~[var in lo..hi] >= 1` (the negation of
-         * the range "in" literal; see NamesAndIDsTracker::need_invar) emitted under
-         * the reason, in place of one `var != v` line per removed value; a width-1
-         * interval is the ordinary eq atom, and direct-only-encoded variables fall
-         * back to per-value emission (still correct, not coalesced).
+         * variable is a single proof line `~[var in lo..hi] >= 1` emitted under the
+         * reason, in place of one `var != v` line per removed value; views and
+         * direct-only-encoded variables fall back to per-value emission.
          */
         auto infer(const Literal & lit, const Justification & why, const ReasonFunction & reason) -> void;
 

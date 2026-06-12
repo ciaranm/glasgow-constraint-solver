@@ -63,20 +63,12 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         auto v1_set = state.copy_of_values(v1);
         auto v2_set = state.copy_of_values(v2);
 
-        // Collapse each contiguous removed interval into ONE ~[pruned in lo..hi] proof
-        // line, with the matching first-class interval reason `other not in [lo, hi]`
-        // (a width-1 interval is the eq atom end to end, so no special case). RUP alone
-        // cannot reach the conclusion across the bit-sum equality v1=v2 (a range flag
-        // pins only the variable's order atoms, never its bits, so it can't cross the
-        // equality), so we first emit two bound-lemmas pruned>=lo -> other>=lo and
-        // other>=hi+1 -> pruned>=hi+1. Each lemma IS RUP: its negation supplies an
-        // opposing bound that, together with the equality, is the Theorem 2.9
-        // (contradictory binary sums) configuration -- this is exactly Justification
-        // Procedure 3.2 (Comparison) materialising a bound across the equality. The
-        // conclusion ~[pruned in lo..hi] then follows by RUP from the two lemmas plus
-        // the reason. The inference is width-independent (two lemmas + one conclusion
-        // regardless of |lo..hi|); see dev_docs/range_literals_spec.md. Range literals
-        // exist only for plain integer variables, so views/constants always take the
+        // Each contiguous removed interval is one ~[pruned in lo..hi] conclusion with
+        // the matching reason `other not in [lo, hi]`. The conclusion is not RUP on
+        // its own (a range literal asserts order atoms, never bits, so it cannot
+        // cross the bit-sum equality), so two bound-lemmas carry the bounds across
+        // first; each is RUP via the contradictory-binary-sums configuration. See
+        // justify_not_in_range_across_equality. Views and constants take the
         // per-value path.
         auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
             std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});

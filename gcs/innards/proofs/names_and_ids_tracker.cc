@@ -80,7 +80,7 @@ struct NamesAndIDsTracker::Imp
     // Range ("in") literals [lo, hi], keyed by (lo, hi): the forward and reverse
     // lines of the reification against the variable's two order cuts. The literal
     // itself lives in variable_conditions_to_x, keyed by the InRange / NotInRange
-    // conditions, just like the eq and order atoms. A width-1 interval IS the eq
+    // conditions, just like the eq and order atoms. A width-1 interval is its eq
     // atom and is never entered here.
     map<SimpleOrProofOnlyIntegerVariableID, map<pair<Integer, Integer>, pair<ProofLine, ProofLine>>> invars_that_exist;
 
@@ -343,6 +343,9 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
 auto NamesAndIDsTracker::create_literals_for_introduced_variable_value(
     SimpleIntegerVariableID id, Integer val, const string & name) -> void
 {
+    // These literals bypass eqvars_that_exist and the containment structures, which
+    // is safe because an introduced variable has no bits encoding, so no range
+    // literal can ever be defined over it.
     track_variable_name(id, to_string(id.index) + "intr_" + name); // hack!
     auto x = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, val);
     _imp->variable_conditions_to_x.emplace(id == val, x);
@@ -625,10 +628,9 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     link_immediate_containment(id, v, v);
     _imp->containment_trees[id].insert(v, v);
 
-    // On a partitioned variable, every eq atom is a singleton cell (spec §4): split the
-    // containing cell, so interval coverings ground out at this atom -- the vocabulary
-    // that per-value conclusions over it are logged in. Without the splits, a covering
-    // chain stalls at an unsplit cell whose values were excluded one at a time.
+    // On a partitioned variable, every eq atom is a singleton cell: split the
+    // containing cell, so that interval coverings reach the atoms that per-value
+    // conclusions are logged over.
     if (_imp->interval_partitions.contains(id)) {
         auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
         if (lb <= v && v <= ub) {
@@ -979,7 +981,6 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
     if (lo > hi)
         return FalseLiteral{};
 
-    // A width-1 interval IS the eq atom.
     if (lo == hi) {
         need_direct_encoding_for(id, lo);
         return visit([&](const auto & id) -> ProofLiteral { return id == lo; }, id);

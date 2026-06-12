@@ -16,25 +16,28 @@ is assumed.
 
 ---
 
-## 1. The two correctness properties — read this first
+## 1. Two ways a proof goes wrong — read this first
 
-Everything that went wrong in the first implementation attempt, three separate
-times, came from conflating two properties that look identical on small tests:
+Throughout, "UP" means plain unit propagation from the empty assignment,
+with no case-splitting: the propagation a RUP check performs after asserting
+the negation of the line being checked. Everything that went wrong in the
+first implementation attempt, three separate times, came from conflating two
+failure modes that look identical on small tests:
 
-- **P1 (line-checkability).** Every line we emit is accepted by VeriPB when
-  the checker examines *that line*. P1 failures are loud, immediate, and
-  local: veripb rejects at the line, and the error points at the culprit.
+- **P1.** A line we emit is not itself accepted by VeriPB. These failures
+  are loud, immediate, and local: veripb rejects at the line, and the error
+  points at the culprit.
 
-- **P2 (replay-completeness).** The clause set we emit keeps *forward unit
-  propagation* strong enough that **later** RUP checks — backtrack clauses,
-  other constraints' inferences — can re-derive the solver facts they depend
-  on. P2 failures are silent and non-local: they appear as rejections of
-  unrelated later lines (typically a backtrack clause), only under
-  composition, only for particular search shapes, and the error points at the
-  victim, not at the missing clause.
+- **P2.** Every line checks individually, but the clause set does not keep
+  UP strong enough for **later** RUP checks — backtrack clauses, other
+  constraints' inferences — to re-derive the solver facts they depend on.
+  The root cause of the eventual proof failure is then nowhere near the line
+  VeriPB takes issue with: the rejection lands on an unrelated later line
+  (typically a backtrack clause), only under composition, only for
+  particular search shapes, and the missing clause is the real culprit.
 
-The trap: **the checker's RUP search is strictly stronger than unit
-propagation, so every P2 clause looks deletable under P1 testing.** Any
+The trap: **a RUP check is strictly stronger than the single UP pass later
+checks rely on, so every P2 clause looks deletable under P1 testing.** Any
 linking clause can be removed and a local test stays green, because RUP
 re-finds the derivation that UP would have needed the clause for. "This
 clause was never load-bearing in my tests" is *always* observable for P2
@@ -42,7 +45,8 @@ clauses on small tests. It is not evidence. The only evidence that a P2
 clause is unnecessary is passing the witness suite of §8, which was built so
 that each clause family's removal fails within milliseconds.
 
-Each clause family below is labelled with the property it serves.
+Each clause family below is labelled with the failure mode it guards
+against.
 
 ## 2. The objects
 
@@ -72,7 +76,7 @@ The interval literals on each variable are maintained so that, at all times:
    (≤ 2 splits per request, one per endpoint).
 3. **Covering (P2).** Every non-leaf literal carries one clause
    `F → C₁ ∨ … ∨ Cₖ` over a partition of itself into existing literals,
-   emitted once when F is minted (or when F is split, for the two halves).
+   emitted once when F is defined (or when F is split, for the two halves).
    Coverings compose through UP across refinements — to falsify a node,
    falsify its pieces, recursively — so a covering is never revisited or
    re-emitted after later splits.
@@ -88,7 +92,7 @@ The interval literals on each variable are maintained so that, at all times:
    The clause over the top-level partition is emitted directly: it has the
    same propagation power given the root bound units, positively asserts the
    last surviving piece without a detour through a root reification (which is
-   what feeds Theorem 2.8 value-crossing), and avoids minting a literal
+   what feeds Theorem 2.8 value-crossing), and avoids introducing a literal
    nothing else references.
 5. **Containment (P2).** Child → parent edges (`¬C ∨ F` for C immediately
    inside F), as in the current implementation. Needed so a *rejected*
@@ -105,22 +109,22 @@ All of these are **state-independent tautologies of the encoding, emitted at
 `ProofLevel::Top`**. There is no search-state bookkeeping, nothing to undo on
 backtrack, and emission order does not matter for soundness (each clause is
 RUP at emission given the reifications and the chain). This is what makes the
-invariant maintainable at mint time: the alternative ("emit a covering over
+invariant maintainable at definition time: the alternative ("emit a covering over
 whatever facts currently witness the exclusion") is also sound but drags
 search state into the tracker; it was considered and rejected — see
 Appendix B7.
 
-Lazy throughout: nothing is minted for a variable until the first interval
+Lazy throughout: nothing is defined for a variable until the first interval
 request, exactly as gevars are lazy today.
 
 ### 3.1 Worked example
 
 X in 1..20. First request `[5,10]` (from any source — conclusion, reason, or
-branch guess): mint `[1,4]`, `[5,10]`, `[11,20]` (cells), the root covering
+branch guess): define `[1,4]`, `[5,10]`, `[11,20]` (cells), the root covering
 `[1,4] ∨ [5,10] ∨ [11,20]`, reifications, no containment yet (no nesting).
 Next request `[7,15]`: split `[5,10]` into `[5,6]`,`[7,10]` (covering
 `[5,10] → [5,6] ∨ [7,10]`), split `[11,20]` into `[11,15]`,`[16,20]`
-(covering), mint `[7,15]` with covering `[7,15] → [7,10] ∨ [11,15]` and
+(covering), define `[7,15]` with covering `[7,15] → [7,10] ∨ [11,15]` and
 containment `[7,10] → [7,15]`, `[11,15] → [7,15]`. The root covering is not
 touched: to falsify `[5,10]` later, UP goes through its own covering.
 
@@ -129,14 +133,14 @@ touched: to falsify `[5,10]` later, UP goes through its own covering.
 Every solver-visible interval fact is expressed over these literals, by the
 encoding layer, never by propagator authors:
 
-- **Conclusions.** `infer_not_in_range(var, lo, hi)` mints `[lo,hi]` (with
+- **Conclusions.** `infer_not_in_range(var, lo, hi)` defines `[lo,hi]` (with
   splits as needed) and emits the single conclusion `reason → ¬[lo,hi]`.
 - **Reasons.** A reason says "var ∉ [lo,hi]" as the *first-class element*
-  `¬[lo,hi]` (minted the same way). There is **no per-value reason loop and
+  `¬[lo,hi]` (defined the same way). There is **no per-value reason loop and
   no after-the-fact coalescing pass**: the Stage-2 coalescer
   (`coalesce_holes_in_reason`, `GCS_RANGE_REASONS`) is deleted, not ported.
-  It minted flags that nothing could falsify (Appendix B4/B5); under this
-  spec the covering makes any minted literal falsifiable, and the reason
+  It introduced flags that nothing could falsify (Appendix B4/B5); under this
+  spec the covering makes any defined literal falsifiable, and the reason
   never materialises per-value eq atoms.
 - **Branching.** Range guesses map to the same literals (as now, via the
   `BranchGuess` channel).
@@ -172,7 +176,7 @@ otherwise were P2 gaps in disguise (Appendix B).
 **Lemma obligations (to be formalised, not assumed):**
 
 - **L1 (intra-variable).** With §3 maintained, the {gevar, eqvar, invar}
-  layer is forward-UP-complete with respect to the variable's possible
+  layer is UP-complete with respect to the variable's possible
   values: every implied literal propagates, and an empty domain propagates to
   contradiction. (Induction over the partition DAG; extends Theorem 3.3.)
 - **L2 (Inv2 restoration).** With L1, reasons/conclusions in interval
@@ -247,20 +251,24 @@ unconditionally for simple variables.*
 separate reason-element type: `VariableConditionOperator` gained `InRange` /
 `NotInRange` (closed interval `[value, upper_value]`), constructed via
 `in_range()` / `not_in_range()`, which canonicalise width-1 to the equality at
-construction. A range condition's proof name IS the range literal:
-`simplify_literal` deviews / constant-folds / clamps to the definition bounds
-/ width-1-canonicalises (vacuous and whole-range conditions fold to constants,
-so the whole-variable literal is never materialised), then `need_proof_name`
-mints via `need_invar` and registers the condition pair against the flag's
-xliteral. The §9.2 four-site resolution worry has structurally dissolved:
-there is no separate resolution pass to forget, because conditions resolve in
-the same `need_all_proof_names_in` / `xliteral_for` pipeline as eq and order
-atoms. `generic_reason` states hole runs as range conditions; branching yields
-them as plain `IntegerVariableCondition` guesses (the `BranchGuess` channel is
-gone); conclusions are range conditions through the ordinary
-`InferenceTracker::infer` path. One addition the spec did not call out:
-clamping to the definition bounds (same solver fact given the bound axioms,
-and required so requests stay unions of cells).*
+construction. A range condition's proof name IS the range literal — an
+xliteral allocated and registered exactly like the eq and order atoms — so
+conditions resolve in the same `need_all_proof_names_in` / `xliteral_for`
+pipeline, and there is no separate resolution pass to forget (the §9.2
+worry, structurally dissolved). `generic_reason` states hole runs as range
+conditions; branching yields them as plain `IntegerVariableCondition`
+guesses; conclusions are range conditions through the ordinary
+`InferenceTracker::infer` path.*
+
+*Revised after review (2026-06-12): requests are NOT clamped to the
+definition bounds. A literal whose cuts stick out of the definition range is
+defined over its own cuts, and the bound-axiom units falsify the
+out-of-bounds part through the reification and the order chain; the
+partition still spans only the definition range, so a partially-outside
+literal's covering is over the cells of its in-bounds intersection, and an
+entirely-outside literal needs no covering at all. Containment neighbours
+are found through a per-variable interval tree over all range and eq
+literals rather than by scanning them.*
 
 ## 8. The witness suite — the actual defence against re-simplification
 
@@ -273,7 +281,7 @@ expensive way.
 
 - **W1 — width-1 unification** (else: first backtrack clause not RUP).
   `a∈{0,2,3}, b∈{0,1,3}, c∈{0,1,2,3}`; `Equals(a,b)`, `Equals(b,c)`,
-  `NotEquals(a,c)`; branch `c≠0` then `c=0`. If width-1 removals mint flags
+  `NotEquals(a,c)`; branch `c≠0` then `c=0`. If width-1 removals make flags
   instead of using eq atoms, the replay stalls in 6 steps: "b lost 1" is
   locked inside `¬f[in_b_1_1]` with no link to `b=1`.
 - **W2 — reason falsifiability, exact match** (else: first backtrack clause
@@ -289,8 +297,8 @@ expensive way.
   concluded as [1,3] and [4,6] separately; the reason names `¬[b in 1..6]`.
   Containment points the wrong way; only the covering
   `[1,6] → [1,3] ∨ [4,6]` (one RUP line) lets the replay through. This is
-  the partition invariant earning its keep: under §3, `[1,6]` is minted as a
-  union of cells and gets that covering at mint.
+  the partition invariant earning its keep: under §3, `[1,6]` is defined as a
+  union of cells and gets that covering when defined.
 - **W4 — containment** (else: backtrack clauses over interval-reject
   decisions not RUP). Regression net: the whole constraint suite runs under
   `reject_random_interval` by default and fails on Count/Among/Element
@@ -307,7 +315,7 @@ The suite is checked in as `range_witness_w{1,2,3,5}_test` (W4 = the existing
 veripb-gated. Each was validated by temporary ablation knobs before the knobs
 were removed:
 
-- **W1 bites harder than predicted.** With width-1 flags minted instead of eq
+- **W1 bites harder than predicted.** With width-1 flags defined instead of eq
   atoms, W1 fails *even with the coverings and containment intact* (the
   pre-implementation UP analysis predicted the covering `flag ↔ eq-atom` link
   would rescue it; it does not). A fresh confirmation of §1's warning that
@@ -321,7 +329,7 @@ were removed:
   reverse reifications and the order chain, independent of the root covering.
   They stay in the suite as composed end-to-end regression nets.
 - **Observation, not a proposal**: the root covering (§3.4) appears
-  forward-UP-redundant given the bound-axiom units, the reverse reifications,
+  UP-redundant given the bound-axiom units, the reverse reifications,
   and the Inv1 chain (the walk derives both wipeout and the positive "last
   surviving piece"). Per the change protocol this is recorded for review, not
   acted on — the W1 result above is exactly why such an analysis is not
@@ -402,7 +410,7 @@ Each entry: the claim, why it looked right, what catches it now.
    (Stage 0). Looked right: a falsification matrix of *derivations* all
    passed — P1 only. Caught by: W4 (containment), W2/W3/W5 (covering).
 2. **"Containment yes, covering unnecessary — the chain gives those
-   deductions"** (Phase A). True for RUP-derivability, false for forward UP.
+   deductions"** (Phase A). True for RUP-derivability, false for UP.
    Caught by: W2, W3.
 3. **"A range removal is one RUP line, per-value facts follow free"**
    (early Stage 3). False across bit-sum equalities; needs the 2.9 bridge

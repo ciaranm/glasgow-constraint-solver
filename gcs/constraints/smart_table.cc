@@ -40,7 +40,6 @@ using std::tuple;
 using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
-using std::visit;
 using std::ranges::copy_if;
 using std::ranges::set_difference;
 using std::ranges::set_intersection;

@@ -9,13 +9,12 @@
 using namespace gcs;
 using std::vector;
 
-// Witness W3 (dev_docs/range_literals_spec.md §8): union coverage. b's combined
+// Witness W3 (see dev_docs/range_literals_spec.md): union coverage. b's combined
 // hole [1,6] is concluded as two separate interval facts (~[b in 1..3] at root from
 // In, ~[b in 4..6] from Equals(a,b)), but Equals(b,c)'s pruning reason names the
 // union literal ~[b in 1..6]. Containment edges point the wrong way for this; only
-// the covering emitted when [1,6] is minted as a union of adjacent cells lets the
-// backtrack replay falsify it by unit propagation. This is the partition invariant
-// (spec §3) earning its keep.
+// the covering emitted when [1,6] is defined as a union of adjacent cells lets the
+// backtrack replay falsify it by unit propagation.
 namespace
 {
     auto scripted_neq_then_eq_zero(IntegerVariableID var) -> BranchCallback

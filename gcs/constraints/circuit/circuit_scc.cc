@@ -42,7 +42,6 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-using std::visit;
 
 using namespace gcs;
 using namespace gcs::innards;
