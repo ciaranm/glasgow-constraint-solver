@@ -27,6 +27,13 @@ namespace gcs::innards
      * Intervals are always maintained in sorted order with no two intervals touching
      * or overlapping.
      *
+     * The each*() iteration methods return generators that borrow the set's
+     * internal storage: the set (and, for each_interval_minus(), the \p other
+     * set too) must outlive the generator, and must not be modified while the
+     * generator is live. To modify a set based upon what an iteration finds,
+     * either iterate over a copy, or build a new set and move-assign it
+     * afterwards.
+     *
      * \tparam Int_ The integer type used for values and bounds. Must support arithmetic
      * and comparison operators, and construction from a literal zero or one.
      *
@@ -361,6 +368,9 @@ namespace gcs::innards
         /**
          * \brief Returns a generator that yields each value in the set in ascending order.
          *
+         * The generator borrows this set, which must outlive it and must not be
+         * modified while iterating; see the class documentation.
+         *
          * \sa each_reversed(), each_interval()
          */
         [[nodiscard]] auto each() const -> std::generator<Int_>
@@ -375,6 +385,9 @@ namespace gcs::innards
         /**
          * \brief Returns a generator that yields each stored interval as a
          * (lower, upper) pair, in ascending order.
+         *
+         * The generator borrows this set, which must outlive it and must not be
+         * modified while iterating; see the class documentation.
          *
          * \sa each(), each_gap_interval()
          */
@@ -391,6 +404,9 @@ namespace gcs::innards
          * and upper() that is not a member of the set, in ascending order.
          *
          * An empty or single-interval set has no gaps and yields nothing.
+         *
+         * The generator borrows this set, which must outlive it and must not be
+         * modified while iterating; see the class documentation.
          *
          * \sa each_gap_interval(), has_holes()
          */
@@ -417,6 +433,9 @@ namespace gcs::innards
          * each_gap(), which iterates <code>i = a; i != b; ++i</code>.
          *
          * An empty or single-interval set has no gaps and yields nothing.
+         *
+         * The generator borrows this set, which must outlive it and must not be
+         * modified while iterating; see the class documentation.
          *
          * \sa each_gap(), has_holes()
          */
@@ -450,11 +469,15 @@ namespace gcs::innards
          * yielded intervals can be expanded to per-value via a nested loop, or
          * later passed wholesale to an interval-level inference primitive.
          *
+         * The generator borrows both this set and \p other, which must outlive
+         * it and must not be modified while iterating; see the class
+         * documentation.
+         *
          * \sa each_interval(), each_gap_interval()
          */
         [[nodiscard]] auto each_interval_minus(const IntervalSet & other) const -> std::generator<std::pair<Int_, Int_>>
         {
-            return [](Intervals self_intervals, Intervals other_intervals) -> std::generator<std::pair<Int_, Int_>> {
+            return [](const Intervals & self_intervals, const Intervals & other_intervals) -> std::generator<std::pair<Int_, Int_>> {
                 auto j = other_intervals.begin();
                 for (auto i = self_intervals.begin(); i != self_intervals.end(); ++i) {
                     Int_ cur = i->first;
@@ -476,6 +499,9 @@ namespace gcs::innards
 
         /**
          * \brief Returns a generator that yields each value in the set in descending order.
+         *
+         * The generator borrows this set, which must outlive it and must not be
+         * modified while iterating; see the class documentation.
          *
          * \sa each()
          */
