@@ -170,7 +170,7 @@ Manually Solving a Constraint Optimisation Problem
 
 Let's start by <a
 href="https://www.minizinc.org/doc-2.5.5/en/modelling.html#an-arithmetic-optimisation-example">making
-some cakes</a>. This example is a cut-down version of ``examples/cake/cake.cc``. We start by
+some cakes</a>. This example is based upon ``examples/cake/cake.cc``. We start by
 including the header file and namespace,
 
 ```cpp
@@ -178,6 +178,10 @@ including the header file and namespace,
 
 using namespace gcs;
 ```
+
+Here ``<gcs/gcs.hh>`` is a convenience header that pulls in the entire public API. The programs in
+the ``examples/`` directory instead use granular includes, such as ``<gcs/problem.hh>`` and
+``<gcs/solve.hh>``; either style works.
 
 Now, we need a `Problem` instance. A constraint satisfaction problem consists of a number of
 variables, each of which has a domain of possible values, together with a set of constraints which
@@ -209,7 +213,7 @@ similar restrictions. Here we are making use of some convenience overloads; we c
 verbose, and have written these constraints like:
 
 ```cpp
-p.post(LinearLessEqual{WeightedSum{{{250_i, banana}, {200_i, chocolate}}}, 4000_i});
+p.post(LinearLessThanEqual{WeightedSum{{{250_i, banana}, {200_i, chocolate}}}, 4000_i});
 ```
 
 Next, we need to define our profit variable, which we want to maximise because capitalism. If we get
@@ -261,8 +265,8 @@ solve_with(p,
 The ``examples/`` directory contains example programs that show how to use the solver as a program
 author. It is probably best to start with ``examples/cake/cake.cc`` for a complete version of this
 example, ``examples/crystal_maze/crystal_maze.cc`` and ``examples/sudoku/sudoku.cc`` for everyone's
-favourite first two constraint programming problems, and ``examples/magic_square/magic_square.cc``
-for some magic.
+favourite first two constraint programming problems, and ``examples/money/money.cc`` for sending
+more money.
 
 Proof Logging
 -------------

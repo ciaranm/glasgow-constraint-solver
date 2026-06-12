@@ -124,8 +124,6 @@ auto main(int argc, char * argv[]) -> int
     }
 
     std::mt19937 rng(seed);
-    // cout << "Seed for random DFAs for Regular: " << seed << endl;
-    //    mt19937 rng(0); // Switch to this to have it the same every time.
     auto p = Problem{};
     post_random_regular(p, n, rng, short_reasons);
 

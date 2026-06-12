@@ -144,7 +144,7 @@ This is a C++23 constraint programming solver with a key focus on **proof loggin
 - `gcs/current_state.hh` — `CurrentState`: read-only view of variable values in solution callbacks
 - `gcs/integer.hh` — `Integer` type wrapper (use `0_i`, `100_i` literals)
 - `gcs/variable_id.hh` — `IntegerVariableID` and related lightweight handle types
-- `gcs/constraints/` — all user-facing constraint types (e.g. `LinearLessEqual`, `AllDifferent`, `Table`, etc.)
+- `gcs/constraints/` — all user-facing constraint types (e.g. `LinearLessThanEqual`, `AllDifferent`, `Table`, etc.)
 - `gcs/gcs.hh` — convenience header including the full public API
 
 ### Innards (`gcs/innards/`)
