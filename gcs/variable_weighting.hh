@@ -251,11 +251,11 @@ namespace gcs
      * On a conflict of constraint c, for each still-unassigned variable x of c the
      * local weight w(c)[x] (initialised to 1) is incremented by a Variant-chosen
      * amount:
-     *   - Ia (initial arity):  1 / |scp(c)|
-     *   - Ca (current arity):  1 / |fut(c)|
-     *   - Id (initial domain): 1 / |dom_init(x)|
-     *   - Cd (current domain): 1 / (1 + |dom(x)|)
-     *   - CaCd (the default, the strongest in their study):
+     *   - InitialArity:  1 / |scp(c)|
+     *   - CurrentArity:  1 / |fut(c)|
+     *   - InitialDomain: 1 / |dom_init(x)|
+     *   - CurrentDomain: 1 / (1 + |dom(x)|)
+     *   - CurrentArityCurrentDomain (the default, the strongest in their study):
      *         1 / (|fut(c)| * (1 + |dom(x)|))
      * weighted_degree_of(x) sums w(c)[x] over x's constraints with at least two
      * unassigned variables, so at the root (all weights 1) it equals the degree.
@@ -270,11 +270,11 @@ namespace gcs
          */
         enum class Variant
         {
-            Ia,
-            Ca,
-            Id,
-            Cd,
-            CaCd
+            InitialArity,
+            CurrentArity,
+            InitialDomain,
+            CurrentDomain,
+            CurrentArityCurrentDomain
         };
 
         RefinedWeighting(const innards::Propagators & propagators, const innards::State & state, Variant variant);
@@ -295,7 +295,7 @@ namespace gcs
         Variant _variant;
         // Local weights by constraint index, then variable index; an absent entry
         // means the default weight of 1. Initial domain sizes by variable index,
-        // for the Id variant.
+        // for the InitialDomain variant.
         std::vector<std::unordered_map<unsigned long long, double>> _local_weights;
         std::unordered_map<unsigned long long, long long> _initial_domain;
     };
@@ -307,13 +307,13 @@ namespace gcs
      */
     enum class WeightingScheme
     {
-        Classic, ///< ClassicDomWDeg
-        Ia,      ///< RefinedWeighting, initial-arity increment
-        Ca,      ///< RefinedWeighting, current-arity increment
-        Id,      ///< RefinedWeighting, initial-domain increment
-        Cd,      ///< RefinedWeighting, current-domain increment
-        CaCd,    ///< RefinedWeighting, ca.cd increment
-        ConflictHistorySearch ///< ConflictHistorySearch (recency-weighted)
+        Classic,                   ///< ClassicDomWDeg
+        InitialArity,              ///< RefinedWeighting, initial-arity increment
+        CurrentArity,              ///< RefinedWeighting, current-arity increment
+        InitialDomain,             ///< RefinedWeighting, initial-domain increment
+        CurrentDomain,             ///< RefinedWeighting, current-domain increment
+        CurrentArityCurrentDomain, ///< RefinedWeighting, ca.cd increment
+        ConflictHistorySearch      ///< ConflictHistorySearch (recency-weighted)
     };
 }
 

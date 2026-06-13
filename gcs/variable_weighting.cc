@@ -216,7 +216,7 @@ RefinedWeighting::RefinedWeighting(const Propagators & propagators, const State 
     _local_weights(propagators.number_of_constraints())
 {
     // Capture the initial domain size of every variable in a constraint scope,
-    // for the Id variant.
+    // for the InitialDomain variant.
     for (size_t c = 0; c < propagators.number_of_constraints(); ++c)
         for (const auto & v : propagators.scope_of_constraint(static_cast<int>(c)))
             _initial_domain.try_emplace(v.index, state.domain_size(v).raw_value);
@@ -239,19 +239,19 @@ auto RefinedWeighting::note_conflict(int constraint_index, const vector<SimpleIn
         double increment = 0.0;
         switch (_variant) {
             using enum Variant;
-        case Ia:
+        case InitialArity:
             increment = 1.0 / static_cast<double>(scope.size());
             break;
-        case Ca:
+        case CurrentArity:
             increment = 1.0 / static_cast<double>(futures);
             break;
-        case Id:
+        case InitialDomain:
             increment = 1.0 / static_cast<double>(_initial_domain.at(x.index));
             break;
-        case Cd:
+        case CurrentDomain:
             increment = 1.0 / (1.0 + static_cast<double>(state.domain_size(x).raw_value));
             break;
-        case CaCd:
+        case CurrentArityCurrentDomain:
             increment = 1.0 / (static_cast<double>(futures) * (1.0 + static_cast<double>(state.domain_size(x).raw_value)));
             break;
         }
