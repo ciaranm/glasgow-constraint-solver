@@ -49,6 +49,19 @@ namespace gcs::innards
             const std::vector<SimpleIntegerVariableID> & scope,
             const std::optional<ReasonFunction> & reason,
             const State & state) -> void = 0;
+
+        /**
+         * \brief Called by the search at each restart boundary, so a weighting
+         * scheme can decay or smooth its scores.
+         *
+         * This is how solve_with() reaches the live weighting (which it does not
+         * own) to signal a restart: the weighting is attached here as the
+         * conflict observer, so the restart hook rides the same seam. The default
+         * does nothing; VariableWeighting forwards to its scheme.
+         */
+        virtual auto on_restart() -> void
+        {
+        }
     };
 }
 
