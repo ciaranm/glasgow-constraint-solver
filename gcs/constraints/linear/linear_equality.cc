@@ -307,82 +307,85 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 add_trigger_for(triggers, reif.cond);
 
                 visit([&, modifier = modifier](const auto & sanitised_cv) {
-                    propagators.install(constraint_id(), [sanitised_cv = sanitised_cv, value = _value + modifier, cond = _reif_cond, proof_line = _proof_line, all_vars = move(all_vars)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState { return overloaded{
-                                                                                                                                                                                                                                                                                      [&](const evaluated_reif::MustHold & reif) {
-                                                                                                                                                                                                                                                                                          // we now know the condition definitely holds, so it's a linear equality
-                                                                                                                                                                                                                                                                                          return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond);
-                                                                                                                                                                                                                                                                                      },
+                    propagators.install(constraint_id(), [sanitised_cv = sanitised_cv, value = _value + modifier, cond = _reif_cond, proof_line = _proof_line, all_vars = move(all_vars)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState { // This comment is needed to stop clang-format exploding
+                        return overloaded{
+                            [&](const evaluated_reif::MustHold & reif) {
+                                // we now know the condition definitely holds, so it's a linear equality
+                                return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond);
+                            },
 
-                                                                                                                                                                                                                                                                                      [&](const evaluated_reif::MustNotHold &) {
-                                                                                                                                                                                                                                                                                          // we now know the condition definitely doesn't hold, so it's a linear not-equals
-                                                                                                                                                                                                                                                                                          return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger, all_vars);
-                                                                                                                                                                                                                                                                                      },
+                            [&](const evaluated_reif::MustNotHold &) {
+                                // we now know the condition definitely doesn't hold, so it's a linear not-equals
+                                return propagate_linear_not_equals(sanitised_cv, value, state, inference, logger, all_vars);
+                            },
 
-                                                                                                                                                                                                                                                                                      [](const evaluated_reif::Deactivated &) {
-                                                                                                                                                                                                                                                                                          return PropagatorState::DisableUntilBacktrack;
-                                                                                                                                                                                                                                                                                      },
+                            [](const evaluated_reif::Deactivated &) {
+                                return PropagatorState::DisableUntilBacktrack;
+                            },
 
-                                                                                                                                                                                                                                                                                      [&](const evaluated_reif::Undecided & reif) {
-                                                                                                                                                                                                                                                                                          // we still don't know whether the condition holds. if we're down to a single unassigned
-                                                                                                                                                                                                                                                                                          // variable, we might have some information.
-                                                                                                                                                                                                                                                                                          auto single_unset = sanitised_cv.terms.end();
-                                                                                                                                                                                                                                                                                          Integer accum = 0_i;
-                                                                                                                                                                                                                                                                                          for (auto i = sanitised_cv.terms.begin(), i_end = sanitised_cv.terms.end(); i != i_end; ++i) {
-                                                                                                                                                                                                                                                                                              auto val = state.optional_single_value(get_var(*i));
-                                                                                                                                                                                                                                                                                              if (val)
-                                                                                                                                                                                                                                                                                                  accum += get_coeff(*i) * *val;
-                                                                                                                                                                                                                                                                                              else {
-                                                                                                                                                                                                                                                                                                  if (single_unset != sanitised_cv.terms.end()) {
-                                                                                                                                                                                                                                                                                                      // at least two unset variables, do nothing for now
-                                                                                                                                                                                                                                                                                                      return PropagatorState::Enable;
-                                                                                                                                                                                                                                                                                                  }
-                                                                                                                                                                                                                                                                                                  else
-                                                                                                                                                                                                                                                                                                      single_unset = i;
-                                                                                                                                                                                                                                                                                              }
-                                                                                                                                                                                                                                                                                          }
+                            [&](const evaluated_reif::Undecided & reif) {
+                                // we still don't know whether the condition holds. if we're down to a single unassigned
+                                // variable, we might have some information.
+                                auto single_unset = sanitised_cv.terms.end();
+                                Integer accum = 0_i;
+                                for (auto i = sanitised_cv.terms.begin(), i_end = sanitised_cv.terms.end(); i != i_end; ++i) {
+                                    auto val = state.optional_single_value(get_var(*i));
+                                    if (val)
+                                        accum += get_coeff(*i) * *val;
+                                    else {
+                                        if (single_unset != sanitised_cv.terms.end()) {
+                                            // at least two unset variables, do nothing for now
+                                            return PropagatorState::Enable;
+                                        }
+                                        else
+                                            single_unset = i;
+                                    }
+                                }
 
-                                                                                                                                                                                                                                                                                          if (single_unset == sanitised_cv.terms.end()) {
-                                                                                                                                                                                                                                                                                              // every variable is assigned, so we know what the condition must be (if we're fully
-                                                                                                                                                                                                                                                                                              // reified)
-                                                                                                                                                                                                                                                                                              if (accum == value) {
-                                                                                                                                                                                                                                                                                                  if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
-                                                                                                                                                                                                                                                                                                      inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
-                                                                                                                                                                                                                                                                                                  return PropagatorState::DisableUntilBacktrack;
-                                                                                                                                                                                                                                                                                              }
-                                                                                                                                                                                                                                                                                              else {
-                                                                                                                                                                                                                                                                                                  if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                                                                                                                                                                                                                                                                                      inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
-                                                                                                                                                                                                                                                                                                  return PropagatorState::DisableUntilBacktrack;
-                                                                                                                                                                                                                                                                                              }
-                                                                                                                                                                                                                                                                                          }
-                                                                                                                                                                                                                                                                                          else {
-                                                                                                                                                                                                                                                                                              // exactly one thing remaining. perhaps the value that would make the equality
-                                                                                                                                                                                                                                                                                              // work doesn't occur in its domain?
-                                                                                                                                                                                                                                                                                              Integer residual = value - accum;
-                                                                                                                                                                                                                                                                                              if (0_i == residual % get_coeff(*single_unset)) {
-                                                                                                                                                                                                                                                                                                  Integer would_make_equal = residual / get_coeff(*single_unset);
-                                                                                                                                                                                                                                                                                                  if (! state.in_domain(get_var(*single_unset), would_make_equal)) {
-                                                                                                                                                                                                                                                                                                      // no way for the remaining variable to take that value, so the condition
-                                                                                                                                                                                                                                                                                                      // has to be false
-                                                                                                                                                                                                                                                                                                      if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                                                                                                                                                                                                                                                                                          inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
-                                                                                                                                                                                                                                                                                                      return PropagatorState::DisableUntilBacktrack;
-                                                                                                                                                                                                                                                                                                  }
-                                                                                                                                                                                                                                                                                                  else {
-                                                                                                                                                                                                                                                                                                      // could go either way, but this might change as more values are lost
-                                                                                                                                                                                                                                                                                                      return PropagatorState::Enable;
-                                                                                                                                                                                                                                                                                                  }
-                                                                                                                                                                                                                                                                                              }
-                                                                                                                                                                                                                                                                                              else {
-                                                                                                                                                                                                                                                                                                  // the value that would make the equality work isn't an integer, so the condition
-                                                                                                                                                                                                                                                                                                  // has to be false
-                                                                                                                                                                                                                                                                                                  if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                                                                                                                                                                                                                                                                                      inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
-                                                                                                                                                                                                                                                                                                  return PropagatorState::DisableUntilBacktrack;
-                                                                                                                                                                                                                                                                                              }
-                                                                                                                                                                                                                                                                                          }
-                                                                                                                                                                                                                                                                                      }}
-                                                                                                                                                                                                                                                                                      .visit(test_reification_condition(state, cond)); }, triggers);
+                                if (single_unset == sanitised_cv.terms.end()) {
+                                    // every variable is assigned, so we know what the condition must be (if we're fully
+                                    // reified)
+                                    if (accum == value) {
+                                        if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
+                                            inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                        return PropagatorState::DisableUntilBacktrack;
+                                    }
+                                    else {
+                                        if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
+                                            inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                        return PropagatorState::DisableUntilBacktrack;
+                                    }
+                                }
+                                else {
+                                    // exactly one thing remaining. perhaps the value that would make the equality
+                                    // work doesn't occur in its domain?
+                                    Integer residual = value - accum;
+                                    if (0_i == residual % get_coeff(*single_unset)) {
+                                        Integer would_make_equal = residual / get_coeff(*single_unset);
+                                        if (! state.in_domain(get_var(*single_unset), would_make_equal)) {
+                                            // no way for the remaining variable to take that value, so the condition
+                                            // has to be false
+                                            if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
+                                                inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                            return PropagatorState::DisableUntilBacktrack;
+                                        }
+                                        else {
+                                            // could go either way, but this might change as more values are lost
+                                            return PropagatorState::Enable;
+                                        }
+                                    }
+                                    else {
+                                        // the value that would make the equality work isn't an integer, so the condition
+                                        // has to be false
+                                        if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
+                                            inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars));
+                                        return PropagatorState::DisableUntilBacktrack;
+                                    }
+                                }
+                            }}
+                            .visit(test_reification_condition(state, cond));
+                    },
+                        triggers);
                 },
                     sanitised_cv);
             }}
