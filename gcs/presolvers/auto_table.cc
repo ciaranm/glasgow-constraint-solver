@@ -31,13 +31,14 @@ namespace
 {
     auto solve_subproblem(unsigned depth, SimpleTuples & tuples, const vector<IntegerVariableID> & vars,
         Propagators & propagators, State & state, const optional<Literal> & this_branch_guess,
+        const BranchCallback & branch_callback,
         ProofLogger * const logger, SimpleIntegerVariableID selector_var_id) -> void
     {
         if (logger)
             logger->enter_proof_level(depth + 1);
 
         if (propagators.propagate(this_branch_guess, state, logger)) {
-            auto brancher = branch_with(variable_order::dom_then_deg(vars), value_order::smallest_first())(state.current(), propagators);
+            auto brancher = branch_callback(state.current(), propagators);
             auto branch_iter = brancher.begin();
             if (branch_iter == brancher.end()) {
                 vector<Integer> tuple;
@@ -73,7 +74,7 @@ namespace
                     auto timestamp = state.new_epoch();
                     auto branch = *branch_iter;
                     state.guess(branch);
-                    solve_subproblem(depth + 1, tuples, vars, propagators, state, branch, logger, selector_var_id);
+                    solve_subproblem(depth + 1, tuples, vars, propagators, state, branch, branch_callback, logger, selector_var_id);
                     state.backtrack(timestamp);
                 }
             }
@@ -90,9 +91,13 @@ namespace
     }
 }
 
-auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state, ProofLogger * const logger) -> bool
+auto AutoTable::run(Problem & problem, Propagators & propagators, State & initial_state, ProofLogger * const logger) -> bool
 {
     SimpleTuples tuples;
+
+    // dom_then_deg is stateless, so its setup is a no-op; build the per-node
+    // callback once and reuse it down the subproblem recursion.
+    auto branch_callback = branch_with(variable_order::dom_then_deg(_vars), value_order::smallest_first())(problem, initial_state, propagators);
 
     auto timestamp = initial_state.new_epoch(true);
     initial_state.guess(TrueLiteral{});
@@ -100,7 +105,7 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
     auto selector_var_id = initial_state.what_variable_id_will_be_created_next();
     if (logger)
         logger->emit_proof_comment("starting autotabulation");
-    solve_subproblem(0, tuples, _vars, propagators, initial_state, nullopt, logger, selector_var_id);
+    solve_subproblem(0, tuples, _vars, propagators, initial_state, nullopt, branch_callback, logger, selector_var_id);
 
     if (logger)
         logger->emit_proof_comment("creating autotable with " + to_string(tuples.size()) + " entries");

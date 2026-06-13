@@ -32,6 +32,7 @@ namespace
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem,
         Propagators & propagators, State & state, const optional<Literal> & this_branch_guess,
         SolveCallbacks & callbacks,
+        const BranchCallback & branch_callback,
         ProofLogger * const logger,
         bool & this_subtree_contains_solution,
         Integer & number_of_solutions,
@@ -54,10 +55,7 @@ namespace
             if (optional_abort_flag && optional_abort_flag->load())
                 return false;
 
-            auto create_branch_generator = callbacks.branch
-                ? callbacks.branch
-                : branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
-            auto branch_generator = create_branch_generator(state.current(), propagators);
+            auto branch_generator = branch_callback(state.current(), propagators);
             auto branch_iter = branch_generator.begin();
 
             if (branch_iter == branch_generator.end()) {
@@ -93,7 +91,7 @@ namespace
                     state.guess(guess);
                     bool child_contains_solution = false;
                     if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess,
-                            callbacks, logger, child_contains_solution, number_of_solutions, objective_value, optional_abort_flag))
+                            callbacks, branch_callback, logger, child_contains_solution, number_of_solutions, objective_value, optional_abort_flag))
                         result = false;
 
                     if (child_contains_solution)
@@ -179,7 +177,18 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
         bool child_contains_solution = false;
         Integer number_of_solutions = 0_i;
         optional<Integer> objective_value = nullopt;
-        if (solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, optional_proof ? optional_proof->logger() : nullptr,
+
+        // Run the branching heuristic's per-search setup once, now that
+        // propagators (and any presolver-added constraints) are final, so a
+        // stateful heuristic sizes and attaches itself correctly; the resulting
+        // per-node BranchCallback is reused throughout the search.
+        auto branch_heuristic = callbacks.branch
+            ? callbacks.branch
+            : branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
+        auto branch_callback = branch_heuristic(problem, state, propagators);
+
+        if (solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, branch_callback,
+                optional_proof ? optional_proof->logger() : nullptr,
                 child_contains_solution, number_of_solutions, objective_value, optional_abort_flag)) {
             if (optional_proof) {
                 if (problem.optional_minimise_variable()) {
