@@ -212,8 +212,10 @@ auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, WeightingSche
         case Classic:
             weighting = make_shared<ClassicDomWDeg>(propagators);
             break;
-        case Chs:
-            weighting = make_shared<ConflictHistorySearch>(propagators);
+        case ConflictHistorySearch:
+            // Qualified: the WeightingScheme::ConflictHistorySearch enumerator
+            // (via using enum) otherwise shadows the class of the same name.
+            weighting = make_shared<gcs::ConflictHistorySearch>(propagators);
             break;
         }
         if (initial)

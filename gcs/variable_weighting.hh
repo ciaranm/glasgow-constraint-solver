@@ -227,8 +227,8 @@ namespace gcs
      */
     enum class WeightingScheme
     {
-        Classic, ///< ClassicDomWDeg
-        Chs      ///< ConflictHistorySearch
+        Classic,              ///< ClassicDomWDeg
+        ConflictHistorySearch ///< ConflictHistorySearch (recency-weighted)
     };
 }
 
