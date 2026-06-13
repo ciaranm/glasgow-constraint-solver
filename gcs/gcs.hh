@@ -42,6 +42,7 @@
 #include <gcs/constraints/minus.hh>
 #include <gcs/constraints/mult_bc.hh>
 #include <gcs/constraints/n_value.hh>
+#include <gcs/constraints/nogoods.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/regular.hh>
