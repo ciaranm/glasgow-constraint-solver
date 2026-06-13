@@ -1,4 +1,5 @@
 #include <gcs/exception.hh>
+#include <gcs/innards/conflict_observer.hh>
 #include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -84,6 +85,11 @@ struct Propagators::Imp
     // install(), used by a conflict observer / weighted-degree heuristic.
     vector<vector<SimpleIntegerVariableID>> propagator_scope;
     vector<vector<int>> var_constraint_indices;
+
+    // A borrowed conflict observer, notified when a propagator wipes out a
+    // domain (see propagate). Set once at search start via set_conflict_observer;
+    // the caller owns it. nullptr when there is no observer.
+    ConflictObserver * conflict_observer = nullptr;
 };
 
 Propagators::Propagators() :
@@ -307,6 +313,13 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         catch (const TrackedPropagationFailed &) {
             contradiction = true;
             ++_imp->contradicting_propagations;
+            // Exactly one propagator contradiction ends each propagate(), so this
+            // fires at most once per call. Non-propagator contradiction paths
+            // (initialisers, the objective bound) never reach here, so they are
+            // not attributed to any constraint.
+            if (_imp->conflict_observer)
+                _imp->conflict_observer->note_conflict(_imp->propagator_constraint_index[propagator_id],
+                    _imp->propagator_scope[propagator_id], tracker.last_contradiction_reason(), state);
         }
 
         if (contradiction || (optional_abort_flag && optional_abort_flag->load()))
@@ -439,4 +452,14 @@ auto Propagators::constraint_indices_of_variable(SimpleIntegerVariableID var) co
         return none;
     }
     return _imp->var_constraint_indices[var.index];
+}
+
+auto Propagators::set_conflict_observer(ConflictObserver * observer) -> void
+{
+    _imp->conflict_observer = observer;
+}
+
+auto Propagators::conflict_observer() const -> ConflictObserver *
+{
+    return _imp->conflict_observer;
 }

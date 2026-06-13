@@ -20,6 +20,8 @@
 
 namespace gcs::innards
 {
+    class ConflictObserver;
+
     class PropagationFunctionImplBase
     {
     public:
@@ -333,6 +335,33 @@ namespace gcs::innards
          * constraint — the adjacency a weighted-degree heuristic sums over.
          */
         [[nodiscard]] auto constraint_indices_of_variable(SimpleIntegerVariableID) const -> const std::vector<int> &;
+
+        ///@}
+
+        /**
+         * \name Conflict observation
+         */
+        ///@{
+
+        /**
+         * Attach a borrowed conflict observer, notified by propagate() whenever
+         * a propagator wipes out a domain. The observer is borrowed: the caller
+         * owns it and must keep it alive for the duration of the search. Pass
+         * nullptr to detach. A conflict is a Propagators event (it carries the
+         * failing constraint's index, scope, and reason, all from here), so the
+         * observer lives with the rest of the conflict-observation machinery
+         * rather than on State.
+         *
+         * \sa ConflictObserver
+         */
+        auto set_conflict_observer(ConflictObserver * observer) -> void;
+
+        /**
+         * The conflict observer currently attached, or nullptr if none.
+         *
+         * \sa Propagators::set_conflict_observer()
+         */
+        [[nodiscard]] auto conflict_observer() const -> ConflictObserver *;
 
         ///@}
     };
