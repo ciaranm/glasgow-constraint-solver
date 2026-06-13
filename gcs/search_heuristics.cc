@@ -205,12 +205,27 @@ auto gcs::variable_order::dom_wdeg(const Problem & problem, WeightingScheme sche
 auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, WeightingScheme scheme, optional<WeightingState> initial) -> BranchVariableHeuristic
 {
     return [vars = move(vars), scheme, initial = move(initial)](
-               const Problem &, innards::State &, innards::Propagators & propagators) -> BranchVariableSelector {
+               const Problem &, innards::State & state, innards::Propagators & propagators) -> BranchVariableSelector {
         shared_ptr<VariableWeighting> weighting;
         switch (scheme) {
             using enum WeightingScheme;
         case Classic:
             weighting = make_shared<ClassicDomWDeg>(propagators);
+            break;
+        case Ia:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::Ia);
+            break;
+        case Ca:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::Ca);
+            break;
+        case Id:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::Id);
+            break;
+        case Cd:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::Cd);
+            break;
+        case CaCd:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::CaCd);
             break;
         case ConflictHistorySearch:
             // Qualified: the WeightingScheme::ConflictHistorySearch enumerator
