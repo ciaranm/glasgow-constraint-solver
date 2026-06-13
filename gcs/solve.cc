@@ -29,6 +29,22 @@ using std::chrono::steady_clock;
 
 namespace
 {
+    /**
+     * How a (sub)tree exploration finished, so the caller knows how to unwind.
+     * Complete: the subtree was fully explored; carry on with siblings/parent.
+     * Stop: stop the whole search (abort flag, or a callback returned false) ---
+     * the proof is abandoned, so we return immediately without balancing levels.
+     * RestartCutoffHit is unused here and is produced once the restart loop lands;
+     * unlike Stop it must unwind through the normal backtrack/forget logging so
+     * the proof stays balanced for the restart that follows.
+     */
+    enum class SearchResult
+    {
+        Complete,
+        Stop,
+        RestartCutoffHit
+    };
+
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem,
         Propagators & propagators, State & state, const optional<Literal> & this_branch_guess,
         SolveCallbacks & callbacks,
@@ -37,7 +53,7 @@ namespace
         bool & this_subtree_contains_solution,
         Integer & number_of_solutions,
         optional<Integer> & objective_value,
-        atomic<bool> * optional_abort_flag) -> bool
+        atomic<bool> * optional_abort_flag) -> SearchResult
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -53,7 +69,7 @@ namespace
 
         if ((! objective_failure) && propagators.propagate(this_branch_guess, state, logger, optional_abort_flag)) {
             if (optional_abort_flag && optional_abort_flag->load())
-                return false;
+                return SearchResult::Stop;
 
             auto branch_generator = branch_callback(state.current(), propagators);
             auto branch_iter = branch_generator.begin();
@@ -73,26 +89,24 @@ namespace
                 ++number_of_solutions;
                 this_subtree_contains_solution = true;
                 if (callbacks.solution && ! callbacks.solution(state.current()))
-                    return false;
+                    return SearchResult::Stop;
             }
             else {
                 if (callbacks.trace && ! callbacks.trace(state.current()))
-                    return false;
+                    return SearchResult::Stop;
 
                 if (optional_abort_flag && optional_abort_flag->load())
-                    return false;
+                    return SearchResult::Stop;
 
-                auto recurse = [&](const Literal & guess) -> bool {
+                auto recurse = [&](const Literal & guess) -> SearchResult {
                     if (optional_abort_flag && optional_abort_flag->load())
-                        return false;
+                        return SearchResult::Stop;
 
-                    auto result = true;
                     auto timestamp = state.new_epoch();
                     state.guess(guess);
                     bool child_contains_solution = false;
-                    if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess,
-                            callbacks, branch_callback, logger, child_contains_solution, number_of_solutions, objective_value, optional_abort_flag))
-                        result = false;
+                    auto result = solve_with_state(depth + 1, stats, problem, propagators, state, guess,
+                        callbacks, branch_callback, logger, child_contains_solution, number_of_solutions, objective_value, optional_abort_flag);
 
                     if (child_contains_solution)
                         this_subtree_contains_solution = true;
@@ -105,8 +119,8 @@ namespace
 
                 for (; branch_iter != branch_generator.end(); ++branch_iter) {
                     auto guess = *branch_iter;
-                    if (! recurse(guess))
-                        return false;
+                    if (auto result = recurse(guess); result != SearchResult::Complete)
+                        return result;
                 }
             }
         }
@@ -120,7 +134,7 @@ namespace
             logger->forget_proof_level(depth + 1);
         }
 
-        return true;
+        return SearchResult::Complete;
     }
 }
 
@@ -187,9 +201,11 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
             : branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
         auto branch_callback = branch_heuristic(problem, state, propagators);
 
-        if (solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, branch_callback,
-                optional_proof ? optional_proof->logger() : nullptr,
-                child_contains_solution, number_of_solutions, objective_value, optional_abort_flag)) {
+        auto search_result = solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, branch_callback,
+            optional_proof ? optional_proof->logger() : nullptr,
+            child_contains_solution, number_of_solutions, objective_value, optional_abort_flag);
+
+        if (search_result == SearchResult::Complete) {
             if (optional_proof) {
                 if (problem.optional_minimise_variable()) {
                     if (objective_value)
