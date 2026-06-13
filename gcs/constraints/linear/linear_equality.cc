@@ -95,7 +95,7 @@ namespace
 
                 if (match) {
                     permitted.emplace_back(current.begin(), current.end());
-                    if (logger) {
+                    if (logger && ! logger->using_assertions()) {
                         Integer sel_value(permitted.size() - 1);
                         logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(future_var_id, sel_value, "lineq");
                         trail += 1_i * (future_var_id == sel_value);
@@ -125,7 +125,7 @@ namespace
                 }
             }
 
-            if (logger) {
+            if (logger && ! logger->using_assertions()) {
                 WPBSum backtrack = trail;
                 for (const auto & [idx, val] : enumerate(current))
                     backtrack += 1_i * (get_var(coeff_vars.terms[idx]) != val);
@@ -134,7 +134,7 @@ namespace
             }
         };
 
-        if (logger)
+        if (logger && ! logger->using_assertions())
             logger->emit_proof_comment("building GAC table for linear equality");
         search(logger);
 
@@ -270,7 +270,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
 
                 visit(
                     [&, modifier = modifier](const auto & lin) {
-                        propagators.install(constraint_id(), [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond](const State & state, auto & inference, ProofLogger * const logger) { return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond); }, triggers);
+                        propagators.install(constraint_id(), [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond](const State & state, auto & inference, ProofLogger * const logger) { return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedLinearEquality}); }, triggers);
                     },
                     sanitised_cv);
             },
@@ -313,7 +313,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                         return overloaded{
                             [&](const evaluated_reif::MustHold & reif) {
                                 // we now know the condition definitely holds, so it's a linear equality
-                                return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond);
+                                return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedLinearEquality});
                             },
 
                             [&](const evaluated_reif::MustNotHold &) {

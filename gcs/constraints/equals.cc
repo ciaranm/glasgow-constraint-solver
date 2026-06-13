@@ -282,35 +282,38 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         if (v1 == v2 && ! is_constant_variable(v1))
             return reification_verdict::MustHold{
                 .justification = JustifyUsingRUP{},
-                .reason = ReasonFunction{}};
+                .reason = ReasonFunction{},
+                .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
             auto reason = ReasonFunction{[=]() { return Reason{v1 == *value1, v2 == *value2}; }};
             if (*value1 == *value2)
-                return reification_verdict::MustHold{.justification = JustifyUsingRUP{}, .reason = reason};
+                return reification_verdict::MustHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             else
-                return reification_verdict::MustNotHold{.justification = JustifyUsingRUP{}, .reason = reason};
+                return reification_verdict::MustNotHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
         }
         else if (value1) {
             if (! state.in_domain(v2, *value1))
                 return reification_verdict::MustNotHold{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return Reason{v1 == *value1, v2 != *value1}; }}};
+                    .reason = ReasonFunction{[=]() { return Reason{v1 == *value1, v2 != *value1}; }},
+                    .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             return reification_verdict::StillUndecided{};
         }
         else if (value2) {
             if (! state.in_domain(v1, *value2))
                 return reification_verdict::MustNotHold{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return Reason{v2 == *value2, v1 != *value2}; }}};
+                    .reason = ReasonFunction{[=]() { return Reason{v2 == *value2, v1 != *value2}; }},
+                    .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             return reification_verdict::StillUndecided{};
         }
         else {
             // not equals is forced if there's no overlap between domains
             if (! state.domains_intersect(v1, v2)) {
                 auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
-                return reification_verdict::MustNotHold{.justification = just, .reason = reason};
+                return reification_verdict::MustNotHold{.justification = just, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             }
             return reification_verdict::StillUndecided{};
         }

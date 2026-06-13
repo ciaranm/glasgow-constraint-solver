@@ -4,15 +4,16 @@
 
 #include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/constraints/innards/triggers.hh>
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/reification.hh>
 
+#include <optional>
 #include <util/overloaded.hh>
 
-#include <string>
 #include <utility>
 #include <variant>
 
@@ -38,6 +39,7 @@ namespace gcs::innards
         {
             Justification justification;
             ReasonFunction reason;
+            std::optional<AssertionAnnotation> assertion_hint = std::nullopt;
         };
 
         /**
@@ -47,6 +49,7 @@ namespace gcs::innards
         {
             Justification justification;
             ReasonFunction reason;
+            std::optional<AssertionAnnotation> assertion_hint = std::nullopt;
         };
     }
 
@@ -142,12 +145,12 @@ namespace gcs::innards
                             },
                             [&](const reification_verdict::MustHold & h) {
                                 if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
-                                    inference.infer(logger, *lit, h.justification, h.reason);
+                                    inference.infer(logger, *lit, h.justification, h.reason, h.assertion_hint);
                                 return PropagatorState::DisableUntilBacktrack;
                             },
                             [&](const reification_verdict::MustNotHold & n) {
                                 if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                    inference.infer(logger, *lit, n.justification, n.reason);
+                                    inference.infer(logger, *lit, n.justification, n.reason, n.assertion_hint);
                                 return PropagatorState::DisableUntilBacktrack;
                             }}
                             .visit(infer_cond_when_undecided(state, inference, logger, reif.cond));

@@ -248,7 +248,7 @@ namespace gcs::innards
 
             [[unlikely]] case Inference::Contradiction:
                 if (logger)
-                    logger->infer(lit, just, reason);
+                    logger->infer(lit, just, reason, assertion_hints);
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};

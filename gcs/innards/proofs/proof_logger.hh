@@ -247,12 +247,12 @@ namespace gcs::innards
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+        auto emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, std::optional<AssertionAnnotation> assertion_hint = std::nullopt) -> ProofLine;
 
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonFunction &) -> ProofLine;
+        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonFunction &, std::optional<AssertionAnnotation> assertion_hint = std::nullopt) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, not subject to

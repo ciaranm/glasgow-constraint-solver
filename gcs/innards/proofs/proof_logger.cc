@@ -299,7 +299,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
 
     if (_imp->use_annotated_assertions && annotation) {
         if (! is_literally_true(lit)) {
-            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
+            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
         }
         return;
     }
@@ -368,7 +368,7 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
     _imp->proof << "% " << s << '\n';
 }
 
-auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
+auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level, std::optional<AssertionAnnotation> assertion_hint) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     log_stacktrace();
@@ -407,7 +407,11 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
                 rule_line << ";";
             }
         },
-        [&](const AssertProofRule &) { rule_line << ";"; }}
+        [&](const AssertProofRule &) {
+			if (assertion_hint) {
+				rule_line << *assertion_hint;
+	 		}
+			rule_line << ";"; }}
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
@@ -422,7 +426,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 
 auto ProofLogger::emit_under_reason(
     const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level, const ReasonFunction & reason) -> ProofLine
+    ProofLevel level, const ReasonFunction & reason, std::optional<AssertionAnnotation> assertion_hint) -> ProofLine
 {
     optional<Reason> reason_literals;
     if (reason)
@@ -464,7 +468,12 @@ auto ProofLogger::emit_under_reason(
 				rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << " ";
 				rule_line << " ;";
 			} else { rule_line << ";"; } },
-        [&](const AssertProofRule &) { rule_line << ";"; }}
+        [&](const AssertProofRule &) { 
+			if (assertion_hint) {
+				rule_line << *assertion_hint;
+	 		}
+
+			rule_line << ";"; }}
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
