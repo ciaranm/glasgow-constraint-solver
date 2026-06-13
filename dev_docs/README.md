@@ -64,6 +64,14 @@ library. For an introduction to *using* the solver, start with the top-level
   distinction that governs which linking clauses are load-bearing — with the
   W1–W5 witness suite as the regression defence against re-simplification.
   Read when touching range/interval reasons, branching, or `infer_not_in_range`.
+- [Restarts, nogoods, and dom/wdeg weighting](restarts-nogoods-weighting.md) —
+  the search-side machinery from issue #315: the restart loop and its
+  `SearchResult` unwind signal, `RestartSchedule`, the `ConflictObserver`
+  weighting seam and the dom/wdeg schemes, the `Nogoods` constraint
+  (entailment-based 2WL, the subscribe-to-all-vars trigger caveat), reduced-nld
+  extraction, and the proof lifecycle (root-keeps-level-1, deep-first-unwind RUP
+  for reduced clauses, `solx`-enabled enumeration). Read when touching restarts,
+  nogoods, or branching heuristics.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.
