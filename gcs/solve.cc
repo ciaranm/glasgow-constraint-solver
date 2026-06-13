@@ -24,8 +24,8 @@ using namespace gcs::innards;
 using std::atomic;
 using std::make_shared;
 using std::max;
-using std::numeric_limits;
 using std::nullopt;
+using std::numeric_limits;
 using std::optional;
 using std::pair;
 using std::shared_ptr;
@@ -75,6 +75,7 @@ namespace
         optional<Integer> & objective_value,
         RestartState & restart,
         NogoodStore * const learned_nogoods,
+        const vector<IntegerVariableCondition> & reduced_prefix,
         atomic<bool> * optional_abort_flag) -> SearchResult
     {
         stats.max_depth = max(stats.max_depth, depth);
@@ -141,7 +142,7 @@ namespace
                     if (optional_abort_flag && optional_abort_flag->load())
                         return SearchResult::Stop;
 
-                    auto recurse = [&](const Literal & guess) -> SearchResult {
+                    auto recurse = [&](const Literal & guess, const vector<IntegerVariableCondition> & child_prefix) -> SearchResult {
                         if (optional_abort_flag && optional_abort_flag->load())
                             return SearchResult::Stop;
 
@@ -149,7 +150,7 @@ namespace
                         state.guess(guess);
                         bool child_contains_solution = false;
                         auto child_result = solve_with_state(depth + 1, stats, problem, propagators, state, guess,
-                            callbacks, branch_callback, logger, child_contains_solution, number_of_solutions, objective_value, restart, learned_nogoods, optional_abort_flag);
+                            callbacks, branch_callback, logger, child_contains_solution, number_of_solutions, objective_value, restart, learned_nogoods, child_prefix, optional_abort_flag);
 
                         if (child_contains_solution)
                             this_subtree_contains_solution = true;
@@ -160,9 +161,32 @@ namespace
                         return child_result;
                     };
 
+                    // Reduced nld-nogoods thread down only the *positive* branch
+                    // decisions. A binary branch's second sibling is the negation of
+                    // its first (x=v then x!=v, or x<=v then x>v): descending into it
+                    // is a refutation flip --- a negative decision --- so it is
+                    // dropped, because the first sibling's own recorded nogood
+                    // re-derives it on the next pass. Every other descended sibling
+                    // (a first sibling, or any d-way value) is a free positive
+                    // decision and extends the prefix.
+                    optional<IntegerVariableCondition> first_sibling;
+                    unsigned long long sibling_index = 0;
                     for (; branch_iter != branch_generator.end(); ++branch_iter) {
                         auto guess = *branch_iter;
-                        auto child_result = recurse(guess);
+                        // Only maintain the reduced prefix when we are actually
+                        // learning nogoods: otherwise reduced_prefix stays empty and
+                        // the copy is free, so ordinary search pays nothing.
+                        auto child_prefix = reduced_prefix;
+                        if (learned_nogoods) {
+                            bool negative_flip = sibling_index == 1 && first_sibling && guess == ! *first_sibling;
+                            if (! negative_flip)
+                                child_prefix.push_back(guess);
+                            if (sibling_index == 0)
+                                first_sibling = guess;
+                            ++sibling_index;
+                        }
+
+                        auto child_result = recurse(guess, child_prefix);
                         if (child_result == SearchResult::Stop)
                             return SearchResult::Stop;
                         if (child_result == SearchResult::RestartCutoffHit) {
@@ -183,33 +207,30 @@ namespace
         }
 
         // Restart-nogood learning: each sibling refuted at this frame before the
-        // cutoff yields a nogood --- the path to here plus that decision. Its
-        // clause is RUP from the sibling's refutation, still present at level
-        // depth+1, so when logging we derive it at Top (surviving the forget below
-        // and the whole restart); we also feed it to the store for the next pass.
+        // cutoff yields a reduced nld-nogood --- the positive decisions on the path
+        // to here (reduced_prefix) plus that refuted decision. The clause drops the
+        // negative (refutation-flip) path decisions but is still RUP: this is logged
+        // during the deep-first unwind, when the ancestor frames' backtrack lemmas
+        // (which force exactly those dropped negatives) are still live below Top, so
+        // RUP re-derives them. We derive it at Top so it survives the forget below
+        // and the whole restart, and feed it to the store for the next pass.
         if (learned_nogoods && result == SearchResult::RestartCutoffHit && ! refuted_siblings.empty()) {
-            vector<Literal> path;
-            for (const auto & lit : state.guesses())
-                path.push_back(lit);
             for (const auto & sibling : refuted_siblings) {
-                auto decisions = path;
-                decisions.push_back(sibling);
-                // The store holds plain conditions; if any decision is not one
-                // (e.g. a proof-scaffolding literal) skip this nogood entirely.
-                Nogood nogood;
-                bool all_conditions = true;
-                for (const auto & decision : decisions) {
-                    if (auto cond = std::get_if<IntegerVariableCondition>(&decision))
-                        nogood.push_back(*cond);
-                    else {
-                        all_conditions = false;
-                        break;
-                    }
-                }
-                if (! all_conditions)
+                // The refuted sibling heads the nogood; if it is not a plain
+                // condition (a proof-scaffolding literal) skip it.
+                auto sibling_cond = std::get_if<IntegerVariableCondition>(&sibling);
+                if (! sibling_cond)
                     continue;
-                if (logger)
+                Nogood nogood = reduced_prefix;
+                nogood.push_back(*sibling_cond);
+                if (logger) {
+                    vector<Literal> decisions;
+                    decisions.reserve(reduced_prefix.size() + 1);
+                    for (const auto & cond : reduced_prefix)
+                        decisions.push_back(cond);
+                    decisions.push_back(*sibling_cond);
                     logger->emit_learned_nogood(decisions);
+                }
                 learned_nogoods->add(move(nogood));
             }
         }
@@ -336,7 +357,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
             restart.conflicts_since_restart = 0;
             search_result = solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, branch_callback,
                 optional_proof ? optional_proof->logger() : nullptr,
-                child_contains_solution, number_of_solutions, objective_value, restart, nogood_store.get(), optional_abort_flag);
+                child_contains_solution, number_of_solutions, objective_value, restart, nogood_store.get(),
+                vector<IntegerVariableCondition>{}, optional_abort_flag);
 
             if (search_result == SearchResult::RestartCutoffHit) {
                 ++stats.restarts;

@@ -94,6 +94,67 @@ TEST_CASE("Solve unsat with restarts")
     CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 
+// As "Solve unsat with restarts" but with binary (2-way) branching:
+// value_order::smallest_in yields x==v then x!=v, and the right branch x!=v is
+// the negation of the left. Reduced nld-nogoods drop that refutation-flip from
+// the recorded path, so this exercises the reduced-extraction code that the
+// d-way default branching above leaves untouched. The proof still verifies --- an
+// unsound reduction (dropping a literal that is not re-derivable) fails RUP.
+TEST_CASE("Solve unsat with restarts and binary branching")
+{
+    Problem p;
+    vector<IntegerVariableID> xs;
+    for (int i = 0; i < 5; ++i)
+        xs.push_back(p.create_integer_variable(0_i, 3_i));
+    for (unsigned i = 0; i < xs.size(); ++i)
+        for (unsigned j = i + 1; j < xs.size(); ++j)
+            p.post(NotEquals{xs[i], xs[j]});
+
+    bool found_solution = false;
+    auto stats = solve_with(
+        p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState &) -> bool { found_solution = true; return false; },
+            .branch = branch_with(variable_order::dom(p), value_order::smallest_in()),
+            .restarts = RestartSchedule::luby(4)},
+        ProofOptions{"solve_test"});
+
+    CHECK(! found_solution);
+    CHECK(stats.restarts > 0);
+    CHECK(stats.learned_nogoods > 0);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+}
+
+// As above but with interval (bound-split) branching: value_order::
+// split_smallest_first yields x<=v then x>v, and x>v is the negation of x<=v
+// (both are order literals, not equalities). The reduced nld-nogoods drop that
+// flip just as for the equality case, exercising the bound-literal path of the
+// extraction and the entailment 2WL. The proof still verifies.
+TEST_CASE("Solve unsat with restarts and interval branching")
+{
+    Problem p;
+    vector<IntegerVariableID> xs;
+    for (int i = 0; i < 5; ++i)
+        xs.push_back(p.create_integer_variable(0_i, 3_i));
+    for (unsigned i = 0; i < xs.size(); ++i)
+        for (unsigned j = i + 1; j < xs.size(); ++j)
+            p.post(NotEquals{xs[i], xs[j]});
+
+    bool found_solution = false;
+    auto stats = solve_with(
+        p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState &) -> bool { found_solution = true; return false; },
+            .branch = branch_with(variable_order::dom(p), value_order::split_smallest_first()),
+            .restarts = RestartSchedule::luby(4)},
+        ProofOptions{"solve_test"});
+
+    CHECK(! found_solution);
+    CHECK(stats.restarts > 0);
+    CHECK(stats.learned_nogoods > 0);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+}
+
 // Optimisation with restarts: the incumbent bound persists across restarts, so
 // each pass only finds strictly better solutions and the final pass proves
 // optimality. Objective-bound dead-ends count as conflicts, so a luby(1)
