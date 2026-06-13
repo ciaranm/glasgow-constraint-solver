@@ -51,17 +51,17 @@ namespace
         if (name == "classic")
             return Classic;
         if (name == "ia")
-            return Ia;
+            return InitialArity;
         if (name == "ca")
-            return Ca;
+            return CurrentArity;
         if (name == "id")
-            return Id;
+            return InitialDomain;
         if (name == "cd")
-            return Cd;
+            return CurrentDomain;
         if (name == "ca.cd" || name == "cacd")
-            return CaCd;
+            return CurrentArityCurrentDomain;
         if (name == "chs")
-            return Chs;
+            return ConflictHistorySearch;
         return std::nullopt;
     }
 
