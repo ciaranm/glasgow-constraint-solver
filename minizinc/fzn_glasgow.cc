@@ -860,15 +860,13 @@ auto main(int argc, char * argv[]) -> int
                         var = variable_order::dom(vars);
                     else if (var_heuristic == "input_order")
                         var = variable_order::in_order(vars);
-                    else if (var_heuristic == "dom_w_deg") {
-                        // not technically "w" but it'll do for now
-                        var = variable_order::dom_then_deg(vars);
-                    }
+                    else if (var_heuristic == "dom_w_deg")
+                        var = variable_order::dom_wdeg(vars);
                     else if (var_heuristic == "smallest")
                         var = variable_order::with_smallest_value(vars);
                     else {
                         println(cerr, "Warning: treating unknown int_search variable heuristic {} as dom_w_deg instead", var_heuristic);
-                        var = variable_order::dom_then_deg(vars);
+                        var = variable_order::dom_wdeg(vars);
                     }
 
                     BranchValueGenerator val;
