@@ -31,7 +31,7 @@ using std::swap;
 using std::to_underlying;
 using std::vector;
 using std::visit;
-using std::ranges::find;
+using std::ranges::contains;
 
 namespace
 {
@@ -135,14 +135,15 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
     // Record this propagator's scope (its trigger variables, views resolved and
     // deduplicated) and add it to each variable's constraint adjacency.
     auto & scope = _imp->propagator_scope.emplace_back();
+    scope.reserve(triggers.on_change.size() + triggers.on_bounds.size() + triggers.on_instantiated.size());
     auto add_to_scope = [&](IntegerVariableID var) {
         overloaded{
             [&](const SimpleIntegerVariableID & v) {
-                if (find(scope, v) == scope.end())
+                if (! contains(scope, v))
                     scope.push_back(v);
             },
             [&](const ViewOfIntegerVariableID & v) {
-                if (find(scope, v.actual_variable) == scope.end())
+                if (! contains(scope, v.actual_variable))
                     scope.push_back(v.actual_variable);
             },
             [&](const ConstantIntegerVariableID &) {
@@ -160,7 +161,7 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         if (_imp->var_constraint_indices.size() <= v.index)
             _imp->var_constraint_indices.resize(v.index + 1);
         auto & indices = _imp->var_constraint_indices[v.index];
-        if (find(indices, constraint_index) == indices.end())
+        if (! contains(indices, constraint_index))
             indices.push_back(constraint_index);
     }
 
@@ -168,7 +169,7 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         _imp->constraint_scope.resize(constraint_index + 1);
     auto & cscope = _imp->constraint_scope[constraint_index];
     for (const auto & v : scope)
-        if (find(cscope, v) == cscope.end())
+        if (! contains(cscope, v))
             cscope.push_back(v);
 
     for (const auto & v : triggers.on_change) {
