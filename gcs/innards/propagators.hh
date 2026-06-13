@@ -336,6 +336,14 @@ namespace gcs::innards
          */
         [[nodiscard]] auto constraint_indices_of_variable(SimpleIntegerVariableID) const -> const std::vector<int> &;
 
+        /**
+         * The scope of the constraint with the given dense index: the union of
+         * its propagators' scopes (views resolved, deduplicated). Used to count
+         * how many of a constraint's variables are still unassigned (the
+         * |fut|>1 filter in a weighted-degree heuristic).
+         */
+        [[nodiscard]] auto scope_of_constraint(int constraint_index) const -> const std::vector<SimpleIntegerVariableID> &;
+
         ///@}
 
         /**

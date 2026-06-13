@@ -6,6 +6,7 @@
 #include <gcs/innards/s_expr-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <variant>
@@ -166,5 +167,17 @@ struct fmt::formatter<gcs::ConstraintID> : fmt::formatter<std::string>
     }
 };
 #endif
+
+// Lets ConstraintID be used as a key in unordered containers (the weighting
+// state map, the dense-index map in Propagators). Equality on the variant is
+// structural; hashing its string form agrees with that.
+template <>
+struct std::hash<gcs::ConstraintID>
+{
+    [[nodiscard]] auto operator()(const gcs::ConstraintID & constraint_id) const -> std::size_t
+    {
+        return std::hash<std::string>{}(gcs::as_string(constraint_id));
+    }
+};
 
 #endif
