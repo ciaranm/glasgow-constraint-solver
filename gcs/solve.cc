@@ -128,15 +128,11 @@ namespace
                     if (callbacks.solution && ! callbacks.solution(state.current()))
                         return SearchResult::Stop;
 
-                    // We found a solution and were asked to keep searching. Without
-                    // recorded nogoods a restart re-explores the tree and so would
-                    // re-find (and re-count) this solution, so a restart schedule is
-                    // only sound for finding one solution or for optimising. Reject
-                    // the unsound combination rather than silently miscounting.
-                    if (restart.enabled && ! problem.optional_minimise_variable())
-                        throw UnimplementedException{"restarts without nogoods cannot enumerate all "
-                                                     "solutions; use a restart schedule only to find one "
-                                                     "solution or to optimise"};
+                    // Continuing past a solution while restarting is sound: the
+                    // proof's solx excludes each solution, so a fully-explored
+                    // subtree (solutions and all) is refuted and the nld nogood
+                    // learned for it stops a later pass re-entering and re-counting
+                    // it. So enumeration accumulates each solution exactly once.
                 }
                 else {
                     if (callbacks.trace && ! callbacks.trace(state.current()))

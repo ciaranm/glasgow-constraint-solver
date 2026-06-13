@@ -13,6 +13,8 @@
 
 #include <cstdlib>
 #include <optional>
+#include <set>
+#include <tuple>
 #include <vector>
 
 using namespace gcs;
@@ -120,25 +122,6 @@ TEST_CASE("Optimise with restarts")
     CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 
-// Without nogoods, restarts cannot soundly enumerate: a callback that keeps
-// going after a solution, with no objective, is the one unsupported combination,
-// and is rejected rather than allowed to miscount.
-TEST_CASE("Restarts refuse to enumerate all solutions")
-{
-    Problem p;
-    auto x = p.create_integer_variable(0_i, 2_i);
-    auto y = p.create_integer_variable(0_i, 2_i);
-    p.post(NotEquals{x, y});
-
-    CHECK_THROWS_AS(
-        solve_with(
-            p,
-            SolveCallbacks{
-                .solution = [](const CurrentState &) -> bool { return true; },
-                .restarts = RestartSchedule::luby(1)}),
-        UnimplementedException);
-}
-
 // An unsatisfiable Langford-pairing instance (size 5): rich enough that
 // AllDifferent and Element prune at the root, so the root node emits
 // guess-independent propagation that later restart passes do not re-derive.
@@ -173,6 +156,51 @@ TEST_CASE("Solve unsat with restarts and root propagation")
 
     CHECK(! found_solution);
     CHECK(stats.restarts > 0);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+}
+
+// Enumerate every solution while restarting. b, c, d are a pairwise-distinct
+// triangle (a permutation of {1,2,3}) and a (domain 1..4) must differ from all
+// three, forcing a = 4 --- so there are six solutions. But a branched to 1/2/3
+// early leaves b, c, d needing three distinct values in the two that remain: a
+// dead end. Random branching hits those, so a luby(1) schedule restarts
+// part-way through enumeration. Each solution must still be reported exactly
+// once: the nld nogoods, sound because solx excludes the solutions already
+// found, stop a later pass re-entering an exhausted region. The proof must
+// conclude a complete enumeration of six.
+TEST_CASE("Enumerate all solutions with restarts")
+{
+    Problem p;
+    auto a = p.create_integer_variable(1_i, 4_i);
+    auto b = p.create_integer_variable(1_i, 3_i);
+    auto c = p.create_integer_variable(1_i, 3_i);
+    auto d = p.create_integer_variable(1_i, 3_i);
+    p.post(NotEquals{a, b});
+    p.post(NotEquals{a, c});
+    p.post(NotEquals{a, d});
+    p.post(NotEquals{b, c});
+    p.post(NotEquals{b, d});
+    p.post(NotEquals{c, d});
+
+    std::set<std::tuple<int, int, int, int>> solutions;
+    unsigned long long callbacks = 0;
+    auto stats = solve_with(
+        p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                ++callbacks;
+                solutions.emplace(s(a).raw_value, s(b).raw_value, s(c).raw_value, s(d).raw_value);
+                return true;
+            },
+            .branch = branch_with(variable_order::random(p, 1234), value_order::random_out(5678)),
+            .restarts = RestartSchedule::luby(1)},
+        ProofOptions{"solve_test"});
+
+    CHECK(solutions.size() == 6);
+    CHECK(callbacks == 6); // each solution reported exactly once, no re-counting
+    CHECK(stats.solutions == 6);
+    CHECK(stats.restarts > 0); // restarts actually fired during enumeration
+    CHECK(stats.learned_nogoods > 0);
     CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 
