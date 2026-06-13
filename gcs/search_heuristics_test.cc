@@ -121,7 +121,7 @@ TEST_CASE("dom_wdeg wired into solve_with finds every solution")
     // this exercises the whole wiring: selection via callbacks.branch, the
     // once-per-search setup in solve_with, and the conflict observer driving the
     // weights during search.
-    auto scheme = GENERATE(WeightingScheme::Classic, WeightingScheme::Chs);
+    auto scheme = GENERATE(WeightingScheme::Classic, WeightingScheme::ConflictHistorySearch);
 
     Problem problem;
     auto a = problem.create_integer_variable(1_i, 3_i);
