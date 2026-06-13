@@ -69,15 +69,16 @@ namespace
     }
 
     // Build the brancher named by --branch over the given variables: "dom-then-deg",
-    // or "dom-wdeg" optionally suffixed with a scheme, e.g. "dom-wdeg:chs" (default ca.cd).
+    // or "dom-wdeg" (the library default scheme) optionally suffixed with a scheme,
+    // e.g. "dom-wdeg:classic".
     auto brancher_from_string(const string & spec, const vector<IntegerVariableID> & vars) -> optional<BranchHeuristic>
     {
         if (spec == "dom-then-deg")
             return branch_with(variable_order::dom_then_deg(vars), value_order::smallest_first());
-        if (spec == "dom-wdeg" || spec.starts_with("dom-wdeg:")) {
-            auto colon = spec.find(':');
-            auto variant = (colon == string::npos) ? string{"ca.cd"} : spec.substr(colon + 1);
-            auto scheme = scheme_from_string(variant);
+        if (spec == "dom-wdeg")
+            return branch_with(variable_order::dom_wdeg(vars), value_order::smallest_first());
+        if (spec.starts_with("dom-wdeg:")) {
+            auto scheme = scheme_from_string(spec.substr(spec.find(':') + 1));
             if (! scheme)
                 return nullopt;
             return branch_with(variable_order::dom_wdeg(vars, *scheme), value_order::smallest_first());
