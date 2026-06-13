@@ -439,6 +439,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(variable_weighting_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME variable_weighting_test COMMAND $<TARGET_FILE:variable_weighting_test>)
 
+    add_executable(search_heuristics_test search_heuristics_test.cc)
+    target_link_libraries(search_heuristics_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME search_heuristics_test COMMAND $<TARGET_FILE:search_heuristics_test>)
+
     add_executable(linear_utils_test constraints/linear/utils_test.cc)
     target_link_libraries(linear_utils_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)
