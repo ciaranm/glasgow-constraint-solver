@@ -15,13 +15,14 @@ namespace gcs::innards
      * happen, so that a search heuristic can attribute each wipeout to the
      * constraint --- and, later, the specific Reason --- that caused it.
      *
-     * A borrowed observer is attached to the Propagators for the duration of a
-     * search (Propagators::set_conflict_observer). Whenever a propagator raises
-     * a contradiction, Propagators::propagate notifies the observer exactly once
-     * with the failing constraint and its scope. This is the write side of the
-     * dom/wdeg weighting seam (issue #315, Stage 0): the weighting value object
-     * will implement this interface. It is deliberately minimal and carries no
-     * query API of its own --- the brancher reads back weights by another path.
+     * Borrowed observers are attached to the Propagators for the duration of a
+     * search (Propagators::add_conflict_observer). Whenever a propagator raises
+     * a contradiction, Propagators::propagate notifies each attached observer
+     * exactly once with the failing constraint and its scope. This is the write
+     * side of the dom/wdeg weighting seam (issue #315, Stage 0): the weighting
+     * value object implements this interface. It is deliberately minimal and
+     * carries no query API of its own --- the brancher reads back weights by
+     * another path.
      *
      * \ingroup Innards
      */

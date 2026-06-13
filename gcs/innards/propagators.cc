@@ -77,10 +77,12 @@ struct Propagators::Imp
     vector<vector<int>> var_constraint_indices;
     vector<vector<SimpleIntegerVariableID>> constraint_scope;
 
-    // A borrowed conflict observer, notified when a propagator wipes out a
-    // domain (see propagate). Set once at search start via set_conflict_observer;
-    // the caller owns it. nullptr when there is no observer.
-    ConflictObserver * conflict_observer = nullptr;
+    // Borrowed conflict observers, each notified when a propagator wipes out a
+    // domain (see propagate). Attached at search start via add_conflict_observer;
+    // the caller owns them. There can be several: a seq_search may chain several
+    // stateful branchers, each carrying its own weighting, and every one needs
+    // to see every conflict. Empty when there are no observers.
+    vector<ConflictObserver *> conflict_observers;
 };
 
 Propagators::Propagators() :
@@ -316,8 +318,8 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
             // fires at most once per call. Non-propagator contradiction paths
             // (initialisers, the objective bound) never reach here, so they are
             // not attributed to any constraint.
-            if (_imp->conflict_observer)
-                _imp->conflict_observer->note_conflict(_imp->propagator_constraint_index[propagator_id],
+            for (auto & observer : _imp->conflict_observers)
+                observer->note_conflict(_imp->propagator_constraint_index[propagator_id],
                     _imp->propagator_scope[propagator_id], tracker.last_contradiction_reason(), state);
         }
 
@@ -458,12 +460,12 @@ auto Propagators::scope_of_constraint(int constraint_index) const -> const vecto
     return _imp->constraint_scope[constraint_index];
 }
 
-auto Propagators::set_conflict_observer(ConflictObserver * observer) -> void
+auto Propagators::add_conflict_observer(ConflictObserver * observer) -> void
 {
-    _imp->conflict_observer = observer;
+    _imp->conflict_observers.push_back(observer);
 }
 
-auto Propagators::conflict_observer() const -> ConflictObserver *
+auto Propagators::conflict_observers() const -> const vector<ConflictObserver *> &
 {
-    return _imp->conflict_observer;
+    return _imp->conflict_observers;
 }

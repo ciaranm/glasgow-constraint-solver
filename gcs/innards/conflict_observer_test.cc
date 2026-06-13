@@ -74,7 +74,7 @@ TEST_CASE("Conflict observer attributes a wipeout to the failing constraint, not
         Triggers{.on_change = {x, y}, .on_bounds = {x + 1_i}});
 
     RecordingObserver observer;
-    propagators.set_conflict_observer(&observer);
+    propagators.add_conflict_observer(&observer);
 
     auto no_contradiction = propagators.propagate(nullopt, state, nullptr);
 
@@ -111,7 +111,7 @@ TEST_CASE("Conflict observer fires for an inference-driven wipeout")
         Triggers{.on_bounds = {x}});
 
     RecordingObserver observer;
-    propagators.set_conflict_observer(&observer);
+    propagators.add_conflict_observer(&observer);
 
     auto no_contradiction = propagators.propagate(nullopt, state, nullptr);
 
@@ -143,8 +143,36 @@ TEST_CASE("Propagation without a conflict observer still detects the wipeout")
 
     // No observer attached: the propagate() notification is guarded and must not
     // be reached, but the contradiction is still reported.
-    CHECK(propagators.conflict_observer() == nullptr);
+    CHECK(propagators.conflict_observers().empty());
     CHECK_FALSE(propagators.propagate(nullopt, state, nullptr));
+}
+
+TEST_CASE("Every attached conflict observer is notified of a wipeout")
+{
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 1_i);
+
+    Propagators propagators;
+    propagators.install(
+        NumberedConstraint{3},
+        [x](const State & inner_state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            inference.contradiction(logger, JustifyUsingRUP{},
+                generic_reason(inner_state, vector<IntegerVariableID>{x}));
+        },
+        Triggers{.on_change = {x}});
+
+    // A seq_search can chain several stateful branchers, each with its own
+    // weighting; every one must see every conflict.
+    RecordingObserver first, second;
+    propagators.add_conflict_observer(&first);
+    propagators.add_conflict_observer(&second);
+
+    CHECK_FALSE(propagators.propagate(nullopt, state, nullptr));
+
+    REQUIRE(first.calls.size() == 1);
+    REQUIRE(second.calls.size() == 1);
+    CHECK(first.calls.front().constraint_index == 0);
+    CHECK(second.calls.front().constraint_index == 0);
 }
 
 TEST_CASE("Propagator scope and variable-to-constraint adjacency")
