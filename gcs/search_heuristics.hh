@@ -1,11 +1,15 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SEARCH_HEURISTICS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SEARCH_HEURISTICS_HH
 
+#include <gcs/innards/state-fwd.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
+#include <gcs/variable_weighting.hh>
 
 #include <cstdint>
 #include <functional>
+#include <optional>
+#include <vector>
 
 namespace gcs
 {
@@ -27,6 +31,25 @@ namespace gcs
      */
     using BranchVariableSelector = std::function<std::optional<IntegerVariableID>(
         const CurrentState &, const innards::Propagators &)>;
+
+    /**
+     * A variable-ordering heuristic that needs per-search setup before it can
+     * select: given a search's Problem, State, and Propagators, it does any
+     * one-time setup (for example a stateful heuristic constructing its weights
+     * and attaching itself as a conflict observer) and returns the
+     * BranchVariableSelector to branch with. Called once per search; in a
+     * parallel search, once per thread with that thread's own State and
+     * Propagators. A stateless ordering simply ignores the arguments and returns
+     * its selector.
+     *
+     * Currently only gcs::variable_order::dom_wdeg() returns one of these; the
+     * other gcs::variable_order:: orderings still return a BranchVariableSelector
+     * directly, pending a later migration to this shape.
+     *
+     * \ingroup SearchHeuristics
+     */
+    using BranchVariableHeuristic = std::function<BranchVariableSelector(
+        const Problem &, innards::State &, innards::Propagators &)>;
 
     /**
      * Given a branch variable, how do we branch on it? Usually this will be used via the gcs::branch_with()
@@ -123,6 +146,40 @@ namespace gcs
          * \sa gcs::branch_with()
          */
         [[nodiscard]] auto dom_then_deg(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+
+        /**
+         * \brief dom/wdeg: branch on the non-assigned variable minimising
+         * dom(x)/W(x), where W(x) is the weighted degree from a dynamic
+         * constraint weighting (classic dom/wdeg: Boussemart, Hemery, Lecoutre,
+         * Sais, ECAI 2004).
+         *
+         * Returns a BranchVariableHeuristic, not a bare selector: at search start
+         * it constructs a ClassicDomWDeg weighting (one weight per constraint,
+         * initialised to 1, bumped on each domain wipeout), attaches it as the
+         * Propagators' conflict observer, and returns the selector. Weights start
+         * uniform, so at the root the heuristic orders by dom(x)/degree(x) and it
+         * specialises towards hard constraints as conflicts accumulate. Ties are
+         * broken on highest constraint degree, and a variable with W(x)=0 (in no
+         * constraint with two or more unassigned variables) is least preferred.
+         *
+         * An optional initial WeightingState seeds the weights --- for carrying
+         * weights across searches or injecting proof-mined weights. Value
+         * ordering is chosen separately, as usual via gcs::branch_with().
+         *
+         * \ingroup SearchHeuristics
+         * \sa WeightingState
+         */
+        [[nodiscard]] auto dom_wdeg(const Problem &,
+            std::optional<WeightingState> initial = std::nullopt) -> BranchVariableHeuristic;
+
+        /**
+         * \brief dom/wdeg over an explicit list of variables.
+         *
+         * \ingroup SearchHeuristics
+         * \sa gcs::variable_order::dom_wdeg(const Problem &, std::optional<WeightingState>)
+         */
+        [[nodiscard]] auto dom_wdeg(std::vector<IntegerVariableID>,
+            std::optional<WeightingState> initial = std::nullopt) -> BranchVariableHeuristic;
 
         /**
          * Branch on non-assigned variables in this order.
