@@ -40,11 +40,8 @@ namespace gcs
      * BranchVariableSelector to branch with. Called once per search; in a
      * parallel search, once per thread with that thread's own State and
      * Propagators. A stateless ordering simply ignores the arguments and returns
-     * its selector.
-     *
-     * Currently only gcs::variable_order::dom_wdeg() returns one of these; the
-     * other gcs::variable_order:: orderings still return a BranchVariableSelector
-     * directly, pending a later migration to this shape.
+     * its selector; a stateful one (gcs::variable_order::dom_wdeg) uses them.
+     * Every gcs::variable_order:: ordering returns one of these.
      *
      * \ingroup SearchHeuristics
      */
@@ -65,20 +62,20 @@ namespace gcs
         const CurrentState &, const innards::Propagators &, const IntegerVariableID &)>;
 
     /**
-     * Combine a BranchVariableSelector from gcs::variable_order:: with a BranchValueGenerator
-     * from gcs::value_order:: to produce a BranchCallback for SolveCallbacks.
+     * Combine a BranchVariableHeuristic from gcs::variable_order:: with a BranchValueGenerator
+     * from gcs::value_order:: to produce a BranchHeuristic for SolveCallbacks.
      *
      * \ingroup SearchHeuristics
      */
-    [[nodiscard]] auto branch_with(BranchVariableSelector, BranchValueGenerator) -> BranchCallback;
+    [[nodiscard]] auto branch_with(BranchVariableHeuristic, BranchValueGenerator) -> BranchHeuristic;
 
     /**
-     * Combine two BranchCallback instances, first trying the first instance, and if it returns
-     * nullopt, instead trying the second instance.
+     * Combine two BranchHeuristic instances, first trying the first instance, and if it returns
+     * nullopt, instead trying the second instance. (Both are set up once per search.)
      *
      * \ingroup SearchHeuristics
      */
-    [[nodiscard]] auto branch_sequence(BranchCallback, BranchCallback) -> BranchCallback;
+    [[nodiscard]] auto branch_sequence(BranchHeuristic, BranchHeuristic) -> BranchHeuristic;
 
     /**
      * Variable ordering heuristics.
@@ -103,7 +100,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto in_order_of(const Problem &, VariableComparator) -> BranchVariableSelector;
+        [[nodiscard]] auto in_order_of(const Problem &, VariableComparator) -> BranchVariableHeuristic;
 
         /**
          * Branch on the smallest non-assigned variable wrt this comparator.
@@ -111,7 +108,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto in_order_of(std::vector<IntegerVariableID>, VariableComparator) -> BranchVariableSelector;
+        [[nodiscard]] auto in_order_of(std::vector<IntegerVariableID>, VariableComparator) -> BranchVariableHeuristic;
 
         /**
          * Branch on the non-assigned variable with smallest domain.
@@ -119,7 +116,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto dom(const Problem &) -> BranchVariableSelector;
+        [[nodiscard]] auto dom(const Problem &) -> BranchVariableHeuristic;
 
         /**
          * Branch on the non-assigned variable with smallest domain.
@@ -127,7 +124,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto dom(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+        [[nodiscard]] auto dom(std::vector<IntegerVariableID>) -> BranchVariableHeuristic;
 
         /**
          * Branch on the non-assigned variable with smallest domain, tie-breaking on highest
@@ -136,7 +133,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto dom_then_deg(const Problem &) -> BranchVariableSelector;
+        [[nodiscard]] auto dom_then_deg(const Problem &) -> BranchVariableHeuristic;
 
         /**
          * Branch on the non-assigned variable with smallest domain, tie-breaking on highest
@@ -145,7 +142,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto dom_then_deg(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+        [[nodiscard]] auto dom_then_deg(std::vector<IntegerVariableID>) -> BranchVariableHeuristic;
 
         /**
          * \brief dom/wdeg: branch on the non-assigned variable minimising
@@ -187,7 +184,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto in_order(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+        [[nodiscard]] auto in_order(std::vector<IntegerVariableID>) -> BranchVariableHeuristic;
 
         /**
          * Branch on the non-assigned variable with the smallest value in its domain.
@@ -195,7 +192,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto with_smallest_value(const Problem &) -> BranchVariableSelector;
+        [[nodiscard]] auto with_smallest_value(const Problem &) -> BranchVariableHeuristic;
 
         /**
          * Branch on the non-assigned variable with the smallest value in its domain.
@@ -203,7 +200,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto with_smallest_value(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+        [[nodiscard]] auto with_smallest_value(std::vector<IntegerVariableID>) -> BranchVariableHeuristic;
 
         /**
          * Branch on the non-assigned variable with the largest value in its domain.
@@ -211,7 +208,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto with_largest_value(const Problem &) -> BranchVariableSelector;
+        [[nodiscard]] auto with_largest_value(const Problem &) -> BranchVariableHeuristic;
 
         /**
          * Branch on the non-assigned variable with the largest value in its domain.
@@ -219,7 +216,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto with_largest_value(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+        [[nodiscard]] auto with_largest_value(std::vector<IntegerVariableID>) -> BranchVariableHeuristic;
 
         /**
          * Branch on a random non-assigned variable, seeded non-deterministically.
@@ -227,7 +224,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto random(const Problem &) -> BranchVariableSelector;
+        [[nodiscard]] auto random(const Problem &) -> BranchVariableHeuristic;
 
         /**
          * Branch on a random non-assigned variable, seeded non-deterministically.
@@ -235,7 +232,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto random(std::vector<IntegerVariableID>) -> BranchVariableSelector;
+        [[nodiscard]] auto random(std::vector<IntegerVariableID>) -> BranchVariableHeuristic;
 
         /**
          * Branch on a random non-assigned variable, with an explicit seed for
@@ -244,7 +241,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto random(const Problem &, std::uint_fast32_t seed) -> BranchVariableSelector;
+        [[nodiscard]] auto random(const Problem &, std::uint_fast32_t seed) -> BranchVariableHeuristic;
 
         /**
          * Branch on a random non-assigned variable, with an explicit seed for
@@ -253,7 +250,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::branch_with()
          */
-        [[nodiscard]] auto random(std::vector<IntegerVariableID>, std::uint_fast32_t seed) -> BranchVariableSelector;
+        [[nodiscard]] auto random(std::vector<IntegerVariableID>, std::uint_fast32_t seed) -> BranchVariableHeuristic;
     }
 
     /**
