@@ -89,18 +89,18 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options()                                                      //
-            ("help", "Display help information")                                   //
-            ("prove", "Create a proof")                                            //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",       //
-                cxxopts::value<string>()->default_value("langford"))               //
-            ("stats", "Print solve statistics")                                    //
-            ("branch", "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] " //
-                       "(VARIANT = classic / ia / ca / id / cd / ca.cd / chs)",    //
-                cxxopts::value<string>()->default_value("dom-then-deg"))           //
-            ("restart", "Restart on a Luby schedule with the given conflict scale " //
-                        "(finds one solution only, since restarts cannot enumerate)", //
-                cxxopts::value<unsigned long long>()->implicit_value("100"))       //
+        options.add_options()                                                          //
+            ("help", "Display help information")                                       //
+            ("prove", "Create a proof")                                                //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",           //
+                cxxopts::value<string>()->default_value("langford"))                   //
+            ("stats", "Print solve statistics")                                        //
+            ("branch", "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] "     //
+                       "(VARIANT = classic / ia / ca / id / cd / ca.cd / chs)",        //
+                cxxopts::value<string>()->default_value("dom-then-deg"))               //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale "   //
+                         "(finds one solution only, since restarts cannot enumerate)", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"))           //
             ;
 
         options.add_options()                                                                   //
@@ -151,8 +151,8 @@ auto main(int argc, char * argv[]) -> int
 
     // Restarts re-explore, so without nogoods they can only find one solution;
     // when restarting we stop at the first, otherwise we enumerate as before.
-    auto restarts = options_vars.contains("restart")
-        ? make_optional(RestartSchedule::luby(options_vars["restart"].as<unsigned long long>()))
+    auto restarts = options_vars.contains("restarts")
+        ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>()))
         : nullopt;
     auto keep_searching_after_solution = ! restarts.has_value();
 
