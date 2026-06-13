@@ -147,35 +147,36 @@ namespace gcs
         /**
          * \brief dom/wdeg: branch on the non-assigned variable minimising
          * dom(x)/W(x), where W(x) is the weighted degree from a dynamic
-         * constraint weighting (classic dom/wdeg: Boussemart, Hemery, Lecoutre,
-         * Sais, ECAI 2004).
+         * constraint weighting.
          *
          * Returns a BranchVariableHeuristic, not a bare selector: at search start
-         * it constructs a ClassicDomWDeg weighting (one weight per constraint,
-         * initialised to 1, bumped on each domain wipeout), attaches it as the
-         * Propagators' conflict observer, and returns the selector. Weights start
-         * uniform, so at the root the heuristic orders by dom(x)/degree(x) and it
-         * specialises towards hard constraints as conflicts accumulate. Ties are
-         * broken on highest constraint degree, and a variable with W(x)=0 (in no
-         * constraint with two or more unassigned variables) is least preferred.
+         * it constructs the weighting for the chosen WeightingScheme, attaches it
+         * as the Propagators' conflict observer, and returns the selector. Ties
+         * are broken on highest constraint degree, and a variable with W(x)=0 (in
+         * no constraint with two or more unassigned variables) is least preferred.
          *
-         * An optional initial WeightingState seeds the weights --- for carrying
-         * weights across searches or injecting proof-mined weights. Value
-         * ordering is chosen separately, as usual via gcs::branch_with().
+         * \p scheme selects the weighting (default WeightingScheme::Classic, the
+         * original dom/wdeg). An optional initial WeightingState seeds the weights
+         * --- for carrying weights across searches or injecting proof-mined
+         * weights. Value ordering is chosen separately, as usual via
+         * gcs::branch_with().
          *
          * \ingroup SearchHeuristics
          * \sa WeightingState
+         * \sa WeightingScheme
          */
         [[nodiscard]] auto dom_wdeg(const Problem &,
+            WeightingScheme scheme = WeightingScheme::Classic,
             std::optional<WeightingState> initial = std::nullopt) -> BranchVariableHeuristic;
 
         /**
          * \brief dom/wdeg over an explicit list of variables.
          *
          * \ingroup SearchHeuristics
-         * \sa gcs::variable_order::dom_wdeg(const Problem &, std::optional<WeightingState>)
+         * \sa gcs::variable_order::dom_wdeg(const Problem &, WeightingScheme, std::optional<WeightingState>)
          */
         [[nodiscard]] auto dom_wdeg(std::vector<IntegerVariableID>,
+            WeightingScheme scheme = WeightingScheme::Classic,
             std::optional<WeightingState> initial = std::nullopt) -> BranchVariableHeuristic;
 
         /**
