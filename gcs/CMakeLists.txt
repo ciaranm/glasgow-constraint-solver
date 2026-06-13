@@ -11,6 +11,7 @@ add_library(glasgow_constraint_solver
         stats.cc
         variable_condition.cc
         variable_id.cc
+        variable_weighting.cc
         constraints/abs.cc
         constraints/abs/justify.cc
         constraints/all_different/all_different_except.cc
