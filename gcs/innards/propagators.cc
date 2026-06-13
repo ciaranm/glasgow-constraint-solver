@@ -39,18 +39,6 @@ namespace
     {
         vector<pair<int, int>> ids_and_masks;
     };
-
-    // ConstraintID structural equality (CurrentlyUnnamedConstraint,
-    // NumberedConstraint, NamedConstraint all compare) backs the dense-index
-    // map below; hashing its string form is enough, since equality is checked
-    // structurally on the variant.
-    struct ConstraintIDHash
-    {
-        auto operator()(const ConstraintID & id) const -> std::size_t
-        {
-            return std::hash<std::string>{}(as_string(id));
-        }
-    };
 }
 
 struct Propagators::Imp
@@ -75,16 +63,19 @@ struct Propagators::Imp
     // a fresh dense index on first sight of each ConstraintID.
     vector<int> propagator_constraint_index;
     vector<ConstraintID> constraint_ids;
-    std::unordered_map<ConstraintID, int, ConstraintIDHash> constraint_index_of_id;
+    std::unordered_map<ConstraintID, int> constraint_index_of_id;
 
     // The scope of each propagator (indexed by propagator id): its trigger
     // variables with views resolved to the underlying simple variable and
     // duplicates removed. var_constraint_indices is the transpose aggregated by
     // constraint: indexed by variable index, the deduplicated dense constraint
-    // indices that variable participates in. Built alongside the triggers in
-    // install(), used by a conflict observer / weighted-degree heuristic.
+    // indices that variable participates in. constraint_scope is the union of a
+    // constraint's propagators' scopes (indexed by dense constraint index), used
+    // for the |fut|>1 weighted-degree filter. All built alongside the triggers
+    // in install().
     vector<vector<SimpleIntegerVariableID>> propagator_scope;
     vector<vector<int>> var_constraint_indices;
+    vector<vector<SimpleIntegerVariableID>> constraint_scope;
 
     // A borrowed conflict observer, notified when a propagator wipes out a
     // domain (see propagate). Set once at search start via set_conflict_observer;
@@ -172,6 +163,13 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         if (find(indices, constraint_index) == indices.end())
             indices.push_back(constraint_index);
     }
+
+    if (_imp->constraint_scope.size() <= static_cast<std::size_t>(constraint_index))
+        _imp->constraint_scope.resize(constraint_index + 1);
+    auto & cscope = _imp->constraint_scope[constraint_index];
+    for (const auto & v : scope)
+        if (find(cscope, v) == cscope.end())
+            cscope.push_back(v);
 
     for (const auto & v : triggers.on_change) {
         trigger_on_change(v, id);
@@ -452,6 +450,11 @@ auto Propagators::constraint_indices_of_variable(SimpleIntegerVariableID var) co
         return none;
     }
     return _imp->var_constraint_indices[var.index];
+}
+
+auto Propagators::scope_of_constraint(int constraint_index) const -> const vector<SimpleIntegerVariableID> &
+{
+    return _imp->constraint_scope[constraint_index];
 }
 
 auto Propagators::set_conflict_observer(ConflictObserver * observer) -> void
