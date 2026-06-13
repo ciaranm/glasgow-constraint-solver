@@ -430,6 +430,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(state_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME state_test COMMAND $<TARGET_FILE:state_test>)
 
+    add_executable(conflict_observer_test innards/conflict_observer_test.cc)
+    target_link_libraries(conflict_observer_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME conflict_observer_test COMMAND $<TARGET_FILE:conflict_observer_test>)
+
     add_executable(linear_utils_test constraints/linear/utils_test.cc)
     target_link_libraries(linear_utils_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)
