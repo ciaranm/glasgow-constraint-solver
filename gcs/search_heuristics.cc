@@ -173,6 +173,40 @@ auto gcs::variable_order::dom_then_deg(vector<IntegerVariableID> vars) -> Branch
     });
 }
 
+auto gcs::variable_order::dom_wdeg(const Problem & problem, optional<WeightingState> initial) -> BranchVariableHeuristic
+{
+    return dom_wdeg(problem.all_normal_variables(), move(initial));
+}
+
+auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, optional<WeightingState> initial) -> BranchVariableHeuristic
+{
+    return [vars = move(vars), initial = move(initial)](
+               const Problem &, innards::State &, innards::Propagators & propagators) -> BranchVariableSelector {
+        auto weighting = make_shared<ClassicDomWDeg>(propagators);
+        if (initial)
+            weighting->load(*initial, propagators);
+        propagators.set_conflict_observer(weighting.get());
+
+        return variable_order::in_order_of(vars,
+            [weighting](const CurrentState & state, const innards::Propagators & p,
+                const IntegerVariableID & a, const IntegerVariableID & b) -> bool {
+                // Minimise dom(x)/W(x), cross-multiplied to avoid division: a
+                // variable with W(x)=0 (in no constraint with two or more
+                // unassigned variables) then sorts last for free. Tie-break on
+                // highest degree, matching dom_then_deg.
+                auto dom_a = static_cast<double>(state.domain_size(a).raw_value);
+                auto dom_b = static_cast<double>(state.domain_size(b).raw_value);
+                auto w_a = weighting->weighted_degree_of(state, p, a);
+                auto w_b = weighting->weighted_degree_of(state, p, b);
+                auto lhs = dom_a * w_b;
+                auto rhs = dom_b * w_a;
+                if (lhs != rhs)
+                    return lhs < rhs;
+                return p.degree_of(a) > p.degree_of(b);
+            });
+    };
+}
+
 auto gcs::variable_order::with_smallest_value(const Problem & problem) -> BranchVariableSelector
 {
     return with_smallest_value(problem.all_normal_variables());
