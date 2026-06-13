@@ -31,6 +31,7 @@ namespace gcs
         unsigned long long solutions = 0;
         unsigned long long max_depth = 0;
         unsigned long long restarts = 0;
+        unsigned long long learned_nogoods = 0;
 
         unsigned long long n_propagators = 0;
 

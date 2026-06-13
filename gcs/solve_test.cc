@@ -86,6 +86,9 @@ TEST_CASE("Solve unsat with restarts")
 
     CHECK(! found_solution);
     CHECK(stats.restarts > 0);
+    // Restarts learn nogoods from the refuted regions, and the proof verifies
+    // those learned clauses (an unsound one would fail RUP).
+    CHECK(stats.learned_nogoods > 0);
     CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 

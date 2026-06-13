@@ -1,3 +1,4 @@
+#include <gcs/constraints/nogoods.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/conflict_observer.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -15,16 +16,19 @@
 
 #include <limits>
 #include <string>
+#include <variant>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::atomic;
+using std::make_shared;
 using std::max;
 using std::numeric_limits;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::vector;
 using std::chrono::duration_cast;
 using std::chrono::microseconds;
@@ -70,6 +74,7 @@ namespace
         Integer & number_of_solutions,
         optional<Integer> & objective_value,
         RestartState & restart,
+        NogoodStore * const learned_nogoods,
         atomic<bool> * optional_abort_flag) -> SearchResult
     {
         stats.max_depth = max(stats.max_depth, depth);
@@ -79,6 +84,11 @@ namespace
             logger->enter_proof_level(depth + 1);
 
         auto result = SearchResult::Complete;
+
+        // Branch decisions this frame tried and whose subtree was then fully
+        // refuted, before any restart cutoff hit. On a restart unwind each is a
+        // learned nogood (the path to here plus that decision).
+        vector<Literal> refuted_siblings;
 
         if (restart.conflicts_since_restart >= restart.cutoff) {
             // This run has spent its conflict budget: abandon the tree and unwind
@@ -143,7 +153,7 @@ namespace
                         state.guess(guess);
                         bool child_contains_solution = false;
                         auto child_result = solve_with_state(depth + 1, stats, problem, propagators, state, guess,
-                            callbacks, branch_callback, logger, child_contains_solution, number_of_solutions, objective_value, restart, optional_abort_flag);
+                            callbacks, branch_callback, logger, child_contains_solution, number_of_solutions, objective_value, restart, learned_nogoods, optional_abort_flag);
 
                         if (child_contains_solution)
                             this_subtree_contains_solution = true;
@@ -155,13 +165,17 @@ namespace
                     };
 
                     for (; branch_iter != branch_generator.end(); ++branch_iter) {
-                        auto child_result = recurse(*branch_iter);
+                        auto guess = *branch_iter;
+                        auto child_result = recurse(guess);
                         if (child_result == SearchResult::Stop)
                             return SearchResult::Stop;
                         if (child_result == SearchResult::RestartCutoffHit) {
                             result = SearchResult::RestartCutoffHit;
                             break;
                         }
+                        // Complete: this sibling's subtree was refuted under the
+                        // current path, so record it for restart-nogood learning.
+                        refuted_siblings.push_back(guess);
                     }
                 }
             }
@@ -172,17 +186,47 @@ namespace
             }
         }
 
+        // Restart-nogood learning: each sibling refuted at this frame before the
+        // cutoff yields a nogood --- the path to here plus that decision. Its
+        // clause is RUP from the sibling's refutation, still present at level
+        // depth+1, so when logging we derive it at Top (surviving the forget below
+        // and the whole restart); we also feed it to the store for the next pass.
+        if (learned_nogoods && result == SearchResult::RestartCutoffHit && ! refuted_siblings.empty()) {
+            vector<Literal> path;
+            for (const auto & lit : state.guesses())
+                path.push_back(lit);
+            for (const auto & sibling : refuted_siblings) {
+                auto decisions = path;
+                decisions.push_back(sibling);
+                // The store holds plain conditions; if any decision is not one
+                // (e.g. a proof-scaffolding literal) skip this nogood entirely.
+                Nogood nogood;
+                bool all_conditions = true;
+                for (const auto & decision : decisions) {
+                    if (auto cond = std::get_if<IntegerVariableCondition>(&decision))
+                        nogood.push_back(*cond);
+                    else {
+                        all_conditions = false;
+                        break;
+                    }
+                }
+                if (! all_conditions)
+                    continue;
+                if (logger)
+                    logger->emit_learned_nogood(decisions);
+                learned_nogoods->add(move(nogood));
+            }
+        }
+
         if (logger) {
             logger->enter_proof_level(depth);
             if (result == SearchResult::RestartCutoffHit) {
-                // A restart abandons this subtree *unrefuted*, so it asserts no
-                // backtrack lemma --- it only deletes what this pass derived below,
-                // which is always sound. But we must NOT delete the root node's
-                // own guess-independent propagation (proof level 1): the next pass
-                // starts from the same root fixpoint, so propagate() re-emits
-                // nothing there, and that reasoning has to survive for the next
-                // pass's backtracks to remain RUP. So at the root (depth 0) we keep
-                // level 1; deeper guess-dependent levels are re-derived next pass.
+                // We must NOT delete the root node's own guess-independent
+                // propagation (proof level 1): the next pass starts from the same
+                // root fixpoint, so propagate() re-emits nothing there, and that
+                // reasoning has to survive for the next pass's backtracks to remain
+                // RUP. So at the root (depth 0) we keep level 1; deeper
+                // guess-dependent levels are re-derived next pass.
                 if (depth > 0)
                     logger->forget_proof_level(depth + 1);
             }
@@ -216,6 +260,19 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     auto state = problem.create_state_for_new_search(optional_proof ? optional_proof->model() : nullptr);
     auto propagators = problem.create_propagators(state, optional_proof ? optional_proof->model() : nullptr);
+
+    // With restarts on, search learns nogoods from refuted regions. Install an
+    // (initially empty) Nogoods over a store the restart loop grows, subscribed
+    // to every variable since a later-learned nogood may mention any. This is
+    // engine-owned, not user-posted --- restart nogoods are internal (and, under
+    // parallel search, per-thread). Must precede the model finalise below.
+    shared_ptr<NogoodStore> nogood_store;
+    if (callbacks.restarts) {
+        nogood_store = make_shared<NogoodStore>();
+        auto nogoods_constraint = Nogoods{nogood_store, problem.all_normal_variables()};
+        nogoods_constraint.set_constraint_id(NamedConstraint{"learned_nogoods"});
+        std::move(nogoods_constraint).install(propagators, state, optional_proof ? optional_proof->model() : nullptr);
+    }
 
     if (optional_proof) {
         if (problem.optional_minimise_variable())
@@ -283,7 +340,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
             restart.conflicts_since_restart = 0;
             search_result = solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, branch_callback,
                 optional_proof ? optional_proof->logger() : nullptr,
-                child_contains_solution, number_of_solutions, objective_value, restart, optional_abort_flag);
+                child_contains_solution, number_of_solutions, objective_value, restart, nogood_store.get(), optional_abort_flag);
 
             if (search_result == SearchResult::RestartCutoffHit) {
                 ++stats.restarts;
@@ -341,6 +398,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
 
     stats.solve_time = duration_cast<microseconds>(steady_clock::now() - start_time);
     propagators.fill_in_constraint_stats(stats);
+    if (nogood_store)
+        stats.learned_nogoods = nogood_store->size();
 
     return stats;
 }
