@@ -212,20 +212,20 @@ auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, WeightingSche
         case Classic:
             weighting = make_shared<ClassicDomWDeg>(propagators);
             break;
-        case Ia:
-            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::Ia);
+        case InitialArity:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::InitialArity);
             break;
-        case Ca:
-            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::Ca);
+        case CurrentArity:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::CurrentArity);
             break;
-        case Id:
-            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::Id);
+        case InitialDomain:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::InitialDomain);
             break;
-        case Cd:
-            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::Cd);
+        case CurrentDomain:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::CurrentDomain);
             break;
-        case CaCd:
-            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::CaCd);
+        case CurrentArityCurrentDomain:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::CurrentArityCurrentDomain);
             break;
         case ConflictHistorySearch:
             // Qualified: the WeightingScheme::ConflictHistorySearch enumerator

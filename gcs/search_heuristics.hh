@@ -155,7 +155,7 @@ namespace gcs
          * are broken on highest constraint degree, and a variable with W(x)=0 (in
          * no constraint with two or more unassigned variables) is least preferred.
          *
-         * \p scheme selects the weighting (default WeightingScheme::CaCd, the
+         * \p scheme selects the weighting (default WeightingScheme::CurrentArityCurrentDomain, the
          * strongest in Wattez et al.). An optional initial WeightingState seeds
          * the weights --- for carrying weights across searches or injecting
          * proof-mined weights. Value ordering is chosen separately, as usual via
@@ -166,7 +166,7 @@ namespace gcs
          * \sa WeightingScheme
          */
         [[nodiscard]] auto dom_wdeg(const Problem &,
-            WeightingScheme scheme = WeightingScheme::CaCd,
+            WeightingScheme scheme = WeightingScheme::CurrentArityCurrentDomain,
             std::optional<WeightingState> initial = std::nullopt) -> BranchVariableHeuristic;
 
         /**
@@ -176,7 +176,7 @@ namespace gcs
          * \sa gcs::variable_order::dom_wdeg(const Problem &, WeightingScheme, std::optional<WeightingState>)
          */
         [[nodiscard]] auto dom_wdeg(std::vector<IntegerVariableID>,
-            WeightingScheme scheme = WeightingScheme::CaCd,
+            WeightingScheme scheme = WeightingScheme::CurrentArityCurrentDomain,
             std::optional<WeightingState> initial = std::nullopt) -> BranchVariableHeuristic;
 
         /**

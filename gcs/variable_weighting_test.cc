@@ -238,7 +238,7 @@ TEST_CASE("RefinedWeighting ca.cd increments by 1 / (fut * (1 + dom))")
     Propagators propagators;
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, b}});
 
-    RefinedWeighting weighting{propagators, state, RefinedWeighting::Variant::CaCd};
+    RefinedWeighting weighting{propagators, state, RefinedWeighting::Variant::CurrentArityCurrentDomain};
     auto current = state.current();
 
     // Every local weight starts at 1, so the root weighted degree is the degree.
@@ -260,8 +260,8 @@ TEST_CASE("RefinedWeighting variants increment differently and round-trip")
     Propagators propagators;
     propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, b}});
 
-    // The Ca variant increments by 1 / fut = 1 / 2 = 0.5, not the ca.cd 0.125.
-    RefinedWeighting ca{propagators, state, RefinedWeighting::Variant::Ca};
+    // The CurrentArity variant increments by 1 / fut = 1 / 2 = 0.5, not the ca.cd 0.125.
+    RefinedWeighting ca{propagators, state, RefinedWeighting::Variant::CurrentArity};
     auto current = state.current();
     ca.note_conflict(0, {a, b}, nullopt, state);
     CHECK(ca.weighted_degree_of(current, propagators, a) == Approx(1.5));
@@ -270,7 +270,7 @@ TEST_CASE("RefinedWeighting variants increment differently and round-trip")
     auto snap = ca.snapshot(propagators);
     REQUIRE(snap.local_weight_of(NumberedConstraint{1}, a).has_value());
     CHECK(snap.local_weight_of(NumberedConstraint{1}, a).value() == Approx(1.5));
-    RefinedWeighting reloaded{propagators, state, RefinedWeighting::Variant::Ca};
+    RefinedWeighting reloaded{propagators, state, RefinedWeighting::Variant::CurrentArity};
     reloaded.load(snap, propagators);
     CHECK(reloaded.weighted_degree_of(current, propagators, a) == Approx(1.5));
 }
