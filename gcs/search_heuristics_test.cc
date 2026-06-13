@@ -1,9 +1,11 @@
 #include <gcs/constraint.hh>
+#include <gcs/constraints/equals.hh>
 #include <gcs/current_state.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
+#include <gcs/solve.hh>
 #include <gcs/variable_id.hh>
 #include <gcs/variable_weighting.hh>
 
@@ -109,4 +111,28 @@ TEST_CASE("dom_wdeg tie-breaks on degree")
     auto picked = selector(state.current(), propagators);
     REQUIRE(picked.has_value());
     CHECK(*picked == IntegerVariableID{a});
+}
+
+TEST_CASE("dom_wdeg wired into solve_with finds every solution")
+{
+    // An all-different triangle over {1,2,3}: the six permutations. dom/wdeg only
+    // changes branch order, so a complete search must still enumerate them all --
+    // this exercises the whole wiring: selection via callbacks.branch, the
+    // once-per-search setup in solve_with, and the conflict observer driving the
+    // weights during search.
+    Problem problem;
+    auto a = problem.create_integer_variable(1_i, 3_i);
+    auto b = problem.create_integer_variable(1_i, 3_i);
+    auto c = problem.create_integer_variable(1_i, 3_i);
+    problem.post(NotEquals{a, b});
+    problem.post(NotEquals{b, c});
+    problem.post(NotEquals{a, c});
+
+    int solutions = 0;
+    solve_with(problem,
+        SolveCallbacks{
+            .solution = [&](const CurrentState &) -> bool { ++solutions; return true; },
+            .branch = branch_with(variable_order::dom_wdeg(problem), value_order::smallest_first())});
+
+    CHECK(solutions == 6);
 }
