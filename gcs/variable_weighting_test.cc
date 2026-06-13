@@ -5,6 +5,7 @@
 #include <gcs/variable_id.hh>
 #include <gcs/variable_weighting.hh>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <optional>
@@ -13,6 +14,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using Catch::Approx;
 using std::nullopt;
 using std::vector;
 
@@ -173,4 +175,56 @@ TEST_CASE("WeightingState merge policies")
         CHECK(m.weight_of(NumberedConstraint{2}) == 3.0); // (5 + 1) / 2
         CHECK(m.weight_of(NumberedConstraint{3}) == 3.5); // (0 + 7) / 2
     }
+}
+
+TEST_CASE("ConflictHistorySearch builds a recency-weighted score")
+{
+    State state;
+    auto a = state.allocate_integer_variable_with_state(0_i, 10_i);
+    auto b = state.allocate_integer_variable_with_state(0_i, 10_i);
+    auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
+
+    Propagators propagators;
+    propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, x}});
+    propagators.install(NumberedConstraint{2}, a_propagator_that_does_nothing(), Triggers{.on_change = {b, x}});
+
+    ConflictHistorySearch weighting{propagators};
+    auto current = state.current();
+
+    // Before any conflict every q(c) = 0, so weighted_degree_of is just delta per
+    // constraint (CHS orders by degree early on).
+    CHECK(weighting.weighted_degree_of(current, propagators, a) == Approx(1.0e-4));
+
+    // One conflict on _1: q(_1) = (1 - alpha) * 0 + alpha * r, with alpha = 0.4 and
+    // r = 1 / (0 - 0 + 1) = 1, so q(_1) = 0.4. _2 is untouched.
+    weighting.note_conflict(0, {}, nullopt, state);
+    CHECK(weighting.weighted_degree_of(current, propagators, a) == Approx(0.4 + 1.0e-4));
+    CHECK(weighting.weighted_degree_of(current, propagators, b) == Approx(1.0e-4));
+
+    // A second conflict, now on _2, after one earlier conflict: its recency factor
+    // r = 1 / (#Conflicts - Conflict(_2) + 1) = 1 / (1 - 0 + 1) = 0.5 is smaller,
+    // so _2 ends up below _1.
+    weighting.note_conflict(1, {}, nullopt, state);
+    CHECK(weighting.weighted_degree_of(current, propagators, b) < weighting.weighted_degree_of(current, propagators, a));
+}
+
+TEST_CASE("ConflictHistorySearch snapshot and load round-trip the scores")
+{
+    State state;
+    auto a = state.allocate_integer_variable_with_state(0_i, 10_i);
+    auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
+
+    Propagators propagators;
+    propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, x}});
+
+    ConflictHistorySearch weighting{propagators};
+    auto current = state.current();
+    weighting.note_conflict(0, {}, nullopt, state); // q(_1) = 0.4
+
+    auto snap = weighting.snapshot(propagators);
+    CHECK(snap.weight_of(NumberedConstraint{1}) == Approx(0.4));
+
+    ConflictHistorySearch reloaded{propagators};
+    reloaded.load(snap, propagators);
+    CHECK(reloaded.weighted_degree_of(current, propagators, a) == Approx(weighting.weighted_degree_of(current, propagators, a)));
 }

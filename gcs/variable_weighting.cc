@@ -5,6 +5,7 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <optional>
 
@@ -14,9 +15,21 @@ using namespace gcs::innards;
 using std::max;
 using std::nullopt;
 using std::optional;
+using std::pow;
 using std::size_t;
 using std::unordered_map;
 using std::vector;
+
+namespace
+{
+    // Conflict-History Search tunables (Habet & Terrioux). These are defaults to
+    // be auto-tuned, not design choices.
+    constexpr double chs_alpha_initial = 0.4;
+    constexpr double chs_alpha_minimum = 0.06;
+    constexpr double chs_alpha_decay = 1.0e-6;
+    constexpr double chs_delta = 1.0e-4;
+    constexpr double chs_smoothing_base = 0.995;
+}
 
 auto WeightingState::weight_of(const ConstraintID & constraint_id) const -> double
 {
@@ -61,18 +74,18 @@ auto WeightingState::constraint_weights() const -> const unordered_map<Constrain
     return _constraint_weights;
 }
 
-ClassicDomWDeg::ClassicDomWDeg(const Propagators & propagators) :
-    _weights(propagators.number_of_constraints(), 1.0)
+DenseConstraintWeighting::DenseConstraintWeighting(const Propagators & propagators, double default_weight) :
+    _weights(propagators.number_of_constraints(), default_weight),
+    _default_weight(default_weight)
 {
 }
 
-auto ClassicDomWDeg::note_conflict(int constraint_index, const vector<SimpleIntegerVariableID> &,
-    const optional<ReasonFunction> &, const State &) -> void
+auto DenseConstraintWeighting::contribution_of(int constraint_index) const -> double
 {
-    _weights[constraint_index] += 1.0;
+    return _weights[constraint_index];
 }
 
-auto ClassicDomWDeg::weighted_degree_of(const CurrentState & state, const Propagators & propagators,
+auto DenseConstraintWeighting::weighted_degree_of(const CurrentState & state, const Propagators & propagators,
     IntegerVariableID var) const -> double
 {
     auto simple = overloaded{
@@ -95,9 +108,36 @@ auto ClassicDomWDeg::weighted_degree_of(const CurrentState & state, const Propag
                     break;
         }
         if (futures >= 2)
-            total += _weights[constraint_index];
+            total += contribution_of(constraint_index);
     }
     return total;
+}
+
+auto DenseConstraintWeighting::snapshot(const Propagators & propagators) const -> WeightingState
+{
+    WeightingState result;
+    for (size_t c = 0; c < _weights.size(); ++c)
+        result.set_weight(propagators.constraint_id_for_index(static_cast<int>(c)), _weights[c]);
+    return result;
+}
+
+auto DenseConstraintWeighting::load(const WeightingState & state, const Propagators & propagators) -> void
+{
+    _weights.assign(propagators.number_of_constraints(), _default_weight);
+    for (size_t c = 0; c < _weights.size(); ++c)
+        if (auto weight = state.optional_weight_of(propagators.constraint_id_for_index(static_cast<int>(c))))
+            _weights[c] = *weight;
+}
+
+ClassicDomWDeg::ClassicDomWDeg(const Propagators & propagators) :
+    DenseConstraintWeighting(propagators, 1.0)
+{
+}
+
+auto ClassicDomWDeg::note_conflict(int constraint_index, const vector<SimpleIntegerVariableID> &,
+    const optional<ReasonFunction> &, const State &) -> void
+{
+    _weights[constraint_index] += 1.0;
 }
 
 auto ClassicDomWDeg::on_restart() -> void
@@ -106,18 +146,41 @@ auto ClassicDomWDeg::on_restart() -> void
     // a different scheme. Nothing to do.
 }
 
-auto ClassicDomWDeg::snapshot(const Propagators & propagators) const -> WeightingState
+ConflictHistorySearch::ConflictHistorySearch(const Propagators & propagators) :
+    DenseConstraintWeighting(propagators, 0.0),
+    _conflict_of(propagators.number_of_constraints(), 0),
+    _alpha(chs_alpha_initial)
 {
-    WeightingState result;
-    for (size_t c = 0; c < _weights.size(); ++c)
-        result.set_weight(propagators.constraint_id_for_index(static_cast<int>(c)), _weights[c]);
-    return result;
 }
 
-auto ClassicDomWDeg::load(const WeightingState & state, const Propagators & propagators) -> void
+auto ConflictHistorySearch::note_conflict(int constraint_index, const vector<SimpleIntegerVariableID> &,
+    const optional<ReasonFunction> &, const State &) -> void
 {
-    _weights.assign(propagators.number_of_constraints(), 1.0);
+    auto r = 1.0 / static_cast<double>(_number_of_conflicts - _conflict_of[constraint_index] + 1);
+    _weights[constraint_index] = (1.0 - _alpha) * _weights[constraint_index] + _alpha * r;
+    ++_number_of_conflicts;
+    _conflict_of[constraint_index] = _number_of_conflicts;
+    _alpha = max(chs_alpha_minimum, _alpha - chs_alpha_decay);
+}
+
+auto ConflictHistorySearch::contribution_of(int constraint_index) const -> double
+{
+    return _weights[constraint_index] + chs_delta;
+}
+
+auto ConflictHistorySearch::on_restart() -> void
+{
+    // Smooth scores towards 0 by their staleness, and reset alpha. Inert until
+    // restarts exist (nothing calls this yet).
     for (size_t c = 0; c < _weights.size(); ++c)
-        if (auto weight = state.optional_weight_of(propagators.constraint_id_for_index(static_cast<int>(c))))
-            _weights[c] = *weight;
+        _weights[c] *= pow(chs_smoothing_base, static_cast<double>(_number_of_conflicts - _conflict_of[c]));
+    _alpha = chs_alpha_initial;
+}
+
+auto ConflictHistorySearch::load(const WeightingState & state, const Propagators & propagators) -> void
+{
+    DenseConstraintWeighting::load(state, propagators);
+    _conflict_of.assign(propagators.number_of_constraints(), 0);
+    _number_of_conflicts = 0;
+    _alpha = chs_alpha_initial;
 }
