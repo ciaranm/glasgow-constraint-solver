@@ -295,7 +295,10 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         int propagator_id = _imp->queue[--_imp->enqueued_end];
         try {
             ++_imp->total_propagations;
-            auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
+            // No refined watches are registered yet, so every propagator sees an
+            // empty fired-payload set (see RefinedWatchContext); this is inert.
+            RefinedWatchContext watches{};
+            auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger, watches);
             if (tracker.did_anything_since_last_call_by_propagation_queue())
                 ++_imp->effectful_propagations;
             switch (propagator_state) {
