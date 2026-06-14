@@ -12,6 +12,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 
+#include <gcs/proof.hh>
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
@@ -95,7 +96,7 @@ namespace
 
                 if (match) {
                     permitted.emplace_back(current.begin(), current.end());
-                    if (logger && ! logger->using_assertions()) {
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         Integer sel_value(permitted.size() - 1);
                         logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(future_var_id, sel_value, "lineq");
                         trail += 1_i * (future_var_id == sel_value);
@@ -125,7 +126,7 @@ namespace
                 }
             }
 
-            if (logger && ! logger->using_assertions()) {
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 WPBSum backtrack = trail;
                 for (const auto & [idx, val] : enumerate(current))
                     backtrack += 1_i * (get_var(coeff_vars.terms[idx]) != val);
@@ -134,7 +135,7 @@ namespace
             }
         };
 
-        if (logger && ! logger->using_assertions())
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
             logger->emit_proof_comment("building GAC table for linear equality");
         search(logger);
 

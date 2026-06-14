@@ -110,7 +110,7 @@ namespace gcs::innards
             // shared scaffolding. Without this, each infer() would enter and exit
             // its own temporary level, wiping the scaffolding before subsequent
             // inferences can use it.
-            if (logger && ! logger->using_assertions() && std::holds_alternative<JustifyExplicitlyThenRUP>(why)) {
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off && std::holds_alternative<JustifyExplicitlyThenRUP>(why)) {
                 // The scaffolding is shared across the batch, but each inference's
                 // RUP is only emitted if it actually changes something (track_impl
                 // drops NoChange). If *every* inference is already entailed, no RUP

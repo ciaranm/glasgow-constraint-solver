@@ -22,6 +22,7 @@ namespace gcs::innards
         ReifiedLinearEquality,
         InitialBound,
         BoundLink,
+        Backtrack,
     };
 
     /**
@@ -29,7 +30,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    inline auto operator<<(std::ostream & s, AssertionHintName hint_name) -> std::ostream &
+    inline auto operator<<(std::ostream & s, const AssertionHintName & hint_name) -> std::ostream &
     {
         switch (hint_name) {
         case AssertionHintName::None:
@@ -46,6 +47,8 @@ namespace gcs::innards
             return s << "InitialBound";
         case AssertionHintName::BoundLink:
             return s << "BoundLink";
+        case AssertionHintName::Backtrack:
+            return s << "Backtrack";
         }
     }
     /**
@@ -77,7 +80,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    inline auto operator<<(std::ostream & s, AssertionAnnotation annotation) -> std::ostream &
+    inline auto operator<<(std::ostream & s, const AssertionAnnotation & annotation) -> std::ostream &
     {
         s << ":";
         for (const auto & id_or_label : annotation.derivable_from) {

@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <gcs/expression.hh>
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -10,6 +11,7 @@
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/proof.hh>
 
 #include <cstddef>
 #include <cstdlib>
@@ -114,7 +116,7 @@ struct ProofLogger::Imp
     string proof_file;
     fstream proof;
     int current_indent = 0;
-    bool use_annotated_assertions;
+    AssertionLevel assertion_level;
 
     Imp(NamesAndIDsTracker & t) :
         tracker(t)
@@ -127,7 +129,7 @@ ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker 
 {
     _imp->proof_file = proof_options.proof_file_names.proof_file;
     _imp->proof_lines_by_level.resize(2);
-    _imp->use_annotated_assertions = proof_options.use_annotated_assertions;
+    _imp->assertion_level = proof_options.assertion_level;
 }
 
 ProofLogger::~ProofLogger() = default;
@@ -205,7 +207,8 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     WPBSum backtrack;
     for (const auto & guess : guesses)
         backtrack += 1_i * ! guess;
-    emit_rup_proof_line(move(backtrack) >= 1_i, ProofLevel::Current);
+    auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+    emit(assert_or_rup, move(backtrack) >= 1_i, ProofLevel::Current, AssertionAnnotation{.hint_name = AssertionHintName::Backtrack});
 }
 
 auto ProofLogger::end_proof() -> void
@@ -297,7 +300,10 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             .visit(simplify_literal(names_and_ids_tracker(), lit));
     };
 
-    if (_imp->use_annotated_assertions && annotation) {
+    if (_imp->assertion_level > AssertionLevel::Inferences)
+        return;
+
+    if (_imp->assertion_level >= AssertionLevel::Definitions && annotation) {
         if (! is_literally_true(lit)) {
             emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
         }
@@ -368,7 +374,7 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
     _imp->proof << "% " << s << '\n';
 }
 
-auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level, std::optional<AssertionAnnotation> assertion_hint) -> ProofLine
+auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     log_stacktrace();
@@ -426,7 +432,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 
 auto ProofLogger::emit_under_reason(
     const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level, const ReasonFunction & reason, std::optional<AssertionAnnotation> assertion_hint) -> ProofLine
+    ProofLevel level, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
     optional<Reason> reason_literals;
     if (reason)
@@ -732,7 +738,7 @@ auto ProofLogger::write_indent() -> void
     }
 }
 
-auto ProofLogger::using_assertions() -> bool
+auto ProofLogger::get_assertion_level() -> AssertionLevel
 {
-    return _imp->use_annotated_assertions;
+    return _imp->assertion_level;
 }

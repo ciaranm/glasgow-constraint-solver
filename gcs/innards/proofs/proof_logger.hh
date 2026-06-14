@@ -247,12 +247,12 @@ namespace gcs::innards
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, std::optional<AssertionAnnotation> assertion_hint = std::nullopt) -> ProofLine;
+        auto emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> ProofLine;
 
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonFunction &, std::optional<AssertionAnnotation> assertion_hint = std::nullopt) -> ProofLine;
+        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonFunction &, const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, not subject to
@@ -331,9 +331,10 @@ namespace gcs::innards
         auto write_indent() -> void;
 
         /**
-         * Get whether the logger is using annotated assertions instead of full justifications.
+         * Get the level enum controlling how much of the proof will be asserted
+         * instead of fully justified.
          */
-        auto using_assertions() -> bool;
+        auto get_assertion_level() -> AssertionLevel;
     };
 }
 

@@ -30,6 +30,19 @@ namespace gcs
     };
 
     /**
+     * \brief Mode setting for annotated assertions. Each option involves successively less
+     * justification.
+     */
+    enum class AssertionLevel
+    {
+        Off = 0,      /// Justify everything; no annotated assertions
+        Definitions,  /// Justify backtracking, links, definitions; assert inferences
+        Links,        /// Justify backtracking; assert inferences & links; omit definitions
+        Inferences,   /// Assert backtracking & inferences; omit links & definitions
+        Backtracking, /// Assert backtracking only; omit everything else
+    };
+
+    /**
      * \brief Options for a Problem telling it how to produce a proof.
      *
      * \sa Problem
@@ -44,18 +57,18 @@ namespace gcs
         ProofFileNames proof_file_names;       ///< Filenames for OPB, proof, and mapping files
         bool verbose_names = true;             ///< Use verbose names in proofs?
         bool always_use_full_encoding = false; ///< Always write the full variable encoding to the OPB file
-        bool use_annotated_assertions = false; ///< Only write annotated assertions instead of full justifications.
+        AssertionLevel assertion_level = AssertionLevel::Off;
 
         /// Write annotated assertions instead of full justifications.
-        ProofOptions & enable_assertions()
+        ProofOptions & set_assertion_level(AssertionLevel a = AssertionLevel::Inferences)
         {
-            use_annotated_assertions = true;
+            assertion_level = a;
             return *this;
         }
         /// Always write the full variable encoding to the OPB file.
-        ProofOptions & enable_full_encoding()
+        ProofOptions & enable_full_encoding(bool e = true)
         {
-            always_use_full_encoding = true;
+            always_use_full_encoding = e;
             return *this;
         }
         /// Set whether to use verbose names in proofs.

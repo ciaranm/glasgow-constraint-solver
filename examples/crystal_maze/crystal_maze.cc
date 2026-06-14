@@ -3,6 +3,7 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/problem.hh>
+#include <gcs/proof.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
@@ -105,7 +106,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto proof_options = options_vars.contains("prove")
         ? make_optional(options_vars.contains("assert")
-                  ? ProofOptions{options_vars["proof-files-basename"].as<string>()}.enable_assertions()
+                  ? ProofOptions{options_vars["proof-files-basename"].as<string>()}.set_assertion_level(AssertionLevel::Inferences)
                   : ProofOptions{options_vars["proof-files-basename"].as<string>()})
         : nullopt;
 
