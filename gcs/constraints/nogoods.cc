@@ -265,24 +265,24 @@ namespace
     // rather than losing the watch for good and later missing a unit/contradiction.
     // (A true two-watched-literal scheme would arm fewer watches, but in this
     // consume-on-fire engine it needs an extra primitive to keep its watched-pair
-    // bookkeeping backtrack-consistent; left to stage C-2 if measurement shows the
-    // extra wakes matter.)
+    // bookkeeping backtrack-consistent; deferred as a later optimisation if
+    // measurement shows the extra wakes matter.)
     auto install_refined_nogoods(Propagators & propagators, const ConstraintID & id,
         shared_ptr<vector<Nogood>> nogoods, shared_ptr<vector<vector<IntegerVariableID>>> nogood_vars) -> void
     {
-        // Arm a refined watch on every literal of every nogood at install (the
-        // permanent base set; the firing consume is what is trailed and undone on
-        // backtrack). payload = the nogood index, so a fire says which clause to
-        // revisit.
+        // Arm a refined watch on every literal of each nogood present at install
+        // (the permanent base set, via Triggers; the firing consume is what is
+        // trailed and undone on backtrack). payload = the nogood index, so a fire
+        // says which clause to revisit. A growable store (the restart loop's learned
+        // nogoods) is empty here and arms nothing now -- those are caught up below.
         Triggers triggers;
         for (size_t ni = 0; ni < nogoods->size(); ++ni)
             for (const auto & lit : (*nogoods)[ni])
                 triggers.refined.emplace_back(lit, static_cast<std::uint32_t>(ni));
 
         // Detect any nogood already unit or violated against the initial domains in
-        // initialise(), exactly as the coarse path does, so a root-level
-        // contradiction is found before search starts (identical search tree). The
-        // bookkeeping it records is discarded.
+        // initialise(), as the coarse path does, so a root-level contradiction is
+        // found before search starts (identical search tree). Discards its bookkeeping.
         auto initial_scratch = make_shared<vector<pair<size_t, size_t>>>();
         propagators.install_initialiser(
             [nogoods, nogood_vars, initial_scratch](const State & state, auto & inference, ProofLogger * const logger) -> void {
@@ -291,25 +291,37 @@ namespace
                     init_watches_for(ni, *nogoods, *nogood_vars, *initial_scratch, state, inference, logger);
             });
 
-        // On the first run, scan every clause once. initialise() can entail literals
-        // (e.g. one nogood's unit inference, or another constraint's initialiser),
-        // but it does not fire refined watches -- only propagate()'s requeue does --
-        // so a clause made unit by an initialise-time entailment would otherwise be
-        // missed. This mirrors the coarse path's root re-scan; thereafter every
-        // entailment goes through requeue and fires a watch, so fired-only suffices.
-        // NOTE: this flag is not backtrackable; restarts (stage C-2) must re-scan at
-        // each root, or rely on root facts persisting.
-        auto did_root_scan = make_shared<bool>(false);
+        // High-water mark of nogoods whose watches are armed; the install-time base
+        // set above covers [0, armed). Non-backtrackable, which is sound because the
+        // catch-up below arms only at a root re-propagation, and those edits live in
+        // the persistent root epoch (never backtracked between restart passes), so
+        // the count stays in step with the armed watches.
+        auto armed = make_shared<size_t>(nogoods->size());
 
         propagators.install(
             id,
-            [nogoods, nogood_vars, did_root_scan](const State & state, auto & inference, ProofLogger * const logger,
+            [nogoods, nogood_vars, armed](const State & state, auto & inference, ProofLogger * const logger,
                 const RefinedWatchContext & ctx) -> PropagatorState {
-                // Visit each clause that lost a watched (non-entailed) literal this
-                // wake, once -- or every clause on the first (root) run.
                 vector<size_t> fired;
-                if (! *did_root_scan) {
-                    *did_root_scan = true;
+                if (ctx.fired_payloads().empty()) {
+                    // A root re-propagation: this propagator is enqueued un-fired only
+                    // at propagate(nullopt) -- depth 0 -- which the restart loop
+                    // re-enters once per pass. Two jobs here (both also needed at the
+                    // very first root):
+                    //  (1) Catch up newly-learned nogoods (the restart loop grows the
+                    //      store between passes): arm a watch on every literal of each
+                    //      clause not yet armed.
+                    //  (2) Scan every clause for a unit/contradiction. initialise()
+                    //      and root propagation can entail literals without firing
+                    //      refined watches (only requeue fires them), and a just-armed
+                    //      clause may already be unit, so fired-only would miss these.
+                    // Away from the root every entailment goes through requeue and
+                    // fires a watch, so fired-only suffices there (the laziness win).
+                    for (size_t ni = *armed; ni < nogoods->size(); ++ni)
+                        for (const auto & lit : (*nogoods)[ni])
+                            ctx.watch(lit, static_cast<std::uint32_t>(ni));
+                    *armed = nogoods->size();
+
                     for (size_t ni = 0; ni < nogoods->size(); ++ni)
                         fired.push_back(ni);
                 }

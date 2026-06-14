@@ -183,6 +183,54 @@ TEST_CASE("Optimise with restarts")
     CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 
+// Scan-vs-refined differential for the engine-owned learned-nogood store (issue
+// #335, stage C-2). The refined per-literal-watch path (the default) must explore
+// the identical search and learn the identical nogoods as the legacy whole-store-
+// scan path (selected by GCS_LEARNED_NOGOODS_SCAN), since the conversion is
+// semantics-preserving. We drive a pigeonhole UNSAT (6 values into 5) with a
+// luby(1) schedule -- many restarts, a growing nogood store, and the growable
+// catch-up exercised at every restart root -- under deterministic, domain-based
+// (degree-independent) branching, and require byte-identical search statistics.
+// A missed or spurious inference on the refined path would change the tree.
+TEST_CASE("Learned nogoods: refined matches scan under restarts")
+{
+    auto run = [](bool scan) -> Stats {
+        if (scan)
+            setenv("GCS_LEARNED_NOGOODS_SCAN", "1", 1);
+        else
+            unsetenv("GCS_LEARNED_NOGOODS_SCAN");
+
+        Problem p;
+        vector<IntegerVariableID> xs;
+        for (int i = 0; i < 6; ++i)
+            xs.push_back(p.create_integer_variable(0_i, 4_i));
+        for (unsigned i = 0; i < xs.size(); ++i)
+            for (unsigned j = i + 1; j < xs.size(); ++j)
+                p.post(NotEquals{xs[i], xs[j]});
+
+        return solve_with(
+            p,
+            SolveCallbacks{
+                .branch = branch_with(variable_order::dom(p), value_order::smallest_in()),
+                .restarts = RestartSchedule::luby(1)},
+            nullopt);
+    };
+
+    auto refined = run(false);
+    auto scan = run(true);
+    unsetenv("GCS_LEARNED_NOGOODS_SCAN");
+
+    // The instance must actually restart and learn, or the differential is vacuous.
+    CHECK(refined.restarts > 0);
+    CHECK(refined.learned_nogoods > 0);
+
+    CHECK(refined.recursions == scan.recursions);
+    CHECK(refined.failures == scan.failures);
+    CHECK(refined.restarts == scan.restarts);
+    CHECK(refined.learned_nogoods == scan.learned_nogoods);
+    CHECK(refined.solutions == scan.solutions);
+}
+
 // An unsatisfiable Langford-pairing instance (size 5): rich enough that
 // AllDifferent and Element prune at the root, so the root node emits
 // guess-independent propagation that later restart passes do not re-derive.
