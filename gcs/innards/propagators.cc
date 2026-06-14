@@ -45,13 +45,17 @@ namespace
 
     // A refined per-literal watch armed on a variable: when `literal` becomes
     // entailed, `payload` is delivered to propagator `owner`. `id` is a stable
-    // identity used to find and undo the watch on backtrack.
+    // identity used to find and undo the watch on backtrack. `trigger_mask` is the
+    // set of Inference granularities that could make `literal` newly entailed (see
+    // refined_watch_trigger_mask); a change outside it cannot fire this watch, so
+    // the firing loop skips the test_literal for it.
     struct RefinedWatch
     {
         Literal literal;
         std::uint32_t payload;
         int owner;
         std::uint64_t id;
+        unsigned trigger_mask;
     };
 
     enum class WatchEditOp
@@ -88,6 +92,36 @@ namespace
             [](const IntegerVariableCondition & cond) -> std::optional<std::size_t> { return underlying_var_index(cond.var); },
             [](const TrueLiteral &) -> std::optional<std::size_t> { return std::nullopt; },
             [](const FalseLiteral &) -> std::optional<std::size_t> { return std::nullopt; }}
+            .visit(literal);
+    }
+
+    // Which Inference granularities can make `literal` newly entailed, as a bitmask
+    // over Inference -- mirroring the coarse iv_triggers masks. `x == v` can only
+    // become true when x is instantiated; `x >= k` / `x < k` only when a bound
+    // moves (an interior removal never changes a bound); `x != v` on any value
+    // removal. So the firing loop can skip the (expensive) test_literal for a watch
+    // whose literal cannot have flipped under the current inference. The mask is
+    // derived from the literal alone -- the engine knows each operator's entailment
+    // semantics -- so every client benefits without passing anything extra.
+    auto refined_watch_trigger_mask(const Literal & literal) -> unsigned
+    {
+        using enum VariableConditionOperator;
+        auto bit = [](Inference i) { return 1u << to_underlying(i); };
+        const auto on_instantiated = bit(Inference::Instantiated);
+        const auto on_bounds = bit(Inference::BoundsChanged) | on_instantiated;
+        const auto on_change = bit(Inference::InteriorValuesChanged) | on_bounds;
+        return overloaded{
+            [&](const IntegerVariableCondition & cond) -> unsigned {
+                switch (cond.op) {
+                case Equal: return on_instantiated;
+                case NotEqual: return on_change;
+                case GreaterEqual:
+                case Less: return on_bounds;
+                }
+                return on_change; // unreachable; conservative default
+            },
+            [&](const TrueLiteral &) -> unsigned { return on_change; },
+            [&](const FalseLiteral &) -> unsigned { return on_change; }}
             .visit(literal);
     }
 }
@@ -156,7 +190,7 @@ struct Propagators::Imp : RefinedWatchSink
             return;
         if (refined_watches_by_var.size() <= *var_index)
             refined_watches_by_var.resize(*var_index + 1);
-        RefinedWatch w{literal, payload, owner, next_refined_watch_id++};
+        RefinedWatch w{literal, payload, owner, next_refined_watch_id++, refined_watch_trigger_mask(literal)};
         refined_watches_by_var[*var_index].push_back(w);
         if (trailed)
             refined_watch_edit_trail.push_back({WatchEditOp::Added, *var_index, w});
@@ -342,13 +376,17 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
                     enqueue_propagator(p);
 
         // Refined watches: fire any whose literal is now entailed, delivering the
-        // payload to its owner and consuming the watch. We test every watch armed on
-        // v on any change to v (correct, since test_literal reads current bounds); a
-        // later stage can narrow this to only the literals a given bound move crosses.
+        // payload to its owner and consuming the watch. A watch is only tested when
+        // the current inference granularity is in its trigger_mask -- e.g. an `x==v`
+        // watch is skipped on a mere bound move, since x==v can only become true when
+        // x is instantiated. This gates the expensive test_literal; the firing of a
+        // watch outside its mask would be a no-op anyway (the literal cannot have
+        // changed status), so this is semantics-preserving.
         if (v.index < _imp->refined_watches_by_var.size()) {
+            const auto inf_bit = 1u << to_underlying(inf);
             auto & watches = _imp->refined_watches_by_var[v.index];
             for (std::size_t i = 0; i < watches.size();) {
-                if (state.test_literal(watches[i].literal) == LiteralIs::DefinitelyTrue) {
+                if ((watches[i].trigger_mask & inf_bit) && state.test_literal(watches[i].literal) == LiteralIs::DefinitelyTrue) {
                     const auto fired = watches[i];
                     if (_imp->inbox_by_propagator[fired.owner].empty())
                         _imp->pending_inbox_owners.push_back(fired.owner);
