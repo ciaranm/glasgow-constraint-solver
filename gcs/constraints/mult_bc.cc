@@ -835,7 +835,7 @@ namespace
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
         const pair<ProofLine, ProofLine> z_eq_product_lines,
         bool x_is_first,
-        bool assume_upper, const vector<ProofLine> & sign_lines) -> void
+        bool assume_upper) -> void
     {
         auto rup_bounds = map<IntegerVariableID, DerivedBounds>{};
 
@@ -1035,7 +1035,7 @@ namespace
             auto lower_justf = [&](const ReasonFunction & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
-                    channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false, sign_lines);
+                    channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
                 logger->emit_rup_proof_line_under_reason(reason,
                     WPBSum{} + 1_i * (x_var <= largest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
@@ -1048,7 +1048,7 @@ namespace
             auto upper_justf = [&](const ReasonFunction & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
-                    channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true, sign_lines);
+                    channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
                 logger->emit_rup_proof_line_under_reason(reason,
                     WPBSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
@@ -1075,7 +1075,7 @@ namespace
             auto upper_justf = [&](const ReasonFunction & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
-                    channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false, sign_lines);
+                    channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
                 logger->emit_rup_proof_line_under_reason(reason,
                     WPBSum{} + 1_i * (x_var <= largest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
@@ -1083,7 +1083,7 @@ namespace
             auto lower_justf = [&](const ReasonFunction & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
-                    channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true, sign_lines);
+                    channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
                 logger->emit_rup_proof_line_under_reason(reason,
                     WPBSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
