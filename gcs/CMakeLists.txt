@@ -165,6 +165,7 @@ if(GCS_BUILD_TESTS)
     add_executable(linear_constant_test constraints/linear/linear_constant_test.cc)
     add_executable(logical_test constraints/logical_test.cc)
     add_executable(min_max_test constraints/min_max_test.cc)
+    add_executable(mini_linear_test constraints/mini_linear_test.cc)
     add_executable(mult_bc_test constraints/mult_bc_test.cc)
     add_executable(n_value_test constraints/n_value_test.cc)
     add_executable(nogoods_test constraints/nogoods_test.cc)
@@ -186,7 +187,7 @@ if(GCS_BUILD_TESTS)
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
             count_test cumulative_test disjunctive_test disjunctive_2d_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
-            logical_test min_max_test mult_bc_test n_value_test nogoods_test parity_test
+            logical_test min_max_test mini_linear_test mult_bc_test n_value_test nogoods_test parity_test
             plus_minus_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
@@ -220,6 +221,7 @@ if(GCS_BUILD_TESTS)
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
     endforeach()
     add_test(NAME equals_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
+    add_test(NAME mini_linear_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:mini_linear_test>)
     add_test(NAME linear_constant_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_constant_test>)
     add_test(NAME sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:sort_test>)
     add_test(NAME arg_sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:arg_sort_test>)
