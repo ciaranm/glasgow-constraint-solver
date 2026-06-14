@@ -46,6 +46,14 @@ namespace gcs::innards
          * wake it. Watches armed while propagating are restored on backtrack.
          */
         virtual auto add_refined_watch(int owner_propagator, const Literal & literal, std::uint32_t payload) -> void = 0;
+
+        /**
+         * \brief Whether the given propagator currently has any refined watch armed
+         * on the given variable. Reads the (backtrack-consistent) watch index, so a
+         * propagator can use it to recompute its watched set without keeping its own
+         * state. \sa RefinedWatchContext::is_watching
+         */
+        [[nodiscard]] virtual auto is_watching(int owner_propagator, const IntegerVariableID & var) const -> bool = 0;
     };
 
     /**
@@ -101,6 +109,17 @@ namespace gcs::innards
         auto watch(const Literal & literal, std::uint32_t payload) const -> void
         {
             _sink->add_refined_watch(_owner, literal, payload);
+        }
+
+        /**
+         * \brief Whether this propagator currently has any refined watch armed on
+         * `var`. Lets a propagator recompute which variables it should watch each
+         * time it runs, without tracking that set itself (which would have to be
+         * kept consistent with backtracking); the watch index already is.
+         */
+        [[nodiscard]] auto is_watching(const IntegerVariableID & var) const -> bool
+        {
+            return _sink->is_watching(_owner, var);
         }
     };
 
