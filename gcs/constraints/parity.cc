@@ -96,7 +96,7 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
         add_trigger_for(triggers, l);
 
     propagators.install(constraint_id(), [lits = _lits](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        long how_many_0 = 0, how_many_1 = 0, how_many_unknown = 0;
+        long /*how_many_0 = 0,*/ how_many_1 = 0, how_many_unknown = 0;
         optional<Literal> an_unknown;
         Reason reason;
         for (const auto & l : lits) {
@@ -109,7 +109,7 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
 
             case DefinitelyFalse:
                 reason.push_back(! l);
-                ++how_many_0;
+                // ++how_many_0;
                 break;
 
             case Undecided:

@@ -325,7 +325,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                     // lines. The inverse channel (p[j]=offset+k -> pos[k]=j) then
                     // makes p[j] != offset+k RUP.
                     inference.infer_not_equal(logger, p[j], pv,
-                        JustifyExplicitlyThenRUP{[&, k, j, below](const ReasonFunction & reason_fn) -> void {
+                        JustifyExplicitlyThenRUP{[&, k, below](const ReasonFunction & reason_fn) -> void {
                             PolBuilder pol;
                             if (below) {
                                 pol.add(witness.rank_ge[k]);
@@ -377,7 +377,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                     }
 
                     inference.infer_not_equal(logger, p[j], pv,
-                        JustifyExplicitlyThenRUP{[&, k, j, U](const ReasonFunction & reason_fn) -> void {
+                        JustifyExplicitlyThenRUP{[&, k, U](const ReasonFunction & reason_fn) -> void {
                             // Line A: x[k] <= U => pos[k] <= #possible(U).
                             // For each i that cannot precede k at x[k]=U, the clause
                             // (x[k] >= U+1) v !before[i][k] is RUP from before_fwd +
