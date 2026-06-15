@@ -855,7 +855,7 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid lb(x) tightening"};
                     else
                         inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
-                            JustifyExplicitlyThenRUP{[&x, &y, &pos, /*&lo_i, &hi_i,*/ &ly, &uy, &inj_lines, S, fa, fb, i, n, L, logger](const ReasonFunction & reason_fn) -> void {
+                            JustifyExplicitlyThenRUP{[&x, &y, &pos, &ly, &uy, &inj_lines, S, fa, fb, i, n, L, logger](const ReasonFunction & reason_fn) -> void {
                                 for (size_t k = n; k-- > 0;)
                                     logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
                                 for (size_t k = 0; k < n; ++k)
@@ -917,7 +917,7 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid ub(x) tightening"};
                     else
                         inference.infer_less_than(logger, x[i], Integer{U + 1},
-                            JustifyExplicitlyThenRUP{[&x, &y, &pos, /*&lo_i, &hi_i,*/ &ly, &uy, &inj_lines, S, fa, fb, i, n, U, logger](const ReasonFunction & reason_fn) -> void {
+                            JustifyExplicitlyThenRUP{[&x, &y, &pos, &ly, &uy, &inj_lines, S, fa, fb, i, n, U, logger](const ReasonFunction & reason_fn) -> void {
                                 for (size_t k = n; k-- > 0;)
                                     logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
                                 for (size_t k = 0; k < n; ++k)
