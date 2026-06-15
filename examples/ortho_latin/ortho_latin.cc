@@ -2,7 +2,10 @@
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
+
+#include <examples/benchmark_cli.hh>
 
 #include <cstdlib>
 #include <cxxopts.hpp>
@@ -43,12 +46,19 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("ortho_latin"))                              //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program Options")                                       //
+            ("help", "Display help information")                                     //
+            ("prove", "Create a proof")                                              //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",         //
+                cxxopts::value<string>()->default_value("ortho_latin"))              //
+            ("stats", "Print solve statistics")                                      //
+            ("branch", "Branching heuristic: default, or dom-wdeg[:VARIANT] "        //
+                       "(VARIANT = classic/ia/ca/id/cd/ca.cd/chs; bare = chs)",      //
+                cxxopts::value<string>()->default_value("default"))                  //
+            ("timeout", "Abort the solve after this many seconds (0 = no limit)",    //
+                cxxopts::value<double>()->default_value("0"))                        //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"))         //
             ;
 
         options.add_options()                                                                    //
@@ -122,17 +132,42 @@ auto main(int argc, char * argv[]) -> int
         p.post(Equals{g1[x][0], constant_variable(Integer{x})});
     }
 
-    auto stats = solve(
-        p, [&](const CurrentState & s) -> bool {
-            for (int x = 0; x < size; ++x) {
-                for (int y = 0; y < size; ++y)
-                    print("{},{} ", s(g1[x][y]), s(g2[x][y]));
-                println("");
-            }
-            println("");
+    auto restarts = options_vars.contains("restarts")
+        ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>()))
+        : nullopt;
 
-            return true;
-        },
+    auto branch_spec = options_vars["branch"].as<string>();
+    BranchHeuristic brancher;
+    if (branch_spec == "default")
+        brancher = branch_with(variable_order::dom_then_deg(p), value_order::smallest_first());
+    else if (branch_spec == "dom-wdeg" || branch_spec.starts_with("dom-wdeg:")) {
+        auto colon = branch_spec.find(':');
+        auto scheme = bench::scheme_from_string(colon == string::npos ? "chs" : branch_spec.substr(colon + 1));
+        if (! scheme) {
+            println(cerr, "Error: unknown --branch scheme in {}", branch_spec);
+            return EXIT_FAILURE;
+        }
+        brancher = branch_with(variable_order::dom_wdeg(p, *scheme), value_order::smallest_first());
+    }
+    else {
+        println(cerr, "Error: unknown --branch value {}", branch_spec);
+        return EXIT_FAILURE;
+    }
+
+    auto stats = bench::solve_with_timeout(options_vars["timeout"].as<double>(), p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                for (int x = 0; x < size; ++x) {
+                    for (int y = 0; y < size; ++y)
+                        print("{},{} ", s(g1[x][y]), s(g2[x][y]));
+                    println("");
+                }
+                println("");
+
+                return true;
+            },
+            .branch = brancher,
+            .restarts = restarts},
         options_vars.contains("prove")
             ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
             : nullopt);

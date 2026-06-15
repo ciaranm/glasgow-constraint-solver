@@ -5,6 +5,8 @@
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
+#include <examples/benchmark_cli.hh>
+
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -100,6 +102,8 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<string>()->default_value("dom-then-deg"))             //
             ("restarts", "Restart on a Luby schedule with the given conflict scale", //
                 cxxopts::value<unsigned long long>()->implicit_value("100"))         //
+            ("timeout", "Abort the solve after this many seconds (0 = no limit)",    //
+                cxxopts::value<double>()->default_value("0"))                        //
             ;
 
         options.add_options()                                                                   //
@@ -152,8 +156,8 @@ auto main(int argc, char * argv[]) -> int
         ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>()))
         : nullopt;
 
-    auto stats = solve_with(
-        p,
+    auto stats = bench::solve_with_timeout(
+        options_vars["timeout"].as<double>(), p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
                 println("solution: {}", solution | std::ranges::views::transform(cref(s)));
