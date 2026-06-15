@@ -58,11 +58,13 @@ namespace gcs
         bool verbose_names = true;             ///< Use verbose names in proofs?
         bool always_use_full_encoding = false; ///< Always write the full variable encoding to the OPB file
         AssertionLevel assertion_level = AssertionLevel::Off;
+        bool assertion_level_set_explicitly = false; ///< Was assertion_level set in code (so it overrides the env var)?
 
         /// Write annotated assertions instead of full justifications.
         ProofOptions & set_assertion_level(AssertionLevel a = AssertionLevel::Inferences)
         {
             assertion_level = a;
+            assertion_level_set_explicitly = true;
             return *this;
         }
         /// Always write the full variable encoding to the OPB file.
