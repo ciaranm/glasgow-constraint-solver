@@ -228,3 +228,49 @@ TEST_CASE("ConflictHistorySearch snapshot and load round-trip the scores")
     reloaded.load(snap, propagators);
     CHECK(reloaded.weighted_degree_of(current, propagators, a) == Approx(weighting.weighted_degree_of(current, propagators, a)));
 }
+
+TEST_CASE("RefinedWeighting ca.cd increments by 1 / (fut * (1 + dom))")
+{
+    State state;
+    auto a = state.allocate_integer_variable_with_state(0_i, 2_i); // dom 3
+    auto b = state.allocate_integer_variable_with_state(0_i, 2_i); // dom 3
+
+    Propagators propagators;
+    propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, b}});
+
+    RefinedWeighting weighting{propagators, state, RefinedWeighting::Variant::CurrentArityCurrentDomain};
+    auto current = state.current();
+
+    // Every local weight starts at 1, so the root weighted degree is the degree.
+    CHECK(weighting.weighted_degree_of(current, propagators, a) == Approx(1.0));
+
+    // One conflict on _1: both future variables (a, b) get
+    // w(_1)[x] += 1 / (fut * (1 + dom)) = 1 / (2 * (1 + 3)) = 0.125.
+    weighting.note_conflict(0, {a, b}, nullopt, state);
+    CHECK(weighting.weighted_degree_of(current, propagators, a) == Approx(1.125));
+    CHECK(weighting.weighted_degree_of(current, propagators, b) == Approx(1.125));
+}
+
+TEST_CASE("RefinedWeighting variants increment differently and round-trip")
+{
+    State state;
+    auto a = state.allocate_integer_variable_with_state(0_i, 2_i); // dom 3
+    auto b = state.allocate_integer_variable_with_state(0_i, 2_i);
+
+    Propagators propagators;
+    propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, b}});
+
+    // The CurrentArity variant increments by 1 / fut = 1 / 2 = 0.5, not the ca.cd 0.125.
+    RefinedWeighting ca{propagators, state, RefinedWeighting::Variant::CurrentArity};
+    auto current = state.current();
+    ca.note_conflict(0, {a, b}, nullopt, state);
+    CHECK(ca.weighted_degree_of(current, propagators, a) == Approx(1.5));
+
+    // snapshot / load round-trips the local weights.
+    auto snap = ca.snapshot(propagators);
+    REQUIRE(snap.local_weight_of(NumberedConstraint{1}, a).has_value());
+    CHECK(snap.local_weight_of(NumberedConstraint{1}, a).value() == Approx(1.5));
+    RefinedWeighting reloaded{propagators, state, RefinedWeighting::Variant::CurrentArity};
+    reloaded.load(snap, propagators);
+    CHECK(reloaded.weighted_degree_of(current, propagators, a) == Approx(1.5));
+}

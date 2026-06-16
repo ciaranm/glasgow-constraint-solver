@@ -6,8 +6,10 @@
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/variable_id.hh>
 
+#include <map>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace gcs
@@ -25,8 +27,10 @@ namespace gcs
      * search/thread and entering another: the basis for share-nothing parallel
      * sync and for seeding a search with proof-mined weights.
      *
-     * v1 holds only global per-constraint weights; a per-(constraint, variable)
-     * map for AbsCon-local schemes is a later additive extension.
+     * It holds a global per-constraint weight map (for whole-constraint schemes)
+     * and a per-(constraint, variable) local weight map (for schemes that weight
+     * variables within a constraint, such as ca.cd); a scheme uses whichever it
+     * needs.
      *
      * \ingroup SearchHeuristics
      */
@@ -59,10 +63,22 @@ namespace gcs
         auto set_weight(const ConstraintID &, double) -> void;
 
         /**
-         * Combine another WeightingState into this one. For every constraint in
-         * \p other, this one's weight (taken as 0 if absent) is combined with
+         * The local weight recorded for a (constraint, variable) pair, or nullopt
+         * if it has none.
+         */
+        [[nodiscard]] auto local_weight_of(const ConstraintID &, SimpleIntegerVariableID) const -> std::optional<double>;
+
+        /**
+         * Set (or overwrite) the local weight for a (constraint, variable) pair.
+         */
+        auto set_local_weight(const ConstraintID &, SimpleIntegerVariableID, double) -> void;
+
+        /**
+         * Combine another WeightingState into this one, entry by entry across both
+         * the per-constraint and per-(constraint, variable) maps. For every entry
+         * in \p other, this one's value (taken as 0 if absent) is combined with
          * other's under \p policy: Sum adds, Max keeps the larger, Average takes
-         * the mean. Constraints present only in this one are left unchanged.
+         * the mean. Entries present only in this one are left unchanged.
          */
         auto merge(const WeightingState & other, MergePolicy policy) -> void;
 
@@ -71,8 +87,15 @@ namespace gcs
          */
         [[nodiscard]] auto constraint_weights() const -> const std::unordered_map<ConstraintID, double> &;
 
+        /**
+         * The full (ConstraintID, variable) -> weight map, for iteration /
+         * serialisation.
+         */
+        [[nodiscard]] auto local_weights() const -> const std::map<std::pair<ConstraintID, SimpleIntegerVariableID>, double> &;
+
     private:
         std::unordered_map<ConstraintID, double> _constraint_weights;
+        std::map<std::pair<ConstraintID, SimpleIntegerVariableID>, double> _local_weights;
     };
 
     /**
@@ -221,14 +244,76 @@ namespace gcs
     };
 
     /**
+     * \brief Refined dom/wdeg increments (Wattez, Lecoutre, Paparrizou, Tabary,
+     * ICTAI 2019): a per-(constraint, variable) local weight whose increment on a
+     * conflict reflects the constraint's arity and the variables' domains.
+     *
+     * On a conflict of constraint c, for each still-unassigned variable x of c the
+     * local weight w(c)[x] (initialised to 1) is incremented by a Variant-chosen
+     * amount:
+     *   - InitialArity:  1 / |scp(c)|
+     *   - CurrentArity:  1 / |fut(c)|
+     *   - InitialDomain: 1 / |dom_init(x)|
+     *   - CurrentDomain: 1 / (1 + |dom(x)|)
+     *   - CurrentArityCurrentDomain (the default, the strongest in their study):
+     *         1 / (|fut(c)| * (1 + |dom(x)|))
+     * weighted_degree_of(x) sums w(c)[x] over x's constraints with at least two
+     * unassigned variables, so at the root (all weights 1) it equals the degree.
+     *
+     * \ingroup SearchHeuristics
+     */
+    class RefinedWeighting final : public VariableWeighting
+    {
+    public:
+        /**
+         * \brief Which of the ia / ca / id / cd / ca.cd increments to use.
+         */
+        enum class Variant
+        {
+            InitialArity,
+            CurrentArity,
+            InitialDomain,
+            CurrentDomain,
+            CurrentArityCurrentDomain
+        };
+
+        RefinedWeighting(const innards::Propagators & propagators, const innards::State & state, Variant variant);
+
+        auto note_conflict(int constraint_index, const std::vector<SimpleIntegerVariableID> & scope,
+            const std::optional<innards::ReasonFunction> & reason, const innards::State & state) -> void override;
+
+        [[nodiscard]] auto weighted_degree_of(const CurrentState & state,
+            const innards::Propagators & propagators, IntegerVariableID var) const -> double override;
+
+        auto on_restart() -> void override;
+
+        [[nodiscard]] auto snapshot(const innards::Propagators & propagators) const -> WeightingState override;
+
+        auto load(const WeightingState & state, const innards::Propagators & propagators) -> void override;
+
+    private:
+        Variant _variant;
+        // Local weights by constraint index, then variable index; an absent entry
+        // means the default weight of 1. Initial domain sizes by variable index,
+        // for the InitialDomain variant.
+        std::vector<std::unordered_map<unsigned long long, double>> _local_weights;
+        std::unordered_map<unsigned long long, long long> _initial_domain;
+    };
+
+    /**
      * \brief Selects which weighting scheme gcs::variable_order::dom_wdeg uses.
      *
      * \ingroup SearchHeuristics
      */
     enum class WeightingScheme
     {
-        Classic,              ///< ClassicDomWDeg
-        ConflictHistorySearch ///< ConflictHistorySearch (recency-weighted)
+        Classic,                   ///< ClassicDomWDeg
+        InitialArity,              ///< RefinedWeighting, initial-arity increment
+        CurrentArity,              ///< RefinedWeighting, current-arity increment
+        InitialDomain,             ///< RefinedWeighting, initial-domain increment
+        CurrentDomain,             ///< RefinedWeighting, current-domain increment
+        CurrentArityCurrentDomain, ///< RefinedWeighting, ca.cd increment
+        ConflictHistorySearch      ///< ConflictHistorySearch (recency-weighted)
     };
 }
 

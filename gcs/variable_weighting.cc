@@ -7,14 +7,18 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <map>
 #include <optional>
+#include <utility>
 
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::map;
 using std::max;
 using std::nullopt;
 using std::optional;
+using std::pair;
 using std::pow;
 using std::size_t;
 using std::unordered_map;
@@ -52,26 +56,48 @@ auto WeightingState::set_weight(const ConstraintID & constraint_id, double weigh
 
 auto WeightingState::merge(const WeightingState & other, MergePolicy policy) -> void
 {
-    for (const auto & [constraint_id, their_weight] : other._constraint_weights) {
-        auto & my_weight = _constraint_weights[constraint_id];
+    auto combine = [policy](double & mine, double theirs) {
         switch (policy) {
             using enum MergePolicy;
         case Sum:
-            my_weight += their_weight;
+            mine += theirs;
             break;
         case Max:
-            my_weight = max(my_weight, their_weight);
+            mine = max(mine, theirs);
             break;
         case Average:
-            my_weight = (my_weight + their_weight) / 2.0;
+            mine = (mine + theirs) / 2.0;
             break;
         }
-    }
+    };
+
+    for (const auto & [constraint_id, their_weight] : other._constraint_weights)
+        combine(_constraint_weights[constraint_id], their_weight);
+    for (const auto & [key, their_weight] : other._local_weights)
+        combine(_local_weights[key], their_weight);
 }
 
 auto WeightingState::constraint_weights() const -> const unordered_map<ConstraintID, double> &
 {
     return _constraint_weights;
+}
+
+auto WeightingState::local_weight_of(const ConstraintID & constraint_id, SimpleIntegerVariableID var) const -> optional<double>
+{
+    auto it = _local_weights.find(pair{constraint_id, var});
+    if (it == _local_weights.end())
+        return nullopt;
+    return it->second;
+}
+
+auto WeightingState::set_local_weight(const ConstraintID & constraint_id, SimpleIntegerVariableID var, double weight) -> void
+{
+    _local_weights[pair{constraint_id, var}] = weight;
+}
+
+auto WeightingState::local_weights() const -> const map<pair<ConstraintID, SimpleIntegerVariableID>, double> &
+{
+    return _local_weights;
 }
 
 DenseConstraintWeighting::DenseConstraintWeighting(const Propagators & propagators, double default_weight) :
@@ -183,4 +209,108 @@ auto ConflictHistorySearch::load(const WeightingState & state, const Propagators
     _conflict_of.assign(propagators.number_of_constraints(), 0);
     _number_of_conflicts = 0;
     _alpha = chs_alpha_initial;
+}
+
+RefinedWeighting::RefinedWeighting(const Propagators & propagators, const State & state, Variant variant) :
+    _variant(variant),
+    _local_weights(propagators.number_of_constraints())
+{
+    // Capture the initial domain size of every variable in a constraint scope,
+    // for the InitialDomain variant.
+    for (size_t c = 0; c < propagators.number_of_constraints(); ++c)
+        for (const auto & v : propagators.scope_of_constraint(static_cast<int>(c)))
+            _initial_domain.try_emplace(v.index, state.domain_size(v).raw_value);
+}
+
+auto RefinedWeighting::note_conflict(int constraint_index, const vector<SimpleIntegerVariableID> & scope,
+    const optional<ReasonFunction> &, const State & state) -> void
+{
+    long long futures = 0;
+    for (const auto & v : scope)
+        if (! state.has_single_value(v))
+            ++futures;
+    if (futures == 0)
+        return;
+
+    auto & weights = _local_weights[constraint_index];
+    for (const auto & x : scope) {
+        if (state.has_single_value(x))
+            continue;
+        double increment = 0.0;
+        switch (_variant) {
+            using enum Variant;
+        case InitialArity:
+            increment = 1.0 / static_cast<double>(scope.size());
+            break;
+        case CurrentArity:
+            increment = 1.0 / static_cast<double>(futures);
+            break;
+        case InitialDomain:
+            increment = 1.0 / static_cast<double>(_initial_domain.at(x.index));
+            break;
+        case CurrentDomain:
+            increment = 1.0 / (1.0 + static_cast<double>(state.domain_size(x).raw_value));
+            break;
+        case CurrentArityCurrentDomain:
+            increment = 1.0 / (static_cast<double>(futures) * (1.0 + static_cast<double>(state.domain_size(x).raw_value)));
+            break;
+        }
+        auto [it, inserted] = weights.try_emplace(x.index, 1.0);
+        it->second += increment;
+    }
+}
+
+auto RefinedWeighting::weighted_degree_of(const CurrentState & state, const Propagators & propagators,
+    IntegerVariableID var) const -> double
+{
+    auto simple = overloaded{
+        [](const SimpleIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v; },
+        [](const ViewOfIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v.actual_variable; },
+        [](const ConstantIntegerVariableID &) -> optional<SimpleIntegerVariableID> { return nullopt; }}
+                      .visit(var);
+
+    if (! simple)
+        return 0.0;
+
+    double total = 0.0;
+    for (const auto & constraint_index : propagators.constraint_indices_of_variable(*simple)) {
+        int futures = 0;
+        for (const auto & v : propagators.scope_of_constraint(constraint_index)) {
+            if (! state.has_single_value(v))
+                if (++futures >= 2)
+                    break;
+        }
+        if (futures >= 2) {
+            const auto & weights = _local_weights[constraint_index];
+            auto it = weights.find(simple->index);
+            total += (it != weights.end() ? it->second : 1.0);
+        }
+    }
+    return total;
+}
+
+auto RefinedWeighting::on_restart() -> void
+{
+    // The refined increments keep their weights across restarts.
+}
+
+auto RefinedWeighting::snapshot(const Propagators & propagators) const -> WeightingState
+{
+    WeightingState result;
+    for (size_t c = 0; c < _local_weights.size(); ++c)
+        for (const auto & [var_index, weight] : _local_weights[c])
+            result.set_local_weight(propagators.constraint_id_for_index(static_cast<int>(c)),
+                SimpleIntegerVariableID{var_index}, weight);
+    return result;
+}
+
+auto RefinedWeighting::load(const WeightingState & state, const Propagators & propagators) -> void
+{
+    for (size_t c = 0; c < _local_weights.size(); ++c) {
+        _local_weights[c].clear();
+        auto constraint_id = propagators.constraint_id_for_index(static_cast<int>(c));
+        for (const auto & v : propagators.scope_of_constraint(static_cast<int>(c)))
+            if (auto weight = state.local_weight_of(constraint_id, v))
+                _local_weights[c][v.index] = *weight;
+    }
 }
