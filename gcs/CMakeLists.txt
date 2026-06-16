@@ -5,6 +5,7 @@ add_library(glasgow_constraint_solver
         presolver.cc
         problem.cc
         proof.cc
+        restarts.cc
         scp_reader.cc
         search_heuristics.cc
         solve.cc
@@ -438,6 +439,10 @@ if(GCS_BUILD_TESTS)
     add_executable(variable_weighting_test variable_weighting_test.cc)
     target_link_libraries(variable_weighting_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME variable_weighting_test COMMAND $<TARGET_FILE:variable_weighting_test>)
+
+    add_executable(restarts_test restarts_test.cc)
+    target_link_libraries(restarts_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME restarts_test COMMAND $<TARGET_FILE:restarts_test>)
 
     add_executable(search_heuristics_test search_heuristics_test.cc)
     target_link_libraries(search_heuristics_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

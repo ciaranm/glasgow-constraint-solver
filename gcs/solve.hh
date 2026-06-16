@@ -5,8 +5,11 @@
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/problem.hh>
 #include <gcs/proof.hh>
+#include <gcs/restarts.hh>
 #include <gcs/stats.hh>
 #include <gcs/variable_condition.hh>
+
+#include <optional>
 
 #include <atomic>
 #include <functional>
@@ -101,6 +104,16 @@ namespace gcs
         BranchHeuristic branch = BranchHeuristic{};
         AfterProofStartedCallback after_proof_started = AfterProofStartedCallback{};
         CompletedCallback completed = CompletedCallback{};
+
+        /**
+         * \brief If set, search restarts on a growing sequence of conflict
+         * cutoffs instead of running a single depth-first pass.
+         *
+         * Default (unset) reproduces a single, exhaustive depth-first search.
+         * \warning Sound only for finding one solution or for optimising; see
+         * gcs::RestartSchedule.
+         */
+        std::optional<RestartSchedule> restarts = std::nullopt;
     };
 
     /**
