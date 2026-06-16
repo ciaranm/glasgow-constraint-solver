@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-24.04, macos-15, macos-26 ]
+        os: [ ubuntu-24.04, ubuntu-26.04, macos-15, macos-26 ]
 
     steps:
     - name: Checkout
@@ -31,10 +31,10 @@ jobs:
       if: startsWith(matrix.os, 'macos')
 
     - name: Configure CMake
-      # Turn the constraint-test runtime caps off on the Ubuntu release runner
-      # so it does full-enumeration completeness checking; the macOS runners
+      # Turn the constraint-test runtime caps off on the Ubuntu release runners
+      # so they do full-enumeration completeness checking; the macOS runners
       # keep the (faster) capped defaults.
-      run: cmake --preset release -B ${{github.workspace}}/build ${{ matrix.os == 'ubuntu-24.04' && '-DGCS_TEST_CAP_DEFAULTS=OFF' || '' }}
+      run: cmake --preset release -B ${{github.workspace}}/build ${{ startsWith(matrix.os, 'ubuntu') && '-DGCS_TEST_CAP_DEFAULTS=OFF' || '' }}
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
