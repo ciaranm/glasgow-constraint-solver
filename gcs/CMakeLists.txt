@@ -11,6 +11,7 @@ add_library(glasgow_constraint_solver
         stats.cc
         variable_condition.cc
         variable_id.cc
+        variable_weighting.cc
         constraints/abs.cc
         constraints/abs/justify.cc
         constraints/all_different/all_different_except.cc
@@ -433,6 +434,10 @@ if(GCS_BUILD_TESTS)
     add_executable(conflict_observer_test innards/conflict_observer_test.cc)
     target_link_libraries(conflict_observer_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME conflict_observer_test COMMAND $<TARGET_FILE:conflict_observer_test>)
+
+    add_executable(variable_weighting_test variable_weighting_test.cc)
+    target_link_libraries(variable_weighting_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME variable_weighting_test COMMAND $<TARGET_FILE:variable_weighting_test>)
 
     add_executable(linear_utils_test constraints/linear/utils_test.cc)
     target_link_libraries(linear_utils_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
