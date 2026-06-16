@@ -10,6 +10,7 @@
 #include <gcs/variable_weighting.hh>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <optional>
 
@@ -85,7 +86,7 @@ TEST_CASE("dom_wdeg seeded weights change the choice")
     WeightingState seed;
     seed.set_weight(NumberedConstraint{1}, 10.0);
 
-    auto selector = variable_order::dom_wdeg({a, b, c}, seed)(dummy, state, propagators);
+    auto selector = variable_order::dom_wdeg({a, b, c}, WeightingScheme::Classic, seed)(dummy, state, propagators);
     auto picked = selector(state.current(), propagators);
     REQUIRE(picked.has_value());
     CHECK(*picked == IntegerVariableID{a});
@@ -120,6 +121,8 @@ TEST_CASE("dom_wdeg wired into solve_with finds every solution")
     // this exercises the whole wiring: selection via callbacks.branch, the
     // once-per-search setup in solve_with, and the conflict observer driving the
     // weights during search.
+    auto scheme = GENERATE(WeightingScheme::Classic, WeightingScheme::ConflictHistorySearch);
+
     Problem problem;
     auto a = problem.create_integer_variable(1_i, 3_i);
     auto b = problem.create_integer_variable(1_i, 3_i);
@@ -132,7 +135,7 @@ TEST_CASE("dom_wdeg wired into solve_with finds every solution")
     solve_with(problem,
         SolveCallbacks{
             .solution = [&](const CurrentState &) -> bool { ++solutions; return true; },
-            .branch = branch_with(variable_order::dom_wdeg(problem), value_order::smallest_first())});
+            .branch = branch_with(variable_order::dom_wdeg(problem, scheme), value_order::smallest_first())});
 
     CHECK(solutions == 6);
 }

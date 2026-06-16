@@ -197,16 +197,27 @@ auto gcs::variable_order::dom_then_deg(vector<IntegerVariableID> vars) -> Branch
     });
 }
 
-auto gcs::variable_order::dom_wdeg(const Problem & problem, optional<WeightingState> initial) -> BranchVariableHeuristic
+auto gcs::variable_order::dom_wdeg(const Problem & problem, WeightingScheme scheme, optional<WeightingState> initial) -> BranchVariableHeuristic
 {
-    return dom_wdeg(problem.all_normal_variables(), move(initial));
+    return dom_wdeg(problem.all_normal_variables(), scheme, move(initial));
 }
 
-auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, optional<WeightingState> initial) -> BranchVariableHeuristic
+auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, WeightingScheme scheme, optional<WeightingState> initial) -> BranchVariableHeuristic
 {
-    return [vars = move(vars), initial = move(initial)](
+    return [vars = move(vars), scheme, initial = move(initial)](
                const Problem &, innards::State &, innards::Propagators & propagators) -> BranchVariableSelector {
-        auto weighting = make_shared<ClassicDomWDeg>(propagators);
+        shared_ptr<VariableWeighting> weighting;
+        switch (scheme) {
+            using enum WeightingScheme;
+        case Classic:
+            weighting = make_shared<ClassicDomWDeg>(propagators);
+            break;
+        case ConflictHistorySearch:
+            // Qualified: the WeightingScheme::ConflictHistorySearch enumerator
+            // (via using enum) otherwise shadows the class of the same name.
+            weighting = make_shared<gcs::ConflictHistorySearch>(propagators);
+            break;
+        }
         if (initial)
             weighting->load(*initial, propagators);
         propagators.set_conflict_observer(weighting.get());

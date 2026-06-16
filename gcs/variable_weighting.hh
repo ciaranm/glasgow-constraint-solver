@@ -123,40 +123,112 @@ namespace gcs
     };
 
     /**
+     * \brief Common storage for weighting schemes that keep one weight per
+     * constraint, indexed densely by constraint index.
+     *
+     * Provides the dense vector and the read / snapshot / load machinery;
+     * concrete schemes supply note_conflict (the update) and on_restart, and may
+     * override contribution_of to map a stored weight to a variable's weighted
+     * degree (the default is the weight itself).
+     *
+     * \ingroup SearchHeuristics
+     */
+    class DenseConstraintWeighting : public VariableWeighting
+    {
+    public:
+        [[nodiscard]] auto weighted_degree_of(const CurrentState & state,
+            const innards::Propagators & propagators, IntegerVariableID var) const -> double override;
+
+        [[nodiscard]] auto snapshot(const innards::Propagators & propagators) const -> WeightingState override;
+
+        auto load(const WeightingState & state, const innards::Propagators & propagators) -> void override;
+
+    protected:
+        /**
+         * One weight per constraint, each initialised to (and reset by load to)
+         * default_weight.
+         */
+        DenseConstraintWeighting(const innards::Propagators & propagators, double default_weight);
+
+        /**
+         * What constraint_index contributes to a variable's weighted degree.
+         * Default is its stored weight; a scheme can override (for example to add
+         * an offset).
+         */
+        [[nodiscard]] virtual auto contribution_of(int constraint_index) const -> double;
+
+        std::vector<double> _weights;
+        double _default_weight;
+    };
+
+    /**
      * \brief Classic dom/wdeg (Boussemart, Hemery, Lecoutre, Sais, ECAI 2004):
      * one weight per constraint, initialised to 1, bumped by 1 on every domain
      * wipeout.
      *
      * weighted_degree_of(x) sums w(c) over the constraints on x with at least two
      * unassigned variables, so at the root --- every weight 1, every variable
-     * unassigned --- it equals the variable's degree, and the heuristic starts
-     * out like dom_then_deg and specialises as conflicts accumulate.
+     * unassigned --- it equals the variable's degree, and the heuristic
+     * specialises as conflicts accumulate.
      *
      * \ingroup SearchHeuristics
      */
-    class ClassicDomWDeg final : public VariableWeighting
+    class ClassicDomWDeg final : public DenseConstraintWeighting
     {
     public:
-        /**
-         * One weight per constraint (Propagators::number_of_constraints), each
-         * initialised to 1.
-         */
         explicit ClassicDomWDeg(const innards::Propagators & propagators);
 
         auto note_conflict(int constraint_index, const std::vector<SimpleIntegerVariableID> & scope,
             const std::optional<innards::ReasonFunction> & reason, const innards::State & state) -> void override;
 
-        [[nodiscard]] auto weighted_degree_of(const CurrentState & state,
-            const innards::Propagators & propagators, IntegerVariableID var) const -> double override;
+        auto on_restart() -> void override;
+    };
+
+    /**
+     * \brief Conflict-History Search (Habet & Terrioux, SAC 2019 / J. Heuristics
+     * 2021): a recency-weighted per-constraint score.
+     *
+     * Each constraint has a score q(c), initialised to 0. On a conflict wiping a
+     * variable of c, q(c) moves towards r(c) = 1 / (#Conflicts - Conflict(c) + 1)
+     * by an exponential recency-weighted average q(c) <- (1 - alpha) q(c) + alpha
+     * r(c), where alpha starts at 0.4 and decays towards 0.06 over conflicts.
+     * weighted_degree_of(x) sums q(c) + delta over x's constraints with at least
+     * two unassigned variables, so early on (all q(c) = 0) it orders by degree.
+     * on_restart resets alpha and smooths the scores; it is inert until restarts
+     * land.
+     *
+     * \ingroup SearchHeuristics
+     */
+    class ConflictHistorySearch final : public DenseConstraintWeighting
+    {
+    public:
+        explicit ConflictHistorySearch(const innards::Propagators & propagators);
+
+        auto note_conflict(int constraint_index, const std::vector<SimpleIntegerVariableID> & scope,
+            const std::optional<innards::ReasonFunction> & reason, const innards::State & state) -> void override;
 
         auto on_restart() -> void override;
 
-        [[nodiscard]] auto snapshot(const innards::Propagators & propagators) const -> WeightingState override;
-
         auto load(const WeightingState & state, const innards::Propagators & propagators) -> void override;
 
+    protected:
+        [[nodiscard]] auto contribution_of(int constraint_index) const -> double override;
+
     private:
-        std::vector<double> _weights;
+        std::vector<long long> _conflict_of; // Conflict(c): #Conflicts when c last conflicted
+        long long _number_of_conflicts = 0;
+        double _alpha;
+    };
+
+    /**
+     * \brief Selects which weighting scheme gcs::variable_order::dom_wdeg uses.
+     *
+     * \ingroup SearchHeuristics
+     */
+    enum class WeightingScheme
+    {
+        Classic,              ///< ClassicDomWDeg
+        ConflictHistorySearch ///< ConflictHistorySearch (recency-weighted)
     };
 }
 
