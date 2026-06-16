@@ -69,18 +69,23 @@ namespace
         RefinedWatch watch;
     };
 
+    // The underlying simple-variable index of a variable id, or nullopt for a
+    // constant (no variable change can fire on it).
+    auto underlying_var_index(const IntegerVariableID & var) -> std::optional<std::size_t>
+    {
+        return overloaded{
+            [](const SimpleIntegerVariableID & v) -> std::optional<std::size_t> { return v.index; },
+            [](const ViewOfIntegerVariableID & v) -> std::optional<std::size_t> { return v.actual_variable.index; },
+            [](const ConstantIntegerVariableID &) -> std::optional<std::size_t> { return std::nullopt; }}
+            .visit(var);
+    }
+
     // The underlying simple-variable index a literal's truth depends on, or nullopt
     // for a constant/true/false literal that no variable change can fire.
     auto underlying_var_index(const Literal & literal) -> std::optional<std::size_t>
     {
         return overloaded{
-            [](const IntegerVariableCondition & cond) -> std::optional<std::size_t> {
-                return overloaded{
-                    [](const SimpleIntegerVariableID & v) -> std::optional<std::size_t> { return v.index; },
-                    [](const ViewOfIntegerVariableID & v) -> std::optional<std::size_t> { return v.actual_variable.index; },
-                    [](const ConstantIntegerVariableID &) -> std::optional<std::size_t> { return std::nullopt; }}
-                    .visit(cond.var);
-            },
+            [](const IntegerVariableCondition & cond) -> std::optional<std::size_t> { return underlying_var_index(cond.var); },
             [](const TrueLiteral &) -> std::optional<std::size_t> { return std::nullopt; },
             [](const FalseLiteral &) -> std::optional<std::size_t> { return std::nullopt; }}
             .visit(literal);
@@ -160,6 +165,17 @@ struct Propagators::Imp : RefinedWatchSink
     auto add_refined_watch(int owner_propagator, const Literal & literal, std::uint32_t payload) -> void override
     {
         register_refined_watch(owner_propagator, literal, payload, true);
+    }
+
+    [[nodiscard]] auto is_watching(int owner_propagator, const IntegerVariableID & var) const -> bool override
+    {
+        auto var_index = underlying_var_index(var);
+        if (! var_index || refined_watches_by_var.size() <= *var_index)
+            return false;
+        for (const auto & w : refined_watches_by_var[*var_index])
+            if (w.owner == owner_propagator)
+                return true;
+        return false;
     }
 };
 
