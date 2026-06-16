@@ -1618,6 +1618,46 @@ namespace
             return result;
         }
     };
+
+    // Map a dom-wdeg variant string to a weighting scheme, for the --branch flag.
+    auto scheme_from_string(const string & name) -> optional<WeightingScheme>
+    {
+        using enum WeightingScheme;
+        if (name == "classic")
+            return Classic;
+        if (name == "ia")
+            return InitialArity;
+        if (name == "ca")
+            return CurrentArity;
+        if (name == "id")
+            return InitialDomain;
+        if (name == "cd")
+            return CurrentDomain;
+        if (name == "ca.cd" || name == "cacd")
+            return CurrentArityCurrentDomain;
+        if (name == "chs")
+            return ConflictHistorySearch;
+        return nullopt;
+    }
+
+    // Build the brancher named by --branch: "dom-then-deg" (the default, over
+    // all variables, as solve_with would otherwise pick), or "dom-wdeg" (the
+    // library default scheme) optionally suffixed with a scheme, e.g.
+    // "dom-wdeg:classic".
+    auto brancher_from_string(const string & spec, const Problem & problem) -> optional<BranchHeuristic>
+    {
+        if (spec == "dom-then-deg")
+            return branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
+        if (spec == "dom-wdeg")
+            return branch_with(variable_order::dom_wdeg(problem), value_order::smallest_first());
+        if (spec.starts_with("dom-wdeg:")) {
+            auto scheme = scheme_from_string(spec.substr(spec.find(':') + 1));
+            if (! scheme)
+                return nullopt;
+            return branch_with(variable_order::dom_wdeg(problem, *scheme), value_order::smallest_first());
+        }
+        return nullopt;
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -1625,10 +1665,15 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::Options options("XCSP Glasgow Constraint Solver", "Get started by using option --help");
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof")          //
-            ("all", "Find all solutions")        //
+        options.add_options("Program Options")                                       //
+            ("help", "Display help information")                                     //
+            ("prove", "Create a proof")                                              //
+            ("all", "Find all solutions")                                            //
+            ("branch", "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] "   //
+                       "(VARIANT one of classic, ia, ca, id, cd, ca.cd, chs)",       //
+                cxxopts::value<string>()->default_value("dom-then-deg"))             //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"))         //
             ("timeout", "Timeout in seconds", cxxopts::value<int>());
 
         options.add_options()("file", "Input file in XCSP format", cxxopts::value<string>());
@@ -1705,6 +1750,16 @@ auto main(int argc, char * argv[]) -> int
         });
     }
 
+    auto brancher = brancher_from_string(options_vars["branch"].as<string>(), problem);
+    if (! brancher) {
+        cerr << "Error: unknown --branch value " << options_vars["branch"].as<string>() << endl;
+        return EXIT_FAILURE;
+    }
+
+    auto restarts = options_vars.contains("restarts")
+        ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>()))
+        : nullopt;
+
     auto stats = solve_with(problem,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
@@ -1730,7 +1785,9 @@ auto main(int argc, char * argv[]) -> int
                     saved_solution.emplace(s.clone());
                     return false;
                 }
-            }},
+            },
+            .branch = *brancher,
+            .restarts = restarts},
         options_vars.contains("prove") ? make_optional<ProofOptions>("xcsp") : nullopt,
         &abort_flag);
 
@@ -1775,6 +1832,9 @@ auto main(int argc, char * argv[]) -> int
         cout << "v </instantiation>" << endl;
     }
 
+    cout << "d RECURSIONS " << stats.recursions << endl;
+    cout << "d RESTARTS " << stats.restarts << endl;
+    cout << "d LEARNED NOGOODS " << stats.learned_nogoods << endl;
     cout << "d WRONG DECISIONS " << stats.failures << endl;
     cout << "d PROPAGATIONS " << stats.propagations << endl;
     cout << "d EFFECTFUL PROPAGATIONS " << stats.effectful_propagations << endl;
