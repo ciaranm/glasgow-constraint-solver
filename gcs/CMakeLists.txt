@@ -402,6 +402,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(interval_set_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)
 
+    add_executable(table_shared_tuples_test constraints/table/shared_tuples_test.cc)
+    target_link_libraries(table_shared_tuples_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME table_shared_tuples_test COMMAND $<TARGET_FILE:table_shared_tuples_test>)
+
     add_executable(interval_tree_test innards/interval_tree_test.cc)
     target_link_libraries(interval_tree_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME interval_tree_test COMMAND $<TARGET_FILE:interval_tree_test>)
