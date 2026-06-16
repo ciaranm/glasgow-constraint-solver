@@ -235,7 +235,7 @@ auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, WeightingSche
         }
         if (initial)
             weighting->load(*initial, propagators);
-        propagators.set_conflict_observer(weighting.get());
+        propagators.add_conflict_observer(weighting.get());
 
         return in_order_of_selector(vars,
             [weighting](const CurrentState & state, const innards::Propagators & p,
