@@ -44,8 +44,8 @@ jobs:
       run: ctest -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu) --output-on-failure --rerun-failed
 
   sanitize:
-    name: Sanitize (ubuntu-24.04)
-    runs-on: ubuntu-24.04
+    name: Sanitize (ubuntu-26.04)
+    runs-on: ubuntu-26.04
 
     steps:
     - name: Checkout
