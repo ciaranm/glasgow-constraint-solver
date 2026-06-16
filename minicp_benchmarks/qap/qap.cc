@@ -31,9 +31,11 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof");
+        options.add_options("Program Options")                                       //
+            ("help", "Display help information")                                     //
+            ("prove", "Create a proof")                                              //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"));
 
         options.add_options()("size", "Size of the problem to solve (max 12)", cxxopts::value<int>()->default_value("12"));
 
@@ -137,13 +139,18 @@ auto main(int argc, char * argv[]) -> int
     p.post(move(wcosts) == 1_i * cost);
     p.minimise(cost);
 
+    auto restarts = options_vars.contains("restarts")
+        ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>()))
+        : nullopt;
+
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
                 cout << "cost: " << s(cost) << endl;
                 return true;
             },
-            .branch = branch_with(variable_order::dom(xs), value_order::smallest_in())},
+            .branch = branch_with(variable_order::dom(xs), value_order::smallest_in()),
+            .restarts = restarts},
         options_vars.contains("prove") ? make_optional<ProofOptions>("qap") : nullopt);
 
     cout << stats << endl;

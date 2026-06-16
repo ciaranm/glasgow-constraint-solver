@@ -33,6 +33,7 @@ using std::make_unique;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::size_t;
 using std::string;
 using std::stringstream;
@@ -45,14 +46,49 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace
+{
+    auto add_distinct(vector<IntegerVariableID> & vs, const IntegerVariableID & v) -> void
+    {
+        if (std::find(vs.begin(), vs.end(), v) == vs.end())
+            vs.push_back(v);
+    }
+}
+
+auto NogoodStore::add(Nogood nogood) -> void
+{
+    vector<IntegerVariableID> vs;
+    for (const auto & lit : nogood)
+        add_distinct(vs, lit.var);
+    _vars->push_back(move(vs));
+    _nogoods->push_back(move(nogood));
+}
+
+auto NogoodStore::size() const -> size_t
+{
+    return _nogoods->size();
+}
+
 Nogoods::Nogoods(vector<Nogood> nogoods) :
-    _nogoods(move(nogoods))
+    _store(make_shared<NogoodStore>())
+{
+    for (auto & nogood : nogoods) {
+        for (const auto & lit : nogood)
+            add_distinct(_trigger_vars, lit.var);
+        _store->add(move(nogood));
+    }
+}
+
+Nogoods::Nogoods(shared_ptr<NogoodStore> store, vector<IntegerVariableID> trigger_vars) :
+    _store(move(store)),
+    _trigger_vars(move(trigger_vars))
 {
 }
 
 auto Nogoods::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Nogoods>(_nogoods);
+    // Share the live store; copy the trigger list.
+    return make_unique<Nogoods>(_store, _trigger_vars);
 }
 
 auto Nogoods::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -69,8 +105,9 @@ auto Nogoods::install(Propagators & propagators, State & initial_state, ProofMod
 auto Nogoods::define_proof_model(ProofModel & model) -> void
 {
     // A nogood forbids a conjunction of literals, so its definition is the clause
-    // of their negations: at least one negated literal must hold.
-    for (const auto & nogood : _nogoods) {
+    // of their negations. Only the nogoods present at install are declared here;
+    // ones learned later are derived in the proof as they are recorded.
+    for (const auto & nogood : *_store->_nogoods) {
         Literals lits;
         for (const auto & lit : nogood)
             lits.emplace_back(! lit);
@@ -81,82 +118,73 @@ auto Nogoods::define_proof_model(ProofModel & model) -> void
 namespace
 {
     constexpr size_t no_watch = std::numeric_limits<size_t>::max();
+
+    // Initialise the two watches for nogood `ni`, propagating a unit or raising a
+    // contradiction if it is already so. Appends to `watches`, so it must be
+    // called with `watches.size() == ni`. Shared between the one-off initialiser
+    // and the propagator's lazy catch-up for nogoods learned during search.
+    template <typename Inference_>
+    auto init_watches_for(size_t ni, const vector<Nogood> & nogoods,
+        const vector<vector<IntegerVariableID>> & nogood_vars, vector<pair<size_t, size_t>> & watches,
+        const State & state, Inference_ & inference, ProofLogger * const logger) -> void
+    {
+        const auto & nogood = nogoods[ni];
+        const auto & vars = nogood_vars[ni];
+
+        auto find_unbroken = [&](size_t skip) -> optional<size_t> {
+            for (size_t p = 0; p < nogood.size(); ++p) {
+                if (p == skip)
+                    continue;
+                if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue)
+                    return p;
+            }
+            return nullopt;
+        };
+
+        auto w1 = find_unbroken(no_watch);
+        if (! w1)
+            inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, vars));
+
+        auto w2 = find_unbroken(*w1);
+        if (! w2) {
+            inference.infer(logger, ! nogood[*w1], JustifyUsingRUP{}, generic_reason(state, vars));
+            watches.emplace_back(*w1, *w1);
+        }
+        else
+            watches.emplace_back(*w1, *w2);
+    }
 }
 
 auto Nogoods::install_propagators(Propagators & propagators) -> void
 {
-    // The distinct variables each nogood mentions (for its reason), and their
-    // union (what to wake on). Nogoods are short, so a linear dedup is fine.
-    auto nogood_vars = make_shared<vector<vector<IntegerVariableID>>>();
-    nogood_vars->reserve(_nogoods.size());
-    vector<IntegerVariableID> all_vars;
-    auto add_distinct = [](vector<IntegerVariableID> & vs, const IntegerVariableID & v) {
-        if (std::find(vs.begin(), vs.end(), v) == vs.end())
-            vs.push_back(v);
-    };
-    for (const auto & nogood : _nogoods) {
-        vector<IntegerVariableID> vs;
-        for (const auto & lit : nogood) {
-            add_distinct(vs, lit.var);
-            add_distinct(all_vars, lit.var);
-        }
-        nogood_vars->push_back(move(vs));
-    }
-
     Triggers triggers;
-    for (auto & v : all_vars)
+    for (auto & v : _trigger_vars)
         triggers.on_change.emplace_back(v);
 
-    // Watches are non-backtrackable: when a watch moves during search, leaving it
-    // moved after backtrack is sound (its literal can only become "more not-held"
-    // as the state relaxes) and avoids restoration overhead. The shared_ptr lets
-    // the initialiser and the main propagator share one watch store and one copy
-    // of the (moved-out) nogood data.
+    // The nogood data is shared with the store (so additions are visible here);
+    // the watches are this propagator's own, non-backtrackable, and grown lazily
+    // to keep pace with the nogoods.
+    auto nogoods = _store->_nogoods;
+    auto nogood_vars = _store->_vars;
     auto watches = make_shared<vector<pair<size_t, size_t>>>();
-    auto nogoods = make_shared<const vector<Nogood>>(move(_nogoods));
 
-    // Init: find two watch positions per nogood, propagating units and raising
-    // contradictions. A position is unusable as a watch iff its literal is
-    // currently DefinitelyTrue (entailed) --- then it cannot be the disjunct that
-    // saves the clause.
+    // Init: set up watches for the nogoods present up front (none, for a store
+    // that the restart loop will grow during search).
     propagators.install_initialiser(
         [nogoods, nogood_vars, watches](const State & state, auto & inference, ProofLogger * const logger) -> void {
             watches->reserve(nogoods->size());
-
-            for (size_t ni = 0; ni < nogoods->size(); ++ni) {
-                const auto & nogood = (*nogoods)[ni];
-                const auto & vars = (*nogood_vars)[ni];
-
-                auto find_unbroken = [&](size_t skip) -> optional<size_t> {
-                    for (size_t p = 0; p < nogood.size(); ++p) {
-                        if (p == skip)
-                            continue;
-                        if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue)
-                            return p;
-                    }
-                    return nullopt;
-                };
-
-                auto w1 = find_unbroken(no_watch);
-                if (! w1)
-                    inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, vars));
-
-                auto w2 = find_unbroken(*w1);
-                if (! w2) {
-                    // Unit clause: the only not-yet-held literal must be falsified.
-                    inference.infer(logger, ! nogood[*w1], JustifyUsingRUP{}, generic_reason(state, vars));
-                    // Mark as handled: both watches at one position read as broken
-                    // on every later fire, and any rescue finds the unit redundant.
-                    watches->emplace_back(*w1, *w1);
-                }
-                else
-                    watches->emplace_back(*w1, *w2);
-            }
+            for (size_t ni = 0; ni < nogoods->size(); ++ni)
+                init_watches_for(ni, *nogoods, *nogood_vars, *watches, state, inference, logger);
         });
 
     propagators.install(
         constraint_id(),
         [nogoods, nogood_vars, watches](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // Catch up: initialise watches for any nogoods learned since the last
+            // fire. (A unit/contradiction is propagated here, on first sight.)
+            for (size_t ni = watches->size(); ni < nogoods->size(); ++ni)
+                init_watches_for(ni, *nogoods, *nogood_vars, *watches, state, inference, logger);
+
             auto is_broken = [&](const Nogood & nogood, size_t p) -> bool {
                 return state.test_literal(nogood[p]) == LiteralIs::DefinitelyTrue;
             };
@@ -221,7 +249,7 @@ auto Nogoods::s_exprify(const innards::ProofModel * const model) const -> string
     // still invoked whenever a .scp is written, so it must produce valid output.
     stringstream s;
     print(s, "{} nogoods (", _constraint_id);
-    for (const auto & nogood : _nogoods) {
+    for (const auto & nogood : *_store->_nogoods) {
         print(s, " (");
         for (const auto & lit : nogood)
             print(s, " ({} {} {})",

@@ -13,6 +13,8 @@
 
 #include <cstdlib>
 #include <optional>
+#include <set>
+#include <tuple>
 #include <vector>
 
 using namespace gcs;
@@ -86,6 +88,70 @@ TEST_CASE("Solve unsat with restarts")
 
     CHECK(! found_solution);
     CHECK(stats.restarts > 0);
+    // Restarts learn nogoods from the refuted regions, and the proof verifies
+    // those learned clauses (an unsound one would fail RUP).
+    CHECK(stats.learned_nogoods > 0);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+}
+
+// As "Solve unsat with restarts" but with binary (2-way) branching:
+// value_order::smallest_in yields x==v then x!=v, and the right branch x!=v is
+// the negation of the left. Reduced nld-nogoods drop that refutation-flip from
+// the recorded path, so this exercises the reduced-extraction code that the
+// d-way default branching above leaves untouched. The proof still verifies --- an
+// unsound reduction (dropping a literal that is not re-derivable) fails RUP.
+TEST_CASE("Solve unsat with restarts and binary branching")
+{
+    Problem p;
+    vector<IntegerVariableID> xs;
+    for (int i = 0; i < 5; ++i)
+        xs.push_back(p.create_integer_variable(0_i, 3_i));
+    for (unsigned i = 0; i < xs.size(); ++i)
+        for (unsigned j = i + 1; j < xs.size(); ++j)
+            p.post(NotEquals{xs[i], xs[j]});
+
+    bool found_solution = false;
+    auto stats = solve_with(
+        p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState &) -> bool { found_solution = true; return false; },
+            .branch = branch_with(variable_order::dom(p), value_order::smallest_in()),
+            .restarts = RestartSchedule::luby(4)},
+        ProofOptions{"solve_test"});
+
+    CHECK(! found_solution);
+    CHECK(stats.restarts > 0);
+    CHECK(stats.learned_nogoods > 0);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+}
+
+// As above but with interval (bound-split) branching: value_order::
+// split_smallest_first yields x<=v then x>v, and x>v is the negation of x<=v
+// (both are order literals, not equalities). The reduced nld-nogoods drop that
+// flip just as for the equality case, exercising the bound-literal path of the
+// extraction and the entailment 2WL. The proof still verifies.
+TEST_CASE("Solve unsat with restarts and interval branching")
+{
+    Problem p;
+    vector<IntegerVariableID> xs;
+    for (int i = 0; i < 5; ++i)
+        xs.push_back(p.create_integer_variable(0_i, 3_i));
+    for (unsigned i = 0; i < xs.size(); ++i)
+        for (unsigned j = i + 1; j < xs.size(); ++j)
+            p.post(NotEquals{xs[i], xs[j]});
+
+    bool found_solution = false;
+    auto stats = solve_with(
+        p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState &) -> bool { found_solution = true; return false; },
+            .branch = branch_with(variable_order::dom(p), value_order::split_smallest_first()),
+            .restarts = RestartSchedule::luby(4)},
+        ProofOptions{"solve_test"});
+
+    CHECK(! found_solution);
+    CHECK(stats.restarts > 0);
+    CHECK(stats.learned_nogoods > 0);
     CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 
@@ -115,25 +181,6 @@ TEST_CASE("Optimise with restarts")
     CHECK(best == optional<Integer>{2_i});
     CHECK(stats.restarts > 0);
     CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
-}
-
-// Without nogoods, restarts cannot soundly enumerate: a callback that keeps
-// going after a solution, with no objective, is the one unsupported combination,
-// and is rejected rather than allowed to miscount.
-TEST_CASE("Restarts refuse to enumerate all solutions")
-{
-    Problem p;
-    auto x = p.create_integer_variable(0_i, 2_i);
-    auto y = p.create_integer_variable(0_i, 2_i);
-    p.post(NotEquals{x, y});
-
-    CHECK_THROWS_AS(
-        solve_with(
-            p,
-            SolveCallbacks{
-                .solution = [](const CurrentState &) -> bool { return true; },
-                .restarts = RestartSchedule::luby(1)}),
-        UnimplementedException);
 }
 
 // An unsatisfiable Langford-pairing instance (size 5): rich enough that
@@ -170,6 +217,51 @@ TEST_CASE("Solve unsat with restarts and root propagation")
 
     CHECK(! found_solution);
     CHECK(stats.restarts > 0);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+}
+
+// Enumerate every solution while restarting. b, c, d are a pairwise-distinct
+// triangle (a permutation of {1,2,3}) and a (domain 1..4) must differ from all
+// three, forcing a = 4 --- so there are six solutions. But a branched to 1/2/3
+// early leaves b, c, d needing three distinct values in the two that remain: a
+// dead end. Random branching hits those, so a luby(1) schedule restarts
+// part-way through enumeration. Each solution must still be reported exactly
+// once: the nld nogoods, sound because solx excludes the solutions already
+// found, stop a later pass re-entering an exhausted region. The proof must
+// conclude a complete enumeration of six.
+TEST_CASE("Enumerate all solutions with restarts")
+{
+    Problem p;
+    auto a = p.create_integer_variable(1_i, 4_i);
+    auto b = p.create_integer_variable(1_i, 3_i);
+    auto c = p.create_integer_variable(1_i, 3_i);
+    auto d = p.create_integer_variable(1_i, 3_i);
+    p.post(NotEquals{a, b});
+    p.post(NotEquals{a, c});
+    p.post(NotEquals{a, d});
+    p.post(NotEquals{b, c});
+    p.post(NotEquals{b, d});
+    p.post(NotEquals{c, d});
+
+    std::set<std::tuple<int, int, int, int>> solutions;
+    unsigned long long callbacks = 0;
+    auto stats = solve_with(
+        p,
+        SolveCallbacks{
+            .solution = [&](const CurrentState & s) -> bool {
+                ++callbacks;
+                solutions.emplace(s(a).raw_value, s(b).raw_value, s(c).raw_value, s(d).raw_value);
+                return true;
+            },
+            .branch = branch_with(variable_order::random(p, 1234), value_order::random_out(5678)),
+            .restarts = RestartSchedule::luby(1)},
+        ProofOptions{"solve_test"});
+
+    CHECK(solutions.size() == 6);
+    CHECK(callbacks == 6); // each solution reported exactly once, no re-counting
+    CHECK(stats.solutions == 6);
+    CHECK(stats.restarts > 0); // restarts actually fired during enumeration
+    CHECK(stats.learned_nogoods > 0);
     CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 

@@ -201,6 +201,15 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     emit_rup_proof_line(move(backtrack) >= 1_i, ProofLevel::Current);
 }
 
+auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions) -> ProofLine
+{
+    _imp->proof << "% learned nogood\n";
+    WPBSum clause;
+    for (const auto & lit : decisions)
+        clause += 1_i * ! lit;
+    return emit_rup_proof_line(move(clause) >= 1_i, ProofLevel::Top);
+}
+
 auto ProofLogger::end_proof() -> void
 {
     _imp->proof << "end pseudo-Boolean proof;\n";

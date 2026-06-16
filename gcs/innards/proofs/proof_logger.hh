@@ -96,6 +96,15 @@ namespace gcs::innards
         auto backtrack(const std::vector<Literal> & guesses) -> void;
 
         /**
+         * Derive a learned nogood --- the clause forbidding the given conjunction
+         * of decisions --- as a persistent (ProofLevel::Top) RUP line, returning
+         * its proof line. Used when restart learning records a nogood as the stack
+         * unrolls: the clause is RUP from the refutation still in scope, and being
+         * at Top it survives the restart's forget. Like backtrack() but kept.
+         */
+        auto emit_learned_nogood(const std::vector<Literal> & decisions) -> ProofLine;
+
+        /**
          * Log that we have reached an unsatisfiable conclusion at the end of the proof.
          */
         auto conclude_unsatisfiable(bool is_optimisation) -> void;
