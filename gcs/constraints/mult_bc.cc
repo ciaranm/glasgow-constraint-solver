@@ -144,6 +144,10 @@ namespace
                         case VariableConditionOperator::GreaterEqual:
                         case VariableConditionOperator::Less:
                             break;
+                        case VariableConditionOperator::InRange:
+                        case VariableConditionOperator::NotInRange:
+                            // MultBC's reasons and reifications are bounds and equalities only
+                            throw UnimplementedException{};
                         }
                         rup_hints.emplace_back(
                             *get_def_line_for_lit(logger, *cond));

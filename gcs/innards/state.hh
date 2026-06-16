@@ -99,6 +99,14 @@ namespace gcs::innards
             const SimpleIntegerVariableID & var,
             Integer value) -> Inference;
 
+        [[nodiscard]] auto change_state_for_not_in_range(
+            const SimpleIntegerVariableID & var,
+            Integer lo, Integer hi) -> Inference;
+
+        [[nodiscard]] auto change_state_for_in_range(
+            const SimpleIntegerVariableID & var,
+            Integer lo, Integer hi) -> Inference;
+
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) -> IntervalSet<Integer> &;
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const IntervalSet<Integer> &;
 
@@ -195,6 +203,25 @@ namespace gcs::innards
         template <IntegerVariableIDLike VarType_>
         [[nodiscard]] auto infer_greater_than_or_equal(const VarType_ &, Integer value) -> Inference;
 
+        /**
+         * Infer that a given IntegerVariableID or more specific type must not take
+         * any value in the closed interval [lo, hi]. The whole contiguous range is
+         * removed in a single pass (see IntervalSet::erase_range). Performance and
+         * clarity overload for a run of infer_not_equal() calls over a contiguous
+         * range; see InferenceTracker::infer_not_in_range for the matching
+         * single-proof-line range inference. A range with lo > hi is a no-op.
+         */
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer_not_in_range(const VarType_ &, Integer lo, Integer hi) -> Inference;
+
+        /**
+         * Infer that a given IntegerVariableID or more specific type must take a
+         * value in the closed interval [lo, hi], i.e. both bounds restrictions at
+         * once. A range with lo > hi is a contradiction.
+         */
+        template <IntegerVariableIDLike VarType_>
+        [[nodiscard]] auto infer_in_range(const VarType_ &, Integer lo, Integer hi) -> Inference;
+
         ///@}
 
         /**
@@ -203,7 +230,8 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Guess that the specified Literal holds. Does not deal with
+         * Guess that the specified condition holds (which may be a range
+         * condition, for interval accept/reject branching). Does not deal with
          * backtracking directly.
          *
          * \sa State::new_epoch()

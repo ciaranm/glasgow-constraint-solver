@@ -203,6 +203,45 @@ auto State::change_state_for_greater_than_or_equal(const SimpleIntegerVariableID
     return Inference::BoundsChanged;
 }
 
+auto State::change_state_for_not_in_range(const SimpleIntegerVariableID & var, Integer lo, Integer hi) -> Inference
+{
+    if (lo > hi)
+        return Inference::NoChange;
+    auto & set = state_of(var);
+    auto old_lower = set.lower(), old_upper = set.upper();
+    // Cheap rejects first: the range cannot touch the domain if it sits entirely
+    // outside the current bounds, and need not change anything if it falls wholly
+    // in a gap (contains_any_of is O(intervals)).
+    if (hi < old_lower || lo > old_upper)
+        return Inference::NoChange;
+    if (! set.contains_any_of(IntervalSet<Integer>{lo, hi}))
+        return Inference::NoChange;
+    set.erase_range(lo, hi);
+    if (set.empty())
+        return Inference::Contradiction;
+    if (set.lower() == set.upper())
+        return Inference::Instantiated;
+    return (set.lower() != old_lower || set.upper() != old_upper) ? Inference::BoundsChanged : Inference::InteriorValuesChanged;
+}
+
+auto State::change_state_for_in_range(const SimpleIntegerVariableID & var, Integer lo, Integer hi) -> Inference
+{
+    if (lo > hi)
+        return Inference::Contradiction;
+    auto & set = state_of(var);
+    auto old_lower = set.lower(), old_upper = set.upper();
+    if (old_lower >= lo && old_upper <= hi)
+        return Inference::NoChange;
+    set.erase_less_than(lo);
+    if (! set.empty())
+        set.erase_greater_than(hi);
+    if (set.empty())
+        return Inference::Contradiction;
+    if (set.lower() == set.upper())
+        return Inference::Instantiated;
+    return Inference::BoundsChanged;
+}
+
 namespace
 {
     auto infer_equal_on_constant(Integer const_value, Integer value) -> Inference
@@ -254,6 +293,10 @@ auto State::infer(const VariableConditionFrom<VarType_> & cond) -> Inference
         return infer_less_than(cond.var, cond.value);
     case GreaterEqual:
         return infer_greater_than_or_equal(cond.var, cond.value);
+    case InRange:
+        return infer_in_range(cond.var, cond.value, cond.upper_value);
+    case NotInRange:
+        return infer_not_in_range(cond.var, cond.value, cond.upper_value);
     }
     throw NonExhaustiveSwitch{};
 }
@@ -302,6 +345,37 @@ auto State::infer_greater_than_or_equal(const VarType_ & var, Integer value) -> 
     }
 }
 
+template <IntegerVariableIDLike VarType_>
+auto State::infer_not_in_range(const VarType_ & var, Integer lo, Integer hi) -> Inference
+{
+    if (lo > hi)
+        return Inference::NoChange;
+    auto [actual_var, negate_first, then_add] = deview(var);
+    // Map [lo, hi] from the view's frame back to the actual variable's frame. A
+    // negated view reverses the order, so the endpoints swap; the result is still
+    // a contiguous closed interval [alo, ahi] with alo <= ahi.
+    auto alo = negate_first ? then_add - hi : lo - then_add;
+    auto ahi = negate_first ? then_add - lo : hi - then_add;
+    return visit_actual(
+        actual_var,
+        [&](const SimpleIntegerVariableID & v) { return change_state_for_not_in_range(v, alo, ahi); },
+        [&](const ConstantIntegerVariableID & v) { return (alo <= v.const_value && v.const_value <= ahi) ? Inference::Contradiction : Inference::NoChange; });
+}
+
+template <IntegerVariableIDLike VarType_>
+auto State::infer_in_range(const VarType_ & var, Integer lo, Integer hi) -> Inference
+{
+    if (lo > hi)
+        return Inference::Contradiction;
+    auto [actual_var, negate_first, then_add] = deview(var);
+    auto alo = negate_first ? then_add - hi : lo - then_add;
+    auto ahi = negate_first ? then_add - lo : hi - then_add;
+    return visit_actual(
+        actual_var,
+        [&](const SimpleIntegerVariableID & v) { return change_state_for_in_range(v, alo, ahi); },
+        [&](const ConstantIntegerVariableID & v) { return (alo <= v.const_value && v.const_value <= ahi) ? Inference::NoChange : Inference::Contradiction; });
+}
+
 auto State::guess(const Literal & lit) -> void
 {
     switch (infer(lit)) {
@@ -310,9 +384,9 @@ auto State::guess(const Literal & lit) -> void
     case Inference::InteriorValuesChanged:
     case Inference::Instantiated:
         _imp->guesses.push_back(lit);
-        return;
+        break;
 
-    case Inference::Contradiction:
+    [[unlikely]] case Inference::Contradiction:
         throw UnexpectedException{"couldn't infer a branch variable"};
     }
 }
@@ -642,6 +716,22 @@ auto State::test_literal(const IntegerVariableCondition & cond) const -> Literal
             return LiteralIs::DefinitelyFalse;
         else
             return LiteralIs::Undecided;
+
+    case InRange:
+        if (lower_bound(cond.var) >= cond.value && upper_bound(cond.var) <= cond.upper_value)
+            return LiteralIs::DefinitelyTrue;
+        else if (! domain_intersects_with(cond.var, IntervalSet<Integer>{cond.value, cond.upper_value}))
+            return LiteralIs::DefinitelyFalse;
+        else
+            return LiteralIs::Undecided;
+
+    case NotInRange:
+        if (! domain_intersects_with(cond.var, IntervalSet<Integer>{cond.value, cond.upper_value}))
+            return LiteralIs::DefinitelyTrue;
+        else if (lower_bound(cond.var) >= cond.value && upper_bound(cond.var) <= cond.upper_value)
+            return LiteralIs::DefinitelyFalse;
+        else
+            return LiteralIs::Undecided;
     }
 
     throw NonExhaustiveSwitch{};
@@ -743,4 +833,14 @@ namespace gcs
     template auto State::infer_greater_than_or_equal(const SimpleIntegerVariableID &, Integer) -> Inference;
     template auto State::infer_greater_than_or_equal(const ViewOfIntegerVariableID &, Integer) -> Inference;
     template auto State::infer_greater_than_or_equal(const ConstantIntegerVariableID &, Integer) -> Inference;
+
+    template auto State::infer_not_in_range(const IntegerVariableID &, Integer, Integer) -> Inference;
+    template auto State::infer_not_in_range(const SimpleIntegerVariableID &, Integer, Integer) -> Inference;
+    template auto State::infer_not_in_range(const ViewOfIntegerVariableID &, Integer, Integer) -> Inference;
+    template auto State::infer_not_in_range(const ConstantIntegerVariableID &, Integer, Integer) -> Inference;
+
+    template auto State::infer_in_range(const IntegerVariableID &, Integer, Integer) -> Inference;
+    template auto State::infer_in_range(const SimpleIntegerVariableID &, Integer, Integer) -> Inference;
+    template auto State::infer_in_range(const ViewOfIntegerVariableID &, Integer, Integer) -> Inference;
+    template auto State::infer_in_range(const ConstantIntegerVariableID &, Integer, Integer) -> Inference;
 }

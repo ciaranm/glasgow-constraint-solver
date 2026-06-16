@@ -5,6 +5,7 @@
 #include <gcs/problem.hh>
 #include <gcs/proof.hh>
 #include <gcs/stats.hh>
+#include <gcs/variable_condition.hh>
 
 #include <atomic>
 #include <functional>
@@ -43,8 +44,9 @@ namespace gcs
     /**
      * \brief Called by gcs::solve_with() to determine branching when
      * searching, should return a generator of IntegerVariableCondition
-     * instances that corresponds to a complete branching choice, or
-     * that yields nothing if every variable is instantiated.
+     * instances (which may be range conditions, for interval accept/reject
+     * branching) that corresponds to a complete branching choice, or that
+     * yields nothing if every variable is instantiated.
      *
      * \ingroup SolveCallbacks
      * \sa SearchHeuristics

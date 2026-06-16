@@ -16,9 +16,32 @@ auto gcs::innards::generic_reason(const State & state, const std::vector<Integer
             reason.push_back(var >= bounds.first);
             reason.push_back(var <= bounds.second);
             if (state.domain_has_holes(var)) {
-                for (auto v = bounds.first + 1_i; v < bounds.second; ++v)
-                    if (! state.in_domain(var, v))
-                        reason.push_back(var != v);
+                // Each maximal run of missing values is one range condition;
+                // views take the per-value fallback, since folding views into
+                // the interval machinery is deferred.
+                if (std::holds_alternative<SimpleIntegerVariableID>(var)) {
+                    std::optional<std::pair<Integer, Integer>> run;
+                    auto flush = [&]() {
+                        if (run) {
+                            reason.push_back(not_in_range(var, run->first, run->second));
+                            run.reset();
+                        }
+                    };
+                    for (auto v = bounds.first + 1_i; v < bounds.second; ++v) {
+                        if (state.in_domain(var, v))
+                            flush();
+                        else if (run)
+                            run->second = v;
+                        else
+                            run = std::pair{v, v};
+                    }
+                    flush();
+                }
+                else {
+                    for (auto v = bounds.first + 1_i; v < bounds.second; ++v)
+                        if (! state.in_domain(var, v))
+                            reason.push_back(var != v);
+                }
             }
         }
     }

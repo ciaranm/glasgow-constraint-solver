@@ -7,6 +7,8 @@
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/state.hh>
 
+#include <cstddef>
+#include <cstdlib>
 #include <deque>
 #include <fstream>
 #include <sstream>
@@ -34,6 +36,7 @@ using std::stringstream;
 using std::tuple;
 using std::variant;
 using std::vector;
+using std::visit;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -59,6 +62,16 @@ namespace
                 return cond.var.actual_variable < cond.value - cond.var.then_add + 1_i;
             else
                 return cond.var.actual_variable >= (cond.value - cond.var.then_add);
+        case VariableConditionOperator::InRange:
+        case VariableConditionOperator::NotInRange:
+            // A negated view reverses the order, so the endpoints swap; the result
+            // is still a contiguous closed interval.
+            if (cond.var.negate_first)
+                return VariableConditionFrom<SimpleIntegerVariableID>{cond.var.actual_variable, cond.op,
+                    cond.var.then_add - cond.upper_value, cond.var.then_add - cond.value};
+            else
+                return VariableConditionFrom<SimpleIntegerVariableID>{cond.var.actual_variable, cond.op,
+                    cond.value - cond.var.then_add, cond.upper_value - cond.var.then_add};
         }
         throw NonExhaustiveSwitch{};
     }
@@ -179,12 +192,12 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             optional_minimise_variable_and_value->first);
 }
 
-auto ProofLogger::backtrack(const vector<Literal> & lits) -> void
+auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
 {
     _imp->proof << "% backtracking\n";
     WPBSum backtrack;
-    for (const auto & lit : lits)
-        backtrack += 1_i * ! lit;
+    for (const auto & guess : guesses)
+        backtrack += 1_i * ! guess;
     emit_rup_proof_line(move(backtrack) >= 1_i, ProofLevel::Current);
 }
 
@@ -249,6 +262,26 @@ auto ProofLogger::conclude_none() -> void
 auto ProofLogger::infer(const Literal & lit, const Justification & why,
     const ReasonFunction & reason) -> void
 {
+    // A range conclusion on a view (folding views into the interval machinery is
+    // deferred) or on a plain variable without a bits encoding (no order cuts to
+    // reify against) cannot become a single range ("in") literal; fall back to one
+    // per-value line each, which is still correct, just not coalesced. Every other
+    // range conclusion rides the standard machinery: the condition's proof name is
+    // the range literal, or the eq atom for width 1.
+    if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
+        if (cond->op == VariableConditionOperator::NotInRange) {
+            auto needs_per_value_fallback = overloaded{
+                [&](const SimpleIntegerVariableID & v) { return ! names_and_ids_tracker().has_bit_representation(v); },
+                [&](const ViewOfIntegerVariableID &) { return true; },
+                [&](const ConstantIntegerVariableID &) { return false; }}
+                                                .visit(cond->var);
+            if (needs_per_value_fallback) {
+                for (Integer val = cond->value; val <= cond->upper_value; ++val)
+                    infer(cond->var != val, why, reason);
+                return;
+            }
+        }
+
     auto need_lit = [&]() {
         overloaded{
             [&](const TrueLiteral &) {},
@@ -330,11 +363,7 @@ auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> Reason
     if (reason_literals)
         names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
 
-    Reason reason_proof_literals{};
-    for (auto & r : *reason_literals)
-        reason_proof_literals.emplace_back(r);
-
-    return reason_proof_literals;
+    return *reason_literals;
 }
 
 auto ProofLogger::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE
@@ -344,9 +373,7 @@ auto ProofLogger::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & 
 
 auto ProofLogger::reify(const WPBSumLE & ineq, const ReasonFunction & reason) -> WPBSumLE
 {
-    auto reason_proof_literals = reason_to_lits(reason);
-
-    return names_and_ids_tracker().reify(ineq, HalfReifyOnConjunctionOf{reason_proof_literals});
+    return names_and_ids_tracker().reify(ineq, reason_to_lits(reason));
 }
 
 auto ProofLogger::emit_proof_line(const string & s, ProofLevel level) -> ProofLine

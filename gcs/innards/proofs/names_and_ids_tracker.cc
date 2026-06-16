@@ -1,3 +1,4 @@
+#include <gcs/innards/interval_tree.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
@@ -13,6 +14,7 @@
 #include <fstream>
 #include <list>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -54,6 +56,7 @@ using std::to_string;
 using std::variant;
 using std::vector;
 using std::visit;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
@@ -74,6 +77,24 @@ struct NamesAndIDsTracker::Imp
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
+    // Range ("in") literals [lo, hi], keyed by (lo, hi): the forward and reverse
+    // lines of the reification against the variable's two order cuts. The literal
+    // itself lives in variable_conditions_to_x, keyed by the InRange / NotInRange
+    // conditions, just like the eq and order atoms. A width-1 interval is its eq
+    // atom and is never entered here.
+    map<SimpleOrProofOnlyIntegerVariableID, map<pair<Integer, Integer>, pair<ProofLine, ProofLine>>> invars_that_exist;
+
+    // Every range and eq literal on each variable, as intervals, for finding a new
+    // literal's immediate neighbours in the containment order.
+    map<SimpleOrProofOnlyIntegerVariableID, IntervalTree> containment_trees;
+
+    // The always-covered partition for each variable with interval literals: the
+    // sorted cell start points, always containing the definition lower bound and
+    // ub+1 as a sentinel, so the cells are the intervals between consecutive
+    // boundaries. Every cell has a literal, every eq atom on a partitioned
+    // variable is a singleton cell, and every requested interval is a union of
+    // adjacent cells. Absent until the first interval request.
+    map<SimpleOrProofOnlyIntegerVariableID, std::set<Integer>> interval_partitions;
 
     map<ViewOfIntegerVariableID, ProofOnlySimpleIntegerVariableID> view_proof_only_vars;
     map<ProofOnlySimpleIntegerVariableID, ViewOfIntegerVariableID> view_proof_only_to_view;
@@ -259,6 +280,12 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             case NotEqual:
                 need_direct_encoding_for(var, cond.value);
                 return _imp->eqvars_that_exist.at(var).at(cond.value).second;
+            case InRange:
+                static_cast<void>(need_invar(var, cond.value, cond.upper_value));
+                return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).first;
+            case NotInRange:
+                static_cast<void>(need_invar(var, cond.value, cond.upper_value));
+                return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).second;
             }
             throw NonExhaustiveSwitch{};
         },
@@ -282,6 +309,9 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
                 case NotEqual:
                     need_direct_encoding_for(*v_id, cond.value);
                     return _imp->eqvars_that_exist.at(*v_id).at(cond.value).second;
+                case InRange:
+                case NotInRange:
+                    throw UnimplementedException{};
                 }
                 throw NonExhaustiveSwitch{};
             }
@@ -301,6 +331,9 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
                 throw UnimplementedException{};
             case NotEqual:
                 throw UnimplementedException{};
+            case InRange:
+            case NotInRange:
+                throw UnimplementedException{};
             }
             throw NonExhaustiveSwitch{};
         }}
@@ -310,6 +343,9 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
 auto NamesAndIDsTracker::create_literals_for_introduced_variable_value(
     SimpleIntegerVariableID id, Integer val, const string & name) -> void
 {
+    // These literals bypass eqvars_that_exist and the containment structures, which
+    // is safe because an introduced variable has no bits encoding, so no range
+    // literal can ever be defined over it.
     track_variable_name(id, to_string(id.index) + "intr_" + name); // hack!
     auto x = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, val);
     _imp->variable_conditions_to_x.emplace(id == val, x);
@@ -327,6 +363,11 @@ auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrPro
     case Less:
     case GreaterEqual:
         need_gevar(cond.var, cond.value);
+        break;
+    case InRange:
+    case NotInRange:
+        if (! _imp->variable_conditions_to_x.contains(cond))
+            static_cast<void>(need_invar(cond.var, cond.value, cond.upper_value));
         break;
     }
 }
@@ -581,6 +622,24 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             }
         }
     }
+
+    // Link this new eq atom (a singleton [v, v]) to its immediate range containers,
+    // so a rejected container propagates ~(id == v). Most variables never have any
+    // range literals, so the containment tree is only maintained once one exists.
+    link_immediate_containment(id, v, v);
+    if (auto tree = _imp->containment_trees.find(id); tree != _imp->containment_trees.end())
+        tree->second.insert(v, v);
+
+    // On a partitioned variable, every eq atom is a singleton cell: split the
+    // containing cell, so that interval coverings reach the atoms that per-value
+    // conclusions are logged over.
+    if (_imp->interval_partitions.contains(id)) {
+        auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
+        if (lb <= v && v <= ub) {
+            ensure_partition_cut(id, v);
+            ensure_partition_cut(id, v + 1_i);
+        }
+    }
 }
 
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
@@ -749,6 +808,248 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             }
         }
     }
+}
+
+auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
+{
+    if (! _imp->logger)
+        return;
+
+    auto tree_it = _imp->containment_trees.find(id);
+    if (tree_it == _imp->containment_trees.end())
+        return;
+    const auto & tree = tree_it->second;
+
+    // A child -> parent containment edge (~child OR parent) as a rup line. A width-1
+    // literal is its eq atom; nothing fits strictly inside a width-1 literal, so a
+    // parent is always a range.
+    auto emit_edge = [&](Integer clo, Integer chi, Integer plo, Integer phi) {
+        visit([&](const auto & id) {
+            WPBSum edge;
+            if (clo == chi)
+                edge += 1_i * (id != clo);
+            else
+                edge += 1_i * not_in_range(id, clo, chi);
+            edge += 1_i * in_range(id, plo, phi);
+            _imp->logger->emit_rup_proof_line(move(edge) >= 1_i, ProofLevel::Top);
+        },
+            id);
+    };
+
+    // self -> minimal containers: walking candidates by decreasing lo (ties:
+    // increasing hi), a candidate is minimal exactly when its hi is strictly below
+    // every hi seen so far, since everything seen so far has a lo at least as big.
+    vector<pair<Integer, Integer>> found;
+    tree.for_each_containing(lo, hi, [&](Integer c, Integer d) {
+        if (c != lo || d != hi)
+            found.emplace_back(c, d);
+    });
+    sort(found, [](const pair<Integer, Integer> & x, const pair<Integer, Integer> & y) {
+        return x.first == y.first ? x.second < y.second : x.first > y.first;
+    });
+    optional<Integer> least_hi;
+    for (const auto & [c, d] : found)
+        if (! least_hi || d < *least_hi) {
+            emit_edge(lo, hi, c, d);
+            least_hi = d;
+        }
+
+    // maximal contained literals -> self, by the mirrored argument.
+    if (lo != hi) {
+        found.clear();
+        tree.for_each_contained_in(lo, hi, [&](Integer c, Integer d) {
+            if (c != lo || d != hi)
+                found.emplace_back(c, d);
+        });
+        sort(found, [](const pair<Integer, Integer> & x, const pair<Integer, Integer> & y) {
+            return x.first == y.first ? x.second > y.second : x.first < y.first;
+        });
+        optional<Integer> greatest_hi;
+        for (const auto & [c, d] : found)
+            if (! greatest_hi || d > *greatest_hi) {
+                emit_edge(c, d, lo, hi);
+                greatest_hi = d;
+            }
+    }
+}
+
+auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
+{
+    // Both order-encoding cuts; need_gevar threads them into the order chain, and
+    // emits the bound-axiom units for any cut outside the definition bounds.
+    need_gevar(id, lo);
+    need_gevar(id, hi + 1_i);
+
+    auto x = allocate_xliteral_meaning(id, lo, hi);
+    _imp->variable_conditions_to_x.emplace(in_range(id, lo, hi), x);
+    _imp->variable_conditions_to_x.emplace(not_in_range(id, lo, hi), ! x);
+
+    auto lines = visit([&](const auto & id) {
+        return _imp->logger->emit_red_proof_lines_reifying(
+            WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::Top);
+    },
+        id);
+
+    // Containment edges let a rejected literal propagate down to the literals a
+    // conflict is written over; the order chain alone does not give this. The
+    // variable's first range literal creates its containment tree, seeded with
+    // the eq atoms that already exist.
+    if (! _imp->containment_trees.contains(id)) {
+        auto & tree = _imp->containment_trees[id];
+        if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
+            for (const auto & [v, _] : eqit->second)
+                tree.insert(v, v);
+    }
+    link_immediate_containment(id, lo, hi);
+    _imp->containment_trees[id].insert(lo, hi);
+
+    _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
+}
+
+auto NamesAndIDsTracker::append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
+{
+    visit([&](const auto & id) {
+        if (lo == hi)
+            sum += 1_i * (id == lo);
+        else
+            sum += 1_i * in_range(id, lo, hi);
+    },
+        id);
+}
+
+auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID id, Integer p) -> void
+{
+    auto & boundaries = _imp->interval_partitions.at(id);
+    if (boundaries.contains(p))
+        return;
+
+    // p falls strictly inside the cell [a, b].
+    auto above = boundaries.upper_bound(p);
+    auto a = *prev(above), b = *above - 1_i;
+
+    // Insert the boundary before defining the halves: a width-1 half goes through
+    // need_direct_encoding_for, whose partition maintenance re-enters here and must
+    // see both of its cuts already present (making the re-entry a no-op).
+    boundaries.insert(p);
+
+    auto define_cell = [&](Integer cell_lo, Integer cell_hi) {
+        if (cell_lo == cell_hi)
+            need_direct_encoding_for(id, cell_lo);
+        else
+            define_plain_invar(id, cell_lo, cell_hi);
+    };
+    define_cell(a, p - 1_i);
+    define_cell(p, b);
+
+    // The split covering: the split cell is no longer a leaf, so unit propagation
+    // falsifies it through its two halves. Coverings compose across refinements, so
+    // the split cell's appearances in earlier coverings are never revisited.
+    WPBSum covering;
+    visit([&](const auto & id) { covering += 1_i * not_in_range(id, a, b); }, id);
+    append_cell_literal_to(covering, id, a, p - 1_i);
+    append_cell_literal_to(covering, id, p, b);
+    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top);
+}
+
+auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void
+{
+    auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
+    auto & boundaries = _imp->interval_partitions[id];
+    boundaries.insert(lb);
+    boundaries.insert(ub + 1_i);
+
+    // Every pre-existing eq atom becomes a singleton cell, so that coverings can
+    // reach conclusions already logged over those atoms.
+    if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
+        for (const auto & [v, _] : eqit->second)
+            if (lb <= v && v <= ub) {
+                boundaries.insert(v);
+                boundaries.insert(v + 1_i);
+            }
+
+    boundaries.insert(request_lo);
+    boundaries.insert(request_hi + 1_i);
+
+    // Define a literal for every cell, then emit the at-least-one clause over the
+    // top-level partition, which gives wipeout detection at the literal level. It is
+    // RUP from the bound axioms via the cells' reverse reifications and the order
+    // chain.
+    WPBSum root_covering;
+    for (auto it = boundaries.begin(); next(it) != boundaries.end(); ++it) {
+        auto cell_lo = *it, cell_hi = *next(it) - 1_i;
+        if (cell_lo == cell_hi)
+            need_direct_encoding_for(id, cell_lo);
+        else
+            define_plain_invar(id, cell_lo, cell_hi);
+        append_cell_literal_to(root_covering, id, cell_lo, cell_hi);
+    }
+    _imp->logger->emit_rup_proof_line(move(root_covering) >= 1_i, ProofLevel::Top);
+}
+
+auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteral
+{
+    if (lo > hi)
+        return FalseLiteral{};
+
+    if (lo == hi) {
+        need_direct_encoding_for(id, lo);
+        return visit([&](const auto & id) -> ProofLiteral { return id == lo; }, id);
+    }
+
+    auto as_literal = [&]() {
+        return visit([&](const auto & id) -> ProofLiteral { return in_range(id, lo, hi); }, id);
+    };
+
+    auto & for_this_var = _imp->invars_that_exist[id];
+    if (for_this_var.contains(pair{lo, hi}))
+        return as_literal();
+
+    if (! _imp->logger)
+        throw UnimplementedException{"range literals during model writing are not yet supported"};
+    if (! has_bit_representation(id))
+        throw ProofError{"range literal requested for a variable without a bits encoding"};
+
+    // The literal is defined over its own two cuts even when they lie outside the
+    // definition bounds; the bound-axiom units falsify the out-of-bounds part by
+    // unit propagation. The partition only spans the definition range, so the
+    // covering is over the cells of the in-bounds intersection.
+    auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
+    auto span_lo = max(lo, lb), span_hi = min(hi, ub);
+
+    if (span_lo > span_hi) {
+        // Entirely outside: the reification plus the bound axioms already falsify
+        // it, so there is nothing to cover.
+        define_plain_invar(id, lo, hi);
+        return as_literal();
+    }
+
+    if (! _imp->interval_partitions.contains(id)) {
+        init_interval_partition(id, span_lo, span_hi);
+    }
+    else {
+        ensure_partition_cut(id, span_lo);
+        ensure_partition_cut(id, span_hi + 1_i);
+    }
+
+    // If the request is exactly one cell, it was defined just now.
+    const auto & boundaries = _imp->interval_partitions.at(id);
+    if (lo == span_lo && hi == span_hi && *next(boundaries.find(span_lo)) == span_hi + 1_i)
+        return as_literal();
+
+    // Otherwise define it, with a covering over the in-bounds cells it spans, so
+    // that falsifying those pieces falsifies it by unit propagation.
+    define_plain_invar(id, lo, hi);
+    WPBSum covering;
+    visit([&](const auto & id) { covering += 1_i * not_in_range(id, lo, hi); }, id);
+    for (auto it = boundaries.find(span_lo); *it != span_hi + 1_i; ++it)
+        append_cell_literal_to(covering, id, *it, *next(it) - 1_i);
+    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top);
+    return as_literal();
+}
+
+auto NamesAndIDsTracker::has_bit_representation(const SimpleOrProofOnlyIntegerVariableID & id) const -> bool
+{
+    return _imp->integer_variable_bits_to_size_and_proof_vars.contains(id);
 }
 
 auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
@@ -1047,6 +1348,59 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     return result;
 }
 
+auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> XLiteral
+{
+    auto result = XLiteral{++_imp->next_xliteral_nr, false};
+
+    if (_imp->verbose_names) {
+        auto value_name = [](Integer v) {
+            return v < 0_i ? "minus" + abs(v).to_string() : v.to_string();
+        };
+
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) -> void {
+                string name = format("i[{}][in{}_{}]", name_of(id), value_name(lo), value_name(hi));
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            },
+            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                string name = format("p[{}_{}][in{}_{}]", id.index, name_of(id), value_name(lo), value_name(hi));
+                _imp->xlits_to_verbose_names.emplace(result, name);
+                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+            }}
+            .visit(id);
+    }
+
+    if (_imp->variables_map_file) {
+        try {
+            nlohmann::json data;
+            data["type"] = "condition";
+            overloaded{
+                [&](const SimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "intvar";
+                    data["cpvarid"] = id.index;
+                },
+                [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
+                    data["cpvartype"] = "proofintvar";
+                    data["cpvarid"] = id.index;
+                }}
+                .visit(id);
+
+            data["name"] = name_of(id);
+            data["operator"] = "in";
+            data["value"] = lo.raw_value;
+            data["upper_value"] = hi.raw_value;
+
+            write_vardata(*_imp->variables_map_file, _imp->first_varmap_entry, pb_file_string_for(result), data);
+        }
+        catch (const ios_base::failure &) {
+            throw ProofError{"Error writing proof variables mapping file to '" + _imp->variables_map_file_name + "'"};
+        }
+    }
+
+    return result;
+}
+
 auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
@@ -1237,6 +1591,11 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
     case NotEqual: return "!=";
     case GreaterEqual: return ">=";
     case Less: return "<";
+    case InRange:
+    case NotInRange:
+        // cake_pb_cp has no range-condition spelling yet, and range conditions
+        // cannot appear in reified constraints (model-phase need_invar throws)
+        throw UnimplementedException{};
     }
 
     throw NonExhaustiveSwitch{};

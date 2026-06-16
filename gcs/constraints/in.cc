@@ -34,6 +34,7 @@ using std::erase_if;
 using std::make_unique;
 using std::move;
 using std::optional;
+using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -156,29 +157,44 @@ auto In::install_propagators(Propagators & propagators) -> void
         [var = _var, var_vals = _var_vals, val_vals = _val_vals, selectors = _selectors](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Step 1: filter dom(var) — drop any value that no source supports.
-            for (auto v : state.each_value_mutable(var)) {
-                if (binary_search(val_vals, v))
-                    continue;
+            if (var_vals.empty()) {
+                // The initial-domain shape (create_integer_variable(vector) posts In
+                // over constants): each contiguous run of unsupported values is one
+                // interval conclusion, RUP with no reason since asserting var in
+                // [lo, hi] walks the order chain past every supported value into the
+                // at-least-one. Collect the runs first so the domain is not mutated
+                // mid-iteration.
+                vector<pair<Integer, Integer>> runs;
+                for (auto v : state.each_value_immutable(var)) {
+                    if (binary_search(val_vals, v))
+                        continue;
+                    if (! runs.empty() && runs.back().second + 1_i == v)
+                        runs.back().second = v;
+                    else
+                        runs.emplace_back(v, v);
+                }
+                for (const auto & [lo, hi] : runs)
+                    inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{}, ReasonFunction{});
+            }
+            else {
+                for (auto v : state.each_value_mutable(var)) {
+                    if (binary_search(val_vals, v))
+                        continue;
 
-                bool supported_by_var = false;
-                for (const auto & V : var_vals) {
-                    if (state.in_domain(V, v)) {
-                        supported_by_var = true;
-                        break;
+                    bool supported_by_var = false;
+                    for (const auto & V : var_vals) {
+                        if (state.in_domain(V, v)) {
+                            supported_by_var = true;
+                            break;
+                        }
                     }
-                }
-                if (supported_by_var)
-                    continue;
+                    if (supported_by_var)
+                        continue;
 
-                Reason reason;
-                for (const auto & V : var_vals)
-                    reason.emplace_back(V != v);
+                    Reason reason;
+                    for (const auto & V : var_vals)
+                        reason.emplace_back(V != v);
 
-                if (selectors.empty()) {
-                    inference.infer_not_equal(logger, var, v, JustifyUsingRUP{},
-                        ReasonFunction{[=]() { return reason; }});
-                }
-                else {
                     inference.infer_not_equal(logger, var, v,
                         JustifyExplicitlyThenRUP{[logger, var, v, &selectors](const ReasonFunction & reason) {
                             for (const auto & sel : selectors)

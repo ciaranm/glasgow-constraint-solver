@@ -215,6 +215,38 @@ namespace
             }(rand, s, var);
         };
     }
+
+    auto reject_random_interval_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
+    {
+        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+            return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
+                vector<Integer> values;
+                for (auto v : s.each_value(var))
+                    values.push_back(v);
+                // An interior interval needs a plain variable and at least three
+                // values (so lo/hi can both be strictly inside the bounds, making the
+                // reject branch a genuine hole). Otherwise fall back to a value reject.
+                const auto * svar = std::get_if<SimpleIntegerVariableID>(&var);
+                if (svar && values.size() >= 3) {
+                    uniform_int_distribution<size_t> dist(1, values.size() - 2);
+                    auto i = dist(*rand);
+                    auto j = dist(*rand);
+                    if (i > j)
+                        std::swap(i, j);
+                    auto lo = values.at(i);
+                    auto hi = values.at(j);
+                    co_yield not_in_range(var, lo, hi);
+                    co_yield in_range(var, lo, hi);
+                }
+                else {
+                    uniform_int_distribution<size_t> dist(0, values.size() - 1);
+                    auto val = values.at(dist(*rand));
+                    co_yield var != val;
+                    co_yield var == val;
+                }
+            }(rand, s, var);
+        };
+    }
 }
 
 auto gcs::value_order::random() -> BranchValueGenerator
@@ -235,6 +267,16 @@ auto gcs::value_order::random_out() -> BranchValueGenerator
 auto gcs::value_order::random_out(uint_fast32_t seed) -> BranchValueGenerator
 {
     return random_out_value_generator(make_shared_rng(seed));
+}
+
+auto gcs::value_order::reject_random_interval() -> BranchValueGenerator
+{
+    return reject_random_interval_value_generator(make_shared_rng());
+}
+
+auto gcs::value_order::reject_random_interval(uint_fast32_t seed) -> BranchValueGenerator
+{
+    return reject_random_interval_value_generator(make_shared_rng(seed));
 }
 
 auto gcs::value_order::smallest_in() -> BranchValueGenerator

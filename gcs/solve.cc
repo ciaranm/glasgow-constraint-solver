@@ -116,8 +116,8 @@ namespace
         if (logger) {
             logger->enter_proof_level(depth);
             vector<Literal> guesses;
-            for (const auto & lit : state.guesses())
-                guesses.push_back(lit);
+            for (const auto & g : state.guesses())
+                guesses.push_back(g);
             logger->backtrack(guesses);
             logger->forget_proof_level(depth + 1);
         }

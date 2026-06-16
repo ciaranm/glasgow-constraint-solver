@@ -309,6 +309,25 @@ namespace gcs
         [[nodiscard]] auto random_out(std::uint_fast32_t seed) -> BranchValueGenerator;
 
         /**
+         * Reject a random (interior) interval of the variable's domain, then accept
+         * it. A silly heuristic for solving, but a deliberate stress test for
+         * interval/range branching: the reject branch is a genuinely disjunctive
+         * decision. Falls back to a value branch for variables with fewer than three
+         * domain values.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto reject_random_interval() -> BranchValueGenerator;
+
+        /**
+         * Reject a random (interior) interval of the variable's domain, then accept
+         * it, with an explicit seed for reproducible debugging.
+         *
+         * \ingroup SearchHeuristics
+         */
+        [[nodiscard]] auto reject_random_interval(std::uint_fast32_t seed) -> BranchValueGenerator;
+
+        /**
          * Accept then reject the median value in the domain.
          *
          * \ingroup SearchHeuristics

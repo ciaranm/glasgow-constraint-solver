@@ -1,4 +1,5 @@
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/innards/justify_not_in_range.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -10,6 +11,7 @@
 #include <util/overloaded.hh>
 
 #include <sstream>
+#include <variant>
 #include <vector>
 
 #include <version>
@@ -57,20 +59,49 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         // Symmetric difference: remove from each side anything not present in
         // the other. Materialise both domains once and walk via merge —
         // O(intervals(v1) + intervals(v2) + |output|) instead of the
-        // O(|domain| × intervals(other)) per-value membership scan. The
-        // per-value loop inside the yielded interval still fires one
-        // infer_not_equal per value (same as before); a future
-        // infer_not_in_interval primitive could collapse it further.
+        // O(|domain| × intervals(other)) per-value membership scan.
         auto v1_set = state.copy_of_values(v1);
         auto v2_set = state.copy_of_values(v2);
 
-        for (auto [lo, hi] : v1_set.each_interval_minus(v2_set))
-            for (Integer val = lo; val <= hi; ++val)
-                inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 != val); return reason; }});
+        // Each contiguous removed interval is one ~[pruned in lo..hi] conclusion with
+        // the matching reason `other not in [lo, hi]`. The conclusion is not RUP on
+        // its own (a range literal asserts order atoms, never bits, so it cannot
+        // cross the bit-sum equality), so two bound-lemmas carry the bounds across
+        // first; each is RUP via the contradictory-binary-sums configuration. See
+        // justify_not_in_range_across_equality. Views and constants take the
+        // per-value path.
+        auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
+            std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});
 
-        for (auto [lo, hi] : v2_set.each_interval_minus(v1_set))
-            for (Integer val = lo; val <= hi; ++val)
-                inference.infer_not_equal(logger, v2, val, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 != val); return reason; }});
+        auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonFunction & r) {
+            // Plain equality pruned = other, so the flag forces other into the same [lo, hi].
+            justify_not_in_range_across_equality(*logger, r,
+                std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi,
+                IntegerVariableID{other}, lo, hi);
+        };
+
+        auto prune = [&](const auto & pruned, const auto & other, const IntervalSet<Integer> & pruned_set, const IntervalSet<Integer> & other_set) {
+            for (auto [lo, hi] : pruned_set.each_interval_minus(other_set)) {
+                if (both_simple)
+                    inference.infer_not_in_range(logger, pruned, lo, hi,
+                        JustifyExplicitlyThenRUP{[=](const ReasonFunction & r) { bridge(pruned, other, lo, hi, r); }},
+                        // Build afresh per call: the justification calls the reason once
+                        // per bridge lemma plus once for the conclusion, so a mutable
+                        // accumulating lambda would duplicate the element on each call.
+                        ReasonFunction{[=, base = reason]() {
+                            auto r = base;
+                            r.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
+                            return r;
+                        }});
+                else
+                    for (Integer val = lo; val <= hi; ++val)
+                        inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{},
+                            ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(other != val); return reason; }});
+            }
+        };
+
+        prune(v1, v2, v1_set, v2_set);
+        prune(v2, v1, v2_set, v1_set);
     }
     else {
         auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);

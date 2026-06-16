@@ -93,6 +93,16 @@ namespace gcs::innards
             track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, reason);
         }
 
+        template <IntegerVariableIDLike VarType_>
+        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const Justification & why, const ReasonFunction & reason) -> void
+        {
+            // The conclusion is the ordinary range condition; the state update
+            // batches the whole removal into one erase_range pass.
+            if (lo > hi)
+                return;
+            track(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, reason);
+        }
+
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const ReasonFunction & reason) -> void
         {
             // For JustifyExplicitlyThenRUP: enter the temporary proof level once,

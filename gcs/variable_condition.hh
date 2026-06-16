@@ -18,16 +18,21 @@ namespace gcs
         Equal,
         NotEqual,
         GreaterEqual,
-        Less
+        Less,
+        InRange,
+        NotInRange
     };
 
     /**
      * \brief A variable condition, asserting that an IntegerVariableID or other
      * variable type is equal, not equal, less than, or greater than or equal to
-     * an Integer constant.
+     * an Integer constant, or inside or outside a closed Integer interval.
      *
      * Usually this is created by writing `var == val`, `var != val`, `var <
-     * val` or `var >= val`.
+     * val`, `var >= val`, `in_range(var, lo, hi)` or `not_in_range(var, lo,
+     * hi)`. For the two range operators the condition is over the closed
+     * interval [value, upper_value]; for the four scalar operators upper_value
+     * is unused and stays at its default so that comparisons behave.
      *
      * \ingroup Core
      */
@@ -37,6 +42,7 @@ namespace gcs
         VariableType_ var;
         VariableConditionOperator op;
         Integer value;
+        Integer upper_value = 0_i;
 
         /**
          * \brief Comparison, no defined meaning but allows for sorting etc.
@@ -47,7 +53,7 @@ namespace gcs
         [[nodiscard]] inline constexpr operator VariableConditionFrom<OtherVariableType_>() const
             requires std::constructible_from<OtherVariableType_, VariableType_>
         {
-            return VariableConditionFrom<OtherVariableType_>{var, op, value};
+            return VariableConditionFrom<OtherVariableType_>{var, op, value, upper_value};
         }
     };
 
@@ -188,6 +194,48 @@ namespace gcs
     }
 
     /**
+     * \brief Create an IntegerVariableCondition that the specified IntegerVariableID takes a
+     * value inside the closed interval [lo, hi].
+     *
+     * A width-1 interval is the same thing as an equality, so `in_range(var, v, v)`
+     * canonicalises to `var == v`. Throws if lo > hi.
+     *
+     * \ingroup Literals
+     * \see IntegerVariableCondition
+     */
+    template <typename VariableType_>
+        requires(enable_conditional_variable_operators<VariableType_>())
+    [[nodiscard]] constexpr inline auto in_range(const VariableType_ & var, Integer lo, Integer hi) -> VariableConditionFrom<VariableType_>
+    {
+        if (lo > hi)
+            throw InvalidProblemDefinitionException{"range condition with lo > hi"};
+        if (lo == hi)
+            return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::Equal, lo};
+        return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::InRange, lo, hi};
+    }
+
+    /**
+     * \brief Create an IntegerVariableCondition that the specified IntegerVariableID takes no
+     * value inside the closed interval [lo, hi].
+     *
+     * A width-1 interval is the same thing as an equality, so `not_in_range(var, v,
+     * v)` canonicalises to `var != v`. Throws if lo > hi.
+     *
+     * \ingroup Literals
+     * \see IntegerVariableCondition
+     */
+    template <typename VariableType_>
+        requires(enable_conditional_variable_operators<VariableType_>())
+    [[nodiscard]] constexpr inline auto not_in_range(const VariableType_ & var, Integer lo, Integer hi) -> VariableConditionFrom<VariableType_>
+    {
+        if (lo > hi)
+            throw InvalidProblemDefinitionException{"range condition with lo > hi"};
+        if (lo == hi)
+            return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::NotEqual, lo};
+        return VariableConditionFrom<VariableType_>{var, VariableConditionOperator::NotInRange, lo, hi};
+    }
+
+    /**
      * \brief Negate an IntegerVariableCondition or other variable condition.
      *
      * Gives the literal with the opposite meaning, for example equals becomes
@@ -206,6 +254,10 @@ namespace gcs
             return VariableConditionFrom<VariableType_>{cond.var, GreaterEqual, cond.value};
         case GreaterEqual:
             return VariableConditionFrom<VariableType_>{cond.var, Less, cond.value};
+        case InRange:
+            return VariableConditionFrom<VariableType_>{cond.var, NotInRange, cond.value, cond.upper_value};
+        case NotInRange:
+            return VariableConditionFrom<VariableType_>{cond.var, InRange, cond.value, cond.upper_value};
         }
         throw NonExhaustiveSwitch{};
     }
