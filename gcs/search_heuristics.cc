@@ -237,23 +237,45 @@ auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, WeightingSche
             weighting->load(*initial, propagators);
         propagators.set_conflict_observer(weighting.get());
 
-        return in_order_of_selector(vars,
-            [weighting](const CurrentState & state, const innards::Propagators & p,
-                const IntegerVariableID & a, const IntegerVariableID & b) -> bool {
-                // Minimise dom(x)/W(x), cross-multiplied to avoid division: a
-                // variable with W(x)=0 (in no constraint with two or more
-                // unassigned variables) then sorts last for free. Tie-break on
-                // highest degree, matching dom_then_deg.
-                auto dom_a = static_cast<double>(state.domain_size(a).raw_value);
-                auto dom_b = static_cast<double>(state.domain_size(b).raw_value);
-                auto w_a = weighting->weighted_degree_of(state, p, a);
-                auto w_b = weighting->weighted_degree_of(state, p, b);
-                auto lhs = dom_a * w_b;
-                auto rhs = dom_b * w_a;
-                if (lhs != rhs)
-                    return lhs < rhs;
-                return p.degree_of(a) > p.degree_of(b);
-            });
+        // Select the argmin of dom(x)/W(x). This is the same selection an
+        // in_order_of_selector min-scan would make, but we compute each
+        // candidate's weighted degree exactly once per node and carry the
+        // incumbent's cached score, rather than recomputing weighted_degree_of
+        // for *both* arguments of every comparison. weighted_degree_of walks
+        // every constraint in a variable's scope, so on wide constraints (e.g.
+        // count / cardinality) the redundant per-comparison recompute of the
+        // incumbent's score dominates the entire solve.
+        return [vars, weighting](const CurrentState & state,
+                   const innards::Propagators & p) -> optional<IntegerVariableID> {
+            optional<IntegerVariableID> result;
+            double dom_result = 0.0, w_result = 0.0;
+            for (const auto & v : vars) {
+                auto size = state.domain_size(v);
+                if (size < 2_i)
+                    continue;
+                auto dom_v = static_cast<double>(size.raw_value);
+                auto w_v = weighting->weighted_degree_of(state, p, v);
+                if (! result) {
+                    result = v;
+                    dom_result = dom_v;
+                    w_result = w_v;
+                    continue;
+                }
+                // Cross-multiplied dom(x)/W(x) to avoid division: a variable
+                // with W(x)=0 (in no constraint with two or more unassigned
+                // variables) sorts last for free. Tie-break on highest degree,
+                // matching dom_then_deg.
+                auto lhs = dom_v * w_result;
+                auto rhs = dom_result * w_v;
+                bool v_better = (lhs != rhs) ? (lhs < rhs) : (p.degree_of(v) > p.degree_of(*result));
+                if (v_better) {
+                    result = v;
+                    dom_result = dom_v;
+                    w_result = w_v;
+                }
+            }
+            return result;
+        };
     };
 }
 
