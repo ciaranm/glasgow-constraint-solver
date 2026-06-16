@@ -17,15 +17,17 @@ using std::vector;
 // backtrack replay falsify it by unit propagation.
 namespace
 {
-    auto scripted_neq_then_eq_zero(IntegerVariableID var) -> BranchCallback
+    auto scripted_neq_then_eq_zero(IntegerVariableID var) -> BranchHeuristic
     {
-        return [var](const CurrentState & state, const innards::Propagators &) -> std::generator<IntegerVariableCondition> {
-            return [](const CurrentState & state, IntegerVariableID var) -> std::generator<IntegerVariableCondition> {
-                if (state.domain_size(var) >= 2_i && state.in_domain(var, 0_i)) {
-                    co_yield var != 0_i;
-                    co_yield var == 0_i;
-                }
-            }(state, var);
+        return [var](const Problem &, innards::State &, innards::Propagators &) -> BranchCallback {
+            return [var](const CurrentState & state, const innards::Propagators &) -> std::generator<IntegerVariableCondition> {
+                return [](const CurrentState & state, IntegerVariableID var) -> std::generator<IntegerVariableCondition> {
+                    if (state.domain_size(var) >= 2_i && state.in_domain(var, 0_i)) {
+                        co_yield var != 0_i;
+                        co_yield var == 0_i;
+                    }
+                }(state, var);
+            };
         };
     }
 }
