@@ -26,29 +26,57 @@ namespace gcs::innards
     class ConflictObserver;
 
     /**
+     * \brief Back-channel through which a RefinedWatchContext registers refined
+     * watches with the engine.
+     *
+     * Implemented by the Propagators internals. It exists so that
+     * RefinedWatchContext — which appears in propagator function signatures, above
+     * the Propagators class — can edit the watch index without depending on it.
+     *
+     * \ingroup Innards
+     */
+    class RefinedWatchSink
+    {
+    public:
+        virtual ~RefinedWatchSink() = default;
+
+        /**
+         * \brief Arm a refined watch owned by the given propagator: when `literal`
+         * next becomes entailed, append `payload` to that propagator's fired set and
+         * wake it. Watches armed while propagating are restored on backtrack.
+         */
+        virtual auto add_refined_watch(int owner_propagator, const Literal & literal, std::uint32_t payload) -> void = 0;
+    };
+
+    /**
      * \brief The refined-watch context handed to a propagator each time it runs.
      *
      * A propagator that registers refined per-literal watches (rather than, or in
      * addition to, the coarse \ref Triggers) is told which of its watches fired
      * since it last ran, via the opaque payloads it chose at registration time, so
      * it can do work proportional to what changed instead of rescanning its state.
+     * A watch is consumed when it fires; the propagator re-arms a replacement via
+     * watch() if it still wants to hear about that literal.
      *
-     * This is the seam for that mechanism. Today no propagator registers refined
-     * watches, so fired_payloads() is always empty and propagators ignore the
-     * context; the watch index that populates it, and the registration and
-     * watch-editing API, land in later stages. The context is forwarded only to
-     * propagators whose function accepts it (see PropagationFunctionImpl), so
-     * existing propagators are unaffected.
+     * The context is forwarded only to propagators whose function accepts it (see
+     * PropagationFunctionImpl), so propagators that use only the coarse \ref
+     * Triggers are unaffected and see no overhead.
      *
      * \ingroup Innards
      */
     class RefinedWatchContext
     {
     private:
+        RefinedWatchSink * _sink = nullptr;
+        int _owner = -1;
         std::span<const std::uint32_t> _fired_payloads;
 
     public:
-        explicit RefinedWatchContext(std::span<const std::uint32_t> fired_payloads = {}) :
+        RefinedWatchContext() = default;
+
+        RefinedWatchContext(RefinedWatchSink & sink, int owner_propagator, std::span<const std::uint32_t> fired_payloads) :
+            _sink(&sink),
+            _owner(owner_propagator),
             _fired_payloads(fired_payloads)
         {
         }
@@ -62,6 +90,17 @@ namespace gcs::innards
         [[nodiscard]] auto fired_payloads() const -> std::span<const std::uint32_t>
         {
             return _fired_payloads;
+        }
+
+        /**
+         * \brief Arm a refined watch: when `literal` next becomes entailed
+         * (test_literal == DefinitelyTrue), this propagator is woken and handed
+         * `payload` among its fired_payloads(). A watch registered while
+         * propagating is restored on backtrack.
+         */
+        auto watch(const Literal & literal, std::uint32_t payload) const -> void
+        {
+            _sink->add_refined_watch(_owner, literal, payload);
         }
     };
 
@@ -184,6 +223,16 @@ namespace gcs::innards
         std::vector<IntegerVariableID> on_change = {};
         std::vector<IntegerVariableID> on_bounds = {};
         std::vector<IntegerVariableID> on_instantiated = {};
+
+        /**
+         * \brief Refined per-literal watches to arm when the constraint is
+         * installed: each (literal, payload) wakes this propagator, handing it
+         * payload, when literal first becomes entailed. These install-time watches
+         * are the persistent baseline (not undone on backtrack); watches the
+         * propagator arms later via RefinedWatchContext::watch are restored on
+         * backtrack. \sa RefinedWatchContext
+         */
+        std::vector<std::pair<Literal, std::uint32_t>> refined = {};
     };
 
     /**
