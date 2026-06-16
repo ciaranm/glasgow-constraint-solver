@@ -68,7 +68,7 @@ namespace gcs::innards
          */
         auto add_constraint(
             const WPBSumLE & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
 
         /**
          * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
@@ -81,13 +81,13 @@ namespace gcs::innards
          */
         auto add_constraint(
             const WPBSumEq & eq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
 
         /**
          * Add a CNF definition to a Proof model.
          */
         auto add_constraint(
-            const Literals & lits) -> std::optional<ProofLine>;
+            const Literals & lits) -> ProofLine;
 
         /**
          * Add a pseudo-Boolean constraint to a Proof model.
@@ -96,7 +96,7 @@ namespace gcs::innards
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
             const WPBSumLE & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
 
         /**
          * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
@@ -108,7 +108,7 @@ namespace gcs::innards
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
             const WPBSumEq & eq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
 
         /**
          * \brief Like add_constraint for an equality, but emits an @label on each
@@ -127,7 +127,7 @@ namespace gcs::innards
             const std::string & role_le, const std::string & role_ge,
             const StringLiteral & constraint_name, const StringLiteral & rule,
             const WPBSumEq & eq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
 
         /**
          * \brief Add a single inequality under a caller-supplied @label, returning
@@ -137,7 +137,7 @@ namespace gcs::innards
          */
         auto add_labelled_constraint(
             const std::string & label, const WPBSumLE & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
 
         /**
          * \brief Like add_constraint for a single inequality, but emits @c[id][role]
@@ -148,7 +148,7 @@ namespace gcs::innards
             const std::string & constraint_id, const std::string & role,
             const StringLiteral & constraint_name, const StringLiteral & rule,
             const WPBSumLE & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::optional<ProofLine>;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
 
         /**
          * Add a CNF definition to a Proof model.
@@ -156,7 +156,7 @@ namespace gcs::innards
         auto add_constraint(
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
-            const Literals & lits) -> std::optional<ProofLine>;
+            const Literals & lits) -> ProofLine;
 
         /**
          * \brief Encode `flag ⇔ ineq` in OPB by emitting both halves of the equivalence:
@@ -171,7 +171,7 @@ namespace gcs::innards
             const StringLiteral & constraint_name,
             const StringLiteral & rule,
             const WPBSumLE & ineq,
-            const ProofFlag & flag) -> std::pair<std::optional<ProofLine>, std::optional<ProofLine>>;
+            const ProofFlag & flag) -> std::pair<ProofLine, ProofLine>;
 
         /**
          * \brief Create a fresh proof flag and fully reify it against `ineq` in one

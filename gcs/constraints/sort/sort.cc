@@ -123,8 +123,8 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model,
             auto [fwd, rev] = model.add_two_way_reified_constraint("Sort", "stable before",
                 WPBSum{} + 1_i * x[ip] + -1_i * x[i] <= bound, flag);
             w.before[ip][i] = flag;
-            w.before_fwd[ip][i] = fwd.value();
-            w.before_rev[ip][i] = rev.value();
+            w.before_fwd[ip][i] = fwd;
+            w.before_rev[ip][i] = rev;
         }
 
     // pos[i] is the stable rank of x[i]: the number of elements before it.
@@ -144,8 +144,8 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model,
             if (ip != i)
                 rank += -1_i * w.before[ip][i];
         auto [le, ge] = model.add_constraint("Sort", "pos is stable rank", move(rank) == 0_i);
-        w.rank_ge.push_back(ge.value());
-        w.rank_le.push_back(le.value());
+        w.rank_ge.push_back(ge);
+        w.rank_le.push_back(le);
     }
 
     // Channel: x[i] is placed at position pos[i] of y.
