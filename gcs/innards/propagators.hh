@@ -54,6 +54,20 @@ namespace gcs::innards
          * state. \sa RefinedWatchContext::is_watching
          */
         [[nodiscard]] virtual auto is_watching(int owner_propagator, const IntegerVariableID & var) const -> bool = 0;
+
+        /**
+         * \brief Read this propagator's backtrackable scratch value for `key`, or 0
+         * if never set. \sa RefinedWatchContext::watch_state
+         */
+        [[nodiscard]] virtual auto watch_state_get(int owner_propagator, std::uint32_t key) const -> std::uint64_t = 0;
+
+        /**
+         * \brief Set this propagator's backtrackable scratch value for `key`. The
+         * write is trailed on the same per-propagate() trail as the watch edits and
+         * undone on backtrack, so a propagator's own bookkeeping stays in lockstep
+         * with its restored watches. \sa RefinedWatchContext::set_watch_state
+         */
+        virtual auto watch_state_set(int owner_propagator, std::uint32_t key, std::uint64_t value) -> void = 0;
     };
 
     /**
@@ -120,6 +134,24 @@ namespace gcs::innards
         [[nodiscard]] auto is_watching(const IntegerVariableID & var) const -> bool
         {
             return _sink->is_watching(_owner, var);
+        }
+
+        /**
+         * \brief Read this propagator's backtrackable scratch value for `key` (0 if
+         * never set). It is restored on backtrack in lockstep with the watches, so a
+         * propagator can keep per-watch bookkeeping in it -- e.g. which two positions
+         * of a clause it watches -- without having to make that bookkeeping
+         * backtrack-consistent itself.
+         */
+        [[nodiscard]] auto watch_state(std::uint32_t key) const -> std::uint64_t
+        {
+            return _sink->watch_state_get(_owner, key);
+        }
+
+        /// \brief Set this propagator's backtrackable scratch value for `key`.
+        auto set_watch_state(std::uint32_t key, std::uint64_t value) const -> void
+        {
+            _sink->watch_state_set(_owner, key, value);
         }
     };
 

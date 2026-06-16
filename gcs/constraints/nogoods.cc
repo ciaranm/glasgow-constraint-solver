@@ -248,38 +248,24 @@ namespace
             triggers);
     }
 
-    // The refined path: no coarse triggers. Instead, watch *every* literal of every
-    // nogood, restore-on-backtrack. A literal's watch is consumed when the literal
-    // becomes entailed and restored when it un-entails on backtrack, so the armed
-    // set is always exactly the clause's non-entailed literals. The propagator
-    // therefore wakes precisely when a clause loses a non-entailed literal, and
-    // visits only the clauses that fired -- never the whole store.
+    // The refined path: a two-watched-literal scheme. Each nogood arms exactly two
+    // watches, on two non-entailed literals; when one fires (its literal becomes
+    // entailed) the propagator moves it to another non-entailed literal, and if there
+    // is none the clause is unit/violated, so it forces the survivor's negation or
+    // contradicts. The two watched positions live in per-clause backtrackable scratch
+    // (ctx.watch_state, packed), restored in lockstep with the watches, so this
+    // bookkeeping never desyncs from the engine across backtrack -- the obstacle that
+    // deferred 2WL at stage C-1.
     //
-    // Watching all literals (rather than a two-watched-literal scheme) keeps this
-    // stateless: there is no per-clause "which two positions are watched"
-    // bookkeeping to hold consistent with backtracking, so it reuses the existing
-    // restore-on-backtrack mechanism directly. Restoring a consumed watch on
-    // backtrack (rather than leaving it removed) is essential here: a watch can fire
-    // and be consumed in a propagate() that a *sibling* clause's contradiction ends
-    // before this propagator runs, and restore puts that abandoned consume back
-    // rather than losing the watch for good and later missing a unit/contradiction.
-    // (A true two-watched-literal scheme would arm fewer watches, but in this
-    // consume-on-fire engine it needs an extra primitive to keep its watched-pair
-    // bookkeeping backtrack-consistent; deferred as a later optimisation if
-    // measurement shows the extra wakes matter.)
+    // Because the watches restore on backtrack, the unit case is trivial: it just
+    // infers and leaves the consumed watch to be restored (no need to keep a watch on
+    // the falsified literal as classic non-backtrackable SAT 2WL does); and an
+    // "abandoned fire" -- a watch consumed in a propagate() that a sibling clause's
+    // contradiction ends before this propagator runs -- is undone for free by the
+    // following backtrack.
     auto install_refined_nogoods(Propagators & propagators, const ConstraintID & id,
         shared_ptr<vector<Nogood>> nogoods, shared_ptr<vector<vector<IntegerVariableID>>> nogood_vars) -> void
     {
-        // Arm a refined watch on every literal of each nogood present at install
-        // (the permanent base set, via Triggers; the firing consume is what is
-        // trailed and undone on backtrack). payload = the nogood index, so a fire
-        // says which clause to revisit. A growable store (the restart loop's learned
-        // nogoods) is empty here and arms nothing now -- those are caught up below.
-        Triggers triggers;
-        for (size_t ni = 0; ni < nogoods->size(); ++ni)
-            for (const auto & lit : (*nogoods)[ni])
-                triggers.refined.emplace_back(lit, static_cast<std::uint32_t>(ni));
-
         // Detect any nogood already unit or violated against the initial domains in
         // initialise(), as the coarse path does, so a root-level contradiction is
         // found before search starts (identical search tree). Discards its bookkeeping.
@@ -291,76 +277,129 @@ namespace
                     init_watches_for(ni, *nogoods, *nogood_vars, *initial_scratch, state, inference, logger);
             });
 
-        // High-water mark of nogoods whose watches are armed; the install-time base
-        // set above covers [0, armed). Non-backtrackable, which is sound because the
-        // catch-up below arms only at a root re-propagation, and those edits live in
-        // the persistent root epoch (never backtracked between restart passes), so
-        // the count stays in step with the armed watches.
-        auto armed = make_shared<size_t>(nogoods->size());
+        // High-water mark of nogoods whose two watches have been set up. Catch-up
+        // (below) sets up new clauses only at a root re-propagation -- where the
+        // restart loop re-enters and where the arming/watch_state edits live in the
+        // persistent root epoch (never backtracked between passes) -- so this
+        // non-backtrackable counter stays in step with the restored watches.
+        auto set_up = make_shared<size_t>(0);
 
         propagators.install(
             id,
-            [nogoods, nogood_vars, armed](const State & state, auto & inference, ProofLogger * const logger,
+            [nogoods, nogood_vars, set_up](const State & state, auto & inference, ProofLogger * const logger,
                 const RefinedWatchContext & ctx) -> PropagatorState {
-                vector<size_t> fired;
-                if (ctx.fired_payloads().empty()) {
-                    // A root re-propagation: this propagator is enqueued un-fired only
-                    // at propagate(nullopt) -- depth 0 -- which the restart loop
-                    // re-enters once per pass. Two jobs here (both also needed at the
-                    // very first root):
-                    //  (1) Catch up newly-learned nogoods (the restart loop grows the
-                    //      store between passes): arm a watch on every literal of each
-                    //      clause not yet armed.
-                    //  (2) Scan every clause for a unit/contradiction. initialise()
-                    //      and root propagation can entail literals without firing
-                    //      refined watches (only requeue fires them), and a just-armed
-                    //      clause may already be unit, so fired-only would miss these.
-                    // Away from the root every entailment goes through requeue and
-                    // fires a watch, so fired-only suffices there (the laziness win).
-                    for (size_t ni = *armed; ni < nogoods->size(); ++ni)
-                        for (const auto & lit : (*nogoods)[ni])
-                            ctx.watch(lit, static_cast<std::uint32_t>(ni));
-                    *armed = nogoods->size();
+                auto pack = [](size_t a, size_t b) -> std::uint64_t {
+                    return (static_cast<std::uint64_t>(a) << 32) | static_cast<std::uint32_t>(b);
+                };
+                // A non-entailed position other than skip1/skip2 to place a watch on.
+                // A DefinitelyFalse position counts as non-entailed -- a satisfied
+                // clause may rest a watch on it.
+                auto find_unbroken = [&](const Nogood & nogood, size_t skip1, size_t skip2) -> optional<size_t> {
+                    for (size_t p = 0; p < nogood.size(); ++p) {
+                        if (p == skip1 || p == skip2)
+                            continue;
+                        if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue)
+                            return p;
+                    }
+                    return nullopt;
+                };
 
-                    for (size_t ni = 0; ni < nogoods->size(); ++ni)
-                        fired.push_back(ni);
+                if (ctx.fired_payloads().empty()) {
+                    // Root re-propagation (the only time this propagator runs un-fired):
+                    // set up the two watches for clauses not yet done. For the fixed
+                    // store this is all of them, once; for the growable store it is the
+                    // nogoods learned since the last pass. A clause already unit/violated
+                    // here (e.g. via an initialise-time entailment) is resolved now, as
+                    // the firing path never sees those. Thereafter every entailment goes
+                    // through requeue and fires a watch, so fired-only suffices.
+                    for (size_t ni = *set_up; ni < nogoods->size(); ++ni) {
+                        const auto & nogood = (*nogoods)[ni];
+                        const auto & vars = (*nogood_vars)[ni];
+                        auto w1 = find_unbroken(nogood, no_watch, no_watch);
+                        if (! w1)
+                            inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, vars));
+                        auto w2 = find_unbroken(nogood, *w1, no_watch);
+                        if (! w2) {
+                            // Unit at first sight: force the negation. The clause is now
+                            // satisfied (a root-level fact that persists), so resting a
+                            // single watch on the satisfied survivor is enough.
+                            inference.infer(logger, ! nogood[*w1], JustifyUsingRUP{}, generic_reason(state, vars));
+                            ctx.watch(nogood[*w1], static_cast<std::uint32_t>(ni));
+                            ctx.set_watch_state(static_cast<std::uint32_t>(ni), pack(*w1, *w1));
+                        }
+                        else {
+                            ctx.watch(nogood[*w1], static_cast<std::uint32_t>(ni));
+                            ctx.watch(nogood[*w2], static_cast<std::uint32_t>(ni));
+                            ctx.set_watch_state(static_cast<std::uint32_t>(ni), pack(*w1, *w2));
+                        }
+                    }
+                    *set_up = nogoods->size();
+                    return PropagatorState::Enable;
                 }
-                else {
-                    for (auto payload : ctx.fired_payloads())
-                        fired.push_back(payload);
-                    sort(fired);
-                    fired.erase(unique(fired.begin(), fired.end()), fired.end());
-                }
+
+                // Visit each clause that had a watch fire this wake, once.
+                vector<size_t> fired;
+                for (auto payload : ctx.fired_payloads())
+                    fired.push_back(payload);
+                sort(fired);
+                fired.erase(unique(fired.begin(), fired.end()), fired.end());
+
+                auto is_broken = [&](const Nogood & nogood, size_t p) {
+                    return state.test_literal(nogood[p]) == LiteralIs::DefinitelyTrue;
+                };
 
                 for (size_t ni : fired) {
                     const auto & nogood = (*nogoods)[ni];
                     const auto & vars = (*nogood_vars)[ni];
+                    auto packed = ctx.watch_state(static_cast<std::uint32_t>(ni));
+                    size_t p = static_cast<size_t>(packed >> 32), q = static_cast<size_t>(packed & 0xffffffffu);
 
-                    // Find up to two non-entailed literals. Two or more: the clause
-                    // cannot be unit yet (and the surviving watches will fire later).
-                    // Exactly one: unit, force its negation. None: contradiction.
-                    optional<size_t> only;
-                    bool two_or_more = false;
-                    for (size_t p = 0; p < nogood.size(); ++p)
-                        if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue) {
-                            if (! only)
-                                only = p;
-                            else {
-                                two_or_more = true;
-                                break;
-                            }
+                    bool b1 = is_broken(nogood, p), b2 = is_broken(nogood, q);
+                    if (! b1 && ! b2)
+                        continue; // a spurious re-fire on an already-handled clause
+
+                    auto key = static_cast<std::uint32_t>(ni);
+                    if (b1 && b2) {
+                        // Both watched literals entailed (both consumed). Find two fresh
+                        // non-entailed literals; one short means unit, none means clash.
+                        auto new1 = find_unbroken(nogood, no_watch, no_watch);
+                        if (! new1)
+                            inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, vars));
+                        auto new2 = find_unbroken(nogood, *new1, no_watch);
+                        if (! new2)
+                            // Unit: infer; both consumed watches are restored on backtrack,
+                            // so leave watch_state at (p, q) to match them.
+                            inference.infer(logger, ! nogood[*new1], JustifyUsingRUP{}, generic_reason(state, vars));
+                        else {
+                            ctx.watch(nogood[*new1], key);
+                            ctx.watch(nogood[*new2], key);
+                            ctx.set_watch_state(key, pack(*new1, *new2));
                         }
-
-                    if (two_or_more)
-                        continue;
-                    if (! only)
-                        inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, vars));
-                    else
-                        inference.infer(logger, ! nogood[*only], JustifyUsingRUP{}, generic_reason(state, vars));
+                    }
+                    else if (b1) {
+                        // Watch at p fired (consumed); q still armed. Move p, or unit on q.
+                        auto new1 = find_unbroken(nogood, q, no_watch);
+                        if (! new1)
+                            inference.infer(logger, ! nogood[q], JustifyUsingRUP{}, generic_reason(state, vars));
+                        else {
+                            ctx.watch(nogood[*new1], key);
+                            ctx.set_watch_state(key, pack(*new1, q));
+                        }
+                    }
+                    else {
+                        // Watch at q fired (consumed); p still armed. Move q, or unit on p.
+                        auto new2 = find_unbroken(nogood, p, no_watch);
+                        if (! new2)
+                            inference.infer(logger, ! nogood[p], JustifyUsingRUP{}, generic_reason(state, vars));
+                        else {
+                            ctx.watch(nogood[*new2], key);
+                            ctx.set_watch_state(key, pack(p, *new2));
+                        }
+                    }
                 }
                 return PropagatorState::Enable;
             },
-            triggers);
+            Triggers{});
     }
 }
 

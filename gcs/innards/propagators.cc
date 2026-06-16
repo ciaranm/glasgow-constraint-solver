@@ -183,6 +183,40 @@ struct Propagators::Imp : RefinedWatchSink
     vector<RefinedWatchEdit> refined_watch_edit_trail;
     std::uint64_t next_refined_watch_id = 0;
 
+    // Per-propagator backtrackable scratch (watch_state): watch_state_by_propagator[
+    // owner][key] is a uint64 the propagator chooses the meaning of (e.g. the two
+    // watched positions of a clause, packed). Writes are recorded on
+    // watch_state_trail and undone by the same per-propagate() backtrack callback as
+    // the watch edits, so the propagator's bookkeeping is restored in lockstep with
+    // its watches.
+    struct WatchStateEdit
+    {
+        int owner;
+        std::uint32_t key;
+        std::uint64_t old_value;
+    };
+    vector<vector<std::uint64_t>> watch_state_by_propagator;
+    vector<WatchStateEdit> watch_state_trail;
+
+    [[nodiscard]] auto watch_state_get(int owner, std::uint32_t key) const -> std::uint64_t override
+    {
+        if (owner < 0 || static_cast<std::size_t>(owner) >= watch_state_by_propagator.size())
+            return 0;
+        const auto & v = watch_state_by_propagator[owner];
+        return key < v.size() ? v[key] : 0;
+    }
+
+    auto watch_state_set(int owner, std::uint32_t key, std::uint64_t value) -> void override
+    {
+        if (watch_state_by_propagator.size() <= static_cast<std::size_t>(owner))
+            watch_state_by_propagator.resize(owner + 1);
+        auto & v = watch_state_by_propagator[owner];
+        if (v.size() <= key)
+            v.resize(key + 1, 0);
+        watch_state_trail.push_back({owner, key, v[key]});
+        v[key] = value;
+    }
+
     auto register_refined_watch(int owner, const Literal & literal, std::uint32_t payload, bool trailed) -> void
     {
         auto var_index = underlying_var_index(literal);
@@ -413,7 +447,8 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
     // exactly the edits made during this propagate(). Install-time base watches are
     // registered before search and so sit below every snapshot and persist.
     auto refined_trail_start = _imp->refined_watch_edit_trail.size();
-    state.on_backtrack([&, refined_trail_start]() {
+    auto watch_state_trail_start = _imp->watch_state_trail.size();
+    state.on_backtrack([&, refined_trail_start, watch_state_trail_start]() {
         while (_imp->refined_watch_edit_trail.size() > refined_trail_start) {
             const auto & e = _imp->refined_watch_edit_trail.back();
             auto & watches = _imp->refined_watches_by_var[e.var_index];
@@ -428,6 +463,14 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
             else
                 watches.push_back(e.watch);
             _imp->refined_watch_edit_trail.pop_back();
+        }
+        // Restore the per-propagator backtrackable scratch in lockstep, so any
+        // bookkeeping a propagator kept in it (e.g. its watched positions) matches
+        // the watches just restored above.
+        while (_imp->watch_state_trail.size() > watch_state_trail_start) {
+            const auto & e = _imp->watch_state_trail.back();
+            _imp->watch_state_by_propagator[e.owner][e.key] = e.old_value;
+            _imp->watch_state_trail.pop_back();
         }
     });
 
