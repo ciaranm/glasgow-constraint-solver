@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -37,8 +38,10 @@ using std::shared_ptr;
 using std::size_t;
 using std::string;
 using std::stringstream;
+using std::unique;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -69,8 +72,9 @@ auto NogoodStore::size() const -> size_t
     return _nogoods->size();
 }
 
-Nogoods::Nogoods(vector<Nogood> nogoods) :
-    _store(make_shared<NogoodStore>())
+Nogoods::Nogoods(vector<Nogood> nogoods, bool refined) :
+    _store(make_shared<NogoodStore>()),
+    _refined(refined)
 {
     for (auto & nogood : nogoods) {
         for (const auto & lit : nogood)
@@ -79,16 +83,17 @@ Nogoods::Nogoods(vector<Nogood> nogoods) :
     }
 }
 
-Nogoods::Nogoods(shared_ptr<NogoodStore> store, vector<IntegerVariableID> trigger_vars) :
+Nogoods::Nogoods(shared_ptr<NogoodStore> store, vector<IntegerVariableID> trigger_vars, bool refined) :
     _store(move(store)),
-    _trigger_vars(move(trigger_vars))
+    _trigger_vars(move(trigger_vars)),
+    _refined(refined)
 {
 }
 
 auto Nogoods::clone() const -> unique_ptr<Constraint>
 {
-    // Share the live store; copy the trigger list.
-    return make_unique<Nogoods>(_store, _trigger_vars);
+    // Share the live store; copy the trigger list; preserve the trigger mode.
+    return make_unique<Nogoods>(_store, _trigger_vars, _refined);
 }
 
 auto Nogoods::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -153,93 +158,207 @@ namespace
         else
             watches.emplace_back(*w1, *w2);
     }
+
+    // The coarse path: wake on every change to any nogood variable and re-scan the
+    // whole store. Correct but does O(store) work per wake; kept for the growable
+    // restart-learning store until that is converted to refined watches (C-2).
+    auto install_scan_nogoods(Propagators & propagators, const ConstraintID & id,
+        shared_ptr<vector<Nogood>> nogoods, shared_ptr<vector<vector<IntegerVariableID>>> nogood_vars,
+        const vector<IntegerVariableID> & trigger_vars) -> void
+    {
+        Triggers triggers;
+        for (auto & v : trigger_vars)
+            triggers.on_change.emplace_back(v);
+
+        // The watches are this propagator's own, non-backtrackable, and grown lazily
+        // to keep pace with the nogoods.
+        auto watches = make_shared<vector<pair<size_t, size_t>>>();
+
+        // Init: set up watches for the nogoods present up front (none, for a store
+        // that the restart loop will grow during search).
+        propagators.install_initialiser(
+            [nogoods, nogood_vars, watches](const State & state, auto & inference, ProofLogger * const logger) -> void {
+                watches->reserve(nogoods->size());
+                for (size_t ni = 0; ni < nogoods->size(); ++ni)
+                    init_watches_for(ni, *nogoods, *nogood_vars, *watches, state, inference, logger);
+            });
+
+        propagators.install(
+            id,
+            [nogoods, nogood_vars, watches](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                // Catch up: initialise watches for any nogoods learned since the last
+                // fire. (A unit/contradiction is propagated here, on first sight.)
+                for (size_t ni = watches->size(); ni < nogoods->size(); ++ni)
+                    init_watches_for(ni, *nogoods, *nogood_vars, *watches, state, inference, logger);
+
+                auto is_broken = [&](const Nogood & nogood, size_t p) -> bool {
+                    return state.test_literal(nogood[p]) == LiteralIs::DefinitelyTrue;
+                };
+
+                auto find_unbroken = [&](const Nogood & nogood, size_t skip1, size_t skip2) -> optional<size_t> {
+                    for (size_t p = 0; p < nogood.size(); ++p) {
+                        if (p == skip1 || p == skip2)
+                            continue;
+                        if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue)
+                            return p;
+                    }
+                    return nullopt;
+                };
+
+                for (size_t ni = 0; ni < nogoods->size(); ++ni) {
+                    auto & w = (*watches)[ni];
+                    const auto & nogood = (*nogoods)[ni];
+                    const auto & vars = (*nogood_vars)[ni];
+
+                    bool b1 = is_broken(nogood, w.first);
+                    bool b2 = is_broken(nogood, w.second);
+
+                    if (! b1 && ! b2)
+                        continue;
+
+                    if (b1 && b2) {
+                        auto new1 = find_unbroken(nogood, no_watch, no_watch);
+                        if (! new1)
+                            inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, vars));
+                        auto new2 = find_unbroken(nogood, *new1, no_watch);
+                        if (! new2)
+                            inference.infer(logger, ! nogood[*new1], JustifyUsingRUP{}, generic_reason(state, vars));
+                        else {
+                            w.first = *new1;
+                            w.second = *new2;
+                        }
+                    }
+                    else if (b1) {
+                        auto new1 = find_unbroken(nogood, w.second, no_watch);
+                        if (! new1)
+                            inference.infer(logger, ! nogood[w.second], JustifyUsingRUP{}, generic_reason(state, vars));
+                        else
+                            w.first = *new1;
+                    }
+                    else {
+                        auto new2 = find_unbroken(nogood, w.first, no_watch);
+                        if (! new2)
+                            inference.infer(logger, ! nogood[w.first], JustifyUsingRUP{}, generic_reason(state, vars));
+                        else
+                            w.second = *new2;
+                    }
+                }
+                return PropagatorState::Enable;
+            },
+            triggers);
+    }
+
+    // The refined path: no coarse triggers. Instead, watch *every* literal of every
+    // nogood, restore-on-backtrack. A literal's watch is consumed when the literal
+    // becomes entailed and restored when it un-entails on backtrack, so the armed
+    // set is always exactly the clause's non-entailed literals. The propagator
+    // therefore wakes precisely when a clause loses a non-entailed literal, and
+    // visits only the clauses that fired -- never the whole store.
+    //
+    // Watching all literals (rather than a two-watched-literal scheme) keeps this
+    // stateless: there is no per-clause "which two positions are watched"
+    // bookkeeping to hold consistent with backtracking, so it reuses the existing
+    // restore-on-backtrack mechanism directly. Restoring a consumed watch on
+    // backtrack (rather than leaving it removed) is essential here: a watch can fire
+    // and be consumed in a propagate() that a *sibling* clause's contradiction ends
+    // before this propagator runs, and restore puts that abandoned consume back
+    // rather than losing the watch for good and later missing a unit/contradiction.
+    // (A true two-watched-literal scheme would arm fewer watches, but in this
+    // consume-on-fire engine it needs an extra primitive to keep its watched-pair
+    // bookkeeping backtrack-consistent; left to stage C-2 if measurement shows the
+    // extra wakes matter.)
+    auto install_refined_nogoods(Propagators & propagators, const ConstraintID & id,
+        shared_ptr<vector<Nogood>> nogoods, shared_ptr<vector<vector<IntegerVariableID>>> nogood_vars) -> void
+    {
+        // Arm a refined watch on every literal of every nogood at install (the
+        // permanent base set; the firing consume is what is trailed and undone on
+        // backtrack). payload = the nogood index, so a fire says which clause to
+        // revisit.
+        Triggers triggers;
+        for (size_t ni = 0; ni < nogoods->size(); ++ni)
+            for (const auto & lit : (*nogoods)[ni])
+                triggers.refined.emplace_back(lit, static_cast<std::uint32_t>(ni));
+
+        // Detect any nogood already unit or violated against the initial domains in
+        // initialise(), exactly as the coarse path does, so a root-level
+        // contradiction is found before search starts (identical search tree). The
+        // bookkeeping it records is discarded.
+        auto initial_scratch = make_shared<vector<pair<size_t, size_t>>>();
+        propagators.install_initialiser(
+            [nogoods, nogood_vars, initial_scratch](const State & state, auto & inference, ProofLogger * const logger) -> void {
+                initial_scratch->reserve(nogoods->size());
+                for (size_t ni = 0; ni < nogoods->size(); ++ni)
+                    init_watches_for(ni, *nogoods, *nogood_vars, *initial_scratch, state, inference, logger);
+            });
+
+        // On the first run, scan every clause once. initialise() can entail literals
+        // (e.g. one nogood's unit inference, or another constraint's initialiser),
+        // but it does not fire refined watches -- only propagate()'s requeue does --
+        // so a clause made unit by an initialise-time entailment would otherwise be
+        // missed. This mirrors the coarse path's root re-scan; thereafter every
+        // entailment goes through requeue and fires a watch, so fired-only suffices.
+        // NOTE: this flag is not backtrackable; restarts (stage C-2) must re-scan at
+        // each root, or rely on root facts persisting.
+        auto did_root_scan = make_shared<bool>(false);
+
+        propagators.install(
+            id,
+            [nogoods, nogood_vars, did_root_scan](const State & state, auto & inference, ProofLogger * const logger,
+                const RefinedWatchContext & ctx) -> PropagatorState {
+                // Visit each clause that lost a watched (non-entailed) literal this
+                // wake, once -- or every clause on the first (root) run.
+                vector<size_t> fired;
+                if (! *did_root_scan) {
+                    *did_root_scan = true;
+                    for (size_t ni = 0; ni < nogoods->size(); ++ni)
+                        fired.push_back(ni);
+                }
+                else {
+                    for (auto payload : ctx.fired_payloads())
+                        fired.push_back(payload);
+                    sort(fired);
+                    fired.erase(unique(fired.begin(), fired.end()), fired.end());
+                }
+
+                for (size_t ni : fired) {
+                    const auto & nogood = (*nogoods)[ni];
+                    const auto & vars = (*nogood_vars)[ni];
+
+                    // Find up to two non-entailed literals. Two or more: the clause
+                    // cannot be unit yet (and the surviving watches will fire later).
+                    // Exactly one: unit, force its negation. None: contradiction.
+                    optional<size_t> only;
+                    bool two_or_more = false;
+                    for (size_t p = 0; p < nogood.size(); ++p)
+                        if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue) {
+                            if (! only)
+                                only = p;
+                            else {
+                                two_or_more = true;
+                                break;
+                            }
+                        }
+
+                    if (two_or_more)
+                        continue;
+                    if (! only)
+                        inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, vars));
+                    else
+                        inference.infer(logger, ! nogood[*only], JustifyUsingRUP{}, generic_reason(state, vars));
+                }
+                return PropagatorState::Enable;
+            },
+            triggers);
+    }
 }
 
 auto Nogoods::install_propagators(Propagators & propagators) -> void
 {
-    Triggers triggers;
-    for (auto & v : _trigger_vars)
-        triggers.on_change.emplace_back(v);
-
-    // The nogood data is shared with the store (so additions are visible here);
-    // the watches are this propagator's own, non-backtrackable, and grown lazily
-    // to keep pace with the nogoods.
-    auto nogoods = _store->_nogoods;
-    auto nogood_vars = _store->_vars;
-    auto watches = make_shared<vector<pair<size_t, size_t>>>();
-
-    // Init: set up watches for the nogoods present up front (none, for a store
-    // that the restart loop will grow during search).
-    propagators.install_initialiser(
-        [nogoods, nogood_vars, watches](const State & state, auto & inference, ProofLogger * const logger) -> void {
-            watches->reserve(nogoods->size());
-            for (size_t ni = 0; ni < nogoods->size(); ++ni)
-                init_watches_for(ni, *nogoods, *nogood_vars, *watches, state, inference, logger);
-        });
-
-    propagators.install(
-        constraint_id(),
-        [nogoods, nogood_vars, watches](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            // Catch up: initialise watches for any nogoods learned since the last
-            // fire. (A unit/contradiction is propagated here, on first sight.)
-            for (size_t ni = watches->size(); ni < nogoods->size(); ++ni)
-                init_watches_for(ni, *nogoods, *nogood_vars, *watches, state, inference, logger);
-
-            auto is_broken = [&](const Nogood & nogood, size_t p) -> bool {
-                return state.test_literal(nogood[p]) == LiteralIs::DefinitelyTrue;
-            };
-
-            auto find_unbroken = [&](const Nogood & nogood, size_t skip1, size_t skip2) -> optional<size_t> {
-                for (size_t p = 0; p < nogood.size(); ++p) {
-                    if (p == skip1 || p == skip2)
-                        continue;
-                    if (state.test_literal(nogood[p]) != LiteralIs::DefinitelyTrue)
-                        return p;
-                }
-                return nullopt;
-            };
-
-            for (size_t ni = 0; ni < nogoods->size(); ++ni) {
-                auto & w = (*watches)[ni];
-                const auto & nogood = (*nogoods)[ni];
-                const auto & vars = (*nogood_vars)[ni];
-
-                bool b1 = is_broken(nogood, w.first);
-                bool b2 = is_broken(nogood, w.second);
-
-                if (! b1 && ! b2)
-                    continue;
-
-                if (b1 && b2) {
-                    auto new1 = find_unbroken(nogood, no_watch, no_watch);
-                    if (! new1)
-                        inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, vars));
-                    auto new2 = find_unbroken(nogood, *new1, no_watch);
-                    if (! new2)
-                        inference.infer(logger, ! nogood[*new1], JustifyUsingRUP{}, generic_reason(state, vars));
-                    else {
-                        w.first = *new1;
-                        w.second = *new2;
-                    }
-                }
-                else if (b1) {
-                    auto new1 = find_unbroken(nogood, w.second, no_watch);
-                    if (! new1)
-                        inference.infer(logger, ! nogood[w.second], JustifyUsingRUP{}, generic_reason(state, vars));
-                    else
-                        w.first = *new1;
-                }
-                else {
-                    auto new2 = find_unbroken(nogood, w.first, no_watch);
-                    if (! new2)
-                        inference.infer(logger, ! nogood[w.first], JustifyUsingRUP{}, generic_reason(state, vars));
-                    else
-                        w.second = *new2;
-                }
-            }
-            return PropagatorState::Enable;
-        },
-        triggers);
+    // The nogood data is shared with the store, so additions are visible here.
+    if (_refined)
+        install_refined_nogoods(propagators, constraint_id(), _store->_nogoods, _store->_vars);
+    else
+        install_scan_nogoods(propagators, constraint_id(), _store->_nogoods, _store->_vars, _trigger_vars);
 }
 
 auto Nogoods::s_exprify(const innards::ProofModel * const model) const -> string
