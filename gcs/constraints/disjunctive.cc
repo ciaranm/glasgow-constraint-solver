@@ -133,9 +133,7 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
             "Disjunctive", "first task finishes before second starts",
             WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] <= -_lengths[i],
             flag);
-        if (! fwd || ! rev)
-            throw UnexpectedException{"Disjunctive: pairwise reification half missing"};
-        return BeforeFlagData{flag, *fwd, *rev};
+        return BeforeFlagData{flag, fwd, rev};
     };
     for (size_t a = 0; a < _active_tasks.size(); ++a) {
         auto i = _active_tasks[a];
@@ -145,11 +143,9 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
             auto data_ji = emit_before(j, i);
             auto clause = model.add_constraint("Disjunctive", "one task must finish first",
                 WPBSum{} + 1_i * data_ij.flag + 1_i * data_ji.flag >= 1_i);
-            if (! clause)
-                throw UnexpectedException{"Disjunctive: pairwise clause missing"};
             _before_flags.emplace(std::make_pair(i, j), data_ij);
             _before_flags.emplace(std::make_pair(j, i), data_ji);
-            _clause_lines.emplace(std::make_pair(i, j), *clause);
+            _clause_lines.emplace(std::make_pair(i, j), clause);
         }
     }
 }

@@ -99,20 +99,20 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
 
     overloaded{
         [&](const reif::MustHold &) {
-            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
+            _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
         },
         [&](const reif::MustNotHold &) {
-            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
+            _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
         },
         [&](const reif::If & cond) {
-            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+            _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         },
         [&](const reif::NotIf & cond) {
-            _proof_lines = pair{*model.add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+            _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         },
         [&](const reif::Iff & cond) {
             _proof_lines = pair{
-                *model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
+                model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
                 model.add_constraint("ReifiedLinearInequality", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
         }}
         .visit(_reif_cond);

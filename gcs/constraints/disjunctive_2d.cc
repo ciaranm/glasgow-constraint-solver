@@ -213,9 +213,7 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
             : (WPBSum{} + 1_i * pos_i + 1_i * size_i + -1_i * pos_j <= 0_i);
         auto [fwd, rev] = model.add_two_way_reified_constraint(
             "Disjunctive2D", "first rectangle precedes second on this axis", ineq, flag);
-        if (! fwd || ! rev)
-            throw UnexpectedException{"Disjunctive2D: pairwise reification half missing"};
-        return BeforeFlagData{flag, *fwd, *rev};
+        return BeforeFlagData{flag, fwd, rev};
     };
 
     // For each rectangle with a variable size on an axis, a proof-only
@@ -276,13 +274,11 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
             }
             auto clause = model.add_constraint("Disjunctive2D", "rectangles must be separated on some axis",
                 move(clause_sum) >= 1_i);
-            if (! clause)
-                throw UnexpectedException{"Disjunctive2D: separation clause missing"};
             _before_x.emplace(make_pair(i, j), bx_ij);
             _before_x.emplace(make_pair(j, i), bx_ji);
             _before_y.emplace(make_pair(i, j), by_ij);
             _before_y.emplace(make_pair(j, i), by_ji);
-            _clause_lines.emplace(make_pair(i, j), *clause);
+            _clause_lines.emplace(make_pair(i, j), clause);
         }
     }
 }

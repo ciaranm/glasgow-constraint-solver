@@ -527,8 +527,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         }
         else {
             visit([&](const auto & id) {
-                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
-                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
+                forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
+                reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -546,8 +546,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         }
         else {
             visit([&](const auto & id) {
-                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
-                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
+                forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
+                reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -566,8 +566,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
                 id);
         else {
             visit([&](const auto & id) {
-                forwards_line = *_imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
-                reverse_line = *_imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
+                forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
+                reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
             },
                 id);
             ++_imp->model_variables;
@@ -670,12 +670,12 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         _imp->gevars_that_exist[id].emplace(v, visit([&](const auto & vid) -> pair<ProofLine, ProofLine> {
             if (can_label)
                 return pair{
-                    _imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}).value(),
-                    _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}}).value()};
+                    _imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
+                    _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
             else
                 return pair{
-                    _imp->model->add_constraint(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}).value(),
-                    _imp->model->add_constraint(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}}).value()};
+                    _imp->model->add_constraint(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
+                    _imp->model->add_constraint(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
         },
                                                    id));
         ++_imp->model_variables;
@@ -1085,7 +1085,7 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
 
     _imp->view_proof_only_vars.emplace(view, v_id);
     _imp->view_proof_only_to_view.emplace(v_id, view);
-    _imp->view_link_ids.emplace(v_id, pair{link_le.value(), link_ge.value()});
+    _imp->view_link_ids.emplace(v_id, pair{link_le, link_ge});
     _imp->views_of_variable[view.actual_variable].push_back(v_id);
 
     // Backfill: if X atoms already exist when this view is registered,

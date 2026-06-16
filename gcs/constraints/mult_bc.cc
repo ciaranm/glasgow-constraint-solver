@@ -1179,7 +1179,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 auto neg_le = optional_model->add_constraint(
                     bit_sum_without_neg + (1_i * v_magnitude) <= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
 
-                channelling_constraints.insert({v, ChannellingData{*pos_ge, *pos_le, *neg_ge, *neg_le}});
+                channelling_constraints.insert({v, ChannellingData{pos_ge, pos_le, neg_ge, neg_le}});
 
                 mag_var.insert({v, v_magnitude});
 
@@ -1210,7 +1210,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                     WPBSum{} + -1_i * ProofBitVariable{v1_mag, i, true} + -1_i * ProofBitVariable{v2_mag, j, true} >= -1_i,
                     HalfReifyOnConjunctionOf{! flag});
 
-                bit_products[i.as_index()].emplace_back(BitProductData{flag, *forwards, *backwards, nullopt, nullopt});
+                bit_products[i.as_index()].emplace_back(BitProductData{flag, forwards, backwards, nullopt, nullopt});
                 bit_product_sum += power2(i + j) * flag;
             }
         }
@@ -1218,29 +1218,29 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         visit(
             [&](auto v3_mag) {
                 auto s = optional_model->add_constraint(bit_product_sum + (-1_i * v3_mag) == 0_i);
-                v3_eq_product_lines = make_pair(*s.first, *s.second);
+                v3_eq_product_lines = make_pair(s.first, s.second);
             },
             v3_mag);
 
         auto xyss = optional_model->create_proof_flag("xy[s][s]");
-        sign_lines.emplace_back(*optional_model->add_constraint(
+        sign_lines.emplace_back(optional_model->add_constraint(
             WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign}));
 
         if (mag_var.contains(_v1))
-            sign_lines.emplace_back(*optional_model->add_constraint(
+            sign_lines.emplace_back(optional_model->add_constraint(
                 WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign}));
         if (mag_var.contains(_v2))
-            sign_lines.emplace_back(*optional_model->add_constraint(
+            sign_lines.emplace_back(optional_model->add_constraint(
                 WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign}));
         if (mag_var.contains(_v1) && mag_var.contains(_v2))
-            sign_lines.emplace_back(*optional_model->add_constraint(
+            sign_lines.emplace_back(optional_model->add_constraint(
                 WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign}));
 
-        sign_lines.emplace_back(*optional_model->add_constraint(
+        sign_lines.emplace_back(optional_model->add_constraint(
             WPBSum{} + 1_i * xyss + 1_i * (_v1 != 0_i) + 1_i * (_v2 != 0_i) >= 3_i,
             HalfReifyOnConjunctionOf{v3_sign}));
 
-        sign_lines.emplace_back(*optional_model->add_constraint(
+        sign_lines.emplace_back(optional_model->add_constraint(
             WPBSum{} + 1_i * ! xyss + 1_i * (_v1 == 0_i) + 1_i * (_v2 == 0_i) >= 1_i,
             HalfReifyOnConjunctionOf{! v3_sign}));
     }

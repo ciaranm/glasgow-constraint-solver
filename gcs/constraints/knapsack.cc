@@ -641,7 +641,7 @@ auto Knapsack::define_proof_model(ProofModel & model) -> void
         for (const auto & [idx, v] : enumerate(_vars))
             sum_eq += cc.at(idx) * v;
         auto [eq1, eq2] = model.add_constraint(sum_eq == 1_i * _totals.at(cc_idx));
-        _eqns_lines.emplace_back(eq1.value(), eq2.value());
+        _eqns_lines.emplace_back(eq1, eq2);
     }
 }
 

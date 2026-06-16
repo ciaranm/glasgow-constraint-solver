@@ -104,20 +104,24 @@ auto ProofModel::emit_constraint_label(const string & constraint_id, const strin
     return ProofLineLabel{"c[" + constraint_id + "]" + (role.empty() ? "" : "[" + role + "]")};
 }
 
-auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> std::optional<ProofLine>
+auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> ProofLine
 {
     WPBSum sum;
 
+    // A clause containing a statically-true literal is a tautology. It
+    // constrains nothing, but we still emit it as a trivially-true `sum >= 0`
+    // rather than omitting it, so there is always a line to return and the
+    // constraint counter stays in step. This is why no add_constraint overload
+    // returns optional any more (issue #264); a tautology was the only source.
+    bool tautological = false;
     for (auto & lit : lits) {
-        if (overloaded{
-                [&](const TrueLiteral &) { return true; },
-                [&](const FalseLiteral &) { return false; },
-                [&]<typename T_>(const VariableConditionFrom<T_> & cond) -> bool {
-                    sum += 1_i * cond;
-                    return false;
-                }}
-                .visit(simplify_literal(names_and_ids_tracker(), lit)))
-            return nullopt;
+        overloaded{
+            [&](const TrueLiteral &) { tautological = true; },
+            [&](const FalseLiteral &) {},
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                sum += 1_i * cond;
+            }}
+            .visit(simplify_literal(names_and_ids_tracker(), lit));
     }
 
     // put these in some kind of order
@@ -126,16 +130,16 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     // remove duplicates
     sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
 
-    return add_constraint(constraint_name, rule, move(sum) >= 1_i, nullopt);
+    return add_constraint(constraint_name, rule, move(sum) >= (tautological ? 0_i : 1_i), nullopt);
 }
 
-auto ProofModel::add_constraint(const Literals & lits) -> std::optional<ProofLine>
+auto ProofModel::add_constraint(const Literals & lits) -> ProofLine
 {
     return add_constraint("?", "?", lits);
 }
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
-    const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+    const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
@@ -150,14 +154,14 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     return line;
 }
 
-auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
 {
     return add_constraint("?", "?", ineq, half_reif);
 }
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
     const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
-    -> pair<optional<ProofLine>, optional<ProofLine>>
+    -> pair<ProofLine, ProofLine>
 {
     names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
@@ -185,7 +189,7 @@ auto ProofModel::add_labelled_constraint(
     const string & constraint_id, const string & role_le, const string & role_ge,
     const StringLiteral & constraint_name, const StringLiteral & rule,
     const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
-    -> pair<optional<ProofLine>, optional<ProofLine>>
+    -> pair<ProofLine, ProofLine>
 {
     names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
@@ -213,7 +217,7 @@ auto ProofModel::add_labelled_constraint(
 }
 
 auto ProofModel::add_labelled_constraint(const string & label, const WPBSumLE & ineq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
@@ -229,7 +233,7 @@ auto ProofModel::add_labelled_constraint(const string & label, const WPBSumLE & 
 
 auto ProofModel::add_labelled_constraint(const string & constraint_id, const string & role,
     const StringLiteral & constraint_name, const StringLiteral & rule,
-    const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> optional<ProofLine>
+    const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
@@ -247,13 +251,13 @@ auto ProofModel::add_labelled_constraint(const string & constraint_id, const str
 }
 
 auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
-    -> pair<optional<ProofLine>, optional<ProofLine>>
+    -> pair<ProofLine, ProofLine>
 {
     return add_constraint("?", "?", eq, half_reif);
 }
 
 auto ProofModel::add_two_way_reified_constraint(const StringLiteral & constraint_name, const StringLiteral & rule,
-    const WPBSumLE & ineq, const ProofFlag & flag) -> pair<optional<ProofLine>, optional<ProofLine>>
+    const WPBSumLE & ineq, const ProofFlag & flag) -> pair<ProofLine, ProofLine>
 {
     auto forward = add_constraint(constraint_name, rule, ineq, HalfReifyOnConjunctionOf{{flag}});
     auto reverse = add_constraint(constraint_name, rule, negate_inequality(ineq), HalfReifyOnConjunctionOf{{! flag}});

@@ -373,6 +373,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(reification_test PRIVATE glasgow_constraint_solver)
     add_test(NAME reification_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:reification_test>)
 
+    add_executable(proof_model_tautology_test innards/proofs/proof_model_tautology_test.cc)
+    target_link_libraries(proof_model_tautology_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME proof_model_tautology_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:proof_model_tautology_test>)
+
     add_executable(invar_test innards/proofs/invar_test.cc)
     target_link_libraries(invar_test PRIVATE glasgow_constraint_solver)
     add_test(NAME invar_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_test>)
