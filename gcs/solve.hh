@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_SOLVE_HH
 
 #include <gcs/current_state.hh>
+#include <gcs/innards/state-fwd.hh>
 #include <gcs/problem.hh>
 #include <gcs/proof.hh>
 #include <gcs/stats.hh>
@@ -54,6 +55,24 @@ namespace gcs
     using BranchCallback = std::function<std::generator<IntegerVariableCondition>(const CurrentState &, const innards::Propagators &)>;
 
     /**
+     * \brief The branching heuristic for gcs::solve_with(): given a search's
+     * Problem, State, and Propagators, it does any one-time per-search setup and
+     * returns the per-node BranchCallback to branch with.
+     *
+     * solve_with() calls it exactly once, after propagators are built, so a
+     * stateful heuristic (for example dom/wdeg) can construct its state and
+     * attach itself as a conflict observer before search begins; the returned
+     * BranchCallback is then reused at every node. A stateless heuristic ignores
+     * the arguments and returns its callback. gcs::branch_with() produces one of
+     * these from a gcs::variable_order:: heuristic and a gcs::value_order::
+     * generator.
+     *
+     * \ingroup SolveCallbacks
+     * \sa SearchHeuristics
+     */
+    using BranchHeuristic = std::function<BranchCallback(const Problem &, innards::State &, innards::Propagators &)>;
+
+    /**
      * \brief Called by gcs::solve_with() after the proof has been started.
      *
      * \ingroup SolveCallbacks
@@ -79,7 +98,7 @@ namespace gcs
     {
         SolutionCallback solution = SolutionCallback{};
         TraceCallback trace = TraceCallback{};
-        BranchCallback branch = BranchCallback{};
+        BranchHeuristic branch = BranchHeuristic{};
         AfterProofStartedCallback after_proof_started = AfterProofStartedCallback{};
         CompletedCallback completed = CompletedCallback{};
     };
