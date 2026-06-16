@@ -57,6 +57,13 @@ library. For an introduction to *using* the solver, start with the top-level
   `recover_am1`-based pairwise at-most-one derivation that replaces
   cumulative's encoded `C_t`, and the third reusable proof-logging
   idea that comes out of the design.
+- [Range ("in") literals](range_literals_spec.md) — the design specification
+  for the interval-literal proof layer: reifying `[X∈[a,b]]` to its
+  order-chain cuts, the always-covered partition invariant, interval-tree
+  containment, and the P1/P2 (line-checkability vs replay-completeness)
+  distinction that governs which linking clauses are load-bearing — with the
+  W1–W5 witness suite as the regression defence against re-simplification.
+  Read when touching range/interval reasons, branching, or `infer_not_in_range`.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.
