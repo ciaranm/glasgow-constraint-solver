@@ -7,6 +7,9 @@
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
+#include <gcs/constraints/logical.hh>
+#include <gcs/constraints/minus.hh>
+#include <gcs/constraints/plus.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/problem.hh>
@@ -318,6 +321,42 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             post_constraint(problem,
                 Count{resolve_variable_list(variables, terms[2], "the count variable list"),
                     resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])},
+                label);
+        }
+        else if (op == "and") {
+            // (label and (X1 ... Xn) Y): Y <-> all Xi nonzero.
+            if (terms.size() != 4)
+                throw ScpReadError{"and takes (label and (vars...) reif)"};
+            post_constraint(problem,
+                And{resolve_variable_list(variables, terms[2], "the and variable list"),
+                    resolve_variable(variables, terms[3])},
+                label);
+        }
+        else if (op == "or") {
+            // (label or (X1 ... Xn) Y): Y <-> some Xi nonzero.
+            if (terms.size() != 4)
+                throw ScpReadError{"or takes (label or (vars...) reif)"};
+            post_constraint(problem,
+                Or{resolve_variable_list(variables, terms[2], "the or variable list"),
+                    resolve_variable(variables, terms[3])},
+                label);
+        }
+        else if (op == "plus") {
+            // (label plus a b result): a + b = result.
+            if (terms.size() != 5)
+                throw ScpReadError{"plus takes (label plus a b result)"};
+            post_constraint(problem,
+                Plus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]),
+                    resolve_variable(variables, terms[4])},
+                label);
+        }
+        else if (op == "minus") {
+            // (label minus a b result): a - b = result.
+            if (terms.size() != 5)
+                throw ScpReadError{"minus takes (label minus a b result)"};
+            post_constraint(problem,
+                Minus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]),
+                    resolve_variable(variables, terms[4])},
                 label);
         }
         else if (op.starts_with("less_") || op.starts_with("greater_")) {

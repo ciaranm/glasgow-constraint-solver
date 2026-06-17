@@ -172,11 +172,11 @@ auto Minus::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} minus (", _constraint_id);
+    // Three flat args (`minus X Y Z`) to match cake_pb_cp's binary prim parse.
+    print(s, "{} minus", _constraint_id);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
-    print(s, ")");
 
     return s.str();
 }

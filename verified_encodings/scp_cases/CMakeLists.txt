@@ -64,3 +64,15 @@ add_scp_chain_test(all_different_sat    none)
 # (enumeration) and UNSAT.
 add_scp_chain_test(binary_less_equal_sat  none)
 add_scp_chain_test(binary_equals_unsat    none)
+
+# none (chain-only): prim arithmetic (plus/minus) and logical (and/or) chain-
+# verify, but the solver emits the equality halves / reified flags unlabelled
+# where cake labels them @c[...], so opbdiff can't byte-match (same situation as
+# all_different). minus is unsat-only: its SAT enumeration trips a RUP because
+# cake encodes `minus a b z` as a = b + z, a strength mismatch on the rearranged
+# bits (tracked with the count_sat enumeration gap).
+add_scp_chain_test(plus_sat     none)
+add_scp_chain_test(plus_unsat   none)
+add_scp_chain_test(minus_unsat  none)
+add_scp_chain_test(and_sat      none)
+add_scp_chain_test(or_sat       none)
