@@ -227,6 +227,13 @@ namespace gcs::innards
             const std::optional<std::string> & annotation = std::nullopt) -> ProofFlag;
 
         /**
+         * Create a scalar flag named `b[id][annotation]`, conforming to cake_pb_cp's
+         * naming for verified encodings. See
+         * NamesAndIDsTracker::create_proof_flag(const ConstraintID &, const std::string &).
+         */
+        [[nodiscard]] auto create_proof_flag(const ConstraintID & id, const std::string & annotation) -> ProofFlag;
+
+        /**
          * Set up proof logging for an integer variable with the specified bounds,
          * that is being tracked inside State.
          */
