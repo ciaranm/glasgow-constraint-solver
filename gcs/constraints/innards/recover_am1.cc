@@ -1,10 +1,8 @@
 #include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 
-#include <util/enumerate.hh>
-
-#include <sstream>
 #include <type_traits>
 #include <variant>
 
@@ -14,7 +12,6 @@ using namespace gcs::innards;
 using std::function;
 using std::holds_alternative;
 using std::is_same_v;
-using std::stringstream;
 using std::vector;
 
 template <typename Literal_>
@@ -81,26 +78,20 @@ template <typename Literal_>
     auto saved_level = logger.proof_level();
     logger.enter_proof_level(saved_level + 1);
 
-    stringstream am1;
+    // Build the at-most-one via PolBuilder rather than a hand-written pol
+    // string: PolBuilder defers stringifying the pair_ne line references to
+    // emit time and renders them as *relative* (negative) indices. A literal
+    // stringstream would bake in absolute line numbers, which break under
+    // workflow-2 when cake_pb_cp re-derives the OPB with a different constraint
+    // count.
+    PolBuilder am1;
     for (unsigned i1 = 1; i1 < atoms.size(); ++i1) {
-        vector<ProofLine> lines;
+        if (i1 != 1)
+            am1.multiply_by(Integer{static_cast<long long>(i1 + 1)});
         for (unsigned i2 = 0; i2 < i1; ++i2)
-            lines.push_back(pair_ne(atoms[i1], atoms[i2]));
-
-        if (i1 == 1)
-            am1 << "pol";
-        else
-            am1 << " " << (i1 + 1) << " *";
-
-        for (const auto & [n, line] : enumerate(lines)) {
-            am1 << " " << line;
-            if (n != 0 || i1 != 1)
-                am1 << " +";
-        }
-
-        am1 << " " << (i1 + 2) << " d";
+            am1.add(pair_ne(atoms[i1], atoms[i2]));
+        am1.divide_by(Integer{static_cast<long long>(i1 + 2)});
     }
-    am1 << ';';
 
     // Restore the caller's level, then emit the result there (its level is
     // resolved at emit time) while the pair_ne lines are still alive — VeriPB
@@ -108,7 +99,7 @@ template <typename Literal_>
     // inner scope, which removes only our deeper pair_ne intermediates and
     // leaves the result (at the caller's level) intact.
     logger.enter_proof_level(saved_level);
-    auto result = logger.emit_proof_line(am1.str(), level);
+    auto result = am1.emit(logger, level);
     logger.forget_proof_level(saved_level + 2);
     return result;
 }
