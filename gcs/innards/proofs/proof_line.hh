@@ -23,19 +23,16 @@ namespace gcs::innards
         [[nodiscard]] auto operator<=>(const ProofLineLabel &) const = default;
     };
 
-    inline auto operator<<(std::ostream & s, const ProofLineNumber & n) -> std::ostream &
-    {
-        return s << n.number;
-    }
-
+    // A label is a name (e.g. `@c[_1][le]`), count-robust, so streaming it as a
+    // constraint *definition* prefix is fine. There is deliberately no ostream
+    // operator for ProofLineNumber / ProofLine: a numeric line is a *reference*,
+    // and references must be emitted relative to the current line via
+    // relative_proof_line() (see below) so they survive the solver's OPB and
+    // cake_pb_cp's re-derived OPB differing in constraint count. Streaming a bare
+    // number would silently emit an absolute reference and break workflow-2.
     inline auto operator<<(std::ostream & s, const ProofLineLabel & l) -> std::ostream &
     {
         return s << "@" << l.label;
-    }
-
-    inline auto operator<<(std::ostream & s, const ProofLine & l) -> std::ostream &
-    {
-        return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
     }
 
     /**

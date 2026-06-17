@@ -36,8 +36,10 @@ namespace gcs::innards
         auto advance_constraint_counter() -> ProofLineNumber;
 
         // Build the constraint label `c[constraint_id][role]` (printed with a
-        // leading @).
-        auto emit_constraint_label(const std::string & constraint_id, const std::string & role) -> ProofLine;
+        // leading @). Returns a ProofLineLabel (not a ProofLine): the result is
+        // streamed as a definition prefix and used as a count-robust reference;
+        // it is never a numeric line.
+        auto emit_constraint_label(const std::string & constraint_id, const std::string & role) -> ProofLineLabel;
 
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
