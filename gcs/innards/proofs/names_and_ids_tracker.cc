@@ -629,18 +629,21 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         }
     }
 
-    if (_imp->assertion_level <= AssertionLevel::Links)
-        // Reverse direction: see the matching block in need_gevar above.
-        if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
-            if (auto it = _imp->views_of_variable.find(*sid_ptr); it != _imp->views_of_variable.end()) {
-                auto views_copy = it->second;
-                for (const auto & view_pid : views_copy) {
-                    const auto & view = _imp->view_proof_only_to_view.at(view_pid);
-                    Integer v_value = view.negate_first ? view.then_add - v : v + view.then_add;
-                    need_direct_encoding_for(view_pid, v_value);
-                }
+    // Nothing beyond this point needs to be emmitted at AssertionLevel::Links
+    if (_imp->assertion_level > AssertionLevel::Links)
+        return;
+
+    // Reverse direction: see the matching block in need_gevar above.
+    if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
+        if (auto it = _imp->views_of_variable.find(*sid_ptr); it != _imp->views_of_variable.end()) {
+            auto views_copy = it->second;
+            for (const auto & view_pid : views_copy) {
+                const auto & view = _imp->view_proof_only_to_view.at(view_pid);
+                Integer v_value = view.negate_first ? view.then_add - v : v + view.then_add;
+                need_direct_encoding_for(view_pid, v_value);
             }
         }
+    }
 
     // Link this new eq atom (a singleton [v, v]) to its immediate range containers,
     // so a rejected container propagates ~(id == v). Most variables never have any
@@ -889,7 +892,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
 
 auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
 {
-    if (! _imp->logger)
+    if (! _imp->logger || _imp->logger->get_assertion_level() > AssertionLevel::Links) // Should be unreachable at AssertionLevel::Links anyway
         return;
 
     auto tree_it = _imp->containment_trees.find(id);
@@ -961,11 +964,20 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     _imp->variable_conditions_to_x.emplace(in_range(id, lo, hi), x);
     _imp->variable_conditions_to_x.emplace(not_in_range(id, lo, hi), ! x);
 
-    auto lines = visit([&](const auto & id) {
-        return _imp->logger->emit_red_proof_lines_reifying(
-            WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::Top);
-    },
-        id);
+    auto will_define = _imp->logger->get_assertion_level() <= AssertionLevel::Definitions;
+    // Struggling to get clang-format to behave here...
+    auto lines = will_define //
+        ? visit([&](const auto & id) {
+              return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::Top);
+          },
+              id)
+        : make_pair(ProofLine{}, ProofLine{});
+
+    _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
+
+    // No containment tree apparatus needed at higher assertion levels.
+    if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
+        return;
 
     // Containment edges let a rejected literal propagate down to the literals a
     // conflict is written over; the order chain alone does not give this. The
@@ -979,8 +991,6 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     }
     link_immediate_containment(id, lo, hi);
     _imp->containment_trees[id].insert(lo, hi);
-
-    _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
 }
 
 auto NamesAndIDsTracker::append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
@@ -996,6 +1006,9 @@ auto NamesAndIDsTracker::append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyI
 
 auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID id, Integer p) -> void
 {
+    if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
+        return;
+
     auto & boundaries = _imp->interval_partitions.at(id);
     if (boundaries.contains(p))
         return;
@@ -1030,6 +1043,9 @@ auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID
 
 auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void
 {
+    if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
+        return;
+
     auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
     auto & boundaries = _imp->interval_partitions[id];
     boundaries.insert(lb);
@@ -1093,9 +1109,10 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
     auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
     auto span_lo = max(lo, lb), span_hi = min(hi, ub);
 
-    if (span_lo > span_hi) {
+    if (span_lo > span_hi || _imp->assertion_level > AssertionLevel::Links) {
         // Entirely outside: the reification plus the bound axioms already falsify
-        // it, so there is nothing to cover.
+        // it, so there is nothing to cover;
+        // ...OR we are at a higher assertion level that doesn't need covering apparatus in the first place.
         define_plain_invar(id, lo, hi);
         return as_literal();
     }
@@ -1157,13 +1174,20 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
         v_lo, v_hi, name, IntegerVariableProofRepresentation::Bits);
 
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
-    auto [link_le, link_ge] = _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
-        WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
+
+    auto will_define = (_imp->assertion_level <= AssertionLevel::Definitions);
+    auto [link_le, link_ge] = will_define //
+        ? _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
+              WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add)
+        : make_pair(ProofLine{}, ProofLine{});
 
     _imp->view_proof_only_vars.emplace(view, v_id);
     _imp->view_proof_only_to_view.emplace(v_id, view);
     _imp->view_link_ids.emplace(v_id, pair{link_le, link_ge});
     _imp->views_of_variable[view.actual_variable].push_back(v_id);
+
+    if (_imp->assertion_level > AssertionLevel::Links) // No further linking needed at higher assertion levels.
+        return v_id;
 
     // Backfill: if X atoms already exist when this view is registered,
     // trigger the matching V atoms now so the V<->X link is emitted for
