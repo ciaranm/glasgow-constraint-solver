@@ -626,7 +626,7 @@ auto GACAllDifferent::prepare(Propagators &, State & initial_state, ProofModel *
 
 auto GACAllDifferent::define_proof_model(ProofModel & model) -> void
 {
-    define_clique_not_equals_encoding(model, as_string(_constraint_id), _sanitised_vars);
+    define_clique_not_equals_encoding(model, _constraint_id, _sanitised_vars);
 }
 
 auto GACAllDifferent::install_propagators(Propagators & propagators) -> void

@@ -22,7 +22,7 @@ namespace gcs
         // appears more than once in `vars`, the resulting pair-of-half-reified
         // constraints is jointly inconsistent — both polarities of the
         // selector are forced false.
-        auto define_clique_not_equals_encoding(ProofModel & model, const std::string & constraint_id,
+        auto define_clique_not_equals_encoding(ProofModel & model, const ConstraintID & constraint_id,
             const std::vector<IntegerVariableID> & vars) -> void;
 
         // Emits the AllDifferentExcept clique encoding. Where the same variable

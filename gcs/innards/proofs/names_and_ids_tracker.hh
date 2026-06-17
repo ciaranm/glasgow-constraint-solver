@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_VARIABLE_CONSTRAINTS_TRACKER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_VARIABLE_CONSTRAINTS_TRACKER_HH
 
+#include <gcs/constraint_id.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
@@ -19,6 +20,7 @@
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 #include <version>
 
 #ifdef __cpp_lib_generator
@@ -70,6 +72,17 @@ namespace gcs::innards
         std::unique_ptr<Imp> _imp;
 
         [[nodiscard]] auto allocate_flag_index() -> unsigned long long;
+
+        // Allocate the XLiteral backing a flag, registering `verbose_name` (and
+        // its negation) as the PB-file rendering. Shared by create_proof_flag
+        // (which passes the `f[index][stem]` form) and make_proof_flag_named
+        // (which passes a fully-formed two-level name verbatim).
+        [[nodiscard]] auto allocate_flag_xliteral(ProofFlag flag, const std::string & verbose_name) -> XLiteral;
+
+        // Create a flag whose PB-file variable name is `full_name` verbatim
+        // (rather than wrapped in `f[index][...]`). The cake-conforming
+        // create_proof_flag overloads build cake's `x[...]` (etc.) names and call this.
+        [[nodiscard]] auto make_proof_flag_named(const std::string & full_name) -> ProofFlag;
 
         auto emit_proof_line_now_or_at_start(const std::function<auto(ProofLogger * const)->void> &) -> void;
 
@@ -386,9 +399,32 @@ namespace gcs::innards
         auto track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer, Integer) -> void;
 
         /**
-         * Create a proof flag with a new identifier.
+         * Create a proof flag with a new identifier, named `f[index][stem]`.
          */
-        [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
+        [[nodiscard]] auto create_proof_flag(const std::string & stem) -> ProofFlag;
+
+        /**
+         * Create a position-indexed flag named `x[id][i1_i2..][annotation?]`,
+         * conforming to cake_pb_cp's naming for verified encodings (workflow 2)
+         * rather than the solver's default `f[index][stem]`.
+         *
+         * This mirrors cake's `Indices (num list) (annotation option)` flag
+         * constructor (cp_to_ilpScript.sml `format_flag`): the indices are the
+         * array positions the auxiliary ranges over, joined by `_`, and the
+         * optional annotation is appended in its own brackets. So an
+         * all_different pair selector is `create_proof_flag(id, {i, j})` ->
+         * `x[id][i_j]`, and a count per-position flag is
+         * `create_proof_flag(id, {i}, "eq")` -> `x[id][i][eq]`.
+         *
+         * cake's prefix encodes what the auxiliary is indexed by, not whether it
+         * is reified: `x` = array positions (this method), `b` = a scalar flag
+         * with only an annotation (`Flag`), `v` = values (`Values`). The `b` / `v`
+         * families get their own entry points when their first consumers land.
+         * Because VeriPB binds variables by name, a flag the solver's proof shares
+         * with cake's re-derived OPB must be defined under cake's name. See #354.
+         */
+        [[nodiscard]] auto create_proof_flag(const ConstraintID & id, const std::vector<long long> & indices,
+            const std::optional<std::string> & annotation = std::nullopt) -> ProofFlag;
 
         /**
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals

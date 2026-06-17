@@ -176,7 +176,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
     else {
         // Still need to define the all different encoding.
         if (model)
-            define_clique_not_equals_encoding(*model, as_string(_constraint_id), _succ);
+            define_clique_not_equals_encoding(*model, _constraint_id, _succ);
     }
 
     // Define encoding to eliminate sub-cycles
