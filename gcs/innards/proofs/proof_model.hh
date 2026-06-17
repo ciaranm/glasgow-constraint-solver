@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_MODEL_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_MODEL_HH
 
+#include <gcs/constraint_id.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
@@ -199,7 +200,15 @@ namespace gcs::innards
         [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &,
             const IntegerVariableProofRepresentation enc) -> ProofOnlySimpleIntegerVariableID;
 
-        [[nodiscard]] auto create_proof_flag(const std::string &) -> ProofFlag;
+        [[nodiscard]] auto create_proof_flag(const std::string & stem) -> ProofFlag;
+
+        /**
+         * Create a position-indexed flag named `x[id][i1_i2..][annotation?]`,
+         * conforming to cake_pb_cp's naming for verified encodings. See
+         * NamesAndIDsTracker::create_proof_flag(const ConstraintID &, const std::vector<long long> &, ...).
+         */
+        [[nodiscard]] auto create_proof_flag(const ConstraintID & id, const std::vector<long long> & indices,
+            const std::optional<std::string> & annotation = std::nullopt) -> ProofFlag;
 
         /**
          * Set up proof logging for an integer variable with the specified bounds,

@@ -446,6 +446,12 @@ auto ProofModel::create_proof_flag(const string & name) -> ProofFlag
     return names_and_ids_tracker().create_proof_flag(name);
 }
 
+auto ProofModel::create_proof_flag(const ConstraintID & id, const vector<long long> & indices,
+    const optional<string> & annotation) -> ProofFlag
+{
+    return names_and_ids_tracker().create_proof_flag(id, indices, annotation);
+}
+
 auto ProofModel::finalise() -> void
 {
     _imp->finalised = true;

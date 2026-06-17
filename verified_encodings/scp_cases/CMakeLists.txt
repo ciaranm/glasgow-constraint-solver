@@ -49,12 +49,13 @@ add_scp_chain_test(multi_mixed_unsat        strict)  # comparison + linear toget
 add_scp_chain_test(not_equals_sat       aux)
 add_scp_chain_test(lin_not_equals_sat   aux)
 
-# none (chain-only): all_different's per-pair selector has the *opposite* polarity
-# to cake's (the deferred conform-the-solver item), and multiple identical-looking
-# selectors defeat aux-name matching anyway -- so the chain (which verifies
-# regardless: the flag is existential) is the oracle here, not opbdiff.
-add_scp_chain_test(all_different_unsat  none)
-add_scp_chain_test(all_different_sat    none)
+# strict: all_different's per-pair selector is now named x[id][i_j] with cake's
+# polarity (selector TRUE = "higher"), via create_proof_flag_with_verbose_name --
+# the first consumer of the two-level aux-naming primitive (#354). The proof never
+# references the selectors by name, so this is purely an OPB-definition conform and
+# the encoding now byte-matches cake's.
+add_scp_chain_test(all_different_unsat  strict)
+add_scp_chain_test(all_different_sat    strict)
 
 # none (chain-only): a {0,1} model variable is encoded as a single tautological
 # line on i[v][b0], where cake emits two bound lines (lb + ub) on the same i[v][b0]

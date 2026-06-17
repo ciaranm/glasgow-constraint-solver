@@ -1236,6 +1236,37 @@ auto NamesAndIDsTracker::create_proof_flag(const string & name) -> ProofFlag
     return result;
 }
 
+auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const vector<long long> & indices,
+    const optional<string> & annotation) -> ProofFlag
+{
+    // Mirror cake_pb_cp's Indices flag rendering (cp_to_ilpScript.sml format_flag):
+    // x[id][i1_i2..][annotation?] -- the index list joined by '_', the optional
+    // annotation in its own brackets.
+    string name = "x[" + as_string(id) + "][";
+    for (size_t k = 0; k < indices.size(); ++k) {
+        if (k != 0)
+            name += "_";
+        name += to_string(indices[k]);
+    }
+    name += "]";
+    if (annotation)
+        name += "[" + *annotation + "]";
+    return make_proof_flag_named(name);
+}
+
+auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> ProofFlag
+{
+    // The supplied name is used verbatim as the PB-file variable name (rather
+    // than wrapped in `f[index][...]`), so the same string is both the tracked
+    // name and the verbose rendering. See the header for why.
+    ProofFlag result{allocate_flag_index(), true};
+    track_variable_name(result, full_name);
+    auto flagvar = allocate_flag_xliteral(result, full_name);
+    _imp->flags.emplace(result, flagvar);
+    _imp->flags.emplace(! result, ! flagvar);
+    return result;
+}
+
 auto NamesAndIDsTracker::pb_file_string_for(const XLiteral & lit) const -> string
 {
     if (_imp->verbose_names) {
@@ -1401,14 +1432,13 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     return result;
 }
 
-auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
+auto NamesAndIDsTracker::allocate_flag_xliteral(ProofFlag flag, const string & verbose_name) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        string name = format("f[{}][{}]", flag.index, name_of(flag));
-        _imp->xlits_to_verbose_names.emplace(result, name);
-        _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+        _imp->xlits_to_verbose_names.emplace(result, verbose_name);
+        _imp->xlits_to_verbose_names.emplace(! result, "~" + verbose_name);
     }
 
     if (_imp->variables_map_file) {
@@ -1425,6 +1455,11 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
     }
 
     return result;
+}
+
+auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
+{
+    return allocate_flag_xliteral(flag, format("f[{}][{}]", flag.index, name_of(flag)));
 }
 
 auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID id, Integer power) -> XLiteral
