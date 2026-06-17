@@ -60,8 +60,8 @@ add_scp_chain_test(all_different_sat    strict)
 # strict: count, the second keystone consumer (#354) and a sterner test -- unlike
 # all_different, its propagator references the per-position equality flag by name in
 # its RUP steps. Its flags are now x[id][i][ge|le|eq] (created via the
-# create_proof_flag_fully_reifying(ConstraintID, position, role, ...) overload, with
-# cake's [r]/[f] labelled halves), the equality is eq <=> ge & le (was ~gt & ~lt),
+# create_proof_flag_fully_reifying(ConstraintID, index list, annotation, ...) overload,
+# with cake's [r]/[f] labelled halves), the equality is eq <=> ge & le (was ~gt & ~lt),
 # and the sum is c[id][le|ge] -- matching cake's encoding exactly, so the propagator
 # proof re-verifies against cake's OPB. count_sat also exercises the relative-line
 # fix for lazily-introduced order literals (the chain-link `pol` was emitting absolute
@@ -69,6 +69,21 @@ add_scp_chain_test(all_different_sat    strict)
 # Domains are 0..2 (not 0..1) to stay off the binary {0,1} encoding (see below).
 add_scp_chain_test(count_unsat  strict)
 add_scp_chain_test(count_sat    strict)
+
+# none (chain-only): element. cake uses the same lean strategy as the solver -- it
+# reifies the per-entry equality (result = array[k]) on the *index variable's own*
+# i[I][eqk] literal, no selector flags -- so there is nothing to conform on element's
+# own side beyond labelling its equality halves. But byte-match is gated by a deeper,
+# cross-cutting divergence: the solver's order/eq-literal *variable* encoding is lazy
+# and lean (omits the trivial ge0/ge(n+1) boundary literals, defines eq0 <=> ~ge1,
+# unlabelled), where cake's is eager and full (the whole ge ladder, eq0 <=> ge0 & ~ge1,
+# all @i[I][...] labelled). That is shared variable-encoding machinery, not element --
+# so element chain-verifies in workflow 2 (the solver's proof checks against cake's
+# OPB; its eq literals are a semantically-equivalent subset of cake's) but cannot
+# byte-match until that encoding is conformed. Tracked separately; gates the
+# eq-literal / extensional family (element, among, table). SAT enumeration + UNSAT.
+add_scp_chain_test(element_sat    none)
+add_scp_chain_test(element_unsat  none)
 
 # none (chain-only): a {0,1} model variable is encoded as a single tautological
 # line on i[v][b0], where cake emits two bound lines (lb + ub) on the same i[v][b0]
