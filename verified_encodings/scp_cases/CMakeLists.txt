@@ -76,3 +76,8 @@ add_scp_chain_test(plus_unsat   none)
 add_scp_chain_test(minus_unsat  none)
 add_scp_chain_test(and_sat      none)
 add_scp_chain_test(or_sat       none)
+
+# none (chain-only): inverse channeling chain-verifies; its clauses reuse the
+# variables' own eq literals so the encoding lines up, but they're unlabelled vs
+# cake, so no opbdiff byte-match.
+add_scp_chain_test(inverse_sat  none)
