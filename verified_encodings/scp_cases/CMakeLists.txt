@@ -2,9 +2,10 @@
 # glasgow_scp_solver, re-derived by cake_pb_cp, checked by veripb (UNSAT *or*
 # complete enumeration -- the (enumerate) element makes cake emit `preserved:`),
 # and the two OPBs are compared by opbdiff --match-labels. Each test skips (77)
-# when cake_pb_cp / veripb are absent. Domains are bits-encoded on purpose, to
-# avoid the direct-only-vs-bits divergence; reified forms are deferred for the
-# same reason (their [0,1] condition variable is direct-encoded).
+# when cake_pb_cp / veripb are absent. Most domains are bits-encoded on purpose,
+# to keep the strict-opbdiff cases byte-clean; the binary_* cases below
+# deliberately use a {0,1} model variable to exercise the binary b0 encoding
+# (verified via the chain, not opbdiff -- see their `none` note).
 
 set(_scp_chain_runner ${CMAKE_CURRENT_SOURCE_DIR}/../run_scp_chain.bash)
 
@@ -54,3 +55,12 @@ add_scp_chain_test(lin_not_equals_sat   aux)
 # regardless: the flag is existential) is the oracle here, not opbdiff.
 add_scp_chain_test(all_different_unsat  none)
 add_scp_chain_test(all_different_sat    none)
+
+# none (chain-only): a {0,1} model variable is encoded as a single tautological
+# line on i[v][b0], where cake emits two bound lines (lb + ub) on the same i[v][b0]
+# -- so opbdiff sees cake's extra ub line ("only in B") and can't byte-match. The
+# chain verifies regardless (the whole point of the relative-line work: VeriPB no
+# longer pins the constraint count). Exercises the binary encoding both SAT
+# (enumeration) and UNSAT.
+add_scp_chain_test(binary_less_equal_sat  none)
+add_scp_chain_test(binary_equals_unsat    none)
