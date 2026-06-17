@@ -106,6 +106,18 @@ add_scp_chain_test(element_unsat  none)
 add_scp_chain_test(nvalue_sat    none)
 add_scp_chain_test(nvalue_unsat  none)
 
+# DISABLED (temporarily omitted, cake-blocked): negative-domain nvalue. cake_pb_cp
+# renders negative values in its labels verbatim (@v[id][-N], @i[X][eq-N]/[ge-N]),
+# but VeriPB 3.0's label grammar (@[a-zA-Z0-9_^\[\]\{\}]+) forbids '-' -- it is
+# allowed in *variable* names ([a-zA-Z_][_a-zA-Z0-9\-...]+) but not labels -- so
+# veripb rejects cake's OPB at the elaboration step. The solver side is fine (it
+# spells negatives "minus", a legal label). This is a cake-side issue (reported
+# upstream); re-enable once cake renders negative values dash-free in labels. Every
+# other family routes negatives through bit-encoding / non-value labels and chain-
+# verifies (equals/not_equals/less_than/all_different/count even byte-match strict).
+add_scp_chain_test(nvalue_neg_sat none)
+set_tests_properties(scp_chain_nvalue_neg_sat PROPERTIES DISABLED TRUE)
+
 # none (chain-only): a {0,1} model variable is encoded as a single tautological
 # line on i[v][b0], where cake emits two bound lines (lb + ub) on the same i[v][b0]
 # -- so opbdiff sees cake's extra ub line ("only in B") and can't byte-match. The
