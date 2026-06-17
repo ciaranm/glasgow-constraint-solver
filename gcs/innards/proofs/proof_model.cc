@@ -305,7 +305,13 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
 
     if (0_i == lower && 1_i == upper) {
         names_and_ids_tracker().track_variable_name(id, name);
-        auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, 1_i);
+        // Name the single PB variable as bit 0 (`i[name][b0]`), matching how
+        // cake_pb_cp encodes a {0,1} variable. For a {0,1} variable the bit-0
+        // literal *is* the (== 1)/(>= 1) literal, so the condition associations
+        // below are unchanged; only the name differs. We still emit just the one
+        // (tautological) line -- cake additionally emits an upper-bound line, but
+        // VeriPB no longer pins the constraint count, and references are relative.
+        auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, 0_i);
         _imp->opb << "1 " << names_and_ids_tracker().pb_file_string_for(eqvar) << " >= 0 ;\n";
         ++_imp->model_variables;
         advance_constraint_counter();

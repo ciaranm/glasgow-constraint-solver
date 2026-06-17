@@ -185,7 +185,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         visit([&](const auto & id) {
             _imp->proof << "e ";
             emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
-            _imp->proof << ":" << _imp->proof_line << ";\n";
+            _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
 
             emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
         },
@@ -219,7 +219,7 @@ auto ProofLogger::conclude_unsatisfiable(bool is_optimisation) -> void
     if (is_optimisation)
         _imp->proof << "conclusion BOUNDS INF INF;\n";
     else
-        _imp->proof << "conclusion UNSAT : " << _imp->proof_line << ";\n";
+        _imp->proof << "conclusion UNSAT : " << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
     end_proof();
 }
 
@@ -411,7 +411,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
             if (rule.lines) {
                 rule_line << ": ";
                 for (auto & line : *rule.lines) {
-                    rule_line << line << ' ';
+                    rule_line << relative_proof_line(line, _imp->proof_line.number) << ' ';
                 }
                 rule_line << " ;";
             }
@@ -422,7 +422,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
         [&](const ImpliesProofRule & rule) {
             if (rule.line) {
                 rule_line << ": ";
-                rule_line << *rule.line << ' ';
+                rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << ' ';
                 rule_line << " ;";
             }
             else {
@@ -472,18 +472,18 @@ auto ProofLogger::emit_under_reason(
     }
 
     overloaded{
-        [&](const RUPProofRule & rule) { 
+        [&](const RUPProofRule & rule) {
 			if(rule.lines) {
 				rule_line << ": ";
 				for (const auto & line : *rule.lines) {
-					rule_line << line << " ";
+					rule_line << relative_proof_line(line, _imp->proof_line.number) << " ";
 				}
 				rule_line << " ;";
 			} else {
 				rule_line << ";"; } },
         [&](const ImpliesProofRule & rule) { if (rule.line) {
 				rule_line << ": ";
-				rule_line << *rule.line << " ";
+				rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << " ";
 				rule_line << " ;";
 			} else { rule_line << ";"; } },
         [&](const AssertProofRule &) { rule_line << ";"; }}
@@ -534,13 +534,34 @@ auto ProofLogger::enter_proof_level(int depth) -> void
 auto ProofLogger::forget_proof_level(int depth) -> void
 {
     auto & lines = _imp->proof_lines_by_level.at(depth);
+    // Emit deletions as *relative* (negative) ids so a constraint-count
+    // difference between the solver's OPB and cake_pb_cp's re-derived OPB
+    // doesn't misaddress them. VeriPB's id space is monotonic (deleted entries
+    // are tombstoned), so every offset is taken against the same `current`.
+    //
+    // We keep `del range` rather than expanding to per-id `del id`, because a
+    // recorded level can contain ids already deleted by a nested level: VeriPB's
+    // `del range` skips already-deleted ids (get_undeleted), but a single
+    // `del id` errors on them. The one wrinkle: `del range from to` is half-open,
+    // so deleting *through* the most recent line (`u == current`) needs an
+    // exclusive upper of `current + 1`, which has no negative encoding (it would
+    // be `0`). In that case we range up to but excluding the top line and delete
+    // the top with `del id -1` (which is the just-emitted line, never already
+    // deleted). A `del range -k 0` form upstream would remove this special case.
+    auto current = _imp->proof_line.number;
+    auto rel = [&](long long absolute) { return absolute - current - 1; };
     for (const auto & [l, u] : lines.each_interval()) {
         write_indent();
-        if (l == u) {
-            _imp->proof << "del id " << l << ";\n";
+        if (l == u)
+            _imp->proof << "del id " << rel(l) << ";\n";
+        else if (u < current)
+            _imp->proof << "del range " << rel(l) << " " << rel(u + 1) << ";\n";
+        else {
+            // u == current: peel the top line out of the (otherwise zero-upper) range.
+            _imp->proof << "del range " << rel(l) << " " << rel(u) << ";\n";
+            write_indent();
+            _imp->proof << "del id " << rel(u) << ";\n";
         }
-        else
-            _imp->proof << "del range " << l << " " << ProofLineNumber{u + 1} << ";\n";
     }
     lines.clear();
 }
@@ -551,11 +572,19 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
         _imp->proof.exceptions(ios::failbit | ios::badbit);
         _imp->proof.open(_imp->proof_file, ios::out);
         _imp->proof << "pseudo-Boolean proof version 3.0\n";
-        _imp->proof << "f " << model.number_of_constraints() << " ;\n";
+        // No `f` rule: VeriPB 3.0 loads the formula implicitly, and omitting the
+        // explicit count means cake_pb_cp's re-derived OPB is allowed to have a
+        // different number of constraints than the solver's own (e.g. cake emits
+        // two bound lines for a binary variable where the solver emits one). All
+        // constraint references are relative (see relative_proof_line), so the
+        // differing count doesn't misaddress them.
     }
     catch (const ios_base::failure &) {
         throw ProofError{"Error writing proof file to '" + _imp->proof_file + "'"};
     }
+    // The solver's own constraint count still seeds the proof-line counter so its
+    // derived-line numbering is internally consistent; relativisation cancels any
+    // difference from cake's count at reference time.
     _imp->proof_line.number += model.number_of_constraints().number;
 }
 
@@ -690,7 +719,8 @@ auto ProofLogger::create_proof_flag(const string & name) -> ProofFlag
 
 auto ProofLogger::delete_range(ProofLine from, ProofLine up_to) -> void
 {
-    _imp->proof << "del range " << from << " " << up_to << ";\n";
+    _imp->proof << "del range " << relative_proof_line(from, _imp->proof_line.number)
+                << " " << relative_proof_line(up_to, _imp->proof_line.number) << ";\n";
 }
 
 auto ProofLogger::write_indent() -> void
