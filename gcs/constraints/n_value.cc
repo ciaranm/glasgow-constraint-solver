@@ -70,33 +70,24 @@ auto NValue::prepare(Propagators &, State & initial_state, ProofModel * const) -
 
 auto NValue::define_proof_model(ProofModel & model) -> void
 {
-    list<ProofFlag> flags;
-    for (auto [v, vars] : _possible_values) {
-        auto flag = model.create_proof_flag("nvalue");
-        WPBSum forward;
-        for (auto & var : vars)
-            forward += 1_i * (var == v);
-        forward += 1_i * ! flag;
-        model.add_constraint("NValue", "forward sum", forward >= 1_i);
-
-        WPBSum reverse;
-        for (auto & var : vars)
-            reverse += 1_i * (var != v);
-        reverse += Integer(vars.size()) * flag;
-        model.add_constraint("NValue", "reverse sum", reverse >= Integer(vars.size()));
-
-        flags.push_back(flag);
+    // Conform to cake_pb_cp's nvalue encoding (#354): for each value v in the
+    // union of the variables' domains, a fully-reified per-value occurrence flag
+    // v[id][v] ⇔ (some var = v) (cake's `elm` / Values), then n_values = the sum
+    // of those flags, emitted as cake's c[id][le] / c[id][ge] halves (the same
+    // count-sum machinery). The flag's halves are v[id][v][r] (flag -> some
+    // var = v) and v[id][v][f] (~flag -> no var = v).
+    WPBSum occurrence_sum;
+    for (const auto & [v, vars] : _possible_values) {
+        WPBSum some_eq;
+        for (const auto & var : vars)
+            some_eq += 1_i * (var == v);
+        auto flag = model.create_proof_flag_values_fully_reifying(_constraint_id, {v.raw_value}, std::nullopt,
+            some_eq >= 1_i);
+        occurrence_sum += 1_i * flag;
     }
-
-    WPBSum forward, reverse;
-    for (auto & flag : flags) {
-        forward += 1_i * flag;
-        reverse += -1_i * flag;
-    }
-    forward += -1_i * _n_values;
-    reverse += 1_i * _n_values;
-    model.add_constraint("NValue", "forward total", forward >= 0_i);
-    model.add_constraint("NValue", "reverse total", reverse >= 0_i);
+    occurrence_sum += -1_i * _n_values;
+    model.add_labelled_constraint(as_string(_constraint_id), "le", "ge",
+        "NValue", "sum of occurrence flags", occurrence_sum == 0_i);
 }
 
 auto NValue::install_propagators(Propagators & propagators) -> void

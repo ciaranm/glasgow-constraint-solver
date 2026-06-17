@@ -10,6 +10,7 @@
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/minus.hh>
+#include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
@@ -322,6 +323,15 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             post_constraint(problem,
                 Count{resolve_variable_list(variables, terms[2], "the count variable list"),
                     resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])},
+                label);
+        }
+        else if (op == "nvalue") {
+            // (label nvalue (X1 ... Xn) Y): Y = #{ distinct values among the Xi }.
+            if (terms.size() != 4)
+                throw ScpReadError{"nvalue takes (label nvalue (vars...) n_values)"};
+            post_constraint(problem,
+                NValue{resolve_variable(variables, terms[3]),
+                    resolve_variable_list(variables, terms[2], "the nvalue variable list")},
                 label);
         }
         else if (op == "inverse") {

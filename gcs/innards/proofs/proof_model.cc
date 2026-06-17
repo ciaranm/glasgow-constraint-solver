@@ -285,6 +285,18 @@ auto ProofModel::create_proof_flag_fully_reifying(const ConstraintID & id, const
     return flag;
 }
 
+auto ProofModel::create_proof_flag_values_fully_reifying(const ConstraintID & id, const vector<long long> & values,
+    const optional<string> & annotation, const WPBSumLE & ineq) -> ProofFlag
+{
+    auto flag = names_and_ids_tracker().create_proof_flag_values(id, values, annotation);
+    // As the index-list variant: v[..][r] is the forward half (flag -> ineq),
+    // [f] the reverse (~flag -> ~ineq).
+    auto base = names_and_ids_tracker().name_of(flag);
+    add_labelled_constraint(base + "[r]", ineq, HalfReifyOnConjunctionOf{{flag}});
+    add_labelled_constraint(base + "[f]", negate_inequality(ineq), HalfReifyOnConjunctionOf{{! flag}});
+    return flag;
+}
+
 auto ProofModel::names_and_ids_tracker() -> NamesAndIDsTracker &
 {
     return _imp->tracker;
@@ -468,6 +480,12 @@ auto ProofModel::create_proof_flag(const ConstraintID & id, const vector<long lo
 auto ProofModel::create_proof_flag(const ConstraintID & id, const string & annotation) -> ProofFlag
 {
     return names_and_ids_tracker().create_proof_flag(id, annotation);
+}
+
+auto ProofModel::create_proof_flag_values(const ConstraintID & id, const vector<long long> & values,
+    const optional<string> & annotation) -> ProofFlag
+{
+    return names_and_ids_tracker().create_proof_flag_values(id, values, annotation);
 }
 
 auto ProofModel::finalise() -> void
