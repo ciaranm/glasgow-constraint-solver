@@ -192,30 +192,49 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },
         [&](const reif::If & reif) {
-            model.add_constraint("ReifiedEquals", "equals option",
+            // cake_pb_cp's encode_equal (-if): the equality split le (V1 <= V2) and
+            // ge (V1 >= V2), each half-reified on the condition. Labelled @c[id][le] /
+            // @c[id][ge] to match cake's cencode_equal_1.
+            model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "ReifiedEquals", "equals option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
         },
         [&](const reif::NotIf & reif) {
-            auto gtflag = model.create_proof_flag("gt");
-            model.add_constraint("ReifiedEquals", "greater option",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{reif.cond, gtflag}});
-            model.add_constraint("ReifiedEquals", "less option",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{reif.cond, ! gtflag}});
+            // cake_pb_cp's reified not-equal (-if): selectors b[id][gt] / b[id][lt]
+            // FULLY reified against the strict comparisons (both the [r] and [f] halves,
+            // each labelled with the flag's own name), plus an at-least-one @c[id][al1]
+            // over lt, gt and the NEGATED condition -- i.e. cond ⇒ (V1 < V2 ∨ V1 > V2).
+            auto gtflag = model.create_proof_flag(_constraint_id, "gt");
+            auto gt_name = model.names_and_ids_tracker().pb_file_string_for(gtflag);
+            model.add_labelled_constraint(gt_name + "[r]",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+            model.add_labelled_constraint(gt_name + "[f]",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= 0_i, HalfReifyOnConjunctionOf{{! gtflag}});
+            auto ltflag = model.create_proof_flag(_constraint_id, "lt");
+            auto lt_name = model.names_and_ids_tracker().pb_file_string_for(ltflag);
+            model.add_labelled_constraint(lt_name + "[r]",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
+            model.add_labelled_constraint(lt_name + "[f]",
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 0_i, HalfReifyOnConjunctionOf{{! ltflag}});
+            model.add_labelled_constraint(as_string(_constraint_id), "al1", "ReifiedEquals", "at least one differs",
+                WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * ! reif.cond >= 1_i);
         },
         [&](const reif::Iff & reif) {
-            // condition unknown, the condition implies it is neither greater nor less
-            model.add_constraint("ReifiedEquals", "equals option",
+            // cake_pb_cp's encode_equal (-iff): the equality split le/ge half-reified on
+            // the condition (@c[id][le] / @c[id][ge], cencode_equal_1); per-side selectors
+            // b[id][gt] / b[id][lt] half-implying the strict comparisons (cake's gtv/ltv
+            // via cvar_imply, each labelled with the flag's own name + [r]); and an
+            // at-least-one @c[id][al1] tying lt, gt and the condition together.
+            model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "ReifiedEquals", "equals option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
 
-            auto gtflag = model.create_proof_flag("gt");
-            model.add_constraint("ReifiedEquals", "greater option",
+            auto gtflag = model.create_proof_flag(_constraint_id, "gt");
+            model.add_labelled_constraint(model.names_and_ids_tracker().pb_file_string_for(gtflag) + "[r]",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
-            auto ltflag = model.create_proof_flag("lt");
-            model.add_constraint("ReifiedEquals", "less option",
+            auto ltflag = model.create_proof_flag(_constraint_id, "lt");
+            model.add_labelled_constraint(model.names_and_ids_tracker().pb_file_string_for(ltflag) + "[r]",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
 
-            // lt + eq + gt >= 1
-            model.add_constraint("ReifiedEquals", "one of less than, equals, greater than",
+            model.add_labelled_constraint(as_string(_constraint_id), "al1", "ReifiedEquals", "one of less than, equals, greater than",
                 WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * reif.cond >= 1_i);
         }}
         .visit(_cond);
