@@ -1338,11 +1338,11 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        string value_name;
-        if (value < 0_i)
-            value_name = "minus" + abs(value).to_string();
-        else
-            value_name = value.to_string();
+        // Negative values render with a leading '-' (e.g. i[X][eq-1]). The VeriPB
+        // 3.0 grammar permits '-' anywhere except the first character of a name
+        // (which the surrounding i[...] / p[...] always supplies), so this is a
+        // legal name and matches cake_pb_cp's rendering directly.
+        auto value_name = value.to_string();
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
@@ -1393,9 +1393,9 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        auto value_name = [](Integer v) {
-            return v < 0_i ? "minus" + abs(v).to_string() : v.to_string();
-        };
+        // Negatives render with a leading '-' (legal mid-name in VeriPB 3.0; see
+        // the eq/ge case above), matching cake_pb_cp.
+        auto value_name = [](Integer v) { return v.to_string(); };
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
