@@ -85,6 +85,20 @@ add_scp_chain_test(count_sat    strict)
 add_scp_chain_test(element_sat    none)
 add_scp_chain_test(element_unsat  none)
 
+# none (chain-only): among, a consumer of the position-indexed `x[...]` aux-naming
+# pattern (#354) -- cake's encode_among reifies, per position i, a flag x[id][i][al1]
+# ⇔ (var_i takes a value in the set) = (Σ_{v∈iS}(var_i = v) ≥ 1), then bit-sums those
+# flags to how_many as c[id][le]/c[id][ge] -- the same counting-family shape as count.
+# The solver now matches that exactly (via create_proof_flag_fully_reifying with the
+# "al1" annotation), dropping its old flat Σ(var=v) sum and the at-most-one scaffolding
+# (a single al1 Boolean per position is inherently ≤ 1). among's own encoding
+# byte-matches cake (the @x[...][al1] flags + @c[...] sum verified identical); but like
+# element/nvalue it references the per-value equality literals (var_i = v), so byte-match
+# is gated by the same lazy-vs-eager *variable*-encoding divergence (#358, the @i[...] ge/eq
+# ladder above). It chain-verifies in workflow 2 regardless. SAT enumeration + UNSAT.
+add_scp_chain_test(among_sat    none)
+add_scp_chain_test(among_unsat  none)
+
 # none (chain-only): a {0,1} model variable is encoded as a single tautological
 # line on i[v][b0], where cake emits two bound lines (lb + ub) on the same i[v][b0]
 # -- so opbdiff sees cake's extra ub line ("only in B") and can't byte-match. The

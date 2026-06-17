@@ -1,5 +1,6 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/among.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/element.hh>
@@ -322,6 +323,18 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             post_constraint(problem,
                 Count{resolve_variable_list(variables, terms[2], "the count variable list"),
                     resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])},
+                label);
+        }
+        else if (op == "among") {
+            // (label among (X1 ... Xn) (v1 ... vm) how_many): how_many = #{ i : Xi ∈ {v1..vm} }.
+            if (terms.size() != 5)
+                throw ScpReadError{"among takes (label among (vars...) (values...) how_many)"};
+            vector<Integer> values_of_interest;
+            for (const auto & e : children_of(terms[3], "the among value list"))
+                values_of_interest.push_back(as_integer(e));
+            post_constraint(problem,
+                Among{resolve_variable_list(variables, terms[2], "the among variable list"),
+                    values_of_interest, resolve_variable(variables, terms[4])},
                 label);
         }
         else if (op == "inverse") {

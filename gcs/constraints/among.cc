@@ -1,12 +1,12 @@
 #include <gcs/constraints/among.hh>
-#include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
-#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
+
+#include <util/enumerate.hh>
 
 #include <version>
 
@@ -17,32 +17,22 @@
 #endif
 
 #include <algorithm>
-#include <map>
 #include <optional>
 #include <sstream>
 #include <string>
-#include <tuple>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::holds_alternative;
-using std::make_shared;
-using std::map;
 using std::optional;
-using std::pair;
-using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::contains;
-using std::ranges::distance;
-using std::ranges::empty;
 using std::ranges::none_of;
-using std::ranges::partition;
 using std::ranges::sort;
-using std::ranges::subrange;
 using std::ranges::unique;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -87,13 +77,29 @@ auto Among::install(Propagators & propagators, State & initial_state, ProofModel
 
 auto Among::define_proof_model(ProofModel & model) -> void
 {
-    // very easy PB encoding: sum up over the condition that each variable equals one of the
-    // value of interest options, and make that equal the how many variable.
-    WPBSum sum;
-    for (auto & var : _vars)
-        for (auto & val : _values_of_interest)
-            sum += 1_i * (var == val);
-    _sum_line = model.add_constraint("Among", "how many", sum == 1_i * _how_many);
+    // Conform to cake_pb_cp's encode_among (#354): per position i, a flag
+    // x[id][i][al1] ⇔ (var_i takes a value in the set), i.e. ⇔ Σ_{v∈iS}(var_i = v) ≥ 1
+    // (cake's at-least-one), then the sum of those flags == how_many, emitted as
+    // cake's c[id][le] / c[id][ge] halves -- the same counting-family bitsum as
+    // count / nvalue. (The solver previously summed every (var = val) literal in one
+    // flat constraint; the per-position al1 flag is what cake and the propagator both
+    // name, and a single Boolean per position is inherently ≤ 1, so the old
+    // at-most-one scaffolding is no longer needed.)
+    for (const auto & [i, var] : enumerate(_vars)) {
+        WPBSum in_set;
+        for (const auto & val : _values_of_interest)
+            in_set += 1_i * (var == val);
+        _flags.push_back(model.create_proof_flag_fully_reifying(_constraint_id,
+            vector<long long>{static_cast<long long>(i)}, "al1", in_set >= 1_i));
+    }
+
+    WPBSum how_many_sum;
+    for (const auto & flag : _flags)
+        how_many_sum += 1_i * flag;
+    how_many_sum += -1_i * _how_many;
+
+    model.add_labelled_constraint(as_string(_constraint_id), "le", "ge",
+        "Among", "sum of flags", how_many_sum == 0_i);
 }
 
 auto Among::install_propagators(Propagators & propagators) -> void
@@ -104,89 +110,66 @@ auto Among::install_propagators(Propagators & propagators) -> void
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
     triggers.on_bounds.emplace_back(_how_many);
 
-    // for proof logging, we're going to need at-most-one constraints over the
-    // values of interest for each variable. compute these once and remember
-    // them.
-    auto am1_lines = make_shared<map<IntegerVariableID, ProofLine>>();
-    propagators.install_initialiser([vars = _vars, values_of_interest = _values_of_interest, am1_lines = am1_lines](
-                                        const State &, auto &, ProofLogger * const logger) -> void {
-        if (logger && values_of_interest.size() > 1) {
-            for (auto & var : vars) {
-                vector<IntegerVariableCondition> var_eq_vois;
-                for (const auto & voi : values_of_interest)
-                    var_eq_vois.push_back(var != voi);
-                am1_lines->emplace(var, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, var_eq_vois, [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
-                    logger->emit_proof_comment("among am1 recover follows");
-                    return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * a + 1_i * b >= 1_i, ProofLevel::Temporary);
-                }));
-            }
-        }
-    });
-
     propagators.install(
         constraint_id(),
-        [vars = _vars, values_of_interest = _values_of_interest, how_many = _how_many, sum_line = _sum_line, am1_lines = am1_lines](
+        [vars = _vars, values_of_interest = _values_of_interest, how_many = _how_many, flags = _flags](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            // partition variables to be 1) those that must not match, 2) those that must match, and 3) those
-            // where they might match but don't have to.
-            vector<IntegerVariableID> partitioned_vars = vars;
-            auto not_impossible_start = partition(partitioned_vars, [&](const auto & var) -> bool {
+            // Classify each variable: it must NOT match if its whole domain is disjoint
+            // from the set; it must match if its whole domain lies inside the set;
+            // otherwise it can be either. (A non-empty domain can be at most one of these.)
+            auto domain_disjoint_from_set = [&](const IntegerVariableID & var) -> bool {
                 return none_of(values_of_interest, [&](const auto & val) -> bool { return state.in_domain(var, val); });
-            }).begin();
-            auto can_be_either_start = partition(subrange{not_impossible_start, partitioned_vars.end()}, [&](const auto & var) -> bool {
+            };
+            auto domain_within_set = [&](const IntegerVariableID & var) -> bool {
                 return none_of(state.each_value_immutable(var), [&](const auto & val) -> bool {
                     return ! contains(values_of_interest, val);
                 });
-            }).begin();
+            };
 
-            auto must_not_match_vars = subrange{partitioned_vars.begin(), not_impossible_start};
-            auto must_match_vars = subrange{not_impossible_start, can_be_either_start};
-            auto can_be_either_vars = subrange{can_be_either_start, partitioned_vars.end()};
-            auto can_be_either_or_must_vars = subrange{not_impossible_start, partitioned_vars.end()};
+            auto must_not_match_count = 0_i, must_match_count = 0_i, can_be_either_count = 0_i;
+            for (const auto & var : vars) {
+                if (domain_disjoint_from_set(var))
+                    ++must_not_match_count;
+                else if (domain_within_set(var))
+                    ++must_match_count;
+                else
+                    ++can_be_either_count;
+            }
 
-            auto must_not_match_count = Integer(distance(must_not_match_vars));
-            auto must_match_count = Integer(distance(must_match_vars));
-            auto can_be_either_count = Integer(distance(can_be_either_vars));
+            // Pin the al1 flag of every must-match variable to 1: from the variable's
+            // at-least-one-value axiom and the flag's reverse half (¬flag → no set value
+            // taken). cake's c[id] sum then RUP-implies the lower bounds. (Constants are
+            // folded into the sum's RHS, so they carry no flag of their own.)
+            auto pin_must_match_flags = [&](const ReasonFunction & reason) -> void {
+                for (const auto & [idx, var] : enumerate(vars))
+                    if (domain_within_set(var) && ! holds_alternative<ConstantIntegerVariableID>(var)) {
+                        // materialise the axiom so the RUP step below can use it
+                        (void)logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(var);
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * flags[idx] >= 1_i, ProofLevel::Temporary);
+                    }
+            };
+            // Pin the al1 flag of every must-not-match variable to 0: from the flag's
+            // forward half (flag → some set value) against the disjoint domain. No
+            // at-most-one lines are needed -- the al1 flag is already a single 0/1
+            // contribution per position.
+            auto pin_must_not_match_flags = [&](const ReasonFunction & reason) -> void {
+                for (const auto & [idx, var] : enumerate(vars))
+                    if (domain_disjoint_from_set(var))
+                        logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * (! flags[idx]) >= 1_i, ProofLevel::Temporary);
+            };
 
             // we now know how many variables definitely match, and how
             // many can't match, so we can derive bounds on the how many
             // variable.
             auto vars_reason = generic_reason(state, vars);
-            inference.infer(logger, how_many >= must_match_count, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) -> void {
-                // Combine the (sum <= how_many) half of the Among encoding with the
-                // at-least-one constraint for each must_match variable. After UP zeroes
-                // the (var == v) literals for v outside the variable's current domain
-                // (which, for must_match vars, includes everything outside voi), the
-                // resulting line collapses to (how_many >= must_match_count) — directly
-                // RUP-implying the inference. Without this scaffolding, RUP needs to
-                // re-derive at-least-one over voi from the bit encoding for each
-                // must_match var, which is not reliable when domains have width > 1.
-                if (sum_line.first && must_match_count > 0_i) {
-                    PolBuilder b;
-                    b.add(*sum_line.first);
-                    for (const auto & m : must_match_vars) {
-                        // Constants in must_match are folded into sum_line.first's RHS at OPB
-                        // emission, so they don't need (and don't have) an at-least-one line.
-                        if (holds_alternative<ConstantIntegerVariableID>(m))
-                            continue;
-                        b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
-                    }
-                    b.emit(*logger, ProofLevel::Temporary);
-                }
-            }},
+            inference.infer(logger, how_many >= must_match_count,
+                JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) -> void { pin_must_match_flags(reason); }},
                 vars_reason);
             auto less_than_this_many = Integer(vars.size()) - must_not_match_count + 1_i;
-            inference.infer(logger, how_many < less_than_this_many, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) -> void {
-                // for any variable that isn't ruled out, show that it can contribute at
-                // most one to the count.
-                if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
-                    PolBuilder b;
-                    b.add(*sum_line.second);
-                    for (const auto & var : can_be_either_or_must_vars)
-                        b.add(am1_lines->at(var));
-                    b.emit(*logger, ProofLevel::Temporary);
-                }
-            }},
+            inference.infer(logger, how_many < less_than_this_many,
+                JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) -> void { pin_must_not_match_flags(reason); }},
                 vars_reason);
 
             // potentially now we know that any undecided variables must actually be either
@@ -210,34 +193,21 @@ auto Among::install_propagators(Propagators & propagators) -> void
                 }
 
                 // anything that might match actually mustn't match
-                for (const auto & var : vars) {
-                    bool all_match = true;
-                    for (const auto & val : state.each_value_immutable(var))
-                        if (! contains(values_of_interest, val))
-                            all_match = false;
-
-                    if (! all_match) {
+                for (const auto & [idx_sb, var_sb] : enumerate(vars)) {
+                    auto idx = idx_sb;
+                    auto var = var_sb;
+                    if (! domain_within_set(var)) {
                         vector<Literal> inferences;
                         for (const auto & val : values_of_interest)
                             inferences.push_back(var != val);
 
-                        inference.infer_all(logger, inferences, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) -> void {
-                            // We need to bound the sum from BELOW: must_match vars each
-                            // contribute at least one to the Among sum, so combining the
-                            // (sum <= how_many) half with at-least-one constraints for
-                            // every must_match var derives that any extra contribution
-                            // from a non-must-match variable conflicts with the fixed
-                            // how_many = must_match_count value.
-                            if (sum_line.first && ! empty(must_match_vars)) {
-                                PolBuilder b;
-                                b.add(*sum_line.first);
-                                for (const auto & m : must_match_vars) {
-                                    if (holds_alternative<ConstantIntegerVariableID>(m))
-                                        continue;
-                                    b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
-                                }
-                                b.emit(*logger, ProofLevel::Temporary);
-                            }
+                        inference.infer_all(logger, inferences, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) -> void {
+                            // The count is fixed and the must-match variables already
+                            // account for all of it, so this variable's al1 flag is 0 --
+                            // hence it takes no set value, i.e. var ≠ every value of interest.
+                            pin_must_match_flags(reason);
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * (! flags[idx]) >= 1_i, ProofLevel::Temporary);
                         }},
                             vars_and_bounds_reason);
                     }
@@ -259,7 +229,9 @@ auto Among::install_propagators(Propagators & propagators) -> void
 
                 if (can_be_either_count > 0_i) {
                     // each that may or may not match must in fact match
-                    for (const auto & var : vars) {
+                    for (const auto & [idx_sb, var_sb] : enumerate(vars)) {
+                        auto idx = idx_sb;
+                        auto var = var_sb;
                         bool might_match = false;
                         for (const auto & val : values_of_interest) {
                             if (state.in_domain(var, val)) {
@@ -271,25 +243,20 @@ auto Among::install_propagators(Propagators & propagators) -> void
                         if (might_match)
                             for (const auto & val : state.each_value_mutable(var))
                                 if (! contains(values_of_interest, val)) {
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) {
-                                        // need to point out that if var == val then var != voi for each voi
+                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
+                                        // With the must-match flags pinned to 1 and the
+                                        // must-not-match flags to 0, the fixed count forces
+                                        // every can-be-either variable (a single 0/1 flag
+                                        // each) to match, so this one's al1 flag is 1 --
+                                        // hence it can't take the non-set value val.
+                                        pin_must_match_flags(reason);
+                                        pin_must_not_match_flags(reason);
+                                        logger->emit_rup_proof_line_under_reason(reason,
+                                            WPBSum{} + 1_i * flags[idx] >= 1_i, ProofLevel::Temporary);
+                                        // if var == val (val ∉ set) then var ≠ each voi
                                         for (const auto & voi : values_of_interest)
-                                            logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
-
-                                        // now every other variable that contributes to the sum is
-                                        // capped at one — must_match vars (whose AM1 lines bound their
-                                        // contribution to the at-most-must_match_count tally) AND every
-                                        // other can_be_either var.
-                                        if (sum_line.second && values_of_interest.size() > 1) {
-                                            PolBuilder b;
-                                            b.add(*sum_line.second);
-                                            for (const auto & m : must_match_vars)
-                                                b.add(am1_lines->at(m));
-                                            for (const auto & other_var : can_be_either_vars)
-                                                if (var != other_var)
-                                                    b.add(am1_lines->at(other_var));
-                                            b.emit(*logger, ProofLevel::Temporary);
-                                        }
+                                            logger->emit_rup_proof_line_under_reason(reason,
+                                                WPBSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
                                     }},
                                         vars_and_bounds_reason);
                                 }
