@@ -118,6 +118,23 @@ add_scp_chain_test(nvalue_unsat  none)
 add_scp_chain_test(nvalue_neg_sat none)
 set_tests_properties(scp_chain_nvalue_neg_sat PROPERTIES DISABLED TRUE)
 
+# none (chain-only): reified equality, all four modes of ReifiedEquals -- the b[...]
+# family's reified consumer (#354). cake's encode_equal (-iff) splits the equality
+# into @c[id][le]/@c[id][ge] half-reified on the condition, adds per-side selectors
+# b[id][gt]/b[id][lt] half-implying the strict comparisons (cake's gtv/ltv via
+# cvar_imply, labelled @b[id][..][r]), and an @c[id][al1] at-least-one over lt, gt
+# and the condition; the -if drops the selectors, and the not_equals_if FULLY reifies
+# the selectors with the condition negated. The solver now matches each exactly (the
+# @c[...]/@b[...][r]/[f] lines byte-match), reusing the create_proof_flag(ConstraintID,
+# annotation) b[...] overload. Byte-match is gated only by the condition variable's
+# eq-literal *definition* (@i[Z][eq1] via the ge ladder), the same lazy-vs-eager
+# variable-encoding divergence as element (#358) -- so these chain-verify but register
+# `none`. SAT enumeration over each reification mode (exercises both selector halves).
+add_scp_chain_test(equals_if_sat        none)
+add_scp_chain_test(equals_iff_sat       none)
+add_scp_chain_test(not_equals_if_sat    none)
+add_scp_chain_test(not_equals_iff_sat   none)
+
 # none (chain-only): a {0,1} model variable is encoded as a single tautological
 # line on i[v][b0], where cake emits two bound lines (lb + ub) on the same i[v][b0]
 # -- so opbdiff sees cake's extra ub line ("only in B") and can't byte-match. The
