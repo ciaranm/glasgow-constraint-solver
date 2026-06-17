@@ -438,6 +438,22 @@ namespace gcs::innards
         [[nodiscard]] auto create_proof_flag(const ConstraintID & id, const std::string & annotation) -> ProofFlag;
 
         /**
+         * Create a value-indexed flag named `v[id][v1_v2..][annotation?]`,
+         * conforming to cake_pb_cp's `Values` flag constructor
+         * (cp_to_ilpScript.sml `format_flag`). The list holds domain values
+         * (joined by '_'), in contrast to the array positions of the `x[...]`
+         * overload above. nvalue's per-value occurrence flag is
+         * `create_proof_flag_values(id, {v})` -> `v[id][v]`. A distinct name (not
+         * an overload of create_proof_flag) because the value-list signature
+         * would otherwise be indistinguishable from the `x[...]` one. Negative
+         * values are spelled `minusN` (the solver's convention, e.g. eq literals
+         * `eqminusN`); cake uses `-N`, so negative domains diverge on value
+         * spelling -- see #354 / #358. See #354.
+         */
+        [[nodiscard]] auto create_proof_flag_values(const ConstraintID & id, const std::vector<long long> & values,
+            const std::optional<std::string> & annotation = std::nullopt) -> ProofFlag;
+
+        /**
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
          */
         [[nodiscard]] auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;

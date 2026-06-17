@@ -1272,6 +1272,32 @@ auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const string
     return make_proof_flag_named("b[" + as_string(id) + "][" + annotation + "]");
 }
 
+auto NamesAndIDsTracker::create_proof_flag_values(const ConstraintID & id, const vector<long long> & values,
+    const optional<string> & annotation) -> ProofFlag
+{
+    // Mirror cake_pb_cp's Values flag rendering (cp_to_ilpScript.sml format_flag):
+    // v[id][v1_v2..][annotation?] -- the value list joined by '_', the optional
+    // annotation in its own brackets. The values are domain values, in contrast
+    // to the array positions of the x[...] overload; nvalue's per-value
+    // occurrence flag is create_proof_flag_values(id, {v}) -> v[id][v]. See #354.
+    string name = "v[" + as_string(id) + "][";
+    for (size_t k = 0; k < values.size(); ++k) {
+        if (k != 0)
+            name += "_";
+        // Negatives are spelled `minusN`, matching the solver's value-naming
+        // everywhere else (e.g. the eq literals i[X][eqminusN]). cake instead
+        // renders them `-N` (format_int_list), so negative-domain cases diverge
+        // from cake on value spelling -- the same naming gap as the eq literals
+        // (cake's eq-N vs the solver's eqminusN), part of the #358 family. For a
+        // non-negative domain (the common nvalue case) the two coincide.
+        name += values[k] < 0 ? "minus" + to_string(-values[k]) : to_string(values[k]);
+    }
+    name += "]";
+    if (annotation)
+        name += "[" + *annotation + "]";
+    return make_proof_flag_named(name);
+}
+
 auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> ProofFlag
 {
     // The supplied name is used verbatim as the PB-file variable name (rather

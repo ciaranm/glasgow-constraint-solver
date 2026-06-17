@@ -203,6 +203,17 @@ namespace gcs::innards
             const std::optional<std::string> & annotation,
             const WPBSumLE & ineq) -> ProofFlag;
 
+        /**
+         * \brief As the position-indexed create_proof_flag_fully_reifying above, but
+         * names the flag cake's value-indexed `v[id][v1_v2..][annotation?]` (see
+         * create_proof_flag_values), with halves under `v[..][r]` / `v[..][f]`.
+         * nvalue's per-value occurrence flag is the first consumer. See #354.
+         */
+        [[nodiscard]] auto create_proof_flag_values_fully_reifying(
+            const ConstraintID & id, const std::vector<long long> & values,
+            const std::optional<std::string> & annotation,
+            const WPBSumLE & ineq) -> ProofFlag;
+
         ///@}
 
         /**
@@ -232,6 +243,14 @@ namespace gcs::innards
          * NamesAndIDsTracker::create_proof_flag(const ConstraintID &, const std::string &).
          */
         [[nodiscard]] auto create_proof_flag(const ConstraintID & id, const std::string & annotation) -> ProofFlag;
+
+        /**
+         * Create a value-indexed flag named `v[id][v1_v2..][annotation?]`,
+         * conforming to cake_pb_cp's naming. See
+         * NamesAndIDsTracker::create_proof_flag_values.
+         */
+        [[nodiscard]] auto create_proof_flag_values(const ConstraintID & id, const std::vector<long long> & values,
+            const std::optional<std::string> & annotation = std::nullopt) -> ProofFlag;
 
         /**
          * Set up proof logging for an integer variable with the specified bounds,

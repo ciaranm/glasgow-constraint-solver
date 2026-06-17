@@ -93,6 +93,19 @@ add_scp_chain_test(count_sat    strict)
 add_scp_chain_test(element_sat    none)
 add_scp_chain_test(element_unsat  none)
 
+# none (chain-only): nvalue, the first consumer of the value-indexed `v[...]`
+# aux-naming pattern (#354) -- completing the x / b / v family trio. cake encodes
+# nvalue with a per-value occurrence flag v[id][v] <=> (some var = v) (its `Values`
+# / `elm`) summed to n_values; the solver now matches that exactly, via the
+# create_proof_flag_values_fully_reifying overload (v[id][v][r]/[f] halves) and the
+# count-style c[id][le]/c[id][ge] sum. nvalue's *own* encoding byte-matches cake
+# (the v[...] flags + sum), but unlike count it references *every* value's eq
+# literal -- including the domain max, whose eq is defined against the ge(ub+1)
+# boundary literal -- so it trips the same lazy-vs-eager variable-encoding gap as
+# element (#358) and is chain-only for now. SAT enumeration + UNSAT.
+add_scp_chain_test(nvalue_sat    none)
+add_scp_chain_test(nvalue_unsat  none)
+
 # none (chain-only): a {0,1} model variable is encoded as a single tautological
 # line on i[v][b0], where cake emits two bound lines (lb + ub) on the same i[v][b0]
 # -- so opbdiff sees cake's extra ub line ("only in B") and can't byte-match. The
