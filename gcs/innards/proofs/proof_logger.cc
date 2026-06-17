@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -616,9 +617,24 @@ auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
     advance_proof_line_number();
     _imp->current_indent += INDENT_WIDTH;
     for (const auto & [proofgoal, proof] : subproofs) {
+        // A ProofLine proofgoal (naming a specific constraint, as circuit does)
+        // is a reference and must be relativised like any other -- but VeriPB
+        // resolves the `proofgoal <id>` argument against the constraint count
+        // *before* the proofgoal line consumes its own id (the `: subproof` line
+        // above is already counted, this proofgoal line is not yet). So relativise
+        // against the counter captured before this advance, not after. (Verified
+        // empirically: a goal at absolute id N with the counter at N+1 here must
+        // be emitted as -2, i.e. N - (N+1) - 1.) A "#n" index goal is a plain
+        // string and passes through.
+        auto goal_base = _imp->proof_line.number;
         advance_proof_line_number();
         write_indent();
-        _imp->proof << "proofgoal " << proofgoal << "\n";
+        _imp->proof << "proofgoal ";
+        visit(overloaded{
+                  [&](const ProofLine & l) { _imp->proof << relative_proof_line(l, goal_base); },
+                  [&](const string & s) { _imp->proof << s; }},
+            proofgoal);
+        _imp->proof << "\n";
         _imp->current_indent += INDENT_WIDTH;
         proof(*this);
         _imp->current_indent -= INDENT_WIDTH;

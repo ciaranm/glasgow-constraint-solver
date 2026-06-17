@@ -3,9 +3,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 
-#include <sstream>
 
-using std::ostringstream;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -39,10 +37,9 @@ auto main() -> int
     tracker.emit_delayed_proof_steps();
 
     // The tautology's line must be referenceable: re-deriving it by pol succeeds
-    // only if it was emitted and is well-formed.
-    ostringstream ref;
-    ref << tautology_line;
-    logger.emit_proof_line("pol " + ref.str() + " ;", ProofLevel::Current);
+    // only if it was emitted and is well-formed. Reference it relative to the
+    // current line (the only supported way to reference a numeric line).
+    logger.emit_proof_line("pol " + relative_proof_line(tautology_line, logger.get_current_proof_line().number) + " ;", ProofLevel::Current);
 
     logger.conclude_none();
     tracker.finalise();

@@ -98,7 +98,7 @@ auto ProofModel::advance_constraint_counter() -> ProofLineNumber
     return ProofLineNumber{++_imp->number_of_constraints.number};
 }
 
-auto ProofModel::emit_constraint_label(const string & constraint_id, const string & role) -> ProofLine
+auto ProofModel::emit_constraint_label(const string & constraint_id, const string & role) -> ProofLineLabel
 {
     // The leading @ is added when a ProofLineLabel is written to the stream.
     return ProofLineLabel{"c[" + constraint_id + "]" + (role.empty() ? "" : "[" + role + "]")};

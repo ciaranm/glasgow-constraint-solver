@@ -37,11 +37,9 @@ namespace gcs::innards
     using ProofRule = std::variant<RUPProofRule, AssertProofRule, ImpliesProofRule>;
 
     using ProofGoal = std::variant<ProofLine, std::string>;
-
-    inline auto operator<<(std::ostream & s, const ProofGoal & l) -> std::ostream &
-    {
-        return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
-    }
+    // No ostream operator for ProofGoal: a ProofLine goal is a constraint
+    // reference and must be emitted relative to the current line, which needs
+    // the logger's counter. ProofLogger::emit_subproofs renders it.
 
     class ProofLogger
     {
