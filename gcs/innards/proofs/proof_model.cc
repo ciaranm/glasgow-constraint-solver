@@ -272,6 +272,19 @@ auto ProofModel::create_proof_flag_fully_reifying(const string & flag_name,
     return flag;
 }
 
+auto ProofModel::create_proof_flag_fully_reifying(const ConstraintID & id, const vector<long long> & indices,
+    const optional<string> & annotation, const WPBSumLE & ineq) -> ProofFlag
+{
+    auto flag = names_and_ids_tracker().create_proof_flag(id, indices, annotation);
+    // Derive the two half-labels from the flag's own name: x[..][r] is the forward
+    // half (flag -> ineq), [f] the reverse (~flag -> ~ineq). The single-argument
+    // add_labelled_constraint emits the @label verbatim.
+    auto base = names_and_ids_tracker().name_of(flag);
+    add_labelled_constraint(base + "[r]", ineq, HalfReifyOnConjunctionOf{{flag}});
+    add_labelled_constraint(base + "[f]", negate_inequality(ineq), HalfReifyOnConjunctionOf{{! flag}});
+    return flag;
+}
+
 auto ProofModel::names_and_ids_tracker() -> NamesAndIDsTracker &
 {
     return _imp->tracker;

@@ -50,12 +50,25 @@ add_scp_chain_test(not_equals_sat       aux)
 add_scp_chain_test(lin_not_equals_sat   aux)
 
 # strict: all_different's per-pair selector is now named x[id][i_j] with cake's
-# polarity (selector TRUE = "higher"), via create_proof_flag_with_verbose_name --
-# the first consumer of the two-level aux-naming primitive (#354). The proof never
-# references the selectors by name, so this is purely an OPB-definition conform and
-# the encoding now byte-matches cake's.
+# polarity (selector TRUE = "higher"), via the create_proof_flag(ConstraintID, role)
+# overload -- the first consumer of the two-level aux-naming primitive (#354). The
+# proof never references the selectors by name, so this is purely an OPB-definition
+# conform and the encoding now byte-matches cake's.
 add_scp_chain_test(all_different_unsat  strict)
 add_scp_chain_test(all_different_sat    strict)
+
+# strict: count, the second keystone consumer (#354) and a sterner test -- unlike
+# all_different, its propagator references the per-position equality flag by name in
+# its RUP steps. Its flags are now x[id][i][ge|le|eq] (created via the
+# create_proof_flag_fully_reifying(ConstraintID, position, role, ...) overload, with
+# cake's [r]/[f] labelled halves), the equality is eq <=> ge & le (was ~gt & ~lt),
+# and the sum is c[id][le|ge] -- matching cake's encoding exactly, so the propagator
+# proof re-verifies against cake's OPB. count_sat also exercises the relative-line
+# fix for lazily-introduced order literals (the chain-link `pol` was emitting absolute
+# refs, which broke under cake's different constraint count -- the old count_sat gap).
+# Domains are 0..2 (not 0..1) to stay off the binary {0,1} encoding (see below).
+add_scp_chain_test(count_unsat  strict)
+add_scp_chain_test(count_sat    strict)
 
 # none (chain-only): a {0,1} model variable is encoded as a single tautological
 # line on i[v][b0], where cake emits two bound lines (lb + ub) on the same i[v][b0]
