@@ -523,7 +523,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     ProofLine forwards_line, reverse_line;
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
-        if (_imp->logger && _imp->assertion_level <= AssertionLevel::Definitions) {
+        if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
             visit([&](const auto & id) {
                 auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
                     id == v, ProofLevel::Top);
@@ -543,7 +543,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     }
     else if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second == v) {
         // it's an upper bound
-        if (_imp->logger && _imp->assertion_level <= AssertionLevel::Definitions) {
+        if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
             visit([&](const auto & id) {
                 auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
                 forwards_line = _f_line;
@@ -562,7 +562,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     }
     else {
         // neither a lower nor an upper bound
-        if (_imp->logger && _imp->assertion_level <= AssertionLevel::Definitions)
+        if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links)
             visit([&](const auto & id) {
                 auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(
                     WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id > v)) >= 2_i,
