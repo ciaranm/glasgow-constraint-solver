@@ -5,6 +5,7 @@
 
 #include <ostream>
 #include <string>
+#include <variant>
 
 namespace gcs::innards
 {
@@ -35,6 +36,32 @@ namespace gcs::innards
     inline auto operator<<(std::ostream & s, const ProofLine & l) -> std::ostream &
     {
         return std::visit([&](const auto & l) -> std::ostream & { return s << l; }, l);
+    }
+
+    /**
+     * Render a proof-line reference as VeriPB's *relative* (negative) constraint
+     * index, counting back from the most-recently emitted constraint
+     * `current_max`. A positive `ProofLineNumber` is treated as an absolute id
+     * and converted to `n - current_max - 1` (so the most recent line, `n ==
+     * current_max`, becomes `-1`); a non-positive number is already relative (or
+     * the "no line" sentinel `0`) and passes through unchanged; a label passes
+     * through as `@label` (name references are count-robust by construction).
+     *
+     * Relative references survive the solver's OPB and cake_pb_cp's re-derived
+     * OPB differing in constraint count (e.g. cake emitting two bound lines for a
+     * binary variable where the solver emits one): the gap between any two
+     * derived constraints is the same on both sides, so the offset is too.
+     */
+    [[nodiscard]] inline auto relative_proof_line(const ProofLine & l, long long current_max) -> std::string
+    {
+        if (auto n = std::get_if<ProofLineNumber>(&l)) {
+            if (n->number > 0)
+                return std::to_string(n->number - current_max - 1);
+            else
+                return std::to_string(n->number);
+        }
+        else
+            return "@" + std::get<ProofLineLabel>(l).label;
     }
 }
 

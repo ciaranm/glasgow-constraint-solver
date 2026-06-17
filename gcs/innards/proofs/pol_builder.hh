@@ -7,8 +7,10 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_condition.hh>
 
-#include <sstream>
+#include <optional>
 #include <string>
+#include <variant>
+#include <vector>
 
 namespace gcs::innards
 {
@@ -65,11 +67,23 @@ namespace gcs::innards
     class PolBuilder
     {
     private:
-        std::stringstream _s;
-        bool _empty;
+        // A pol line is built as a sequence of tokens: verbatim string fragments
+        // (coefficients, operators, literal names) interleaved with constraint
+        // references (ProofLine). The references are only resolved to text at
+        // render time, because emitting them as VeriPB *relative* (negative)
+        // indices needs the current proof-line counter, which is known at emit
+        // (not at add). str() renders them absolutely (for tests/debugging);
+        // emit() renders them relatively against the logger's current line.
+        using Token = std::variant<std::string, ProofLine>;
+        std::vector<Token> _tokens;
+        bool _empty = true;
         const NamesAndIDsTracker * _deview_tracker = nullptr;
 
         auto separator_if_not_first() -> void;
+
+        // Render to "pol ... ;". With current_max set, constraint references are
+        // emitted as relative indices; without, absolutely.
+        [[nodiscard]] auto render(std::optional<long long> current_max) const -> std::string;
 
     public:
         PolBuilder();
