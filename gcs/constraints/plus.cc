@@ -159,11 +159,12 @@ auto Plus::s_exprify(const innards::ProofModel * const model) const -> string
 {
     stringstream s;
 
-    print(s, "{} plus (", _constraint_id);
+    // cake_pb_cp's binary prim parse wants three flat args (`plus X Y Z`), not a
+    // bracketed list, so X op Y = Z reads as rest = [X; Y; Z].
+    print(s, "{} plus", _constraint_id);
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
     print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
-    print(s, ")");
 
     return s.str();
 }
