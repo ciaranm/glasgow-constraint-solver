@@ -182,8 +182,8 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
             // less -- cake_pb_cp labels them gt (sum > value) / lt (sum < value),
             // on a single per-constraint selector b[id][ne] (cake's `nev`).
             auto neflag = model.create_proof_flag(_constraint_id, "ne");
-            model.add_labelled_constraint(as_string(_constraint_id), "gt", "ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
-            model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
+            model.add_labelled_constraint(as_string(_constraint_id), "gt", "ReifiedLinearEquality", "not equals: greater half", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
+            model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedLinearEquality", "not equals: less half", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },
         [&](const reif::If & cond) {
             _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});

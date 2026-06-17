@@ -186,9 +186,9 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
             // single per-constraint selector b[id][ne] (cake's `nev`): the flag
             // true selects the gt half, false the lt half.
             auto neflag = model.create_proof_flag(_constraint_id, "ne");
-            model.add_labelled_constraint(as_string(_constraint_id), "gt", "ReifiedEquals", "greater option",
+            model.add_labelled_constraint(as_string(_constraint_id), "gt", "ReifiedEquals", "not equals: greater half",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{neflag}});
-            model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedEquals", "less option",
+            model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedEquals", "not equals: less half",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },
         [&](const reif::If & reif) {
