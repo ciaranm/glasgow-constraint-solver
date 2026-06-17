@@ -27,8 +27,11 @@ auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const C
             // references these selectors by name (the propagator's justifications
             // RUP over the variable literals), so the name/polarity are free to
             // match cake without touching any proof step.
+            // Explicit vector (not a braced list): with the scalar b[id][role]
+            // overload also present, a braced {i, j} is ambiguous against
+            // std::string's (count, char) constructor.
             auto selector = model.create_proof_flag(constraint_id,
-                {static_cast<long long>(i), static_cast<long long>(j)});
+                vector<long long>{static_cast<long long>(i), static_cast<long long>(j)});
             model.add_labelled_constraint(id_label, to_string(i) + "lt" + to_string(j),
                 "AllDifferent", "not equals because lower", WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
             model.add_labelled_constraint(id_label, to_string(i) + "gt" + to_string(j),

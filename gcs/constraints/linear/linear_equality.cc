@@ -179,8 +179,9 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
         },
         [&](const reif::MustNotHold &) {
             // condition is definitely false, the flag implies either greater or
-            // less -- cake_pb_cp labels them gt (sum > value) / lt (sum < value).
-            auto neflag = model.create_proof_flag("linne");
+            // less -- cake_pb_cp labels them gt (sum > value) / lt (sum < value),
+            // on a single per-constraint selector b[id][ne] (cake's `nev`).
+            auto neflag = model.create_proof_flag(_constraint_id, "ne");
             model.add_labelled_constraint(as_string(_constraint_id), "gt", "ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{neflag}});
             model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },

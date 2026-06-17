@@ -427,6 +427,17 @@ namespace gcs::innards
             const std::optional<std::string> & annotation = std::nullopt) -> ProofFlag;
 
         /**
+         * Create a scalar flag named `b[id][annotation]`, conforming to
+         * cake_pb_cp's naming for verified encodings (workflow 2). This mirrors
+         * cake's `Flag annotation` constructor (cp_to_ilpScript.sml `format_flag`):
+         * a per-constraint auxiliary carrying only an annotation, with no index
+         * list -- in contrast to the position-indexed `x[id][...]` overload above.
+         * not_equals' single selector is `create_proof_flag(id, "ne")` ->
+         * `b[id][ne]`. See #354 for the `x` / `b` / `v` family split.
+         */
+        [[nodiscard]] auto create_proof_flag(const ConstraintID & id, const std::string & annotation) -> ProofFlag;
+
+        /**
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
          */
         [[nodiscard]] auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;

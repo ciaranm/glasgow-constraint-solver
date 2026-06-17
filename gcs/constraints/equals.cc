@@ -182,12 +182,14 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
         },
         [&](const reif::MustNotHold &) {
-            // cake_pb_cp: V1 != V2 split into gt (V1 > V2) and lt (V1 < V2).
-            auto gtflag = model.create_proof_flag("gt");
+            // cake_pb_cp: V1 != V2 split into gt (V1 > V2) and lt (V1 < V2) on a
+            // single per-constraint selector b[id][ne] (cake's `nev`): the flag
+            // true selects the gt half, false the lt half.
+            auto neflag = model.create_proof_flag(_constraint_id, "ne");
             model.add_labelled_constraint(as_string(_constraint_id), "gt", "ReifiedEquals", "greater option",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{neflag}});
             model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedEquals", "less option",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! gtflag}});
+                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! neflag}});
         },
         [&](const reif::If & reif) {
             model.add_constraint("ReifiedEquals", "equals option",

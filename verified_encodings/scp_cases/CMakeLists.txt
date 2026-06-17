@@ -43,11 +43,19 @@ add_scp_chain_test(lin_greater_equal_unsat  strict)
 add_scp_chain_test(multi_comparison_unsat   strict)  # two interacting comparisons
 add_scp_chain_test(multi_mixed_unsat        strict)  # comparison + linear together
 
-# aux: matches modulo a constraint-local selector flag's *name* -- cake names
-# not_equals' flag b[name][ne], the solver f[N][gt], but with the same polarity,
-# so the @c lines still match once names are ignored.
-add_scp_chain_test(not_equals_sat       aux)
-add_scp_chain_test(lin_not_equals_sat   aux)
+# strict: not_equals' single selector is now named b[id][ne] with cake's
+# polarity (selector TRUE = gt half, FALSE = lt half), via the
+# create_proof_flag(ConstraintID, annotation) overload -- the first consumer of
+# the scalar `b[...]` aux-naming pattern (#354), the b[...] analogue of
+# all_different for `x[...]`. The proof never references the selector by name
+# (the propagator prunes by RUP / domain-disjointness), so this is a pure
+# OPB-definition rename, and both the integer and linear forms (cake's shared
+# `nev` selector) now byte-match cake. SAT enumerates both selector halves; the
+# UNSAT cases (operands forced equal) exercise the refutation proof shape.
+add_scp_chain_test(not_equals_sat       strict)
+add_scp_chain_test(not_equals_unsat     strict)
+add_scp_chain_test(lin_not_equals_sat   strict)
+add_scp_chain_test(lin_not_equals_unsat strict)
 
 # strict: all_different's per-pair selector is now named x[id][i_j] with cake's
 # polarity (selector TRUE = "higher"), via the create_proof_flag(ConstraintID, role)

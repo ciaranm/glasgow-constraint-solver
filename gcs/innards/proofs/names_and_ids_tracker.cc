@@ -1263,6 +1263,15 @@ auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const vector
     return make_proof_flag_named(name);
 }
 
+auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const string & annotation) -> ProofFlag
+{
+    // Mirror cake_pb_cp's Flag rendering (cp_to_ilpScript.sml format_flag):
+    // b[id][annotation] -- a scalar flag carrying only an annotation, no index
+    // list. Used where the auxiliary is per-constraint rather than per-position,
+    // e.g. not_equals' single `ne` selector b[id][ne]. See #354.
+    return make_proof_flag_named("b[" + as_string(id) + "][" + annotation + "]");
+}
+
 auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> ProofFlag
 {
     // The supplied name is used verbatim as the PB-file variable name (rather
