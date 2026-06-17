@@ -62,29 +62,34 @@ auto Count::install(Propagators & propagators, State & initial_state, ProofModel
 
 auto Count::define_proof_model(ProofModel & model) -> void
 {
-    for (auto & var : _vars) {
-        // var_minus_val_gt_0 ⇔ var > val
-        auto var_minus_val_gt_0 = model.create_proof_flag_fully_reifying("countg",
-            "Count", "var greater", WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 1_i);
+    // Conform to cake_pb_cp's count encoding (#354): per position i, the
+    // flags x[id][i][ge] ⇔ var ≥ val, x[id][i][le] ⇔ var ≤ val, and
+    // x[id][i][eq] ⇔ (ge ∧ le) ⇔ var = val. (The solver previously used
+    // strict gt/lt and eq ⇔ ¬gt ∧ ¬lt; the equality flag means the same
+    // thing — var = val — which is all the propagator references.)
+    for (const auto & [i, var] : enumerate(_vars)) {
+        vector<long long> pos{static_cast<long long>(i)};
 
-        // var_minus_val_lt_0 ⇔ var < val
-        auto var_minus_val_lt_0 = model.create_proof_flag_fully_reifying("countl",
-            "Count", "var less", WPBSum{} + 1_i * var + -1_i * _value_of_interest <= -1_i);
+        auto ge = model.create_proof_flag_fully_reifying(_constraint_id, pos, "ge",
+            WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 0_i);
 
-        // flag ⇔ var = val (encoded as ¬gt ∧ ¬lt)
-        auto flag = model.create_proof_flag_fully_reifying("count",
-            "Count", "var equal", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i);
+        auto le = model.create_proof_flag_fully_reifying(_constraint_id, pos, "le",
+            WPBSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i);
 
-        _flags.emplace_back(flag, var_minus_val_gt_0, var_minus_val_lt_0);
+        auto eq = model.create_proof_flag_fully_reifying(_constraint_id, pos, "eq",
+            WPBSum{} + 1_i * ge + 1_i * le >= 2_i);
+
+        _flags.emplace_back(eq, ge, le);
     }
 
-    // sum flag == how_many
+    // sum of equal flags == how_many, as cake's c[id][le] / c[id][ge] halves
     WPBSum how_many_sum;
-    for (auto & [flag, _1, _2] : _flags)
-        how_many_sum += 1_i * flag;
+    for (auto & [eq, _1, _2] : _flags)
+        how_many_sum += 1_i * eq;
     how_many_sum += -1_i * _how_many;
 
-    model.add_constraint("Count", "sum of flags", how_many_sum == 0_i);
+    model.add_labelled_constraint(as_string(_constraint_id), "le", "ge",
+        "Count", "sum of flags", how_many_sum == 0_i);
 }
 
 auto Count::install_propagators(Propagators & propagators) -> void

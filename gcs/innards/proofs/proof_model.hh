@@ -187,6 +187,22 @@ namespace gcs::innards
             const StringLiteral & rule,
             const WPBSumLE & ineq) -> ProofFlag;
 
+        /**
+         * \brief As create_proof_flag_fully_reifying, but names the flag cake's
+         * position-indexed `x[id][i1_i2..][annotation?]` (see create_proof_flag with
+         * an index list) and emits the two implication halves under the labels
+         * `x[..][r]` (flag -> ineq) and `x[..][f]` (~flag -> ~ineq), matching cake.
+         *
+         * The `x` prefix reflects that the flag is position-indexed, not that it is
+         * reified: cake names count's fully-reified flags `x[...]` (scalar flags would
+         * be `b[...]`). The halves carry raw `@` labels and no `* constraint` comment,
+         * matching cake (and the variable-encoding @i labels). See issue #354.
+         */
+        [[nodiscard]] auto create_proof_flag_fully_reifying(
+            const ConstraintID & id, const std::vector<long long> & indices,
+            const std::optional<std::string> & annotation,
+            const WPBSumLE & ineq) -> ProofFlag;
+
         ///@}
 
         /**

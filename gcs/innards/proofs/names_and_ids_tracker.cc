@@ -43,6 +43,7 @@ using std::generator;
 using std::ios;
 using std::ios_base;
 using std::list;
+using std::make_shared;
 using std::make_unique;
 using std::map;
 using std::max;
@@ -50,6 +51,7 @@ using std::min;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::to_string;
@@ -704,12 +706,18 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     auto this_gevar = other_gevars.find(v);
     auto higher_gevar = next(this_gevar);
 
-    auto make_pol_chain_line = [&](IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> string {
-        PolBuilder b;
-        b.add_for_literal(*this, ! cond1)
+    // Returns a shared PolBuilder (rather than a rendered string) so the line
+    // references resolve to *relative* indices at emit time -- a workflow-2
+    // requirement: under cake_pb_cp the OPB has a different constraint count, so
+    // an absolute `pol 50 ...` would point at the wrong (or deleted) constraint.
+    // emit_proof_line_now_or_at_start may defer the lambda to proof start, hence
+    // the shared_ptr capture (the std::function it stores must stay copyable).
+    auto make_pol_chain_line = [&](IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> shared_ptr<PolBuilder> {
+        auto b = make_shared<PolBuilder>();
+        b->add_for_literal(*this, ! cond1)
             .add_for_literal(*this, ! cond2)
             .saturate();
-        return b.str();
+        return b;
     };
 
     // implied by the next highest gevar, if there is one?
@@ -720,8 +728,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 emit_proof_line_now_or_at_start([c = chain_con](ProofLogger * const logger) { logger->emit_rup_proof_line(c, ProofLevel::Top); });
             },
             [&](const SimpleIntegerVariableID & id) {
-                auto pol_line = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
-                emit_proof_line_now_or_at_start([p = pol_line](ProofLogger * const logger) { logger->emit_proof_line(p, ProofLevel::Top); });
+                auto pol = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
+                emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
             }}
             .visit(id);
     }
@@ -734,8 +742,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 emit_proof_line_now_or_at_start([c = chain_con](ProofLogger * const logger) { logger->emit_rup_proof_line(c, ProofLevel::Top); });
             },
             [&](const SimpleIntegerVariableID & id) {
-                auto pol_line = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
-                emit_proof_line_now_or_at_start([p = pol_line](ProofLogger * const logger) { logger->emit_proof_line(p, ProofLevel::Top); });
+                auto pol = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
+                emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
             }}
             .visit(id);
     }
@@ -779,15 +787,15 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 bool neg = view.negate_first;
                 ProofLine d1_x = neg ? *x_fwd_line : *x_rev_line;
                 ProofLine d2_x = neg ? *x_rev_line : *x_fwd_line;
-                PolBuilder b1;
-                b1.add(*v_fwd_line).add(link.first).add(d1_x).saturate();
-                PolBuilder b2;
-                b2.add(*v_rev_line).add(link.second).add(d2_x).saturate();
-                auto pol1 = b1.str();
-                auto pol2 = b2.str();
-                emit_proof_line_now_or_at_start([pol1, pol2](ProofLogger * const logger) {
-                    logger->emit_proof_line(pol1, ProofLevel::Top);
-                    logger->emit_proof_line(pol2, ProofLevel::Top);
+                // Shared PolBuilders (not rendered strings) so the line refs emit
+                // as relative indices -- see make_pol_chain_line above for why.
+                auto b1 = make_shared<PolBuilder>();
+                b1->add(*v_fwd_line).add(link.first).add(d1_x).saturate();
+                auto b2 = make_shared<PolBuilder>();
+                b2->add(*v_rev_line).add(link.second).add(d2_x).saturate();
+                emit_proof_line_now_or_at_start([b1, b2](ProofLogger * const logger) {
+                    b1->emit(*logger, ProofLevel::Top);
+                    b2->emit(*logger, ProofLevel::Top);
                 });
             }
         }
@@ -1205,18 +1213,19 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
     // which then leaks an uncancelled residual into the consumer's pol when
     // it adds a reif on the same variable. The unsaturated form has the full
     // bit-level coefficient mass needed for clean cancellation.
-    PolBuilder pol;
-    pol.add(v_form_line);
+    // Shared PolBuilder (not a rendered string) so the line refs emit as
+    // relative indices -- see make_pol_chain_line above for why.
+    auto pol = make_shared<PolBuilder>();
+    pol->add(v_form_line);
     for (const auto & vc : view_contributions) {
         auto [link_le, link_ge] = view_link_lines_for(vc.view_proof_id);
         Integer mult = vc.opb_form_coefficient > 0_i ? vc.opb_form_coefficient : -vc.opb_form_coefficient;
         const ProofLine & link_to_use = vc.opb_form_coefficient > 0_i ? link_le : link_ge;
-        pol.add(link_to_use, mult);
+        pol->add(link_to_use, mult);
     }
-    auto pol_str = pol.str();
 
-    emit_proof_line_now_or_at_start([this, v_form_line, pol_str](ProofLogger * const logger) {
-        auto deview_line = logger->emit_proof_line(pol_str, ProofLevel::Top);
+    emit_proof_line_now_or_at_start([this, v_form_line, pol](ProofLogger * const logger) {
+        auto deview_line = pol->emit(*logger, ProofLevel::Top);
         register_deviewed_line(v_form_line, deview_line);
     });
 }
