@@ -111,6 +111,23 @@ namespace gcs::innards
             // its own temporary level, wiping the scaffolding before subsequent
             // inferences can use it.
             if (logger && std::holds_alternative<JustifyExplicitlyThenRUP>(why)) {
+                // The scaffolding is shared across the batch, but each inference's
+                // RUP is only emitted if it actually changes something (track_impl
+                // drops NoChange). If *every* inference is already entailed, no RUP
+                // would reference the scaffolding, so emitting it is wasted work
+                // (and leaves an unreferenced constraint for forget to delete).
+                // Only emit when at least one inference will fire. (A single infer()
+                // is already lazy this way: track_impl gates logger->infer on the
+                // inference changing something.)
+                auto any_will_fire = false;
+                for (const auto & lit : lits)
+                    if (_state.test_literal(lit) != LiteralIs::DefinitelyTrue) {
+                        any_will_fire = true;
+                        break;
+                    }
+                if (! any_will_fire)
+                    return;
+
                 const auto & j = std::get<JustifyExplicitlyThenRUP>(why);
                 auto t = logger->temporary_proof_level();
                 j.add_proof_steps(reason);
