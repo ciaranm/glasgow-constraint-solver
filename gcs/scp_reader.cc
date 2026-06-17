@@ -5,6 +5,7 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
+#include <gcs/constraints/inverse.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/logical.hh>
@@ -321,6 +322,20 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             post_constraint(problem,
                 Count{resolve_variable_list(variables, terms[2], "the count variable list"),
                     resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])},
+                label);
+        }
+        else if (op == "inverse") {
+            // (label inverse ((X...) offx) ((Y...) offy)): X[i]=j+offy <-> Y[j]=i+offx.
+            if (terms.size() != 4)
+                throw ScpReadError{"inverse takes (label inverse ((X...) offx) ((Y...) offy))"};
+            const auto & a = children_of(terms[2], "the inverse X group");
+            const auto & b = children_of(terms[3], "the inverse Y group");
+            if (a.size() != 2 || b.size() != 2)
+                throw ScpReadError{"each inverse group is ((vars...) offset)"};
+            post_constraint(problem,
+                Inverse{resolve_variable_list(variables, a[0], "the inverse X list"),
+                    resolve_variable_list(variables, b[0], "the inverse Y list"),
+                    as_integer(a[1]), as_integer(b[1])},
                 label);
         }
         else if (op == "and") {

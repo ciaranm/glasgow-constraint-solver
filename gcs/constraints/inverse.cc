@@ -186,18 +186,18 @@ auto Inverse::s_exprify(const innards::ProofModel * const model) const -> std::s
 {
     stringstream s;
 
-    print(s, "{} inverse\n          (", _constraint_id);
+    // cake_pb_cp wants each side grouped with its offset: a (list offset) pair,
+    // i.e. `inverse ((X...) offx) ((Y...) offy)`. The outer pair of parentheses
+    // around the whole body is added by solve()/write_scp.
+    print(s, "{} inverse ( (", _constraint_id);
     for (const auto & x : _x) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(x));
     }
-    print(s, ")\n          (");
+    print(s, " ) {} ) ( (", _x_start);
     for (const auto & y : _y) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(y));
     }
-    // Note: no trailing ')' here -- solve()/write_scp wraps the whole body in
-    // one pair of parentheses. The stray ')' this used to emit left the .scp
-    // unbalanced (harmless only because nothing parsed it).
-    print(s, ")\n          {} {}", _x_start, _y_start);
+    print(s, " ) {} )", _y_start);
 
     return s.str();
 }
