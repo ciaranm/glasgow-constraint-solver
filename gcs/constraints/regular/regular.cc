@@ -287,6 +287,25 @@ namespace
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
         auto gen_reason = generic_reason(state, vars);
 
+        // Degenerate empty sequence (issue #254): with no variables there is
+        // nothing to propagate over, but the empty word is accepted only if the
+        // initial state (0) is itself a final state. The per-position loops
+        // below are all empty when vars.empty(), so detect the infeasible case
+        // explicitly. The proof model pins state_at_pos[0] to state 0 and
+        // requires it to be final (with an exactly-one over the states), so the
+        // contradiction is reverse-unit-propagatable.
+        if (vars.empty()) {
+            bool initial_is_final = false;
+            for (auto f : final_states)
+                if (f == 0L) {
+                    initial_is_final = true;
+                    break;
+                }
+            if (! initial_is_final)
+                inference.contradiction(logger, JustifyUsingRUP{}, gen_reason);
+            return;
+        }
+
         ReasonFunction reason;
         ProofLine reason_definition_1, reason_definition_2;
 

@@ -252,6 +252,46 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}},
         {1});
 
+    // Degenerate cases (issue #254). The even-zeros DFA: state 0 (initial) is
+    // the "even count of 0s" state; 0 toggles state, 1 keeps it.
+    // Empty sequence with the initial state accepting -> the empty word is
+    // accepted (zero 0s is even).
+    run_regular_test(proofs, view_cfg, "empty seq accepted",
+        {},
+        2,
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
+        {0});
+    // Empty sequence with only the non-initial state accepting -> the empty
+    // word is rejected.
+    run_regular_test(proofs, view_cfg, "empty seq rejected",
+        {},
+        2,
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
+        {1});
+    // Single fixed symbol, both directions.
+    run_regular_test(proofs, view_cfg, "single fixed accepted",
+        {{1, 1}},
+        2,
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
+        {0}); // [1] has zero 0s: accepted
+    run_regular_test(proofs, view_cfg, "single fixed rejected",
+        {{0, 0}},
+        2,
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
+        {0}); // [0] has one 0 (odd): rejected
+    // Fully fixed multi-symbol accepted word.
+    run_regular_test(proofs, view_cfg, "all fixed accepted",
+        {{1, 1}, {0, 0}, {0, 0}},
+        2,
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
+        {0}); // two 0s (even): accepted
+    // Mixed fixed + variable: only the middle symbol can make the count even.
+    run_regular_test(proofs, view_cfg, "mixed fixed and variable",
+        {{0, 0}, {0, 1}, {0, 0}},
+        2,
+        {{{0_i, 1}, {1_i, 0}}, {{0_i, 0}, {1_i, 1}}},
+        {0}); // accepted only when the middle symbol is 1
+
     // Regex-string and dup tests use bare variables; only run them when no
     // wrapping is in effect, to avoid duplicating the bare coverage under
     // every wrap.
