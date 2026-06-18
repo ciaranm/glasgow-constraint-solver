@@ -87,6 +87,17 @@ add_scp_chain_test(count_sat    strict)
 add_scp_chain_test(plus_sat     strict)
 add_scp_chain_test(plus_unsat   strict)
 
+# strict: minus, conformed exactly as plus -- @c[id][le] (the a - b <= c half,
+# -a + b + c >= 0) and @c[id][ge] (a - b >= c, a - b - c >= 0). cake encodes
+# `minus a b z` as the same a - b = z equality, so once labelled it byte-matches;
+# minus is also pure bit-sum (no eq/ge ladder, no #358). The earlier "minus SAT
+# trips a RUP" note no longer holds -- it was the count_sat lazily-introduced
+# order-literal gap, since fixed by relative line refs -- so SAT enumeration now
+# verifies too. Domains are non-binary (Z 0..2 unsat / 0..4 sat) to stay off the
+# {0,1} boundary-line encoding. SAT enumeration + UNSAT.
+add_scp_chain_test(minus_sat    strict)
+add_scp_chain_test(minus_unsat  strict)
+
 # none (chain-only): element. cake uses the same lean strategy as the solver -- it
 # reifies the per-entry equality (result = array[k]) on the *index variable's own*
 # i[I][eqk] literal, no selector flags -- so there is nothing to conform on element's
@@ -153,15 +164,10 @@ add_scp_chain_test(not_equals_iff_sat   none)
 add_scp_chain_test(binary_less_equal_sat  none)
 add_scp_chain_test(binary_equals_unsat    none)
 
-# none (chain-only): minus and logical (and/or) chain-verify but don't byte-match.
-# minus is unsat-only: its SAT enumeration trips a RUP because cake encodes
-# `minus a b z` as a = b + z, a strength mismatch on the rearranged bits (tracked
-# with the count_sat enumeration gap); its sum halves still need the plus-style
-# @c[id][le]/[ge] relabel. and/or use {0,1} variables, so they diverge on cake's
-# eager per-variable lb/ub boundary lines (the binary-encoding subcase of #358,
-# as for the binary_* cases below) -- not a missing label, so the relabel alone
-# wouldn't byte-match them.
-add_scp_chain_test(minus_unsat  none)
+# none (chain-only): logical and/or chain-verify but don't byte-match. They use
+# {0,1} variables, so they diverge on cake's eager per-variable lb/ub boundary
+# lines (the binary-encoding subcase of #358, as for the binary_* cases above) --
+# not a missing label, so a relabel alone wouldn't byte-match them.
 add_scp_chain_test(and_sat      none)
 add_scp_chain_test(or_sat       none)
 
