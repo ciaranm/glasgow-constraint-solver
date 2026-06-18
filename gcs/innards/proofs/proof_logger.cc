@@ -192,8 +192,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             },
             [&](const ViewOfIntegerVariableID & var) {
                 if (_imp->assertion_level > AssertionLevel::Definitions) {
-                    auto actual = deview(var == val);
-                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(actual.var, actual.value);
+                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*names_and_ids_tracker().find_view(var), val);
                 }
                 else
                     _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
@@ -249,8 +248,8 @@ auto ProofLogger::end_proof() -> void
 auto ProofLogger::conclude_unsatisfiable(bool is_optimisation) -> void
 {
     _imp->proof << "% asserting contradiction\n";
-    _imp->proof << "rup >= 1 ;\n";
-    record_proof_line(advance_proof_line_number(), ProofLevel::Top);
+    auto assert_or_rup = _imp->assertion_level == AssertionLevel::Backtracking ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+    emit(assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Top);
     _imp->proof << "output NONE;\n";
     if (is_optimisation)
         _imp->proof << "conclusion BOUNDS INF INF;\n";
@@ -452,7 +451,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     // Note: no automatic deview-derivation here. Runtime RUP/red emissions
     // happen many times per propagator inference and per-call deview
     // derivation explodes proof size on tests with many view-using
-    // constraints. Callers that need the deview-form of a runtime-emitted
+    // constraints. Callers that need the deview-form of a runtime-mitted
     // constraint use the explicit `*_then_deview` variant (see
     // `emit_rup_proof_line_under_reason_then_deview`).
     return line;

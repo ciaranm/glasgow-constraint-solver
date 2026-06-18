@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
