@@ -106,17 +106,17 @@ add_scp_chain_test(element_unsat  none)
 add_scp_chain_test(nvalue_sat    none)
 add_scp_chain_test(nvalue_unsat  none)
 
-# DISABLED (temporarily omitted, cake-blocked): negative-domain nvalue. cake_pb_cp
-# renders negative values in its labels verbatim (@v[id][-N], @i[X][eq-N]/[ge-N]),
-# but VeriPB 3.0's label grammar (@[a-zA-Z0-9_^\[\]\{\}]+) forbids '-' -- it is
-# allowed in *variable* names ([a-zA-Z_][_a-zA-Z0-9\-...]+) but not labels -- so
-# veripb rejects cake's OPB at the elaboration step. The solver side is fine (it
-# spells negatives "minus", a legal label). This is a cake-side issue (reported
-# upstream); re-enable once cake renders negative values dash-free in labels. Every
-# other family routes negatives through bit-encoding / non-value labels and chain-
-# verifies (equals/not_equals/less_than/all_different/count even byte-match strict).
+# none (chain-only): negative-domain nvalue. cake_pb_cp renders negative values
+# in its labels verbatim (@v[id][-N], @i[X][eq-N]/[ge-N]); VeriPB-dev #191 settled
+# that '-' is legal in @labels (it was already legal in variable names), so veripb
+# now parses cake's OPB. The solver previously spelled negatives "minus", which
+# made its proof reference i[X][eqminusN] while cake's OPB defined i[X][eq-N] -- a
+# different variable to veripb, so the elaboration failed. The solver now renders
+# negatives `-N` everywhere (eq/ge literals and v[...] flags), so its proof and
+# cake's OPB agree on the variables and the chain verifies. Stays `none` because
+# byte-match is still gated by the lazy-vs-eager variable encoding (#358), as for
+# the positive nvalue cases above.
 add_scp_chain_test(nvalue_neg_sat none)
-set_tests_properties(scp_chain_nvalue_neg_sat PROPERTIES DISABLED TRUE)
 
 # none (chain-only): reified equality, all four modes of ReifiedEquals -- the b[...]
 # family's reified consumer (#354). cake's encode_equal (-iff) splits the equality

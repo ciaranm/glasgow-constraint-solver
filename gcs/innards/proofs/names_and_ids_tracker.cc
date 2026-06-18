@@ -1284,13 +1284,12 @@ auto NamesAndIDsTracker::create_proof_flag_values(const ConstraintID & id, const
     for (size_t k = 0; k < values.size(); ++k) {
         if (k != 0)
             name += "_";
-        // Negatives are spelled `minusN`, matching the solver's value-naming
-        // everywhere else (e.g. the eq literals i[X][eqminusN]). cake instead
-        // renders them `-N` (format_int_list), so negative-domain cases diverge
-        // from cake on value spelling -- the same naming gap as the eq literals
-        // (cake's eq-N vs the solver's eqminusN), part of the #358 family. For a
-        // non-negative domain (the common nvalue case) the two coincide.
-        name += values[k] < 0 ? "minus" + to_string(-values[k]) : to_string(values[k]);
+        // Negative values are rendered `-N`, matching cake's format_int_list and
+        // the solver's eq/ge literals (i[X][eq-N]). VeriPB allows '-' in both
+        // variable names and @labels (VeriPB-dev #191), so this is legal in the
+        // labelled flag definitions too and byte-matches cake over negative
+        // domains.
+        name += to_string(values[k]);
     }
     name += "]";
     if (annotation)
@@ -1373,11 +1372,9 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        string value_name;
-        if (value < 0_i)
-            value_name = "minus" + abs(value).to_string();
-        else
-            value_name = value.to_string();
+        // Negative values render as `-N` (matching cake); '-' is legal in both
+        // VeriPB variable names and @labels (VeriPB-dev #191).
+        string value_name = value.to_string();
 
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
@@ -1428,8 +1425,10 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
+        // Negative values render as `-N` (matching cake); '-' is legal in both
+        // VeriPB variable names and @labels (VeriPB-dev #191).
         auto value_name = [](Integer v) {
-            return v < 0_i ? "minus" + abs(v).to_string() : v.to_string();
+            return v.to_string();
         };
 
         overloaded{

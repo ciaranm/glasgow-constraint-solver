@@ -446,9 +446,9 @@ namespace gcs::innards
          * `create_proof_flag_values(id, {v})` -> `v[id][v]`. A distinct name (not
          * an overload of create_proof_flag) because the value-list signature
          * would otherwise be indistinguishable from the `x[...]` one. Negative
-         * values are spelled `minusN` (the solver's convention, e.g. eq literals
-         * `eqminusN`); cake uses `-N`, so negative domains diverge on value
-         * spelling -- see #354 / #358. See #354.
+         * values render as `-N`, matching cake (and the solver's eq/ge literals,
+         * e.g. `i[X][eq-N]`); '-' is legal in both VeriPB variable names and
+         * @labels (VeriPB-dev #191). See #354.
          */
         [[nodiscard]] auto create_proof_flag_values(const ConstraintID & id, const std::vector<long long> & values,
             const std::optional<std::string> & annotation = std::nullopt) -> ProofFlag;
