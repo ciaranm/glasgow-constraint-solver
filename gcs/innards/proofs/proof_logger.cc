@@ -249,7 +249,7 @@ auto ProofLogger::end_proof() -> void
 auto ProofLogger::conclude_unsatisfiable(bool is_optimisation) -> void
 {
     _imp->proof << "% asserting contradiction\n";
-    auto assert_or_rup = _imp->assertion_level == AssertionLevel::Backtracking ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+    auto assert_or_rup = _imp->assertion_level >= AssertionLevel::Inferences ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
     emit(assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Top);
     _imp->proof << "output NONE;\n";
     if (is_optimisation)
