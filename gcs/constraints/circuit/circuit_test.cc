@@ -98,6 +98,14 @@ auto main(int argc, char * argv[]) -> int
             continue;
         for (int n : {3, 4, 5})
             run_circuit_test(proofs, view_cfg, n);
+        // Degenerate minimal circuits (issue #254): n=1 is a single self-loop
+        // (the canonical minimal circuit), n=2 the unique 2-cycle. Run only in
+        // the bare configuration; the view sweep targets the larger instances
+        // and its positions can exceed these tiny n.
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+            run_circuit_test(proofs, view_cfg, 1);
+            run_circuit_test(proofs, view_cfg, 2);
+        }
     }
 
     return EXIT_SUCCESS;
