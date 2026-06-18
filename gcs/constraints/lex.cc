@@ -478,8 +478,19 @@ namespace
         WPBSum at_least_one;
         for (auto & da : *d.decision_at)
             at_least_one += 1_i * da;
-        if (equal_prefix_satisfies)
+        if (equal_prefix_satisfies) {
+            if (n == 0) {
+                // The common prefix is empty, and an empty prefix is trivially
+                // equal (prefix_equal[0] is the nullopt placeholder for that
+                // always-TRUE flag). With equal_prefix_satisfies, the
+                // at-least-one disjunction is therefore satisfied
+                // unconditionally and needs no constraint. Dereferencing
+                // prefix_equal->at(0) here would be a nullopt access (issue
+                // #254: lex with one empty operand).
+                return d;
+            }
             at_least_one += 1_i * *d.prefix_equal->at(n);
+        }
         model.add_constraint(move(at_least_one) >= 1_i, cond_half_reify);
 
         return d;
