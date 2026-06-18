@@ -135,7 +135,23 @@ auto main(int argc, char * argv[]) -> int
         {pair{-1, 6}, pair{-2, 5}},
         {pair{1, 3}, pair{-1, 3}},
         {pair{-1, 5}, pair{-6, 8}},
-        {pair{-1, 1}, pair{-2, 4}}};
+        {pair{-1, 1}, pair{-2, 4}},
+        // All-constant arguments (issue #254): both operands are
+        // ConstantIntegerVariableIDs, so the constraint reduces to a
+        // true/false check on abs(c1) == c2. Both directions are covered.
+        {2, 2},     // abs(2) == 2: tautology
+        {2, 3},     // abs(2) != 3: contradiction
+        {-4, 4},    // abs(-4) == 4: tautology
+        {-4, 5},    // abs(-4) != 5: contradiction
+        {0, 0},     // abs(0) == 0: tautology
+        {-7, 6},    // abs(-7) != 6: contradiction
+        // Singleton-domain variables (genuine variables, domain size 1):
+        // exercises the propagation path rather than constant folding.
+        {pair{-4, -4}, pair{4, 4}}, // tautology
+        {pair{-4, -4}, pair{5, 5}}, // contradiction
+        // Mixed: one genuine constant, one real singleton-domain variable.
+        {-6, pair{6, 6}},           // tautology
+        {pair{-6, -6}, 7}};         // contradiction
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
