@@ -11,6 +11,7 @@
 #include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
 
+#include <gcs/proof.hh>
 #include <util/enumerate.hh>
 
 #include <version>
@@ -149,6 +150,8 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
 
         propagators.install_initialiser([x = _x, x_start = _x_start, x_value_am1s = _x_value_am1s, build_am1s = build_am1s](
                                             const State & state, auto & inference, ProofLogger * const logger) -> void {
+            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+                return;
             build_am1s(x, x_start, state, inference, logger, x_value_am1s);
         });
     }

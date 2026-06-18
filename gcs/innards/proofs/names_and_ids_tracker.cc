@@ -1287,6 +1287,8 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
     if (view_contributions.empty())
         return;
 
+    if (_imp->assertion_level > AssertionLevel::Links)
+        return;
     // Build the pol expression. For each view contribution:
     //   opb_form_coefficient > 0 (positive V in OPB):  add `|coeff| * link_le`.
     //   opb_form_coefficient < 0 (negative V in OPB):  add `|coeff| * link_ge`.

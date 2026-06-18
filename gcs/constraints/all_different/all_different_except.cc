@@ -9,6 +9,7 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
+#include <gcs/proof.hh>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)

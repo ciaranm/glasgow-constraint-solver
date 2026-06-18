@@ -136,6 +136,8 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
         propagators.install_initialiser(
             [vars, start, n, value_am1s = _value_am1s](
                 const State &, auto &, ProofLogger * const logger) -> void {
+                if (! logger || logger->get_assertion_level() >= AssertionLevel::Off)
+                    return;
                 for (Integer v = start; v < start + Integer(n); ++v) {
                     vector<IntegerVariableCondition> xieqvs;
                     for (const auto & var : vars)

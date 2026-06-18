@@ -9,6 +9,7 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
+#include <gcs/proof.hh>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -575,20 +576,20 @@ namespace
             boundses.emplace_back(state.bounds(t));
 
         int temporary_proof_level = 0;
-        if (logger)
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
             temporary_proof_level = logger->temporary_proof_level();
 
         vector<IntegerVariableID> reason_variables;
         reason_variables.insert(reason_variables.end(), vars.begin(), vars.end());
         reason_variables.insert(reason_variables.end(), totals.begin(), totals.end());
-        if (logger)
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
             knapsack_gac<true>(state, logger, reason_variables, inference, committed_sums,
                 boundses, coeffs, totals, vars, undetermined_vars, eqn_lines);
         else
             knapsack_gac<false>(state, logger, reason_variables, inference, committed_sums,
                 boundses, coeffs, totals, vars, undetermined_vars, nullopt);
 
-        if (logger)
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
             logger->forget_proof_level(temporary_proof_level);
 
         return PropagatorState::Enable;

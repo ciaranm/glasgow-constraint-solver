@@ -3,6 +3,10 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 
+#include <gcs/proof.hh>
+#include <util/enumerate.hh>
+
+#include <sstream>
 #include <type_traits>
 #include <variant>
 
@@ -21,6 +25,9 @@ template <typename Literal_>
     const vector<Literal_> & atoms,
     const function<auto(const Literal_ &, const Literal_ &)->ProofLine> & pair_ne) -> ProofLine
 {
+    if (logger.get_assertion_level() > AssertionLevel::Off)
+        return ProofLine{};
+
     if (atoms.size() < 2)
         // An at-most-one over fewer than two atoms is vacuous; the caller should
         // handle it directly rather than ask the helper to fold zero pairwise

@@ -1,3 +1,4 @@
+#include <cmath>
 #include <gcs/constraints/regular/regex.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/exception.hh>
@@ -8,6 +9,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 
+#include <gcs/proof.hh>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -92,7 +94,7 @@ namespace
     auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags,
         const State &, const ReasonFunction & reason, string comment = "") -> void
     {
-        if (logger) {
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
             // Trying to cut down on repeated code
             if (! comment.empty())
                 logger->emit_proof_comment(comment);
@@ -113,7 +115,7 @@ namespace
     {
         auto num_vars = vars.size();
 
-        if (logger)
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
             logger->emit_proof_comment("Initialising graph");
 
         // Forward phase: accumulate
@@ -130,7 +132,7 @@ namespace
                 }
             }
 
-            if (logger) {
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 for (long next_q = 0; next_q < num_states; ++next_q) {
                     if (graph.nodes[i + 1].contains(next_q)) continue;
                     // Want to eliminate this node i.e. prove !state[i+1][next_q]
@@ -180,7 +182,7 @@ namespace
                         state_is_support[q] = 1;
                     else {
                         graph.states_supporting[i][val].erase(q);
-                        if (logger)
+                        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i][q]}, state, reason);
                     }
                 }
@@ -190,7 +192,7 @@ namespace
             for (const auto & q : gn) {
                 if (! state_is_support[q]) {
                     graph.nodes[i].erase(q);
-                    if (logger)
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                         log_additional_inference(logger, {}, {! state_at_pos_flags[i][q]}, state, reason, "back pass");
                 }
             }
@@ -224,7 +226,7 @@ namespace
                     // once no such edge remains.
                     if (! still_supports(graph, i - 1, l, val)) {
                         graph.states_supporting[i - 1][val].erase(l);
-                        if (logger)
+                        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             log_additional_inference(logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, reason,
                                 "dec outdeg inner");
                     }
@@ -232,7 +234,7 @@ namespace
                 }
             }
             graph.in_edges[i][k] = {};
-            if (logger)
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                 log_additional_inference(logger, {}, {! state_at_pos_flags[i][k]}, state, reason, "dec outdeg");
         }
     }
@@ -243,7 +245,7 @@ namespace
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
-            if (logger) {
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 // Again, want to eliminate this node i.e. prove !state[i][k]
                 for (const auto & q : graph.nodes[i - 1]) {
                     // So first eliminate each previous state/variable combo

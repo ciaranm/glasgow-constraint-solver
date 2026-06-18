@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/proof.hh>
 #include <util/enumerate.hh>
 
 #include <list>
@@ -1027,7 +1028,7 @@ namespace
                     back_edges.emplace_back(node, next_node);
                 }
                 else if (options.prune_skip && data.visit_number[next_node] < data.start_prev_subtree) {
-                    if (logger) {
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (next_node == data.root) {
                             logger->emit_proof_comment(format("Pruning edge to the root from a subtree other than the first ({}, {})", node, next_node));
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.prev_subroot, options);
@@ -1047,7 +1048,7 @@ namespace
         }
 
         if (data.lowlink[node] == data.visit_number[node]) {
-            if (logger) {
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 logger->emit_proof_comment("More than one SCC");
                 auto ctx = SCCProofContext{state, *logger, reason, succ, proof_data, node, options};
                 prove_reachable_set_too_small(ctx);
@@ -1076,7 +1077,7 @@ namespace
                 auto back_edges = explore(state, inference, logger, reason, next_node, succ, data, proof_data, options);
 
                 if (back_edges.empty()) {
-                    if (logger) {
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         logger->emit_proof_comment("No back edges");
                         auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, next_node, options);
                         prove_reachable_set_too_small(ctx);
@@ -1087,7 +1088,7 @@ namespace
                     auto from_node = back_edges[0].first;
                     auto to_node = back_edges[0].second;
                     if (! state.optional_single_value(succ[from_node])) {
-                        if (logger) {
+                        if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                             logger->emit_proof_comment(format("Fix required back edge ({}, {}):", from_node, to_node));
 
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, from_node, options);
@@ -1103,7 +1104,7 @@ namespace
         }
 
         if (cmp_not_equal(data.count, succ.size())) {
-            if (logger) {
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 logger->emit_proof_comment("Disconnected graph");
                 auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
                 prove_reachable_set_too_small(ctx);
@@ -1114,7 +1115,7 @@ namespace
         if (options.prune_root && data.start_prev_subtree > 1) {
             for (const auto & v : state.each_value_mutable(succ[data.root])) {
                 if (data.visit_number[v.as_index()] < data.start_prev_subtree) {
-                    if (logger) {
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         logger->emit_proof_comment("Prune impossible edges from root node");
                         auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
                         prove_reachable_set_too_small(ctx, succ[data.root] == v);
