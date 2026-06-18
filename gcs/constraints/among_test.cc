@@ -176,7 +176,18 @@ auto main(int argc, char * argv[]) -> int
             {pair{1, 1}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
             {pair{3, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}},
             {pair{0, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}},
-            {pair{1, 5}, vector{2, 3, 2, 3, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}}};
+            {pair{1, 5}, vector{2, 3, 2, 3, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
+            // Degenerate cases (issue #254): empty array, empty value set,
+            // single element, all-constant. Result is a genuine constant.
+            {0, vector{2, 3}, {}},                    // empty array: 0 in set (tautology)
+            {1, vector{2, 3}, {}},                    // empty array: can't be 1 (contradiction)
+            {0, vector<int>{}, {5, 5, 5}},            // empty value set: nothing matches (tautology)
+            {1, vector<int>{}, {5, 5, 5}},            // empty value set: can't be 1 (contradiction)
+            {1, vector{5}, {5}},                      // single element matches (tautology)
+            {1, vector{5}, {6}},                      // single element, no match (contradiction)
+            {2, vector{5, 6}, {5, 6, 7}},             // all-constant array: 2 match (tautology)
+            {3, vector{5, 6}, {5, 6, 7}},             // all-constant array: only 2 match (contradiction)
+            {pair{0, 2}, vector{5}, {5, pair{1, 10}}}}; // mixed: one constant match + one variable
 
     random_device rand_dev;
     mt19937 rand(rand_dev());

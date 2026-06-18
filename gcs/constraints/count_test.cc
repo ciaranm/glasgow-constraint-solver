@@ -174,7 +174,16 @@ auto main(int argc, char * argv[]) -> int
         {pair{2, 2}, pair{3, 6}, {pair{5, 9}, pair{-5, 3}, pair{2, 6}}},
         // Constant array entries: voi seen N times where some array slots are fixed.
         {pair{0, 3}, pair{0, 3}, {1, 2, pair{1, 3}}},
-        {pair{0, 3}, 2, {pair{1, 4}, 2, pair{1, 4}, 2}}};
+        {pair{0, 3}, 2, {pair{1, 4}, 2, pair{1, 4}, 2}},
+        // Degenerate cases (issue #254): empty array, single element, all-constant.
+        // Genuine ConstantIntegerVariableIDs for how_many / voi / array entries.
+        {0, 5, {}},                         // empty array: count of 5 is 0 (tautology)
+        {1, 5, {}},                         // empty array: count can't be 1 (contradiction)
+        {1, 3, {3}},                        // single constant element == voi (tautology)
+        {2, 3, {3}},                        // single element: count can't be 2 (contradiction)
+        {2, 4, {4, 4, 7}},                  // all-constant array: 4 occurs twice (tautology)
+        {1, 4, {4, 4, 7}},                  // all-constant array: count is 2, not 1 (contradiction)
+        {pair{0, 2}, 5, {5, pair{1, 10}}}}; // mixed: one constant match + one variable
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
