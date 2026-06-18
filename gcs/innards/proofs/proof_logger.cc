@@ -328,7 +328,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
     if (_imp->assertion_level > AssertionLevel::Inferences)
         return;
 
-    if ((_imp->assertion_level <= AssertionLevel::Definitions && annotation) || _imp->assertion_level >= AssertionLevel::Links) {
+    if ((_imp->assertion_level == AssertionLevel::Definitions && annotation) || _imp->assertion_level >= AssertionLevel::Links) {
         // At AssertionLevel::Definitions we can assert some inferences and not others (since the needed constraints for the justifications will
         // still be present). At higher levels, we need to assert all inferences.
         if (! is_literally_true(lit)) {
