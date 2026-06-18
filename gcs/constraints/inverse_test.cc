@@ -140,7 +140,11 @@ auto main(int argc, char * argv[]) -> int
         // `0 ≥ 1` contradiction, which downstream pol expressions sum into a
         // valid contradiction proof.
         {{3, 2, 3, pair{0, 3}}, {pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}},
-        {{pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, {1, pair{0, 3}, 1, pair{0, 3}}}};
+        {{pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, {1, pair{0, 3}, 1, pair{0, 3}}},
+        // issue #254: fully all-constant arguments, both directions.
+        {{0, 1}, {0, 1}},  // identity permutation, consistent (tautology)
+        {{1, 0}, {1, 0}},  // swap: x[0]=1<->y[1]=0, x[1]=0<->y[0]=1, consistent (tautology)
+        {{1, 0}, {0, 1}}}; // x swapped but y identity: inconsistent (contradiction)
 
     random_device rand_dev;
     mt19937 rand(rand_dev());

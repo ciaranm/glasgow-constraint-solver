@@ -236,6 +236,21 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // Self-reference: trivially satisfied
     run_in_self_reference_test(proofs, view_cfg, {1, 5});
     run_in_self_reference_test(proofs, view_cfg, {-2, 2});
+
+    // Degenerate collections (issue #254): an In with no supporting values at
+    // all is unsatisfiable and must be handled cleanly (no UB on the empty
+    // value/var lists), across every overload.
+    run_in_integer_vals_test(proofs, view_cfg, {1, 5}, {});           // empty value list: unsat
+    run_in_const_vars_test(proofs, view_cfg, {1, 5}, {});             // empty const-var list: unsat
+    run_in_var_list_test(proofs, view_cfg, {1, 5}, {});              // empty supporter list: unsat
+    run_in_var_list_mixed_test(proofs, view_cfg, {1, 5}, {}, {});    // both empty: unsat
+
+    // Fixed (singleton-domain) variable against a constant value set, both
+    // directions: the value is present (tautology) or absent (contradiction).
+    run_in_integer_vals_test(proofs, view_cfg, {3, 3}, {1, 3, 5});    // 3 in set: tautology
+    run_in_integer_vals_test(proofs, view_cfg, {2, 2}, {1, 3, 5});    // 2 not in set: contradiction
+    run_in_const_vars_test(proofs, view_cfg, {4, 4}, {4, 5, 6});      // 4 in const-var set: tautology
+    run_in_const_vars_test(proofs, view_cfg, {7, 7}, {4, 5, 6});      // 7 not in set: contradiction
 }
 
 auto run_random_tests(bool proofs, const ViewWrapConfig & view_cfg, mt19937 & rand) -> void
