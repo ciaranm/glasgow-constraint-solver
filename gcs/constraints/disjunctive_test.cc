@@ -198,6 +198,13 @@ auto main(int argc, char * argv[]) -> int
         {{{0, 2}, {0, 2}}, {0, 2}},
         // Two zero-length tasks.
         {{{0, 2}, {0, 2}}, {0, 0}},
+        // Degenerate cases (issue #254).
+        // Empty task list: vacuously satisfiable (no propagator installed).
+        {{}, {}},
+        // All-fixed starts, abutting but not overlapping: [0,1) then [1,2).
+        {{{0, 0}, {1, 1}}, {1, 1}},
+        // All-fixed starts that overlap: both span [0,2) (contradiction).
+        {{{0, 0}, {1, 1}}, {2, 2}},
     };
 
     // Random instances for breadth.
