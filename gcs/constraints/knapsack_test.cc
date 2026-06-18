@@ -187,7 +187,19 @@ auto main(int, char *[]) -> int
         {{0, 1}, {{8, 7, 4, 8}, {4, 3, 4, 4}}, {{0, 18}, {10, 1000}}},
         {{0, 1}, {{7, 4, 4, 7}, {1, 2, 1, 0}}, {{18, 19}, {3, 8}}},
         {{2, 4}, {{4, 1, 2, 3}, {4, 6, 3, 8}, {5, 3, 1, 6}}, {{0, 64}, {0, 48}, {0, 41}}},
-        {{1, 4}, {{1, 8, 3, 1}}, {{3, 42}}}};
+        {{1, 4}, {{1, 8, 3, 1}}, {{3, 42}}},
+        // Degenerate cases (issue #254).
+        // Empty item list (zero columns): every weighted sum is 0, so the
+        // totals must admit 0.
+        {{0, 0}, {{}}, {{0, 0}}},          // empty items, total admits 0 (tautology)
+        {{0, 0}, {{}}, {{5, 5}}},          // empty items, total can't be 0 (contradiction)
+        // Single item.
+        {{0, 1}, {{5}}, {{0, 5}}},         // one item, two takings
+        // All-fixed taken variables (valrange is a singleton), both directions.
+        {{0, 0}, {{2, 3}}, {{0, 0}}},      // all taken 0: sum 0 == total (tautology)
+        {{0, 0}, {{2, 3}}, {{5, 5}}},      // all taken 0: sum 0 != total 5 (contradiction)
+        {{1, 1}, {{2, 3}}, {{5, 5}}},      // all taken 1: sum 5 == total (tautology)
+        {{1, 1}, {{2, 3}}, {{4, 4}}}};     // all taken 1: sum 5 != total 4 (contradiction)
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
