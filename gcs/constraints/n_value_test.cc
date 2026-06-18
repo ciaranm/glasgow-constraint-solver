@@ -133,7 +133,14 @@ auto main(int argc, char * argv[]) -> int
         {pair{-5, 5}, {pair{-8, 0}, pair{4, 4}, pair{10, 10}, pair{2, 11}, pair{4, 10}}},
         // Constant array entries: pinned values count toward distinct.
         {pair{0, 5}, {3, pair{1, 4}, 3}},
-        {pair{0, 5}, {1, 2, 3, pair{0, 5}}}};
+        {pair{0, 5}, {1, 2, 3, pair{0, 5}}},
+        // Degenerate cases (issue #254): all-constant arrays + genuine constant result.
+        {1, {5, 5, 5}},        // all same constant: 1 distinct value (tautology)
+        {2, {5, 6, 5}},        // all-constant: 2 distinct values (tautology)
+        {1, {5, 6}},           // all-constant: 2 distinct, result can't be 1 (contradiction)
+        {1, {7}},              // single constant element: 1 distinct (tautology)
+        {2, {7}},              // single constant element: result can't be 2 (contradiction)
+        {2, {5, pair{5, 6}, 6}}}; // mixed: two constants plus a variable
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
