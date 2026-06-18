@@ -2,6 +2,7 @@
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/constraints/circuit/circuit_scc.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/propagators.hh>
@@ -1041,7 +1042,7 @@ namespace
                         }
                     }
 
-                    inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, ReasonFunction{});
+                    inference.infer(logger, succ[node] != w, JustifyUsingRUP{}, ReasonFunction{});
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
             }
@@ -1094,7 +1095,7 @@ namespace
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, from_node, options);
                             prove_reachable_set_too_small(ctx, succ[from_node] != Integer{to_node});
                         }
-                        inference.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, ReasonFunction{});
+                        inference.infer(logger, succ[from_node] == Integer{to_node}, JustifyUsingRUP{}, ReasonFunction{});
                     }
                 }
                 data.start_prev_subtree = data.end_prev_subtree + 1;

@@ -1,6 +1,7 @@
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -539,7 +540,7 @@ namespace
                 // }
             }
             else {
-                inference.contradiction(logger, NoJustificationNeeded{}, reason);
+                inference.contradiction(logger, JustifyUsingRUP{}, reason);
             }
             return;
         }
@@ -567,7 +568,7 @@ namespace
         else {
             for (const auto & var : vars) {
                 for (const auto & value : unsupported[var]) {
-                    inference.infer_not_equal(logger, var, value, NoJustificationNeeded{}, ReasonFunction{});
+                    inference.infer_not_equal(logger, var, value, JustifyUsingRUP{}, ReasonFunction{});
                 }
             }
         }

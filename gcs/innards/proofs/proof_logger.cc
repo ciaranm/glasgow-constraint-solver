@@ -20,6 +20,7 @@
 #include <optional>
 #include <sstream>
 
+#include <variant>
 #include <version>
 #ifdef __cpp_lib_stacktrace
 #include <stacktrace>
@@ -331,7 +332,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
     if ((_imp->assertion_level == AssertionLevel::Definitions && annotation) || _imp->assertion_level >= AssertionLevel::Links) {
         // At AssertionLevel::Definitions we can assert some inferences and not others (since the needed constraints for the justifications will
         // still be present). At higher levels, we need to assert all inferences.
-        if (! is_literally_true(lit)) {
+        if (! is_literally_true(lit) && ! std::holds_alternative<NoJustificationNeeded>(why)) {
             emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
         }
         return;
