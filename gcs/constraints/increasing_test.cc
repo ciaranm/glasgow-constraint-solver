@@ -144,6 +144,18 @@ auto run_all_for_variant(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // Constant entries pinning the chain at a fixed value.
     run_inc_test<V>(proofs, view_cfg, {pair{0, 5}, 3, pair{0, 5}});
     run_inc_test<V>(proofs, view_cfg, {2, pair{0, 5}, 4});
+
+    // All-constant chains (issue #254): genuine ConstantIntegerVariableIDs,
+    // so each variant reduces to a true/false check. build_expected computes
+    // the per-variant truth, covering both directions: e.g. {1,2,3} satisfies
+    // (Strictly)Increasing but not the Decreasing variants; {2,2,3} satisfies
+    // Increasing but not StrictlyIncreasing; {3,2,1} the mirror image.
+    run_inc_test<V>(proofs, view_cfg, {1, 2, 3});
+    run_inc_test<V>(proofs, view_cfg, {2, 2, 3});
+    run_inc_test<V>(proofs, view_cfg, {3, 2, 1});
+    run_inc_test<V>(proofs, view_cfg, {2, 2, 2});
+    // Mixed: a genuine constant plus a singleton-domain variable.
+    run_inc_test<V>(proofs, view_cfg, {1, pair{2, 2}, 3});
 }
 
 // Dup-variable test: Increasing/Decreasing variants with the same
