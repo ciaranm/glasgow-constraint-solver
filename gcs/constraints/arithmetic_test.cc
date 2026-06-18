@@ -263,10 +263,25 @@ auto main(int, char *[]) -> int
         {{1, 3}, {1, 3}, {0, 10}},
         {{1, 3}, {1, 3}, {1, 3}},
         {{1, 5}, {6, 8}, {-10, 10}},
-        {{1, 1}, {2, 4}, {-5, 5}}};
+        {{1, 1}, {2, 4}, {-5, 5}},
+        // issue #254: all-fixed (singleton-domain) operands. Each row runs for
+        // Plus/Minus/Times/Div/Mod; build_expected gives the per-operation
+        // truth, so each tautology direction is hit by exactly one operation
+        // and the others act as the contradiction direction.
+        {{2, 2}, {3, 3}, {5, 5}},   // Plus: 2+3==5
+        {{5, 5}, {2, 2}, {3, 3}},   // Minus: 5-2==3
+        {{2, 2}, {3, 3}, {6, 6}},   // Times: 2*3==6
+        {{6, 6}, {3, 3}, {2, 2}},   // Div: 6/3==2
+        {{7, 7}, {3, 3}, {1, 1}},   // Mod: 7%3==1
+        {{5, 5}, {0, 0}, {3, 3}},   // Div/Mod by fixed zero: no solution
+        {{5, 5}, {2, 2}, {99, 99}}}; // all operations contradicted
 
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> power_data = {
         {{0, 3}, {0, 5}, {-1, 250}},
+        // issue #254: all-fixed operands for Power, both directions.
+        {{2, 2}, {3, 3}, {8, 8}}, // 2^3 == 8 (tautology)
+        {{2, 2}, {3, 3}, {9, 9}}, // 2^3 != 9 (contradiction)
+        {{2, 2}, {0, 0}, {1, 1}}, // 2^0 == 1 (tautology)
         {{2, 4}, {0, 4}, {0, 260}},
         {{-3, 3}, {0, 4}, {-30, 90}},
         {{1, 1}, {-3, 3}, {-2, 2}},

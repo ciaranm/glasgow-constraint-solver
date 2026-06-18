@@ -255,7 +255,14 @@ auto main(int argc, char * argv[]) -> int
         {pair{1, 1}, pair{2, 2}},
         {pair{2, 2}, pair{1, 1}},
         {pair{1, 1}, pair{1, 1}},
-        {pair{-2, -2}, pair{-2, -1}}};
+        {pair{-2, -2}, pair{-2, -1}},
+        // issue #254: genuine all-constant operands (ConstantIntegerVariableID).
+        // Each comparison mode gets both directions via build_expected, e.g.
+        // 3<5 holds but 5<3 does not; 4 and 4 are (not) equal as appropriate.
+        {3, 5},
+        {5, 3},
+        {4, 4},
+        {-2, -2}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());

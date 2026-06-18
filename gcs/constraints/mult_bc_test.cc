@@ -99,7 +99,15 @@ auto main(int, char *[]) -> int
         {{-10, 2}, {-5, 3}, {4, 9}},
         {{9, 23}, {-5, 9}, {9, 14}},
         {{-4, 8}, {-8, 7}, {-2, 9}},
-        {{-34, -27}, {-10, 2}, {29, 179}}};
+        {{-34, -27}, {-10, 2}, {29, 179}},
+        // issue #254: all-fixed (singleton-domain) operands, both directions —
+        // the product is fully determined, so the constraint reduces to a
+        // true/false check.
+        {{2, 2}, {3, 3}, {6, 6}},     // 2*3 == 6 (tautology)
+        {{2, 2}, {3, 3}, {7, 7}},     // 2*3 != 7 (contradiction)
+        {{0, 0}, {5, 5}, {0, 0}},     // 0*5 == 0 (tautology)
+        {{-2, -2}, {3, 3}, {-6, -6}}, // -2*3 == -6 (tautology)
+        {{-2, -2}, {3, 3}, {6, 6}}};  // -2*3 != 6 (contradiction)
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
