@@ -156,6 +156,11 @@ namespace
         // Out-of-range value gets bound-trimmed by Inverse before propagation.
         run_symalldiff_test(proofs, true, {{0, 1, 5}, {0, 1}}, 0);
 
+        // Fully all-fixed (issue #254), both directions.
+        run_symalldiff_test(proofs, true, {{0}, {1}}, 0); // identity: valid involution (tautology)
+        run_symalldiff_test(proofs, true, {{1}, {0}}, 0); // swap: valid involution (tautology)
+        run_symalldiff_test(proofs, true, {{1}, {1}}, 0); // both map to 1: not an involution (contradiction)
+
         // Cases where AllDifferent-GAC + Inverse-channeling is strictly
         // weaker than the symmetric-alldifferent GAC of Régin (1999).
         // GAC for the latter requires non-bipartite matching on the

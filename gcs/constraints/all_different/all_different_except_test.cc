@@ -149,6 +149,11 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
     run_alldiffexcept_test(proofs, view_cfg, {{0, 2}, {1, 2}, {1, 2}}, {0});
     run_alldiffexcept_test(proofs, view_cfg, {{0, 1}, {0, 1}, {0, 2}, {0, 2}}, {0});
 
+    // Degenerate all-fixed (issue #254), both directions.
+    run_alldiffexcept_test(proofs, view_cfg, {{2, 2}, {2, 2}}, {2});    // dup of excluded value: allowed (tautology)
+    run_alldiffexcept_test(proofs, view_cfg, {{1, 1}, {2, 2}}, {0});    // distinct constants (tautology)
+    run_alldiffexcept_test(proofs, view_cfg, {{3, 3}, {3, 3}}, {});     // dup, empty excluded set (contradiction)
+
     if (run_dup) {
         // Same variable in two positions: forces it into the excluded set.
         run_alldiffexcept_dup_test(proofs, {{0, 3}}, {0, 0}, {0});

@@ -150,6 +150,12 @@ auto run_all_tests(Variant variant, bool proofs, const ViewWrapConfig & view_cfg
     // Unsatisfiable: two vars forced to equal a fixed val
     run_at_most_one_test(variant, proofs, view_cfg, {{2, 2}, {2, 2}, {1, 3}}, {2, 2});
 
+    // Fully all-fixed (issue #254), both directions: every var and the value
+    // are singletons, so the constraint reduces to a count check.
+    run_at_most_one_test(variant, proofs, view_cfg, {{5, 5}, {5, 5}}, {5, 5}); // two equal val: contradiction
+    run_at_most_one_test(variant, proofs, view_cfg, {{5, 5}, {6, 6}}, {5, 5}); // exactly one equals val: tautology
+    run_at_most_one_test(variant, proofs, view_cfg, {{6, 6}, {7, 7}}, {5, 5}); // none equals val: tautology
+
     // 4-variable tests
     run_at_most_one_test(variant, proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}, {1, 3}}, {2, 2});
     run_at_most_one_test(variant, proofs, view_cfg, {{2, 2}, {1, 3}, {1, 3}, {1, 3}}, {2, 2});
