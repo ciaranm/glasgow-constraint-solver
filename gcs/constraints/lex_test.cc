@@ -472,6 +472,17 @@ auto run_variant_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // element" case.
     run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {{1, 3}, {1, 3}, {1, 3}});
     run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}, {1, 3}, {1, 3}}, {{1, 3}});
+
+    // Degenerate (issue #254): empty operands and all-fixed operands.
+    // Empty-vs-empty: equal, so the non-strict variants hold and the strict
+    // ones do not. Empty-vs-nonempty: the empty side is a strict prefix.
+    run_lex_test_unequal<V>(proofs, view_cfg, {}, {});               // equal-length empty: depends on or_equal
+    run_lex_test_unequal<V>(proofs, view_cfg, {}, {{1, 3}});         // empty < [x]
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 3}}, {});         // [x] > empty
+    // All-fixed (singleton) operands, both directions.
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}}, {{2, 2}});             // [1] < [2]
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {2, 2}}, {{1, 1}, {2, 2}}); // equal
+    run_lex_test_unequal<V>(proofs, view_cfg, {{1, 1}, {3, 3}}, {{1, 1}, {2, 2}}); // [1,3] > [1,2]
 }
 
 // Dup-variable test: Lex with the same handle appearing across the two
