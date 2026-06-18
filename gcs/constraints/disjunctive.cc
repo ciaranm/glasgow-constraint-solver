@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
@@ -681,15 +682,16 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Disjunctive::s_exprify(const ProofModel * const model) const -> string
+auto Disjunctive::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-    print(s, "{} disjunctive{} (", _constraint_id, _strict ? "_strict" : "");
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> starts, lengths;
     for (const auto & v : _starts)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    print(s, " ) ( ");
+        starts.push_back(tracker.s_expr_term_of(v));
     for (const auto & l : _lengths)
-        print(s, " {}", l);
-    print(s, " )");
-    return s.str();
+        lengths.push_back(SExpr::atom(l.to_string()));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom(_strict ? "disjunctive_strict" : "disjunctive"),
+        SExpr::list(std::move(starts)),
+        SExpr::list(std::move(lengths))});
 }

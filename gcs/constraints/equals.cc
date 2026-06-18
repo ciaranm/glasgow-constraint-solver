@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 
 #include <util/overloaded.hh>
 
@@ -355,9 +356,9 @@ NotEqualsIff::NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v
 {
 }
 
-auto ReifiedEquals::s_exprify(const innards::ProofModel * const model) const -> string
+auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     string constraint_type = overloaded{
         [](const reif::MustHold &) -> string { return "equals"; },
@@ -368,12 +369,13 @@ auto ReifiedEquals::s_exprify(const innards::ProofModel * const model) const -> 
             return _neq ? "not_equals_iff" : "equals_iff";
         }}.visit(_cond);
 
-    print(s, "{} {}", _constraint_id, constraint_type);
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_cond));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type)};
+    if (auto cond = tracker.s_expr_term_of(_cond))
+        terms.push_back(std::move(*cond));
+    terms.push_back(tracker.s_expr_term_of(_v1));
+    terms.push_back(tracker.s_expr_term_of(_v2));
 
-    return s.str();
+    return SExpr::list(std::move(terms));
 }
 
 template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,

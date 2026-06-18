@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
@@ -1099,17 +1100,20 @@ auto Sort::install_propagators(Propagators & propagators) -> void
     install_sortedness_propagator(propagators, constraint_id(), _x, _y, _witness);
 }
 
-auto Sort::s_exprify(const ProofModel * const model) const -> string
+auto Sort::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
-    print(s, "{} sort\n          (", _constraint_id);
+    vector<SExpr> xs;
     for (const auto & v : _x)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    print(s, ")\n          (");
-    for (const auto & v : _y)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    print(s, ")");
+        xs.push_back(tracker.s_expr_term_of(v));
 
-    return s.str();
+    vector<SExpr> ys;
+    for (const auto & v : _y)
+        ys.push_back(tracker.s_expr_term_of(v));
+
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("sort"),
+        SExpr::list(move(xs)),
+        SExpr::list(move(ys))});
 }

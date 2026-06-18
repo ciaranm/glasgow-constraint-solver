@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <version>
@@ -193,17 +194,16 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto AllDifferentExcept::s_exprify(const ProofModel * const model) const -> string
+auto AllDifferentExcept::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} all_different_except (", _constraint_id);
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> vars, excluded;
     for (const auto & var : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ") (");
+        vars.push_back(tracker.s_expr_term_of(var));
     for (const auto & v : _excluded)
-        print(s, " {}", v);
-    print(s, ")");
-
-    return s.str();
+        excluded.push_back(SExpr::atom(v.to_string()));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("all_different_except"),
+        SExpr::list(std::move(vars)),
+        SExpr::list(std::move(excluded))});
 }

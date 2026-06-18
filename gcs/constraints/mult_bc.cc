@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <iostream>
 #include <sstream>
@@ -1282,15 +1283,11 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         return PropagatorState::Enable; }, triggers);
 }
 
-auto MultBC::s_exprify(const innards::ProofModel * const model) const -> string
+auto MultBC::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} multiply (", _constraint_id);
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v1));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v2));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_v3));
-    print(s, ")");
-
-    return s.str();
+    auto & tracker = model->names_and_ids_tracker();
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("multiply"),
+        SExpr::list({tracker.s_expr_term_of(_v1),
+            tracker.s_expr_term_of(_v2),
+            tracker.s_expr_term_of(_v3)})});
 }

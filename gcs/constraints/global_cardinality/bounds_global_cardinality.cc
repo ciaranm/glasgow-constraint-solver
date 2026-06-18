@@ -8,6 +8,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
@@ -412,20 +413,19 @@ auto BoundsGlobalCardinality::prepare(Propagators &, State &, ProofModel * const
     return true;
 }
 
-auto BoundsGlobalCardinality::s_exprify(const ProofModel * const model) const -> string
+auto BoundsGlobalCardinality::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} boundsglobalcardinality{} (", _constraint_id, _closed ? "closed" : "");
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> vars, values, counts;
     for (const auto & var : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ") (");
+        vars.push_back(tracker.s_expr_term_of(var));
     for (const auto & val : _values)
-        print(s, " {}", val);
-    print(s, ") (");
+        values.push_back(SExpr::atom(val.to_string()));
     for (const auto & c : _counts)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(c));
-    print(s, ")");
-
-    return s.str();
+        counts.push_back(tracker.s_expr_term_of(c));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom(_closed ? "boundsglobalcardinalityclosed" : "boundsglobalcardinality"),
+        SExpr::list(std::move(vars)),
+        SExpr::list(std::move(values)),
+        SExpr::list(std::move(counts))});
 }

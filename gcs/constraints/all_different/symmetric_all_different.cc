@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
@@ -178,14 +179,14 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
         triggers);
 }
 
-auto SymmetricAllDifferent::s_exprify(const ProofModel * const model) const -> string
+auto SymmetricAllDifferent::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} symmetric_all_different (", _constraint_id);
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> vars;
     for (const auto & var : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ") {}", _start);
-
-    return s.str();
+        vars.push_back(tracker.s_expr_term_of(var));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("symmetric_all_different"),
+        SExpr::list(std::move(vars)),
+        SExpr::atom(_start.to_string())});
 }

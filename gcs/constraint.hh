@@ -87,21 +87,11 @@ namespace gcs
          * stringification happens once, centrally, and the structured term can
          * be compared against a parsed `.scp` line directly.
          *
-         * A constraint must override **exactly one** of s_expr() (preferred) or
-         * the legacy s_exprify(): by default s_expr() parses s_exprify()'s
-         * string and s_exprify() prints s_expr(), so overriding neither would
-         * recurse. New constraints should override s_expr(); the remaining
-         * legacy s_exprify() overrides are being migrated across (see
-         * dev_docs/scp_s_expr_migration.md), after which s_exprify() goes away.
+         * Every constraint overrides this. (It used to be derivable from a legacy
+         * string form, s_exprify(); that bridge has been removed now that all
+         * constraints build the structured term directly.)
          */
-        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr;
-
-        /**
-         * Legacy string form: the body of s_expr() *without* the enclosing
-         * parentheses (the historical `Constraint::s_exprify` contract). \see
-         * s_expr.
-         */
-        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string;
+        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr = 0;
     };
 }
 

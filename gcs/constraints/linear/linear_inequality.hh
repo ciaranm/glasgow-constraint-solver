@@ -2,11 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_LINEAR_LINEAR_INEQUALITY_HH 1
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/propagators-fwd.hh>
-#include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/reification.hh>
 
 #include <memory>
@@ -43,7 +43,7 @@ namespace gcs
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string override;
+        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };
 }
 

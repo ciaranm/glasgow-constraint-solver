@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <optional>
@@ -643,18 +644,20 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Cumulative::s_exprify(const ProofModel * const model) const -> string
+auto Cumulative::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-    print(s, "{} cumulative (", _constraint_id);
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> starts, lengths, heights;
     for (const auto & v : _starts)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    print(s, " ) ( ");
+        starts.push_back(tracker.s_expr_term_of(v));
     for (const auto & l : _lengths)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(l));
-    print(s, " ) ( ");
+        lengths.push_back(tracker.s_expr_term_of(l));
     for (const auto & h : _heights)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(h));
-    print(s, " ) {}", model->names_and_ids_tracker().s_expr_name_of(_capacity));
-    return s.str();
+        heights.push_back(tracker.s_expr_term_of(h));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("cumulative"),
+        SExpr::list(std::move(starts)),
+        SExpr::list(std::move(lengths)),
+        SExpr::list(std::move(heights)),
+        tracker.s_expr_term_of(_capacity)});
 }

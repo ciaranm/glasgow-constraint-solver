@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <sstream>
@@ -161,16 +162,14 @@ auto Plus::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Plus::s_exprify(const innards::ProofModel * const model) const -> string
+auto Plus::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     // cake_pb_cp's binary prim parse wants three flat args (`plus X Y Z`), not a
     // bracketed list, so X op Y = Z reads as rest = [X; Y; Z].
-    print(s, "{} plus", _constraint_id);
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
-
-    return s.str();
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("plus"),
+        tracker.s_expr_term_of(_a),
+        tracker.s_expr_term_of(_b),
+        tracker.s_expr_term_of(_result)});
 }

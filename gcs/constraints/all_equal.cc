@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <memory>
@@ -147,11 +148,11 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
         return PropagatorState::Enable; }, triggers);
 }
 
-auto AllEqual::s_exprify(const ProofModel * const model) const -> string
+auto AllEqual::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-    print(s, "{} all_equal", _constraint_id);
+    auto & tracker = model->names_and_ids_tracker();
+    std::vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_equal")};
     for (const auto & v : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    return s.str();
+        terms.push_back(tracker.s_expr_term_of(v));
+    return SExpr::list(std::move(terms));
 }

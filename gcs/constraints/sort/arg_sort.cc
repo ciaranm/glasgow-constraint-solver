@@ -10,6 +10,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
@@ -446,20 +447,23 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     // (full enumeration + BC consistency + VeriPB all unchanged when removed).
 }
 
-auto ArgSort::s_exprify(const ProofModel * const model) const -> string
+auto ArgSort::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
-    print(s, "{} arg_sort\n          (", _constraint_id);
+    vector<SExpr> xs;
     for (const auto & v : _x)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    print(s, ")\n          (");
-    for (const auto & v : _p)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    // Note: no trailing ')' here -- solve()/write_scp wraps the whole body in
-    // one pair of parentheses. The stray ')' this used to emit left the .scp
-    // unbalanced (harmless only because nothing parsed it).
-    print(s, ")\n          {}", _offset);
+        xs.push_back(tracker.s_expr_term_of(v));
 
-    return s.str();
+    vector<SExpr> ps;
+    for (const auto & v : _p)
+        ps.push_back(tracker.s_expr_term_of(v));
+
+    // The offset is a trailing bare atom (not wrapped in its own list), matching
+    // the old textual form.
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("arg_sort"),
+        SExpr::list(move(xs)),
+        SExpr::list(move(ps)),
+        SExpr::atom(_offset.to_string())});
 }

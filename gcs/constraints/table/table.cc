@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
@@ -195,32 +196,24 @@ auto Table::install_propagators(Propagators & propagators) -> void
         move(_tuples));
 }
 
-auto Table::s_exprify(const innards::ProofModel * const model) const -> std::string
+auto Table::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} table", _constraint_id);
-    println(s, "(");
-
-    println(s, "    (");
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> tuple_terms;
     visit([&](const auto & tuples) {
         for (const auto & t : depointinate(tuples)) {
-            println(s, "        (");
-            for (const auto & v : t) {
-                println(s, "            {}", tuple_entry_as_string(v));
-            }
-            println(s, "        )");
+            vector<SExpr> row;
+            for (const auto & v : t)
+                row.push_back(SExpr::atom(tuple_entry_as_string(v)));
+            tuple_terms.push_back(SExpr::list(std::move(row)));
         }
     },
         _tuples);
-    println(s, "    )");
-
-    println(s, "    (");
+    vector<SExpr> vars;
     for (const auto & var : _vars)
-        println(s, "        {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    println(s, "    )");
-
-    println(s, ")");
-
-    return s.str();
+        vars.push_back(tracker.s_expr_term_of(var));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("table"),
+        SExpr::list(std::move(tuple_terms)),
+        SExpr::list(std::move(vars))});
 }

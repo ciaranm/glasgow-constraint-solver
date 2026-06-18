@@ -21,7 +21,7 @@ namespace gcs
      *
      * Internally enforces vars_1 (>|>=)_lex vars_2 — strict or non-strict
      * depending on the `or_equal` flag — under a `ReificationCondition`. The
-     * `vars_swapped` flag is a hint to s_exprify about whether the
+     * `vars_swapped` flag is a hint to s_expr about whether the
      * user-facing direction was less-than (less-than variants swap their
      * arguments at construction so the propagator always sees a "greater"
      * problem).
@@ -100,7 +100,7 @@ namespace gcs
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string override;
+        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };
 
     /**

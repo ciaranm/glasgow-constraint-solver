@@ -25,7 +25,7 @@ namespace gcs
 
         virtual auto install(innards::Propagators & propagators, innards::State &, innards::ProofModel *) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        [[nodiscard]] virtual auto s_exprify(const innards::ProofModel * const) const -> std::string override;
+        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };
 }
 

@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 
 #include <util/enumerate.hh>
 
@@ -198,17 +199,15 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
         return PropagatorState::Enable; }, triggers);
 }
 
-auto ArrayMinMax::s_exprify(const innards::ProofModel * const model) const -> string
+auto ArrayMinMax::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} {} (", _constraint_id, _min ? "min" : "max");
-    for (const auto & v : _vars) {
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    }
-    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_result));
-
-    return s.str();
+    auto & tracker = model->names_and_ids_tracker();
+    std::vector<SExpr> vars;
+    for (const auto & v : _vars)
+        vars.push_back(tracker.s_expr_term_of(v));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(_min ? "min" : "max"),
+        SExpr::list(std::move(vars)),
+        tracker.s_expr_term_of(_result)});
 }
 
 Min::Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :

@@ -42,7 +42,7 @@ TEST_CASE("SExpr: incidental whitespace is normalised away")
 {
     // Leading/trailing/inner spacing, tabs and newlines all collapse to the
     // single canonical form: this is exactly the messy hand-formatting the
-    // old string-built s_exprify produced (e.g. "( 0 3)").
+    // old string-built constraint writers produced (e.g. "( 0 3)").
     CHECK(format("{}", parse_s_expr("(   0    3 )")) == "(0 3)");
     CHECK(format("{}", parse_s_expr("  (_1   all_different ( _1 _1 _2 _2))  ")) ==
         "(_1 all_different (_1 _1 _2 _2))");
@@ -130,7 +130,8 @@ TEST_CASE("SExpr: a sequence of top-level terms")
 
 TEST_CASE("SExpr: the '#' alternate form drops a list's enclosing parentheses")
 {
-    // This is the shape Constraint::s_exprify returns; solve() wraps it in ().
+    // The `#` form yields a list's body without its outer parens (the s-expr
+    // body of a constraint's term).
     auto body = SExpr::list({SExpr::atom("_1"),
         SExpr::atom("abs"),
         parse_s_expr("_2"),
