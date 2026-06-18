@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_LOGGER_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_LOGGER_HH
 
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_line.hh>
@@ -14,6 +15,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace gcs::innards
@@ -129,8 +131,9 @@ namespace gcs::innards
          * variable is a single proof line `~[var in lo..hi] >= 1` emitted under the
          * reason, in place of one `var != v` line per removed value; views and
          * direct-only-encoded variables fall back to per-value emission.
+         * Also pass an assertion annotation.
          */
-        auto infer(const Literal & lit, const Justification & why, const ReasonFunction & reason) -> void;
+        auto infer(const Literal & lit, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & annotation = std::nullopt) -> void;
 
         /**
          * \brief Return the current <em>active proof level</em> &mdash; the

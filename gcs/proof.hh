@@ -44,6 +44,7 @@ namespace gcs
         ProofFileNames proof_file_names;       ///< Filenames for OPB, proof, and mapping files
         bool verbose_names = true;             ///< Use verbose names in proofs?
         bool always_use_full_encoding = false; ///< Always write the full variable encoding to the OPB file
+        bool use_annotated_assertions = false; ///< Only write annotated assertions instead of full justifications.
     };
 
     class Proof

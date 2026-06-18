@@ -1,10 +1,13 @@
 #include <cstdio>
+#include <gcs/expression.hh>
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_error.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/state.hh>
 
@@ -12,6 +15,7 @@
 #include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <optional>
 #include <sstream>
 
 #include <version>
@@ -110,6 +114,7 @@ struct ProofLogger::Imp
     string proof_file;
     fstream proof;
     int current_indent = 0;
+    bool use_annotated_assertions;
 
     Imp(NamesAndIDsTracker & t) :
         tracker(t)
@@ -122,6 +127,7 @@ ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker 
 {
     _imp->proof_file = proof_options.proof_file_names.proof_file;
     _imp->proof_lines_by_level.resize(2);
+    _imp->use_annotated_assertions = proof_options.use_annotated_assertions;
 }
 
 ProofLogger::~ProofLogger() = default;
@@ -261,7 +267,7 @@ auto ProofLogger::conclude_none() -> void
 }
 
 auto ProofLogger::infer(const Literal & lit, const Justification & why,
-    const ReasonFunction & reason) -> void
+    const ReasonFunction & reason, const optional<AssertionAnnotation> & annotation) -> void
 {
     // A range conclusion on a view (folding views into the interval machinery is
     // deferred) or on a plain variable without a bits encoding (no order cuts to
@@ -291,51 +297,22 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             .visit(simplify_literal(names_and_ids_tracker(), lit));
     };
 
+    if (_imp->use_annotated_assertions && annotation) {
+        if (! is_literally_true(lit)) {
+            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
+        }
+        return;
+    }
+
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
-            log_stacktrace();
-            need_lit();
-            optional<Reason> reason_literals;
-            if (reason)
-                reason_literals = reason();
-
-            if (reason_literals)
-                names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
-
             if (! is_literally_true(lit)) {
-                WPBSum terms;
-                HalfReifyOnConjunctionOf reif{};
-                if (reason_literals)
-                    reif = *reason_literals;
-
-                terms += 1_i * lit;
-                write_indent();
-                _imp->proof << "rup ";
-                emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
-                _imp->proof << ";\n";
-                record_proof_line(advance_proof_line_number(), ProofLevel::Current);
+                emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
             }
         },
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
-            log_stacktrace();
-            need_lit();
-            optional<Reason> reason_literals;
-            if (reason)
-                reason_literals = reason();
-
-            HalfReifyOnConjunctionOf reif{};
-            if (reason_literals) {
-                names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
-                reif = *reason_literals;
-            }
             if (! is_literally_true(lit)) {
-                WPBSum terms;
-                terms += 1_i * lit;
-                write_indent();
-                _imp->proof << "a ";
-                emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
-                _imp->proof << ";\n";
-                record_proof_line(advance_proof_line_number(), ProofLevel::Current);
+                emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
             }
         },
         [&](const JustifyExplicitlyOnly & x) {
