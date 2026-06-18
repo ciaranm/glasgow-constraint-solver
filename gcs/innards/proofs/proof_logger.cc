@@ -179,7 +179,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     WPBSum blocking_sum{};
 
     for (const auto & [var, val] : all_variables_and_values) {
-        if (! optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Links)
+        if (! optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
             blocking_sum += 1_i * (var != val);
 
         overloaded{
@@ -329,7 +329,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
     if (_imp->assertion_level > AssertionLevel::Inferences)
         return;
 
-    if ((_imp->assertion_level == AssertionLevel::Definitions && annotation) || _imp->assertion_level >= AssertionLevel::Links) {
+    if (_imp->assertion_level != AssertionLevel::Off) {
         // At AssertionLevel::Definitions we can assert some inferences and not others (since the needed constraints for the justifications will
         // still be present). At higher levels, we need to assert all inferences.
         if (! is_literally_true(lit) && ! std::holds_alternative<NoJustificationNeeded>(why)) {

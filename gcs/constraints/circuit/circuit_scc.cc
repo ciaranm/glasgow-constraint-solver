@@ -1040,9 +1040,11 @@ namespace
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
                             prove_skipped_subtree(ctx, node, next_node, data.prev_subroot);
                         }
+                        inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, ReasonFunction{});
                     }
-
-                    inference.infer(logger, succ[node] != w, JustifyUsingRUP{}, ReasonFunction{});
+                    else {
+                        inference.infer(logger, succ[node] != w, JustifyUsingRUP{}, ReasonFunction{});
+                    }
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
             }
@@ -1094,8 +1096,12 @@ namespace
 
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, from_node, options);
                             prove_reachable_set_too_small(ctx, succ[from_node] != Integer{to_node});
+                            inference.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, ReasonFunction{});
                         }
-                        inference.infer(logger, succ[from_node] == Integer{to_node}, JustifyUsingRUP{}, ReasonFunction{});
+                        else {
+
+                            inference.infer(logger, succ[from_node] == Integer{to_node}, JustifyUsingRUP{}, ReasonFunction{});
+                        }
                     }
                 }
                 data.start_prev_subtree = data.end_prev_subtree + 1;
