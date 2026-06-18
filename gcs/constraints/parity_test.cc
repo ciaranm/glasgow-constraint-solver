@@ -148,7 +148,13 @@ auto main(int argc, char * argv[]) -> int
         // All-constant infeasible (count = 2, even).
         {1, 1, 0},
         // All-constant feasible (count = 1, odd).
-        {1, 0, 0}};
+        {1, 0, 0},
+        // Single genuine constant (issue #254): one nonzero is odd (tautology).
+        {5},
+        // Two genuine nonzero constants: count = 2, even (contradiction).
+        {2, 3},
+        // Longer all-constant: count = 3, odd (tautology).
+        {1, 2, 0, -1}};
 
     random_device rand_dev;
     mt19937 rand(rand_dev());

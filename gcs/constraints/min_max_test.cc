@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/min_max.hh>
+#include <gcs/exception.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 #include <util/enumerate.hh>
@@ -162,7 +163,16 @@ auto main(int argc, char * argv[]) -> int
         {pair{-3, 2}, {pair{-1, 7}, pair{-2, 6}, pair{1, 8}, pair{4, 11}}},
         // Constant array entries: forced winner / fixed pivot.
         {pair{-5, 10}, {3, pair{0, 7}, 5}},
-        {pair{-5, 10}, {pair{0, 4}, 7, pair{1, 6}, pair{2, 9}}}};
+        {pair{-5, 10}, {pair{0, 4}, 7, pair{1, 6}, pair{2, 9}}},
+        // Degenerate cases (issue #254): all-constant arrays + genuine constant
+        // result. Each row is run for both Min and Max; build_expected computes
+        // the per-direction truth. (Empty array is rejected at construction by
+        // ArrayMin/ArrayMax::prepare and so is covered separately, not here.)
+        {4, {4, 4, 4}},        // all equal: min == max == 4, result 4 (tautology both)
+        {4, {3, 5, 4}},        // min 3 / max 5: result 4 wrong for both (contradiction both)
+        {4, {4}},              // single constant element (tautology both)
+        {3, {4}},              // single constant element: result 3 wrong (contradiction both)
+        {pair{0, 9}, {3, 5, pair{0, 9}}}}; // mixed: two constants plus a variable
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
@@ -198,6 +208,35 @@ auto main(int argc, char * argv[]) -> int
                 // {x, y, z} with result = y — forces y == min/max(x,y,z).
                 run_dup_min_max_test(proofs, m, "xyz_resy", {{1, 4}, {1, 4}, {1, 4}}, {0, 1, 2}, 1, {0, 5});
             }
+        }
+    }
+
+    // Degenerate (issue #254): min/max over an empty array has no well-defined
+    // value, and must be rejected with a clean exception rather than asserting
+    // or reading past the end of the (empty) container.
+    {
+        bool empty_min_throws = false, empty_max_throws = false;
+        try {
+            Problem p;
+            auto result = p.create_integer_variable(0_i, 5_i);
+            p.post(ArrayMin{vector<IntegerVariableID>{}, result});
+            solve(p, [](const CurrentState &) { return true; });
+        }
+        catch (const InvalidProblemDefinitionException &) {
+            empty_min_throws = true;
+        }
+        try {
+            Problem p;
+            auto result = p.create_integer_variable(0_i, 5_i);
+            p.post(ArrayMax{vector<IntegerVariableID>{}, result});
+            solve(p, [](const CurrentState &) { return true; });
+        }
+        catch (const InvalidProblemDefinitionException &) {
+            empty_max_throws = true;
+        }
+        if (! empty_min_throws || ! empty_max_throws) {
+            println(cerr, "min/max over empty array: expected InvalidProblemDefinitionException");
+            return EXIT_FAILURE;
         }
     }
 

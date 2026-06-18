@@ -146,6 +146,15 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_value_precede_test(proofs, view_cfg, {1, 2}, {1, pair{1, 3}, pair{1, 3}});
     run_value_precede_test(proofs, view_cfg, {1, 2}, {pair{1, 3}, 2, pair{1, 3}});  // unsat: forces 2 in pos 1 with no preceding 1
     run_value_precede_test(proofs, view_cfg, {1, 2, 3}, {1, pair{1, 3}, 2, pair{1, 3}});
+
+    // Degenerate collections (issue #254): empty / single-element vars, and
+    // all-constant vars in both directions.
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {});       // empty vars: vacuously true
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {1});      // single const: 1 with no 2 (tautology)
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {2});      // single const: 2 before any 1 (contradiction)
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {5});      // single const: neither chain value (tautology)
+    run_value_precede_test(proofs, view_cfg, {1, 2, 3}, {1, 2, 3}); // all-const, in order (tautology)
+    run_value_precede_test(proofs, view_cfg, {1, 2, 3}, {3, 2, 1}); // all-const, reversed (contradiction)
 }
 
 // Dup-variable test: ValuePrecede with the same handle in several array
