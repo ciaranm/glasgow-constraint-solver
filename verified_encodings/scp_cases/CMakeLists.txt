@@ -78,6 +78,15 @@ add_scp_chain_test(all_different_sat    strict)
 add_scp_chain_test(count_unsat  strict)
 add_scp_chain_test(count_sat    strict)
 
+# strict: plus. The propagator's sum line is now the two labelled halves
+# @c[id][le] (the Z >= a + b half) and @c[id][ge] (the Z <= a + b half), via the
+# add_labelled_constraint equality overload, matching cake's encode_plus exactly
+# (the bound lines already agreed -- plus is pure bit-sum, no eq/ge ladder, so it
+# never hit #358). Domains are 0..2/0..6 (not 0..1) to stay off the binary {0,1}
+# encoding (see below). SAT enumeration + UNSAT.
+add_scp_chain_test(plus_sat     strict)
+add_scp_chain_test(plus_unsat   strict)
+
 # none (chain-only): element. cake uses the same lean strategy as the solver -- it
 # reifies the per-entry equality (result = array[k]) on the *index variable's own*
 # i[I][eqk] literal, no selector flags -- so there is nothing to conform on element's
@@ -144,19 +153,20 @@ add_scp_chain_test(not_equals_iff_sat   none)
 add_scp_chain_test(binary_less_equal_sat  none)
 add_scp_chain_test(binary_equals_unsat    none)
 
-# none (chain-only): prim arithmetic (plus/minus) and logical (and/or) chain-
-# verify, but the solver emits the equality halves / reified flags unlabelled
-# where cake labels them @c[...], so opbdiff can't byte-match (same situation as
-# all_different). minus is unsat-only: its SAT enumeration trips a RUP because
-# cake encodes `minus a b z` as a = b + z, a strength mismatch on the rearranged
-# bits (tracked with the count_sat enumeration gap).
-add_scp_chain_test(plus_sat     none)
-add_scp_chain_test(plus_unsat   none)
+# none (chain-only): minus and logical (and/or) chain-verify but don't byte-match.
+# minus is unsat-only: its SAT enumeration trips a RUP because cake encodes
+# `minus a b z` as a = b + z, a strength mismatch on the rearranged bits (tracked
+# with the count_sat enumeration gap); its sum halves still need the plus-style
+# @c[id][le]/[ge] relabel. and/or use {0,1} variables, so they diverge on cake's
+# eager per-variable lb/ub boundary lines (the binary-encoding subcase of #358,
+# as for the binary_* cases below) -- not a missing label, so the relabel alone
+# wouldn't byte-match them.
 add_scp_chain_test(minus_unsat  none)
 add_scp_chain_test(and_sat      none)
 add_scp_chain_test(or_sat       none)
 
-# none (chain-only): inverse channeling chain-verifies; its clauses reuse the
-# variables' own eq literals so the encoding lines up, but they're unlabelled vs
-# cake, so no opbdiff byte-match.
+# none (chain-only): inverse channeling chain-verifies; it references the
+# variables' own eq/ge literals, so it trips the same lazy-vs-eager variable-
+# encoding gap as element (#358) (cake's full ge0 ladder + eq0 <=> ge0 & ~ge1),
+# and its clauses are unlabelled vs cake -- so no opbdiff byte-match yet.
 add_scp_chain_test(inverse_sat  none)
