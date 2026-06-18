@@ -111,6 +111,17 @@ auto main(int, char *[]) -> int
         {{pair{1, 3}, pair{1, 3}, pair{2, 3}}, {1, 2, 3}, {pair{0, 3}, pair{0, 3}, pair{0, 3}}, true},
         // A GAC-only pruning: AllDifferent-style Hall set (each value once).
         {{pair{1, 2}, pair{1, 2}, pair{1, 3}}, {1, 2, 3}, {pair{0, 1}, pair{0, 1}, pair{0, 1}}, false},
+        // Degenerate cases (issue #254): empty vars, empty value set, single
+        // value, and all-constant vars/counts in both directions.
+        {{}, {1}, {0}, false},                              // empty vars, open: count of 1 is 0 (tautology)
+        {{}, {1}, {1}, false},                              // empty vars, open: count can't be 1 (contradiction)
+        {{}, {1}, {0}, true},                               // empty vars, closed: vacuously satisfied
+        {{5}, {5}, {1}, false},                             // single all-const var matches value (tautology)
+        {{5}, {3}, {1}, false},                             // count of absent value can't be 1 (contradiction)
+        {{1, 1, 2}, {1, 2}, {2, 1}, false},                 // all-const vars + counts, correct (tautology)
+        {{1, 1, 2}, {1, 2}, {1, 1}, false},                 // all-const vars + counts, wrong count (contradiction)
+        {{pair{1, 2}, pair{1, 2}}, {1}, {pair{0, 2}}, false}, // single cover value
+        {{pair{1, 2}}, {}, {}, false},                      // empty value set, open: any assignment allowed
     };
 
     random_device rand_dev;
