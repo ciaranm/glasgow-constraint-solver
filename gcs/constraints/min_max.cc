@@ -1,4 +1,5 @@
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/innards/justify_not_in_range.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -176,24 +177,57 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
 
             auto support_1_set = state.copy_of_values(*support_1);
             auto result_set = state.copy_of_values(result);
-            for (auto [lo, hi] : support_1_set.each_interval_minus(result_set))
-                for (Integer val = lo; val <= hi; ++val)
-                    inference.infer(logger, *support_1 != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
-                        // first, show that the selector can't be true for anything other than the supporting variable
-                        for (const auto & [idx, var] : enumerate(vars)) {
-                            if (var != *support_1) {
-                                for (const auto & val : state.each_value_immutable(result))
-                                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != val)) >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
-                            }
-                        }
-                        // now fish out the supporting variable, and show that it has to have its selector true
-                        for (const auto & [idx, var] : enumerate(vars)) {
-                            if (var == *support_1)
-                                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
-                        }
+
+            // The selector can only be true for the supporting variable: every other var
+            // is missing all of result's values, so its model selector must be false. This
+            // is value-independent, so the range path emits it once per interval rather
+            // than once per removed value.
+            auto rule_out_other_selectors = [&](const ReasonFunction & reason) {
+                for (const auto & [idx, var] : enumerate(vars))
+                    if (var != *support_1) {
+                        for (const auto & rval : state.each_value_immutable(result))
+                            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! selectors.at(idx)) + (1_i * (result != rval)) >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                    }
+            };
+
+            // Each contiguous removed interval is a single ~[support_1 in lo..hi]
+            // conclusion. With the other selectors ruled out, al1 forces support_1's
+            // selector true, so the model pins support_1 == result; two ge-layer bound
+            // lemmas then bridge result's absence from [lo, hi] across that equality,
+            // exactly as in equals.cc (the range literal asserts order atoms, never bits,
+            // so the conclusion is not RUP without them). Views and constants, where the
+            // bridge does not apply, keep the per-value path.
+            auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{*support_1}) &&
+                std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{result});
+
+            for (auto [lo, hi] : support_1_set.each_interval_minus(result_set)) {
+                if (both_simple)
+                    inference.infer_not_in_range(logger, *support_1, lo, hi, JustifyExplicitlyThenRUP{[&, lo = lo, hi = hi](const ReasonFunction & reason) {
+                        rule_out_other_selectors(reason);
+                        justify_not_in_range_across_equality(*logger, reason,
+                            std::get<SimpleIntegerVariableID>(IntegerVariableID{*support_1}), lo, hi,
+                            result, lo, hi);
                     }},
-                        ReasonFunction{[=]() { return reason; }});
+                        // Built afresh per call: the justification calls the reason once per
+                        // bridge lemma plus once for the conclusion, so a mutable accumulating
+                        // lambda would duplicate the appended literal on each call.
+                        ReasonFunction{[=, base = reason]() {
+                            auto r = base;
+                            r.emplace_back(not_in_range(result, lo, hi));
+                            return r;
+                        }});
+                else
+                    for (Integer val = lo; val <= hi; ++val)
+                        inference.infer(logger, *support_1 != val, JustifyExplicitlyThenRUP{[&, val = val](const ReasonFunction & reason) {
+                            rule_out_other_selectors(reason);
+                            // now fish out the supporting variable, and show that it has to have its selector true
+                            for (const auto & [idx, var] : enumerate(vars))
+                                if (var == *support_1)
+                                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
+                        }},
+                            ReasonFunction{[=]() { return reason; }});
+            }
         }
 
         return PropagatorState::Enable; }, triggers);
