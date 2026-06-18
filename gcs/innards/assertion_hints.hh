@@ -23,6 +23,8 @@ namespace gcs::innards
         InitialBound,
         BoundLink,
         Backtrack,
+        SolxBlock,
+        SoliImprove,
     };
 
     /**
@@ -49,6 +51,10 @@ namespace gcs::innards
             return s << "BoundLink";
         case AssertionHintName::Backtrack:
             return s << "Backtrack";
+        case AssertionHintName::SolxBlock:
+            return s << "SolxBlock";
+        case AssertionHintName::SoliImprove:
+            return s << "SolxBlock";
         }
     }
     /**

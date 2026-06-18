@@ -175,22 +175,43 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     _imp->proof << (optional_minimise_variable_and_value ? "soli" : "solx");
 
-    for (const auto & [var, val] : all_variables_and_values)
+    WPBSum blocking_sum{};
+
+    for (const auto & [var, val] : all_variables_and_values) {
+        if (! optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Links)
+            blocking_sum += 1_i * (var != val);
+
         overloaded{
             [&](const ConstantIntegerVariableID &) {
             },
             [&](const SimpleIntegerVariableID & var) {
-                _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(var == val);
+                if (_imp->assertion_level > AssertionLevel::Definitions)
+                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(var, val);
+                else
+                    _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(var == val);
             },
             [&](const ViewOfIntegerVariableID & var) {
-                _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
+                if (_imp->assertion_level > AssertionLevel::Definitions) {
+                    auto actual = deview(var == val);
+                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(actual.var, actual.value);
+                }
+                else
+                    _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
             }}
             .visit(var);
+    }
 
     _imp->proof << ";\n";
     record_proof_line(advance_proof_line_number(), ProofLevel::Top);
 
-    if (optional_minimise_variable_and_value)
+    if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
+        // soli and no links => have to assert the objective improving constraint
+        visit([&](const auto & id) {
+            emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = AssertionHintName::SoliImprove});
+        },
+            optional_minimise_variable_and_value->first);
+    else if (optional_minimise_variable_and_value)
+        // normal soli, emit e line for trimmer
         visit([&](const auto & id) {
             _imp->proof << "e ";
             emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
@@ -199,6 +220,11 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
         },
             optional_minimise_variable_and_value->first);
+    else if (_imp->assertion_level > AssertionLevel::Definitions) {
+        // solx and no links => have to assert the blocking constraint
+        emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = AssertionHintName::SolxBlock});
+    }
+    // nothing needs done for solx below AssertionLevel::Links
 }
 
 auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
@@ -303,7 +329,9 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
     if (_imp->assertion_level > AssertionLevel::Inferences)
         return;
 
-    if (_imp->assertion_level >= AssertionLevel::Definitions && annotation) {
+    if ((_imp->assertion_level <= AssertionLevel::Definitions && annotation) || _imp->assertion_level >= AssertionLevel::Links) {
+        // At AssertionLevel::Definitions we can assert some inferences and not others (since the needed constraints for the justifications will
+        // still be present). At higher levels, we need to assert all inferences.
         if (! is_literally_true(lit)) {
             emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
         }

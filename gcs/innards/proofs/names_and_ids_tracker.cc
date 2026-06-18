@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_line-fwd.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/variable_id_utils.hh>
@@ -964,7 +965,7 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     _imp->variable_conditions_to_x.emplace(in_range(id, lo, hi), x);
     _imp->variable_conditions_to_x.emplace(not_in_range(id, lo, hi), ! x);
 
-    auto will_define = _imp->logger->get_assertion_level() <= AssertionLevel::Definitions;
+    auto will_define = _imp->logger->get_assertion_level() <= AssertionLevel::Links;
     // Struggling to get clang-format to behave here...
     auto lines = will_define //
         ? visit([&](const auto & id) {
@@ -1422,6 +1423,28 @@ auto NamesAndIDsTracker::pb_file_string_for(const XLiteral & lit) const -> strin
 auto NamesAndIDsTracker::pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> string
 {
     return pb_file_string_for(xliteral_for(cond));
+}
+
+auto NamesAndIDsTracker::bit_assignment_string_for(const SimpleOrProofOnlyIntegerVariableID & var, const Integer & value) const -> string
+{
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(var);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
+        throw ProofError("missing bits");
+
+    const auto & [negative_coeff, bits] = it->second;
+
+    bool sign_bit_set = (negative_coeff != 0_i) && (value < 0_i);
+    Integer remainder = sign_bit_set ? value - negative_coeff : value;
+
+    string result;
+    for (const auto & [coeff, lit] : bits) {
+        bool bit_is_one = (coeff < 0_i) ? sign_bit_set : ((remainder / coeff) % 2_i == 1_i);
+        if (! result.empty())
+            result += " ";
+        result += pb_file_string_for(bit_is_one ? lit : ! lit);
+    }
+
+    return result;
 }
 
 auto NamesAndIDsTracker::xliteral_for(const ProofFlag & flag) const -> const XLiteral

@@ -320,6 +320,11 @@ namespace gcs::innards
         [[nodiscard]] auto pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> std::string;
 
         /**
+         * Return a string form of the exact literals specifying a bit assignment for var == val, an alternative way to witness solutions.
+         */
+        [[nodiscard]] auto bit_assignment_string_for(const SimpleOrProofOnlyIntegerVariableID & var, const Integer & value) const -> std::string;
+
+        /**
          * Return the raw proof literal representing a proof flag, for writing to a model or log.
          */
         [[nodiscard]] auto xliteral_for(const ProofFlag &) const -> const XLiteral;
