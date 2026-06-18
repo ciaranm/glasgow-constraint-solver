@@ -182,6 +182,14 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
         {{4_i, 4_i}, {1_i, 1_i}}); // first tuple already infeasible (4 not in dom): satisfied automatically
     run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3},
         {{1_i, 1_i}, {1_i, 1_i}, {2_i, 2_i}}); // duplicates in forbidden list
+    // Degenerate (issue #254): empty forbidden list (all allowed) and all-fixed
+    // variables in both directions.
+    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3},
+        {}); // empty forbidden list: every assignment allowed
+    run_negative_table_test_2(proofs, view_cfg, {1, 1}, {2, 2},
+        {{2_i, 1_i}, {3_i, 3_i}}); // fixed (1,2) not forbidden (tautology)
+    run_negative_table_test_2(proofs, view_cfg, {1, 1}, {2, 2},
+        {{1_i, 2_i}}); // fixed (1,2) is forbidden (contradiction)
 
     // Three-variable cases.
     run_negative_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3},

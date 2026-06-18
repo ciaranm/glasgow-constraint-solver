@@ -180,6 +180,14 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
         {});  // empty table: unsatisfiable
     run_table_test_2(proofs, view_cfg, {-2, 2}, {-2, 2},
         {{-2_i, 2_i}, {0_i, 0_i}, {2_i, -2_i}});
+    // Degenerate (issue #254): all-fixed variables, both directions, and a
+    // mixed fixed+variable case. (Empty tuple list → UNSAT is covered above.)
+    run_table_test_2(proofs, view_cfg, {1, 1}, {1, 1},
+        {{1_i, 1_i}});  // fixed (1,1) is an allowed tuple (tautology)
+    run_table_test_2(proofs, view_cfg, {2, 2}, {3, 3},
+        {{1_i, 1_i}});  // fixed (2,3) is not in the table (contradiction)
+    run_table_test_2(proofs, view_cfg, {1, 1}, {1, 3},
+        {{1_i, 1_i}, {1_i, 2_i}});  // mixed: v1 fixed, v2 variable
 
     // Table, 3 variables
     run_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3},
