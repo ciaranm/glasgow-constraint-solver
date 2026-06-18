@@ -195,7 +195,13 @@ auto main(int argc, char * argv[]) -> int
         {pair{1, 3}, pair{5, 8}},
         {pair{4, 13}, pair{3, 16}},
         {pair{-2, 4}, pair{-8, 7}},
-        {pair{-7, 3}, pair{-10, 5}}};
+        {pair{-7, 3}, pair{-10, 5}},
+        // issue #254: genuine all-constant operands (ConstantIntegerVariableID),
+        // both directions. Each Equals/NotEquals (and reified) mode is computed
+        // from build_expected: 4==4 holds, 4==5 does not.
+        {4, 4},
+        {4, 5},
+        {-3, -3}};
 
     random_device rand_dev;
     mt19937 rand(get_seed().value_or(rand_dev()));

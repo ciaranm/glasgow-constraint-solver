@@ -187,7 +187,14 @@ auto main(int argc, char * argv[]) -> int
         // Constant-result regression: x + y == 6 over [1,5] × [1,5].
         {pair{1, 5}, pair{1, 5}, 6},
         // Constant-operand: x + 2 == z over [1,5] × [3,8].
-        {pair{1, 5}, 2, pair{3, 8}}};
+        {pair{1, 5}, 2, pair{3, 8}},
+        // issue #254: fully all-constant operands (ConstantIntegerVariableID).
+        // Each row runs for both Plus and Minus; build_expected gives the
+        // per-operation truth, e.g. {2,3,5}: 2+3==5 (Plus SAT) but 2-3!=5
+        // (Minus UNSAT); {4,1,3}: 4+1!=3 (Plus UNSAT) but 4-1==3 (Minus SAT).
+        {2, 3, 5},
+        {4, 1, 3},
+        {0, 0, 0}};
 
     // The random sweep mixes constants and bounds-pairs across all three slots
     // via random_bounds_or_constant. v1/v2's variant is wider than the helper's
