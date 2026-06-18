@@ -116,6 +116,39 @@ auto run_alldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domain
     check_results(proof_name, expected, actual);
 }
 
+// issue #254: AllDifferent over a degenerate collection — the empty array and
+// the single-element array (both trivially satisfiable), plus tiny all-constant
+// arrays in both the distinct (SAT) and duplicate (UNSAT) directions. Guards
+// against UB on empty containers and proof steps referencing absent variables.
+auto run_alldiff_collection_test(bool proofs, const string & label,
+    const vector<variant<int, pair<int, int>>> & specs) -> void
+{
+    print(cerr, "all_different_collection [{}] {}{}", label, specs, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    auto is_satisfying = [](const vector<int> & vs) {
+        for (std::size_t i = 0; i < vs.size(); ++i)
+            for (std::size_t j = i + 1; j < vs.size(); ++j)
+                if (vs[i] == vs[j])
+                    return false;
+        return true;
+    };
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, is_satisfying, specs);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> vars;
+    for (const auto & s : specs)
+        vars.push_back(visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, s));
+    p.post(AllDifferent{vars});
+
+    auto proof_name = proofs ? make_optional("all_different_test_collection") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -137,7 +170,12 @@ auto main(int argc, char * argv[]) -> int
             // issue #108: constants in hall set crash prove_matching_is_too_small
             {pair{-2, 3}, 5, pair{3, 5}, pair{3, 6}, 3, pair{3, 5}},
             // issue #108: constants in hall set crash prove_deletion_using_sccs
-            {pair{1, 2}, pair{1, 2}, 3, pair{3, 4}, pair{4, 5}, pair{5, 6}}};
+            {pair{1, 2}, pair{1, 2}, 3, pair{3, 4}, pair{4, 5}, pair{5, 6}},
+            // issue #254: fully all-constant arguments (genuine
+            // ConstantIntegerVariableIDs), both directions.
+            {1, 2, 3, 4, 5, 6}, // all distinct constants (tautology)
+            {1, 1, 3, 4, 5, 6}, // two equal constants (contradiction)
+            {7, 7, 7, 7, 7, 7}}; // all equal constants (contradiction)
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
@@ -173,6 +211,13 @@ auto main(int argc, char * argv[]) -> int
                 run_alldiff_dup_test<GACAllDifferent>(proofs, unique_domains, positions, "gac");
                 run_alldiff_dup_test<VCAllDifferent>(proofs, unique_domains, positions, "vc");
             }
+
+            // Degenerate collections (issue #254).
+            run_alldiff_collection_test(proofs, "empty", {});
+            run_alldiff_collection_test(proofs, "single_var", {pair{0, 2}});
+            run_alldiff_collection_test(proofs, "single_const", {5});
+            run_alldiff_collection_test(proofs, "const_distinct", {1, 2, 3});
+            run_alldiff_collection_test(proofs, "const_dup", {1, 2, 1});
         }
     }
 
