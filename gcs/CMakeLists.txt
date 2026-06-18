@@ -320,7 +320,7 @@ if(GCS_BUILD_TESTS)
     foreach(mode lex_gt lex_ge lex_lt lex_le
                  lex_gt_fixed lex_ge_fixed lex_lt_fixed lex_le_fixed
                  am1_eq am1_in_set al1_eq al1_in_set
-                 mixed_same_var stacked_unary wide_constants)
+                 mixed_same_var stacked_unary wide_constants degenerate)
         add_test(NAME smart_table_constraint_${mode}
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:smart_table_test> ${mode})
     endforeach()
