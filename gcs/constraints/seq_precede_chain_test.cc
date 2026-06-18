@@ -158,6 +158,13 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     run_test(proofs, view_cfg, {pair{1, 4}, 1, pair{1, 4}, 2});
     // Constant zero / negative entries are unconstrained by the chain.
     run_test(proofs, view_cfg, {0, pair{1, 3}, -1, pair{1, 3}});
+
+    // Degenerate (issue #254): single-element and fully all-constant arrays,
+    // both directions (a value v>=2 needs v-1 to appear earlier).
+    run_test(proofs, view_cfg, {1});       // single constant, value < 2 (tautology)
+    run_test(proofs, view_cfg, {2});       // single constant, value 2 with no preceding 1 (contradiction)
+    run_test(proofs, view_cfg, {1, 2, 3}); // all-const, properly chained (tautology)
+    run_test(proofs, view_cfg, {3, 1, 2}); // all-const, 3 before its prerequisite 2 (contradiction)
 }
 
 // Dup-variable test: SeqPrecedeChain with the same handle in several
