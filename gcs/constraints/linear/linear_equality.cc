@@ -10,6 +10,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
@@ -394,9 +395,9 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
     }
 }
 
-auto ReifiedLinearEquality::s_exprify(const ProofModel * const model) const -> std::string
+auto ReifiedLinearEquality::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     auto [rei, cons] = overloaded{
         [&](const reif::MustHold &) { return make_pair(false, "lin_equals"); },
@@ -406,17 +407,19 @@ auto ReifiedLinearEquality::s_exprify(const ProofModel * const model) const -> s
         [&](const reif::NotIf &) { return make_pair(true, "lin_not_equals_if"); }}
                            .visit(_reif_cond);
 
-    print(s, "{} {}", _constraint_id, cons);
-    if (rei) {
-        print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
-    }
-    print(s, " (");
-    for (const auto & [c, v] : _coeff_vars.terms) {
-        print(s, " {} {}", c, model->names_and_ids_tracker().s_expr_name_of(v));
-    }
-    print(s, ") {}", _value);
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cons)};
+    if (rei)
+        terms.push_back(*tracker.s_expr_term_of(_reif_cond));
 
-    return s.str();
+    vector<SExpr> coeff_vars;
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        coeff_vars.push_back(SExpr::atom(c.to_string()));
+        coeff_vars.push_back(tracker.s_expr_term_of(v));
+    }
+    terms.push_back(SExpr::list(std::move(coeff_vars)));
+    terms.push_back(SExpr::atom(_value.to_string()));
+
+    return SExpr::list(std::move(terms));
 }
 
 auto ReifiedLinearEquality::clone() const -> unique_ptr<Constraint>

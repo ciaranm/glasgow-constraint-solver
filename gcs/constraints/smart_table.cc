@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 
 #include <algorithm>
 #include <map>
@@ -949,7 +950,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         triggers);
 }
 
-auto SmartTable::s_exprify(const ProofModel * const model) const -> string
+auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto to_op = [](SmartEntryConstraint c) {
         switch (c) {
@@ -965,41 +966,40 @@ auto SmartTable::s_exprify(const ProofModel * const model) const -> string
         throw NonExhaustiveSwitch{};
     };
 
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
-    print(s, "{} smart_table (\n        (", _constraint_id);
-
+    vector<SExpr> entries;
     for (const auto & tuple : _tuples) {
         for (const auto & entry : tuple) {
             overloaded{
                 [&](const BinaryEntry & binary_entry) {
-                    print(s, " ({} {} {})",
-                        model->names_and_ids_tracker().s_expr_name_of(binary_entry.var_1),
-                        to_op(binary_entry.constraint_type),
-                        model->names_and_ids_tracker().s_expr_name_of(binary_entry.var_2));
+                    entries.push_back(SExpr::list({tracker.s_expr_term_of(binary_entry.var_1),
+                        SExpr::atom(to_op(binary_entry.constraint_type)),
+                        tracker.s_expr_term_of(binary_entry.var_2)}));
                 },
                 [&](const UnaryValueEntry & unary_val_entry) {
-                    print(s, " ({} {} {})",
-                        model->names_and_ids_tracker().s_expr_name_of(unary_val_entry.var),
-                        to_op(unary_val_entry.constraint_type),
-                        unary_val_entry.value);
+                    entries.push_back(SExpr::list({tracker.s_expr_term_of(unary_val_entry.var),
+                        SExpr::atom(to_op(unary_val_entry.constraint_type)),
+                        SExpr::atom(unary_val_entry.value.to_string())}));
                 },
                 [&](const UnarySetEntry & unary_set_entry) {
-                    print(s, " ({} {} (",
-                        model->names_and_ids_tracker().s_expr_name_of(unary_set_entry.var),
-                        to_op(unary_set_entry.constraint_type));
+                    vector<SExpr> values;
                     for (const auto & value : unary_set_entry.values)
-                        print(s, " {}", value);
-                    print(s, "))");
+                        values.push_back(SExpr::atom(value.to_string()));
+                    entries.push_back(SExpr::list({tracker.s_expr_term_of(unary_set_entry.var),
+                        SExpr::atom(to_op(unary_set_entry.constraint_type)),
+                        SExpr::list(move(values))}));
                 }}
                 .visit(entry);
         }
     }
-    print(s, ")\n        (");
 
+    vector<SExpr> vars;
     for (const auto & var : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ")\n        )");
+        vars.push_back(tracker.s_expr_term_of(var));
 
-    return s.str();
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("smart_table"),
+        SExpr::list(move(entries)),
+        SExpr::list(move(vars))});
 }

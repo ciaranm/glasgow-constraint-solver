@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <sstream>
@@ -174,15 +175,13 @@ auto Minus::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Minus::s_exprify(const innards::ProofModel * const model) const -> string
+auto Minus::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     // Three flat args (`minus X Y Z`) to match cake_pb_cp's binary prim parse.
-    print(s, "{} minus", _constraint_id);
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_a));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_b));
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result));
-
-    return s.str();
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("minus"),
+        tracker.s_expr_term_of(_a),
+        tracker.s_expr_term_of(_b),
+        tracker.s_expr_term_of(_result)});
 }

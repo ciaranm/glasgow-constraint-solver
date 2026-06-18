@@ -4,6 +4,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
@@ -239,17 +240,14 @@ auto Count::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Count::s_exprify(const ProofModel * const model) const -> std::string
+auto Count::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} count (", _constraint_id);
-    for (const auto & v : _vars) {
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    }
-    print(s, ") {} {}",
-        model->names_and_ids_tracker().s_expr_name_of(_value_of_interest),
-        model->names_and_ids_tracker().s_expr_name_of(_how_many));
-
-    return s.str();
+    auto & tracker = model->names_and_ids_tracker();
+    std::vector<SExpr> vars;
+    for (const auto & v : _vars)
+        vars.push_back(tracker.s_expr_term_of(v));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("count"),
+        SExpr::list(std::move(vars)),
+        tracker.s_expr_term_of(_value_of_interest),
+        tracker.s_expr_term_of(_how_many)});
 }

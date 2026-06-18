@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
 
@@ -554,62 +555,57 @@ auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<C
 }
 
 template <typename EntryType_, unsigned dimensions_>
-auto NDimensionalElement<EntryType_, dimensions_>::s_exprify(const ProofModel * const model) const -> std::string
+auto NDimensionalElement<EntryType_, dimensions_>::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     // cake_pb_cp reads the array as a bare varc list -- position is implicit, so
-    // no per-entry index -- and each index as a space-separated (variable offset)
-    // pair, then the result: "(X0 ... Xn-1) (Y0 off0) ... Z". The offset matches
-    // our _index_starts (both subtract it: the chosen entry is Xs[val(Y) - off]).
-    auto print_elem = [&](auto & s, const auto & elem) {
-        if constexpr (std::is_same_v<EntryType_, IntegerVariableID>) {
-            print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(elem));
-        }
-        else {
-            print(s, " {}", elem);
-        }
+    // no per-entry index -- and each index as a (variable offset) pair, then the
+    // result: "(X0 ... Xn-1) (Y0 off0) ... Z". The offset matches our
+    // _index_starts (both subtract it: the chosen entry is Xs[val(Y) - off]).
+    auto entry_term = [&](const auto & elem) -> SExpr {
+        if constexpr (std::is_same_v<EntryType_, IntegerVariableID>)
+            return tracker.s_expr_term_of(elem);
+        else
+            return SExpr::atom(elem.to_string());
     };
 
-    auto print_array = [&](auto & s, const auto & arr, auto self_ref) -> void {
+    // Build the array's children: the innermost rows (a vector of EntryType_) in
+    // traversal order; in a multi-dimensional array each row is its own sub-list
+    // (cake reads element_2d's array as ((row1) (row2) ...)), in 1-D they are flat.
+    vector<SExpr> array_children;
+    auto build_array = [&](auto & self, const auto & arr) -> void {
         using ArrayType = std::decay_t<decltype(arr)>;
-
-        // Innermost level (a vector of EntryType_): emit the entries; in a
-        // multi-dimensional array each such row is wrapped in its own parens
-        // (cake reads element_2d's array as ((row1) (row2) ...)).
         if constexpr (std::is_same_v<typename ArrayType::value_type, EntryType_>) {
             if (dimensions_ > 1) {
-                print(s, " (");
+                vector<SExpr> row;
+                for (const auto & e : arr)
+                    row.push_back(entry_term(e));
+                array_children.push_back(SExpr::list(move(row)));
             }
-            for (const auto & e : arr) {
-                print_elem(s, e);
-            }
-            if (dimensions_ > 1) {
-                print(s, ")");
+            else {
+                for (const auto & e : arr)
+                    array_children.push_back(entry_term(e));
             }
         }
         else {
-            // Recursive case: dig deeper
-            for (const auto & sub_arr : arr) {
-                self_ref(s, sub_arr, self_ref);
-            }
+            for (const auto & sub_arr : arr)
+                self(self, sub_arr);
         }
     };
+    build_array(build_array, *_array);
 
-    print(s, "{} {} (", _constraint_id, dimensions_ == 1 ? "element" : "element_2d");
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom(dimensions_ == 1 ? "element" : "element_2d"),
+        SExpr::list(move(array_children))};
 
-    print_array(s, *_array, print_array);
+    for (size_t i = 0; i < _index_vars.size(); ++i)
+        terms.push_back(SExpr::list({tracker.s_expr_term_of(_index_vars[i]),
+            SExpr::atom(_index_starts[i].to_string())}));
 
-    print(s, ")");
+    terms.push_back(tracker.s_expr_term_of(_result_var));
 
-    for (size_t i = 0; i < _index_vars.size(); ++i) {
-        print(s, " ({} {})",
-            model->names_and_ids_tracker().s_expr_name_of(_index_vars[i]),
-            _index_starts[i]);
-    }
-    print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(_result_var));
-
-    return s.str();
+    return SExpr::list(move(terms));
 }
 
 namespace gcs

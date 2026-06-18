@@ -529,6 +529,14 @@ namespace gcs::innards
         [[nodiscard]] auto s_expr_term_of(IntegerVariableID id) const -> SExpr;
 
         /**
+         * Get the s-expr *term* for a literal: s_expr_name_of() parsed into an
+         * SExpr (a bare atom like `_1` or `1`, or a list for a view literal).
+         * The literal-list constraints (and / or / parity) write their inputs
+         * with this. Prefer it over `parse_s_expr(s_expr_name_of(...))`.
+         */
+        [[nodiscard]] auto s_expr_term_of(Literal lit) const -> SExpr;
+
+        /**
          * Get the s-expr term for a reification condition, or nullopt when the
          * condition is unconditional (MustHold / MustNotHold). Keeps the
          * "no condition" case explicit rather than leaking the empty string that

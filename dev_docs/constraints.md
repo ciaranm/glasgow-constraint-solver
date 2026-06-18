@@ -97,16 +97,17 @@ namespace gcs
         virtual auto install(innards::Propagators &, innards::State &,
             innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        [[nodiscard]] virtual auto s_exprify(
-            const innards::ProofModel * const) const -> std::string override;
+        [[nodiscard]] virtual auto s_expr(
+            const innards::ProofModel * const) const -> innards::SExpr override;
     };
 }
 ```
 
 `install` is rvalue-qualified (`&&`) — it consumes the Constraint
 object. `clone` produces a fresh independent copy (used by some search
-strategies). `s_exprify` produces a textual dump of the constraint for
-debugging.
+strategies). `s_expr` returns the constraint's `.scp` entry as a structured
+s-expression term `(name op args...)` (built with `innards::SExpr::list`/`atom`
+and `NamesAndIDsTracker::s_expr_term_of`); `innards::write_scp` serialises it.
 
 ## install: the entry point
 
@@ -638,7 +639,7 @@ correctness work wants the full enumeration check.
 1. Header file with class declaration, Doxygen comments, the standard
    trio of virtual methods.
 2. `.cc` file with constructor, `install` method (OPB block + propagator
-   registration), `clone`, `s_exprify`.
+   registration), `clone`, `s_expr`.
 3. Test file with the standard `for (bool proofs : {false, true})`
    loop and a `can_run_veripb()` gate on the proofs leg. Split into
    multiple ctest entries via an argv mode if the test gets slow.

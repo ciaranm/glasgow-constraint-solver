@@ -1698,6 +1698,13 @@ auto NamesAndIDsTracker::s_expr_term_of(IntegerVariableID id) const -> SExpr
     return parse_s_expr(s_expr_name_of(id));
 }
 
+auto NamesAndIDsTracker::s_expr_term_of(Literal lit) const -> SExpr
+{
+    // As for the variable overload: s_expr_name_of(Literal) is always a single,
+    // non-empty term (a bare atom for a condition/True/False, or a view list).
+    return parse_s_expr(s_expr_name_of(lit));
+}
+
 auto NamesAndIDsTracker::s_expr_term_of(ReificationCondition cond) const -> optional<SExpr>
 {
     // s_expr_name_of(ReificationCondition) returns "" for the unconditional

@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <optional>
@@ -137,18 +138,17 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
             }
         } }, triggers);
 }
-auto ParityOdd::s_exprify(const innards::ProofModel * const model) const -> string
+auto ParityOdd::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     // cake_pb_cp encodes parity as `parity (X1 ... Xn) Y` meaning Y = XOR(Xi).
     // ParityOdd is the bare odd-parity assertion XOR(Xi) = 1, so we write the
     // constant Y = 1 (1 = XOR(Xi) <-> XOR(Xi) = 1). The scp_reader requires Y = 1.
-    print(s, "{} parity (", _constraint_id);
-    for (const auto & lit : _lits) {
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
-    }
-    print(s, " ) 1");
-
-    return s.str();
+    std::vector<SExpr> lits;
+    for (const auto & lit : _lits)
+        lits.push_back(tracker.s_expr_term_of(lit));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("parity"),
+        SExpr::list(std::move(lits)),
+        SExpr::atom("1")});
 }

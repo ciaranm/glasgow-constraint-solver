@@ -3,6 +3,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <version>
@@ -110,9 +111,8 @@ namespace gcs::innards
 }
 
 template <ArithmeticOperator op_>
-auto GACArithmetic<op_>::s_exprify(const innards::ProofModel * const model) const -> std::string
+auto GACArithmetic<op_>::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    // (name op v1 v2 result)
     string op_str;
     switch (op_) {
     case ArithmeticOperator::Plus: op_str = "plus"; break;
@@ -122,10 +122,10 @@ auto GACArithmetic<op_>::s_exprify(const innards::ProofModel * const model) cons
     case ArithmeticOperator::Mod: op_str = "mod"; break;
     case ArithmeticOperator::Power: op_str = "power"; break;
     }
-    stringstream s;
-    print(s, "({} {} {} {} {})", _constraint_id, op_str,
-        model->names_and_ids_tracker().s_expr_name_of(_v1),
-        model->names_and_ids_tracker().s_expr_name_of(_v2),
-        model->names_and_ids_tracker().s_expr_name_of(_result));
-    return s.str();
+    // The single (name op v1 v2 result) list. The old s_exprify built this *with*
+    // its own outer parens, which write_scp then double-wrapped to ((name ...));
+    // returning a structured term wraps exactly once.
+    auto & tracker = model->names_and_ids_tracker();
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(op_str),
+        tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2), tracker.s_expr_term_of(_result)});
 }

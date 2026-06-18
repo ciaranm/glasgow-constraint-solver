@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 
 #include <version>
 
@@ -363,7 +364,7 @@ namespace
 
 namespace
 {
-    // Records the alphabet (sorted transition keys) for proof logging and s_exprify.
+    // Records the alphabet (sorted transition keys) for proof logging and s_expr.
     auto symbols_of(const vector<unordered_map<Integer, set<long>>> & transitions) -> vector<Integer>
     {
         set<Integer> sym_set;
@@ -542,29 +543,42 @@ auto Regular::install_propagators(Propagators & propagators) -> void
         return PropagatorState::Enable; }, triggers);
 }
 
-auto Regular::s_exprify(const ProofModel * const model) const -> string
+auto Regular::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
-    print(s, "{} regular (", _constraint_id);
+    vector<SExpr> vars;
     for (const auto & var : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ") {}\n       (", _num_states);
+        vars.push_back(tracker.s_expr_term_of(var));
+
+    vector<SExpr> syms;
     for (const auto & sym : symbols())
-        print(s, " {}", sym);
-    print(s, ")\n       ((");
+        syms.push_back(SExpr::atom(sym.to_string()));
+
+    // The old textual form wrapped the per-state list inside one extra pair of
+    // parentheses (the `((` ... `))` around the loop), so the transitions term
+    // is an outer list containing a single inner list of per-state edge lists.
+    vector<SExpr> states;
     for (size_t i = 0; i < _transitions.size(); i++) {
-        print(s, "(");
+        vector<SExpr> edges;
         for (const auto & tran : _transitions[i]) {
             for (const auto & target : tran.second)
-                print(s, " ({} {})", tran.first, target);
+                edges.push_back(SExpr::list({SExpr::atom(tran.first.to_string()),
+                    SExpr::atom(std::to_string(target))}));
         }
-        print(s, ")\n        ");
+        states.push_back(SExpr::list(move(edges)));
     }
-    print(s, "))\n       (");
-    for (const auto & f : _final_states)
-        print(s, " {}", f);
-    print(s, ")");
+    auto transitions_term = SExpr::list({SExpr::list(move(states))});
 
-    return s.str();
+    vector<SExpr> finals;
+    for (const auto & f : _final_states)
+        finals.push_back(SExpr::atom(std::to_string(f)));
+
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("regular"),
+        SExpr::list(move(vars)),
+        SExpr::atom(std::to_string(_num_states)),
+        SExpr::list(move(syms)),
+        std::move(transitions_term),
+        SExpr::list(move(finals))});
 }

@@ -9,6 +9,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <version>
@@ -199,27 +200,29 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
         sanitised_cv, sanitised_neg_cv);
 }
 
-auto ReifiedLinearInequality::s_exprify(const ProofModel * const model) const -> std::string
+auto ReifiedLinearInequality::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     // cake_pb_cp's name for the <= form is lin_less_equal (not lin_less_than_equal).
     auto [rei, cons] = overloaded{
         [&](const reif::MustHold &) { return make_pair(false, "lin_less_equal"); },
         [&](const reif::If &) { return make_pair(true, "lin_less_equal_if"); },
         [&](const reif::Iff &) { return make_pair(true, "lin_less_equal_iff"); },
-        [&](const auto &) { throw UnexpectedException{"Unexpected reification type in s_exprify"}; return make_pair(false, ""); }}
+        [&](const auto &) { throw UnexpectedException{"Unexpected reification type in s_expr"}; return make_pair(false, ""); }}
                            .visit(_reif_cond);
 
-    print(s, "{} {}", _constraint_id, cons);
-    if (rei) {
-        print(s, " {} ", model->names_and_ids_tracker().s_expr_name_of(_reif_cond));
-    }
-    print(s, "(");
-    for (const auto & [c, v] : _coeff_vars.terms) {
-        print(s, " {} {}", c, model->names_and_ids_tracker().s_expr_name_of(v));
-    }
-    print(s, ") {}", _value);
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cons)};
+    if (rei)
+        terms.push_back(*tracker.s_expr_term_of(_reif_cond));
 
-    return s.str();
+    vector<SExpr> coeff_vars;
+    for (const auto & [c, v] : _coeff_vars.terms) {
+        coeff_vars.push_back(SExpr::atom(c.to_string()));
+        coeff_vars.push_back(tracker.s_expr_term_of(v));
+    }
+    terms.push_back(SExpr::list(std::move(coeff_vars)));
+    terms.push_back(SExpr::atom(_value.to_string()));
+
+    return SExpr::list(std::move(terms));
 }

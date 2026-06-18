@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/reason.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/overloaded.hh>
@@ -621,9 +622,9 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
         std::move(infer_cond_when_undecided));
 }
 
-auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const innards::ProofModel * const model) const -> std::string
+auto LexCompareGreaterThanOrMaybeEqual::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     string reif_suffix = overloaded{
         [](const reif::MustHold &) -> string { return ""; },
@@ -638,8 +639,6 @@ auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const innards::ProofModel * co
         _or_equal ? "_equal" : "",
         reif_suffix);
 
-    print(s, "{} {}", _constraint_id, cmp);
-
     auto cond_lit = overloaded{
         [](const reif::MustHold &) -> optional<IntegerVariableCondition> { return nullopt; },
         [](const reif::MustNotHold &) -> optional<IntegerVariableCondition> { return nullopt; },
@@ -648,18 +647,19 @@ auto LexCompareGreaterThanOrMaybeEqual::s_exprify(const innards::ProofModel * co
         [](const reif::Iff & r) -> optional<IntegerVariableCondition> { return r.cond; }}
                         .visit(_reif_cond);
 
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cmp)};
     if (cond_lit)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(*cond_lit));
+        terms.push_back(tracker.s_expr_term_of(*cond_lit));
 
-    print(s, " (");
     auto & first = _vars_swapped ? _vars_2 : _vars_1;
     auto & second = _vars_swapped ? _vars_1 : _vars_2;
+    vector<SExpr> a, b;
     for (const auto & var : first)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ") (");
+        a.push_back(tracker.s_expr_term_of(var));
     for (const auto & var : second)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ")");
+        b.push_back(tracker.s_expr_term_of(var));
+    terms.push_back(SExpr::list(std::move(a)));
+    terms.push_back(SExpr::list(std::move(b)));
 
-    return s.str();
+    return SExpr::list(std::move(terms));
 }

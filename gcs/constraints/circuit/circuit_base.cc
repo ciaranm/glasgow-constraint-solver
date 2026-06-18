@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 
 #include <list>
 #include <map>
@@ -240,16 +241,15 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
     return pos_var_data;
 }
 
-auto CircuitBase::s_exprify(const innards::ProofModel * const model) const -> string
+auto CircuitBase::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} circuit (", _constraint_id);
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> vars;
     for (const auto & var : _succ)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ")");
-
-    return s.str();
+        vars.push_back(tracker.s_expr_term_of(var));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("circuit"),
+        SExpr::list(std::move(vars))});
 }
 
 template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,

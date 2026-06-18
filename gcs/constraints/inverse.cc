@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
 
@@ -182,22 +183,20 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
         return PropagatorState::Enable; }, triggers);
 }
 
-auto Inverse::s_exprify(const innards::ProofModel * const model) const -> std::string
+auto Inverse::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     // cake_pb_cp wants each side grouped with its offset: a (list offset) pair,
-    // i.e. `inverse ((X...) offx) ((Y...) offy)`. The outer pair of parentheses
-    // around the whole body is added by solve()/write_scp.
-    print(s, "{} inverse ( (", _constraint_id);
-    for (const auto & x : _x) {
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(x));
-    }
-    print(s, " ) {} ) ( (", _x_start);
-    for (const auto & y : _y) {
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(y));
-    }
-    print(s, " ) {} )", _y_start);
-
-    return s.str();
+    // i.e. `inverse ((X...) offx) ((Y...) offy)`. The outer list wrapping the
+    // whole term is the SExpr::list returned here.
+    std::vector<SExpr> xs;
+    for (const auto & x : _x)
+        xs.push_back(tracker.s_expr_term_of(x));
+    std::vector<SExpr> ys;
+    for (const auto & y : _y)
+        ys.push_back(tracker.s_expr_term_of(y));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("inverse"),
+        SExpr::list({SExpr::list(std::move(xs)), SExpr::atom(_x_start.to_string())}),
+        SExpr::list({SExpr::list(std::move(ys)), SExpr::atom(_y_start.to_string())})});
 }

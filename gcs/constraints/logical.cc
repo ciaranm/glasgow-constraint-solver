@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <util/overloaded.hh>
@@ -252,17 +253,15 @@ auto And::install_propagators(Propagators & propagators) -> void
     install_propagators_logical(propagators, constraint_id(), _lits, _full_reif, _reif_state);
 }
 
-auto And::s_exprify(const innards::ProofModel * const model) const -> string
+auto And::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} and (", _constraint_id);
-    for (const auto & lit : _lits) {
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
-    }
-    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_full_reif));
-
-    return s.str();
+    auto & tracker = model->names_and_ids_tracker();
+    std::vector<SExpr> lits;
+    for (const auto & lit : _lits)
+        lits.push_back(tracker.s_expr_term_of(lit));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("and"),
+        SExpr::list(std::move(lits)),
+        tracker.s_expr_term_of(_full_reif)});
 }
 
 Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) :
@@ -319,15 +318,13 @@ auto Or::install_propagators(Propagators & propagators) -> void
     install_propagators_logical(propagators, constraint_id(), move(lits), ! _full_reif, _reif_state);
 }
 
-auto Or::s_exprify(const innards::ProofModel * const model) const -> string
+auto Or::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} or (", _constraint_id);
-    for (const auto & lit : _lits) {
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
-    }
-    print(s, ") {}", model->names_and_ids_tracker().s_expr_name_of(_full_reif));
-
-    return s.str();
+    auto & tracker = model->names_and_ids_tracker();
+    std::vector<SExpr> lits;
+    for (const auto & lit : _lits)
+        lits.push_back(tracker.s_expr_term_of(lit));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("or"),
+        SExpr::list(std::move(lits)),
+        tracker.s_expr_term_of(_full_reif)});
 }

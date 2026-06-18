@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <version>
@@ -660,24 +661,29 @@ auto Knapsack::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Knapsack::s_exprify(const innards::ProofModel * const model) const -> string
+auto Knapsack::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
-    print(s, "{} knapsack\n            (", _constraint_id);
+    vector<SExpr> coeff_rows;
     for (const auto & cs : _coeffs) {
-        print(s, "\n                (");
+        vector<SExpr> row;
         for (const auto & c : cs)
-            print(s, " {}", c);
-        print(s, ")");
+            row.push_back(SExpr::atom(c.to_string()));
+        coeff_rows.push_back(SExpr::list(move(row)));
     }
-    print(s, "\n            )\n            (");
-    for (const auto & v : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    print(s, ")\n            (");
-    for (const auto & t : _totals)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(t));
-    print(s, ")\n        ");
 
-    return s.str();
+    vector<SExpr> vars;
+    for (const auto & v : _vars)
+        vars.push_back(tracker.s_expr_term_of(v));
+
+    vector<SExpr> totals;
+    for (const auto & t : _totals)
+        totals.push_back(tracker.s_expr_term_of(t));
+
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("knapsack"),
+        SExpr::list(move(coeff_rows)),
+        SExpr::list(move(vars)),
+        SExpr::list(move(totals))});
 }

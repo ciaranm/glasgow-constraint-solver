@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
@@ -788,21 +789,22 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
-auto Disjunctive2D::s_exprify(const ProofModel * const model) const -> string
+auto Disjunctive2D::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-    print(s, "{} disjunctive2d{} (", _constraint_id, _strict ? "_strict" : "");
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> xs, ys, widths, heights;
     for (const auto & v : _xs)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    print(s, " ) ( ");
+        xs.push_back(tracker.s_expr_term_of(v));
     for (const auto & v : _ys)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-    print(s, " ) ( ");
+        ys.push_back(tracker.s_expr_term_of(v));
     for (const auto & w : _widths)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(w));
-    print(s, " ) ( ");
+        widths.push_back(tracker.s_expr_term_of(w));
     for (const auto & h : _heights)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(h));
-    print(s, " )");
-    return s.str();
+        heights.push_back(tracker.s_expr_term_of(h));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom(_strict ? "disjunctive2d_strict" : "disjunctive2d"),
+        SExpr::list(std::move(xs)),
+        SExpr::list(std::move(ys)),
+        SExpr::list(std::move(widths)),
+        SExpr::list(std::move(heights))});
 }

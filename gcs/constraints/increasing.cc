@@ -4,6 +4,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <version>
@@ -132,17 +133,16 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
         return entailed ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable; }, triggers);
 }
 
-auto IncreasingChain::s_exprify(const ProofModel * const model) const -> string
+auto IncreasingChain::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
+    auto & tracker = model->names_and_ids_tracker();
 
     const char * keyword = _strict
         ? (_descending ? "strictly_decreasing" : "strictly_increasing")
         : (_descending ? "decreasing" : "increasing");
 
-    print(s, "{} {}", _constraint_id, keyword);
+    std::vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(keyword)};
     for (const auto & v : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(v));
-
-    return s.str();
+        terms.push_back(tracker.s_expr_term_of(v));
+    return SExpr::list(std::move(terms));
 }

@@ -3,6 +3,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <version>
@@ -83,12 +84,13 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
     ValuePrecede{move(chain), move(_vars)}.install(propagators, initial_state, optional_model);
 }
 
-auto SeqPrecedeChain::s_exprify(const ProofModel * const model) const -> string
+auto SeqPrecedeChain::s_expr(const ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-    print(s, "{} seq_precede_chain (", _constraint_id);
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> vars;
     for (const auto & var : _vars)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ")");
-    return s.str();
+        vars.push_back(tracker.s_expr_term_of(var));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("seq_precede_chain"),
+        SExpr::list(std::move(vars))});
 }

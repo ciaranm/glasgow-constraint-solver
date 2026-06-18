@@ -3,6 +3,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
 
 #include <algorithm>
 #include <sstream>
@@ -65,17 +66,14 @@ auto LexSmartTable::install(Propagators & propagators, State & initial_state, Pr
     move(smt_table).install(propagators, initial_state, optional_model);
 }
 
-auto LexSmartTable::s_exprify(const innards::ProofModel * const model) const -> std::string
+auto LexSmartTable::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    stringstream s;
-
-    print(s, "{} lex (", _constraint_id);
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> a, b;
     for (const auto & var : _vars_1)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ") (");
+        a.push_back(tracker.s_expr_term_of(var));
     for (const auto & var : _vars_2)
-        print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(var));
-    print(s, ")");
-
-    return s.str();
+        b.push_back(tracker.s_expr_term_of(var));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("lex"),
+        SExpr::list(std::move(a)), SExpr::list(std::move(b))});
 }
