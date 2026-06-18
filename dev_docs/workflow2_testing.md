@@ -31,7 +31,10 @@ One ctest per case. **Where `cake_pb_cp` is absent** (e.g. GitHub CI, where
 building CakeML is awkward) the runner degrades to a workflow-1 self-verify
 (`veripb` on the solver's *own* OPB/pbp) rather than skipping, so the case is
 still exercised; it skips (`SKIP_RETURN_CODE 77`) only when `veripb` itself is
-absent. The `(enumerate)` `.scp` element (so cake emits `preserved:`) means
+absent. To run the full chain locally rather than the fallback, put `cake_pb_cp`
+on `PATH` (alongside `veripb`/`opbdiff`, e.g. symlinked into `~/.cargo/bin`) or
+point `CAKE_PB_CP` at the built binary. The `(enumerate)` `.scp` element (so cake
+emits `preserved:`) means
 **SAT cases verify by complete enumeration** — not just UNSAT — so the table can
 exercise the naturally-satisfiable forms too.
 
