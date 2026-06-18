@@ -295,6 +295,15 @@ auto main(int argc, char * argv[]) -> int
         {{{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {0, 2}, {2, 2}},
         // Wider value ranges so we don't hit small-value coincidences.
         {{{0, 4}, {0, 4}}, {{0, 4}, {0, 4}}, {3, 2}, {2, 3}},
+        // Degenerate cases (issue #254).
+        // Empty rectangle list: vacuously satisfiable.
+        {{}, {}, {}, {}},
+        // Single rectangle: nothing to overlap with (vacuously satisfiable).
+        {{{1, 2}}, {{1, 2}}, {1}, {1}},
+        // All-fixed positions, separated along x: (0,0) and (2,0), both 1x1.
+        {{{0, 0}, {2, 2}}, {{0, 0}, {0, 0}}, {1, 1}, {1, 1}},
+        // All-fixed positions overlapping at the origin (contradiction).
+        {{{0, 0}, {0, 0}}, {{0, 0}, {0, 0}}, {1, 1}, {1, 1}},
     };
 
     random_device rand_dev;

@@ -504,6 +504,16 @@ auto main(int argc, char * argv[]) -> int
         {{{0, 4}}, {1}, {3}, 2},
         // Two tasks of differing lengths, cap 1: gaps matter.
         {{{0, 3}, {0, 3}}, {1, 2}, {1, 1}, 1},
+        // Degenerate cases (issue #254).
+        // Empty active-task list: the only task has zero length and zero height,
+        // so no propagator is installed and every start is feasible.
+        {{{0, 2}}, {0}, {0}, 1},
+        // All-fixed start (singleton): load fits under capacity (tautology).
+        {{{5, 5}}, {3}, {2}, 5},
+        // All-fixed start: a single task overloads capacity (contradiction).
+        {{{0, 0}}, {2}, {10}, 5},
+        // All-fixed starts: two tasks overlap at time 0, exceeding capacity.
+        {{{0, 0}, {0, 0}}, {1, 1}, {3, 3}, 5},
     };
 
     // Random instances for breadth. Kept small because search is exhaustive
