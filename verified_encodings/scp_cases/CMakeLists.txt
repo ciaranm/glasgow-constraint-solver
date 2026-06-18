@@ -171,6 +171,19 @@ add_scp_chain_test(binary_equals_unsat    none)
 add_scp_chain_test(and_sat      none)
 add_scp_chain_test(or_sat       none)
 
+# none (chain-only): parity (ParityOdd). cake's `parity (Xs) Y` encodes Y = XOR(Xs);
+# the solver's bare odd-parity XOR(Xs)=1 is written as `parity (Xs) 1`. cake builds
+# the same chain of arc-consistent XOR gadgets the solver does (seed + 4 clauses per
+# input + final pin), and the propagator's RUP inferences verify against it directly
+# (no pol scaffolding) -- it only fires with <=1 input free, so unit propagation
+# threads through the chain. Inputs are {0,1}, so it diverges from cake only on the
+# binary lb/ub boundary lines (the #358 subcase, as for and/or) -> none, not strict.
+# parity_unsat forces the conflict over *free* vars (parity gives A!=B, equals gives
+# A=B) rather than fixed domains, which would drag in the ge0 ladder for the pinned
+# variable (also #358). SAT enumeration + UNSAT.
+add_scp_chain_test(parity_sat    none)
+add_scp_chain_test(parity_unsat  none)
+
 # none (chain-only): inverse channeling chain-verifies; it references the
 # variables' own eq/ge literals, so it trips the same lazy-vs-eager variable-
 # encoding gap as element (#358) (cake's full ge0 ladder + eq0 <=> ge0 & ~ge1),

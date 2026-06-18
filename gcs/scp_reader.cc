@@ -11,6 +11,7 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/minus.hh>
 #include <gcs/constraints/n_value.hh>
+#include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
@@ -364,6 +365,18 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             post_constraint(problem,
                 Or{resolve_variable_list(variables, terms[2], "the or variable list"),
                     resolve_variable(variables, terms[3])},
+                label);
+        }
+        else if (op == "parity") {
+            // (label parity (X1 ... Xn) Y): cake encodes Y = XOR(Xi). The solver
+            // only has the bare odd-parity constraint (ParityOdd, XOR(Xi) = 1),
+            // which it writes with the constant Y = 1, so require that here.
+            if (terms.size() != 4)
+                throw ScpReadError{"parity takes (label parity (vars...) 1)"};
+            if (as_integer(terms[3]) != Integer{1})
+                throw ScpReadError{"parity Y must be the constant 1 (only bare odd parity is supported)"};
+            post_constraint(problem,
+                ParityOdd{resolve_variable_list(variables, terms[2], "the parity variable list")},
                 label);
         }
         else if (op == "plus") {

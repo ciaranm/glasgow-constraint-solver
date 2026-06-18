@@ -141,11 +141,14 @@ auto ParityOdd::s_exprify(const innards::ProofModel * const model) const -> stri
 {
     stringstream s;
 
-    print(s, "{} xor (", _constraint_id);
+    // cake_pb_cp encodes parity as `parity (X1 ... Xn) Y` meaning Y = XOR(Xi).
+    // ParityOdd is the bare odd-parity assertion XOR(Xi) = 1, so we write the
+    // constant Y = 1 (1 = XOR(Xi) <-> XOR(Xi) = 1). The scp_reader requires Y = 1.
+    print(s, "{} parity (", _constraint_id);
     for (const auto & lit : _lits) {
         print(s, " {}", model->names_and_ids_tracker().s_expr_name_of(lit));
     }
-    print(s, ")");
+    print(s, " ) 1");
 
     return s.str();
 }

@@ -1,0 +1,1 @@
+( ( (A 0 1) (B 0 1) ) ( (_1 parity ( A B ) 1) (_2 equals A B) ) )
