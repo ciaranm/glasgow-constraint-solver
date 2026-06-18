@@ -256,23 +256,45 @@ auto main(int argc, char * argv[]) -> int
         {{-1, 3}, {0, 2}, {{-1, 2}, {1, 3}, {4, 5}}},
         {{1, 4}, {0, 4}, {{1, 4}, {2, 3}, {0, 5}, {-2, 0}, {5, 7}}},
         {{-5, 5}, {-3, 2}, {{-8, 0}, {4, 4}, {10, 10}, {2, 11}, {4, 10}}},
-        {{7, 10}, {0, 9}, {{8, 18}, {9, 19}, {-1, 0}, {-6, 0}}}};
+        {{7, 10}, {0, 9}, {{8, 18}, {9, 19}, {-1, 0}, {-6, 0}}},
+        // Degenerate cases (issue #254): empty array (no valid index), and
+        // all-fixed index/var/array in both directions including out-of-range.
+        {{1, 2}, {0, 1}, {}},        // empty array: no valid index (unsat)
+        {{1, 1}, {0, 0}, {{1, 1}}},  // all fixed, array[0]==1==var (tautology)
+        {{2, 2}, {0, 0}, {{1, 1}}},  // all fixed, array[0]==1 != var 2 (contradiction)
+        {{1, 1}, {1, 1}, {{1, 1}}}}; // all fixed, index 1 out of range (contradiction)
 
     vector<tuple<pair<int, int>, pair<int, int>, vector<int>>> const_data = {
         {{1, 2}, {1, 2}, {1, 2}},
         {{1, 2}, {0, 1}, {1, 2}},
         {{1, 2}, {0, 2}, {1, 2, 2}},
         {{1, 2}, {0, 2}, {1, 2, 5}},
-        {{-4, 6}, {-3, 3}, {-7, 2, -4, -10}}};
+        {{-4, 6}, {-3, 3}, {-7, 2, -4, -10}},
+        // Degenerate cases (issue #254): empty constant array + all-fixed.
+        {{1, 2}, {0, 1}, {}},   // empty constant array: no valid index (unsat)
+        {{4, 4}, {0, 0}, {4}},  // all fixed, array[0]==4==var (tautology)
+        {{3, 3}, {0, 0}, {4}},  // all fixed, array[0]==4 != var 3 (contradiction)
+        {{1, 1}, {1, 1}, {4}},  // all fixed, index 1 out of range (contradiction)
+        {{3, 5}, {0, 0}, {4}}}; // var in 3..5 forced to array[0]==4 (single solution)
 
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>, vector<vector<int>>>> const2d_data = {
         {{1, 2}, {1, 2}, {1, 2}, {{1, 2}, {1, 2}}},
         {{1, 2}, {0, 1}, {1, 2}, {{1, 2}, {1, 2}}},
-        {{1, 8}, {0, 3}, {0, 3}, {{1, 5}, {7, 9}, {3, 6}}}};
+        {{1, 8}, {0, 3}, {0, 3}, {{1, 5}, {7, 9}, {3, 6}}},
+        // Degenerate (issue #254): empty 2D array (no rows) — no valid index.
+        {{1, 2}, {0, 1}, {0, 1}, {}},
+        // All-fixed 2D, both directions.
+        {{5, 5}, {0, 0}, {0, 0}, {{5}}},  // a[0][0]==5==var (tautology)
+        {{4, 4}, {0, 0}, {0, 0}, {{5}}}}; // a[0][0]==5 != var 4 (contradiction)
 
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>, vector<vector<pair<int, int>>>>> var2d_data = {
         {{1, 2}, {1, 2}, {1, 2}, {{{1, 2}, {2, 3}}, {{1, 2}, {2, 3}}}},
-        {{2, 6}, {0, 2}, {0, 1}, {{{2, 4}, {0, 1}}, {{-2, -2}, {1, 3}}, {{-2, 1}, {-3, 0}}}}};
+        {{2, 6}, {0, 2}, {0, 1}, {{{2, 4}, {0, 1}}, {{-2, -2}, {1, 3}}, {{-2, 1}, {-3, 0}}}},
+        // Degenerate (issue #254): empty 2D array (no rows) — no valid index.
+        {{1, 2}, {0, 1}, {0, 1}, {}},
+        // All-fixed 2D.
+        {{5, 5}, {0, 0}, {0, 0}, {{{5, 5}}}},   // a[0][0]==5==var (tautology)
+        {{4, 4}, {0, 0}, {0, 0}, {{{5, 5}}}}};  // a[0][0]==5 != var 4 (contradiction)
     random_device rand_dev;
     mt19937 rand(rand_dev());
 
