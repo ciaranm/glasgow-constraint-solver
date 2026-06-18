@@ -25,13 +25,14 @@ shift || true
 
 export PATH=$HOME/.cargo/bin:$PATH
 
-# The prebuilt cake_pb_cp is not generally installed; allow an override.
-CAKE_PB_CP=${CAKE_PB_CP:-$HOME/claude/CakePB-dev/cp/cake_pb_cp}
+# cake_pb_cp is found on PATH, like veripb and opbdiff; the prebuilt binary is not
+# generally installed, so set CAKE_PB_CP to an explicit path to override.
+CAKE_PB_CP=${CAKE_PB_CP:-cake_pb_cp}
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-if [[ ! -x "$CAKE_PB_CP" ]]; then
-    echo "SKIP: cake_pb_cp not found at '$CAKE_PB_CP' (set CAKE_PB_CP to override)"
+if ! have "$CAKE_PB_CP"; then
+    echo "SKIP: cake_pb_cp not on PATH (set CAKE_PB_CP=/path/to/cake_pb_cp to override)"
     exit 77
 fi
 if ! have veripb; then

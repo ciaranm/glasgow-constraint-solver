@@ -31,7 +31,10 @@ scp=$2
 opbdiff_mode=${3:-strict}
 
 export PATH=$HOME/.cargo/bin:$PATH
-CAKE_PB_CP=${CAKE_PB_CP:-$HOME/claude/CakePB-dev/cp/cake_pb_cp}
+# cake_pb_cp is found on PATH, like veripb and opbdiff; set CAKE_PB_CP to an
+# explicit path to override. When it is absent the chain degrades to a workflow-1
+# self-verify below, so machines without a CakeML build (CI, contributors) pass.
+CAKE_PB_CP=${CAKE_PB_CP:-cake_pb_cp}
 
 have() { command -v "$1" >/dev/null 2>&1; }
 verified() { grep -qE '^s VERIFIED' <<< "$1"; }
@@ -46,10 +49,10 @@ set -e
 echo "[1] $(basename "$solver") --all --prove $(basename "$scp")"
 "$solver" --all --prove --proof-files-basename "$base" "$scp" > /dev/null
 
-if [[ ! -x "$CAKE_PB_CP" ]]; then
+if ! have "$CAKE_PB_CP"; then
     # cake_pb_cp unavailable -- fall back to a workflow-1 self-verify so the case
     # still gets checked (the solver's proof is valid against its own OPB).
-    echo "[fallback] cake_pb_cp not found at '$CAKE_PB_CP'; workflow-1 self-verify only"
+    echo "[fallback] cake_pb_cp not on PATH (set CAKE_PB_CP to override); workflow-1 self-verify only"
     out=$(veripb "${base}.opb" "${base}.pbp" 2>&1)
     if ! verified "$out"; then echo "FAIL: self-verify"; tail -5 <<< "$out"; exit 1; fi
     grep -E '^s VERIFIED' <<< "$out"
