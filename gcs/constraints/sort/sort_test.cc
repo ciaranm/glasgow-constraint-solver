@@ -146,6 +146,14 @@ auto main(int argc, char * argv[]) -> int
         // Single element (y[0] == x[0]).
         run_sort_test(proofs, {{0, 3}}, {{0, 3}});
 
+        // Degenerate (issue #254): empty arrays (vacuously satisfied) and
+        // all-fixed inputs/outputs in both directions.
+        run_sort_test(proofs, {}, {});                                            // empty: vacuous
+        run_sort_test(proofs, {{5, 5}}, {{5, 5}});                                // single fixed: y[0]==x[0] (tautology)
+        run_sort_test(proofs, {{3, 3}}, {{2, 2}});                                // single fixed: y[0]!=x[0] (contradiction)
+        run_sort_test(proofs, {{2, 2}, {1, 1}, {2, 2}}, {{1, 1}, {2, 2}, {2, 2}}); // all fixed, correctly sorted (tautology)
+        run_sort_test(proofs, {{1, 1}, {2, 2}}, {{2, 2}, {1, 1}});                // all fixed, y not sorted (contradiction)
+
         // n = 4, exercises the matching/SCC on a larger instance.
         run_sort_test(proofs, {{0, 3}, {0, 3}, {0, 3}, {0, 3}}, {{0, 3}, {0, 3}, {0, 3}, {0, 3}});
 

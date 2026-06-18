@@ -121,6 +121,14 @@ auto main(int argc, char * argv[]) -> int
         // Single element: p[0] pinned to offset.
         run_arg_sort_test(proofs, 0, {{0, 5}});
 
+        // Degenerate (issue #254): empty input (vacuously satisfied) and
+        // all-fixed inputs (the permutation is uniquely determined), 0- and
+        // 1-based.
+        run_arg_sort_test(proofs, 0, {});                          // empty input
+        run_arg_sort_test(proofs, 0, {{5, 5}});                    // single fixed: p[0]==offset
+        run_arg_sort_test(proofs, 0, {{3, 3}, {1, 1}, {2, 2}});    // all fixed distinct, 0-based
+        run_arg_sort_test(proofs, 1, {{3, 3}, {1, 1}, {2, 2}});    // all fixed distinct, 1-based
+
         // Negative values.
         run_arg_sort_test(proofs, 0, {{-2, 0}, {-2, 0}});
 
