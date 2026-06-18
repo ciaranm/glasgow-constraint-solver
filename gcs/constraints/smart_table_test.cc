@@ -359,6 +359,69 @@ auto run_wide_constants_test(bool proofs, const string & mode) -> void
     }
 }
 
+// issue #254: degenerate SmartTable instances — an empty tuple list (no
+// allowed tuple, so unsatisfiable), all-fixed (singleton-domain) variables in
+// both the matching and non-matching directions, and a single-variable table.
+auto run_degenerate_test(bool proofs, const string & mode) -> void
+{
+    auto basename = "smart_table_test_" + mode;
+
+    // Empty tuple list: unsatisfiable.
+    {
+        print(cerr, "smart table {} empty-tuples{}", mode, proofs ? " with proofs:" : ":");
+        cerr << flush;
+        Problem p;
+        auto x = p.create_integer_variable(1_i, 2_i);
+        auto y = p.create_integer_variable(1_i, 2_i);
+        p.post(SmartTable{{x, y}, SmartTuples{}});
+        set<tuple<int, int>> expected, actual; // empty: unsatisfiable
+        auto proof_name = proofs ? make_optional(basename + "_empty") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{x, y});
+        check_results(proof_name, expected, actual);
+    }
+
+    // All-fixed variables that satisfy the (single) tuple.
+    {
+        print(cerr, "smart table {} fixed-match{}", mode, proofs ? " with proofs:" : ":");
+        cerr << flush;
+        Problem p;
+        auto x = p.create_integer_variable(1_i, 1_i);
+        auto y = p.create_integer_variable(2_i, 2_i);
+        p.post(SmartTable{{x, y}, SmartTuples{{SmartTable::equals(x, 1_i), SmartTable::equals(y, 2_i)}}});
+        set<tuple<int, int>> expected{{1, 2}}, actual;
+        auto proof_name = proofs ? make_optional(basename + "_match") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{x, y});
+        check_results(proof_name, expected, actual);
+    }
+
+    // All-fixed variables that violate the tuple: unsatisfiable.
+    {
+        print(cerr, "smart table {} fixed-nomatch{}", mode, proofs ? " with proofs:" : ":");
+        cerr << flush;
+        Problem p;
+        auto x = p.create_integer_variable(1_i, 1_i);
+        auto y = p.create_integer_variable(3_i, 3_i);
+        p.post(SmartTable{{x, y}, SmartTuples{{SmartTable::equals(x, 1_i), SmartTable::equals(y, 2_i)}}});
+        set<tuple<int, int>> expected, actual; // empty: y is fixed to 3, tuple needs y == 2
+        auto proof_name = proofs ? make_optional(basename + "_nomatch") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{x, y});
+        check_results(proof_name, expected, actual);
+    }
+
+    // Single variable, single unary tuple selecting a subset of the domain.
+    {
+        print(cerr, "smart table {} single-var{}", mode, proofs ? " with proofs:" : ":");
+        cerr << flush;
+        Problem p;
+        auto x = p.create_integer_variable(1_i, 3_i);
+        p.post(SmartTable{{x}, SmartTuples{{SmartTable::equals(x, 2_i)}}});
+        set<tuple<int>> expected{{2}}, actual;
+        auto proof_name = proofs ? make_optional(basename + "_single") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{x});
+        check_results(proof_name, expected, actual);
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     if (argc != 2)
@@ -377,7 +440,7 @@ auto main(int argc, char * argv[]) -> int
 
     // These modes carry their own instances rather than using the
     // length/ranges table below.
-    if (mode == "mixed_same_var" || mode == "stacked_unary" || mode == "wide_constants") {
+    if (mode == "mixed_same_var" || mode == "stacked_unary" || mode == "wide_constants" || mode == "degenerate") {
         for (bool proofs : {false, true}) {
             if (proofs && ! can_run_veripb())
                 continue;
@@ -385,8 +448,10 @@ auto main(int argc, char * argv[]) -> int
                 run_mixed_same_var_test(proofs, mode);
             else if (mode == "stacked_unary")
                 run_stacked_unary_test(proofs, mode);
-            else
+            else if (mode == "wide_constants")
                 run_wide_constants_test(proofs, mode);
+            else
+                run_degenerate_test(proofs, mode);
         }
         return EXIT_SUCCESS;
     }
