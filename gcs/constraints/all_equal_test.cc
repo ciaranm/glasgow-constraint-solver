@@ -30,8 +30,11 @@ using std::nullopt;
 using std::pair;
 using std::random_device;
 using std::set;
+using std::string;
 using std::tuple;
+using std::variant;
 using std::vector;
+using std::visit;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -69,6 +72,37 @@ auto run_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<in
 
     auto proof_name = proofs ? make_optional("all_equal_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
+    check_results(proof_name, expected, actual);
+}
+
+// issue #254: AllEqual over a degenerate collection — empty / single-element
+// (both vacuously satisfiable, no propagator) and tiny all-genuine-constant
+// arrays (ConstantIntegerVariableID) in both the equal (SAT) and unequal
+// (UNSAT) directions, plus a mixed const+variable case.
+auto run_all_equal_collection_test(bool proofs, const string & label,
+    const vector<variant<int, pair<int, int>>> & specs) -> void
+{
+    print(cerr, "all_equal_collection [{}] {}{}", label, specs, proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    set<tuple<vector<int>>> expected, actual;
+    build_expected(expected, [](const vector<int> & vs) {
+        for (std::size_t i = 1; i < vs.size(); ++i)
+            if (vs[i] != vs[0])
+                return false;
+        return true;
+    },
+        specs);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    vector<IntegerVariableID> vars;
+    for (const auto & s : specs)
+        vars.push_back(visit([&](auto b) { return create_integer_variable_or_constant(p, b); }, s));
+    p.post(AllEqual{vars});
+
+    auto proof_name = proofs ? make_optional("all_equal_test_collection") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{vars});
     check_results(proof_name, expected, actual);
 }
 
@@ -180,6 +214,10 @@ auto main(int argc, char * argv[]) -> int
         {{1, 5}, {2, 6}, {3, 7}},
         {{2, 4}, {2, 4}, {2, 4}},
         {{1, 6}, {2, 5}, {3, 4}, {4, 7}},
+        // issue #254: all-fixed (singleton-domain) collections, both directions.
+        {{3, 3}, {3, 3}},          // equal constants (tautology)
+        {{2, 2}, {5, 5}},          // unequal constants (contradiction)
+        {{4, 4}, {4, 4}, {4, 4}},  // three equal constants (tautology)
     };
 
     random_device rand_dev;
@@ -207,6 +245,15 @@ auto main(int argc, char * argv[]) -> int
             run_test(proofs, view_cfg, doms);
         if (run_holes)
             run_holes_test(proofs);
+        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+            // Degenerate collections with genuine constants (issue #254).
+            run_all_equal_collection_test(proofs, "empty", {});
+            run_all_equal_collection_test(proofs, "single_var", {pair{0, 2}});
+            run_all_equal_collection_test(proofs, "single_const", {5});
+            run_all_equal_collection_test(proofs, "const_equal", {3, 3, 3});
+            run_all_equal_collection_test(proofs, "const_unequal", {3, 4});
+            run_all_equal_collection_test(proofs, "mixed", {3, pair{1, 5}, 3});
+        }
         if (run_dup) {
             // {x, x} — tautology, every value of x.
             run_dup_all_equal_test(proofs, {{1, 5}}, {0, 0});
