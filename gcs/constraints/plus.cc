@@ -83,32 +83,32 @@ namespace
         // min(result) = min(a) + min(b);
         inference.infer(logger, result >= a_vals.first + b_vals.first,
             justify(Conclude::LE),
-            [=]() { return ReasonLiterals{a >= a_vals.first, b >= b_vals.first}; });
+            ExplicitReason{ReasonLiterals{a >= a_vals.first, b >= b_vals.first}});
 
         // max(result) = max(a) + max(b);
         inference.infer(logger, result <= a_vals.second + b_vals.second,
             justify(Conclude::GE),
-            [=]() { return ReasonLiterals{a <= a_vals.second, b <= b_vals.second}; });
+            ExplicitReason{ReasonLiterals{a <= a_vals.second, b <= b_vals.second}});
 
         // min(a) = min(result) - max(b);
         inference.infer(logger, a >= result_vals.first - b_vals.second,
             justify(Conclude::GE),
-            [=]() { return ReasonLiterals{result >= result_vals.first, b <= b_vals.second}; });
+            ExplicitReason{ReasonLiterals{result >= result_vals.first, b <= b_vals.second}});
 
         // max(a) = max(result) - min(b);
         inference.infer(logger, a <= result_vals.second - b_vals.first,
             justify(Conclude::LE),
-            [=]() { return ReasonLiterals{result <= result_vals.second, b >= b_vals.first}; });
+            ExplicitReason{ReasonLiterals{result <= result_vals.second, b >= b_vals.first}});
 
         // min(b) = min(result) - max(a);
         inference.infer(logger, b >= result_vals.first - a_vals.second,
             justify(Conclude::GE),
-            [=]() { return ReasonLiterals{result >= result_vals.first, a <= a_vals.second}; });
+            ExplicitReason{ReasonLiterals{result >= result_vals.first, a <= a_vals.second}});
 
         // max(b) = max(result) - min(a);
         inference.infer(logger, b <= result_vals.second - a_vals.first,
             justify(Conclude::LE),
-            [=]() { return ReasonLiterals{result <= result_vals.second, a >= a_vals.first}; });
+            ExplicitReason{ReasonLiterals{result <= result_vals.second, a >= a_vals.first}});
 
         return PropagatorState::Enable;
     }
