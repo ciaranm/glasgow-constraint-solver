@@ -7,7 +7,18 @@ touch justifications. The justification side — and a unified rethink of the wh
 the performance win on its own and is a strict stepping stone toward the larger
 redesign (the `Reason` type defined here is reused there verbatim).
 
-Nothing here is on main yet; this is a proposal to react to.
+## IMPLEMENTED (2026-06-19)
+
+This is built on the `302-then-347` branch. As built: the `Reason` variant
+(`NoReason` / `ExplicitReason` / `{Generic,BothBounds,Lazy}ReasonOver` +
+`Narrowable*`) and `materialise()` live in `gcs/innards/reason.hh`; the
+materialise is deferred inside the inference tracker (`snapshot_reason` pins the
+eager-vs-lazy timing so eager reasons snapshot pre-inference into an
+`ExplicitReason` and lazy ones materialise post-inference). The old
+`ReasonFunction` thunk, its `LegacyReasonFunction` bridge, and the `Reason(F&&)`
+ctor are all gone — no `std::function` is built on the reason path. Every step was
+byte-identical to the prior proofs. The justification layer that builds on this is
+implemented too; see the "IMPLEMENTED" note in `infer-redesign.md`.
 
 ## Motivation
 

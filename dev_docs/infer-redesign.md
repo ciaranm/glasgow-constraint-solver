@@ -5,9 +5,59 @@ and its justification — as one declarative, mode-driven mechanism. This subsum
 the reason-only change in `reasons-improvement.md` and generalises PR #302
 (*Annotated Assertions*) from the justification side into the same model.
 
-This is a north-star sketch, **not committed**. It is intentionally larger than
+This is a north-star sketch. It is intentionally larger than
 `reasons-improvement.md`; that doc is the safe first slice you can ship and stop
 at. Read this for where `infer()` *could* go.
+
+## IMPLEMENTED (2026-06-19) — what was actually built
+
+The reason layer (`reasons-improvement.md`) and this justification layer are both
+implemented on the `302-then-347` branch. The exploratory body below is the
+design we worked from; where it differs from the code, **this section wins**.
+
+As built:
+
+- **Reason layer** — the `Reason` variant + `materialise()`, deferred in the
+  inference tracker; `ReasonFunction` and its bridge are gone. (See
+  `reasons-improvement.md`'s implemented note.)
+- **Justification dispatch** — a single new `Justification` alternative
+  `JustifyByData { emit, annotation, then_rup }` (`gcs/innards/justification.hh`),
+  built by `justify_with(witness, hint_name)`. `ProofLogger::infer` dispatches by
+  mode: **eager** runs `emit` then RUPs the inference (the
+  `JustifyExplicitlyThenRUP` shape, byte-identical to the old closures);
+  **assert** builds the annotation and never runs `emit`.
+- **One witness, consumers by ADL** — `emit_justification(ProofLogger&, const
+  Data&, const ReasonLiterals&)` (eager steps, required) and `hint_sexpr(const
+  Data&, NamesAndIDsTracker&)` (assert wire, optional). `justify_with` detects the
+  latter with `if constexpr (requires { hint_sexpr(...); })` — a *witness-complete*
+  witness contributes typed hint fields, one without `hint_sexpr` carries only the
+  coarse `hint_name`. This is the capability spectrum below, in lightweight form.
+- **Worked examples** — `all_different` GAC (both Hall shapes; `emit` ignores the
+  reason) and `plus` (`emit` reads the reason positionally; emit-only witness, no
+  `hint_sexpr`).
+
+**The one substantive departure from the body below: there is no logger-side
+per-constraint proof-data store.** The body proposes `logger.constraint_proof_data
+<AllDifferentDef>(owner)` so `emit_justification` can reach a constraint's mutable
+proof state (all_different's at-most-one line cache) by owner without the witness
+carrying it. We built that, then removed it: the cache is a `shared_ptr` member of
+the `Constraint`, which outlives the whole search, so `emit` may simply **capture**
+it — valid even for backtrack-time replay (G4). So a constraint that needs
+persistent proof state captures it; the witness stays the small, serialisable
+thing that `hint_sexpr` turns into the wire form (the only path crossing to the
+external justifier). Anywhere the body says "reach `def` via the store / owner",
+read "captured by the `emit` closure". `emit_justification` is therefore a free
+function only where the witness alone suffices (e.g. `plus`); `all_different`
+builds its `JustifyByData` from a local `hall_justification` helper whose `emit`
+captures the scope and at-most-one cache.
+
+Still deferred (consistent with the body's "open questions"): the witness is built
+even in proofs-off mode (the `gather`-deferral would gate it; the proofs-off cost
+is now just closure construction, not a domain walk); the coarse `hint_name` is a
+per-call-site literal, not derived from the owner's model type; capability tiers
+beyond witness-complete (re-derivable, eager-only) are not modelled — every hint
+so far is witness-complete; and Plan B is not yet rolled out past the two worked
+examples (per Matthew: fewer hints, expand when the external Justifier needs them).
 
 ## The abstraction
 
@@ -580,6 +630,12 @@ auto hint_sexpr(const HallData & d, NamesAndIDsTracker & names) -> SExpr
 }
 
 // eager / lazy C++ steps: reach `def` via the owner, reuse the existing free fn, ignore the reason.
+// NOTE (superseded — see "IMPLEMENTED" at top): the store was removed. As built,
+// all_different does not define emit_justification(HallData); its JustifyByData
+// emit closure CAPTURES `all_variables` + the at-most-one cache (both owned by
+// the Constraint, which outlives search) and calls justify_all_different_hall_
+// set_or_violator directly. Read `logger.constraint_proof_data<...>(owner)` here
+// as "captured by the closure".
 auto emit_justification(ProofLogger & logger, const HallData & d, const ReasonLiterals &) -> void
 {
     auto & def = logger.constraint_proof_data<AllDifferentDef>(d.owner);     // { all_variables, value_am1_constraint_numbers }
