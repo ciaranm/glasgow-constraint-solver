@@ -435,8 +435,8 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     Triggers ad_triggers;
     ad_triggers.on_change.insert(ad_triggers.on_change.end(), _p.begin(), _p.end());
 
-    propagators.install(constraint_id(), [p = _p, vals = move(p_vals), am1_lines](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        propagate_gac_all_different(p, vals, vector<Integer>{}, *am1_lines, state, inference, logger);
+    propagators.install(constraint_id(), [p = _p, vals = move(p_vals), am1_lines, constraint_id = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagate_gac_all_different(constraint_id, p, vals, vector<Integer>{}, *am1_lines, state, inference, logger);
         return PropagatorState::Enable; }, ad_triggers);
 
     // No leaf-checking propagator is needed: once every x is fixed, each

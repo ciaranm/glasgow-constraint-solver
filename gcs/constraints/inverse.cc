@@ -164,7 +164,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
     for (const auto & [i, _] : enumerate(_x))
         x_values.push_back(Integer(i) + _x_start);
 
-    propagators.install(constraint_id(), [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s, constraint_id = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
         for (const auto & [i, x_i] : enumerate(x)) {
             for (auto x_i_value : state.each_value_mutable(x_i))
                 if (! state.in_domain(y.at((x_i_value - y_start).as_index()), Integer(i) + x_start))
@@ -181,7 +181,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
                         [&]() { return Reason{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}; });
         }
 
-        propagate_gac_all_different(x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);
+        propagate_gac_all_different(constraint_id, x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);
 
         return PropagatorState::Enable; }, triggers);
 }

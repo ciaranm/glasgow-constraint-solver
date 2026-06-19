@@ -1,3 +1,4 @@
+#include <gcs/constraint.hh>
 #include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/all_different/justify.hh>
@@ -378,6 +379,7 @@ namespace
 }
 
 auto gcs::innards::propagate_gac_all_different(
+    const ConstraintID & constraint_id,
     const vector<IntegerVariableID> & vars,
     const vector<Integer> & vals,
     const vector<Integer> & excluded,
@@ -420,7 +422,7 @@ auto gcs::innards::propagate_gac_all_different(
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
         auto [just, reason] = prove_matching_is_too_small(vars, vals, excluded, n_right, value_am1_constraint_numbers, state, *logger, edges, left_covered, matching);
-        return tracker.infer(logger, FalseLiteral{}, just, reason, AssertionAnnotation{.hint_name = AssertionHintName::AllDifferent});
+        return tracker.infer(logger, FalseLiteral{}, just, reason, AssertionAnnotation{.hint_name = AssertionHintName::AllDifferent, .hint_fields = hint_list(AssertionHintIdentifier::constraint_id, constraint_id)});
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -588,7 +590,7 @@ auto gcs::innards::propagate_gac_all_different(
 
         auto [just, reason] = prove_deletion_using_sccs(vars, vals, excluded, n_right, value_am1_constraint_numbers, state, *logger,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        tracker.infer_all(logger, deletions_by_scc[scc], just, reason, AssertionAnnotation{.hint_name = AssertionHintName::AllDifferent});
+        tracker.infer_all(logger, deletions_by_scc[scc], just, reason, AssertionAnnotation{.hint_name = AssertionHintName::AllDifferent, .hint_fields = hint_list(AssertionHintIdentifier::constraint_id, constraint_id)});
     }
 }
 
@@ -645,15 +647,17 @@ auto GACAllDifferent::install_propagators(Propagators & propagators) -> void
         constraint_id(),
         [vars = move(_sanitised_vars),
             vals = move(_compressed_vals),
-            value_am1_constraint_numbers = move(value_am1_constraint_numbers)](const State & state, auto & inference,
+            value_am1_constraint_numbers = move(value_am1_constraint_numbers),
+            constraint_id = constraint_id()](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(vars, vals, vector<Integer>{}, *value_am1_constraint_numbers.get(), state, inference, logger);
+            propagate_gac_all_different(constraint_id, vars, vals, vector<Integer>{}, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers);
 }
 
 template auto gcs::innards::propagate_gac_all_different(
+    const ConstraintID & constraint_id,
     const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals,
     const std::vector<Integer> & excluded,
@@ -663,6 +667,7 @@ template auto gcs::innards::propagate_gac_all_different(
     ProofLogger * const logger) -> void;
 
 template auto gcs::innards::propagate_gac_all_different(
+    const ConstraintID & constraint_id,
     const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals,
     const std::vector<Integer> & excluded,

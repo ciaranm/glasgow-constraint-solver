@@ -4,11 +4,23 @@
 
 #include <gcs/constraint_id.hh>
 #include <gcs/innards/proofs/proof_line.hh>
+#include <gcs/innards/s_expr.hh>
 #include <gcs/integer.hh>
-#include <gcs/variable_id.hh>
+
+#include <optional>
+#include <ostream>
+#include <string>
 #include <utility>
-#include <variant>
-#include <vector>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+using std::format;
+#else
+#include <fmt/core.h>
+using fmt::format;
+#endif
+
 namespace gcs::innards
 {
 
@@ -61,28 +73,73 @@ namespace gcs::innards
         case AssertionHintName::SoliImprove:
             return s << "SoliImprove";
         }
+        return s;
     }
 
     /**
-     * \brief Kewords that can be used in assertion hint.
+     * \brief Keywords that can be used in an assertion hint.
      *
      * \ingroup Innards
-     * */
+     */
     enum class AssertionHintIdentifier
     {
+        constraint_id,
         // Todo
     };
 
+    inline auto as_string(AssertionHintIdentifier identifier) -> std::string
+    {
+        switch (identifier) {
+        case AssertionHintIdentifier::constraint_id:
+            return "constraint_id";
+        }
+        return "";
+    }
+
     /**
-     * \brief The allowed field types that can appear in the
-     * hints section of an annotated assertion.
+     * \brief Render a single hint field as an s-expression atom.
      *
      * \ingroup Innards
-     * \sa AssertionAnnotation
      */
-    using AssertionHintField = std::variant<AssertionHintIdentifier, ProofLineLabel, ConstraintID, Integer, IntegerVariableID>;
+    inline auto hint_sexpr(SExpr expr) -> SExpr
+    {
+        return expr;
+    }
 
-    using AssertionHintRecord = std::variant<AssertionHintField, std::vector<AssertionHintField>, std::pair<AssertionHintField, std::vector<AssertionHintField>>>;
+    inline auto hint_sexpr(AssertionHintIdentifier identifier) -> SExpr
+    {
+        return SExpr::atom(as_string(identifier));
+    }
+
+    inline auto hint_sexpr(const ProofLineLabel & label) -> SExpr
+    {
+        return SExpr::atom("@" + label.label);
+    }
+
+    inline auto hint_sexpr(const ConstraintID & id) -> SExpr
+    {
+        return SExpr::atom(as_string(id));
+    }
+
+    inline auto hint_sexpr(Integer value) -> SExpr
+    {
+        return SExpr::atom(value.to_string());
+    }
+
+    // NB: To put a variable in a hint, pass names_and_ids_tracker().s_expr_term_of(var)
+
+    /**
+     * \brief Build an s-expression hint from an arbitrary mix of fields and
+     * nested hint lists. This is intended to cover every conceivable hint shape, even if
+     * we're not in practice using the full generality at the moment.
+     *
+     * \ingroup Innards
+     */
+    template <typename... Ts_>
+    inline auto hint_list(Ts_ &&... xs) -> SExpr
+    {
+        return SExpr::list({hint_sexpr(std::forward<Ts_>(xs))...});
+    }
 
     /**
      * \brief An annotation for an annotated assertion step.
@@ -93,11 +150,11 @@ namespace gcs::innards
     {
         std::vector<ProofLineLabel> derivable_from = {};
         AssertionHintName hint_name = AssertionHintName::None;
-        std::vector<AssertionHintRecord> hint_fields = {};
+        std::optional<SExpr> hint_fields = std::nullopt;
     };
 
     /**
-     * \brief An assertion annotated can be written to an ostream.
+     * \brief An assertion annotation can be written to an ostream.
      *
      * \ingroup Innards
      */
@@ -108,6 +165,8 @@ namespace gcs::innards
             s << id_or_label << " ";
         }
         s << ":" << annotation.hint_name << ":";
+        if (annotation.hint_fields)
+            s << format("{}", *annotation.hint_fields);
         return s;
     }
 
