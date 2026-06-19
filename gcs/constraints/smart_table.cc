@@ -164,9 +164,9 @@ namespace
     }
 
     auto log_filtering_inference(ProofLogger * const logger, const ProofFlag * tuple_selector, const Literal & lit,
-        const State &, auto &, const ReasonFunction & reason)
+        const State & state, auto &, const Reason & reason)
     {
-        logger->emit_rup_proof_line_under_reason(reason,
+        logger->emit_rup_proof_line_under_reason(eager_reason(reason, state),
             WPBSum{} + 1_i * (! *tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
@@ -503,7 +503,7 @@ namespace
 
         auto unsupported_sum = WPBSum{};
 
-        ReasonFunction reason_to_use;
+        Reason reason_to_use;
         ProofLine reason_definition_1, reason_definition_2;
         if (logger && short_reasons) {
             auto reason_sum = WPBSum{};
@@ -945,7 +945,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         constraint_id(),
         [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors), short_reasons = _short_reasons](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            auto reason = generic_reason(state, vars);
+            auto reason = eager_reason(generic_reason(state, vars), state);
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger, short_reasons);
             return PropagatorState::Enable;
         },

@@ -287,7 +287,7 @@ namespace
         const bool short_reasons) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
-        auto gen_reason = generic_reason(state, vars);
+        auto gen_reason = eager_reason(generic_reason(state, vars), state);
 
         // Degenerate empty sequence (issue #254): with no variables there is
         // nothing to propagate over, but the empty word is accepted only if the
@@ -322,7 +322,7 @@ namespace
             ProofFlag reason_short = _reason_short;
             reason_definition_1 = _line1;
             reason_definition_2 = _line2;
-            reason = singleton_reason(reason_short);
+            reason = eager_reason(singleton_reason(reason_short), state);
         }
         else {
             reason = gen_reason;

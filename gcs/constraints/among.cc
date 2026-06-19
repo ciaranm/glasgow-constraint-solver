@@ -153,7 +153,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
             // we now know how many variables definitely match, and how
             // many can't match, so we can derive bounds on the how many
             // variable.
-            auto vars_reason = generic_reason(state, vars);
+            auto vars_reason = eager_reason(generic_reason(state, vars), state);
             inference.infer(logger, how_many >= must_match_count, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) -> void {
                 // Combine the (sum <= how_many) half of the Among encoding with the
                 // at-least-one constraint for each must_match variable. After UP zeroes

@@ -412,7 +412,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             auto infer_bound = [&](Integer relevant_bound, bool ge) {
                 auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var <= relevant_bound);
                 ReasonLiterals reason;
-                auto idx_reason = generic_reason(state, index_vars)();
+                auto idx_reason = materialise(generic_reason(state, index_vars), state);
                 reason.insert(reason.end(), idx_reason.begin(), idx_reason.end());
                 for (const auto & var : considered_vars)
                     reason.push_back(ge ? (var >= relevant_bound) : (var <= relevant_bound));
@@ -486,7 +486,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             collect_supported_values(0);
 
             for (auto value : still_to_find_support_for.each()) {
-                ReasonLiterals reason = generic_reason(state, index_vars)();
+                ReasonLiterals reason = materialise(generic_reason(state, index_vars), state);
                 for (const auto & var : considered_vars)
                     reason.push_back(var != value);
                 inference.infer_not_equal(logger, result_var, value, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {

@@ -281,7 +281,7 @@ namespace
                     justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                 }},
             ReasonFunction{[hall_variable_ids, excluded, &state]() -> ReasonLiterals {
-                auto reason = generic_reason(state, hall_variable_ids)();
+                auto reason = materialise(generic_reason(state, hall_variable_ids), state);
                 for (const auto & v : hall_variable_ids)
                     for (const auto & s : excluded)
                         reason.emplace_back(v != s);
@@ -410,7 +410,7 @@ namespace
                                  justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                              }}},
                 ReasonFunction{[hall_variable_ids, excluded, &state]() -> ReasonLiterals {
-                    auto reason = generic_reason(state, hall_variable_ids)();
+                    auto reason = materialise(generic_reason(state, hall_variable_ids), state);
                     for (const auto & v : hall_variable_ids)
                         for (const auto & s : excluded)
                             reason.emplace_back(v != s);

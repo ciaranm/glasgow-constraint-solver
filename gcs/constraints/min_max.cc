@@ -166,7 +166,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
         else if (! support_2) {
             // no, there's only a single var left that has any intersection with result. so, that
             // variable has to lose any values not present in result.
-            ReasonLiterals reason = generic_reason(state, vector{result})();
+            ReasonLiterals reason = materialise(generic_reason(state, vector{result}), state);
 
             for (auto & var : vars) {
                 if (var == *support_1)

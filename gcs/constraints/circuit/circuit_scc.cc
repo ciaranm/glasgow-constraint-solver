@@ -1198,7 +1198,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
             pos_alldiff_data_handle = pos_alldiff_data_handle,
             unassigned_handle = unassigned_handle,
             options = scc_options](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            auto reason = generic_reason(state, succ);
+            ReasonFunction reason = eager_reason(generic_reason(state, succ), state);
 
             if (logger && options.short_reasons) {
                 auto reason_sum = WPBSum{};
@@ -1209,7 +1209,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
                 auto [_reason_short, _line1, _line2] =
                     logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "sr", ProofLevel::Current);
                 ProofFlag reason_short = _reason_short;
-                reason = singleton_reason(reason_short);
+                reason = eager_reason(singleton_reason(reason_short), state);
             }
 
             propagate_circuit_using_scc(state, inference, logger, reason,

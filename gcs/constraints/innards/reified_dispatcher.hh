@@ -38,7 +38,7 @@ namespace gcs::innards
         struct MustHold
         {
             Justification justification;
-            ReasonFunction reason;
+            Reason reason;
             std::optional<AssertionAnnotation> assertion_hint = std::nullopt;
         };
 
@@ -48,7 +48,7 @@ namespace gcs::innards
         struct MustNotHold
         {
             Justification justification;
-            ReasonFunction reason;
+            Reason reason;
             std::optional<AssertionAnnotation> assertion_hint = std::nullopt;
         };
     }
