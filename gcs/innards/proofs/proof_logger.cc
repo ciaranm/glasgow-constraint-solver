@@ -207,7 +207,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
         // soli and no links => have to assert the objective improving constraint
         visit([&](const auto & id) {
-            emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = AssertionHintName::SoliImprove});
+            emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = "soli_improve"});
         },
             optional_minimise_variable_and_value->first);
     else if (optional_minimise_variable_and_value)
@@ -222,7 +222,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             optional_minimise_variable_and_value->first);
     else if (_imp->assertion_level > AssertionLevel::Definitions) {
         // solx and no links => have to assert the blocking constraint
-        emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = AssertionHintName::SolxBlock});
+        emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = "solx_block"});
     }
     // nothing needs done for solx below AssertionLevel::Links
 }
@@ -234,7 +234,7 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     for (const auto & guess : guesses)
         backtrack += 1_i * ! guess;
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-    emit(assert_or_rup, move(backtrack) >= 1_i, ProofLevel::Current, AssertionAnnotation{.hint_name = AssertionHintName::Backtrack});
+    emit(assert_or_rup, move(backtrack) >= 1_i, ProofLevel::Current, AssertionAnnotation{.hint_name = "backtrack"});
 }
 
 auto ProofLogger::end_proof() -> void

@@ -67,6 +67,21 @@ using fmt::format;
 using fmt::print;
 #endif
 
+namespace gcs::innards::hints
+{
+    auto hint_sexpr(const all_different_hall & hall, NamesAndIDsTracker & names) -> SExpr
+    {
+        vector<SExpr> hall_var_terms;
+        for (const auto & v : hall.hall_vars)
+            hall_var_terms.push_back(names.s_expr_term_of(v));
+        return hint_list(
+            hint_list(SExpr::atom("constraint_id"), hall.owner),
+            hint_list(SExpr::atom("hall_vars"), SExpr::list(move(hall_var_terms))),
+            hint_list(SExpr::atom("hall_vals"), hint_seq(hall.hall_vals)),
+            hint_list(SExpr::atom("justifier"), SExpr::atom(string{all_different_hall::justifier})));
+    }
+}
+
 GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) :
     _vars(move(v))
 {
@@ -263,16 +278,11 @@ namespace
 
         optional<AssertionAnnotation> assertion_annotation;
         if (logger && logger->get_assertion_level() != AssertionLevel::Off) {
-            vector<SExpr> hall_var_terms;
-            for (const auto & v : hall_variable_ids)
-                hall_var_terms.push_back(logger->names_and_ids_tracker().s_expr_term_of(v));
             assertion_annotation = std::make_optional(AssertionAnnotation{
-                .hint_name = AssertionHintName::AllDifferent,
-                .hint_fields = hint_list(
-                    hint_list(AssertionHintIdentifier::constraint_id, constraint_id),
-                    hint_list(AssertionHintIdentifier::hall_vars, SExpr::list(move(hall_var_terms))),
-                    hint_list(AssertionHintIdentifier::hall_vals, hint_seq(hall_value_nrs)),
-                    hint_list(AssertionHintIdentifier::justifier, AssertionHintIdentifier::hall_set_or_violator))});
+                .hint_name = "all_different",
+                .hint_fields = hints::hint_sexpr(
+                    hints::all_different_hall{hall_variable_ids, hall_value_nrs, constraint_id},
+                    logger->names_and_ids_tracker())});
         }
 
         return tuple{
@@ -281,11 +291,11 @@ namespace
                     justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                 }},
             Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
-                out = materialise(generic_reason(st, hall_variable_ids), st);
-                for (const auto & v : hall_variable_ids)
-                    for (const auto & s : excluded)
-                        out.emplace_back(v != s);
-            }}},
+                                      out = materialise(generic_reason(st, hall_variable_ids), st);
+                                      for (const auto & v : hall_variable_ids)
+                                          for (const auto & s : excluded)
+                                              out.emplace_back(v != s);
+                                  }}},
             assertion_annotation};
     }
 
@@ -375,8 +385,8 @@ namespace
             optional<AssertionAnnotation> assertion_annotation;
             if (logger && logger->get_assertion_level() != AssertionLevel::Off)
                 assertion_annotation = std::make_optional(AssertionAnnotation{
-                    .hint_name = AssertionHintName::AllDifferent,
-                    .hint_fields = hint_list(hint_list(AssertionHintIdentifier::constraint_id, constraint_id))});
+                    .hint_name = "all_different",
+                    .hint_fields = hint_list(hint_list(SExpr::atom("constraint_id"), constraint_id))});
 
             return tuple{Justification{JustifyUsingRUP{}},
                 Reason{ExplicitReason{ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}}},
@@ -391,16 +401,11 @@ namespace
 
             optional<AssertionAnnotation> assertion_annotation;
             if (logger && logger->get_assertion_level() != AssertionLevel::Off) {
-                vector<SExpr> hall_var_terms;
-                for (const auto & v : hall_variable_ids)
-                    hall_var_terms.push_back(logger->names_and_ids_tracker().s_expr_term_of(v));
                 assertion_annotation = std::make_optional(AssertionAnnotation{
-                    .hint_name = AssertionHintName::AllDifferent,
-                    .hint_fields = hint_list(
-                        hint_list(AssertionHintIdentifier::constraint_id, constraint_id),
-                        hint_list(AssertionHintIdentifier::hall_vars, SExpr::list(move(hall_var_terms))),
-                        hint_list(AssertionHintIdentifier::hall_vals, hint_seq(hall_value_nrs)),
-                        hint_list(AssertionHintIdentifier::justifier, AssertionHintIdentifier::hall_set_or_violator))});
+                    .hint_name = "all_different",
+                    .hint_fields = hints::hint_sexpr(
+                        hints::all_different_hall{hall_variable_ids, hall_value_nrs, constraint_id},
+                        logger->names_and_ids_tracker())});
             }
 
             return tuple{Justification{JustifyExplicitlyThenRUP{
@@ -409,11 +414,11 @@ namespace
                                  justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                              }}},
                 Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
-                    out = materialise(generic_reason(st, hall_variable_ids), st);
-                    for (const auto & v : hall_variable_ids)
-                        for (const auto & s : excluded)
-                            out.emplace_back(v != s);
-                }}},
+                                          out = materialise(generic_reason(st, hall_variable_ids), st);
+                                          for (const auto & v : hall_variable_ids)
+                                              for (const auto & s : excluded)
+                                                  out.emplace_back(v != s);
+                                      }}},
                 assertion_annotation};
         }
     }
