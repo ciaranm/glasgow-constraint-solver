@@ -209,6 +209,24 @@ namespace
         }
     }
 
+    // Build the JustifyByData shared by both GAC all_different Hall shapes (the
+    // matching-too-small contradiction and the SCC Hall-set deletion). Eager
+    // emit reproduces the original closure: it captures the variable scope and
+    // references the at-most-one cache (both owned by the constraint, so valid
+    // for the whole solve, including any later replay) and calls the existing
+    // Hall justifier. Assert mode serialises the typed Hall witness.
+    auto hall_justification(
+        const vector<IntegerVariableID> & vars,
+        const vector<IntegerVariableID> & hall_variable_ids,
+        const vector<Integer> & hall_value_nrs,
+        const ConstraintID & constraint_id,
+        map<Integer, ProofLine> & value_am1_constraint_numbers) -> JustifyByData
+    {
+        return JustifyByData{
+            .emit = [vars, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](ProofLogger & logger, const ReasonLiterals &) { justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers); },
+            .annotation = [hall = hints::all_different_hall{hall_variable_ids, hall_value_nrs, constraint_id}](NamesAndIDsTracker & names) { return AssertionAnnotation{.hint_name = "all_different", .hint_fields = hints::hint_sexpr(hall, names)}; }};
+    }
+
     auto prove_matching_is_too_small(
         const ConstraintID & constraint_id,
         const vector<IntegerVariableID> & vars,
@@ -220,7 +238,7 @@ namespace
         ProofLogger * const logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> std::tuple<JustifyExplicitlyThenRUP, Reason, optional<AssertionAnnotation>>
+        const vector<optional<Right>> & matching) -> std::tuple<Justification, Reason, optional<AssertionAnnotation>>
     {
         vector<optional<Left>> inverse_matching(n_right, nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -276,27 +294,15 @@ namespace
             if (hall_values[v.offset])
                 hall_value_nrs.push_back(vals[v.offset]);
 
-        optional<AssertionAnnotation> assertion_annotation;
-        if (logger && logger->get_assertion_level() != AssertionLevel::Off) {
-            assertion_annotation = std::make_optional(AssertionAnnotation{
-                .hint_name = "all_different",
-                .hint_fields = hints::hint_sexpr(
-                    hints::all_different_hall{hall_variable_ids, hall_value_nrs, constraint_id},
-                    logger->names_and_ids_tracker())});
-        }
-
         return tuple{
-            JustifyExplicitlyThenRUP{
-                [vars, logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ReasonLiterals &) -> void {
-                    justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
-                }},
+            hall_justification(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
             Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
                                       out = materialise(generic_reason(st, hall_variable_ids), st);
                                       for (const auto & v : hall_variable_ids)
                                           for (const auto & s : excluded)
                                               out.emplace_back(v != s);
                                   }}},
-            assertion_annotation};
+            nullopt};
     }
 
     using Vertex = variant<Left, Right>;
@@ -399,27 +405,15 @@ namespace
                 if (hall_right[v.offset])
                     hall_value_nrs.push_back(vals[v.offset]);
 
-            optional<AssertionAnnotation> assertion_annotation;
-            if (logger && logger->get_assertion_level() != AssertionLevel::Off) {
-                assertion_annotation = std::make_optional(AssertionAnnotation{
-                    .hint_name = "all_different",
-                    .hint_fields = hints::hint_sexpr(
-                        hints::all_different_hall{hall_variable_ids, hall_value_nrs, constraint_id},
-                        logger->names_and_ids_tracker())});
-            }
-
-            return tuple{Justification{JustifyExplicitlyThenRUP{
-                             [vars, logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](
-                                 const ReasonLiterals &) -> void {
-                                 justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
-                             }}},
+            return tuple{
+                hall_justification(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
                 Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
                                           out = materialise(generic_reason(st, hall_variable_ids), st);
                                           for (const auto & v : hall_variable_ids)
                                               for (const auto & s : excluded)
                                                   out.emplace_back(v != s);
                                       }}},
-                assertion_annotation};
+                nullopt};
         }
     }
 }

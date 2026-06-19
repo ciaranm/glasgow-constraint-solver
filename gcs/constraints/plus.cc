@@ -35,6 +35,39 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace gcs::innards::hints
+{
+    // Emit-only witness for a plus bound push: the sum-definition line to start
+    // the cut from. The two operand bounds come from the reason (read
+    // positionally), so emit_justification consumes the reason — the opposite of
+    // all_different's Hall emit, which ignores it. No hint_sexpr overload: plus
+    // has no typed external hint yet (its witness is the reason, already written
+    // into the assertion), so justify_with carries only the coarse name.
+    struct plus_bound
+    {
+        ProofLine pol_line;
+    };
+
+    auto emit_justification(ProofLogger & logger, const plus_bound & d, const ReasonLiterals & reason) -> void
+    {
+        PolBuilder b;
+        b.add(d.pol_line);
+
+        // Constants in WPBSum are baked into the OPB sum_line directly (see
+        // emit_inequality_to.cc:58-60), so a reason literal whose variable is a
+        // ConstantIntegerVariableID already contributes to sum_line and doesn't
+        // need (or have) a pol-side defining line. Issue #166.
+        for (size_t i = 0; i < 2; ++i) {
+            auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason.at(i))));
+            if (holds_alternative<ConstantIntegerVariableID>(lit.var))
+                continue;
+            b.add_for_literal(logger.names_and_ids_tracker(), lit);
+        }
+
+        b.emit(logger, ProofLevel::Temporary);
+    }
+}
+
 namespace
 {
     auto propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,
@@ -53,31 +86,14 @@ namespace
             LE
         };
 
-        auto justify = [&](Conclude c) -> JustifyExplicitlyThenRUP {
-            return JustifyExplicitlyThenRUP{
-                [c, sum_line, logger](const ReasonLiterals & reason) {
-                    auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
-                    if (! sum_line_value)
-                        return;
-
-                    PolBuilder b;
-                    b.add(*sum_line_value);
-
-                    // Constants in WPBSum are baked into the OPB sum_line directly
-                    // (see emit_inequality_to.cc:58–60), so a reason literal whose
-                    // variable is a ConstantIntegerVariableID already contributes
-                    // to sum_line and doesn't need (or have) a pol-side defining
-                    // line — need_pol_item_defining_literal would throw on it.
-                    // Issue #166.
-                    for (size_t i = 0; i < 2; ++i) {
-                        auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason.at(i))));
-                        if (holds_alternative<ConstantIntegerVariableID>(lit.var))
-                            continue;
-                        b.add_for_literal(logger->names_and_ids_tracker(), lit);
-                    }
-
-                    b.emit(*logger, ProofLevel::Temporary);
-                }};
+        auto justify = [&](Conclude c) -> Justification {
+            auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
+            // No sum line (e.g. proofs without a model): no explicit lemma, just
+            // the trailing RUP. Kept as an empty-step JustifyExplicitlyThenRUP so
+            // the proof is byte-identical to the pre-Plan-B early-return closure.
+            if (! sum_line_value)
+                return JustifyExplicitlyThenRUP{[](const ReasonLiterals &) {}};
+            return justify_with(hints::plus_bound{*sum_line_value}, "plus");
         };
 
         // min(result) = min(a) + min(b);

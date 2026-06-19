@@ -333,7 +333,14 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         // At AssertionLevel::Definitions we can assert some inferences and not others (since the needed constraints for the justifications will
         // still be present). At higher levels, we need to assert all inferences.
         if (! is_literally_true(lit) && ! std::holds_alternative<NoJustificationNeeded>(why)) {
-            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
+            // A JustifyByData carries its own (deferred) annotation, built from
+            // the typed witness only now that we are in a consuming mode; any
+            // other justification uses the annotation passed in.
+            const auto * const by_data = std::get_if<JustifyByData>(&why);
+            auto effective_annotation = (by_data && by_data->annotation)
+                ? std::make_optional(by_data->annotation(names_and_ids_tracker()))
+                : annotation;
+            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, effective_annotation);
         }
         return;
     }
@@ -360,6 +367,23 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             x.add_proof_steps(reason);
             infer(lit, JustifyUsingRUP{}, reason);
             forget_proof_level(t);
+        },
+        [&](const JustifyByData & x) {
+            // Eager mode: run the witness's emit (the real proof steps), then RUP
+            // the inference under the reason when requested. An empty emit is a
+            // pure-RUP inference. Mirrors JustifyExplicitlyThenRUP / JustifyUsingRUP
+            // so proofs are byte-identical to the pre-Plan-B closures.
+            if (x.emit) {
+                need_lit();
+                auto t = temporary_proof_level();
+                x.emit(*this, reason);
+                if (x.then_rup)
+                    infer(lit, JustifyUsingRUP{}, reason);
+                forget_proof_level(t);
+            }
+            else if (! is_literally_true(lit)) {
+                emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
+            }
         },
         [&](const NoJustificationNeeded &) {
         }}
