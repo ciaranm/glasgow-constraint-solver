@@ -220,10 +220,10 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                 auto [lb_j, ub_j] = state.bounds(counts[j]);
                 if (must > lb_j)
                     inference.infer(logger, counts[j] >= must, JustifyUsingRUP{},
-                        ReasonFunction{[fixed_eq]() -> ReasonLiterals { return fixed_eq; }});
+                        ExplicitReason{fixed_eq});
                 if (can < ub_j)
                     inference.infer(logger, counts[j] <= can, JustifyUsingRUP{},
-                        ReasonFunction{[absent_ne]() -> ReasonLiterals { return absent_ne; }});
+                        ExplicitReason{absent_ne});
             }
 
             // Build Régin's value graph as a flow network and find a feasible

@@ -144,7 +144,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                     for (const auto & sel : selectors)
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
                 }},
-                    ReasonFunction{[=]() { return reason; }});
+                    ExplicitReason{reason});
             }
         }
 
@@ -226,7 +226,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                                 if (var == *support_1)
                                     logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
                         }},
-                            ReasonFunction{[=]() { return reason; }});
+                            ExplicitReason{reason});
             }
         }
 

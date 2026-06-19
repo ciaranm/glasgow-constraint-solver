@@ -57,7 +57,7 @@ namespace
         const auto & coeff_vars,
         const vector<pair<Integer, Integer>> & bounds,
         const optional<SimpleIntegerVariableID> & var, bool invert,
-        const optional<Literal> & add_to_reason) -> ReasonFunction
+        const optional<Literal> & add_to_reason) -> Reason
     {
         ReasonLiterals reason;
         for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
@@ -74,7 +74,7 @@ namespace
         if (add_to_reason)
             reason.push_back(*add_to_reason);
 
-        return ReasonFunction{[=]() { return reason; }};
+        return ExplicitReason{reason};
     }
 
     auto infer(auto & inference, ProofLogger * const logger,

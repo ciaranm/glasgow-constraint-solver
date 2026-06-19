@@ -113,7 +113,7 @@ namespace
                     for (auto & lit : lits)
                         why.push_back(lit);
                     why.push_back(! full_reif);
-                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return why; }});
+                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{why});
                     return PropagatorState::Enable;
                 }
                 else {
@@ -122,7 +122,7 @@ namespace
                         if (l != *undecided1)
                             why.push_back(l);
                     why.push_back(! full_reif);
-                    inference.infer(logger, ! *undecided1, JustifyUsingRUP{}, ReasonFunction{[=]() { return why; }});
+                    inference.infer(logger, ! *undecided1, JustifyUsingRUP{}, ExplicitReason{why});
                     return PropagatorState::DisableUntilBacktrack;
                 }
             }

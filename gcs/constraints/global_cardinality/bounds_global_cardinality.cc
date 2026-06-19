@@ -148,13 +148,13 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                 // c_j >= must: the fixed variables alone force the count up.
                 if (must > lb_j)
                     inference.infer(logger, counts[j] >= must, JustifyUsingRUP{},
-                        ReasonFunction{[fixed_eq]() -> ReasonLiterals { return fixed_eq; }});
+                        ExplicitReason{fixed_eq});
 
                 // c_j <= can: only the variables that can still take value may
                 // contribute to the count.
                 if (can < ub_j)
                     inference.infer(logger, counts[j] <= can, JustifyUsingRUP{},
-                        ReasonFunction{[absent_ne]() -> ReasonLiterals { return absent_ne; }});
+                        ExplicitReason{absent_ne});
 
                 // Saturated capacity: if as many variables are already fixed to
                 // value as the count's upper bound allows, no other variable may
@@ -165,7 +165,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                     for (const auto & var : vars)
                         if (state.in_domain(var, value) && ! state.has_single_value(var))
                             inference.infer(logger, var != value, JustifyUsingRUP{},
-                                ReasonFunction{[sat]() -> ReasonLiterals { return sat; }});
+                                ExplicitReason{sat});
                 }
 
                 // Just-met demand: if only `can` variables can take value and the
@@ -178,7 +178,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                             for (const auto & w : state.each_value_mutable(var))
                                 if (w != value)
                                     inference.infer(logger, var != w, JustifyUsingRUP{},
-                                        ReasonFunction{[force]() -> ReasonLiterals { return force; }});
+                                        ExplicitReason{force});
                 }
             }
 

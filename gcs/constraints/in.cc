@@ -202,7 +202,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                                     WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i,
                                     ProofLevel::Temporary);
                         }},
-                        ReasonFunction{[=]() { return reason; }});
+                        ExplicitReason{reason});
                 }
             }
 
@@ -263,7 +263,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                                     ProofLevel::Temporary);
                             }
                         }},
-                        ReasonFunction{[=]() { return reason; }});
+                        ExplicitReason{reason});
                 }
             }
 

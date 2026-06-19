@@ -442,7 +442,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                     };
                     rule_out(0);
                 }},
-                    ReasonFunction{[=]() { return reason; }});
+                    ExplicitReason{reason});
             };
 
             if (lowest_found && *lowest_found > current_bounds.first)
@@ -513,7 +513,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                     };
                     rule_out(0);
                 }},
-                    ReasonFunction{[=]() { return reason; }});
+                    ExplicitReason{reason});
             }
 
             return PropagatorState::Enable; }, result_triggers);
