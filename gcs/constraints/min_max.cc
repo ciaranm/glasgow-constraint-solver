@@ -138,7 +138,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 for (auto & var : vars)
                     reason.emplace_back(var != value);
 
-                inference.infer_not_equal(logger, result, value, JustifyExplicitlyThenRUP{[logger, result, value, &selectors](const ReasonFunction & reason) {
+                inference.infer_not_equal(logger, result, value, JustifyExplicitlyThenRUP{[logger, result, value, &selectors](const ReasonLiterals & reason) {
                     // show that none of the selectors work, if we're taking the result to be that value and also
                     // that the value is missing from all of the vars
                     for (const auto & sel : selectors)
@@ -182,7 +182,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
             // is missing all of result's values, so its model selector must be false. This
             // is value-independent, so the range path emits it once per interval rather
             // than once per removed value.
-            auto rule_out_other_selectors = [&](const ReasonFunction & reason) {
+            auto rule_out_other_selectors = [&](const ReasonLiterals & reason) {
                 for (const auto & [idx, var] : enumerate(vars))
                     if (var != *support_1) {
                         for (const auto & rval : state.each_value_immutable(result))
@@ -210,7 +210,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                     // an accumulating literal.
                     ReasonLiterals support_reason = reason;
                     support_reason.emplace_back(not_in_range(result, lo, hi));
-                    inference.infer_not_in_range(logger, *support_1, lo, hi, JustifyExplicitlyThenRUP{[&, lo = lo, hi = hi](const ReasonFunction & reason) {
+                    inference.infer_not_in_range(logger, *support_1, lo, hi, JustifyExplicitlyThenRUP{[&, lo = lo, hi = hi](const ReasonLiterals & reason) {
                         rule_out_other_selectors(reason);
                         justify_not_in_range_across_equality(*logger, reason,
                             std::get<SimpleIntegerVariableID>(IntegerVariableID{*support_1}), lo, hi,
@@ -220,7 +220,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 }
                 else
                     for (Integer val = lo; val <= hi; ++val)
-                        inference.infer(logger, *support_1 != val, JustifyExplicitlyThenRUP{[&, val = val](const ReasonFunction & reason) {
+                        inference.infer(logger, *support_1 != val, JustifyExplicitlyThenRUP{[&, val = val](const ReasonLiterals & reason) {
                             rule_out_other_selectors(reason);
                             // now fish out the supporting variable, and show that it has to have its selector true
                             for (const auto & [idx, var] : enumerate(vars))

@@ -92,7 +92,7 @@ namespace
     };
 
     auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags,
-        const State &, const ReasonFunction & reason, string comment = "") -> void
+        const State &, const ReasonLiterals & reason, string comment = "") -> void
     {
         if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
             // Trying to cut down on repeated code
@@ -111,7 +111,7 @@ namespace
     auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars,
         const long num_states, const vector<unordered_map<Integer, set<long>>> & transitions,
         const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const State & state, const ReasonFunction & reason, ProofLogger * const logger)
+        const State & state, const ReasonLiterals & reason, ProofLogger * const logger)
     {
         auto num_vars = vars.size();
 
@@ -213,7 +213,7 @@ namespace
     }
 
     auto decrement_outdeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
-        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const ReasonFunction & reason, ProofLogger * const logger) -> void
+        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const ReasonLiterals & reason, ProofLogger * const logger) -> void
     {
         graph.out_deg[i][k]--;
         if (graph.out_deg[i][k] == 0 && i > 0) {
@@ -241,7 +241,7 @@ namespace
 
     auto decrement_indeg(RegularGraph & graph, const long i, const long k,
         const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const State & state, const ReasonFunction & reason, ProofLogger * const logger) -> void
+        const State & state, const ReasonLiterals & reason, ProofLogger * const logger) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
@@ -308,12 +308,12 @@ namespace
             return;
         }
 
-        ReasonFunction reason;
+        ReasonLiterals reason;
         ProofLine reason_definition_1, reason_definition_2;
 
         if (logger && short_reasons) {
             auto reason_sum = WPBSum{};
-            for (const auto & lit : gen_reason()) {
+            for (const auto & lit : gen_reason) {
                 reason_sum += 1_i * get<ProofLiteral>(lit);
             }
             // We will manually delete this later.

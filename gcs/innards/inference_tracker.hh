@@ -87,8 +87,13 @@ namespace gcs::innards
 
         [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            if (logger)
-                logger->infer(FalseLiteral{}, why, reason_function_for(logger, reason, _state), assertion_hints);
+            if (logger) {
+                auto reason_fn = reason_function_for(logger, reason, _state);
+                ReasonLiterals lits;
+                if (reason_fn)
+                    lits = reason_fn();
+                logger->infer(FalseLiteral{}, why, lits, assertion_hints);
+            }
             throw TrackedPropagationFailed{};
         }
 
@@ -167,9 +172,12 @@ namespace gcs::innards
                 // eager build) and reuse it for the scaffolding and every RUP,
                 // rather than re-walking per inference.
                 auto reason_fn = reason_function_for(logger, reason, _state);
+                ReasonLiterals reason_lits;
+                if (reason_fn)
+                    reason_lits = reason_fn();
                 const auto & j = std::get<JustifyExplicitlyThenRUP>(why);
                 auto t = logger->temporary_proof_level();
-                j.add_proof_steps(reason_fn);
+                j.add_proof_steps(reason_lits);
                 for (const auto & lit : lits)
                     infer(logger, lit, JustifyUsingRUP{}, Reason{reason_fn});
                 logger->forget_proof_level(t);
@@ -263,8 +271,18 @@ namespace gcs::innards
             case Inference::InteriorValuesChanged:
             case Inference::BoundsChanged:
             case Inference::Instantiated:
-                if (logger)
-                    logger->infer(lit, just, reason, assertion_hints);
+                if (logger) {
+                    // Materialise the reason here, post-inference: the reason_fn
+                    // handed to us by reason_function_for already encodes the
+                    // correct timing (eager kinds return their pre-inference
+                    // snapshot, Lazy kinds materialise against the now-current
+                    // state), so calling it now gives both kinds the literals the
+                    // logger used to compute internally.
+                    ReasonLiterals lits;
+                    if (reason)
+                        lits = reason();
+                    logger->infer(lit, just, lits, assertion_hints);
+                }
 
                 overloaded{
                     [&](const TrueLiteral &) {},
@@ -287,8 +305,12 @@ namespace gcs::innards
                 break;
 
             [[unlikely]] case Inference::Contradiction:
-                if (logger)
-                    logger->infer(lit, just, reason, assertion_hints);
+                if (logger) {
+                    ReasonLiterals lits;
+                    if (reason)
+                        lits = reason();
+                    logger->infer(lit, just, lits, assertion_hints);
+                }
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};

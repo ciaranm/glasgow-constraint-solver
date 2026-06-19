@@ -155,7 +155,7 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
                     for (const auto & v : non_excluded_values) {
                         inf.infer(logger, x != v,
                             JustifyExplicitlyThenRUP{
-                                [&logger, x, v, &duplicate_selectors](const ReasonFunction &) -> void {
+                                [&logger, x, v, &duplicate_selectors](const ReasonLiterals &) -> void {
                                     const auto & selector = duplicate_selectors.at(x);
                                     logger->emit(RUPProofRule{},
                                         WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i,

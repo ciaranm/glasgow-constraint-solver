@@ -75,7 +75,7 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
             std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});
 
-        auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonFunction & r) {
+        auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonLiterals & r) {
             // Plain equality pruned = other, so the flag forces other into the same [lo, hi].
             justify_not_in_range_across_equality(*logger, r,
                 std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi,
@@ -92,7 +92,7 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
                     ReasonLiterals not_in_range_reason = reason;
                     not_in_range_reason.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
                     inference.infer_not_in_range(logger, pruned, lo, hi,
-                        JustifyExplicitlyThenRUP{[=](const ReasonFunction & r) { bridge(pruned, other, lo, hi, r); }},
+                        JustifyExplicitlyThenRUP{[=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }},
                         ExplicitReason{std::move(not_in_range_reason)},
                         AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
                 }
@@ -134,7 +134,7 @@ namespace
                 reason.emplace_back(v1 != val);
 
         auto justify = [&state = state, logger = logger, v1 = v1, v2 = v2, v1_bounds = v1_bounds, cond = cond](
-                           const ReasonFunction &) {
+                           const ReasonLiterals &) {
             for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
                 if (state.in_domain(v1, val))
                     logger->emit_rup_proof_line(WPBSum{} + 1_i * (v1 != val) + 1_i * (v2 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);

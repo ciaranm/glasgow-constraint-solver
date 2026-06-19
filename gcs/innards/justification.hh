@@ -18,7 +18,7 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa JustifyExplicitlyThenRUP
      */
-    using ExplicitJustificationFunction = std::function<auto(const ReasonFunction & reason)->void>;
+    using ExplicitJustificationFunction = std::function<auto(const ReasonLiterals & reason)->void>;
 
     /**
      * \brief Specify that an inference requires an explicit justification in

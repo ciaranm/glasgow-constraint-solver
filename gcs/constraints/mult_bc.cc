@@ -86,7 +86,7 @@ namespace
         WPBSum sum = WPBSum{};
         Integer rhs = 0_i;
         HalfReifyOnConjunctionOf half_reif = HalfReifyOnConjunctionOf{};
-        optional<ReasonFunction> reason = nullopt;
+        optional<ReasonLiterals> reason = nullopt;
         ProofLine line;
     };
 
@@ -97,7 +97,7 @@ namespace
     };
 
     auto result_of_deriving(ProofLogger & logger, ProofRule rule, const WPBSumLE & ineq,
-        const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const ReasonFunction & reason) -> DerivedPBConstraint
+        const HalfReifyOnConjunctionOf & reif, const ProofLevel & proof_level, const ReasonLiterals & reason) -> DerivedPBConstraint
     {
         // Have to flip it again to store in the form lhs >= rhs
         WPBSum ge_lhs{};
@@ -203,7 +203,7 @@ namespace
         const DerivedPBConstraint & constr,
         const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
-        const ReasonFunction & reason,
+        const ReasonLiterals & reason,
         const optional<HalfReifyOnConjunctionOf> & assumption = nullopt) -> DerivedPBConstraint
     {
         if (constr.sum.terms.size() != 1 || abs(constr.sum.terms[0].coefficient) != 1_i)
@@ -276,7 +276,7 @@ namespace
 
         // logger.emit_proof_comment("Chanelling RUP");
         // This might be a horribly bad idea...
-        for (const auto & lit : reason()) {
+        for (const auto & lit : reason) {
             auto cond = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(lit)));
             auto line = get_def_line_for_lit(logger, cond);
             if (line) {
@@ -307,7 +307,7 @@ namespace
         const SimpleIntegerVariableID & y,
         const SimpleIntegerVariableID & z,
         const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
-        const ReasonFunction & reason)
+        const ReasonLiterals & reason)
         -> DerivedPBConstraint
     {
         auto channel_reif = HalfReifyOnConjunctionOf{constr.half_reif};
@@ -385,7 +385,7 @@ namespace
         auto result = add_lines(logger, channel_line, rup_sign);
         auto channel_sum = WPBSum{} + constr.sum.terms[0].coefficient * (z_negative ? -1_i : 1_i) * z;
         vector<ProofLine> rup_hints = {result};
-        for (const auto & lit : reason()) {
+        for (const auto & lit : reason) {
             auto cond = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(lit)));
             auto line = get_def_line_for_lit(logger, cond);
             if (line) {
@@ -522,7 +522,7 @@ namespace
                 rup_hints.insert(rup_hints.end(), further_hints.begin(), further_hints.end());
                 rup_hints.emplace_back(p.line);
                 weakened_premises.emplace_back(result_of_deriving(logger, RUPProofRule{rup_hints}, // implies?
-                    want_to_derive, p.half_reif, ProofLevel::Temporary, ReasonFunction{}));
+                    want_to_derive, p.half_reif, ProofLevel::Temporary, ReasonLiterals{}));
             }
 
             //  Then add the negation of our desired constraint to each of the weakened premises
@@ -566,7 +566,7 @@ namespace
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
         const pair<ProofLine, ProofLine> z_eq_product_lines,
         vector<vector<BitProductData>> & bit_products,
-        const ReasonFunction & reason)
+        const ReasonLiterals & reason)
         -> DerivedPBConstraint
     {
         // logger.emit_proof_comment("Prove Conditional Product Lower Bound:");
@@ -619,7 +619,7 @@ namespace
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var,
         const pair<ProofLine, ProofLine> z_eq_product_lines,
         vector<vector<BitProductData>> & bit_products,
-        const ReasonFunction & reason)
+        const ReasonLiterals & reason)
         -> DerivedPBConstraint
     {
         auto mag_z_sum = WPBSum{};
@@ -708,7 +708,7 @@ namespace
             ProofLevel::Temporary, reason);
     }
 
-    auto prove_product_bounds(const ReasonFunction & reason, ProofLogger & logger,
+    auto prove_product_bounds(const ReasonLiterals & reason, ProofLogger & logger,
         vector<vector<BitProductData>> & bit_products,
         const SimpleIntegerVariableID x, const SimpleIntegerVariableID y, const SimpleIntegerVariableID z,
         const map<IntegerVariableID, pair<Integer, Integer>> & var_bounds,
@@ -830,7 +830,7 @@ namespace
     }
 
     auto prove_quotient_bounds(
-        const ReasonFunction & reason,
+        const ReasonLiterals & reason,
         ProofLogger & logger,
         vector<vector<BitProductData>> & bit_products,
         const SimpleIntegerVariableID x, const SimpleIntegerVariableID y, const SimpleIntegerVariableID z,
@@ -1037,7 +1037,7 @@ namespace
             auto smallest_possible_quotient = -largest_possible_quotient;
 
             auto var_bounds = map<IntegerVariableID, pair<Integer, Integer>>{{x_var, state.bounds(x_var)}, {y_var, state.bounds(y_var)}, {z_var, state.bounds(z_var)}};
-            auto lower_justf = [&](const ReasonFunction & reason) {
+            auto lower_justf = [&](const ReasonLiterals & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
@@ -1050,7 +1050,7 @@ namespace
                 [lits = ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
 
             var_bounds.at(x_var).first = min(var_bounds.at(x_var).first, largest_possible_quotient);
-            auto upper_justf = [&](const ReasonFunction & reason) {
+            auto upper_justf = [&](const ReasonLiterals & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
@@ -1077,7 +1077,7 @@ namespace
             auto largest_possible_quotient = max({div_floor(z_min, y_min), div_floor(z_min, y_max), div_floor(z_max, y_min), div_floor(z_max, y_max)});
 
             auto var_bounds = map<IntegerVariableID, pair<Integer, Integer>>{{x_var, state.bounds(x_var)}, {y_var, state.bounds(y_var)}, {z_var, state.bounds(z_var)}};
-            auto upper_justf = [&](const ReasonFunction & reason) {
+            auto upper_justf = [&](const ReasonLiterals & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
@@ -1085,7 +1085,7 @@ namespace
                     WPBSum{} + 1_i * (x_var <= largest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
-            auto lower_justf = [&](const ReasonFunction & reason) {
+            auto lower_justf = [&](const ReasonLiterals & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds,
                     smallest_possible_quotient, largest_possible_quotient,
                     channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
@@ -1093,7 +1093,7 @@ namespace
                     WPBSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
-            auto both_justf = [&](const ReasonFunction & reason) {
+            auto both_justf = [&](const ReasonLiterals & reason) {
                 upper_justf(reason);
                 lower_justf(reason);
             };
@@ -1257,7 +1257,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             auto [smallest_product, largest_product] = get_product_bounds(bounds1.first, bounds1.second, bounds2.first, bounds2.second);
             auto & bit_products = any_cast<vector<vector<BitProductData>> &>(state.get_persistent_constraint_state(bit_products_h));
 
-            auto justf = [&](const ReasonFunction & reason) {
+            auto justf = [&](const ReasonLiterals & reason) {
                 prove_product_bounds(reason, *logger, bit_products, v1, v2, v3, var_bounds,
                     smallest_product, largest_product, channelling_constraints, mag_var, v3_eq_product_lines, sign_lines);
                 logger->emit_rup_proof_line_under_reason(reason,

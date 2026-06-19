@@ -230,15 +230,16 @@ namespace gcs::innards
     [[nodiscard]] auto singleton_reason(const ProofLiteralOrFlag & lit) -> Reason;
 
     /**
-     * \brief Eagerly materialise a reason into a constant thunk against the
-     * current state.
+     * \brief Eagerly materialise a reason into its literal conjunction against
+     * the current state.
      *
      * For the handful of proof-only consumers that build a reason and hand it
      * straight to the ProofLogger (bypassing the inference tracker, which
      * normally does this conversion). The domain walk happens now, so call this
-     * at the point the old eager `*_reason()` factory would have run.
+     * at the point the old eager `*_reason()` factory would have run. This is
+     * just a convenience spelling of materialise() for those call sites.
      */
-    [[nodiscard]] auto eager_reason(const Reason & reason, const State & state) -> ReasonFunction;
+    [[nodiscard]] auto eager_reason(const Reason & reason, const State & state) -> ReasonLiterals;
 }
 
 #endif

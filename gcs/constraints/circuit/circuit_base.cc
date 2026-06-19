@@ -148,7 +148,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
         auto length = chain_lengths.back();
         chain_lengths.pop_back();
         if (cmp_less(length, succ.size() - 1)) {
-            auto justf = [&](const ReasonFunction &) {
+            auto justf = [&](const ReasonLiterals &) {
                 output_cycle_to_proof(succ, i, length, pos_var_data, state, *logger, Integer{end[i]}, Integer{i});
             };
             inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitlyThenRUP{justf}, generic_reason(state, succ));

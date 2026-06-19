@@ -296,7 +296,7 @@ auto ProofLogger::conclude_none() -> void
 }
 
 auto ProofLogger::infer(const Literal & lit, const Justification & why,
-    const ReasonFunction & reason, const optional<AssertionAnnotation> & annotation) -> void
+    const ReasonLiterals & reason, const optional<AssertionAnnotation> & annotation) -> void
 {
     // A range conclusion on a view (folding views into the interval machinery is
     // deferred) or on a plain variable without a bits encoding (no order cuts to
@@ -366,26 +366,9 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         .visit(why);
 }
 
-auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> ReasonLiterals
-{
-    optional<ReasonLiterals> reason_literals;
-    if (reason)
-        reason_literals = reason();
-
-    if (reason_literals)
-        names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
-
-    return *reason_literals;
-}
-
 auto ProofLogger::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE
 {
     return names_and_ids_tracker().reify(ineq, half_reif);
-}
-
-auto ProofLogger::reify(const WPBSumLE & ineq, const ReasonFunction & reason) -> WPBSumLE
-{
-    return names_and_ids_tracker().reify(ineq, reason_to_lits(reason));
 }
 
 auto ProofLogger::emit_proof_line(const string & s, ProofLevel level) -> ProofLine
@@ -460,13 +443,10 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 
 auto ProofLogger::emit_under_reason(
     const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
+    ProofLevel level, const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
-    optional<ReasonLiterals> reason_literals;
-    if (reason)
-        reason_literals = reason();
-    if (reason_literals)
-        names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
+    if (! reason.empty())
+        names_and_ids_tracker().need_all_proof_names_in(reason);
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
@@ -480,8 +460,8 @@ auto ProofLogger::emit_under_reason(
                      .visit(rule)
               << " ";
 
-    if (reason_literals) {
-        emit_inequality_to(names_and_ids_tracker(), reify(ineq, *reason_literals), rule_line);
+    if (! reason.empty()) {
+        emit_inequality_to(names_and_ids_tracker(), reify(ineq, reason), rule_line);
     }
     else {
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
@@ -520,13 +500,13 @@ auto ProofLogger::emit_rup_proof_line(const SumLessThanEqual<Weighted<PseudoBool
     return emit(RUPProofRule{}, ineq, level);
 }
 
-auto ProofLogger::emit_rup_proof_line_under_reason(const ReasonFunction & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+auto ProofLogger::emit_rup_proof_line_under_reason(const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level) -> ProofLine
 {
     return emit_under_reason(RUPProofRule{}, ineq, level, reason);
 }
 
-auto ProofLogger::emit_rup_proof_line_under_reason_then_deview(const ReasonFunction & reason,
+auto ProofLogger::emit_rup_proof_line_under_reason_then_deview(const ReasonLiterals & reason,
     const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     auto v_form_line = emit_rup_proof_line_under_reason(reason, ineq, level);

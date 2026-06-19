@@ -121,7 +121,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
 
             // can't have more that this many occurrences of the value of interest
             auto how_many_is_less_than = Integer(vars.size() - how_many_definitely_do_not) + 1_i;
-            auto justf = [&](const ReasonFunction & reason) -> void {
+            auto justf = [&](const ReasonLiterals & reason) -> void {
                 for (const auto & [idx, var] : enumerate(vars)) {
                     if (! state.domains_intersect(var, value_of_interest)) {
                         for (const auto & val : state.each_value_immutable(value_of_interest))
@@ -163,7 +163,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
                 }
 
                 if (how_many_might < state.lower_bound(how_many)) {
-                    auto justf = [&](const ReasonFunction & reason) -> void {
+                    auto justf = [&](const ReasonLiterals & reason) -> void {
                         for (const auto & [idx, var] : enumerate(vars)) {
                             if (! state.in_domain(var, voi)) {
                                 // need to help the checker see that the equality flag must be zero
@@ -192,7 +192,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
             // what are the supports on possible values we've seen?
             if (lowest_how_many_must) {
                 auto just = JustifyExplicitlyThenRUP{
-                    [&](const ReasonFunction & reason) -> void {
+                    [&](const ReasonLiterals & reason) -> void {
                         for (const auto & voi : state.each_value_immutable(value_of_interest))
                             logger->emit_rup_proof_line_under_reason(reason,
                                 WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
@@ -203,7 +203,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
 
             if (highest_how_many_might) {
                 auto just = JustifyExplicitlyThenRUP{
-                    [&](const ReasonFunction & reason) -> void {
+                    [&](const ReasonLiterals & reason) -> void {
                         // Per-(voi, var) conditional pairs: emit when voi is
                         // in value_of_interest's domain but not var's. Outer
                         // loop is over var so we can call each_interval_minus

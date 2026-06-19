@@ -110,7 +110,7 @@ auto gcs::innards::singleton_reason(const ProofLiteralOrFlag & lit) -> Reason
     return ExplicitReason{ReasonLiterals{lit}};
 }
 
-auto gcs::innards::eager_reason(const Reason & reason, const State & state) -> ReasonFunction
+auto gcs::innards::eager_reason(const Reason & reason, const State & state) -> ReasonLiterals
 {
-    return [lits = materialise(reason, state)]() { return lits; };
+    return materialise(reason, state);
 }

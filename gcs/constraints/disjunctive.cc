@@ -301,7 +301,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 "Disjunctive: mand_load > 1 without two contributing tasks"};
 
                         auto justify = [logger, &before_flags, &clause_lines, &bridge,
-                                           violating_t, pi, pj](const ReasonFunction & reason) -> void {
+                                           violating_t, pi, pj](const ReasonLiterals & reason) -> void {
                             auto & bf_i = bridge->at(make_pair(pi, violating_t));
                             auto & bf_j = bridge->at(make_pair(pj, violating_t));
 
@@ -424,7 +424,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                            size_t j, Integer t, size_t k,
                                            IntegerVariableCondition ext_lit,
                                            bool emit_intermediate,
-                                           const ReasonFunction & reason) -> void {
+                                           const ReasonLiterals & reason) -> void {
                     auto & bf_k = bridge->at(make_pair(k, t));
                     auto & bf_j = bridge->at(make_pair(j, t));
 
@@ -590,7 +590,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 break;
                         }
 
-                        auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
+                        auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
                             if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                                 return;
                             for (size_t step = 0; step < chain.size(); ++step)
@@ -631,7 +631,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 break;
                         }
 
-                        auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
+                        auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
                             if (! logger)
                                 return;
                             for (size_t step = 0; step < chain.size(); ++step)

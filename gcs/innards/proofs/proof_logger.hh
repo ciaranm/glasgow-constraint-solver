@@ -133,7 +133,7 @@ namespace gcs::innards
          * direct-only-encoded variables fall back to per-value emission.
          * Also pass an assertion annotation.
          */
-        auto infer(const Literal & lit, const Justification & why, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & annotation = std::nullopt) -> void;
+        auto infer(const Literal & lit, const Justification & why, const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & annotation = std::nullopt) -> void;
 
         /**
          * \brief Return the current <em>active proof level</em> &mdash; the
@@ -218,21 +218,10 @@ namespace gcs::innards
         auto emit_proof_comment(const std::string &) -> void;
 
         /**
-         * Given a reason, return the vector of literals in the conjunction.
-         */
-        auto reason_to_lits(const ReasonFunction & reason) -> ReasonLiterals;
-
-        /**
          * Given a PB constraint C and a conjunction of literals L, return the native
          * PB constraint encoding L => C
          */
         auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;
-
-        /**
-         * Given a PB constraint C and a reason R, return the native
-         * PB constraint encoding R => C
-         */
-        auto reify(const WPBSumLE &, const ReasonFunction &) -> WPBSumLE;
 
         /**
          * Get the current proof line ID (i.e. the next one to be used.
@@ -252,7 +241,7 @@ namespace gcs::innards
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonFunction &, const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> ProofLine;
+        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonLiterals &, const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, not subject to
@@ -264,7 +253,7 @@ namespace gcs::innards
          * Emit a RUP proof step for the specified expression, subject to a
          * given reason.
          */
-        auto emit_rup_proof_line_under_reason(const ReasonFunction &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+        auto emit_rup_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
          * Like `emit_rup_proof_line_under_reason`, but returns the deview-form
@@ -282,7 +271,7 @@ namespace gcs::innards
          * V-form constraint emitted by the RUP step doesn't match those
          * coefficients and the pol cancellation fails.
          */
-        auto emit_rup_proof_line_under_reason_then_deview(const ReasonFunction &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+        auto emit_rup_proof_line_under_reason_then_deview(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit a RED proof step for the specified expression.

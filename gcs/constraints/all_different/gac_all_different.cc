@@ -277,7 +277,7 @@ namespace
 
         return tuple{
             JustifyExplicitlyThenRUP{
-                [vars, logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ReasonFunction &) -> void {
+                [vars, logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ReasonLiterals &) -> void {
                     justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                 }},
             Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
@@ -405,7 +405,7 @@ namespace
 
             return tuple{Justification{JustifyExplicitlyThenRUP{
                              [vars, logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](
-                                 const ReasonFunction &) -> void {
+                                 const ReasonLiterals &) -> void {
                                  justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                              }}},
                 Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
