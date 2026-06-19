@@ -11,6 +11,7 @@
 #include <ostream>
 #include <string>
 #include <utility>
+#include <vector>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -84,7 +85,10 @@ namespace gcs::innards
     enum class AssertionHintIdentifier
     {
         constraint_id,
-        // Todo
+        hall_vars,
+        hall_vals,
+        justifier,
+        hall_set_or_violator,
     };
 
     inline auto as_string(AssertionHintIdentifier identifier) -> std::string
@@ -92,6 +96,14 @@ namespace gcs::innards
         switch (identifier) {
         case AssertionHintIdentifier::constraint_id:
             return "constraint_id";
+        case AssertionHintIdentifier::hall_vars:
+            return "hall_vars";
+        case AssertionHintIdentifier::hall_vals:
+            return "hall_vals";
+        case AssertionHintIdentifier::justifier:
+            return "justifier";
+        case AssertionHintIdentifier::hall_set_or_violator:
+            return "hall_set_or_violator";
         }
         return "";
     }
@@ -139,6 +151,20 @@ namespace gcs::innards
     inline auto hint_list(Ts_ &&... xs) -> SExpr
     {
         return SExpr::list({hint_sexpr(std::forward<Ts_>(xs))...});
+    }
+
+    /**
+     * \brief Build an s-expression list from a runtime range
+     *
+     * \ingroup Innards
+     */
+    template <typename Range_>
+    inline auto hint_seq(const Range_ & xs) -> SExpr
+    {
+        std::vector<SExpr> children;
+        for (const auto & x : xs)
+            children.push_back(hint_sexpr(x));
+        return SExpr::list(std::move(children));
     }
 
     /**
