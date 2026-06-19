@@ -1,5 +1,6 @@
 #include <gcs/constraints/abs/abs.hh>
 #include <gcs/constraints/abs/justify.hh>
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -11,7 +12,6 @@
 
 #include <algorithm>
 #include <optional>
-#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -131,7 +131,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     [logger, v1, v2, abs_nonneg_ge](const ReasonFunction &) -> void {
                         justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge);
                     }},
-                ReasonFunction{});
+                ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
 
             auto v2_ub = state.upper_bound(v2);
 
@@ -144,7 +144,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonFunction & r) -> void {
                             justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
                         }},
-                    ReasonFunction{});
+                    ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
             }
 
             // Symmetric flag-collision concern: skip when ub(v2) <= 0.
@@ -154,7 +154,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonFunction & r) -> void {
                             justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
                         }},
-                    ReasonFunction{});
+                    ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
             }
 
             auto [v1_lb, v1_ub] = state.bounds(v1);
@@ -164,7 +164,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     [logger, v1, v2, v1_lb, v1_ub, big_m, abs_nonneg_le, abs_neg_le](const ReasonFunction & r) -> void {
                         justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, big_m, *abs_nonneg_le, *abs_neg_le, r);
                     }},
-                ReasonFunction{});
+                ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
         },
         InitialiserPriority::SimpleDefinition);
 
@@ -203,7 +203,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                             [logger, v1, v2, v1_lb, v1_ub, image_ub, abs_nonneg_le, abs_neg_le](const ReasonFunction & r) -> void {
                                 justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, image_ub, *abs_nonneg_le, *abs_neg_le, r);
                             }},
-                        ReasonFunction{[v1, v1_lb, v1_ub]() { return Reason{{v1 >= v1_lb, v1 <= v1_ub}}; }});
+                        ReasonFunction{[v1, v1_lb, v1_ub]() { return Reason{{v1 >= v1_lb, v1 <= v1_ub}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
                 }
 
                 if (v1_lb >= 1_i && v1_lb > v2_lb) {
@@ -212,7 +212,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                             [logger, v1, v2, v1_lb, abs_nonneg_ge](const ReasonFunction & r) -> void {
                                 justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonneg, v1_lb, *abs_nonneg_ge, r);
                             }},
-                        ReasonFunction{[v1, v1_lb]() { return Reason{v1 >= v1_lb}; }});
+                        ReasonFunction{[v1, v1_lb]() { return Reason{v1 >= v1_lb}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
                 }
                 else if (v1_ub <= -1_i && -v1_ub > v2_lb) {
                     inference.infer_greater_than_or_equal(logger, v2, -v1_ub,
@@ -220,7 +220,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                             [logger, v1, v2, v1_ub, abs_neg_ge](const ReasonFunction & r) -> void {
                                 justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonpos, -v1_ub, *abs_neg_ge, r);
                             }},
-                        ReasonFunction{[v1, v1_ub]() { return Reason{v1 <= v1_ub}; }});
+                        ReasonFunction{[v1, v1_ub]() { return Reason{v1 <= v1_ub}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
                 }
             }
 
@@ -231,7 +231,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonFunction & r) -> void {
                             justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
                         }},
-                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 <= v2_ub}; }});
+                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 <= v2_ub}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
             }
             if (-v2_ub > v1_lb) {
                 inference.infer_greater_than_or_equal(logger, v1, -v2_ub,
@@ -239,7 +239,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonFunction & r) -> void {
                             justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
                         }},
-                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 <= v2_ub}; }});
+                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 <= v2_ub}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
             }
 
             // Interior pruning: remove values in v2 with no preimage in v1,
@@ -269,7 +269,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         JustifyExplicitlyThenRUP{[logger, v1, v2, val](const ReasonFunction & r) {
                             justify_abs_hole(*logger, r, v1, v2, val);
                         }},
-                        ReasonFunction{[v1, val]() { return Reason{{v1 != val, v1 != -val}}; }});
+                        ReasonFunction{[v1, val]() { return Reason{{v1 != val, v1 != -val}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
                 }
             }
 
@@ -292,7 +292,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     if (! state.in_domain(v1, val))
                         continue;
                     inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{},
-                        ReasonFunction{[v2, val]() { return Reason{v2 != abs(val)}; }});
+                        ReasonFunction{[v2, val]() { return Reason{v2 != abs(val)}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
                 }
             }
 

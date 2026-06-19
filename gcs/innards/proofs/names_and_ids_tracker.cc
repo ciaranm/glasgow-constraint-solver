@@ -1,9 +1,12 @@
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/interval_tree.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
+#include <gcs/innards/proofs/proof_line-fwd.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/variable_id_utils.hh>
@@ -12,6 +15,7 @@
 #include <cstdlib>
 #include <exception>
 #include <fstream>
+#include <gcs/proof.hh>
 #include <list>
 #include <map>
 #include <set>
@@ -136,12 +140,14 @@ struct NamesAndIDsTracker::Imp
     bool first_varmap_entry = true;
     bool finalised = false;
     bool verbose_names;
+    AssertionLevel assertion_level = AssertionLevel::Off;
 };
 
 NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) :
     _imp(make_unique<Imp>())
 {
     _imp->verbose_names = proof_options.verbose_names;
+    _imp->assertion_level = proof_options.assertion_level;
 
     if (proof_options.proof_file_names.variables_map_file) {
         _imp->variables_map_file_name = *proof_options.proof_file_names.variables_map_file;
@@ -518,7 +524,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     ProofLine forwards_line, reverse_line;
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
-        if (_imp->logger) {
+        if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
             visit([&](const auto & id) {
                 auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
                     id == v, ProofLevel::Top);
@@ -527,7 +533,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             },
                 id);
         }
-        else {
+        else if (! _imp->logger) {
             visit([&](const auto & id) {
                 forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
                 reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
@@ -538,7 +544,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     }
     else if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second == v) {
         // it's an upper bound
-        if (_imp->logger) {
+        if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
             visit([&](const auto & id) {
                 auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
                 forwards_line = _f_line;
@@ -546,7 +552,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             },
                 id);
         }
-        else {
+        else if (! _imp->logger) {
             visit([&](const auto & id) {
                 forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
                 reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
@@ -557,7 +563,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     }
     else {
         // neither a lower nor an upper bound
-        if (_imp->logger)
+        if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links)
             visit([&](const auto & id) {
                 auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(
                     WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id > v)) >= 2_i,
@@ -566,7 +572,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
                 reverse_line = _r_line;
             },
                 id);
-        else {
+        else if (! _imp->logger) {
             visit([&](const auto & id) {
                 forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
                 reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
@@ -606,12 +612,27 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             ProofVariableCondition v_cond{*pid_ptr, VariableConditionOperator::Equal, v};
             IntegerVariableID x_var{view.actual_variable};
             auto x_cond = (x_var == x_threshold);
+            // Always queue this (it delays to proof start when the logger
+            // isn't attached yet during model building); decide whether to
+            // emit based on using_assertions() *inside* the lambda, when the
+            // logger definitely exists. Guarding on _imp->logger out here
+            // drops the step entirely during model building, losing the
+            // channelling between the proof-only encoding and the actual
+            // variable. See the matching pattern in need_gevar's bound links.
             emit_proof_line_now_or_at_start([v_cond, x_cond](ProofLogger * const logger) {
-                logger->emit_rup_proof_line(WPBSum{} + 1_i * ! v_cond + 1_i * x_cond >= 1_i, ProofLevel::Top);
-                logger->emit_rup_proof_line(WPBSum{} + 1_i * ! x_cond + 1_i * v_cond >= 1_i, ProofLevel::Top);
+                if (logger->get_assertion_level() > AssertionLevel::Links)
+                    return;
+
+                auto assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+                logger->emit(assert_or_rup, WPBSum{} + 1_i * ! v_cond + 1_i * x_cond >= 1_i, ProofLevel::Top);
+                logger->emit(assert_or_rup, WPBSum{} + 1_i * ! x_cond + 1_i * v_cond >= 1_i, ProofLevel::Top);
             });
         }
     }
+
+    // Nothing beyond this point needs to be emmitted at AssertionLevel::Links
+    if (_imp->assertion_level > AssertionLevel::Links)
+        return;
 
     // Reverse direction: see the matching block in need_gevar above.
     if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
@@ -654,11 +675,12 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     _imp->variable_conditions_to_x.emplace(id < v, ! gevar);
 
     // gevar -> bits
-    if (_imp->logger) {
-        _imp->gevars_that_exist[id].emplace(v, visit([&](const auto & id) {
-            return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top);
-        },
-                                                   id));
+    if (_imp->logger && _imp->assertion_level > AssertionLevel::Definitions) {
+        _imp->gevars_that_exist[id].emplace(v, make_pair(ProofLine{}, ProofLine{})); // Don't output geqvar definitions if using assertions
+    }
+    else if (_imp->logger) {
+        auto def_lines = visit([&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top); }, id);
+        _imp->gevars_that_exist[id].emplace(v, def_lines);
     }
     else {
         // Label the two halves @i[name][ge<v>][f]/[r] to match cake_pb_cp, but
@@ -686,20 +708,27 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     // is it a bound?
     auto bounds = _imp->integer_variable_definition_bounds.find(id);
 
+    auto fix_bound = [&](bool negated) {
+        if (_imp->logger) {
+            if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
+                return;
+
+            ProofRule assert_or_rup = _imp->logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+            auto annotation = AssertionAnnotation{.hint_name = AssertionHintName::InitialBound};
+            visit([&](auto id) { _imp->logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (id >= v) : (id >= v)) >= 1_i, ProofLevel::Top, annotation); }, id);
+        }
+        else
+            visit([&](auto id) { _imp->model->add_constraint(WPBSum{} + 1_i * (negated ? ! (id >= v) : (id >= v)) >= 1_i); }, id);
+    };
+
     // lower?
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first >= v) {
-        if (_imp->logger)
-            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * (id >= v) >= 1_i, ProofLevel::Top); }, id);
-        else
-            visit([&](auto id) { _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i); }, id);
+        fix_bound(false);
     }
 
     // upper?
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second < v) {
-        if (_imp->logger)
-            visit([&](auto id) { _imp->logger->emit_rup_proof_line(WPBSum{} + 1_i * ! (id >= v) >= 1_i, ProofLevel::Top); }, id);
-        else
-            visit([&](auto id) { _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i); }, id);
+        fix_bound(true);
     }
 
     auto & other_gevars = _imp->gevars_that_exist.at(id);
@@ -721,15 +750,29 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     };
 
     // implied by the next highest gevar, if there is one?
+    auto link_hint = AssertionAnnotation{.hint_name = AssertionHintName::BoundLink};
     if (higher_gevar != other_gevars.end()) {
         overloaded{
             [&](const ProofOnlySimpleIntegerVariableID & id) {
                 auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
-                emit_proof_line_now_or_at_start([c = chain_con](ProofLogger * const logger) { logger->emit_rup_proof_line(c, ProofLevel::Top); });
+                emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) { 
+						if (logger->get_assertion_level() > AssertionLevel::Links)
+							return;
+            			ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+						logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint); });
             },
             [&](const SimpleIntegerVariableID & id) {
-                auto pol = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
-                emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                if (_imp->assertion_level > AssertionLevel::Links) {
+                    return;
+                }
+                else if (_imp->assertion_level == AssertionLevel::Links) {
+                    auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
+                    emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) { logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint); });
+                }
+                else {
+                    auto pol = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
+                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                }
             }}
             .visit(id);
     }
@@ -739,11 +782,24 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         overloaded{
             [&](const ProofOnlySimpleIntegerVariableID & id) {
                 auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
-                emit_proof_line_now_or_at_start([c = chain_con](ProofLogger * const logger) { logger->emit_rup_proof_line(c, ProofLevel::Top); });
+                emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) { 
+						if (logger->get_assertion_level() > AssertionLevel::Links)
+							return;
+            			ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+						logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint); });
             },
             [&](const SimpleIntegerVariableID & id) {
-                auto pol = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
-                emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                if (_imp->assertion_level > AssertionLevel::Links) {
+                    return;
+                }
+                else if (_imp->assertion_level == AssertionLevel::Links) {
+                    auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
+                    emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) { logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint); });
+                }
+                else {
+                    auto pol = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
+                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                }
             }}
             .visit(id);
     }
@@ -769,12 +825,29 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     // Both lines queued via emit_proof_line_now_or_at_start so they land at
     // the top of the proof, alongside the standard order-encoding chain
     // links, rather than as extra OPB axioms.
+    if (_imp->assertion_level > AssertionLevel::Links)
+        return;
+
     if (auto pid_ptr = std::get_if<ProofOnlySimpleIntegerVariableID>(&id)) {
         auto view_it = _imp->view_proof_only_to_view.find(*pid_ptr);
         if (view_it != _imp->view_proof_only_to_view.end()) {
             const auto & view = view_it->second;
             Integer x_threshold = view.negate_first ? view.then_add - v + 1_i : v - view.then_add;
             need_gevar(view.actual_variable, x_threshold);
+            if (_imp->assertion_level == AssertionLevel::Links) {
+                // Definitions are omitted at this level, instead assert the view links that the
+                // pol lines below would derive.
+                auto v_atom = (*pid_ptr >= v);
+                auto x_atom = (view.actual_variable >= x_threshold);
+                auto x_cond = view.negate_first ? ! x_atom : x_atom;
+                auto d1 = WPBSum{} + 1_i * ! v_atom + 1_i * x_cond >= 1_i;
+                auto d2 = WPBSum{} + 1_i * ! x_cond + 1_i * v_atom >= 1_i;
+                emit_proof_line_now_or_at_start([d1, d2, link_hint](ProofLogger * const logger) {
+                    logger->emit(AssertProofRule{}, d1, ProofLevel::Top, link_hint);
+                    logger->emit(AssertProofRule{}, d2, ProofLevel::Top, link_hint);
+                });
+                return;
+            }
 
             auto v_defs = _imp->gevars_that_exist[id].at(v);
             auto x_defs = _imp->gevars_that_exist[SimpleOrProofOnlyIntegerVariableID{view.actual_variable}].at(x_threshold);
@@ -820,7 +893,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
 
 auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
 {
-    if (! _imp->logger)
+    if (! _imp->logger || _imp->logger->get_assertion_level() > AssertionLevel::Links) // Should be unreachable at AssertionLevel::Links anyway
         return;
 
     auto tree_it = _imp->containment_trees.find(id);
@@ -892,11 +965,20 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     _imp->variable_conditions_to_x.emplace(in_range(id, lo, hi), x);
     _imp->variable_conditions_to_x.emplace(not_in_range(id, lo, hi), ! x);
 
-    auto lines = visit([&](const auto & id) {
-        return _imp->logger->emit_red_proof_lines_reifying(
-            WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::Top);
-    },
-        id);
+    auto will_define = _imp->logger->get_assertion_level() <= AssertionLevel::Links;
+    // Struggling to get clang-format to behave here...
+    auto lines = will_define //
+        ? visit([&](const auto & id) {
+              return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::Top);
+          },
+              id)
+        : make_pair(ProofLine{}, ProofLine{});
+
+    _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
+
+    // No containment tree apparatus needed at higher assertion levels.
+    if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
+        return;
 
     // Containment edges let a rejected literal propagate down to the literals a
     // conflict is written over; the order chain alone does not give this. The
@@ -910,8 +992,6 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     }
     link_immediate_containment(id, lo, hi);
     _imp->containment_trees[id].insert(lo, hi);
-
-    _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
 }
 
 auto NamesAndIDsTracker::append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
@@ -927,6 +1007,9 @@ auto NamesAndIDsTracker::append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyI
 
 auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID id, Integer p) -> void
 {
+    if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
+        return;
+
     auto & boundaries = _imp->interval_partitions.at(id);
     if (boundaries.contains(p))
         return;
@@ -961,6 +1044,9 @@ auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID
 
 auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void
 {
+    if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
+        return;
+
     auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
     auto & boundaries = _imp->interval_partitions[id];
     boundaries.insert(lb);
@@ -1024,9 +1110,10 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
     auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
     auto span_lo = max(lo, lb), span_hi = min(hi, ub);
 
-    if (span_lo > span_hi) {
+    if (span_lo > span_hi || _imp->assertion_level > AssertionLevel::Links) {
         // Entirely outside: the reification plus the bound axioms already falsify
-        // it, so there is nothing to cover.
+        // it, so there is nothing to cover;
+        // ...OR we are at a higher assertion level that doesn't need covering apparatus in the first place.
         define_plain_invar(id, lo, hi);
         return as_literal();
     }
@@ -1088,13 +1175,20 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
         v_lo, v_hi, name, IntegerVariableProofRepresentation::Bits);
 
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
-    auto [link_le, link_ge] = _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
-        WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
+
+    auto will_define = true;              // We do need to define views properly in the model!
+    auto [link_le, link_ge] = will_define //
+        ? _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
+              WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add)
+        : make_pair(ProofLine{}, ProofLine{});
 
     _imp->view_proof_only_vars.emplace(view, v_id);
     _imp->view_proof_only_to_view.emplace(v_id, view);
     _imp->view_link_ids.emplace(v_id, pair{link_le, link_ge});
     _imp->views_of_variable[view.actual_variable].push_back(v_id);
+
+    if (_imp->assertion_level > AssertionLevel::Links) // No further linking needed at higher assertion levels.
+        return v_id;
 
     // Backfill: if X atoms already exist when this view is registered,
     // trigger the matching V atoms now so the V<->X link is emitted for
@@ -1193,6 +1287,8 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
     if (view_contributions.empty())
         return;
 
+    if (_imp->assertion_level > AssertionLevel::Links)
+        return;
     // Build the pol expression. For each view contribution:
     //   opb_form_coefficient > 0 (positive V in OPB):  add `|coeff| * link_le`.
     //   opb_form_coefficient < 0 (negative V in OPB):  add `|coeff| * link_ge`.
@@ -1329,6 +1425,28 @@ auto NamesAndIDsTracker::pb_file_string_for(const XLiteral & lit) const -> strin
 auto NamesAndIDsTracker::pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> string
 {
     return pb_file_string_for(xliteral_for(cond));
+}
+
+auto NamesAndIDsTracker::bit_assignment_string_for(const SimpleOrProofOnlyIntegerVariableID & var, const Integer & value) const -> string
+{
+    auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(var);
+    if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
+        throw ProofError("missing bits");
+
+    const auto & [negative_coeff, bits] = it->second;
+
+    bool sign_bit_set = (negative_coeff != 0_i) && (value < 0_i);
+    Integer remainder = sign_bit_set ? value - negative_coeff : value;
+
+    string result;
+    for (const auto & [coeff, lit] : bits) {
+        bool bit_is_one = (coeff < 0_i) ? sign_bit_set : ((remainder / coeff) % 2_i == 1_i);
+        if (! result.empty())
+            result += " ";
+        result += pb_file_string_for(bit_is_one ? lit : ! lit);
+    }
+
+    return result;
 }
 
 auto NamesAndIDsTracker::xliteral_for(const ProofFlag & flag) const -> const XLiteral

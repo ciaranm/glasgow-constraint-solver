@@ -33,7 +33,7 @@ namespace
         Propagators & propagators, State & state, const optional<Literal> & this_branch_guess,
         ProofLogger * const logger, SimpleIntegerVariableID selector_var_id) -> void
     {
-        if (logger)
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
             logger->enter_proof_level(depth + 1);
 
         if (propagators.propagate(this_branch_guess, state, logger)) {
@@ -44,7 +44,7 @@ namespace
                 for (auto & var : vars)
                     tuple.push_back(state(var));
 
-                if (logger) {
+                if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                     logger->emit_proof_comment("new table entry found");
 
                     Integer sel_value(tuples.size());
@@ -79,7 +79,7 @@ namespace
             }
         }
 
-        if (logger) {
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
             logger->enter_proof_level(depth);
             vector<Literal> guesses;
             for (const auto & g : state.guesses())
@@ -98,11 +98,11 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
     initial_state.guess(TrueLiteral{});
 
     auto selector_var_id = initial_state.what_variable_id_will_be_created_next();
-    if (logger)
+    if (logger && logger->get_assertion_level() == AssertionLevel::Off)
         logger->emit_proof_comment("starting autotabulation");
     solve_subproblem(0, tuples, _vars, propagators, initial_state, nullopt, logger, selector_var_id);
 
-    if (logger)
+    if (logger && logger->get_assertion_level() == AssertionLevel::Off)
         logger->emit_proof_comment("creating autotable with " + to_string(tuples.size()) + " entries");
 
     initial_state.backtrack(timestamp);
@@ -115,7 +115,7 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
         throw UnexpectedException{"something went horribly wrong with variable IDs when autotabulating"};
 
     ExtensionalData data{selector, _vars, move(tuples)};
-    if (logger)
+    if (logger && logger->get_assertion_level() == AssertionLevel::Off)
         logger->emit_proof_comment("finished autotabulation");
 
     Triggers triggers;

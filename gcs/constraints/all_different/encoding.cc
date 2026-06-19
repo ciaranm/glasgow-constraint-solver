@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different/encoding.hh>
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>

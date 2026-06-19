@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <gcs/proof.hh>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -326,7 +327,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             end_y = _end_y, active_rects = _active_rects, x_lo = _x_lo, x_hi = _x_hi, y_lo = _y_lo,
             y_hi = _y_hi, bridge_x, bridge_y](
             State &, auto &, ProofLogger * const logger) -> void {
-            if (! logger)
+            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                 return;
             // "after" reifies on pos + size >= t+1; for a constant size that is
             // the single-variable pos >= t-size+1, for a variable size the
@@ -696,7 +697,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             break;
                     }
                     auto justify = [&, chain](const ReasonFunction & reason) -> void {
-                        if (logger)
+                        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             emit_proof(chain, +1, reason);
                     };
                     inference.infer_greater_than_or_equal(logger, free_pos[i], target,
@@ -721,7 +722,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             break;
                     }
                     auto justify = [&, chain](const ReasonFunction & reason) -> void {
-                        if (logger)
+                        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             emit_proof(chain, -1, reason);
                     };
                     inference.infer_less_than(logger, free_pos[i], target + 1_i,

@@ -92,8 +92,9 @@ auto main(int argc, char * argv[]) -> int
                 variable_order::dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
                 value_order::largest_first())},
         options_vars.contains("prove")
-            ? make_optional<ProofOptions>(ProofFileNames{options_vars["proof-files-basename"].as<string>()},
-                  true, options_vars.count("full-proof-encoding"))
+            ? make_optional(options_vars.count("full-proof-encoding")
+                      ? ProofOptions{ProofFileNames{options_vars["proof-files-basename"].as<string>()}}.enable_full_encoding()
+                      : ProofOptions{ProofFileNames{options_vars["proof-files-basename"].as<string>()}})
             : nullopt);
 
     if (options_vars.contains("stats"))

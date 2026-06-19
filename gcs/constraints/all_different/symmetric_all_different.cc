@@ -136,6 +136,8 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
         propagators.install_initialiser(
             [vars, start, n, value_am1s = _value_am1s](
                 const State &, auto &, ProofLogger * const logger) -> void {
+                if (! logger || logger->get_assertion_level() >= AssertionLevel::Off)
+                    return;
                 for (Integer v = start; v < start + Integer(n); ++v) {
                     vector<IntegerVariableCondition> xieqvs;
                     for (const auto & var : vars)
@@ -160,7 +162,7 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
 
     propagators.install(
         constraint_id(),
-        [vars, start, values = move(values), value_am1s = _value_am1s](
+        [vars, start, values = move(values), value_am1s = _value_am1s, constraint_id = constraint_id()](
             const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
             // Channeling: x_i = v  =>  x_v = i. If i is not in D(x_v), prune
             // v from D(x_i). Single pass — Inverse(x, y) runs this in both
@@ -173,7 +175,7 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
                             [&]() { return Reason{vars.at((v - start).as_index()) != Integer(i) + start}; });
             }
 
-            propagate_gac_all_different(vars, values, vector<Integer>{}, *value_am1s.get(), state, inf, logger);
+            propagate_gac_all_different(constraint_id, vars, values, vector<Integer>{}, *value_am1s.get(), state, inf, logger);
             return PropagatorState::Enable;
         },
         triggers);

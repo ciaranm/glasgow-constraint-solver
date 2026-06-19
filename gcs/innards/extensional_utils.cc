@@ -1,7 +1,12 @@
+#include <cmath>
 #include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/reason.hh>
+#include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/proof.hh>
 
 using std::vector;
 using std::visit;
@@ -59,6 +64,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
 {
     // check whether selectable tuples are still feasible
     visit([&](const auto & tuples) {
+        auto none_feasible = true;
         for (auto tuple_idx : state.each_value_mutable(table.selector)) {
             bool is_feasible = true;
             for (unsigned idx = 0; idx < table.vars.size(); ++idx)
@@ -67,9 +73,18 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                     break;
                 }
 
-            if (! is_feasible)
+            if (is_feasible)
+                none_feasible = false;
+            else if (logger && logger->get_assertion_level() != AssertionLevel::Off && state.has_single_value(table.selector))
+                // Last selector val so infeasible -> we need an explicit contradiction at higher assertion levels
+                // since there's no table for the implicit one.
+                inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, table.vars));
+            else
                 inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, ReasonFunction{});
         }
+        if (none_feasible && logger && logger->get_assertion_level() != AssertionLevel::Off)
+            // selector already empty on entry
+            inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, table.vars));
     },
         table.tuples);
 
@@ -85,8 +100,9 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                     }
                 }
 
-                if (! supported)
+                if (! supported) {
                     inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{}, generic_reason(state, table.vars));
+                }
             }
         }
     },

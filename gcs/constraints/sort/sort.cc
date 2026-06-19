@@ -10,6 +10,7 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
+#include <gcs/proof.hh>
 #include <util/enumerate.hh>
 
 #include <version>
@@ -981,7 +982,7 @@ auto gcs::innards::install_sortedness_propagator(Propagators & propagators, cons
             rank_ge = witness.rank_ge, rank_le = witness.rank_le, pos = witness.pos,
             inj_lines, al1_lines, anti_lines](
             State &, auto &, ProofLogger * const logger) -> void {
-            if (! logger)
+            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                 return;
 
             // Totality + antisymmetry. The reverse (resp. forward) halves of the

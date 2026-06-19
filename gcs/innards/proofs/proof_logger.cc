@@ -1,19 +1,26 @@
 #include <cstdio>
+#include <gcs/expression.hh>
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_error.hh>
+#include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/proof.hh>
 
 #include <cstddef>
 #include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <optional>
 #include <sstream>
 
+#include <variant>
 #include <version>
 #ifdef __cpp_lib_stacktrace
 #include <stacktrace>
@@ -110,6 +117,7 @@ struct ProofLogger::Imp
     string proof_file;
     fstream proof;
     int current_indent = 0;
+    AssertionLevel assertion_level;
 
     Imp(NamesAndIDsTracker & t) :
         tracker(t)
@@ -122,6 +130,7 @@ ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker 
 {
     _imp->proof_file = proof_options.proof_file_names.proof_file;
     _imp->proof_lines_by_level.resize(2);
+    _imp->assertion_level = proof_options.assertion_level;
 }
 
 ProofLogger::~ProofLogger() = default;
@@ -167,22 +176,42 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     _imp->proof << (optional_minimise_variable_and_value ? "soli" : "solx");
 
-    for (const auto & [var, val] : all_variables_and_values)
+    WPBSum blocking_sum{};
+
+    for (const auto & [var, val] : all_variables_and_values) {
+        if (! optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
+            blocking_sum += 1_i * (var != val);
+
         overloaded{
             [&](const ConstantIntegerVariableID &) {
             },
             [&](const SimpleIntegerVariableID & var) {
-                _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(var == val);
+                if (_imp->assertion_level > AssertionLevel::Definitions)
+                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(var, val);
+                else
+                    _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(var == val);
             },
             [&](const ViewOfIntegerVariableID & var) {
-                _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
+                if (_imp->assertion_level > AssertionLevel::Definitions) {
+                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*names_and_ids_tracker().find_view(var), val);
+                }
+                else
+                    _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
             }}
             .visit(var);
+    }
 
     _imp->proof << ";\n";
     record_proof_line(advance_proof_line_number(), ProofLevel::Top);
 
-    if (optional_minimise_variable_and_value)
+    if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
+        // soli and no links => have to assert the objective improving constraint
+        visit([&](const auto & id) {
+            emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = AssertionHintName::SoliImprove});
+        },
+            optional_minimise_variable_and_value->first);
+    else if (optional_minimise_variable_and_value)
+        // normal soli, emit e line for trimmer
         visit([&](const auto & id) {
             _imp->proof << "e ";
             emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
@@ -191,6 +220,11 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
         },
             optional_minimise_variable_and_value->first);
+    else if (_imp->assertion_level > AssertionLevel::Definitions) {
+        // solx and no links => have to assert the blocking constraint
+        emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = AssertionHintName::SolxBlock});
+    }
+    // nothing needs done for solx below AssertionLevel::Links
 }
 
 auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
@@ -199,7 +233,8 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     WPBSum backtrack;
     for (const auto & guess : guesses)
         backtrack += 1_i * ! guess;
-    emit_rup_proof_line(move(backtrack) >= 1_i, ProofLevel::Current);
+    auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+    emit(assert_or_rup, move(backtrack) >= 1_i, ProofLevel::Current, AssertionAnnotation{.hint_name = AssertionHintName::Backtrack});
 }
 
 auto ProofLogger::end_proof() -> void
@@ -214,8 +249,8 @@ auto ProofLogger::end_proof() -> void
 auto ProofLogger::conclude_unsatisfiable(bool is_optimisation) -> void
 {
     _imp->proof << "% asserting contradiction\n";
-    _imp->proof << "rup >= 1 ;\n";
-    record_proof_line(advance_proof_line_number(), ProofLevel::Top);
+    auto assert_or_rup = _imp->assertion_level >= AssertionLevel::Inferences ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+    emit(assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Top);
     _imp->proof << "output NONE;\n";
     if (is_optimisation)
         _imp->proof << "conclusion BOUNDS INF INF;\n";
@@ -261,7 +296,7 @@ auto ProofLogger::conclude_none() -> void
 }
 
 auto ProofLogger::infer(const Literal & lit, const Justification & why,
-    const ReasonFunction & reason) -> void
+    const ReasonFunction & reason, const optional<AssertionAnnotation> & annotation) -> void
 {
     // A range conclusion on a view (folding views into the interval machinery is
     // deferred) or on a plain variable without a bits encoding (no order cuts to
@@ -291,51 +326,27 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             .visit(simplify_literal(names_and_ids_tracker(), lit));
     };
 
+    if (_imp->assertion_level > AssertionLevel::Inferences)
+        return;
+
+    if (_imp->assertion_level != AssertionLevel::Off) {
+        // At AssertionLevel::Definitions we can assert some inferences and not others (since the needed constraints for the justifications will
+        // still be present). At higher levels, we need to assert all inferences.
+        if (! is_literally_true(lit) && ! std::holds_alternative<NoJustificationNeeded>(why)) {
+            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
+        }
+        return;
+    }
+
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP & j) {
-            log_stacktrace();
-            need_lit();
-            optional<Reason> reason_literals;
-            if (reason)
-                reason_literals = reason();
-
-            if (reason_literals)
-                names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
-
             if (! is_literally_true(lit)) {
-                WPBSum terms;
-                HalfReifyOnConjunctionOf reif{};
-                if (reason_literals)
-                    reif = *reason_literals;
-
-                terms += 1_i * lit;
-                write_indent();
-                _imp->proof << "rup ";
-                emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
-                _imp->proof << ";\n";
-                record_proof_line(advance_proof_line_number(), ProofLevel::Current);
+                emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
             }
         },
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
-            log_stacktrace();
-            need_lit();
-            optional<Reason> reason_literals;
-            if (reason)
-                reason_literals = reason();
-
-            HalfReifyOnConjunctionOf reif{};
-            if (reason_literals) {
-                names_and_ids_tracker().need_all_proof_names_in(*reason_literals);
-                reif = *reason_literals;
-            }
             if (! is_literally_true(lit)) {
-                WPBSum terms;
-                terms += 1_i * lit;
-                write_indent();
-                _imp->proof << "a ";
-                emit_inequality_to(names_and_ids_tracker(), reify(move(terms) >= 1_i, reif), _imp->proof);
-                _imp->proof << ";\n";
-                record_proof_line(advance_proof_line_number(), ProofLevel::Current);
+                emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
             }
         },
         [&](const JustifyExplicitlyOnly & x) {
@@ -391,7 +402,7 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
     _imp->proof << "% " << s << '\n';
 }
 
-auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
+auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     log_stacktrace();
@@ -430,14 +441,18 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
                 rule_line << ";";
             }
         },
-        [&](const AssertProofRule &) { rule_line << ";"; }}
+        [&](const AssertProofRule &) {
+			if (assertion_hint) {
+				rule_line << *assertion_hint;
+	 		}
+			rule_line << ";"; }}
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
     // Note: no automatic deview-derivation here. Runtime RUP/red emissions
     // happen many times per propagator inference and per-call deview
     // derivation explodes proof size on tests with many view-using
-    // constraints. Callers that need the deview-form of a runtime-emitted
+    // constraints. Callers that need the deview-form of a runtime-mitted
     // constraint use the explicit `*_then_deview` variant (see
     // `emit_rup_proof_line_under_reason_then_deview`).
     return line;
@@ -445,7 +460,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 
 auto ProofLogger::emit_under_reason(
     const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level, const ReasonFunction & reason) -> ProofLine
+    ProofLevel level, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
     optional<Reason> reason_literals;
     if (reason)
@@ -487,7 +502,12 @@ auto ProofLogger::emit_under_reason(
 				rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << " ";
 				rule_line << " ;";
 			} else { rule_line << ";"; } },
-        [&](const AssertProofRule &) { rule_line << ";"; }}
+        [&](const AssertProofRule &) { 
+			if (assertion_hint) {
+				rule_line << *assertion_hint;
+	 		}
+
+			rule_line << ";"; }}
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
@@ -744,4 +764,9 @@ auto ProofLogger::write_indent() -> void
     for (auto _ = _imp->current_indent; _--;) {
         _imp->proof << ' ';
     }
+}
+
+auto ProofLogger::get_assertion_level() -> AssertionLevel
+{
+    return _imp->assertion_level;
 }

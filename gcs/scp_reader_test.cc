@@ -72,7 +72,7 @@ namespace
     auto prove_to_scp(Problem & problem, const std::string & basename) -> std::string
     {
         solve_with(problem, SolveCallbacks{},
-            std::make_optional<ProofOptions>(ProofFileNames{basename}, true, false));
+            std::make_optional<ProofOptions>(ProofFileNames{basename}));
         std::ifstream in{basename + ".scp"};
         std::string scp{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
         for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})

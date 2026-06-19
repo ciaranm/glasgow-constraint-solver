@@ -388,7 +388,7 @@ namespace gcs::test_innards
 
         solve_with(p,
             SolveCallbacks{.solution = capped_solution, .trace = capped_trace, .branch = random_branch_with_optional_seed(p)},
-            proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}, true, false) : std::nullopt);
+            proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : std::nullopt);
     }
 
     /**
@@ -404,7 +404,7 @@ namespace gcs::test_innards
             SolveCallbacks{
                 .trace = [](const CurrentState &) -> bool { return false; },
                 .branch = random_branch_with_optional_seed(p)},
-            std::make_optional<ProofOptions>(ProofFileNames{proof_name}, true, false));
+            std::make_optional<ProofOptions>(ProofFileNames{proof_name}));
 
         if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
             throw UnexpectedException{"veripb verification failed"};

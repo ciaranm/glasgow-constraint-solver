@@ -9,6 +9,7 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
+#include <gcs/proof.hh>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -186,9 +187,10 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
         [vars = move(_sanitised_vars),
             vals = move(_compressed_vals),
             excluded = move(_sanitised_excluded),
-            value_am1_constraint_numbers = _value_am1_constraint_numbers](const State & state, auto & inference,
+            value_am1_constraint_numbers = _value_am1_constraint_numbers,
+            constraint_id = constraint_id()](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(vars, vals, excluded, *value_am1_constraint_numbers.get(), state, inference, logger);
+            propagate_gac_all_different(constraint_id, vars, vals, excluded, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers);

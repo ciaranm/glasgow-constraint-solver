@@ -149,7 +149,7 @@ auto run_power_pinned_test(bool proofs, Integer base, Integer exp, pair<long lon
                 actual_results.insert(s(v3).raw_value);
                 return true;
             }},
-        proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}, true, false) : nullopt);
+        proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
 
     println(cerr, " got {} solutions", actual_results.size());
 

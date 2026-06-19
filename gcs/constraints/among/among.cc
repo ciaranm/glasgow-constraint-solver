@@ -9,6 +9,7 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
+#include <gcs/proof.hh>
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -111,7 +112,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
     auto am1_lines = make_shared<map<IntegerVariableID, ProofLine>>();
     propagators.install_initialiser([vars = _vars, values_of_interest = _values_of_interest, am1_lines = am1_lines](
                                         const State &, auto &, ProofLogger * const logger) -> void {
-        if (logger && values_of_interest.size() > 1) {
+        if (logger && values_of_interest.size() > 1 && logger->get_assertion_level() == AssertionLevel::Off) {
             for (auto & var : vars) {
                 vector<IntegerVariableCondition> var_eq_vois;
                 for (const auto & voi : values_of_interest)

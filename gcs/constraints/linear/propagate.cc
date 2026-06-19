@@ -1,6 +1,7 @@
 #include <gcs/constraints/linear/justify.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -79,7 +80,8 @@ namespace
     auto infer(auto & inference, ProofLogger * const logger,
         const vector<pair<Integer, Integer>> & bounds, const auto & coeff_vars,
         int p, const SimpleIntegerVariableID & var, Integer remainder, const bool coeff, bool second_constraint_for_equality,
-        const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason) -> void
+        const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
+        const optional<AssertionAnnotation> & assertion_hint) -> void
     {
         if (coeff) {
             if (bounds[p].second >= (1_i + remainder)) {
@@ -87,7 +89,7 @@ namespace
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_less_than(logger, var, 1_i + remainder, JustifyExplicitlyThenRUP{justf},
-                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
         else {
@@ -96,7 +98,7 @@ namespace
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_greater_than_or_equal(logger, var, -remainder, JustifyExplicitlyThenRUP{justf},
-                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
     }
@@ -104,7 +106,8 @@ namespace
     auto infer(auto & inference, ProofLogger * const logger,
         const vector<pair<Integer, Integer>> & bounds, const auto & coeff_vars,
         int p, const SimpleIntegerVariableID & var, Integer remainder, const Integer coeff, bool second_constraint_for_equality,
-        const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason) -> void
+        const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
+        const optional<AssertionAnnotation> & assertion_hint) -> void
     {
         // lots of conditionals to get the rounding right...
         if (coeff > 0_i && remainder >= 0_i) {
@@ -113,7 +116,7 @@ namespace
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_less_than(logger, var, 1_i + remainder / coeff, JustifyExplicitlyThenRUP{justf},
-                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
         else if (coeff > 0_i && remainder < 0_i) {
@@ -123,7 +126,7 @@ namespace
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_less_than(logger, var, 1_i + div_with_rounding, JustifyExplicitlyThenRUP{justf},
-                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
         else if (coeff < 0_i && remainder >= 0_i) {
@@ -132,7 +135,7 @@ namespace
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_greater_than_or_equal(logger, var, remainder / coeff, JustifyExplicitlyThenRUP{justf},
-                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
         else if (coeff < 0_i && remainder < 0_i) {
@@ -142,7 +145,7 @@ namespace
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
                 inference.infer_greater_than_or_equal(logger, var, div_with_rounding, JustifyExplicitlyThenRUP{justf},
-                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                    linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
         else
@@ -152,7 +155,8 @@ namespace
 
 auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, const State & state,
     auto & inference, ProofLogger * const logger,
-    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState
+    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
+    const optional<AssertionAnnotation> & assertion_hint) -> PropagatorState
 {
     vector<pair<Integer, Integer>> bounds;
     bounds.reserve(coeff_vars.terms.size());
@@ -193,7 +197,7 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
         Integer remainder = value - lower_without_me;
 
         infer(inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv),
-            false, proof_line, add_to_reason);
+            false, proof_line, add_to_reason, assertion_hint);
         bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
 
         if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
@@ -230,7 +234,7 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
             Integer inv_remainder = -value - inv_lower_without_me;
 
             infer(inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)),
-                true, proof_line, add_to_reason);
+                true, proof_line, add_to_reason, assertion_hint);
             bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
 
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
@@ -247,27 +251,33 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
 
 template auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, SimpleInferenceTracker &, ProofLogger * const logger,
-    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
+    const optional<AssertionAnnotation> & assertion_hint) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, SimpleInferenceTracker &, ProofLogger * const logger,
-    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
+    const optional<AssertionAnnotation> & assertion_hint) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<SimpleIntegerVariableID> & coeff_vars,
     Integer value, const State & state, SimpleInferenceTracker &, ProofLogger * const logger,
-    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
+    const optional<AssertionAnnotation> & assertion_hint) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, EagerProofLoggingInferenceTracker &, ProofLogger * const logger,
-    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
+    const optional<AssertionAnnotation> & assertion_hint) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
     Integer value, const State & state, EagerProofLoggingInferenceTracker &, ProofLogger * const logger,
-    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
+    const optional<AssertionAnnotation> & assertion_hint) -> PropagatorState;
 
 template auto gcs::innards::propagate_linear(const SumOf<SimpleIntegerVariableID> & coeff_vars,
     Integer value, const State & state, EagerProofLoggingInferenceTracker &, ProofLogger * const logger,
-    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason) -> PropagatorState;
+    bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
+    const optional<AssertionAnnotation> & assertion_hint) -> PropagatorState;
 
 auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer value, const State & state,
     auto & inference, ProofLogger * const logger,

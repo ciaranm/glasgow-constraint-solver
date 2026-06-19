@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <gcs/proof.hh>
 #include <map>
 #include <memory>
 #include <optional>
@@ -748,7 +749,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         }
 
                         auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
-                            if (! logger)
+                            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                                 return;
                             for (size_t step = 0; step < chain.size(); ++step)
                                 emit_chain_step(j, chain[step].t, chain[step].k,

@@ -1,6 +1,7 @@
 #include <gcs/constraints/smart_table/smart_table.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -8,6 +9,7 @@
 #include <gcs/innards/s_expr.hh>
 
 #include <algorithm>
+#include <gcs/proof.hh>
 #include <map>
 #include <set>
 #include <sstream>
@@ -194,7 +196,7 @@ namespace
                         [&](Integer val) { return val > dom_1[0]; });
                     copy_if(dom_1, back_inserter(new_dom_1),
                         [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
-                    if (logger) {
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (new_dom_2.size() < dom_2.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i),
                                 state, inference, singleton_reason(binary_entry.var_1 >= dom_1[0]));
@@ -208,7 +210,7 @@ namespace
                         [&](Integer val) { return val >= dom_1[0]; });
                     copy_if(dom_1, back_inserter(new_dom_1),
                         [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
-                    if (logger) {
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (new_dom_2.size() < dom_2.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference, singleton_reason(binary_entry.var_1 >= dom_1[0]));
                         if (new_dom_1.size() < dom_1.size())
@@ -219,7 +221,7 @@ namespace
                     set_intersection(dom_1, dom_2, back_inserter(new_dom_1));
                     new_dom_2 = new_dom_1;
 
-                    if (logger) {
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         // This one seems particularly annoying. Is it necessary? - not sure
                         if (new_dom_1.size() < dom_1.size()) {
                             vector<Integer> discarded_dom1;
@@ -242,14 +244,14 @@ namespace
                     if (dom_1.size() == 1) {
                         new_dom_1 = dom_1;
                         set_difference(dom_2, dom_1, back_inserter(new_dom_2));
-                        if (logger && new_dom_2.size() < dom_2.size()) {
+                        if (logger && new_dom_2.size() < dom_2.size() && logger->get_assertion_level() == AssertionLevel::Off) {
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference, singleton_reason(binary_entry.var_1 == dom_1[0]));
                         }
                     }
                     else if (dom_2.size() == 1) {
                         new_dom_2 = dom_2;
                         set_difference(dom_1, dom_2, back_inserter(new_dom_1));
-                        if (logger && new_dom_1.size() < dom_1.size()) {
+                        if (logger && new_dom_1.size() < dom_1.size() && logger->get_assertion_level() == AssertionLevel::Off) {
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference, singleton_reason(binary_entry.var_2 == dom_2[0]));
                         }
                     }
@@ -263,7 +265,7 @@ namespace
                         [&](Integer val) { return val > dom_2[0]; });
                     copy_if(dom_2, back_inserter(new_dom_2),
                         [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
-                    if (logger) {
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference, singleton_reason(binary_entry.var_2 >= dom_2[0]));
                         if (new_dom_2.size() < dom_2.size())
@@ -275,7 +277,7 @@ namespace
                         [&](Integer val) { return val >= dom_2[0]; });
                     copy_if(dom_2, back_inserter(new_dom_2),
                         [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
-                    if (logger) {
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (new_dom_1.size() < dom_1.size())
                             log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference, singleton_reason(binary_entry.var_2 >= dom_2[0]));
                         if (new_dom_2.size() < dom_2.size())
@@ -521,7 +523,7 @@ namespace
         }
 
         if (! some_tuple_still_feasible) {
-            if (logger) {
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 auto justf = [&](const ReasonFunction & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
                         logger->emit_rup_proof_line_under_reason(
@@ -538,11 +540,11 @@ namespace
                 // }
             }
             else {
-                inference.contradiction(logger, NoJustificationNeeded{}, reason);
+                inference.contradiction(logger, JustifyUsingRUP{}, reason);
             }
             return;
         }
-        if (logger) {
+        if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
 
             for (const auto & var : vars) {
                 for (const auto & value : unsupported[var]) {
@@ -566,7 +568,7 @@ namespace
         else {
             for (const auto & var : vars) {
                 for (const auto & value : unsupported[var]) {
-                    inference.infer_not_equal(logger, var, value, NoJustificationNeeded{}, ReasonFunction{});
+                    inference.infer_not_equal(logger, var, value, JustifyUsingRUP{}, ReasonFunction{});
                 }
             }
         }

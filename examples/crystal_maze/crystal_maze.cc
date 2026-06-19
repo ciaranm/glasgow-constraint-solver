@@ -3,11 +3,13 @@
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/problem.hh>
+#include <gcs/proof.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -49,12 +51,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("crystal_maze"))                             //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("crystal_maze"))     //
+            ("stats", "Print solve statistics")                              //
+            ("assert", "Use annotated assertions")                           //
             ;
 
         options.add_options()             //
@@ -101,6 +104,12 @@ auto main(int argc, char * argv[]) -> int
         p.post(LinearEquality{WeightedSum{} + 1_i * xs[x1] + -1_i * xs[x2] + -1_i * diffs.back(), 0_i, options_vars.contains("gac")});
     }
 
+    auto proof_options = options_vars.contains("prove")
+        ? make_optional(options_vars.contains("assert")
+                  ? ProofOptions{options_vars["proof-files-basename"].as<string>()}.set_assertion_level(AssertionLevel::Inferences)
+                  : ProofOptions{options_vars["proof-files-basename"].as<string>()})
+        : nullopt;
+
     auto stats = solve_with(p,
         SolveCallbacks{
             .solution = [&](const CurrentState & s) -> bool {
@@ -111,9 +120,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
             .branch = branch_with(variable_order::dom_then_deg(xs), value_order::smallest_first())},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        proof_options);
 
     if (options_vars.contains("stats"))
         print("{}", stats);
