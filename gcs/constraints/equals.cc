@@ -92,7 +92,7 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
                     ReasonLiterals not_in_range_reason = reason;
                     not_in_range_reason.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
                     inference.infer_not_in_range(logger, pruned, lo, hi,
-                        JustifyExplicitlyThenRUP{[=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }},
+                        JustifyByData{.emit = [=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }},
                         ExplicitReason{std::move(not_in_range_reason)},
                         AssertionAnnotation{.hint_name = "equals"});
                 }
@@ -122,7 +122,7 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 namespace
 {
     auto no_overlap_justification(const State & state, ProofLogger * const logger,
-        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitlyThenRUP, Reason>
+        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyByData, Reason>
     {
         auto v1_bounds = state.bounds(v1);
         ReasonLiterals reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
@@ -142,7 +142,7 @@ namespace
                     logger->emit_rup_proof_line(WPBSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
         };
 
-        return pair{JustifyExplicitlyThenRUP{justify}, ExplicitReason{reason}};
+        return pair{JustifyByData{.emit = justify}, ExplicitReason{reason}};
     }
 }
 

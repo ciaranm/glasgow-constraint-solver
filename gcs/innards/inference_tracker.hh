@@ -141,12 +141,14 @@ namespace gcs::innards
 
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            // For JustifyExplicitlyThenRUP: enter the temporary proof level once,
-            // run the explicit scaffolding once, then RUP each inference under the
-            // shared scaffolding. Without this, each infer() would enter and exit
-            // its own temporary level, wiping the scaffolding before subsequent
-            // inferences can use it.
-            if (logger && logger->get_assertion_level() == AssertionLevel::Off && std::holds_alternative<JustifyExplicitlyThenRUP>(why)) {
+            // For an explicit-steps-then-RUP justification (JustifyByData with an
+            // emit and then_rup): enter the temporary proof level once, run the
+            // explicit scaffolding once, then RUP each inference under the shared
+            // scaffolding. Without this, each infer() would enter and exit its own
+            // temporary level, wiping the scaffolding before subsequent inferences
+            // can use it.
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off &&
+                std::holds_alternative<JustifyByData>(why) && std::get<JustifyByData>(why).emit && std::get<JustifyByData>(why).then_rup) {
                 // The scaffolding is shared across the batch, but each inference's
                 // RUP is only emitted if it actually changes something (track_impl
                 // drops NoChange). If *every* inference is already entailed, no RUP
@@ -170,9 +172,9 @@ namespace gcs::innards
                 // declarative and re-materialise per inference inside the loop.
                 auto snapshotted = snapshot_reason(logger, reason, _state);
                 ReasonLiterals reason_lits = materialise(snapshotted, _state);
-                const auto & j = std::get<JustifyExplicitlyThenRUP>(why);
+                const auto & j = std::get<JustifyByData>(why);
                 auto t = logger->temporary_proof_level();
-                j.add_proof_steps(reason_lits);
+                j.emit(reason_lits);
                 for (const auto & lit : lits)
                     infer(logger, lit, JustifyUsingRUP{}, snapshotted);
                 logger->forget_proof_level(t);

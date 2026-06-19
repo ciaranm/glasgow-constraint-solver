@@ -154,7 +154,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
             // many can't match, so we can derive bounds on the how many
             // variable.
             auto vars_reason = eager_reason(generic_reason(state, vars), state);
-            inference.infer(logger, how_many >= must_match_count, JustifyExplicitlyThenRUP{[&](const ReasonLiterals &) -> void {
+            inference.infer(logger, how_many >= must_match_count, JustifyByData{.emit = [&](const ReasonLiterals &) -> void {
                 // Combine the (sum <= how_many) half of the Among encoding with the
                 // at-least-one constraint for each must_match variable. After UP zeroes
                 // the (var == v) literals for v outside the variable's current domain
@@ -178,7 +178,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
             }},
                 vars_reason);
             auto less_than_this_many = Integer(vars.size()) - must_not_match_count + 1_i;
-            inference.infer(logger, how_many < less_than_this_many, JustifyExplicitlyThenRUP{[&](const ReasonLiterals &) -> void {
+            inference.infer(logger, how_many < less_than_this_many, JustifyByData{.emit = [&](const ReasonLiterals &) -> void {
                 // for any variable that isn't ruled out, show that it can contribute at
                 // most one to the count.
                 if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
@@ -220,7 +220,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
                         for (const auto & val : values_of_interest)
                             inferences.push_back(var != val);
 
-                        inference.infer_all(logger, inferences, JustifyExplicitlyThenRUP{[&](const ReasonLiterals &) -> void {
+                        inference.infer_all(logger, inferences, JustifyByData{.emit = [&](const ReasonLiterals &) -> void {
                             // We need to bound the sum from BELOW: must_match vars each
                             // contribute at least one to the Among sum, so combining the
                             // (sum <= how_many) half with at-least-one constraints for
@@ -270,7 +270,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
                         if (might_match)
                             for (const auto & val : state.each_value_mutable(var))
                                 if (! contains(values_of_interest, val)) {
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonLiterals &) {
+                                    inference.infer(logger, var != val, JustifyByData{.emit = [&](const ReasonLiterals &) {
                                         // need to point out that if var == val then var != voi for each voi
                                         for (const auto & voi : values_of_interest)
                                             logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);

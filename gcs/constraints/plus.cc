@@ -37,12 +37,14 @@ using fmt::print;
 
 namespace gcs::innards::hints
 {
-    // Emit-only witness for a plus bound push: the sum-definition line to start
-    // the cut from. The two operand bounds come from the reason (read
-    // positionally), so emit_justification consumes the reason — the opposite of
-    // all_different's Hall emit, which ignores it. No hint_sexpr overload: plus
-    // has no typed external hint yet (its witness is the reason, already written
-    // into the assertion), so justify_with carries only the coarse name.
+    // Witness for a plus bound push: the sum-definition line to start the cut
+    // from. The two operand bounds come from the reason (read positionally), so
+    // emit_justification consumes the reason — the opposite of all_different's
+    // Hall emit, which ignores it. A genuinely witness-driven emit (nothing
+    // captured but the witness and logger), in contrast to all_different's, whose
+    // emit must capture per-constraint state. No hint_sexpr overload: plus has no
+    // typed external hint yet (its witness is the reason, already in the
+    // assertion), so it carries only the coarse hint_name.
     struct plus_bound
     {
         ProofLine pol_line;
@@ -86,14 +88,19 @@ namespace
             LE
         };
 
+        auto annotation = [](NamesAndIDsTracker &) { return AssertionAnnotation{.hint_name = "plus"}; };
         auto justify = [&](Conclude c) -> Justification {
             auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
             // No sum line (e.g. proofs without a model): no explicit lemma, just
-            // the trailing RUP. Kept as an empty-step JustifyExplicitlyThenRUP so
-            // the proof is byte-identical to the pre-Plan-B early-return closure.
+            // the trailing RUP (empty emit + then_rup), byte-identical to the
+            // pre-Plan-B early-return closure.
             if (! sum_line_value)
-                return JustifyExplicitlyThenRUP{[](const ReasonLiterals &) {}};
-            return justify_with(hints::plus_bound{*sum_line_value}, "plus");
+                return JustifyByData{.emit = [](const ReasonLiterals &) {}, .annotation = annotation};
+            return JustifyByData{
+                .emit = [logger, witness = hints::plus_bound{*sum_line_value}](const ReasonLiterals & reason) {
+                    emit_justification(*logger, witness, reason);
+                },
+                .annotation = annotation};
         };
 
         // min(result) = min(a) + min(b);

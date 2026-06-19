@@ -175,7 +175,7 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
             if (min_possible > value + modifier) {
                 // cannot possibly hold
                 return reification_verdict::MustNotHold{
-                    .justification = JustifyExplicitlyThenRUP{[&state, sanitised_cv, logger, proof_lines](const ReasonLiterals &) {
+                    .justification = JustifyByData{.emit = [&state, sanitised_cv, logger, proof_lines](const ReasonLiterals &) {
                         justify_cond(state, sanitised_cv, *logger, proof_lines);
                     }},
                     .reason = generic_reason(state, vars)};
@@ -183,7 +183,7 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
             else if (max_possible <= value + modifier) {
                 // must definitely hold
                 return reification_verdict::MustHold{
-                    .justification = JustifyExplicitlyThenRUP{[&state, sanitised_neg_cv, logger, proof_lines_swapped](const ReasonLiterals &) {
+                    .justification = JustifyByData{.emit = [&state, sanitised_neg_cv, logger, proof_lines_swapped](const ReasonLiterals &) {
                         justify_cond(state, sanitised_neg_cv, *logger, proof_lines_swapped);
                     }},
                     .reason = generic_reason(state, vars)};

@@ -216,6 +216,7 @@ namespace
     // for the whole solve, including any later replay) and calls the existing
     // Hall justifier. Assert mode serialises the typed Hall witness.
     auto hall_justification(
+        ProofLogger * const logger,
         const vector<IntegerVariableID> & vars,
         const vector<IntegerVariableID> & hall_variable_ids,
         const vector<Integer> & hall_value_nrs,
@@ -223,7 +224,7 @@ namespace
         map<Integer, ProofLine> & value_am1_constraint_numbers) -> JustifyByData
     {
         return JustifyByData{
-            .emit = [vars, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](ProofLogger & logger, const ReasonLiterals &) { justify_all_different_hall_set_or_violator(logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers); },
+            .emit = [logger, vars, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ReasonLiterals &) { justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers); },
             .annotation = [hall = hints::all_different_hall{hall_variable_ids, hall_value_nrs, constraint_id}](NamesAndIDsTracker & names) { return AssertionAnnotation{.hint_name = "all_different", .hint_fields = hints::hint_sexpr(hall, names)}; }};
     }
 
@@ -295,7 +296,7 @@ namespace
                 hall_value_nrs.push_back(vals[v.offset]);
 
         return tuple{
-            hall_justification(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
+            hall_justification(logger, vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
             Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
                                       out = materialise(generic_reason(st, hall_variable_ids), st);
                                       for (const auto & v : hall_variable_ids)
@@ -406,7 +407,7 @@ namespace
                     hall_value_nrs.push_back(vals[v.offset]);
 
             return tuple{
-                hall_justification(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
+                hall_justification(logger, vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
                 Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
                                           out = materialise(generic_reason(st, hall_variable_ids), st);
                                           for (const auto & v : hall_variable_ids)

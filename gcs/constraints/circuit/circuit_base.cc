@@ -151,7 +151,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
             auto justf = [&](const ReasonLiterals &) {
                 output_cycle_to_proof(succ, i, length, pos_var_data, state, *logger, Integer{end[i]}, Integer{i});
             };
-            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitlyThenRUP{justf}, generic_reason(state, succ));
+            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyByData{.emit = justf}, generic_reason(state, succ));
         }
         else {
             inference.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{}, generic_reason(state, succ));

@@ -125,7 +125,7 @@ namespace
                         WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
                         ProofLevel::Temporary);
             };
-            inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
+            inference.contradiction(logger, JustifyByData{.emit = contradiction_proof}, reason);
         }
 
         auto emit_not_d = [&](const ReasonLiterals & r, size_t k) -> void {
@@ -157,7 +157,7 @@ namespace
 
         inference.infer_all(logger,
             {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] <= b1_alpha.second},
-            JustifyExplicitlyThenRUP{tighten_proof}, reason);
+            JustifyByData{.emit = tighten_proof}, reason);
 
         auto nb1_alpha = state.bounds(vars_1[alpha]);
         auto nb2_alpha = state.bounds(vars_2[alpha]);
@@ -202,7 +202,7 @@ namespace
                             emit_not_d(r, k);
                         emit_not_prefix_equal_if_credited(r);
                     };
-                    inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
+                    inference.contradiction(logger, JustifyByData{.emit = contradiction_proof}, reason);
                 }
 
                 auto force_strict_proof = [&, alpha, n](const ReasonLiterals & r) -> void {
@@ -217,7 +217,7 @@ namespace
                 inference.infer_all(logger,
                     {vars_1[alpha] > nb2_alpha.first,
                         vars_2[alpha] < nb1_alpha.second},
-                    JustifyExplicitlyThenRUP{force_strict_proof}, reason);
+                    JustifyByData{.emit = force_strict_proof}, reason);
 
                 auto fb1 = state.bounds(vars_1[alpha]);
                 auto fb2 = state.bounds(vars_2[alpha]);
@@ -362,7 +362,7 @@ namespace
                         prefix_equal_lt_flags, decision_at_lt_flags);
             };
             return reification_verdict::MustHold{
-                .justification = JustifyExplicitlyThenRUP{justify},
+                .justification = JustifyByData{.emit = justify},
                 .reason = std::move(reason)};
         }
         else {
@@ -377,7 +377,7 @@ namespace
                         prefix_equal_gt_flags, decision_at_gt_flags);
             };
             return reification_verdict::MustNotHold{
-                .justification = JustifyExplicitlyThenRUP{justify},
+                .justification = JustifyByData{.emit = justify},
                 .reason = std::move(reason)};
         }
     }

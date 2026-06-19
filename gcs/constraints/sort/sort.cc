@@ -239,7 +239,7 @@ namespace
                         break;
                     }
                 inference.contradiction(logger,
-                    JustifyExplicitlyThenRUP{[&y, k1, k2, V = uy[j], logger](const ReasonLiterals &) -> void {
+                    JustifyByData{.emit = [&y, k1, k2, V = uy[j], logger](const ReasonLiterals &) -> void {
                         for (size_t m = k1; m < k2; ++m)
                             logger->emit(RUPProofRule{},
                                 WPBSum{} + 1_i * (y[m] < Integer{V + 1}) + 1_i * (y[m + 1] >= Integer{V + 1}) >= 1_i,
@@ -290,7 +290,7 @@ namespace
                 throw UnexpectedException{"Sort: no Hall violator for an infeasible matching"};
 
             inference.contradiction(logger,
-                JustifyExplicitlyThenRUP{[&, S, fa, fb](const ReasonLiterals & reason_fn) -> void {
+                JustifyByData{.emit = [&, S, fa, fb](const ReasonLiterals & reason_fn) -> void {
                     // Normalized y-bound lemmas as RUP chains: NUY[k] : y_k <= uy[k]
                     // (top-down, from y_k <= y_{k+1} <= uy[k+1] and y_k <= ouy[k]);
                     // NLY[k] : y_k >= ly[k] (bottom-up). These let each rank
@@ -509,7 +509,7 @@ namespace
                     // from the sortedness constraint y[k-1] <= y[k]; the closing
                     // RUP walks the chain down to the witnessing earlier position.
                     inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
-                        JustifyExplicitlyThenRUP{[&y, j, L, logger](const ReasonLiterals &) -> void {
+                        JustifyByData{.emit = [&y, j, L, logger](const ReasonLiterals &) -> void {
                             for (size_t k = 1; k <= j; ++k)
                                 logger->emit(RUPProofRule{},
                                     WPBSum{} + 1_i * (y[k] >= Integer{L}) + 1_i * (y[k - 1] < Integer{L}) >= 1_i,
@@ -519,7 +519,7 @@ namespace
                 }
                 else if (forced_above >= n - j) {
                     inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
-                        JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_le_lines, &anti_lines, &inj_lines, &al1_lines, n, j, L, logger](const ReasonLiterals & reason_fn) -> void {
+                        JustifyByData{.emit = [&x, &y, &before, &pos, &rank_le_lines, &anti_lines, &inj_lines, &al1_lines, n, j, L, logger](const ReasonLiterals & reason_fn) -> void {
                             // PIVOT' (mirror): (x_i >= L) v (x_m < L) v before[i][m],
                             // RUP from before[i][m]'s reverse half and the constant
                             // threshold L (x_i < L <= x_m forces i before m).
@@ -593,7 +593,7 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid lb(y) tightening"};
                     else
                         inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
-                            JustifyExplicitlyThenRUP{[&y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, L, logger](const ReasonLiterals & reason_fn) -> void {
+                            JustifyByData{.emit = [&y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, L, logger](const ReasonLiterals & reason_fn) -> void {
                                 for (size_t k = n; k-- > 0;)
                                     logger->emit_rup_proof_line_under_reason(reason_fn,
                                         WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
@@ -664,7 +664,7 @@ namespace
                     // to the witnessing later position (whose ub <= U is in the
                     // reason), reaching a contradiction.
                     inference.infer_less_than(logger, y[j], Integer{U + 1},
-                        JustifyExplicitlyThenRUP{[&y, n, j, U, logger](const ReasonLiterals &) -> void {
+                        JustifyByData{.emit = [&y, n, j, U, logger](const ReasonLiterals &) -> void {
                             for (size_t k = j; k + 1 < n; ++k)
                                 logger->emit(RUPProofRule{},
                                     WPBSum{} + 1_i * (y[k] < Integer{U + 1}) + 1_i * (y[k + 1] >= Integer{U + 1}) >= 1_i,
@@ -679,7 +679,7 @@ namespace
                     // permutation lines) surjectivity give y[j] <= U; the count
                     // line "count_U >= j+1" is plain RUP under the reason.
                     inference.infer_less_than(logger, y[j], Integer{U + 1},
-                        JustifyExplicitlyThenRUP{[&x, &y, &before, &pos, &rank_lines, &inj_lines, &al1_lines, n, j, U, logger](const ReasonLiterals & reason_fn) -> void {
+                        JustifyByData{.emit = [&x, &y, &before, &pos, &rank_lines, &inj_lines, &al1_lines, n, j, U, logger](const ReasonLiterals & reason_fn) -> void {
                             // PIVOT BRIDGE (honest, transitivity-free). For each i, m the
                             // clause (x_m > U) v (x_i <= U) v before[m][i] is RUP from
                             // before[m][i]'s reverse half and the bound on the constant
@@ -770,7 +770,7 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid ub(y) tightening"};
                     else
                         inference.infer_less_than(logger, y[j], Integer{U + 1},
-                            JustifyExplicitlyThenRUP{[&y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, U, logger](const ReasonLiterals & reason_fn) -> void {
+                            JustifyByData{.emit = [&y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, U, logger](const ReasonLiterals & reason_fn) -> void {
                                 // Normalized y-bounds for the unconditional rank
                                 // exclusions (k < lo_i: y_k <= uy[k] < lx_i;
                                 // k >= hi_i: y_k >= ly[k] > ux_i).
@@ -835,7 +835,7 @@ namespace
                 // for pos[i] then closes it. HALL (jl_in > lo_i): asserted.
                 if (jl_in[i] == lo_i[i])
                     inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
-                        JustifyExplicitlyThenRUP{[&x, &pos, n, i, L, logger](const ReasonLiterals & reason_fn) -> void {
+                        JustifyByData{.emit = [&x, &pos, n, i, L, logger](const ReasonLiterals & reason_fn) -> void {
                             for (size_t k = 0; k < n; ++k)
                                 logger->emit_rup_proof_line_under_reason(reason_fn,
                                     WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] >= Integer{L}) >= 1_i,
@@ -857,7 +857,7 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid lb(x) tightening"};
                     else
                         inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
-                            JustifyExplicitlyThenRUP{[&x, &y, &pos, &ly, &uy, &inj_lines, S, fa, fb, i, n, L, logger](const ReasonLiterals & reason_fn) -> void {
+                            JustifyByData{.emit = [&x, &y, &pos, &ly, &uy, &inj_lines, S, fa, fb, i, n, L, logger](const ReasonLiterals & reason_fn) -> void {
                                 for (size_t k = n; k-- > 0;)
                                     logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
                                 for (size_t k = 0; k < n; ++k)
@@ -900,7 +900,7 @@ namespace
                 // uy[hi_i-1] (jh_in[i] == hi_i[i]-1).
                 if (jh_in[i] + 1 == hi_i[i])
                     inference.infer_less_than(logger, x[i], Integer{U + 1},
-                        JustifyExplicitlyThenRUP{[&x, &pos, n, i, U, logger](const ReasonLiterals & reason_fn) -> void {
+                        JustifyByData{.emit = [&x, &pos, n, i, U, logger](const ReasonLiterals & reason_fn) -> void {
                             for (size_t k = 0; k < n; ++k)
                                 logger->emit_rup_proof_line_under_reason(reason_fn,
                                     WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] < Integer{U + 1}) >= 1_i,
@@ -919,7 +919,7 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid ub(x) tightening"};
                     else
                         inference.infer_less_than(logger, x[i], Integer{U + 1},
-                            JustifyExplicitlyThenRUP{[&x, &y, &pos, &ly, &uy, &inj_lines, S, fa, fb, i, n, U, logger](const ReasonLiterals & reason_fn) -> void {
+                            JustifyByData{.emit = [&x, &y, &pos, &ly, &uy, &inj_lines, S, fa, fb, i, n, U, logger](const ReasonLiterals & reason_fn) -> void {
                                 for (size_t k = n; k-- > 0;)
                                     logger->emit_rup_proof_line_under_reason(reason_fn, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
                                 for (size_t k = 0; k < n; ++k)

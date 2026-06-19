@@ -88,7 +88,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_less_than(logger, var, 1_i + remainder, JustifyExplicitlyThenRUP{justf},
+                inference.infer_less_than(logger, var, 1_i + remainder, JustifyByData{.emit = justf},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
@@ -97,7 +97,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_greater_than_or_equal(logger, var, -remainder, JustifyExplicitlyThenRUP{justf},
+                inference.infer_greater_than_or_equal(logger, var, -remainder, JustifyByData{.emit = justf},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
@@ -115,7 +115,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_less_than(logger, var, 1_i + remainder / coeff, JustifyExplicitlyThenRUP{justf},
+                inference.infer_less_than(logger, var, 1_i + remainder / coeff, JustifyByData{.emit = justf},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
@@ -125,7 +125,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_less_than(logger, var, 1_i + div_with_rounding, JustifyExplicitlyThenRUP{justf},
+                inference.infer_less_than(logger, var, 1_i + div_with_rounding, JustifyByData{.emit = justf},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
@@ -134,7 +134,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_greater_than_or_equal(logger, var, remainder / coeff, JustifyExplicitlyThenRUP{justf},
+                inference.infer_greater_than_or_equal(logger, var, remainder / coeff, JustifyByData{.emit = justf},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
@@ -144,7 +144,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_greater_than_or_equal(logger, var, div_with_rounding, JustifyExplicitlyThenRUP{justf},
+                inference.infer_greater_than_or_equal(logger, var, div_with_rounding, JustifyByData{.emit = justf},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }

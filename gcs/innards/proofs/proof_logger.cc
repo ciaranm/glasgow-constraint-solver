@@ -356,27 +356,17 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
                 emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
             }
         },
-        [&](const JustifyExplicitlyOnly & x) {
-            auto t = temporary_proof_level();
-            x.add_proof_steps(reason);
-            forget_proof_level(t);
-        },
-        [&](const JustifyExplicitlyThenRUP & x) {
-            need_lit();
-            auto t = temporary_proof_level();
-            x.add_proof_steps(reason);
-            infer(lit, JustifyUsingRUP{}, reason);
-            forget_proof_level(t);
-        },
         [&](const JustifyByData & x) {
-            // Eager mode: run the witness's emit (the real proof steps), then RUP
-            // the inference under the reason when requested. An empty emit is a
-            // pure-RUP inference. Mirrors JustifyExplicitlyThenRUP / JustifyUsingRUP
-            // so proofs are byte-identical to the pre-Plan-B closures.
+            // Eager mode: run emit (the real proof steps); if then_rup, RUP the
+            // inference under the reason afterwards (the ThenRUP shape) — otherwise
+            // the explicit steps stand alone (the Only shape). An empty emit is a
+            // pure-RUP inference. need_lit() matches ThenRUP (it registered the
+            // inference's name before the RUP); the Only shape did not.
             if (x.emit) {
-                need_lit();
+                if (x.then_rup)
+                    need_lit();
                 auto t = temporary_proof_level();
-                x.emit(*this, reason);
+                x.emit(reason);
                 if (x.then_rup)
                     infer(lit, JustifyUsingRUP{}, reason);
                 forget_proof_level(t);
