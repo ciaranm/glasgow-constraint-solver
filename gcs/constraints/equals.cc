@@ -47,13 +47,13 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 {
     auto val1 = state.optional_single_value(v1);
     if (val1) {
-        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 == *val1); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 == *val1); return r; }()}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
         return PropagatorState::DisableUntilBacktrack;
     }
 
     auto val2 = state.optional_single_value(v2);
     if (val2) {
-        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 == *val2); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 == *val2); return r; }()}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
         return PropagatorState::DisableUntilBacktrack;
     }
 
@@ -84,22 +84,22 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 
         auto prune = [&](const auto & pruned, const auto & other, const IntervalSet<Integer> & pruned_set, const IntervalSet<Integer> & other_set) {
             for (auto [lo, hi] : pruned_set.each_interval_minus(other_set)) {
-                if (both_simple)
+                if (both_simple) {
+                    // ExplicitReason holds an immutable snapshot (the base reason plus
+                    // the excluded interval), so the justification — which materialises
+                    // it once per bridge lemma plus once for the conclusion — gets a
+                    // fresh copy each time rather than an accumulating element.
+                    ReasonLiterals not_in_range_reason = reason;
+                    not_in_range_reason.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
                     inference.infer_not_in_range(logger, pruned, lo, hi,
                         JustifyExplicitlyThenRUP{[=](const ReasonFunction & r) { bridge(pruned, other, lo, hi, r); }},
-                        // Build afresh per call: the justification calls the reason once
-                        // per bridge lemma plus once for the conclusion, so a mutable
-                        // accumulating lambda would duplicate the element on each call.
-                        ReasonFunction{[=, base = reason]() {
-                            auto r = base;
-                            r.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
-                            return r;
-                        }},
+                        ExplicitReason{std::move(not_in_range_reason)},
                         AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+                }
                 else
                     for (Integer val = lo; val <= hi; ++val)
                         inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{},
-                            ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(other != val); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+                            ExplicitReason{[&] { auto r = reason; r.emplace_back(other != val); return r; }()}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
             }
         };
 
@@ -109,10 +109,10 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
     else {
         auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
         if (bounds1 != bounds2) {
-            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 >= bounds1.first); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
-            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 >= bounds2.first); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
-            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 <= bounds1.second); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
-            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 <= bounds2.second); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 >= bounds1.first); return r; }()}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 >= bounds2.first); return r; }()}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 <= bounds1.second); return r; }()}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 <= bounds2.second); return r; }()}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
         }
     }
 
@@ -122,7 +122,7 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 namespace
 {
     auto no_overlap_justification(const State & state, ProofLogger * const logger,
-        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitlyThenRUP, ReasonFunction>
+        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitlyThenRUP, Reason>
     {
         auto v1_bounds = state.bounds(v1);
         ReasonLiterals reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
@@ -142,7 +142,7 @@ namespace
                     logger->emit_rup_proof_line(WPBSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
         };
 
-        return pair{JustifyExplicitlyThenRUP{justify}, ReasonFunction{[=]() { return reason; }}};
+        return pair{JustifyExplicitlyThenRUP{justify}, ExplicitReason{reason}};
     }
 }
 
@@ -260,13 +260,13 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         auto value1 = state.optional_single_value(v1);
         if (value1) {
             inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{},
-                ReasonFunction{[=]() { return ReasonLiterals{{cond, v1 == *value1}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+                ExplicitReason{ReasonLiterals{{cond, v1 == *value1}}}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
             return PropagatorState::DisableUntilBacktrack;
         }
         auto value2 = state.optional_single_value(v2);
         if (value2) {
             inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{},
-                ReasonFunction{[=]() { return ReasonLiterals{{cond, v2 == *value2}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+                ExplicitReason{ReasonLiterals{{cond, v2 == *value2}}}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
             return PropagatorState::DisableUntilBacktrack;
         }
         return PropagatorState::Enable;
@@ -287,7 +287,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
-            auto reason = ReasonFunction{[=]() { return ReasonLiterals{v1 == *value1, v2 == *value2}; }};
+            auto reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 == *value2}};
             if (*value1 == *value2)
                 return reification_verdict::MustHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             else
@@ -297,7 +297,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
             if (! state.in_domain(v2, *value1))
                 return reification_verdict::MustNotHold{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return ReasonLiterals{v1 == *value1, v2 != *value1}; }},
+                    .reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 != *value1}},
                     .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             return reification_verdict::StillUndecided{};
         }
@@ -305,7 +305,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
             if (! state.in_domain(v1, *value2))
                 return reification_verdict::MustNotHold{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return ReasonLiterals{v2 == *value2, v1 != *value2}; }},
+                    .reason = ExplicitReason{ReasonLiterals{v2 == *value2, v1 != *value2}},
                     .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             return reification_verdict::StillUndecided{};
         }
