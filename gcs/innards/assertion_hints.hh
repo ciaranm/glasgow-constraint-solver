@@ -2,7 +2,12 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_ASSERTION_HINTS_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_ASSERTION_HINTS_HH
 
+#include <gcs/constraint_id.hh>
 #include <gcs/innards/proofs/proof_line.hh>
+#include <gcs/integer.hh>
+#include <gcs/variable_id.hh>
+#include <utility>
+#include <variant>
 #include <vector>
 namespace gcs::innards
 {
@@ -54,9 +59,20 @@ namespace gcs::innards
         case AssertionHintName::SolxBlock:
             return s << "SolxBlock";
         case AssertionHintName::SoliImprove:
-            return s << "SolxBlock";
+            return s << "SoliImprove";
         }
     }
+
+    /**
+     * \brief Kewords that can be used in assertion hint.
+     *
+     * \ingroup Innards
+     * */
+    enum class AssertionHintIdentifier
+    {
+        // Todo
+    };
+
     /**
      * \brief The allowed field types that can appear in the
      * hints section of an annotated assertion.
@@ -64,10 +80,9 @@ namespace gcs::innards
      * \ingroup Innards
      * \sa AssertionAnnotation
      */
-    enum AssertionHintField
-    {
-        // Hint field types will go here
-    };
+    using AssertionHintField = std::variant<AssertionHintIdentifier, ProofLineLabel, ConstraintID, Integer, IntegerVariableID>;
+
+    using AssertionHintRecord = std::variant<AssertionHintField, std::vector<AssertionHintField>, std::pair<AssertionHintField, std::vector<AssertionHintField>>>;
 
     /**
      * \brief An annotation for an annotated assertion step.
@@ -78,7 +93,7 @@ namespace gcs::innards
     {
         std::vector<ProofLineLabel> derivable_from = {};
         AssertionHintName hint_name = AssertionHintName::None;
-        std::vector<AssertionHintField> hint_fields = {};
+        std::vector<AssertionHintRecord> hint_fields = {};
     };
 
     /**
