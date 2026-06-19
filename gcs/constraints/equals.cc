@@ -3,6 +3,7 @@
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/assertion_hints.hh>
+#include <gcs/innards/hint_names.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -47,13 +48,13 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 {
     auto val1 = state.optional_single_value(v1);
     if (val1) {
-        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 == *val1); return r; }()}, AssertionAnnotation{.hint_name = "equals"});
+        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 == *val1); return r; }()}, AssertionAnnotation{.hint_name = hints::equals});
         return PropagatorState::DisableUntilBacktrack;
     }
 
     auto val2 = state.optional_single_value(v2);
     if (val2) {
-        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 == *val2); return r; }()}, AssertionAnnotation{.hint_name = "equals"});
+        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 == *val2); return r; }()}, AssertionAnnotation{.hint_name = hints::equals});
         return PropagatorState::DisableUntilBacktrack;
     }
 
@@ -94,12 +95,12 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
                     inference.infer_not_in_range(logger, pruned, lo, hi,
                         JustifyByData{.emit = [=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }},
                         ExplicitReason{std::move(not_in_range_reason)},
-                        AssertionAnnotation{.hint_name = "equals"});
+                        AssertionAnnotation{.hint_name = hints::equals});
                 }
                 else
                     for (Integer val = lo; val <= hi; ++val)
                         inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{},
-                            ExplicitReason{[&] { auto r = reason; r.emplace_back(other != val); return r; }()}, AssertionAnnotation{.hint_name = "equals"});
+                            ExplicitReason{[&] { auto r = reason; r.emplace_back(other != val); return r; }()}, AssertionAnnotation{.hint_name = hints::equals});
             }
         };
 
@@ -109,10 +110,10 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
     else {
         auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
         if (bounds1 != bounds2) {
-            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 >= bounds1.first); return r; }()}, AssertionAnnotation{.hint_name = "equals"});
-            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 >= bounds2.first); return r; }()}, AssertionAnnotation{.hint_name = "equals"});
-            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 <= bounds1.second); return r; }()}, AssertionAnnotation{.hint_name = "equals"});
-            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 <= bounds2.second); return r; }()}, AssertionAnnotation{.hint_name = "equals"});
+            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 >= bounds1.first); return r; }()}, AssertionAnnotation{.hint_name = hints::equals});
+            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 >= bounds2.first); return r; }()}, AssertionAnnotation{.hint_name = hints::equals});
+            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 <= bounds1.second); return r; }()}, AssertionAnnotation{.hint_name = hints::equals});
+            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 <= bounds2.second); return r; }()}, AssertionAnnotation{.hint_name = hints::equals});
         }
     }
 
@@ -260,13 +261,13 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         auto value1 = state.optional_single_value(v1);
         if (value1) {
             inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{},
-                ExplicitReason{ReasonLiterals{{cond, v1 == *value1}}}, AssertionAnnotation{.hint_name = "equals"});
+                ExplicitReason{ReasonLiterals{{cond, v1 == *value1}}}, AssertionAnnotation{.hint_name = hints::equals});
             return PropagatorState::DisableUntilBacktrack;
         }
         auto value2 = state.optional_single_value(v2);
         if (value2) {
             inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{},
-                ExplicitReason{ReasonLiterals{{cond, v2 == *value2}}}, AssertionAnnotation{.hint_name = "equals"});
+                ExplicitReason{ReasonLiterals{{cond, v2 == *value2}}}, AssertionAnnotation{.hint_name = hints::equals});
             return PropagatorState::DisableUntilBacktrack;
         }
         return PropagatorState::Enable;
@@ -283,22 +284,22 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
             return reification_verdict::MustHold{
                 .justification = JustifyUsingRUP{},
                 .reason = NoReason{},
-                .assertion_hint = AssertionAnnotation{.hint_name = "equals"}};
+                .assertion_hint = AssertionAnnotation{.hint_name = hints::equals}};
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
             auto reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 == *value2}};
             if (*value1 == *value2)
-                return reification_verdict::MustHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = "equals"}};
+                return reification_verdict::MustHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = hints::equals}};
             else
-                return reification_verdict::MustNotHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = "equals"}};
+                return reification_verdict::MustNotHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = hints::equals}};
         }
         else if (value1) {
             if (! state.in_domain(v2, *value1))
                 return reification_verdict::MustNotHold{
                     .justification = JustifyUsingRUP{},
                     .reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 != *value1}},
-                    .assertion_hint = AssertionAnnotation{.hint_name = "equals"}};
+                    .assertion_hint = AssertionAnnotation{.hint_name = hints::equals}};
             return reification_verdict::StillUndecided{};
         }
         else if (value2) {
@@ -306,14 +307,14 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
                 return reification_verdict::MustNotHold{
                     .justification = JustifyUsingRUP{},
                     .reason = ExplicitReason{ReasonLiterals{v2 == *value2, v1 != *value2}},
-                    .assertion_hint = AssertionAnnotation{.hint_name = "equals"}};
+                    .assertion_hint = AssertionAnnotation{.hint_name = hints::equals}};
             return reification_verdict::StillUndecided{};
         }
         else {
             // not equals is forced if there's no overlap between domains
             if (! state.domains_intersect(v1, v2)) {
                 auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
-                return reification_verdict::MustNotHold{.justification = just, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = "equals"}};
+                return reification_verdict::MustNotHold{.justification = just, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = hints::equals}};
             }
             return reification_verdict::StillUndecided{};
         }

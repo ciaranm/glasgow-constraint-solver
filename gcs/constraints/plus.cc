@@ -1,4 +1,5 @@
 #include <gcs/constraints/plus.hh>
+#include <gcs/innards/hint_names.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
@@ -88,7 +89,7 @@ namespace
             LE
         };
 
-        auto annotation = [](NamesAndIDsTracker &) { return AssertionAnnotation{.hint_name = "plus"}; };
+        auto annotation = [](NamesAndIDsTracker &) { return AssertionAnnotation{.hint_name = hints::plus}; };
         auto justify = [&](Conclude c) -> Justification {
             auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
             // No sum line (e.g. proofs without a model): no explicit lemma, just

@@ -1,4 +1,5 @@
 #include <gcs/innards/assertion_hints.hh>
+#include <gcs/innards/hint_names.hh>
 #include <gcs/innards/interval_tree.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
@@ -714,7 +715,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 return;
 
             ProofRule assert_or_rup = _imp->logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-            auto annotation = AssertionAnnotation{.hint_name = "initial_bound"};
+            auto annotation = AssertionAnnotation{.hint_name = hints::initial_bound};
             visit([&](auto id) { _imp->logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (id >= v) : (id >= v)) >= 1_i, ProofLevel::Top, annotation); }, id);
         }
         else
@@ -750,7 +751,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     };
 
     // implied by the next highest gevar, if there is one?
-    auto link_hint = AssertionAnnotation{.hint_name = "bound_link"};
+    auto link_hint = AssertionAnnotation{.hint_name = hints::bound_link};
     if (higher_gevar != other_gevars.end()) {
         overloaded{
             [&](const ProofOnlySimpleIntegerVariableID & id) {

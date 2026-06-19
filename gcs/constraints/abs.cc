@@ -1,6 +1,7 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/abs/justify.hh>
 #include <gcs/innards/assertion_hints.hh>
+#include <gcs/innards/hint_names.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -131,7 +132,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                                   [logger, v1, v2, abs_nonneg_ge](const ReasonLiterals &) -> void {
                     justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge);
                 }},
-                NoReason{}, AssertionAnnotation{.hint_name = "abs"});
+                NoReason{}, AssertionAnnotation{.hint_name = hints::abs});
 
             auto v2_ub = state.upper_bound(v2);
 
@@ -144,7 +145,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                                       [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonLiterals & r) -> void {
                         justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
                     }},
-                    NoReason{}, AssertionAnnotation{.hint_name = "abs"});
+                    NoReason{}, AssertionAnnotation{.hint_name = hints::abs});
             }
 
             // Symmetric flag-collision concern: skip when ub(v2) <= 0.
@@ -154,7 +155,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                                       [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonLiterals & r) -> void {
                         justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
                     }},
-                    NoReason{}, AssertionAnnotation{.hint_name = "abs"});
+                    NoReason{}, AssertionAnnotation{.hint_name = hints::abs});
             }
 
             auto [v1_lb, v1_ub] = state.bounds(v1);
@@ -164,7 +165,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                                   [logger, v1, v2, v1_lb, v1_ub, big_m, abs_nonneg_le, abs_neg_le](const ReasonLiterals & r) -> void {
                     justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, big_m, *abs_nonneg_le, *abs_neg_le, r);
                 }},
-                NoReason{}, AssertionAnnotation{.hint_name = "abs"});
+                NoReason{}, AssertionAnnotation{.hint_name = hints::abs});
         },
         InitialiserPriority::SimpleDefinition);
 
@@ -203,7 +204,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                                           [logger, v1, v2, v1_lb, v1_ub, image_ub, abs_nonneg_le, abs_neg_le](const ReasonLiterals & r) -> void {
                             justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, image_ub, *abs_nonneg_le, *abs_neg_le, r);
                         }},
-                        ExplicitReason{ReasonLiterals{{v1 >= v1_lb, v1 <= v1_ub}}}, AssertionAnnotation{.hint_name = "abs"});
+                        ExplicitReason{ReasonLiterals{{v1 >= v1_lb, v1 <= v1_ub}}}, AssertionAnnotation{.hint_name = hints::abs});
                 }
 
                 if (v1_lb >= 1_i && v1_lb > v2_lb) {
@@ -212,7 +213,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                                           [logger, v1, v2, v1_lb, abs_nonneg_ge](const ReasonLiterals & r) -> void {
                             justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonneg, v1_lb, *abs_nonneg_ge, r);
                         }},
-                        ExplicitReason{ReasonLiterals{v1 >= v1_lb}}, AssertionAnnotation{.hint_name = "abs"});
+                        ExplicitReason{ReasonLiterals{v1 >= v1_lb}}, AssertionAnnotation{.hint_name = hints::abs});
                 }
                 else if (v1_ub <= -1_i && -v1_ub > v2_lb) {
                     inference.infer_greater_than_or_equal(logger, v2, -v1_ub,
@@ -220,7 +221,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                                           [logger, v1, v2, v1_ub, abs_neg_ge](const ReasonLiterals & r) -> void {
                             justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonpos, -v1_ub, *abs_neg_ge, r);
                         }},
-                        ExplicitReason{ReasonLiterals{v1 <= v1_ub}}, AssertionAnnotation{.hint_name = "abs"});
+                        ExplicitReason{ReasonLiterals{v1 <= v1_ub}}, AssertionAnnotation{.hint_name = hints::abs});
                 }
             }
 
@@ -231,7 +232,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                                       [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonLiterals & r) -> void {
                         justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
                     }},
-                    ExplicitReason{ReasonLiterals{v2 <= v2_ub}}, AssertionAnnotation{.hint_name = "abs"});
+                    ExplicitReason{ReasonLiterals{v2 <= v2_ub}}, AssertionAnnotation{.hint_name = hints::abs});
             }
             if (-v2_ub > v1_lb) {
                 inference.infer_greater_than_or_equal(logger, v1, -v2_ub,
@@ -239,7 +240,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                                       [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonLiterals & r) -> void {
                         justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
                     }},
-                    ExplicitReason{ReasonLiterals{v2 <= v2_ub}}, AssertionAnnotation{.hint_name = "abs"});
+                    ExplicitReason{ReasonLiterals{v2 <= v2_ub}}, AssertionAnnotation{.hint_name = hints::abs});
             }
 
             // Interior pruning: remove values in v2 with no preimage in v1,
@@ -269,7 +270,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         JustifyByData{.emit = [logger, v1, v2, val](const ReasonLiterals & r) {
                             justify_abs_hole(*logger, r, v1, v2, val);
                         }},
-                        ExplicitReason{ReasonLiterals{{v1 != val, v1 != -val}}}, AssertionAnnotation{.hint_name = "abs"});
+                        ExplicitReason{ReasonLiterals{{v1 != val, v1 != -val}}}, AssertionAnnotation{.hint_name = hints::abs});
                 }
             }
 
@@ -292,7 +293,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     if (! state.in_domain(v1, val))
                         continue;
                     inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{},
-                        ExplicitReason{ReasonLiterals{v2 != abs(val)}}, AssertionAnnotation{.hint_name = "abs"});
+                        ExplicitReason{ReasonLiterals{v2 != abs(val)}}, AssertionAnnotation{.hint_name = hints::abs});
                 }
             }
 

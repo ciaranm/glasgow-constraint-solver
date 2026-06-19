@@ -4,6 +4,7 @@
 #include <gcs/constraints/all_different/justify.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/assertion_hints.hh>
+#include <gcs/innards/hint_names.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -225,7 +226,7 @@ namespace
     {
         return JustifyByData{
             .emit = [logger, vars, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ReasonLiterals &) { justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers); },
-            .annotation = [hall = hints::all_different_hall{hall_variable_ids, hall_value_nrs, constraint_id}](NamesAndIDsTracker & names) { return AssertionAnnotation{.hint_name = "all_different", .hint_fields = hints::hint_sexpr(hall, names)}; }};
+            .annotation = [hall = hints::all_different_hall{hall_variable_ids, hall_value_nrs, constraint_id}](NamesAndIDsTracker & names) { return AssertionAnnotation{.hint_name = hints::all_different, .hint_fields = hints::hint_sexpr(hall, names)}; }};
     }
 
     auto prove_matching_is_too_small(
@@ -392,7 +393,7 @@ namespace
             optional<AssertionAnnotation> assertion_annotation;
             if (logger && logger->get_assertion_level() != AssertionLevel::Off)
                 assertion_annotation = std::make_optional(AssertionAnnotation{
-                    .hint_name = "all_different",
+                    .hint_name = hints::all_different,
                     .hint_fields = hint_list(hint_list(SExpr::atom("constraint_id"), constraint_id))});
 
             return tuple{Justification{JustifyUsingRUP{}},
