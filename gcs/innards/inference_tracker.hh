@@ -34,37 +34,35 @@ namespace gcs::innards
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
         bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
 
-        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason, assertion_hints);
         }
 
-        // Convert a declarative Reason into the eager thunk the proof logger
-        // still consumes, preserving the old materialisation *timing* exactly so
-        // proofs stay byte-identical:
+        // Pin a reason's materialisation *timing* so it can be carried across the
+        // domain change in track() and materialised by the logger-side tracker
+        // afterwards, while staying byte-identical to the old eager call sites:
         //   - proofs off (logger == nullptr): never materialise. The reason is
         //     ignored by the simple tracker, so building its literals would be
         //     the wasted eager-build-then-discard this rework removes (G1).
-        //   - the *_reason() factories (Generic / BothBounds / Explicit / None):
-        //     these used to be built eagerly at the call site, against the
-        //     pre-inference state. Snapshot them here, before _state.infer().
-        //   - bespoke reason callbacks (the LegacyReasonFunction bridge and the
-        //     Lazy variants): these used to be evaluated by the logger, after the
-        //     inference. Hand the logger a thunk so the timing is unchanged.
-        [[nodiscard]] static auto reason_function_for(ProofLogger * const logger, const Reason & reason, State & state) -> ReasonFunction
+        //   - the *_reason() factories (Generic / BothBounds / Explicit): these
+        //     used to be built eagerly at the call site, against the pre-inference
+        //     state. Snapshot them now, before _state.infer(), into an
+        //     ExplicitReason that later re-materialises to the same literals
+        //     regardless of state.
+        //   - the Lazy variants: these used to be evaluated by the logger, after
+        //     the inference. Carry the declarative reason unchanged so it
+        //     materialises against the (post-inference) state later.
+        [[nodiscard]] static auto snapshot_reason(ProofLogger * const logger, const Reason & reason, State & state) -> Reason
         {
             if (! logger)
-                return ReasonFunction{};
+                return NoReason{};
 
             return reason.visit(overloaded{
-                [&](const NoReason &) -> ReasonFunction { return ReasonFunction{}; },
-                [&](const LegacyReasonFunction & r) -> ReasonFunction { return r.fn; },
-                [&](const LazyReasonOver &) -> ReasonFunction { return [reason, &state]() { return materialise(reason, state); }; },
-                [&](const NarrowableLazyReasonOver &) -> ReasonFunction { return [reason, &state]() { return materialise(reason, state); }; },
-                [&](const auto &) -> ReasonFunction {
-                    ReasonLiterals lits = materialise(reason, state);
-                    return [lits = std::move(lits)]() { return lits; };
-                }});
+                [&](const NoReason &) -> Reason { return NoReason{}; },
+                [&](const LazyReasonOver &) -> Reason { return reason; },
+                [&](const NarrowableLazyReasonOver &) -> Reason { return reason; },
+                [&](const auto &) -> Reason { return ExplicitReason{materialise(reason, state)}; }});
         }
 
     public:
@@ -81,55 +79,53 @@ namespace gcs::innards
 
         auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            auto reason_fn = reason_function_for(logger, reason, _state);
-            track(logger, _state.infer(lit), lit, why, reason_fn, assertion_hints);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer(lit), lit, why, snapshotted, assertion_hints);
         }
 
         [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            if (logger) {
-                auto reason_fn = reason_function_for(logger, reason, _state);
-                ReasonLiterals lits;
-                if (reason_fn)
-                    lits = reason_fn();
-                logger->infer(FalseLiteral{}, why, lits, assertion_hints);
-            }
+            // No domain change happens here, so the reason materialises against
+            // the current state directly (the eager/lazy timing distinction only
+            // matters when there is an inference to straddle).
+            if (logger)
+                logger->infer(FalseLiteral{}, why, materialise(reason, _state), assertion_hints);
             throw TrackedPropagationFailed{};
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            auto reason_fn = reason_function_for(logger, reason, _state);
-            track(logger, _state.infer(lit), lit, why, reason_fn, assertion_hints);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer(lit), lit, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            auto reason_fn = reason_function_for(logger, reason, _state);
-            track(logger, _state.infer_equal(var, value), var == value, why, reason_fn, assertion_hints);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer_equal(var, value), var == value, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            auto reason_fn = reason_function_for(logger, reason, _state);
-            track(logger, _state.infer_not_equal(var, value), var != value, why, reason_fn, assertion_hints);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            auto reason_fn = reason_function_for(logger, reason, _state);
-            track(logger, _state.infer_less_than(var, value), var < value, why, reason_fn, assertion_hints);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer_less_than(var, value), var < value, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
         auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            auto reason_fn = reason_function_for(logger, reason, _state);
-            track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, reason_fn, assertion_hints);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
@@ -139,8 +135,8 @@ namespace gcs::innards
             // batches the whole removal into one erase_range pass.
             if (lo > hi)
                 return;
-            auto reason_fn = reason_function_for(logger, reason, _state);
-            track(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, reason_fn, assertion_hints);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, snapshotted, assertion_hints);
         }
 
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
@@ -168,24 +164,23 @@ namespace gcs::innards
                 if (! any_will_fire)
                     return;
 
-                // Materialise the shared reason once (matching the old single
-                // eager build) and reuse it for the scaffolding and every RUP,
-                // rather than re-walking per inference.
-                auto reason_fn = reason_function_for(logger, reason, _state);
-                ReasonLiterals reason_lits;
-                if (reason_fn)
-                    reason_lits = reason_fn();
+                // Snapshot the shared reason once, pre-batch (matching the old
+                // single eager build): eager reasons become a fixed ExplicitReason
+                // reused for the scaffolding and every RUP; lazy reasons stay
+                // declarative and re-materialise per inference inside the loop.
+                auto snapshotted = snapshot_reason(logger, reason, _state);
+                ReasonLiterals reason_lits = materialise(snapshotted, _state);
                 const auto & j = std::get<JustifyExplicitlyThenRUP>(why);
                 auto t = logger->temporary_proof_level();
                 j.add_proof_steps(reason_lits);
                 for (const auto & lit : lits)
-                    infer(logger, lit, JustifyUsingRUP{}, Reason{reason_fn});
+                    infer(logger, lit, JustifyUsingRUP{}, snapshotted);
                 logger->forget_proof_level(t);
             }
             else {
-                auto reason_fn = reason_function_for(logger, reason, _state);
+                auto snapshotted = snapshot_reason(logger, reason, _state);
                 for (const auto & lit : lits)
-                    infer(logger, lit, why, Reason{reason_fn}, assertion_hints);
+                    infer(logger, lit, why, snapshotted, assertion_hints);
             }
         }
 
@@ -220,7 +215,7 @@ namespace gcs::innards
     public:
         using InferenceTrackerBase::InferenceTrackerBase;
 
-        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const ReasonFunction &, const std::optional<AssertionAnnotation> &) -> void
+        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const Reason &, const std::optional<AssertionAnnotation> &) -> void
         {
             switch (inf) {
             case Inference::NoChange:
@@ -262,7 +257,7 @@ namespace gcs::innards
     public:
         using InferenceTrackerBase::InferenceTrackerBase;
 
-        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             switch (inf) {
             case Inference::NoChange:
@@ -272,16 +267,13 @@ namespace gcs::innards
             case Inference::BoundsChanged:
             case Inference::Instantiated:
                 if (logger) {
-                    // Materialise the reason here, post-inference: the reason_fn
-                    // handed to us by reason_function_for already encodes the
-                    // correct timing (eager kinds return their pre-inference
-                    // snapshot, Lazy kinds materialise against the now-current
-                    // state), so calling it now gives both kinds the literals the
-                    // logger used to compute internally.
-                    ReasonLiterals lits;
-                    if (reason)
-                        lits = reason();
-                    logger->infer(lit, just, lits, assertion_hints);
+                    // Materialise the reason here, post-inference: snapshot_reason
+                    // already pinned the timing (eager kinds are a fixed
+                    // ExplicitReason snapshot taken pre-inference, Lazy kinds stay
+                    // declarative and materialise against the now-current state),
+                    // so materialising now gives both kinds the literals the logger
+                    // used to compute internally.
+                    logger->infer(lit, just, materialise(reason, _state), assertion_hints);
                 }
 
                 overloaded{
@@ -305,12 +297,8 @@ namespace gcs::innards
                 break;
 
             [[unlikely]] case Inference::Contradiction:
-                if (logger) {
-                    ReasonLiterals lits;
-                    if (reason)
-                        lits = reason();
-                    logger->infer(lit, just, lits, assertion_hints);
-                }
+                if (logger)
+                    logger->infer(lit, just, materialise(reason, _state), assertion_hints);
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};

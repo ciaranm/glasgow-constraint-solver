@@ -195,12 +195,9 @@ auto Among::install_propagators(Propagators & propagators) -> void
             // matching or not matching.
             auto [at_least_how_many, at_most_how_many] = state.bounds(how_many);
 
-            auto vars_and_bounds_reason = [&vars_reason, how_many, at_least_how_many, at_most_how_many]() {
-                auto result = vars_reason;
-                result.push_back(how_many >= at_least_how_many);
-                result.push_back(how_many <= at_most_how_many);
-                return result;
-            };
+            auto vars_and_bounds_reason = vars_reason;
+            vars_and_bounds_reason.push_back(how_many >= at_least_how_many);
+            vars_and_bounds_reason.push_back(how_many <= at_most_how_many);
 
             // if we have enough definitely matching values, nothing else can match
             if (must_match_count == at_most_how_many) {

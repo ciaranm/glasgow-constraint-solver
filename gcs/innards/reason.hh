@@ -9,10 +9,8 @@
 
 #include <gch/small_vector.hpp>
 
-#include <concepts>
 #include <functional>
 #include <optional>
-#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -26,11 +24,6 @@ namespace gcs::innards
     // in_range() / not_in_range()) is an ordinary condition, whose proof name
     // is the range ("in") literal.
     using ReasonLiterals = gch::small_vector<ProofLiteralOrFlag, 2>;
-
-    // A legacy eager reason thunk. Retained only as a bridge while call sites
-    // are migrated from the old `ReasonFunction` factories to the declarative
-    // `Reason` variant below; remove once nothing constructs one.
-    using ReasonFunction = std::function<auto()->ReasonLiterals>;
 
     // Owned / shared / borrowed handle over the variable scope a reason reasons
     // about, reusing gcs::ArrayParam (gcs/array_param.hh). "Borrowed" is the
@@ -104,22 +97,12 @@ namespace gcs::innards
         LazyReasonFn fn;
     };
 
-    // Transitional bridge: wraps an old-style eager reason thunk so call sites
-    // not yet converted to the variant still compile. materialise() just calls
-    // it. Remove together with ReasonFunction once the migration is complete.
-    struct LegacyReasonFunction
-    {
-        ReasonFunction fn;
-    };
-
     /**
      * \brief A reason for an inference, as a declarative variant.
      *
      * Implemented as a thin wrapper over a std::variant so it can also be
      * implicitly built from a materialised ReasonLiterals (used directly as the
-     * reason) and, transitionally, from any old-style reason thunk (the
-     * LegacyReasonFunction bridge). Inspect with visit(); materialise() turns it
-     * into ReasonLiterals.
+     * reason). Inspect with visit(); materialise() turns it into ReasonLiterals.
      */
     class Reason
     {
@@ -127,8 +110,7 @@ namespace gcs::innards
         using Variant = std::variant<
             NoReason, ExplicitReason,
             GenericReasonOver, BothBoundsReasonOver, LazyReasonOver,
-            NarrowableGenericReasonOver, NarrowableBothBoundsReasonOver, NarrowableLazyReasonOver,
-            LegacyReasonFunction>;
+            NarrowableGenericReasonOver, NarrowableBothBoundsReasonOver, NarrowableLazyReasonOver>;
 
         Reason() :
             _variant(NoReason{})
@@ -178,14 +160,6 @@ namespace gcs::innards
         /// Materialised literals used verbatim as the reason.
         Reason(ReasonLiterals literals) :
             _variant(ExplicitReason{std::move(literals)})
-        {
-        }
-
-        /// Transitional bridge from any old-style reason thunk (e.g. a `[]{ return ReasonLiterals{...}; }` lambda).
-        template <typename F_>
-            requires(! std::same_as<std::remove_cvref_t<F_>, Reason>) && std::is_invocable_r_v<ReasonLiterals, F_ &>
-        Reason(F_ && f) :
-            _variant(LegacyReasonFunction{ReasonFunction(std::forward<F_>(f))})
         {
         }
 

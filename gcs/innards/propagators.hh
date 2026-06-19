@@ -227,7 +227,7 @@ namespace gcs::innards
         /**
          * Install an initialiser whose only job is to immediately raise a
          * contradiction with the given Justification (RUP, explicit, or
-         * none) and ReasonFunction. Convenience wrapper around
+         * none) and Reason. Convenience wrapper around
          * install_initialiser; intended for cases where the OPB encoding
          * emitted by define_proof_model collapses to a trivially-false
          * constraint and we want propagation to detect that up front.

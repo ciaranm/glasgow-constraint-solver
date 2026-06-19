@@ -88,8 +88,7 @@ auto gcs::innards::materialise(const Reason & reason, const State & state) -> Re
         [&](const LazyReasonOver & r) { r.fn(state, result); },
         [&](const NarrowableGenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, result); },
         [&](const NarrowableBothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, result); },
-        [&](const NarrowableLazyReasonOver & r) { r.fn(state, result); },
-        [&](const LegacyReasonFunction & r) { if (r.fn) result = r.fn(); }});
+        [&](const NarrowableLazyReasonOver & r) { r.fn(state, result); }});
     return result;
 }
 

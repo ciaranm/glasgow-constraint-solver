@@ -564,7 +564,7 @@ namespace
                 all_vars_assigned.push_back(v == state(v));
 
             for (const auto & [x, t] : enumerate(totals)) {
-                inference.infer(logger, totals.at(x) == committed_sums.at(x), JustifyUsingRUP{}, [=]() { return all_vars_assigned; });
+                inference.infer(logger, totals.at(x) == committed_sums.at(x), JustifyUsingRUP{}, all_vars_assigned);
             }
         }
 
