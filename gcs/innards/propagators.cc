@@ -99,7 +99,7 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         if (optional_model)
             optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var >= val);
         install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-            inference.infer(logger, var >= val, JustifyUsingRUP{}, ReasonFunction{});
+            inference.infer(logger, var >= val, JustifyUsingRUP{}, NoReason{});
         });
         return;
     case Upper:
@@ -108,7 +108,7 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         if (optional_model)
             optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var <= val);
         install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-            inference.infer(logger, var <= val, JustifyUsingRUP{}, ReasonFunction{});
+            inference.infer(logger, var <= val, JustifyUsingRUP{}, NoReason{});
         });
         return;
     }
@@ -145,7 +145,7 @@ auto Propagators::install_initialiser(InitialisationFunction && f, InitialiserPr
     _imp->initialisation_functions_by_priority[to_underlying(priority)].emplace_back(move(f));
 }
 
-auto Propagators::install_initial_contradiction(const string &, Justification why, ReasonFunction reason, InitialiserPriority priority) -> void
+auto Propagators::install_initial_contradiction(const string &, Justification why, Reason reason, InitialiserPriority priority) -> void
 {
     install_initialiser(
         [why = move(why), reason = move(reason)](const State &, auto & inference, ProofLogger * const logger) -> void {

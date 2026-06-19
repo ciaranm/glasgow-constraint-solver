@@ -477,7 +477,7 @@ namespace
                 // First pass of filtering supported_by_tree and check of validity
                 if (! filter_and_check_valid(tree, supported_by_tree, pb_selector, state, inference, reason, logger)) {
                     // Not feasible
-                    inference.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, ReasonFunction{});
+                    inference.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, NoReason{});
                     break;
                 }
 
@@ -568,7 +568,7 @@ namespace
         else {
             for (const auto & var : vars) {
                 for (const auto & value : unsupported[var]) {
-                    inference.infer_not_equal(logger, var, value, JustifyUsingRUP{}, ReasonFunction{});
+                    inference.infer_not_equal(logger, var, value, JustifyUsingRUP{}, NoReason{});
                 }
             }
         }

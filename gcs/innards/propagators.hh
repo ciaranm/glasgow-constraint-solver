@@ -234,7 +234,7 @@ namespace gcs::innards
          */
         auto install_initial_contradiction(const std::string & explain_yourself,
             Justification why,
-            ReasonFunction reason = ReasonFunction{},
+            Reason reason = NoReason{},
             InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void;
 
         ///@}

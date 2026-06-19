@@ -282,7 +282,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         if (v1 == v2 && ! is_constant_variable(v1))
             return reification_verdict::MustHold{
                 .justification = JustifyUsingRUP{},
-                .reason = ReasonFunction{},
+                .reason = NoReason{},
                 .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);

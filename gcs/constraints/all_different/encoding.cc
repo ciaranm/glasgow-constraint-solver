@@ -46,7 +46,7 @@ auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
     propagators.install_initialiser(
         [](
             State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.contradiction(logger, JustifyUsingRUP{}, ReasonFunction{});
+            inference.contradiction(logger, JustifyUsingRUP{}, NoReason{});
         },
         InitialiserPriority::SimpleDefinition);
 }

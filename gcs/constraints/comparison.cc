@@ -198,11 +198,11 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
                 if (or_equal)
                     return reification_verdict::MustHold{
                         .justification = JustifyUsingRUP{},
-                        .reason = ReasonFunction{}};
+                        .reason = NoReason{}};
                 else
                     return reification_verdict::MustNotHold{
                         .justification = JustifyUsingRUP{},
-                        .reason = ReasonFunction{}};
+                        .reason = NoReason{}};
             }
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             if (or_equal ? (v1_bounds.second <= v2_bounds.first) : (v1_bounds.second < v2_bounds.first)) {

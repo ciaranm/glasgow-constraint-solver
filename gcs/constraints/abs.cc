@@ -131,7 +131,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     [logger, v1, v2, abs_nonneg_ge](const ReasonFunction &) -> void {
                         justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge);
                     }},
-                ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                NoReason{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
 
             auto v2_ub = state.upper_bound(v2);
 
@@ -144,7 +144,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonFunction & r) -> void {
                             justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
                         }},
-                    ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                    NoReason{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
             }
 
             // Symmetric flag-collision concern: skip when ub(v2) <= 0.
@@ -154,7 +154,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                         [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonFunction & r) -> void {
                             justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
                         }},
-                    ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                    NoReason{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
             }
 
             auto [v1_lb, v1_ub] = state.bounds(v1);
@@ -164,7 +164,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     [logger, v1, v2, v1_lb, v1_ub, big_m, abs_nonneg_le, abs_neg_le](const ReasonFunction & r) -> void {
                         justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, big_m, *abs_nonneg_le, *abs_neg_le, r);
                     }},
-                ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                NoReason{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
         },
         InitialiserPriority::SimpleDefinition);
 

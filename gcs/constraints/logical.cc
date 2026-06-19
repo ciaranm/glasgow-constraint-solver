@@ -77,7 +77,7 @@ namespace
             // then we don't do anything else
             propagators.install_initialiser([full_reif = full_reif](
                                                 const State &, auto & inference, ProofLogger * const logger) -> void {
-                inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ReasonFunction{});
+                inference.infer(logger, ! full_reif, JustifyUsingRUP{}, NoReason{});
             });
             return;
         }

@@ -174,7 +174,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                         runs.emplace_back(v, v);
                 }
                 for (const auto & [lo, hi] : runs)
-                    inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{}, ReasonFunction{});
+                    inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{}, NoReason{});
             }
             else {
                 for (auto v : state.each_value_mutable(var)) {
