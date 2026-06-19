@@ -202,21 +202,22 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{result});
 
             for (auto [lo, hi] : support_1_set.each_interval_minus(result_set)) {
-                if (both_simple)
+                if (both_simple) {
+                    // The support reason is the base reason plus the just-excluded
+                    // interval. ExplicitReason holds an immutable snapshot, so the
+                    // justification (which materialises it once per bridge lemma plus
+                    // once for the conclusion) gets a fresh copy each time rather than
+                    // an accumulating literal.
+                    ReasonLiterals support_reason = reason;
+                    support_reason.emplace_back(not_in_range(result, lo, hi));
                     inference.infer_not_in_range(logger, *support_1, lo, hi, JustifyExplicitlyThenRUP{[&, lo = lo, hi = hi](const ReasonFunction & reason) {
                         rule_out_other_selectors(reason);
                         justify_not_in_range_across_equality(*logger, reason,
                             std::get<SimpleIntegerVariableID>(IntegerVariableID{*support_1}), lo, hi,
                             result, lo, hi);
                     }},
-                        // Built afresh per call: the justification calls the reason once per
-                        // bridge lemma plus once for the conclusion, so a mutable accumulating
-                        // lambda would duplicate the appended literal on each call.
-                        ReasonFunction{[=, base = reason]() {
-                            auto r = base;
-                            r.emplace_back(not_in_range(result, lo, hi));
-                            return r;
-                        }});
+                        ExplicitReason{std::move(support_reason)});
+                }
                 else
                     for (Integer val = lo; val <= hi; ++val)
                         inference.infer(logger, *support_1 != val, JustifyExplicitlyThenRUP{[&, val = val](const ReasonFunction & reason) {
