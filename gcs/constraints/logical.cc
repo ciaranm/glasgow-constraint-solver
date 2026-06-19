@@ -59,7 +59,7 @@ namespace
             propagators.install_initialiser([full_reif = full_reif, lits = lits](
                                                 const State &, auto & inference, ProofLogger * const logger) {
                 for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{full_reif}}; }});
+                    inference.infer(logger, l, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{full_reif}}});
             });
             return;
         }
@@ -86,7 +86,7 @@ namespace
             switch (state.test_literal(full_reif)) {
             case DefinitelyTrue: {
                 for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{full_reif}}; }});
+                    inference.infer(logger, l, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{full_reif}}});
                 return PropagatorState::DisableUntilBacktrack;
             }
 
@@ -142,7 +142,7 @@ namespace
                     }
 
                 if (any_false) {
-                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{! *any_false}}; }});
+                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{! *any_false}}});
                     return PropagatorState::DisableUntilBacktrack;
                 }
                 else if (all_true) {

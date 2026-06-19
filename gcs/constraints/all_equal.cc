@@ -99,11 +99,11 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
             if (state.lower_bound(vars[i]) < lo)
                 inference.infer_greater_than_or_equal(logger, vars[i], lo,
                     JustifyUsingRUP{},
-                    ReasonFunction{[w = argmax_lo, lo = lo]() { return ReasonLiterals{{w >= lo}}; }});
+                    ExplicitReason{ReasonLiterals{{argmax_lo >= lo}}});
             if (state.upper_bound(vars[i]) > hi)
                 inference.infer_less_than(logger, vars[i], hi + 1_i,
                     JustifyUsingRUP{},
-                    ReasonFunction{[w = argmin_hi, hi = hi]() { return ReasonLiterals{{w <= hi}}; }});
+                    ExplicitReason{ReasonLiterals{{argmin_hi <= hi}}});
         }
 
         // If any domain has holes, prune every var to the intersection of
@@ -133,7 +133,7 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
                             }
                         inference.infer_not_equal(logger, vars[i], val,
                             JustifyUsingRUP{},
-                            ReasonFunction{[w = witness, val]() { return ReasonLiterals{{w != val}}; }});
+                            ExplicitReason{ReasonLiterals{{witness != val}}});
                     }
                 }
             }
