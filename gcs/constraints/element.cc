@@ -411,7 +411,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
             auto infer_bound = [&](Integer relevant_bound, bool ge) {
                 auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var <= relevant_bound);
-                Reason reason;
+                ReasonLiterals reason;
                 auto idx_reason = generic_reason(state, index_vars)();
                 reason.insert(reason.end(), idx_reason.begin(), idx_reason.end());
                 for (const auto & var : considered_vars)
@@ -486,7 +486,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             collect_supported_values(0);
 
             for (auto value : still_to_find_support_for.each()) {
-                Reason reason = generic_reason(state, index_vars)();
+                ReasonLiterals reason = generic_reason(state, index_vars)();
                 for (const auto & var : considered_vars)
                     reason.push_back(var != value);
                 inference.infer_not_equal(logger, result_var, value, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
@@ -528,7 +528,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             // that are present in the result variable
             bool index_is_fully_defined = true;
             vector<size_t> elem;
-            Reason index_reason;
+            ReasonLiterals index_reason;
             for (const auto & [p, i] : enumerate(index_vars)) {
                 auto v = state.optional_single_value(i);
                 if (! v) {

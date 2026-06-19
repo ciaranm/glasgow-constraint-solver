@@ -128,8 +128,8 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
             // it, and forces the variables into a value whose lower demand can
             // only just be met.
             for (const auto & [j, value] : enumerate(values)) {
-                Reason fixed_eq;  // var == value, for variables fixed to value
-                Reason absent_ne; // var != value, for variables without value
+                ReasonLiterals fixed_eq;  // var == value, for variables fixed to value
+                ReasonLiterals absent_ne; // var != value, for variables without value
                 Integer must = 0_i, can = 0_i;
                 for (const auto & var : vars) {
                     if (state.in_domain(var, value)) {
@@ -148,37 +148,37 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                 // c_j >= must: the fixed variables alone force the count up.
                 if (must > lb_j)
                     inference.infer(logger, counts[j] >= must, JustifyUsingRUP{},
-                        ReasonFunction{[fixed_eq]() -> Reason { return fixed_eq; }});
+                        ReasonFunction{[fixed_eq]() -> ReasonLiterals { return fixed_eq; }});
 
                 // c_j <= can: only the variables that can still take value may
                 // contribute to the count.
                 if (can < ub_j)
                     inference.infer(logger, counts[j] <= can, JustifyUsingRUP{},
-                        ReasonFunction{[absent_ne]() -> Reason { return absent_ne; }});
+                        ReasonFunction{[absent_ne]() -> ReasonLiterals { return absent_ne; }});
 
                 // Saturated capacity: if as many variables are already fixed to
                 // value as the count's upper bound allows, no other variable may
                 // take it.
                 if (must == ub_j) {
-                    Reason sat = fixed_eq;
+                    ReasonLiterals sat = fixed_eq;
                     sat.emplace_back(counts[j] <= ub_j);
                     for (const auto & var : vars)
                         if (state.in_domain(var, value) && ! state.has_single_value(var))
                             inference.infer(logger, var != value, JustifyUsingRUP{},
-                                ReasonFunction{[sat]() -> Reason { return sat; }});
+                                ReasonFunction{[sat]() -> ReasonLiterals { return sat; }});
                 }
 
                 // Just-met demand: if only `can` variables can take value and the
                 // count's lower bound needs all of them, each is forced to value.
                 if (can == lb_j && can > 0_i) {
-                    Reason force = absent_ne;
+                    ReasonLiterals force = absent_ne;
                     force.emplace_back(counts[j] >= lb_j);
                     for (const auto & var : vars)
                         if (state.in_domain(var, value) && ! state.has_single_value(var))
                             for (const auto & w : state.each_value_mutable(var))
                                 if (w != value)
                                     inference.infer(logger, var != w, JustifyUsingRUP{},
-                                        ReasonFunction{[force]() -> Reason { return force; }});
+                                        ReasonFunction{[force]() -> ReasonLiterals { return force; }});
                 }
             }
 
@@ -250,8 +250,8 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         pb.emit(*logger, ProofLevel::Temporary);
                     };
 
-                    auto capacity_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> Reason {
-                        Reason r;
+                    auto capacity_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> ReasonLiterals {
+                        ReasonLiterals r;
                         for (const auto & var : confined) {
                             auto [v_lo, v_hi] = state.bounds(var);
                             for (Integer s = v_lo; s <= v_hi; ++s)
@@ -275,8 +275,8 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                     // boundary). These two true facts are asserted; everything
                     // built on top of them is real, so the surrounding Hall
                     // combinatorics is genuinely checked.
-                    auto demand_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> Reason {
-                        Reason r;
+                    auto demand_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> ReasonLiterals {
+                        ReasonLiterals r;
                         for (const auto & var : vars)
                             if (! domain_meets_hall(var))
                                 for (const auto & val : hall)

@@ -366,9 +366,9 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         .visit(why);
 }
 
-auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> Reason
+auto ProofLogger::reason_to_lits(const ReasonFunction & reason) -> ReasonLiterals
 {
-    optional<Reason> reason_literals;
+    optional<ReasonLiterals> reason_literals;
     if (reason)
         reason_literals = reason();
 
@@ -462,7 +462,7 @@ auto ProofLogger::emit_under_reason(
     const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     ProofLevel level, const ReasonFunction & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
-    optional<Reason> reason_literals;
+    optional<ReasonLiterals> reason_literals;
     if (reason)
         reason_literals = reason();
     if (reason_literals)

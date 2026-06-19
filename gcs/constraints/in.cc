@@ -191,7 +191,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                     if (supported_by_var)
                         continue;
 
-                    Reason reason;
+                    ReasonLiterals reason;
                     for (const auto & V : var_vals)
                         reason.emplace_back(V != v);
 
@@ -235,7 +235,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                     if (state.in_domain(var, val))
                         continue;
 
-                    Reason reason = generic_reason(state, vector{var})();
+                    ReasonLiterals reason = generic_reason(state, vector{var})();
                     for (const auto & [j, V_j] : enumerate(var_vals)) {
                         if (j == i)
                             continue;

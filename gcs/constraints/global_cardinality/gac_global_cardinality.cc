@@ -204,7 +204,7 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
             // must-occur..can-occur range (so they are determined at a leaf).
             // These are the certified per-value RUP steps from the BC propagator.
             for (const auto & [j, value] : enumerate(values)) {
-                Reason fixed_eq, absent_ne;
+                ReasonLiterals fixed_eq, absent_ne;
                 Integer must = 0_i, can = 0_i;
                 for (const auto & var : vars) {
                     if (state.in_domain(var, value)) {
@@ -220,10 +220,10 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                 auto [lb_j, ub_j] = state.bounds(counts[j]);
                 if (must > lb_j)
                     inference.infer(logger, counts[j] >= must, JustifyUsingRUP{},
-                        ReasonFunction{[fixed_eq]() -> Reason { return fixed_eq; }});
+                        ReasonFunction{[fixed_eq]() -> ReasonLiterals { return fixed_eq; }});
                 if (can < ub_j)
                     inference.infer(logger, counts[j] <= can, JustifyUsingRUP{},
-                        ReasonFunction{[absent_ne]() -> Reason { return absent_ne; }});
+                        ReasonFunction{[absent_ne]() -> ReasonLiterals { return absent_ne; }});
             }
 
             // Build Régin's value graph as a flow network and find a feasible

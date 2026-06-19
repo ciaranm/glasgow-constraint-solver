@@ -164,7 +164,7 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
                                         WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i,
                                         ProofLevel::Temporary);
                                 }},
-                            []() -> Reason { return Reason{}; });
+                            []() -> ReasonLiterals { return ReasonLiterals{}; });
                     }
                 }
             });

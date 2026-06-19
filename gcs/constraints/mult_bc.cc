@@ -1029,7 +1029,7 @@ namespace
         }
         else if (y_min == 0_i && y_max == 0_i) {
             // y == 0 and 0 not in bounds of z => no possible values for x
-            inference.contradiction(logger, JustifyUsingRUP{}, [y_var, z_var]() { return Reason{y_var == 0_i, z_var != 0_i}; });
+            inference.contradiction(logger, JustifyUsingRUP{}, [y_var, z_var]() { return ReasonLiterals{y_var == 0_i, z_var != 0_i}; });
         }
         else if (y_min < 0_i && y_max > 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y contains -1, 0, 1 and z has either all positive or all negative values
@@ -1047,7 +1047,7 @@ namespace
 
             inference.infer(logger, x_var <= largest_possible_quotient,
                 JustifyExplicitlyOnly{lower_justf},
-                [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
+                [lits = ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
 
             var_bounds.at(x_var).first = min(var_bounds.at(x_var).first, largest_possible_quotient);
             auto upper_justf = [&](const ReasonFunction & reason) {
@@ -1060,7 +1060,7 @@ namespace
 
             inference.infer(logger, x_var >= smallest_possible_quotient,
                 JustifyExplicitlyOnly{upper_justf},
-                [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
+                [lits = ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
         }
         else if (y_min == 0_i && y_max != 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y is either 0 or strictly positive and z has either all positive or all negative values
@@ -1100,17 +1100,17 @@ namespace
 
             if (smallest_possible_quotient > largest_possible_quotient) {
                 inference.infer(logger, FalseLiteral{}, JustifyExplicitlyOnly{both_justf},
-                    [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
+                    [lits = ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
                          y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
             }
             else {
                 inference.infer(logger, x_var <= largest_possible_quotient,
                     JustifyExplicitlyOnly{upper_justf},
-                    [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
+                    [lits = ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
                          y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
                 inference.infer(logger, x_var >= smallest_possible_quotient,
                     JustifyExplicitlyOnly{lower_justf},
-                    [lits = Reason{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
+                    [lits = ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
                          y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second}]() { return lits; });
             }
         }
@@ -1268,7 +1268,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
             inference.infer_all(logger, {v3 <= largest_product, v3 >= smallest_product},
                 JustifyExplicitlyOnly{justf},
-                [lits = Reason{v1 >= var_bounds.at(v1).first, v1 <= var_bounds.at(v1).second,
+                [lits = ReasonLiterals{v1 >= var_bounds.at(v1).first, v1 <= var_bounds.at(v1).second,
                      v2 >= var_bounds.at(v2).first, v2 <= var_bounds.at(v2).second}]() { return lits; });
 
             auto bounds3 = state.bounds(v3);

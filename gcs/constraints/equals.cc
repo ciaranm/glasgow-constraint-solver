@@ -43,7 +43,7 @@ using fmt::print;
 #endif
 
 auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
-    auto & inference, const Reason & reason) -> PropagatorState
+    auto & inference, const ReasonLiterals & reason) -> PropagatorState
 {
     auto val1 = state.optional_single_value(v1);
     if (val1) {
@@ -125,7 +125,7 @@ namespace
         IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitlyThenRUP, ReasonFunction>
     {
         auto v1_bounds = state.bounds(v1);
-        Reason reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
+        ReasonLiterals reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
 
         for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
             if (state.in_domain(v1, val))
@@ -249,7 +249,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
                                             const State & state, auto & inference, ProofLogger * const logger,
                                             const Literal & cond) -> PropagatorState {
         return visit([&](auto & v1, auto & v2) {
-            return enforce_equality(logger, v1, v2, state, inference, Reason{cond});
+            return enforce_equality(logger, v1, v2, state, inference, ReasonLiterals{cond});
         },
             v1, v2);
     };
@@ -260,13 +260,13 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         auto value1 = state.optional_single_value(v1);
         if (value1) {
             inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{},
-                ReasonFunction{[=]() { return Reason{{cond, v1 == *value1}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+                ReasonFunction{[=]() { return ReasonLiterals{{cond, v1 == *value1}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
             return PropagatorState::DisableUntilBacktrack;
         }
         auto value2 = state.optional_single_value(v2);
         if (value2) {
             inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{},
-                ReasonFunction{[=]() { return Reason{{cond, v2 == *value2}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+                ReasonFunction{[=]() { return ReasonLiterals{{cond, v2 == *value2}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
             return PropagatorState::DisableUntilBacktrack;
         }
         return PropagatorState::Enable;
@@ -287,7 +287,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
-            auto reason = ReasonFunction{[=]() { return Reason{v1 == *value1, v2 == *value2}; }};
+            auto reason = ReasonFunction{[=]() { return ReasonLiterals{v1 == *value1, v2 == *value2}; }};
             if (*value1 == *value2)
                 return reification_verdict::MustHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             else
@@ -297,7 +297,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
             if (! state.in_domain(v2, *value1))
                 return reification_verdict::MustNotHold{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return Reason{v1 == *value1, v2 != *value1}; }},
+                    .reason = ReasonFunction{[=]() { return ReasonLiterals{v1 == *value1, v2 != *value1}; }},
                     .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             return reification_verdict::StillUndecided{};
         }
@@ -305,7 +305,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
             if (! state.in_domain(v1, *value2))
                 return reification_verdict::MustNotHold{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return Reason{v2 == *value2, v1 != *value2}; }},
+                    .reason = ReasonFunction{[=]() { return ReasonLiterals{v2 == *value2, v1 != *value2}; }},
                     .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
             return reification_verdict::StillUndecided{};
         }
@@ -384,6 +384,6 @@ auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SEx
 }
 
 template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,
-    SimpleInferenceTracker & inference, const Reason & reason) -> PropagatorState;
+    SimpleInferenceTracker & inference, const ReasonLiterals & reason) -> PropagatorState;
 template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,
-    EagerProofLoggingInferenceTracker & inference, const Reason & reason) -> PropagatorState;
+    EagerProofLoggingInferenceTracker & inference, const ReasonLiterals & reason) -> PropagatorState;

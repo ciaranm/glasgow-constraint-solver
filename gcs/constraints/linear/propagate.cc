@@ -59,7 +59,7 @@ namespace
         const optional<SimpleIntegerVariableID> & var, bool invert,
         const optional<Literal> & add_to_reason) -> ReasonFunction
     {
-        Reason reason;
+        ReasonLiterals reason;
         for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
             if (var && get_var(cv) != *var) {
                 if ((get_coeff(cv) < 0_i) != invert) {

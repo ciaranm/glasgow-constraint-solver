@@ -14,15 +14,15 @@
 
 namespace gcs::innards
 {
-    // Reason values are produced eagerly per inference (when proofs are on).
+    // ReasonLiterals values are produced eagerly per inference (when proofs are on).
     // Typical sizes are 1 (singleton_reason for reified flags) to a handful
     // (bounds_reason / generic_reason over a small set of variables). Inline
     // capacity 2 keeps the common 1- and 2-element cases off the heap. An
     // interval-shaped fact is stated as an interval: a range condition (see
     // in_range() / not_in_range()) is an ordinary condition, whose proof name
     // is the range ("in") literal.
-    using Reason = gch::small_vector<ProofLiteralOrFlag, 2>;
-    using ReasonFunction = std::function<auto()->Reason>;
+    using ReasonLiterals = gch::small_vector<ProofLiteralOrFlag, 2>;
+    using ReasonFunction = std::function<auto()->ReasonLiterals>;
 
     /**
      * \brief Build a reason recording every value in each variable's domain

@@ -96,7 +96,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
                 auto reason_lb = prev_lb;
                 inference.infer_greater_than_or_equal(logger, vars[i], needed,
                     JustifyUsingRUP{},
-                    ReasonFunction{[v = vars[i - 1], reason_lb]() { return Reason{{v >= reason_lb}}; }});
+                    ReasonFunction{[v = vars[i - 1], reason_lb]() { return ReasonLiterals{{v >= reason_lb}}; }});
                 prev_lb = needed;
             }
             else {
@@ -114,7 +114,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
                 auto reason_ub = prev_ub;
                 inference.infer_less_than(logger, vars[i], needed + 1_i,
                     JustifyUsingRUP{},
-                    ReasonFunction{[v = vars[i + 1], reason_ub]() { return Reason{{v <= reason_ub}}; }});
+                    ReasonFunction{[v = vars[i + 1], reason_ub]() { return ReasonLiterals{{v <= reason_ub}}; }});
                 prev_ub = needed;
             }
             else {

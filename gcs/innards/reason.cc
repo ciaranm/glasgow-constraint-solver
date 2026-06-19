@@ -7,7 +7,7 @@ using namespace gcs::innards;
 auto gcs::innards::generic_reason(const State & state, const std::vector<IntegerVariableID> & vars,
     const std::optional<Literal> & extra_lit) -> ReasonFunction
 {
-    Reason reason;
+    ReasonLiterals reason;
     for (const auto & var : vars) {
         auto bounds = state.bounds(var);
         if (bounds.first == bounds.second)
@@ -54,7 +54,7 @@ auto gcs::innards::generic_reason(const State & state, const std::vector<Integer
 auto gcs::innards::bounds_reason(const State & state, const std::vector<IntegerVariableID> & vars,
     const std::optional<Literal> & extra_lit) -> ReasonFunction
 {
-    Reason reason;
+    ReasonLiterals reason;
     for (const auto & var : vars) {
         auto bounds = state.bounds(var);
         if (bounds.first == bounds.second)
@@ -72,7 +72,7 @@ auto gcs::innards::bounds_reason(const State & state, const std::vector<IntegerV
 
 auto innards::singleton_reason(const ProofLiteralOrFlag & lit) -> ReasonFunction
 {
-    Reason reason;
+    ReasonLiterals reason;
     reason.push_back(lit);
     return [=]() { return reason; };
 }

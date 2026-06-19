@@ -280,7 +280,7 @@ namespace
                 [vars, logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ReasonFunction &) -> void {
                     justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                 }},
-            ReasonFunction{[hall_variable_ids, excluded, &state]() -> Reason {
+            ReasonFunction{[hall_variable_ids, excluded, &state]() -> ReasonLiterals {
                 auto reason = generic_reason(state, hall_variable_ids)();
                 for (const auto & v : hall_variable_ids)
                     for (const auto & s : excluded)
@@ -380,7 +380,7 @@ namespace
                     .hint_fields = hint_list(hint_list(AssertionHintIdentifier::constraint_id, constraint_id))});
 
             return tuple{Justification{JustifyUsingRUP{}},
-                ReasonFunction{[=]() { return Reason{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}; }},
+                ReasonFunction{[=]() { return ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}; }},
                 assertion_annotation};
         }
         else {
@@ -409,7 +409,7 @@ namespace
                                  const ReasonFunction &) -> void {
                                  justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
                              }}},
-                ReasonFunction{[hall_variable_ids, excluded, &state]() -> Reason {
+                ReasonFunction{[hall_variable_ids, excluded, &state]() -> ReasonLiterals {
                     auto reason = generic_reason(state, hall_variable_ids)();
                     for (const auto & v : hall_variable_ids)
                         for (const auto & s : excluded)

@@ -59,7 +59,7 @@ namespace
             propagators.install_initialiser([full_reif = full_reif, lits = lits](
                                                 const State &, auto & inference, ProofLogger * const logger) {
                 for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{full_reif}}; }});
+                    inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{full_reif}}; }});
             });
             return;
         }
@@ -86,7 +86,7 @@ namespace
             switch (state.test_literal(full_reif)) {
             case DefinitelyTrue: {
                 for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{full_reif}}; }});
+                    inference.infer(logger, l, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{full_reif}}; }});
                 return PropagatorState::DisableUntilBacktrack;
             }
 
@@ -109,7 +109,7 @@ namespace
                     return PropagatorState::DisableUntilBacktrack;
                 else if (! undecided1) {
                     // literals are all true, but reif is false
-                    Reason why;
+                    ReasonLiterals why;
                     for (auto & lit : lits)
                         why.push_back(lit);
                     why.push_back(! full_reif);
@@ -117,7 +117,7 @@ namespace
                     return PropagatorState::Enable;
                 }
                 else {
-                    Reason why;
+                    ReasonLiterals why;
                     for (auto & l : lits)
                         if (l != *undecided1)
                             why.push_back(l);
@@ -142,7 +142,7 @@ namespace
                     }
 
                 if (any_false) {
-                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{! *any_false}}; }});
+                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{! *any_false}}; }});
                     return PropagatorState::DisableUntilBacktrack;
                 }
                 else if (all_true) {
@@ -155,7 +155,7 @@ namespace
                         vector<ProofLiteral> reason_lits{};
                         for (auto & l : lits)
                             reason_lits.emplace_back(l);
-                        return Reason(reason_lits.begin(), reason_lits.end());
+                        return ReasonLiterals(reason_lits.begin(), reason_lits.end());
                     }});
                     return PropagatorState::DisableUntilBacktrack;
                 }

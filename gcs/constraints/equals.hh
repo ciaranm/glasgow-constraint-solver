@@ -16,7 +16,7 @@ namespace gcs
     namespace innards
     {
         auto enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
-            auto & inference, const Reason & reason) -> PropagatorState;
+            auto & inference, const ReasonLiterals & reason) -> PropagatorState;
     }
 
     /**
