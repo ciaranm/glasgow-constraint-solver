@@ -442,13 +442,13 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                         JustifyExplicitlyThenRUP{[&, cut_values, confined](const ReasonFunction &) {
                             emit_gcc_capacity_pol(*logger, state, vars, values, counts, count_lines, cut_values, confined);
                         }},
-                        ReasonFunction{[&, cut_values, confined]() { return gcc_capacity_reason(state, values, counts, cut_values, confined); }});
+                        LazyReasonOver{vars, [&, cut_values, confined](const State &, ReasonLiterals & out) { out = gcc_capacity_reason(state, values, counts, cut_values, confined); }});
                 else if (! demand_cut.empty())
                     inference.contradiction(logger,
                         JustifyExplicitlyThenRUP{[&, demand_cut, suppliers](const ReasonFunction &) {
                             emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, demand_cut, suppliers, nullopt, nullopt);
                         }},
-                        ReasonFunction{[&, demand_cut, suppliers]() { return gcc_demand_reason(state, vars, values, counts, demand_cut, suppliers); }});
+                        LazyReasonOver{vars, [&, demand_cut, suppliers](const State &, ReasonLiterals & out) { out = gcc_demand_reason(state, vars, values, counts, demand_cut, suppliers); }});
                 else if (closed && unmatched >= 0)
                     // A closed variable with no cover value left: the per-variable
                     // In constraint certifies this, so leave it to that rather
@@ -563,7 +563,7 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                             JustifyExplicitlyThenRUP{[&, cut_values, confined](const ReasonFunction &) {
                                 emit_gcc_capacity_pol(*logger, state, vars, values, counts, count_lines, cut_values, confined);
                             }},
-                            ReasonFunction{[&, cut_values, confined]() { return gcc_capacity_reason(state, values, counts, cut_values, confined); }});
+                            LazyReasonOver{vars, [&, cut_values, confined](const State &, ReasonLiterals & out) { out = gcc_capacity_reason(state, values, counts, cut_values, confined); }});
                     }
                     else {
                         // Demand cut: cover values inside the cut are at their lower bound.
@@ -588,7 +588,7 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                             JustifyExplicitlyThenRUP{[&, cut_values, potential, value = value, i = i](const ReasonFunction &) {
                                 emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], value);
                             }},
-                            ReasonFunction{[&, cut_values, potential]() { return gcc_demand_reason(state, vars, values, counts, cut_values, potential); }});
+                            LazyReasonOver{vars, [&, cut_values, potential](const State &, ReasonLiterals & out) { out = gcc_demand_reason(state, vars, values, counts, cut_values, potential); }});
                     }
                 }
 
@@ -622,7 +622,7 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                             JustifyExplicitlyThenRUP{[&, cut_values, potential, val = val, i = i](const ReasonFunction &) {
                                 emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], val);
                             }},
-                            ReasonFunction{[&, cut_values, potential]() { return gcc_demand_reason(state, vars, values, counts, cut_values, potential); }});
+                            LazyReasonOver{vars, [&, cut_values, potential](const State &, ReasonLiterals & out) { out = gcc_demand_reason(state, vars, values, counts, cut_values, potential); }});
             }
 
             return PropagatorState::Enable;

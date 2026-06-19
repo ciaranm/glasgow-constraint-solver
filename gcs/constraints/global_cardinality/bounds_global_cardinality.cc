@@ -315,7 +315,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                     pb.add(*count_lines[j].first);
                                     pb.emit(*logger, ProofLevel::Temporary);
                                 }},
-                                ReasonFunction{[&, j = j]() { return capacity_reason(j); }});
+                                LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = capacity_reason(j); }});
                         auto upper = potential_count - (demand - lb_j);
                         if (upper < ub_j)
                             // Dual: at-most-one over H per potential variable, the
@@ -344,11 +344,11 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                     pb.add(*count_lines[j].second);
                                     pb.emit(*logger, ProofLevel::Temporary);
                                 }},
-                                ReasonFunction{[&, j = j]() { return demand_reason(j); }});
+                                LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = demand_reason(j); }});
                     }
 
                     if (confined_count > cap) {
-                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, ReasonFunction{[&]() { return capacity_reason(nullopt); }});
+                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
                     }
                     else if (confined_count == cap) {
                         for (const auto & var : vars) {
@@ -356,7 +356,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                 continue;
                             for (const auto & val : hall)
                                 if (state.in_domain(var, val))
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, ReasonFunction{[&]() { return capacity_reason(nullopt); }});
+                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
                         }
                     }
 
@@ -392,13 +392,13 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                     };
 
                     if (potential_count < demand) {
-                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_demand_pol(nullopt, 0_i); }}, ReasonFunction{[&]() { return demand_reason(nullopt); }});
+                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_demand_pol(nullopt, 0_i); }}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
                     }
                     else if (potential_count == demand) {
                         for (const auto & var : potential)
                             for (const auto & val : state.each_value_mutable(var))
                                 if (! hall.contains(val))
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&, var = var, val = val](const ReasonFunction &) { emit_demand_pol(var, val); }}, ReasonFunction{[&]() { return demand_reason(nullopt); }});
+                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&, var = var, val = val](const ReasonFunction &) { emit_demand_pol(var, val); }}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
                     }
                 }
             }
