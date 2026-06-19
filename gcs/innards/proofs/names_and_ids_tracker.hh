@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
@@ -318,6 +319,11 @@ namespace gcs::innards
          * Return a string form of a raw proof literal, for writing to a model or log.
          */
         [[nodiscard]] auto pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> std::string;
+
+        /**
+         * Return a string form of the exact literals specifying a bit assignment for var == val, an alternative way to witness solutions.
+         */
+        [[nodiscard]] auto bit_assignment_string_for(const SimpleOrProofOnlyIntegerVariableID & var, const Integer & value) const -> std::string;
 
         /**
          * Return the raw proof literal representing a proof flag, for writing to a model or log.

@@ -104,7 +104,7 @@ auto main(int argc, char * argv[]) -> int
                 return find_all;
             }},
         options_vars.contains("prove")
-            ? make_optional<ProofOptions>(ProofFileNames{options_vars["proof-files-basename"].as<string>()}, true, false)
+            ? make_optional<ProofOptions>(ProofFileNames{options_vars["proof-files-basename"].as<string>()})
             : nullopt);
 
     if (options_vars.contains("stats"))

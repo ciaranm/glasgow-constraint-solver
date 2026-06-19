@@ -130,7 +130,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
                     length++;
                     // Need to check this in case alldiff hasn't been fully propagated.
                     if (j == j0) {
-                        if (logger)
+                        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             output_cycle_to_proof(succ, j0, length, pos_var_data, state, *logger);
                         inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, succ));
                     }

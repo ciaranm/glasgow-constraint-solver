@@ -3,6 +3,7 @@
 
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/expression.hh>
+#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
@@ -21,7 +22,8 @@ namespace gcs::innards
     auto propagate_linear(const auto & terms, Integer, const State &, auto & inference_tracker,
         ProofLogger * const logger, bool equality,
         const std::optional<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & proof_line,
-        const std::optional<Literal> & add_to_reason) -> PropagatorState;
+        const std::optional<Literal> & add_to_reason,
+        const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> PropagatorState;
 
     /**
      * \brief Propagate a not-equals
