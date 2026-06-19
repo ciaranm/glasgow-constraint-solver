@@ -170,7 +170,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
                 if (! state.in_domain(y.at((x_i_value - y_start).as_index()), Integer(i) + x_start))
                     inf.infer(logger, x_i != x_i_value,
                         JustifyUsingRUP{},
-                        [&]() { return ReasonLiterals{y.at((x_i_value - y_start).as_index()) != Integer(i) + x_start}; });
+                        ExplicitReason{ReasonLiterals{y.at((x_i_value - y_start).as_index()) != Integer(i) + x_start}});
         }
 
         for (const auto & [i, y_i] : enumerate(y)) {
@@ -178,7 +178,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
                 if (! state.in_domain(x.at((y_i_value - x_start).as_index()), Integer(i) + y_start))
                     inf.infer(logger, y_i != y_i_value,
                         JustifyUsingRUP{},
-                        [&]() { return ReasonLiterals{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}; });
+                        ExplicitReason{ReasonLiterals{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}});
         }
 
         propagate_gac_all_different(constraint_id, x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);

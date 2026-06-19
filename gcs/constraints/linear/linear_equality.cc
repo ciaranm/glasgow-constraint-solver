@@ -241,7 +241,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                                 State & state, auto & inference, ProofLogger * const logger) {
                 *data = build_table(coeff_vars, value, cond, state, logger);
                 if (! data->has_value())
-                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedLinearEquality});
+                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{}}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedLinearEquality});
             },
                 InitialiserPriority::Expensive);
 
@@ -260,7 +260,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 // the (folded-out) constant part, so the equality holds iff _value + modifier == 0
                 if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != -_value) {
                     propagators.install_initialiser([reason_from_cond = reif.cond](const State &, auto & inference, ProofLogger * const logger) {
-                        inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{reason_from_cond}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedLinearEquality});
+                        inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{reason_from_cond}}}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedLinearEquality});
                     });
                 }
 
@@ -281,7 +281,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 // the equality _value + modifier == 0 must NOT hold, so it is violated iff it does
                 if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == -_value) {
                     propagators.install_initialiser([reason_from_cond = reif.cond](const State &, auto & inference, ProofLogger * const logger) {
-                        inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{reason_from_cond}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedLinearEquality});
+                        inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{reason_from_cond}}}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedLinearEquality});
                     });
                 }
 

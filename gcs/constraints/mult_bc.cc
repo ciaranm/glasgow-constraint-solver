@@ -1029,7 +1029,7 @@ namespace
         }
         else if (y_min == 0_i && y_max == 0_i) {
             // y == 0 and 0 not in bounds of z => no possible values for x
-            inference.contradiction(logger, JustifyUsingRUP{}, [y_var, z_var]() { return ReasonLiterals{y_var == 0_i, z_var != 0_i}; });
+            inference.contradiction(logger, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{y_var == 0_i, z_var != 0_i}});
         }
         else if (y_min < 0_i && y_max > 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y contains -1, 0, 1 and z has either all positive or all negative values

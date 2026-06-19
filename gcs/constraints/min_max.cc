@@ -109,18 +109,18 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);
             if (min)
-                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{var <= var_bounds.second}}; }});
+                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{var <= var_bounds.second}}});
             else
-                inference.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{var >= var_bounds.first}}; }});
+                inference.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{var >= var_bounds.first}}});
         }
 
         // each var >= result
         auto result_bounds = state.bounds(result);
         for (auto & var : vars) {
             if (min)
-                inference.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{result >= result_bounds.first}}; }});
+                inference.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{result >= result_bounds.first}}});
             else
-                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, ReasonFunction{[=]() { return ReasonLiterals{{result <= result_bounds.second}}; }});
+                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{result <= result_bounds.second}}});
         }
 
         // result in union(vars)

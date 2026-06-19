@@ -172,7 +172,7 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
                     if (! state.in_domain(vars.at((v - start).as_index()), Integer(i) + start))
                         inf.infer(logger, x_i != v,
                             JustifyUsingRUP{},
-                            [&]() { return ReasonLiterals{vars.at((v - start).as_index()) != Integer(i) + start}; });
+                            ExplicitReason{ReasonLiterals{vars.at((v - start).as_index()) != Integer(i) + start}});
             }
 
             propagate_gac_all_different(constraint_id, vars, values, vector<Integer>{}, *value_am1s.get(), state, inf, logger);
