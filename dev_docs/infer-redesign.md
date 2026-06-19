@@ -20,21 +20,28 @@ As built:
 - **Reason layer** — the `Reason` variant + `materialise()`, deferred in the
   inference tracker; `ReasonFunction` and its bridge are gone. (See
   `reasons-improvement.md`'s implemented note.)
-- **Justification dispatch** — a single new `Justification` alternative
-  `JustifyByData { emit, annotation, then_rup }` (`gcs/innards/justification.hh`),
-  built by `justify_with(witness, hint_name)`. `ProofLogger::infer` dispatches by
-  mode: **eager** runs `emit` then RUPs the inference (the
-  `JustifyExplicitlyThenRUP` shape, byte-identical to the old closures);
-  **assert** builds the annotation and never runs `emit`.
-- **One witness, consumers by ADL** — `emit_justification(ProofLogger&, const
-  Data&, const ReasonLiterals&)` (eager steps, required) and `hint_sexpr(const
-  Data&, NamesAndIDsTracker&)` (assert wire, optional). `justify_with` detects the
-  latter with `if constexpr (requires { hint_sexpr(...); })` — a *witness-complete*
-  witness contributes typed hint fields, one without `hint_sexpr` carries only the
-  coarse `hint_name`. This is the capability spectrum below, in lightweight form.
+- **Justification dispatch** — `JustifyByData { emit, annotation, then_rup }`
+  (`gcs/innards/justification.hh`) is now the *sole* explicit-justification
+  alternative of `Justification`: it replaced and deleted `JustifyExplicitlyOnly`
+  / `JustifyExplicitlyThenRUP` (`then_rup` picks the shape). `emit` is an
+  `ExplicitJustificationFunction` (`void(const ReasonLiterals&)`), so existing
+  justification closures moved over unchanged. `ProofLogger::infer` dispatches by
+  mode: **eager** runs `emit`, then RUPs the inference if `then_rup`
+  (byte-identical to the old closures); **assert** uses `annotation` if set, else
+  the annotation passed to `infer()`, and never runs `emit`.
+- **A typed hint** is attached via the `annotation` closure, which calls the
+  witness's `hint_sexpr(const Data&, NamesAndIDsTracker&)`. There is no
+  `justify_with` / `if constexpr` capability switch any more (it was removed):
+  constraints with a typed witness build the annotation explicitly (a small
+  per-constraint helper), and coarse-only constraints leave `annotation` empty and
+  pass `hints::<name>` through `infer()`'s parameter.
+- **Names** — coarse model-level names live as `inline constexpr std::string_view`
+  in `gcs/innards/hint_names.hh` (`gcs::innards::hints`), one place, no repetition;
+  fine per-shape `justifier` keywords stay on the witness structs.
 - **Worked examples** — `all_different` GAC (both Hall shapes; `emit` ignores the
-  reason) and `plus` (`emit` reads the reason positionally; emit-only witness, no
-  `hint_sexpr`).
+  reason, captures per-constraint state) and `plus` (`emit` reads the reason
+  positionally; `plus_bound` + `emit_justification` is the witness-driven-emit
+  example, no `hint_sexpr` so coarse name only).
 
 **The one substantive departure from the body below: there is no logger-side
 per-constraint proof-data store.** The body proposes `logger.constraint_proof_data
