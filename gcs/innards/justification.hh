@@ -90,6 +90,46 @@ namespace gcs::innards
     };
 
     /**
+     * \brief Justify an inference with a *typed witness*, dispatched by proof mode.
+     *
+     * The pay-for-use, std::function-free successor to JustifyByData. The witness
+     * is a small struct (in \c gcs::innards::hints, reopened per constraint) that
+     * carries everything its justification needs; its consumers are found by ADL on
+     * the witness type:
+     *
+     *   - \c emit_justification(ProofLogger &, const Witness &, const ReasonLiterals &)
+     *     — the real eager (and, later, lazy) proof steps (required);
+     *   - \c hint_sexpr(const Witness &, NamesAndIDsTracker &) -> SExpr — the
+     *     assertion wire form (optional; absent ⇒ coarse-name-only annotation).
+     *
+     * A \c hint_name member on the witness (static constexpr for a typed witness, a
+     * plain member for the generic closure escape) carries the coarse model-level
+     * name. \c then_rup picks the ThenRUP (real steps then a RUP for the inference)
+     * versus Only (steps stand alone) shape, exactly as for JustifyByData.
+     *
+     * Unlike JustifyByData this holds no std::function: the witness is built by
+     * value at the call site (cheap — no type erasure, no heap), and dispatch is
+     * compile-time overload resolution. The Simple (proofs-off) tracker never
+     * touches the witness, so nothing is emitted or materialised. The only erasure
+     * is the future lazy-storage boundary (a per-type emit function pointer).
+     *
+     * \ingroup Innards
+     * \sa JustifyByData
+     */
+    template <typename Witness_>
+    struct JustifyByWitness
+    {
+        Witness_ witness;
+        bool then_rup = true;
+    };
+
+    template <typename Witness_>
+    JustifyByWitness(Witness_) -> JustifyByWitness<Witness_>;
+
+    template <typename Witness_>
+    JustifyByWitness(Witness_, bool) -> JustifyByWitness<Witness_>;
+
+    /**
      * \brief Specify why an inference is justified, for proof logging.
      *
      * \ingroup Innards

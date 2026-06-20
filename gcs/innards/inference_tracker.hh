@@ -4,6 +4,7 @@
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/justification.hh>
+#include <gcs/innards/proofs/infer_witness.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 
@@ -65,6 +66,63 @@ namespace gcs::innards
                 [&](const auto &) -> Reason { return ExplicitReason{materialise(reason, state)}; }});
         }
 
+        // The bookkeeping for a firing (non-NoChange, non-Contradiction) inference:
+        // record the affected variable for later replay and mark that propagation
+        // did something. Shared by the witness path (track_witness) and the variant
+        // track_impl bodies below.
+        auto record_firing_inference(const Inference inf, const Literal & lit) -> void
+        {
+            overloaded{
+                [&](const TrueLiteral &) {},
+                [&](const FalseLiteral &) {},
+                [&](const IntegerVariableCondition & cond) {
+                    overloaded{
+                        [&](const ConstantIntegerVariableID &) {},
+                        [&](const SimpleIntegerVariableID & var) {
+                            _inferences.emplace_back(var, inf);
+                        },
+                        [&](const ViewOfIntegerVariableID & var) {
+                            _inferences.emplace_back(var.actual_variable, inf);
+                        }}
+                        .visit(cond.var);
+                }}
+                .visit(lit);
+
+            _did_anything_since_last_call_by_propagation_queue = true;
+            _did_anything_since_last_call_inside_propagator = true;
+        }
+
+        // The witness counterpart of track_impl. Lives in the base class because it
+        // needs no per-tracker behaviour: the witness is consumed (built into proof
+        // steps or an assertion) only when there is a logger, so the Simple,
+        // proofs-off tracker never touches it (pay-for-use) and the same body serves
+        // both trackers. Dispatch onto the witness is compile-time overload
+        // resolution inside infer_witness; no std::function is involved.
+        template <typename Witness_>
+        auto track_witness(ProofLogger * const logger, const Inference inf, const Literal & lit,
+            const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback) -> void
+        {
+            switch (inf) {
+            case Inference::NoChange:
+                break;
+
+            case Inference::InteriorValuesChanged:
+            case Inference::BoundsChanged:
+            case Inference::Instantiated:
+                if (logger)
+                    infer_witness(*logger, lit, why.witness, why.then_rup, materialise(reason, _state), fallback);
+                record_firing_inference(inf, lit);
+                break;
+
+            [[unlikely]] case Inference::Contradiction:
+                if (logger)
+                    infer_witness(*logger, lit, why.witness, why.then_rup, materialise(reason, _state), fallback);
+                _did_anything_since_last_call_by_propagation_queue = true;
+                _did_anything_since_last_call_inside_propagator = true;
+                throw TrackedPropagationFailed{};
+            }
+        }
+
     public:
         explicit InferenceTrackerBase(State & s) :
             _state(s),
@@ -81,6 +139,17 @@ namespace gcs::innards
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track(logger, _state.infer(lit), lit, why, snapshotted, assertion_hints);
+        }
+
+        // Justify an inference with a typed witness (JustifyByWitness): the
+        // pay-for-use, std::function-free path. The fallback annotation is used in
+        // assertion mode only when the witness carries no hint of its own, matching
+        // JustifyByData's empty-annotation behaviour.
+        template <typename Witness_>
+        auto infer(ProofLogger * const logger, const Literal & lit, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_witness(logger, _state.infer(lit), lit, why, snapshotted, fallback);
         }
 
         [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
@@ -183,6 +252,37 @@ namespace gcs::innards
                 auto snapshotted = snapshot_reason(logger, reason, _state);
                 for (const auto & lit : lits)
                     infer(logger, lit, why, snapshotted, assertion_hints);
+            }
+        }
+
+        // The witness counterpart of infer_all: same shared-temporary-level batching
+        // for the explicit-steps-then-RUP shape, but the scaffolding is emitted by
+        // the witness's emit_justification rather than a JustifyByData::emit closure.
+        template <typename Witness_>
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            if (logger && logger->get_assertion_level() == AssertionLevel::Off && why.then_rup) {
+                auto any_will_fire = false;
+                for (const auto & lit : lits)
+                    if (_state.test_literal(lit) != LiteralIs::DefinitelyTrue) {
+                        any_will_fire = true;
+                        break;
+                    }
+                if (! any_will_fire)
+                    return;
+
+                auto snapshotted = snapshot_reason(logger, reason, _state);
+                ReasonLiterals reason_lits = materialise(snapshotted, _state);
+                auto t = logger->temporary_proof_level();
+                emit_justification(*logger, why.witness, reason_lits);
+                for (const auto & lit : lits)
+                    infer(logger, lit, JustifyUsingRUP{}, snapshotted);
+                logger->forget_proof_level(t);
+            }
+            else {
+                auto snapshotted = snapshot_reason(logger, reason, _state);
+                for (const auto & lit : lits)
+                    infer(logger, lit, why, snapshotted, fallback);
             }
         }
 

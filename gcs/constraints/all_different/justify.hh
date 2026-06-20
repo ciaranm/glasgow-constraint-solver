@@ -4,6 +4,7 @@
 #include <gcs/constraint_id.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
@@ -33,16 +34,29 @@ namespace gcs::innards
          * saturate, and the owning constraint. Shared by the matching-too-small
          * contradiction and the SCC Hall-set deletion (same shape, different
          * owner and call site).
+         *
+         * The two trailing pointers are the per-constraint emit context (the full
+         * variable scope and the constraint's mutable at-most-one line cache); they
+         * are read only by emit_justification, not serialised by hint_sexpr. Both
+         * point to data owned by the constraint, which outlives the whole search, so
+         * a built witness is valid not just for eager emission but for storing and
+         * replaying at backtrack time (the "fat witness" carrying emit context, with
+         * hint_sexpr serialising only the clean subset).
          */
         struct all_different_hall
         {
             std::vector<IntegerVariableID> hall_vars;
             std::vector<Integer> hall_vals;
             ConstraintID owner;
+            const std::vector<IntegerVariableID> * all_vars = nullptr;
+            std::map<Integer, ProofLine> * value_am1_constraint_numbers = nullptr;
             static constexpr std::string_view justifier = "hall_set_or_violator";
+            static constexpr std::string_view hint_name = "all_different";
         };
 
         [[nodiscard]] auto hint_sexpr(const all_different_hall & hall, NamesAndIDsTracker & names) -> SExpr;
+
+        auto emit_justification(ProofLogger & logger, const all_different_hall & hall, const ReasonLiterals & reason) -> void;
     }
 }
 
