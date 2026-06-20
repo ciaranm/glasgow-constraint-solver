@@ -75,6 +75,19 @@ namespace
         if (extra)
             reason.push_back(*extra);
     }
+
+    // Materialisation of ExactSingleValue: `extra` (if any) first, then `var ==
+    // value` for each variable, where value is the variable's single current
+    // value. The leading-extra order matches the legacy explicit reasons this
+    // replaces, keeping proofs byte-identical. Each var must be instantiated.
+    auto materialise_exact_single_value(const State & state, const std::vector<IntegerVariableID> & vars,
+        const optional<Literal> & extra, ReasonLiterals & reason) -> void
+    {
+        if (extra)
+            reason.push_back(*extra);
+        for (const auto & var : vars)
+            reason.push_back(var == state.optional_single_value(var).value());
+    }
 }
 
 auto gcs::innards::materialise(const Reason & reason, const State & state) -> ReasonLiterals
@@ -85,6 +98,7 @@ auto gcs::innards::materialise(const Reason & reason, const State & state) -> Re
         [&](const ExplicitReason & r) { result = r.literals; },
         [&](const GenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, result); },
         [&](const BothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, result); },
+        [&](const ExactSingleValue & r) { materialise_exact_single_value(state, *r.vars, r.extra, result); },
         [&](const LazyReasonOver & r) { r.fn(state, result); },
         [&](const NarrowableGenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, result); },
         [&](const NarrowableBothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, result); },

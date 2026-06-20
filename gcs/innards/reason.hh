@@ -64,6 +64,19 @@ namespace gcs::innards
         std::optional<Literal> extra;
     };
 
+    /// Reason recording that each variable in `vars` is fixed to exactly its
+    /// single current value (`var == value`). Equivalent to BothBoundsReasonOver
+    /// for an already-instantiated variable, but it states the equality directly
+    /// and emits `extra` *first*, matching the literal order of the hand-written
+    /// explicit reasons it replaces, so the proof stays byte-identical. Cheap to
+    /// build off the proofs-off path: it captures the (borrowable) variable scope
+    /// and defers reading the value to materialise().
+    struct ExactSingleValue
+    {
+        ReasonVars vars;
+        std::optional<Literal> extra;
+    };
+
     /// Reason whose literals are computed by a bespoke callback reading state; `vars` records the implicated scope.
     struct LazyReasonOver
     {
@@ -109,7 +122,7 @@ namespace gcs::innards
     public:
         using Variant = std::variant<
             NoReason, ExplicitReason,
-            GenericReasonOver, BothBoundsReasonOver, LazyReasonOver,
+            GenericReasonOver, BothBoundsReasonOver, ExactSingleValue, LazyReasonOver,
             NarrowableGenericReasonOver, NarrowableBothBoundsReasonOver, NarrowableLazyReasonOver>;
 
         Reason() :
@@ -133,6 +146,11 @@ namespace gcs::innards
         }
 
         Reason(BothBoundsReasonOver r) :
+            _variant(std::move(r))
+        {
+        }
+
+        Reason(ExactSingleValue r) :
             _variant(std::move(r))
         {
         }

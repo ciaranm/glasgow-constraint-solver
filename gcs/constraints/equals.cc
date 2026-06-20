@@ -282,25 +282,28 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
             v1, v2);
     };
 
-    auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2](
+    auto v1_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v1});
+    auto v2_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v2});
+    auto v1v2_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v1, _v2});
+    auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, v1_scope, v2_scope](
                                                 const State & state, auto & inference, ProofLogger * const logger,
                                                 const Literal & cond) -> PropagatorState {
         auto value1 = state.optional_single_value(v1);
         if (value1) {
             inference.infer_not_equal(logger, v2, *value1, JustifyByWitness{hints::CoarseHint{equals_hint}},
-                ExplicitReason{ReasonLiterals{{cond, v1 == *value1}}});
+                ExactSingleValue{ReasonVars{v1_scope.get()}, cond});
             return PropagatorState::DisableUntilBacktrack;
         }
         auto value2 = state.optional_single_value(v2);
         if (value2) {
             inference.infer_not_equal(logger, v1, *value2, JustifyByWitness{hints::CoarseHint{equals_hint}},
-                ExplicitReason{ReasonLiterals{{cond, v2 == *value2}}});
+                ExactSingleValue{ReasonVars{v2_scope.get()}, cond});
             return PropagatorState::DisableUntilBacktrack;
         }
         return PropagatorState::Enable;
     };
 
-    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2](
+    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, v1v2_scope](
                                          const State & state, auto &, ProofLogger * const logger,
                                          const IntegerVariableCondition & cond) -> ReificationVerdictFor<EqualsJustification> {
         // Aliased non-constant operands: equality definitely holds regardless of
@@ -315,7 +318,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
-            auto reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 == *value2}};
+            auto reason = Reason{ExactSingleValue{ReasonVars{v1v2_scope.get()}, std::nullopt}};
             if (*value1 == *value2)
                 return reification_verdict::MustHold<EqualsJustification>{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = equals_hint}};
             else
