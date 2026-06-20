@@ -56,14 +56,21 @@ namespace gcs::innards
         //     materialises against the (post-inference) state later.
         [[nodiscard]] static auto snapshot_reason(ProofLogger * const logger, const Reason & reason, State & state) -> Reason
         {
-            if (! logger)
+            // The proofs-off (non-materialising) tracker never reads the reason, so
+            // this collapses to a constant NoReason there and the whole call — and
+            // the snapshotted Reason it would have produced — is dead-code eliminated.
+            if constexpr (! Actual_::materialises_reasons)
                 return NoReason{};
+            else {
+                if (! logger)
+                    return NoReason{};
 
-            return reason.visit(overloaded{
-                [&](const NoReason &) -> Reason { return NoReason{}; },
-                [&](const LazyReasonOver &) -> Reason { return reason; },
-                [&](const NarrowableLazyReasonOver &) -> Reason { return reason; },
-                [&](const auto &) -> Reason { return ExplicitReason{materialise(reason, state)}; }});
+                return reason.visit(overloaded{
+                    [&](const NoReason &) -> Reason { return NoReason{}; },
+                    [&](const LazyReasonOver &) -> Reason { return reason; },
+                    [&](const NarrowableLazyReasonOver &) -> Reason { return reason; },
+                    [&](const auto &) -> Reason { return ExplicitReason{materialise(reason, state)}; }});
+            }
         }
 
         // The bookkeeping for a firing (non-NoChange, non-Contradiction) inference:
@@ -109,14 +116,16 @@ namespace gcs::innards
             case Inference::InteriorValuesChanged:
             case Inference::BoundsChanged:
             case Inference::Instantiated:
-                if (logger)
-                    infer_witness(*logger, lit, why.witness, why.then_rup, materialise(reason, _state), fallback);
+                if constexpr (Actual_::materialises_reasons)
+                    if (logger)
+                        infer_witness(*logger, lit, why.witness, why.then_rup, materialise(reason, _state), fallback);
                 record_firing_inference(inf, lit);
                 break;
 
             [[unlikely]] case Inference::Contradiction:
-                if (logger)
-                    infer_witness(*logger, lit, why.witness, why.then_rup, materialise(reason, _state), fallback);
+                if constexpr (Actual_::materialises_reasons)
+                    if (logger)
+                        infer_witness(*logger, lit, why.witness, why.then_rup, materialise(reason, _state), fallback);
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};
@@ -178,8 +187,9 @@ namespace gcs::innards
         template <typename Witness_>
         [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
-            if (logger)
-                infer_witness(*logger, FalseLiteral{}, why.witness, why.then_rup, materialise(reason, _state), fallback);
+            if constexpr (Actual_::materialises_reasons)
+                if (logger)
+                    infer_witness(*logger, FalseLiteral{}, why.witness, why.then_rup, materialise(reason, _state), fallback);
             throw TrackedPropagationFailed{};
         }
 
@@ -225,8 +235,9 @@ namespace gcs::innards
             // No domain change happens here, so the reason materialises against
             // the current state directly (the eager/lazy timing distinction only
             // matters when there is an inference to straddle).
-            if (logger)
-                logger->infer(FalseLiteral{}, why, materialise(reason, _state), assertion_hints);
+            if constexpr (Actual_::materialises_reasons)
+                if (logger)
+                    logger->infer(FalseLiteral{}, why, materialise(reason, _state), assertion_hints);
             throw TrackedPropagationFailed{};
         }
 
@@ -297,7 +308,7 @@ namespace gcs::innards
         template <typename Witness_>
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
-            if constexpr (WitnessHasExplicitSteps<Witness_>) {
+            if constexpr (Actual_::materialises_reasons && WitnessHasExplicitSteps<Witness_>) {
                 if (logger && logger->get_assertion_level() == AssertionLevel::Off && why.then_rup) {
                     auto any_will_fire = false;
                     for (const auto & lit : lits)
@@ -355,6 +366,10 @@ namespace gcs::innards
     public:
         using InferenceTrackerBase::InferenceTrackerBase;
 
+        // Proofs-off tracker: it never materialises a reason, so the base infer()
+        // path skips snapshot_reason and every proof-only block compiles out.
+        static constexpr bool materialises_reasons = false;
+
         auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const Reason &, const std::optional<AssertionAnnotation> &) -> void
         {
             switch (inf) {
@@ -396,6 +411,8 @@ namespace gcs::innards
     {
     public:
         using InferenceTrackerBase::InferenceTrackerBase;
+
+        static constexpr bool materialises_reasons = true;
 
         auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
