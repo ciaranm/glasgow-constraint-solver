@@ -151,8 +151,9 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
 auto AllEqual::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    std::vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_equal")};
+    std::vector<SExpr> vars;
     for (const auto & v : _vars)
-        terms.push_back(tracker.s_expr_term_of(v));
-    return SExpr::list(std::move(terms));
+        vars.push_back(tracker.s_expr_term_of(v));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_equal"),
+        SExpr::list(std::move(vars))});
 }

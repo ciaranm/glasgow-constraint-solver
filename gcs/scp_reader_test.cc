@@ -1,10 +1,12 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/all_equal.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
+#include <gcs/constraints/increasing.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/current_state.hh>
 #include <gcs/expression.hh>
@@ -92,6 +94,29 @@ TEST_CASE("read_scp: all_different enumerates correctly")
         ))");
 
     CHECK(solutions == set<map<string, long long>>{{{"A", 0}, {"B", 1}}, {{"A", 1}, {"B", 0}}});
+}
+
+TEST_CASE("read_scp: all_equal enumerates correctly")
+{
+    auto solutions = enumerate(R"(
+        (
+            ( (A 0 2) (B 0 2) (C 0 2) )
+            ( (_1 all_equal (A B C)) )
+        ))");
+
+    CHECK(solutions == set<map<string, long long>>{{{"A", 0}, {"B", 0}, {"C", 0}}, {{"A", 1}, {"B", 1}, {"C", 1}}, {{"A", 2}, {"B", 2}, {"C", 2}}});
+}
+
+TEST_CASE("read_scp: the increasing family enumerates correctly")
+{
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) ) ( (_1 increasing (X Y Z)) ) )"))
+        CHECK((s.at("X") <= s.at("Y") && s.at("Y") <= s.at("Z")));
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (Z 0 3) ) ( (_1 strictly_increasing (X Y Z)) ) )"))
+        CHECK((s.at("X") < s.at("Y") && s.at("Y") < s.at("Z")));
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) ) ( (_1 decreasing (X Y Z)) ) )"))
+        CHECK((s.at("X") >= s.at("Y") && s.at("Y") >= s.at("Z")));
+    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (Z 0 3) ) ( (_1 strictly_decreasing (X Y Z)) ) )"))
+        CHECK((s.at("X") > s.at("Y") && s.at("Y") > s.at("Z")));
 }
 
 TEST_CASE("read_scp: in with a mix of integer and variable values")
@@ -269,6 +294,28 @@ TEST_CASE("read_scp: element and count survive write -> read -> write unchanged"
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_elemcount_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: all_equal and the increasing family survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto a = original.create_integer_variable(0_i, 3_i, "A");
+    auto b = original.create_integer_variable(0_i, 3_i, "B");
+    auto c = original.create_integer_variable(0_i, 3_i, "C");
+    auto d = original.create_integer_variable(0_i, 3_i, "D");
+    original.post(AllEqual{std::vector<IntegerVariableID>{a, b}});
+    original.post(Increasing{std::vector<IntegerVariableID>{b, c}});
+    original.post(StrictlyIncreasing{std::vector<IntegerVariableID>{c, d}});
+    original.post(Decreasing{std::vector<IntegerVariableID>{d, c}});         // exercises the descending keyword
+    original.post(StrictlyDecreasing{std::vector<IntegerVariableID>{d, c}}); // ... and its strict variant
+    auto scp_a = prove_to_scp(original, "scp_reader_aeqinc_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_aeqinc_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

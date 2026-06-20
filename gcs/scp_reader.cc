@@ -1,10 +1,12 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/all_equal.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/in.hh>
+#include <gcs/constraints/increasing.hh>
 #include <gcs/constraints/inverse.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
@@ -293,6 +295,21 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             if (terms.size() != 3)
                 throw ScpReadError{"all_different takes one list: (label all_different (vars...))"};
             post_constraint(problem, AllDifferent{resolve_variable_list(variables, terms[2], "the all_different variable list")}, label);
+        }
+        else if (op == "all_equal") {
+            if (terms.size() != 3)
+                throw ScpReadError{"all_equal takes one list: (label all_equal (vars...))"};
+            post_constraint(problem, AllEqual{resolve_variable_list(variables, terms[2], "the all_equal variable list")}, label);
+        }
+        else if (op == "increasing" || op == "strictly_increasing" || op == "decreasing" || op == "strictly_decreasing") {
+            // The keyword carries the strict / descending flags that IncreasingChain
+            // takes directly (the inverse of how the writer derives the keyword).
+            if (terms.size() != 3)
+                throw ScpReadError{"the increasing family takes one list: (label " + op + " (vars...))"};
+            post_constraint(problem,
+                IncreasingChain{resolve_variable_list(variables, terms[2], "the increasing variable list"),
+                    op.starts_with("strictly_"), op.ends_with("decreasing")},
+                label);
         }
         else if (op == "in") {
             if (terms.size() != 4)
