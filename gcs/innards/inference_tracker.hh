@@ -142,17 +142,30 @@ namespace gcs::innards
         }
 
         // Justify an inference with a typed witness (JustifyByWitness): the
-        // pay-for-use, std::function-free path. The fallback annotation is used in
-        // assertion mode only when the witness carries no hint of its own, matching
-        // JustifyByData's empty-annotation behaviour. There is a witness overload
-        // for each variant infer entry point (general literal, the typed
-        // condition/bound helpers, and contradiction); each just routes to
-        // track_witness instead of track.
+        // pay-for-use, std::function-free explicit-steps path. The fallback
+        // annotation is used in assertion mode only when the witness carries no hint
+        // of its own. There is a witness overload for each plain infer entry point
+        // (general literal, the typed condition/bound helpers, and contradiction);
+        // each just routes to track_witness instead of track.
         template <typename Witness_>
         auto infer(ProofLogger * const logger, const Literal & lit, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_witness(logger, _state.infer(lit), lit, why, snapshotted, fallback);
+        }
+
+        // Visit a variant of justifications and dispatch each alternative to its
+        // matching infer overload. This is how the reified dispatcher's verdict —
+        // which carries a per-constraint variant of justification shapes (plain
+        // Justification alternatives and/or typed JustifyByWitness) — is applied:
+        // the dispatcher just forwards the verdict's justification here, so the
+        // visit lives in infer() rather than at the call site. (The non-template
+        // const Justification & overload is preferred for a Justification argument,
+        // so the variant overload only catches the per-constraint variants.)
+        template <typename... Alts_>
+        auto infer(ProofLogger * const logger, const Literal & lit, const std::variant<Alts_...> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            std::visit([&](const auto & alt) { infer(logger, lit, alt, reason, fallback); }, why);
         }
 
         template <IntegerVariableIDLike VarType_, typename Witness_>
@@ -265,49 +278,14 @@ namespace gcs::innards
 
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
-            // For an explicit-steps-then-RUP justification (JustifyByData with an
-            // emit and then_rup): enter the temporary proof level once, run the
-            // explicit scaffolding once, then RUP each inference under the shared
-            // scaffolding. Without this, each infer() would enter and exit its own
-            // temporary level, wiping the scaffolding before subsequent inferences
-            // can use it.
-            if (logger && logger->get_assertion_level() == AssertionLevel::Off &&
-                std::holds_alternative<JustifyByData>(why) && std::get<JustifyByData>(why).emit && std::get<JustifyByData>(why).then_rup) {
-                // The scaffolding is shared across the batch, but each inference's
-                // RUP is only emitted if it actually changes something (track_impl
-                // drops NoChange). If *every* inference is already entailed, no RUP
-                // would reference the scaffolding, so emitting it is wasted work
-                // (and leaves an unreferenced constraint for forget to delete).
-                // Only emit when at least one inference will fire. (A single infer()
-                // is already lazy this way: track_impl gates logger->infer on the
-                // inference changing something.)
-                auto any_will_fire = false;
-                for (const auto & lit : lits)
-                    if (_state.test_literal(lit) != LiteralIs::DefinitelyTrue) {
-                        any_will_fire = true;
-                        break;
-                    }
-                if (! any_will_fire)
-                    return;
-
-                // Snapshot the shared reason once, pre-batch (matching the old
-                // single eager build): eager reasons become a fixed ExplicitReason
-                // reused for the scaffolding and every RUP; lazy reasons stay
-                // declarative and re-materialise per inference inside the loop.
-                auto snapshotted = snapshot_reason(logger, reason, _state);
-                ReasonLiterals reason_lits = materialise(snapshotted, _state);
-                const auto & j = std::get<JustifyByData>(why);
-                auto t = logger->temporary_proof_level();
-                j.emit(reason_lits);
-                for (const auto & lit : lits)
-                    infer(logger, lit, JustifyUsingRUP{}, snapshotted);
-                logger->forget_proof_level(t);
-            }
-            else {
-                auto snapshotted = snapshot_reason(logger, reason, _state);
-                for (const auto & lit : lits)
-                    infer(logger, lit, why, snapshotted, assertion_hints);
-            }
+            // The plain justifications (RUP / assert / none) carry no shared
+            // scaffolding to batch, so infer each literal in turn. The
+            // explicit-steps batching (enter one temporary level, emit the
+            // scaffolding once, RUP each inference under it) lives on the
+            // JustifyByWitness infer_all overload below.
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            for (const auto & lit : lits)
+                infer(logger, lit, why, snapshotted, assertion_hints);
         }
 
         // The witness counterpart of infer_all. For an explicit-steps witness it

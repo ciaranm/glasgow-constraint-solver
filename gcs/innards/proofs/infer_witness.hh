@@ -41,8 +41,8 @@ namespace gcs::innards
      * hint: emit the coarse \c hint_name plus the serialised fields. Otherwise, if
      * the witness carries a non-empty coarse \c hint_name, emit just that; if it is
      * empty, fall back to the annotation passed to infer() (so the generic closure
-     * escape with no coarse name behaves exactly like the old un-annotated
-     * JustifyByData).
+     * escape with no coarse name asserts under the annotation infer() was given,
+     * if any).
      *
      * \ingroup Innards
      */
@@ -65,9 +65,9 @@ namespace gcs::innards
     /**
      * \brief The mode-dispatched back end for a JustifyByWitness inference.
      *
-     * Mirrors the JustifyByData arm of ProofLogger::infer, but resolves the
-     * justification by compile-time overload resolution on the witness type rather
-     * than through a std::function:
+     * The explicit-steps counterpart to ProofLogger::infer's plain arms, resolving
+     * the justification by compile-time overload resolution on the witness type
+     * rather than through a std::function:
      *
      *   - above AssertionLevel::Inferences: nothing (the inference is not asserted);
      *   - assertion mode: assert the inference under its reason, annotated by

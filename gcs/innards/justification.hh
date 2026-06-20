@@ -15,17 +15,6 @@
 namespace gcs::innards
 {
     /**
-     * \brief The explicit proof steps for a justification: writes to the proof,
-     * with the inference's reason provided for convenience. Any ProofLevel::Temporary
-     * constraints it emits are wiped after the conclusion is derived. Held by
-     * JustifyByData::emit.
-     *
-     * \ingroup Innards
-     * \sa JustifyByData
-     */
-    using ExplicitJustificationFunction = std::function<auto(const ReasonLiterals & reason)->void>;
-
-    /**
      * \brief Specify that an inference can be justified using reverse unit
      * propagation.
      *
@@ -63,36 +52,9 @@ namespace gcs::innards
     };
 
     /**
-     * \brief Justify an inference with explicit proof steps, dispatched by mode.
-     *
-     * The single explicit-justification recipe (it replaces JustifyExplicitlyOnly
-     * and JustifyExplicitlyThenRUP). In eager mode \c emit writes the real proof
-     * steps, followed by a RUP for the inference itself when \c then_rup (the
-     * "ThenRUP" shape; \c then_rup == false is the "Only" shape). In assertion
-     * mode \c emit is not run: the inference is asserted under its \c annotation
-     * if set, otherwise under the annotation passed to infer(). An empty \c emit
-     * is a pure-RUP inference.
-     *
-     * \c annotation is how a constraint attaches a *typed* hint: it builds the
-     * AssertionAnnotation from a witness (via that witness's \c hint_sexpr) only
-     * in a consuming mode. Constraints that only want the coarse second-field name
-     * can leave \c annotation empty and pass it through infer()'s annotation
-     * parameter instead.
-     *
-     * \ingroup Innards
-     * \sa Justification
-     */
-    struct JustifyByData
-    {
-        ExplicitJustificationFunction emit;
-        std::function<auto(NamesAndIDsTracker &)->AssertionAnnotation> annotation;
-        bool then_rup = true;
-    };
-
-    /**
      * \brief Justify an inference with a *typed witness*, dispatched by proof mode.
      *
-     * The pay-for-use, std::function-free successor to JustifyByData. The witness
+     * The pay-for-use, std::function-free explicit-justification interface. The witness
      * is a small struct (in \c gcs::innards::hints, reopened per constraint) that
      * carries everything its justification needs; its consumers are found by ADL on
      * the witness type:
@@ -105,16 +67,16 @@ namespace gcs::innards
      * A \c hint_name member on the witness (static constexpr for a typed witness, a
      * plain member for the generic closure escape) carries the coarse model-level
      * name. \c then_rup picks the ThenRUP (real steps then a RUP for the inference)
-     * versus Only (steps stand alone) shape, exactly as for JustifyByData.
+     * versus Only (steps stand alone) shape.
      *
-     * Unlike JustifyByData this holds no std::function: the witness is built by
-     * value at the call site (cheap — no type erasure, no heap), and dispatch is
-     * compile-time overload resolution. The Simple (proofs-off) tracker never
-     * touches the witness, so nothing is emitted or materialised. The only erasure
-     * is the future lazy-storage boundary (a per-type emit function pointer).
+     * It holds no std::function: the witness is built by value at the call site
+     * (cheap — no type erasure, no heap), and dispatch is compile-time overload
+     * resolution. The Simple (proofs-off) tracker never touches the witness, so
+     * nothing is emitted or materialised. The only erasure is the future
+     * lazy-storage boundary (a per-type emit function pointer).
      *
      * \ingroup Innards
-     * \sa JustifyByData
+     * \sa Justification
      */
     template <typename Witness_>
     struct JustifyByWitness
@@ -132,9 +94,13 @@ namespace gcs::innards
     /**
      * \brief Specify why an inference is justified, for proof logging.
      *
+     * The plain (witness-free) justifications. Explicit proof steps are supplied by
+     * a typed JustifyByWitness instead, dispatched by overload resolution rather
+     * than carried in this variant.
+     *
      * \ingroup Innards
      */
-    using Justification = std::variant<JustifyUsingRUP, AssertRatherThanJustifying, NoJustificationNeeded, JustifyByData>;
+    using Justification = std::variant<JustifyUsingRUP, AssertRatherThanJustifying, NoJustificationNeeded>;
 }
 
 #endif

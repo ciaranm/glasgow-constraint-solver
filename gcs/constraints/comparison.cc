@@ -196,24 +196,24 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
             // shrinking to expose the contradiction.
             if (v1 == v2 && ! is_constant_variable(v1)) {
                 if (or_equal)
-                    return reification_verdict::MustHold{
+                    return reification_verdict::MustHold<Justification>{
                         .justification = JustifyUsingRUP{},
                         .reason = NoReason{}};
                 else
-                    return reification_verdict::MustNotHold{
+                    return reification_verdict::MustNotHold<Justification>{
                         .justification = JustifyUsingRUP{},
                         .reason = NoReason{}};
             }
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             if (or_equal ? (v1_bounds.second <= v2_bounds.first) : (v1_bounds.second < v2_bounds.first)) {
                 // v1 has to be less than (or equal): constraint must hold.
-                return reification_verdict::MustHold{
+                return reification_verdict::MustHold<Justification>{
                     .justification = JustifyUsingRUP{},
                     .reason = ExplicitReason{ReasonLiterals{{v1 <= v1_bounds.second, v2 >= v2_bounds.first}}}};
             }
             else if (or_equal ? (v1_bounds.first > v2_bounds.second) : (v1_bounds.first >= v2_bounds.second)) {
                 // v1 has to be greater than (or equal): constraint cannot hold.
-                return reification_verdict::MustNotHold{
+                return reification_verdict::MustNotHold<Justification>{
                     .justification = JustifyUsingRUP{},
                     .reason = ExplicitReason{ReasonLiterals{{v1 >= v1_bounds.first, v2 <= v2_bounds.second}}}};
             }

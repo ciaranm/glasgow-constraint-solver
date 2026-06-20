@@ -318,29 +318,17 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             }
         }
 
-    auto need_lit = [&]() {
-        overloaded{
-            [&](const TrueLiteral &) {},
-            [&](const FalseLiteral &) {},
-            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { names_and_ids_tracker().need_proof_name(cond); }}
-            .visit(simplify_literal(names_and_ids_tracker(), lit));
-    };
-
     if (_imp->assertion_level > AssertionLevel::Inferences)
         return;
 
     if (_imp->assertion_level != AssertionLevel::Off) {
         // At AssertionLevel::Definitions we can assert some inferences and not others (since the needed constraints for the justifications will
         // still be present). At higher levels, we need to assert all inferences.
+        // Explicit-steps justifications are typed witnesses (JustifyByWitness),
+        // handled by infer_witness(); this variant only carries the plain ones, so
+        // the annotation is just the one passed in.
         if (! is_literally_true(lit) && ! std::holds_alternative<NoJustificationNeeded>(why)) {
-            // A JustifyByData carries its own (deferred) annotation, built from
-            // the typed witness only now that we are in a consuming mode; any
-            // other justification uses the annotation passed in.
-            const auto * const by_data = std::get_if<JustifyByData>(&why);
-            auto effective_annotation = (by_data && by_data->annotation)
-                ? std::make_optional(by_data->annotation(names_and_ids_tracker()))
-                : annotation;
-            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, effective_annotation);
+            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
         }
         return;
     }
@@ -354,25 +342,6 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
             if (! is_literally_true(lit)) {
                 emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
-            }
-        },
-        [&](const JustifyByData & x) {
-            // Eager mode: run emit (the real proof steps); if then_rup, RUP the
-            // inference under the reason afterwards (the ThenRUP shape) — otherwise
-            // the explicit steps stand alone (the Only shape). An empty emit is a
-            // pure-RUP inference. need_lit() matches ThenRUP (it registered the
-            // inference's name before the RUP); the Only shape did not.
-            if (x.emit) {
-                if (x.then_rup)
-                    need_lit();
-                auto t = temporary_proof_level();
-                x.emit(reason);
-                if (x.then_rup)
-                    infer(lit, JustifyUsingRUP{}, reason);
-                forget_proof_level(t);
-            }
-            else if (! is_literally_true(lit)) {
-                emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
             }
         },
         [&](const NoJustificationNeeded &) {

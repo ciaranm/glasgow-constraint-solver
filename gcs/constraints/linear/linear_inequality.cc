@@ -75,6 +75,31 @@ namespace
     }
 }
 
+namespace gcs::innards::hints
+{
+    // Witness for the reified linear-inequality "condition forced" justification,
+    // carried in a reified verdict (was an inline JustifyByData closure). Templated
+    // on the sanitised coefficient-vector type that tidy_up_linear produces and the
+    // install-time visit deduces; it carries that and the proof lines by value (as
+    // the original closure captured them) and the State by pointer (the verdict is
+    // consumed synchronously while the constraint is live). No coarse hint name: the
+    // original verdict carried none.
+    template <typename CoeffVars_>
+    struct LinearInequalityCond
+    {
+        const State * state;
+        CoeffVars_ coeff_vars;
+        std::pair<std::optional<ProofLine>, std::optional<ProofLine>> proof_lines;
+        static constexpr std::string_view hint_name = "";
+    };
+
+    template <typename CoeffVars_>
+    auto emit_justification(ProofLogger & logger, const LinearInequalityCond<CoeffVars_> & w, const ReasonLiterals &) -> void
+    {
+        justify_cond(*w.state, w.coeff_vars, logger, w.proof_lines);
+    }
+}
+
 auto ReifiedLinearInequality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     if (! prepare(propagators, initial_state, optional_model))
@@ -143,6 +168,16 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
         triggers.on_bounds.push_back(v);
 
     visit([&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
+        // The verdict justification is the linear "cond forced" witness over the
+        // sanitised coeff-vector type (and its negation for the must-hold side); a
+        // variant of the two, collapsing to a single witness when the two deduced
+        // types coincide.
+        using CV = std::decay_t<decltype(sanitised_cv)>;
+        using NegCV = std::decay_t<decltype(sanitised_neg_cv)>;
+        using LinearCondJustification = std::conditional_t<std::is_same_v<CV, NegCV>,
+            JustifyByWitness<hints::LinearInequalityCond<CV>>,
+            std::variant<JustifyByWitness<hints::LinearInequalityCond<CV>>, JustifyByWitness<hints::LinearInequalityCond<NegCV>>>>;
+
         auto enforce_constraint_must_hold = [sanitised_cv, value = _value, modifier = modifier, proof_lines](
                                                 const State & state, auto & inference, ProofLogger * const logger,
                                                 const Literal & cond) -> PropagatorState {
@@ -158,7 +193,7 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
         auto infer_cond_when_undecided = [sanitised_cv, sanitised_neg_cv, value = _value, modifier = modifier,
                                              proof_lines, proof_lines_swapped, vars = vars](
                                              const State & state, auto &, ProofLogger * const logger,
-                                             const IntegerVariableCondition &) -> ReificationVerdict {
+                                             const IntegerVariableCondition &) -> ReificationVerdictFor<LinearCondJustification> {
             Integer min_possible = 0_i, max_possible = 0_i;
             for (const auto & cv : sanitised_cv.terms) {
                 auto bounds = state.bounds(get_var(cv));
@@ -174,18 +209,14 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
 
             if (min_possible > value + modifier) {
                 // cannot possibly hold
-                return reification_verdict::MustNotHold{
-                    .justification = JustifyByData{.emit = [&state, sanitised_cv, logger, proof_lines](const ReasonLiterals &) {
-                        justify_cond(state, sanitised_cv, *logger, proof_lines);
-                    }},
+                return reification_verdict::MustNotHold<LinearCondJustification>{
+                    .justification = JustifyByWitness{hints::LinearInequalityCond<CV>{&state, sanitised_cv, proof_lines}},
                     .reason = generic_reason(state, vars)};
             }
             else if (max_possible <= value + modifier) {
                 // must definitely hold
-                return reification_verdict::MustHold{
-                    .justification = JustifyByData{.emit = [&state, sanitised_neg_cv, logger, proof_lines_swapped](const ReasonLiterals &) {
-                        justify_cond(state, sanitised_neg_cv, *logger, proof_lines_swapped);
-                    }},
+                return reification_verdict::MustHold<LinearCondJustification>{
+                    .justification = JustifyByWitness{hints::LinearInequalityCond<NegCV>{&state, sanitised_neg_cv, proof_lines_swapped}},
                     .reason = generic_reason(state, vars)};
             }
             else

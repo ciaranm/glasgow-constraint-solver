@@ -276,7 +276,37 @@ namespace
                 WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
                 ProofLevel::Temporary);
     }
+}
 
+namespace gcs::innards::hints
+{
+    // Witness for the lex "unsat scaffold" justification, carried in a reified
+    // verdict. Was an inline JustifyByData closure; it captures the scaffold inputs
+    // the same way (variable scope + reason by value, the aux-flag tables by
+    // shared_ptr, the State by pointer — valid because the verdict is consumed
+    // synchronously while the constraint is live). No coarse hint name: the original
+    // verdict carried none.
+    struct LexUnsatScaffold
+    {
+        const State * state;
+        ReasonLiterals reason;
+        std::vector<IntegerVariableID> first_vars, second_vars;
+        std::size_t n;
+        std::shared_ptr<std::vector<std::optional<ProofFlag>>> prefix_equal_flags;
+        std::shared_ptr<std::vector<ProofFlag>> decision_at_flags;
+        static constexpr std::string_view hint_name = "";
+    };
+
+    auto emit_justification(ProofLogger & logger, const LexUnsatScaffold & w, const ReasonLiterals &) -> void
+    {
+        if (w.prefix_equal_flags && w.decision_at_flags)
+            emit_lex_unsat_scaffold(*w.state, &logger, w.reason, w.first_vars, w.second_vars, w.n,
+                w.prefix_equal_flags, w.decision_at_flags);
+    }
+}
+
+namespace
+{
     // Detection-only logic for when the reification condition is undecided.
     // Walk through positions: if we can prove the constraint definitely
     // holds (or definitely doesn't hold) from the current bounds, return
@@ -293,7 +323,7 @@ namespace
         const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags,
         const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_lt_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags,
-        const IntegerVariableCondition & cond) -> ReificationVerdict
+        const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyByWitness<hints::LexUnsatScaffold>>
     {
         auto n1 = vars_1.size();
         auto n2 = vars_2.size();
@@ -353,31 +383,17 @@ namespace
         if (definitely_holds) {
             auto reason_under_cond_false = reason;
             reason_under_cond_false.push_back(! cond);
-            auto justify = [&state, logger, vars_1, vars_2, n,
-                               prefix_equal_lt_flags, decision_at_lt_flags,
-                               reason_under_cond_false](const ReasonLiterals &) -> void {
-                if (logger && prefix_equal_lt_flags && decision_at_lt_flags)
-                    emit_lex_unsat_scaffold(state, logger, reason_under_cond_false,
-                        vars_2, vars_1, n,
-                        prefix_equal_lt_flags, decision_at_lt_flags);
-            };
-            return reification_verdict::MustHold{
-                .justification = JustifyByData{.emit = justify},
+            return reification_verdict::MustHold<JustifyByWitness<hints::LexUnsatScaffold>>{
+                .justification = JustifyByWitness{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_false),
+                    vars_2, vars_1, n, prefix_equal_lt_flags, decision_at_lt_flags}},
                 .reason = std::move(reason)};
         }
         else {
             auto reason_under_cond_true = reason;
             reason_under_cond_true.push_back(cond);
-            auto justify = [&state, logger, vars_1, vars_2, n,
-                               prefix_equal_gt_flags, decision_at_gt_flags,
-                               reason_under_cond_true](const ReasonLiterals &) -> void {
-                if (logger && prefix_equal_gt_flags && decision_at_gt_flags)
-                    emit_lex_unsat_scaffold(state, logger, reason_under_cond_true,
-                        vars_1, vars_2, n,
-                        prefix_equal_gt_flags, decision_at_gt_flags);
-            };
-            return reification_verdict::MustNotHold{
-                .justification = JustifyByData{.emit = justify},
+            return reification_verdict::MustNotHold<JustifyByWitness<hints::LexUnsatScaffold>>{
+                .justification = JustifyByWitness{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_true),
+                    vars_1, vars_2, n, prefix_equal_gt_flags, decision_at_gt_flags}},
                 .reason = std::move(reason)};
         }
     }
@@ -613,7 +629,7 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
                                          prefix_equal_lt_flags = _prefix_equal_lt_flags,
                                          decision_at_lt_flags = _decision_at_lt_flags](
                                          const State & state, auto &, ProofLogger * const logger,
-                                         const IntegerVariableCondition & cond) -> ReificationVerdict {
+                                         const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyByWitness<hints::LexUnsatScaffold>> {
         return run_lex_undecided_detection(state, logger,
             vars_1, vars_2, or_equal,
             prefix_equal_gt_flags, decision_at_gt_flags,
