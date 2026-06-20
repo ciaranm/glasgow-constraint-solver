@@ -19,12 +19,12 @@ release`; binaries land in `build/`.
 | Benchmark               | Command                                       | Approx wall time |
 |-------------------------|-----------------------------------------------|------------------|
 | `magic_series_300`      | `./build/magic_series --size=300`             | ~6 s             |
-| `magic_square_5`        | `./build/magic_square --size=5`               | ~7 s             |
+| `qap_12`                | `./build/qap --size=12`                       | ~7 s             |
 | `langford_11`           | `./build/langford --size=11 --stats`          | ~12 s            |
 | `n_queens_14_all`       | `./build/n_queens --size=14 --all`            | ~18 s            |
 | `ortho_latin_6_all`     | `./build/ortho_latin --size=6 --all --stats`  | ~20 s            |
-| `qap_12`                | `./build/qap --size=12`                       | ~33 s            |
-| `tsp_default`           | `./build/tsp`                                 | ~60 s            |
+| `magic_square_5`        | `./build/magic_square --size=5`               | ~32 s            |
+| `tsp_default`           | `./build/tsp`                                 | ~50 s            |
 | `n_queens_88`           | `./build/n_queens --size=88`                  | ~5 min           |
 
 The first four cover under-30 s workloads that are quick to iterate on. The
@@ -32,8 +32,10 @@ last four (`ortho_latin` onwards) push out further, with `n_queens_88` being
 the long pole — keep it in the set even though it dominates total runtime,
 because it is the only one that exercises a large search tree at scale.
 
-`magic_series` and `magic_square` are fast but worth keeping: they exercise
-linear-arithmetic-heavy propagation that the others don't.
+`magic_series` and `magic_square` are worth keeping for their
+linear-arithmetic-heavy propagation, which the others don't exercise.
+(`magic_square --size=5` is one of the longer runs in the set — its default
+search explores ~6 M nodes — despite the small board.)
 
 ### Notes on individual benchmarks
 
