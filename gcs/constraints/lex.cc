@@ -125,7 +125,7 @@ namespace
                         WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
                         ProofLevel::Temporary);
             };
-            inference.contradiction(logger, JustifyByData{.emit = contradiction_proof}, reason);
+            inference.contradiction(logger, JustifyByWitness{hints::InlineEmit{contradiction_proof}}, reason);
         }
 
         auto emit_not_d = [&](const ReasonLiterals & r, size_t k) -> void {
@@ -157,7 +157,7 @@ namespace
 
         inference.infer_all(logger,
             {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] <= b1_alpha.second},
-            JustifyByData{.emit = tighten_proof}, reason);
+            JustifyByWitness{hints::InlineEmit{tighten_proof}}, reason);
 
         auto nb1_alpha = state.bounds(vars_1[alpha]);
         auto nb2_alpha = state.bounds(vars_2[alpha]);
@@ -202,7 +202,7 @@ namespace
                             emit_not_d(r, k);
                         emit_not_prefix_equal_if_credited(r);
                     };
-                    inference.contradiction(logger, JustifyByData{.emit = contradiction_proof}, reason);
+                    inference.contradiction(logger, JustifyByWitness{hints::InlineEmit{contradiction_proof}}, reason);
                 }
 
                 auto force_strict_proof = [&, alpha, n](const ReasonLiterals & r) -> void {
@@ -217,7 +217,7 @@ namespace
                 inference.infer_all(logger,
                     {vars_1[alpha] > nb2_alpha.first,
                         vars_2[alpha] < nb1_alpha.second},
-                    JustifyByData{.emit = force_strict_proof}, reason);
+                    JustifyByWitness{hints::InlineEmit{force_strict_proof}}, reason);
 
                 auto fb1 = state.bounds(vars_1[alpha]);
                 auto fb2 = state.bounds(vars_2[alpha]);

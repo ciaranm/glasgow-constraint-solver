@@ -196,12 +196,12 @@ auto In::install_propagators(Propagators & propagators) -> void
                         reason.emplace_back(V != v);
 
                     inference.infer_not_equal(logger, var, v,
-                        JustifyByData{.emit = [logger, var, v, &selectors](const ReasonLiterals & reason) {
+                        JustifyByWitness{hints::InlineEmit{[logger, var, v, &selectors](const ReasonLiterals & reason) {
                             for (const auto & sel : selectors)
                                 logger->emit_rup_proof_line_under_reason(reason,
                                     WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i,
                                     ProofLevel::Temporary);
-                        }},
+                        }}},
                         ExplicitReason{reason});
                 }
             }
@@ -244,7 +244,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                     }
 
                     inference.infer_not_equal(logger, V, val,
-                        JustifyByData{.emit = [logger, &state, &var_vals, &selectors, var, i](const ReasonLiterals & reason) {
+                        JustifyByWitness{hints::InlineEmit{[logger, &state, &var_vals, &selectors, var, i](const ReasonLiterals & reason) {
                             // When var is fixed, dom(var) is a single value and the inner-loop
                             // scaffolding line `! sel_j + (var != w)` collapses (under the reason's
                             // `var = w` literal) to the same constraint as the outer `! sel_j`, so
@@ -262,7 +262,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                                     WPBSum{} + 1_i * ! selectors[j] >= 1_i,
                                     ProofLevel::Temporary);
                             }
-                        }},
+                        }}},
                         ExplicitReason{reason});
                 }
             }

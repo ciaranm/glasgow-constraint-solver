@@ -534,7 +534,7 @@ namespace
                             ProofLevel::Temporary);
                     }
                 };
-                inference.contradiction(logger, JustifyByData{.emit = justf}, reason_to_use);
+                inference.contradiction(logger, JustifyByWitness{hints::InlineEmit{justf}}, reason_to_use);
                 // if (short_reasons) {
                 //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
                 // }
@@ -558,7 +558,7 @@ namespace
                                 ProofLevel::Temporary);
                         }
                     };
-                    inference.infer_not_equal(logger, var, value, JustifyByData{.emit = justf}, reason_to_use);
+                    inference.infer_not_equal(logger, var, value, JustifyByWitness{hints::InlineEmit{justf}}, reason_to_use);
                 }
             }
             // if (short_reasons) {

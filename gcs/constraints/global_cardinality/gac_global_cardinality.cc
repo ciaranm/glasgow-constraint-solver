@@ -439,15 +439,15 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
 
                 if (! cut_values.empty())
                     inference.contradiction(logger,
-                        JustifyByData{.emit = [&, cut_values, confined](const ReasonLiterals &) {
+                        JustifyByWitness{hints::InlineEmit{[&, cut_values, confined](const ReasonLiterals &) {
                             emit_gcc_capacity_pol(*logger, state, vars, values, counts, count_lines, cut_values, confined);
-                        }},
+                        }}},
                         LazyReasonOver{vars, [&, cut_values, confined](const State &, ReasonLiterals & out) { out = gcc_capacity_reason(state, values, counts, cut_values, confined); }});
                 else if (! demand_cut.empty())
                     inference.contradiction(logger,
-                        JustifyByData{.emit = [&, demand_cut, suppliers](const ReasonLiterals &) {
+                        JustifyByWitness{hints::InlineEmit{[&, demand_cut, suppliers](const ReasonLiterals &) {
                             emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, demand_cut, suppliers, nullopt, nullopt);
-                        }},
+                        }}},
                         LazyReasonOver{vars, [&, demand_cut, suppliers](const State &, ReasonLiterals & out) { out = gcc_demand_reason(state, vars, values, counts, demand_cut, suppliers); }});
                 else if (closed && unmatched >= 0)
                     // A closed variable with no cover value left: the per-variable
@@ -560,9 +560,9 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                                 confined.push_back(vars[k]);
                         }
                         inference.infer(logger, vars[i] != value,
-                            JustifyByData{.emit = [&, cut_values, confined](const ReasonLiterals &) {
+                            JustifyByWitness{hints::InlineEmit{[&, cut_values, confined](const ReasonLiterals &) {
                                 emit_gcc_capacity_pol(*logger, state, vars, values, counts, count_lines, cut_values, confined);
-                            }},
+                            }}},
                             LazyReasonOver{vars, [&, cut_values, confined](const State &, ReasonLiterals & out) { out = gcc_capacity_reason(state, values, counts, cut_values, confined); }});
                     }
                     else {
@@ -585,9 +585,9 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                                 potential.push_back(vars[k]);
                         }
                         inference.infer(logger, vars[i] != value,
-                            JustifyByData{.emit = [&, cut_values, potential, value = value, i = i](const ReasonLiterals &) {
+                            JustifyByWitness{hints::InlineEmit{[&, cut_values, potential, value = value, i = i](const ReasonLiterals &) {
                                 emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], value);
-                            }},
+                            }}},
                             LazyReasonOver{vars, [&, cut_values, potential](const State &, ReasonLiterals & out) { out = gcc_demand_reason(state, vars, values, counts, cut_values, potential); }});
                     }
                 }
@@ -619,9 +619,9 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                 for (const auto & val : state.each_value_mutable(vars[i]))
                     if (! cover.contains(val))
                         inference.infer(logger, vars[i] != val,
-                            JustifyByData{.emit = [&, cut_values, potential, val = val, i = i](const ReasonLiterals &) {
+                            JustifyByWitness{hints::InlineEmit{[&, cut_values, potential, val = val, i = i](const ReasonLiterals &) {
                                 emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], val);
-                            }},
+                            }}},
                             LazyReasonOver{vars, [&, cut_values, potential](const State &, ReasonLiterals & out) { out = gcc_demand_reason(state, vars, values, counts, cut_values, potential); }});
             }
 

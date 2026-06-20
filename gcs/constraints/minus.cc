@@ -61,31 +61,31 @@ namespace
             LE
         };
 
-        auto justify = [&](Conclude c) -> JustifyByData {
-            return JustifyByData{.emit =
-                                     [c, sum_line, logger](const ReasonLiterals & reason) {
-                                         auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
-                                         if (! sum_line_value)
-                                             return;
+        auto justify = [&](Conclude c) {
+            return JustifyByWitness{hints::InlineEmit{
+                [c, sum_line, logger](const ReasonLiterals & reason) {
+                    auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
+                    if (! sum_line_value)
+                        return;
 
-                                         PolBuilder b;
-                                         b.add(*sum_line_value);
+                    PolBuilder b;
+                    b.add(*sum_line_value);
 
-                                         // Constants in WPBSum are baked into the OPB sum_line directly
-                                         // (see emit_inequality_to.cc:58–60), so a reason literal whose
-                                         // variable is a ConstantIntegerVariableID already contributes
-                                         // to sum_line and doesn't need (or have) a pol-side defining
-                                         // line — need_pol_item_defining_literal would throw on it.
-                                         // Issue #166.
-                                         for (size_t i = 0; i < 2; ++i) {
-                                             auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason.at(i))));
-                                             if (holds_alternative<ConstantIntegerVariableID>(lit.var))
-                                                 continue;
-                                             b.add_for_literal(logger->names_and_ids_tracker(), lit);
-                                         }
+                    // Constants in WPBSum are baked into the OPB sum_line directly
+                    // (see emit_inequality_to.cc:58–60), so a reason literal whose
+                    // variable is a ConstantIntegerVariableID already contributes
+                    // to sum_line and doesn't need (or have) a pol-side defining
+                    // line — need_pol_item_defining_literal would throw on it.
+                    // Issue #166.
+                    for (size_t i = 0; i < 2; ++i) {
+                        auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason.at(i))));
+                        if (holds_alternative<ConstantIntegerVariableID>(lit.var))
+                            continue;
+                        b.add_for_literal(logger->names_and_ids_tracker(), lit);
+                    }
 
-                                         b.emit(*logger, ProofLevel::Temporary);
-                                     }};
+                    b.emit(*logger, ProofLevel::Temporary);
+                }}};
         };
 
         // Conclude side picked so the OPB sum_line half contributes the same
