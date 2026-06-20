@@ -57,6 +57,21 @@ namespace gcs::innards
         [[nodiscard]] auto hint_sexpr(const all_different_hall & hall, NamesAndIDsTracker & names) -> SExpr;
 
         auto emit_justification(ProofLogger & logger, const all_different_hall & hall, const ReasonLiterals & reason) -> void;
+
+        /**
+         * \brief Witness for the trivial SCC deletion: a value is deleted because a
+         * single other variable is forced to take it. The justification is plain
+         * RUP (no explicit steps), so this witness has no emit_justification — it is
+         * the pure-RUP capability tier, with only an assertion hint carrying the
+         * owning constraint.
+         */
+        struct all_different_forced_value
+        {
+            ConstraintID owner;
+            static constexpr std::string_view hint_name = "all_different";
+        };
+
+        [[nodiscard]] auto hint_sexpr(const all_different_forced_value & forced, NamesAndIDsTracker & names) -> SExpr;
     }
 }
 

@@ -4,7 +4,6 @@
 #include <gcs/constraints/all_different/justify.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/assertion_hints.hh>
-#include <gcs/innards/hint_names.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -87,6 +86,11 @@ namespace gcs::innards::hints
     {
         justify_all_different_hall_set_or_violator(logger, *hall.all_vars, hall.hall_vars, hall.hall_vals,
             *hall.value_am1_constraint_numbers);
+    }
+
+    auto hint_sexpr(const all_different_forced_value & forced, NamesAndIDsTracker &) -> SExpr
+    {
+        return hint_list(hint_list(SExpr::atom("constraint_id"), forced.owner));
     }
 }
 
@@ -250,7 +254,7 @@ namespace
         ProofLogger * const logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> std::tuple<hints::all_different_hall, Reason, optional<AssertionAnnotation>>
+        const vector<optional<Right>> & matching) -> std::tuple<hints::all_different_hall, Reason>
     {
         vector<optional<Left>> inverse_matching(n_right, nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -313,11 +317,16 @@ namespace
                                       for (const auto & v : hall_variable_ids)
                                           for (const auto & s : excluded)
                                               out.emplace_back(v != s);
-                                  }}},
-            nullopt};
+                                  }}}};
     }
 
     using Vertex = variant<Left, Right>;
+
+    // The two justification shapes a single SCC deletion can take: a Hall set (real
+    // explicit steps) or a single forced value (pure RUP). A typed variant rather
+    // than an optional, so each shape names itself and carries its own assertion
+    // hint — there is no separate annotation channel.
+    using DeletionJustification = variant<hints::all_different_forced_value, hints::all_different_hall>;
 
     auto vertex_to_offset(
         const vector<IntegerVariableID> & vars,
@@ -342,7 +351,7 @@ namespace
         const vector<vector<Right>> & edges_out_from_variable,
         const vector<vector<Left>> & edges_out_from_value,
         const Right delete_value,
-        const vector<int> & components) -> tuple<optional<hints::all_different_hall>, Reason, optional<AssertionAnnotation>>
+        const vector<int> & components) -> tuple<DeletionJustification, Reason>
     {
         // we know a hall set exists, but we have to find it. starting
         // from but not including the end of the edge we're deleting,
@@ -400,15 +409,9 @@ namespace
             if (edges_out_from_value[delete_value.offset].empty())
                 throw UnexpectedException{"missing edge out from value in trivial scc"};
 
-            optional<AssertionAnnotation> assertion_annotation;
-            if (logger && logger->get_assertion_level() != AssertionLevel::Off)
-                assertion_annotation = std::make_optional(AssertionAnnotation{
-                    .hint_name = hints::all_different,
-                    .hint_fields = hint_list(hint_list(SExpr::atom("constraint_id"), constraint_id))});
-
-            return tuple{optional<hints::all_different_hall>{nullopt},
-                Reason{ExplicitReason{ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}}},
-                assertion_annotation};
+            return tuple{
+                DeletionJustification{hints::all_different_forced_value{constraint_id}},
+                Reason{ExplicitReason{ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}}}};
         }
         else {
             // a hall set is at work
@@ -418,14 +421,13 @@ namespace
                     hall_value_nrs.push_back(vals[v.offset]);
 
             return tuple{
-                optional<hints::all_different_hall>{hall_witness(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers)},
+                DeletionJustification{hall_witness(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers)},
                 Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
                                           out = materialise(generic_reason(st, hall_variable_ids), st);
                                           for (const auto & v : hall_variable_ids)
                                               for (const auto & s : excluded)
                                                   out.emplace_back(v != s);
-                                      }}},
-                nullopt};
+                                      }}}};
         }
     }
 }
@@ -473,8 +475,8 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [witness, reason, annotation] = prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, edges, left_covered, matching);
-        return tracker.infer(logger, FalseLiteral{}, JustifyByWitness{move(witness)}, reason, annotation);
+        auto [witness, reason] = prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, edges, left_covered, matching);
+        return tracker.infer(logger, FalseLiteral{}, JustifyByWitness{move(witness)}, reason);
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -640,12 +642,9 @@ auto gcs::innards::propagate_gac_all_different(
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [maybe_witness, reason, annotation] = prove_deletion_using_sccs(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger,
+        auto [justification, reason] = prove_deletion_using_sccs(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        if (maybe_witness)
-            tracker.infer_all(logger, deletions_by_scc[scc], JustifyByWitness{move(*maybe_witness)}, reason, annotation);
-        else
-            tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{}, reason, annotation);
+        visit([&](auto & witness) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyByWitness{move(witness)}, reason); }, justification);
     }
 }
 

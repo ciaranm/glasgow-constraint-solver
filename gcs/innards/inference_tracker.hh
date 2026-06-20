@@ -255,35 +255,40 @@ namespace gcs::innards
             }
         }
 
-        // The witness counterpart of infer_all: same shared-temporary-level batching
-        // for the explicit-steps-then-RUP shape, but the scaffolding is emitted by
-        // the witness's emit_justification rather than a JustifyByData::emit closure.
+        // The witness counterpart of infer_all. For an explicit-steps witness it
+        // does the same shared-temporary-level batching as the variant infer_all,
+        // emitting the scaffolding once via emit_justification then RUPing each
+        // inference. A pure-RUP witness has no scaffolding to share, so it falls
+        // through to the per-literal path (each inference RUPs under the reason,
+        // carrying the witness's assertion hint in assert mode).
         template <typename Witness_>
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
-            if (logger && logger->get_assertion_level() == AssertionLevel::Off && why.then_rup) {
-                auto any_will_fire = false;
-                for (const auto & lit : lits)
-                    if (_state.test_literal(lit) != LiteralIs::DefinitelyTrue) {
-                        any_will_fire = true;
-                        break;
-                    }
-                if (! any_will_fire)
-                    return;
+            if constexpr (WitnessHasExplicitSteps<Witness_>) {
+                if (logger && logger->get_assertion_level() == AssertionLevel::Off && why.then_rup) {
+                    auto any_will_fire = false;
+                    for (const auto & lit : lits)
+                        if (_state.test_literal(lit) != LiteralIs::DefinitelyTrue) {
+                            any_will_fire = true;
+                            break;
+                        }
+                    if (! any_will_fire)
+                        return;
 
-                auto snapshotted = snapshot_reason(logger, reason, _state);
-                ReasonLiterals reason_lits = materialise(snapshotted, _state);
-                auto t = logger->temporary_proof_level();
-                emit_justification(*logger, why.witness, reason_lits);
-                for (const auto & lit : lits)
-                    infer(logger, lit, JustifyUsingRUP{}, snapshotted);
-                logger->forget_proof_level(t);
+                    auto snapshotted = snapshot_reason(logger, reason, _state);
+                    ReasonLiterals reason_lits = materialise(snapshotted, _state);
+                    auto t = logger->temporary_proof_level();
+                    emit_justification(*logger, why.witness, reason_lits);
+                    for (const auto & lit : lits)
+                        infer(logger, lit, JustifyUsingRUP{}, snapshotted);
+                    logger->forget_proof_level(t);
+                    return;
+                }
             }
-            else {
-                auto snapshotted = snapshot_reason(logger, reason, _state);
-                for (const auto & lit : lits)
-                    infer(logger, lit, why, snapshotted, fallback);
-            }
+
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            for (const auto & lit : lits)
+                infer(logger, lit, why, snapshotted, fallback);
         }
 
         auto each_inference() const -> std::generator<std::pair<SimpleIntegerVariableID, Inference>>
