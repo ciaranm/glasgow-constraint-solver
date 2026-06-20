@@ -144,12 +144,67 @@ namespace gcs::innards
         // Justify an inference with a typed witness (JustifyByWitness): the
         // pay-for-use, std::function-free path. The fallback annotation is used in
         // assertion mode only when the witness carries no hint of its own, matching
-        // JustifyByData's empty-annotation behaviour.
+        // JustifyByData's empty-annotation behaviour. There is a witness overload
+        // for each variant infer entry point (general literal, the typed
+        // condition/bound helpers, and contradiction); each just routes to
+        // track_witness instead of track.
         template <typename Witness_>
         auto infer(ProofLogger * const logger, const Literal & lit, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_witness(logger, _state.infer(lit), lit, why, snapshotted, fallback);
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Witness_>
+        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_witness(logger, _state.infer(lit), lit, why, snapshotted, fallback);
+        }
+
+        template <typename Witness_>
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            if (logger)
+                infer_witness(*logger, FalseLiteral{}, why.witness, why.then_rup, materialise(reason, _state), fallback);
+            throw TrackedPropagationFailed{};
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Witness_>
+        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_witness(logger, _state.infer_equal(var, value), var == value, why, snapshotted, fallback);
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Witness_>
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_witness(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, fallback);
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Witness_>
+        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_witness(logger, _state.infer_less_than(var, value), var < value, why, snapshotted, fallback);
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Witness_>
+        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_witness(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, fallback);
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Witness_>
+        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            if (lo > hi)
+                return;
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_witness(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, snapshotted, fallback);
         }
 
         [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void

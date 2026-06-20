@@ -161,6 +161,23 @@ namespace gcs::innards
         {
             witness.emit(reason);
         }
+
+        /**
+         * \brief The pure-RUP escape: an inference that is RUP-derivable on its own
+         * but wants a coarse model-level name in assertion mode.
+         *
+         * This is the witness form of "JustifyUsingRUP plus a coarse hint name".
+         * It has no emit_justification (so eager mode emits just the RUP,
+         * byte-identical to JustifyUsingRUP) and no hint_sexpr (so the annotation is
+         * the coarse name alone). The home for a constraint's coarse name until it
+         * grows a typed, structured witness.
+         *
+         * \ingroup Innards
+         */
+        struct CoarseHint
+        {
+            std::string_view hint_name;
+        };
     }
 }
 

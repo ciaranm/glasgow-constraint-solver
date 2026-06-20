@@ -5,7 +5,6 @@
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/extensional_utils.hh>
-#include <gcs/innards/hint_names.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -65,6 +64,11 @@ ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer val
 
 namespace
 {
+    // Coarse model-level hint name for linear_equality's inferences, carried on the
+    // CoarseHint witness for the direct sites and on the raw annotation passed into
+    // propagate_linear (the shared linear core, not yet witness-based).
+    constexpr std::string_view linear_equality_hint = "linear_equality";
+
     template <typename CV_>
     auto build_table(const CV_ & coeff_vars, Integer value, ReificationCondition cond, State & state, ProofLogger * const logger) -> optional<ExtensionalData>
     {
@@ -242,7 +246,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                                 State & state, auto & inference, ProofLogger * const logger) {
                 *data = build_table(coeff_vars, value, cond, state, logger);
                 if (! data->has_value())
-                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{}}, AssertionAnnotation{.hint_name = hints::linear_equality});
+                    inference.infer(logger, FalseLiteral{}, JustifyByWitness{hints::CoarseHint{linear_equality_hint}}, ExplicitReason{ReasonLiterals{}});
             },
                 InitialiserPriority::Expensive);
 
@@ -261,7 +265,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 // the (folded-out) constant part, so the equality holds iff _value + modifier == 0
                 if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != -_value) {
                     propagators.install_initialiser([reason_from_cond = reif.cond](const State &, auto & inference, ProofLogger * const logger) {
-                        inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{reason_from_cond}}}, AssertionAnnotation{.hint_name = hints::linear_equality});
+                        inference.infer(logger, FalseLiteral{}, JustifyByWitness{hints::CoarseHint{linear_equality_hint}}, ExplicitReason{ReasonLiterals{{reason_from_cond}}});
                     });
                 }
 
@@ -272,7 +276,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
 
                 visit(
                     [&, modifier = modifier](const auto & lin) {
-                        propagators.install(constraint_id(), [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond](const State & state, auto & inference, ProofLogger * const logger) { return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond, AssertionAnnotation{.hint_name = hints::linear_equality}); }, triggers);
+                        propagators.install(constraint_id(), [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond](const State & state, auto & inference, ProofLogger * const logger) { return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond, AssertionAnnotation{.hint_name = linear_equality_hint}); }, triggers);
                     },
                     sanitised_cv);
             },
@@ -282,7 +286,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 // the equality _value + modifier == 0 must NOT hold, so it is violated iff it does
                 if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier == -_value) {
                     propagators.install_initialiser([reason_from_cond = reif.cond](const State &, auto & inference, ProofLogger * const logger) {
-                        inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{reason_from_cond}}}, AssertionAnnotation{.hint_name = hints::linear_equality});
+                        inference.infer(logger, FalseLiteral{}, JustifyByWitness{hints::CoarseHint{linear_equality_hint}}, ExplicitReason{ReasonLiterals{{reason_from_cond}}});
                     });
                 }
 
@@ -315,7 +319,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                         return overloaded{
                             [&](const evaluated_reif::MustHold & reif) {
                                 // we now know the condition definitely holds, so it's a linear equality
-                                return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond, AssertionAnnotation{.hint_name = hints::linear_equality});
+                                return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond, AssertionAnnotation{.hint_name = linear_equality_hint});
                             },
 
                             [&](const evaluated_reif::MustNotHold &) {
@@ -351,12 +355,12 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                     // reified)
                                     if (accum == value) {
                                         if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
-                                            inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars), AssertionAnnotation{.hint_name = hints::linear_equality});
+                                            inference.infer(logger, *lit, JustifyByWitness{hints::CoarseHint{linear_equality_hint}}, generic_reason(state, all_vars));
                                         return PropagatorState::DisableUntilBacktrack;
                                     }
                                     else {
                                         if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                            inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars), AssertionAnnotation{.hint_name = hints::linear_equality});
+                                            inference.infer(logger, *lit, JustifyByWitness{hints::CoarseHint{linear_equality_hint}}, generic_reason(state, all_vars));
                                         return PropagatorState::DisableUntilBacktrack;
                                     }
                                 }
@@ -370,7 +374,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                             // no way for the remaining variable to take that value, so the condition
                                             // has to be false
                                             if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                                inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars), AssertionAnnotation{.hint_name = hints::linear_equality});
+                                                inference.infer(logger, *lit, JustifyByWitness{hints::CoarseHint{linear_equality_hint}}, generic_reason(state, all_vars));
                                             return PropagatorState::DisableUntilBacktrack;
                                         }
                                         else {
@@ -382,7 +386,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                         // the value that would make the equality work isn't an integer, so the condition
                                         // has to be false
                                         if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                            inference.infer(logger, *lit, JustifyUsingRUP{}, generic_reason(state, all_vars), AssertionAnnotation{.hint_name = hints::linear_equality});
+                                            inference.infer(logger, *lit, JustifyByWitness{hints::CoarseHint{linear_equality_hint}}, generic_reason(state, all_vars));
                                         return PropagatorState::DisableUntilBacktrack;
                                     }
                                 }

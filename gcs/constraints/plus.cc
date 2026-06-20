@@ -1,5 +1,4 @@
 #include <gcs/constraints/plus.hh>
-#include <gcs/innards/hint_names.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
@@ -46,15 +45,23 @@ namespace gcs::innards::hints
     // emit must capture per-constraint state. No hint_sexpr overload: plus has no
     // typed external hint yet (its witness is the reason, already in the
     // assertion), so it carries only the coarse hint_name.
+    //
+    // pol_line is optional: with no sum line (e.g. proofs without a model) there
+    // is no explicit lemma, just the trailing RUP, so emit does nothing — an
+    // empty-emit explicit step, byte-identical to the pre-witness early return.
     struct PlusBound
     {
-        ProofLine pol_line;
+        std::optional<ProofLine> pol_line;
+        static constexpr std::string_view hint_name = "plus";
     };
 
     auto emit_justification(ProofLogger & logger, const PlusBound & d, const ReasonLiterals & reason) -> void
     {
+        if (! d.pol_line)
+            return;
+
         PolBuilder b;
-        b.add(d.pol_line);
+        b.add(*d.pol_line);
 
         // Constants in WPBSum are baked into the OPB sum_line directly (see
         // emit_inequality_to.cc:58-60), so a reason literal whose variable is a
@@ -89,19 +96,9 @@ namespace
             LE
         };
 
-        auto annotation = [](NamesAndIDsTracker &) { return AssertionAnnotation{.hint_name = hints::plus}; };
-        auto justify = [&](Conclude c) -> Justification {
+        auto justify = [&](Conclude c) {
             auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
-            // No sum line (e.g. proofs without a model): no explicit lemma, just
-            // the trailing RUP (empty emit + then_rup), byte-identical to the
-            // pre-Plan-B early-return closure.
-            if (! sum_line_value)
-                return JustifyByData{.emit = [](const ReasonLiterals &) {}, .annotation = annotation};
-            return JustifyByData{
-                .emit = [logger, witness = hints::PlusBound{*sum_line_value}](const ReasonLiterals & reason) {
-                    emit_justification(*logger, witness, reason);
-                },
-                .annotation = annotation};
+            return JustifyByWitness{hints::PlusBound{sum_line_value}};
         };
 
         // min(result) = min(a) + min(b);
