@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -82,7 +83,71 @@ namespace gcs::innards
         }
     };
 
-    using InitialisationFunction = std::function<auto(State &, EagerProofLoggingInferenceTracker &, ProofLogger * const)->void>;
+    // Like PropagationFunction, but for initialisers: a type-erased wrapper that
+    // can be invoked with either inference tracker, so the proofs-off initialiser
+    // pass can use the lean SimpleInferenceTracker too. (A plain std::function
+    // would pin the tracker type to one or the other.)
+    class InitialisationFunctionImplBase
+    {
+    public:
+        virtual ~InitialisationFunctionImplBase() = default;
+
+        InitialisationFunctionImplBase() = default;
+        InitialisationFunctionImplBase(const InitialisationFunctionImplBase &) = delete;
+        InitialisationFunctionImplBase(InitialisationFunctionImplBase &&) = default;
+
+        auto operator=(const InitialisationFunctionImplBase &) -> InitialisationFunctionImplBase & = delete;
+        auto operator=(InitialisationFunctionImplBase &&) -> InitialisationFunctionImplBase & = default;
+
+        virtual auto operator()(State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> void = 0;
+        virtual auto operator()(State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> void = 0;
+    };
+
+    template <typename Func_>
+    class InitialisationFunctionImpl : public InitialisationFunctionImplBase
+    {
+    private:
+        Func_ _f;
+
+    public:
+        InitialisationFunctionImpl(Func_ && f) :
+            _f(std::move(f))
+        {
+        }
+
+        auto operator()(State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> void override
+        {
+            _f(state, tracker, logger);
+        }
+
+        auto operator()(State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> void override
+        {
+            _f(state, tracker, logger);
+        }
+    };
+
+    class InitialisationFunction
+    {
+    private:
+        std::unique_ptr<InitialisationFunctionImplBase> _impl;
+
+    public:
+        template <typename Func_>
+        InitialisationFunction(Func_ && f) :
+            _impl(std::make_unique<InitialisationFunctionImpl<Func_>>(std::move(f)))
+        {
+        }
+
+        auto operator()(State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> void
+        {
+            _impl->operator()(state, tracker, logger);
+        }
+
+        auto operator()(State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> void
+        {
+            _impl->operator()(state, tracker, logger);
+        }
+    };
 
     /**
      * \brief Priority for initialisers, controlling the order in which they run.

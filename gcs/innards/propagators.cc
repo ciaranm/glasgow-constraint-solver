@@ -158,9 +158,16 @@ auto Propagators::initialise(State & state, ProofLogger * const logger) const ->
 {
     for (auto & bucket : _imp->initialisation_functions_by_priority) {
         for (auto & f : bucket) {
-            EagerProofLoggingInferenceTracker inf(state);
             try {
-                f(state, inf, logger);
+                // As in propagate(): with no logger, run the lean tracker.
+                if (logger) {
+                    EagerProofLoggingInferenceTracker inf(state);
+                    f(state, inf, logger);
+                }
+                else {
+                    SimpleInferenceTracker inf(state);
+                    f(state, inf, logger);
+                }
             }
             catch (const TrackedPropagationFailed &) {
                 return false;
