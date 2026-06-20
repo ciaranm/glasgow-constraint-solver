@@ -1,4 +1,5 @@
 #include <gcs/exception.hh>
+#include <gcs/innards/conflict_observer.hh>
 #include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -30,6 +31,7 @@ using std::swap;
 using std::to_underlying;
 using std::vector;
 using std::visit;
+using std::ranges::find;
 
 namespace
 {
@@ -74,6 +76,20 @@ struct Propagators::Imp
     vector<int> propagator_constraint_index;
     vector<ConstraintID> constraint_ids;
     std::unordered_map<ConstraintID, int, ConstraintIDHash> constraint_index_of_id;
+
+    // The scope of each propagator (indexed by propagator id): its trigger
+    // variables with views resolved to the underlying simple variable and
+    // duplicates removed. var_constraint_indices is the transpose aggregated by
+    // constraint: indexed by variable index, the deduplicated dense constraint
+    // indices that variable participates in. Built alongside the triggers in
+    // install(), used by a conflict observer / weighted-degree heuristic.
+    vector<vector<SimpleIntegerVariableID>> propagator_scope;
+    vector<vector<int>> var_constraint_indices;
+
+    // A borrowed conflict observer, notified when a propagator wipes out a
+    // domain (see propagate). Set once at search start via set_conflict_observer;
+    // the caller owns it. nullptr when there is no observer.
+    ConflictObserver * conflict_observer = nullptr;
 };
 
 Propagators::Propagators() :
@@ -122,7 +138,40 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
     auto [it, inserted] = _imp->constraint_index_of_id.try_emplace(constraint_id, static_cast<int>(_imp->constraint_ids.size()));
     if (inserted)
         _imp->constraint_ids.push_back(constraint_id);
-    _imp->propagator_constraint_index.push_back(it->second);
+    int constraint_index = it->second;
+    _imp->propagator_constraint_index.push_back(constraint_index);
+
+    // Record this propagator's scope (its trigger variables, views resolved and
+    // deduplicated) and add it to each variable's constraint adjacency.
+    auto & scope = _imp->propagator_scope.emplace_back();
+    auto add_to_scope = [&](IntegerVariableID var) {
+        overloaded{
+            [&](const SimpleIntegerVariableID & v) {
+                if (find(scope, v) == scope.end())
+                    scope.push_back(v);
+            },
+            [&](const ViewOfIntegerVariableID & v) {
+                if (find(scope, v.actual_variable) == scope.end())
+                    scope.push_back(v.actual_variable);
+            },
+            [&](const ConstantIntegerVariableID &) {
+            }}
+            .visit(var);
+    };
+    for (const auto & v : triggers.on_change)
+        add_to_scope(v);
+    for (const auto & v : triggers.on_bounds)
+        add_to_scope(v);
+    for (const auto & v : triggers.on_instantiated)
+        add_to_scope(v);
+
+    for (const auto & v : scope) {
+        if (_imp->var_constraint_indices.size() <= v.index)
+            _imp->var_constraint_indices.resize(v.index + 1);
+        auto & indices = _imp->var_constraint_indices[v.index];
+        if (find(indices, constraint_index) == indices.end())
+            indices.push_back(constraint_index);
+    }
 
     for (const auto & v : triggers.on_change) {
         trigger_on_change(v, id);
@@ -264,6 +313,13 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         catch (const TrackedPropagationFailed &) {
             contradiction = true;
             ++_imp->contradicting_propagations;
+            // Exactly one propagator contradiction ends each propagate(), so this
+            // fires at most once per call. Non-propagator contradiction paths
+            // (initialisers, the objective bound) never reach here, so they are
+            // not attributed to any constraint.
+            if (_imp->conflict_observer)
+                _imp->conflict_observer->note_conflict(_imp->propagator_constraint_index[propagator_id],
+                    _imp->propagator_scope[propagator_id], tracker.last_contradiction_reason(), state);
         }
 
         if (contradiction || (optional_abort_flag && optional_abort_flag->load()))
@@ -382,4 +438,28 @@ auto Propagators::constraint_index_of_propagator(int propagator_id) const -> int
 auto Propagators::constraint_id_for_index(int constraint_index) const -> const ConstraintID &
 {
     return _imp->constraint_ids[constraint_index];
+}
+
+auto Propagators::scope_of_propagator(int propagator_id) const -> const vector<SimpleIntegerVariableID> &
+{
+    return _imp->propagator_scope[propagator_id];
+}
+
+auto Propagators::constraint_indices_of_variable(SimpleIntegerVariableID var) const -> const vector<int> &
+{
+    if (var.index >= _imp->var_constraint_indices.size()) {
+        static const vector<int> none;
+        return none;
+    }
+    return _imp->var_constraint_indices[var.index];
+}
+
+auto Propagators::set_conflict_observer(ConflictObserver * observer) -> void
+{
+    _imp->conflict_observer = observer;
+}
+
+auto Propagators::conflict_observer() const -> ConflictObserver *
+{
+    return _imp->conflict_observer;
 }
