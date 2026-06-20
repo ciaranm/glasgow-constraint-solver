@@ -46,12 +46,12 @@ namespace gcs::innards::hints
     // emit must capture per-constraint state. No hint_sexpr overload: plus has no
     // typed external hint yet (its witness is the reason, already in the
     // assertion), so it carries only the coarse hint_name.
-    struct plus_bound
+    struct PlusBound
     {
         ProofLine pol_line;
     };
 
-    auto emit_justification(ProofLogger & logger, const plus_bound & d, const ReasonLiterals & reason) -> void
+    auto emit_justification(ProofLogger & logger, const PlusBound & d, const ReasonLiterals & reason) -> void
     {
         PolBuilder b;
         b.add(d.pol_line);
@@ -98,7 +98,7 @@ namespace
             if (! sum_line_value)
                 return JustifyByData{.emit = [](const ReasonLiterals &) {}, .annotation = annotation};
             return JustifyByData{
-                .emit = [logger, witness = hints::plus_bound{*sum_line_value}](const ReasonLiterals & reason) {
+                .emit = [logger, witness = hints::PlusBound{*sum_line_value}](const ReasonLiterals & reason) {
                     emit_justification(*logger, witness, reason);
                 },
                 .annotation = annotation};

@@ -133,7 +133,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
                 }
             };
             inference.infer(logger, how_many < how_many_is_less_than,
-                JustifyByWitness{hints::inline_emit{justf}},
+                JustifyByWitness{hints::InlineEmit{justf}},
                 generic_reason(state, all_vars));
 
             // must have at least this many occurrences of the value of interest
@@ -174,7 +174,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             }
                         }
                     };
-                    inference.infer(logger, value_of_interest != voi, JustifyByWitness{hints::inline_emit{justf}}, generic_reason(state, all_vars));
+                    inference.infer(logger, value_of_interest != voi, JustifyByWitness{hints::InlineEmit{justf}}, generic_reason(state, all_vars));
                 }
                 else if (how_many_must > state.upper_bound(how_many)) {
                     // unlike above, we don't need to help, because the equality flag will propagate
@@ -191,7 +191,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
 
             // what are the supports on possible values we've seen?
             if (lowest_how_many_must) {
-                auto just = JustifyByWitness{hints::inline_emit{
+                auto just = JustifyByWitness{hints::InlineEmit{
                     [&](const ReasonLiterals & reason) -> void {
                         for (const auto & voi : state.each_value_immutable(value_of_interest))
                             logger->emit_rup_proof_line_under_reason(reason,
@@ -202,7 +202,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
             }
 
             if (highest_how_many_might) {
-                auto just = JustifyByWitness{hints::inline_emit{
+                auto just = JustifyByWitness{hints::InlineEmit{
                     [&](const ReasonLiterals & reason) -> void {
                         // Per-(voi, var) conditional pairs: emit when voi is
                         // in value_of_interest's domain but not var's. Outer

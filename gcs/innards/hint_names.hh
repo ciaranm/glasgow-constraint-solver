@@ -14,7 +14,7 @@ namespace gcs::innards::hints
      * sites and the whole set is extractable from a single place. This is the
      * coarse level only; the fine, per-justification-shape discriminator (the
      * "justifier" keyword) lives decentralised on each hint's witness struct in
-     * gcs::innards::hints (e.g. all_different_hall::justifier), reached by ADL.
+     * gcs::innards::hints (e.g. AllDifferentHall::justifier), reached by ADL.
      *
      * \ingroup Innards
      */

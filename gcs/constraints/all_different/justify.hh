@@ -43,7 +43,7 @@ namespace gcs::innards
          * replaying at backtrack time (the "fat witness" carrying emit context, with
          * hint_sexpr serialising only the clean subset).
          */
-        struct all_different_hall
+        struct AllDifferentHall
         {
             std::vector<IntegerVariableID> hall_vars;
             std::vector<Integer> hall_vals;
@@ -54,9 +54,9 @@ namespace gcs::innards
             static constexpr std::string_view hint_name = "all_different";
         };
 
-        [[nodiscard]] auto hint_sexpr(const all_different_hall & hall, NamesAndIDsTracker & names) -> SExpr;
+        [[nodiscard]] auto hint_sexpr(const AllDifferentHall & hall, NamesAndIDsTracker & names) -> SExpr;
 
-        auto emit_justification(ProofLogger & logger, const all_different_hall & hall, const ReasonLiterals & reason) -> void;
+        auto emit_justification(ProofLogger & logger, const AllDifferentHall & hall, const ReasonLiterals & reason) -> void;
 
         /**
          * \brief Witness for the trivial SCC deletion: a value is deleted because a
@@ -65,13 +65,13 @@ namespace gcs::innards
          * the pure-RUP capability tier, with only an assertion hint carrying the
          * owning constraint.
          */
-        struct all_different_forced_value
+        struct AllDifferentForcedValue
         {
             ConstraintID owner;
             static constexpr std::string_view hint_name = "all_different";
         };
 
-        [[nodiscard]] auto hint_sexpr(const all_different_forced_value & forced, NamesAndIDsTracker & names) -> SExpr;
+        [[nodiscard]] auto hint_sexpr(const AllDifferentForcedValue & forced, NamesAndIDsTracker & names) -> SExpr;
     }
 }
 

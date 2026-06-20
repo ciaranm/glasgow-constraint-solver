@@ -70,7 +70,7 @@ using fmt::print;
 
 namespace gcs::innards::hints
 {
-    auto hint_sexpr(const all_different_hall & hall, NamesAndIDsTracker & names) -> SExpr
+    auto hint_sexpr(const AllDifferentHall & hall, NamesAndIDsTracker & names) -> SExpr
     {
         vector<SExpr> hall_var_terms;
         for (const auto & v : hall.hall_vars)
@@ -79,16 +79,16 @@ namespace gcs::innards::hints
             hint_list(SExpr::atom("constraint_id"), hall.owner),
             hint_list(SExpr::atom("hall_vars"), SExpr::list(move(hall_var_terms))),
             hint_list(SExpr::atom("hall_vals"), hint_seq(hall.hall_vals)),
-            hint_list(SExpr::atom("justifier"), SExpr::atom(string{all_different_hall::justifier})));
+            hint_list(SExpr::atom("justifier"), SExpr::atom(string{AllDifferentHall::justifier})));
     }
 
-    auto emit_justification(ProofLogger & logger, const all_different_hall & hall, const ReasonLiterals &) -> void
+    auto emit_justification(ProofLogger & logger, const AllDifferentHall & hall, const ReasonLiterals &) -> void
     {
         justify_all_different_hall_set_or_violator(logger, *hall.all_vars, hall.hall_vars, hall.hall_vals,
             *hall.value_am1_constraint_numbers);
     }
 
-    auto hint_sexpr(const all_different_forced_value & forced, NamesAndIDsTracker &) -> SExpr
+    auto hint_sexpr(const AllDifferentForcedValue & forced, NamesAndIDsTracker &) -> SExpr
     {
         return hint_list(hint_list(SExpr::atom("constraint_id"), forced.owner));
     }
@@ -233,9 +233,9 @@ namespace
         const vector<IntegerVariableID> & hall_variable_ids,
         const vector<Integer> & hall_value_nrs,
         const ConstraintID & constraint_id,
-        map<Integer, ProofLine> & value_am1_constraint_numbers) -> hints::all_different_hall
+        map<Integer, ProofLine> & value_am1_constraint_numbers) -> hints::AllDifferentHall
     {
-        return hints::all_different_hall{
+        return hints::AllDifferentHall{
             .hall_vars = hall_variable_ids,
             .hall_vals = hall_value_nrs,
             .owner = constraint_id,
@@ -254,7 +254,7 @@ namespace
         ProofLogger * const logger,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> std::tuple<hints::all_different_hall, Reason>
+        const vector<optional<Right>> & matching) -> std::tuple<hints::AllDifferentHall, Reason>
     {
         vector<optional<Left>> inverse_matching(n_right, nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -326,7 +326,7 @@ namespace
     // explicit steps) or a single forced value (pure RUP). A typed variant rather
     // than an optional, so each shape names itself and carries its own assertion
     // hint — there is no separate annotation channel.
-    using DeletionJustification = variant<hints::all_different_forced_value, hints::all_different_hall>;
+    using DeletionJustification = variant<hints::AllDifferentForcedValue, hints::AllDifferentHall>;
 
     auto vertex_to_offset(
         const vector<IntegerVariableID> & vars,
@@ -410,7 +410,7 @@ namespace
                 throw UnexpectedException{"missing edge out from value in trivial scc"};
 
             return tuple{
-                DeletionJustification{hints::all_different_forced_value{constraint_id}},
+                DeletionJustification{hints::AllDifferentForcedValue{constraint_id}},
                 Reason{ExplicitReason{ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}}}};
         }
         else {

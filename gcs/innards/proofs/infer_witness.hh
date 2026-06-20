@@ -150,14 +150,14 @@ namespace gcs::innards
          * \ingroup Innards
          */
         template <typename Emit_>
-        struct inline_emit
+        struct InlineEmit
         {
             Emit_ emit;
             std::string_view hint_name = "";
         };
 
         template <typename Emit_>
-        auto emit_justification(ProofLogger &, const inline_emit<Emit_> & witness, const ReasonLiterals & reason) -> void
+        auto emit_justification(ProofLogger &, const InlineEmit<Emit_> & witness, const ReasonLiterals & reason) -> void
         {
             witness.emit(reason);
         }
