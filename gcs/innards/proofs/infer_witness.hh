@@ -112,25 +112,24 @@ namespace gcs::innards
             return;
         }
 
-        if constexpr (WitnessHasExplicitSteps<Witness_>) {
-            if (then_rup) {
-                overloaded{
-                    [&](const TrueLiteral &) {},
-                    [&](const FalseLiteral &) {},
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) { logger.names_and_ids_tracker().need_proof_name(cond); }}
-                    .visit(simplify_literal(logger.names_and_ids_tracker(), lit));
-            }
-            auto t = logger.temporary_proof_level();
-            emit_justification(logger, witness, reason);
-            if (then_rup)
-                logger.infer(lit, JustifyUsingRUP{}, reason);
-            logger.forget_proof_level(t);
+        // A JustifyByWitness always has explicit steps now; a pure-RUP inference
+        // that only wants an assertion hint uses JustifyUsingRUP{hint} instead.
+        static_assert(WitnessHasExplicitSteps<Witness_>,
+            "JustifyByWitness needs explicit proof steps (an emit_justification overload); "
+            "use JustifyUsingRUP{hint} for a pure-RUP inference that only carries an assertion hint");
+
+        if (then_rup) {
+            overloaded{
+                [&](const TrueLiteral &) {},
+                [&](const FalseLiteral &) {},
+                [&]<typename T_>(const VariableConditionFrom<T_> & cond) { logger.names_and_ids_tracker().need_proof_name(cond); }}
+                .visit(simplify_literal(logger.names_and_ids_tracker(), lit));
         }
-        else {
-            // Pure-RUP witness: no explicit steps, byte-identical to JustifyUsingRUP.
-            if (! is_literally_true(lit))
-                logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
-        }
+        auto t = logger.temporary_proof_level();
+        emit_justification(logger, witness, reason);
+        if (then_rup)
+            logger.infer(lit, JustifyUsingRUP{}, reason);
+        logger.forget_proof_level(t);
     }
 
     namespace hints
@@ -161,23 +160,6 @@ namespace gcs::innards
         {
             witness.emit(reason);
         }
-
-        /**
-         * \brief The pure-RUP escape: an inference that is RUP-derivable on its own
-         * but wants a coarse model-level name in assertion mode.
-         *
-         * This is the witness form of "JustifyUsingRUP plus a coarse hint name".
-         * It has no emit_justification (so eager mode emits just the RUP,
-         * byte-identical to JustifyUsingRUP) and no hint_sexpr (so the annotation is
-         * the coarse name alone). The home for a constraint's coarse name until it
-         * grows a typed, structured witness.
-         *
-         * \ingroup Innards
-         */
-        struct CoarseHint
-        {
-            std::string_view hint_name;
-        };
     }
 }
 

@@ -45,11 +45,26 @@ using fmt::format;
 using fmt::print;
 #endif
 
+namespace gcs::innards::hints
+{
+    // Pure-RUP hint for abs's RUP inferences (removing an out-of-range value):
+    // RUP-derivable, so no emit_justification; carries the owning constraint id.
+    struct AbsRUP
+    {
+        ConstraintID owner;
+        static constexpr std::string_view hint_name = "abs";
+    };
+
+    auto hint_sexpr(const AbsRUP & h, NamesAndIDsTracker &) -> SExpr
+    {
+        return hint_list(hint_list(SExpr::atom("constraint_id"), h.owner));
+    }
+}
+
 namespace
 {
-    // Coarse model-level hint name for abs's inferences, carried on the witness
-    // (InlineEmit / CoarseHint) in assertion mode. abs has no typed structured
-    // hint yet, so this single name is all its witnesses carry.
+    // Coarse model-level hint name for abs's explicit-steps (InlineEmit) witnesses
+    // in assertion mode. The pure-RUP inferences use hints::AbsRUP instead.
     constexpr std::string_view abs_hint = "abs";
 
     // Collect a set of (lower, upper) pieces (possibly unordered and
@@ -184,7 +199,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
     Triggers triggers{.on_change = {_v1, _v2}};
     propagators.install(
         constraint_id(),
-        [v1 = _v1, v2 = _v2,
+        [v1 = _v1, v2 = _v2, owner = constraint_id(),
             abs_nonneg_le = _abs_nonneg_lines.first,
             abs_nonneg_ge = _abs_nonneg_lines.second,
             abs_neg_le = _abs_neg_lines.first,
@@ -306,7 +321,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 for (Integer val = clipped_lo; val <= clipped_hi; ++val) {
                     if (! state.in_domain(v1, val))
                         continue;
-                    inference.infer_not_equal(logger, v1, val, JustifyByWitness{hints::CoarseHint{abs_hint}},
+                    inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{hints::AbsRUP{owner}},
                         ExplicitReason{ReasonLiterals{v2 != abs(val)}});
                 }
             }

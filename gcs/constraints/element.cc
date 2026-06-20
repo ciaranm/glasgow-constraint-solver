@@ -523,7 +523,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
         Triggers equality_triggers;
         equality_triggers.on_change.insert(equality_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
         equality_triggers.on_change.emplace_back(_result_var);
-        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // if there's only a single possible array variable left, it can only take values
             // that are present in the result variable
             bool index_is_fully_defined = true;
@@ -541,7 +541,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
             if (index_is_fully_defined) {
                 auto array_var = get_array_var<dimensions_>(elem, *array);
-                enforce_equality(logger, result_var, array_var, state, inference, index_reason);
+                enforce_equality(logger, result_var, array_var, state, inference, index_reason, owner);
             }
 
             return PropagatorState::Enable; }, equality_triggers);

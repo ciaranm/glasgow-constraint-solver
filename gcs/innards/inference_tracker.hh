@@ -8,6 +8,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 
+#include <concepts>
 #include <deque>
 #include <optional>
 #include <utility>
@@ -205,6 +206,61 @@ namespace gcs::innards
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_witness(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, fallback);
+        }
+
+        // A JustifyUsingRUP carrying a typed hint is a RUP inference (no explicit
+        // steps) that wants a typed assertion hint. Each overload below turns the
+        // hint into an annotation (only when something will be asserted — Off mode
+        // builds nothing, so it stays byte-identical to a bare RUP) and delegates to
+        // the plain JustifyUsingRUP{} path. No witness machinery is involved.
+        template <typename Hint_>
+        [[nodiscard]] auto rup_hint_annotation(ProofLogger * const logger, const Hint_ & hint, const std::optional<AssertionAnnotation> & fallback) -> std::optional<AssertionAnnotation>
+        {
+            if (logger && logger->get_assertion_level() != AssertionLevel::Off)
+                return witness_annotation(*logger, hint, fallback);
+            return fallback;
+        }
+
+        template <typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        auto infer(ProofLogger * const logger, const Literal & lit, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            infer(logger, lit, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            infer_equal(logger, var, value, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            infer_not_equal(logger, var, value, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            infer_less_than(logger, var, value, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            infer_greater_than_or_equal(logger, var, value, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
+        }
+
+        template <typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            infer_all(logger, lits, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
         template <IntegerVariableIDLike VarType_, typename Witness_>

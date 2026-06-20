@@ -15,18 +15,40 @@
 namespace gcs::innards
 {
     /**
+     * \brief The empty hint: a bare RUP carrying no assertion hint. This is what
+     * JustifyUsingRUP{} (and hence the Justification variant) holds.
+     *
+     * \ingroup Innards
+     */
+    struct NoHint
+    {
+    };
+
+    /**
      * \brief Specify that an inference can be justified using reverse unit
-     * propagation.
+     * propagation, optionally carrying a typed assertion hint.
+     *
+     * `JustifyUsingRUP{}` is the bare, nameless RUP (the common case, and the one
+     * that lives in the Justification variant). `JustifyUsingRUP{hints::Foo{...}}`
+     * is the same RUP inference, but in assertion mode it is asserted under a typed
+     * hint (model name + structured fields, e.g. the owning constraint id) built by
+     * witness_annotation. The hint never carries explicit proof steps — that is what
+     * JustifyByWitness is for — so in normal (Off) proof mode this is byte-identical
+     * to a bare RUP regardless of the hint.
      *
      * \ingroup Innards
      * \sa Justification
      */
+    template <typename Hint_ = NoHint>
     struct JustifyUsingRUP
     {
-        explicit JustifyUsingRUP()
-        {
-        }
+        [[no_unique_address]] Hint_ hint{};
     };
+
+    JustifyUsingRUP() -> JustifyUsingRUP<NoHint>;
+
+    template <typename Hint_>
+    JustifyUsingRUP(Hint_) -> JustifyUsingRUP<Hint_>;
 
     /**
      * \brief Specify that an inference will be asserted rather than justified.
@@ -100,7 +122,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using Justification = std::variant<JustifyUsingRUP, AssertRatherThanJustifying, NoJustificationNeeded>;
+    using Justification = std::variant<JustifyUsingRUP<NoHint>, AssertRatherThanJustifying, NoJustificationNeeded>;
 }
 
 #endif

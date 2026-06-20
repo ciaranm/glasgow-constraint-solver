@@ -334,7 +334,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
     }
 
     overloaded{
-        [&]([[maybe_unused]] const JustifyUsingRUP & j) {
+        [&]([[maybe_unused]] const JustifyUsingRUP<NoHint> & j) {
             if (! is_literally_true(lit)) {
                 emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
             }
