@@ -215,6 +215,16 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
     build_implication_constraints(0);
 }
 
+// GCC's -O3 scalar-replacement of aggregates picks apart the small-buffer storage
+// of ReasonLiterals (gch::small_vector<ProofLiteralOrFlag, 2>) used for the reason
+// literals below, then cannot prove one of the resulting temporaries initialised,
+// emitting a -Wmaybe-uninitialized false positive (attributed to the first
+// install() lambda). The reason locals are all default-constructed before use --
+// there is no real uninitialised read -- and clang's analysis does not warn.
+#if defined(__GNUC__) && ! defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagators & propagators) -> void
 {
@@ -547,6 +557,9 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             return PropagatorState::Enable; }, equality_triggers);
     }
 }
+#if defined(__GNUC__) && ! defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<Constraint>
