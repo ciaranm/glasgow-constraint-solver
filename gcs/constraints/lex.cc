@@ -315,7 +315,7 @@ namespace
     // StillUndecided.
     auto run_lex_undecided_detection(
         const State & state,
-        ProofLogger * const logger,
+        ProofLogger * const,
         const vector<IntegerVariableID> & vars_1,
         const vector<IntegerVariableID> & vars_2,
         bool or_equal,

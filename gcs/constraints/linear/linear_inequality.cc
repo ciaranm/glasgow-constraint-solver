@@ -192,7 +192,7 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
 
         auto infer_cond_when_undecided = [sanitised_cv, sanitised_neg_cv, value = _value, modifier = modifier,
                                              proof_lines, proof_lines_swapped, vars = vars](
-                                             const State & state, auto &, ProofLogger * const logger,
+                                             const State & state, auto &, ProofLogger * const,
                                              const IntegerVariableCondition &) -> ReificationVerdictFor<LinearCondJustification> {
             Integer min_possible = 0_i, max_possible = 0_i;
             for (const auto & cv : sanitised_cv.terms) {
