@@ -7,7 +7,6 @@
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/reason.hh>
 
-#include <functional>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -15,13 +14,50 @@
 namespace gcs::innards
 {
     /**
-     * \brief The empty hint: a bare RUP carrying no assertion hint. This is what
-     * JustifyUsingRUP{} (and hence the Justification variant) holds.
+     * \brief The empty hint: a bare justification carrying no assertion hint. This
+     * is what JustifyUsingRUP{} / JustifyExplicitly{emit, then_rup} hold by default
+     * (and hence what lives in the Justification variant).
      *
      * \ingroup Innards
      */
     struct NoHint
     {
+    };
+
+    namespace hints
+    {
+        /**
+         * \brief A bare coarse model-level name, with no structured fields.
+         *
+         * The minimal assertion hint: in assertion mode it annotates the inference
+         * with just this name (no \c hint_sexpr), telling the justifier which
+         * constraint family the step came from without serialising any operands. The
+         * tier between NoHint (annotate with nothing, fall back to the call site's
+         * annotation) and a per-constraint typed hint (name plus structured fields).
+         *
+         * \ingroup Innards
+         */
+        struct ModelName
+        {
+            std::string_view hint_name;
+        };
+    }
+
+    /**
+     * \brief Whether a JustifyExplicitly appends a RUP derivation of the inferred
+     * literal after its explicit proof steps, or lets the steps stand alone.
+     *
+     * This was historically a bare `bool then_rup`; it is spelled as an enum, and is
+     * a mandatory argument at every JustifyExplicitly call site, so the proof shape
+     * is always legible rather than hidden behind an unlabelled true/false.
+     *
+     * \ingroup Innards
+     * \sa JustifyExplicitly
+     */
+    enum class ThenRUP
+    {
+        Yes, ///< emit the explicit steps, then RUP the inferred literal under the reason
+        No   ///< the explicit steps stand alone (they conclude the inference themselves)
     };
 
     /**
@@ -31,10 +67,10 @@ namespace gcs::innards
      * `JustifyUsingRUP{}` is the bare, nameless RUP (the common case, and the one
      * that lives in the Justification variant). `JustifyUsingRUP{hints::Foo{...}}`
      * is the same RUP inference, but in assertion mode it is asserted under a typed
-     * hint (model name + structured fields, e.g. the owning constraint id) built by
-     * witness_annotation. The hint never carries explicit proof steps — that is what
-     * JustifyByWitness is for — so in normal (Off) proof mode this is byte-identical
-     * to a bare RUP regardless of the hint.
+     * hint (model name plus optional structured fields, e.g. the owning constraint
+     * id) built by hint_annotation. The hint never carries explicit proof steps —
+     * that is what JustifyExplicitly is for — so in normal (Off) proof mode this is
+     * byte-identical to a bare RUP regardless of the hint.
      *
      * \ingroup Innards
      * \sa Justification
@@ -74,51 +110,52 @@ namespace gcs::innards
     };
 
     /**
-     * \brief Justify an inference with a *typed witness*, dispatched by proof mode.
+     * \brief Justify an inference with *explicit proof steps*, dispatched by proof
+     * mode, optionally carrying a typed assertion hint.
      *
-     * The pay-for-use, std::function-free explicit-justification interface. The witness
-     * is a small struct (in \c gcs::innards::hints, reopened per constraint) that
-     * carries everything its justification needs; its consumers are found by ADL on
-     * the witness type:
+     * The pay-for-use, std::function-free explicit-justification interface, mirroring
+     * JustifyUsingRUP: both are parameterised on an optional \c Hint_, and the hint
+     * means the same thing in both (a typed assertion annotation, orthogonal to how
+     * the inference is proved). The difference is the \c emit:
      *
-     *   - \c emit_justification(ProofLogger &, const Witness &, const ReasonLiterals &)
-     *     — the real eager (and, later, lazy) proof steps (required);
-     *   - \c hint_sexpr(const Witness &, NamesAndIDsTracker &) -> SExpr — the
-     *     assertion wire form (optional; absent ⇒ coarse-name-only annotation).
+     *   - \c emit is a callable `(const ReasonLiterals &) -> void` that writes the
+     *     real proof steps. It is built by value at the call site (a lambda, or a
+     *     storable struct with operator() for replay at backtrack time) — no type
+     *     erasure, no heap, no std::function. The Simple (proofs-off) tracker never
+     *     touches it, so nothing is emitted or materialised when proofs are off.
+     *   - \c then_rup picks the proof shape: ThenRUP::Yes emits the steps at a
+     *     temporary level then RUPs the inferred literal under the reason; ThenRUP::No
+     *     lets the steps conclude the inference themselves.
+     *   - \c hint is the assertion-mode annotation (NoHint by default), resolved by
+     *     hint_annotation exactly as for JustifyUsingRUP. In Off mode it is ignored,
+     *     so the hint never changes the emitted proof.
      *
-     * A \c hint_name member on the witness (static constexpr for a typed witness, a
-     * plain member for the generic closure escape) carries the coarse model-level
-     * name. \c then_rup picks the ThenRUP (real steps then a RUP for the inference)
-     * versus Only (steps stand alone) shape.
-     *
-     * It holds no std::function: the witness is built by value at the call site
-     * (cheap — no type erasure, no heap), and dispatch is compile-time overload
-     * resolution. The Simple (proofs-off) tracker never touches the witness, so
-     * nothing is emitted or materialised. The only erasure is the future
-     * lazy-storage boundary (a per-type emit function pointer).
+     * The only erasure is the future lazy-storage boundary (a per-type emit function
+     * pointer).
      *
      * \ingroup Innards
      * \sa Justification
      */
-    template <typename Witness_>
-    struct JustifyByWitness
+    template <typename Emit_, typename Hint_ = NoHint>
+    struct JustifyExplicitly
     {
-        Witness_ witness;
-        bool then_rup = true;
+        Emit_ emit;
+        ThenRUP then_rup;
+        [[no_unique_address]] Hint_ hint{};
     };
 
-    template <typename Witness_>
-    JustifyByWitness(Witness_) -> JustifyByWitness<Witness_>;
+    template <typename Emit_>
+    JustifyExplicitly(Emit_, ThenRUP) -> JustifyExplicitly<Emit_, NoHint>;
 
-    template <typename Witness_>
-    JustifyByWitness(Witness_, bool) -> JustifyByWitness<Witness_>;
+    template <typename Emit_, typename Hint_>
+    JustifyExplicitly(Emit_, ThenRUP, Hint_) -> JustifyExplicitly<Emit_, Hint_>;
 
     /**
      * \brief Specify why an inference is justified, for proof logging.
      *
-     * The plain (witness-free) justifications. Explicit proof steps are supplied by
-     * a typed JustifyByWitness instead, dispatched by overload resolution rather
-     * than carried in this variant.
+     * The plain (emit-free) justifications. Explicit proof steps are supplied by a
+     * JustifyExplicitly instead, dispatched by overload resolution rather than
+     * carried in this variant.
      *
      * \ingroup Innards
      */

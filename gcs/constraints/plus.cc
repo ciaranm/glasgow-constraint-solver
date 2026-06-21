@@ -98,7 +98,7 @@ namespace
 
         auto justify = [&](Conclude c) {
             auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
-            return JustifyByWitness{hints::PlusBound{sum_line_value}};
+            return JustifyExplicitly{hints::PlusBound{sum_line_value}, ThenRUP::Yes};
         };
 
         // min(result) = min(a) + min(b);

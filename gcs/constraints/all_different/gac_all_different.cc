@@ -476,7 +476,9 @@ auto gcs::innards::propagate_gac_all_different(
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
         auto [witness, reason] = prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, edges, left_covered, matching);
-        return tracker.infer(logger, FalseLiteral{}, JustifyByWitness{move(witness)}, reason);
+        return tracker.infer(logger, FalseLiteral{},
+            JustifyExplicitly{[&logger, w = witness](const ReasonLiterals & r) { emit_justification(*logger, w, r); }, ThenRUP::Yes, move(witness)},
+            reason);
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -646,7 +648,10 @@ auto gcs::innards::propagate_gac_all_different(
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
         visit(overloaded{
                   [&](hints::AllDifferentForcedValue & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); },
-                  [&](hints::AllDifferentHall & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyByWitness{move(w)}, reason); }},
+                  [&](hints::AllDifferentHall & w) {
+                      tracker.infer_all(logger, deletions_by_scc[scc],
+                          JustifyExplicitly{[&logger, wc = w](const ReasonLiterals & r) { emit_justification(*logger, wc, r); }, ThenRUP::Yes, move(w)}, reason);
+                  }},
             justification);
     }
 }

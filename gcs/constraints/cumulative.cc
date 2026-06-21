@@ -479,7 +479,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         pol.emit(*logger, ProofLevel::Temporary);
                     };
 
-                    inference.contradiction(logger, JustifyByWitness{hints::InlineEmit{justify}},
+                    inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes},
                         generic_reason(state, reason_vars));
                     return PropagatorState::DisableUntilBacktrack;
                 }
@@ -600,7 +600,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     };
 
                     inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                        JustifyByWitness{hints::InlineEmit{justify}},
+                        JustifyExplicitly{justify, ThenRUP::Yes},
                         generic_reason(state, reason_vars));
                 }
 
@@ -634,7 +634,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     };
 
                     inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                        JustifyByWitness{hints::InlineEmit{justify}},
+                        JustifyExplicitly{justify, ThenRUP::Yes},
                         generic_reason(state, reason_vars));
                 }
             }

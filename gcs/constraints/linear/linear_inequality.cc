@@ -175,8 +175,8 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
         using CV = std::decay_t<decltype(sanitised_cv)>;
         using NegCV = std::decay_t<decltype(sanitised_neg_cv)>;
         using LinearCondJustification = std::conditional_t<std::is_same_v<CV, NegCV>,
-            JustifyByWitness<hints::LinearInequalityCond<CV>>,
-            std::variant<JustifyByWitness<hints::LinearInequalityCond<CV>>, JustifyByWitness<hints::LinearInequalityCond<NegCV>>>>;
+            JustifyExplicitly<hints::LinearInequalityCond<CV>>,
+            std::variant<JustifyExplicitly<hints::LinearInequalityCond<CV>>, JustifyExplicitly<hints::LinearInequalityCond<NegCV>>>>;
 
         auto enforce_constraint_must_hold = [sanitised_cv, value = _value, modifier = modifier, proof_lines](
                                                 const State & state, auto & inference, ProofLogger * const logger,
@@ -210,13 +210,13 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
             if (min_possible > value + modifier) {
                 // cannot possibly hold
                 return reification_verdict::MustNotHold<LinearCondJustification>{
-                    .justification = JustifyByWitness{hints::LinearInequalityCond<CV>{&state, sanitised_cv, proof_lines}},
+                    .justification = JustifyExplicitly{hints::LinearInequalityCond<CV>{&state, sanitised_cv, proof_lines}, ThenRUP::Yes},
                     .reason = generic_reason(state, vars)};
             }
             else if (max_possible <= value + modifier) {
                 // must definitely hold
                 return reification_verdict::MustHold<LinearCondJustification>{
-                    .justification = JustifyByWitness{hints::LinearInequalityCond<NegCV>{&state, sanitised_neg_cv, proof_lines_swapped}},
+                    .justification = JustifyExplicitly{hints::LinearInequalityCond<NegCV>{&state, sanitised_neg_cv, proof_lines_swapped}, ThenRUP::Yes},
                     .reason = generic_reason(state, vars)};
             }
             else

@@ -150,7 +150,7 @@ namespace gcs::innards
                     },
                     [&](const evaluated_reif::Undecided & reif) {
                         // The verdict's justification type varies per constraint
-                        // (plain Justification, a single typed JustifyByWitness, or a
+                        // (plain Justification, a single typed JustifyExplicitly, or a
                         // variant of justification shapes), so dispatch generically:
                         // StillUndecided enables; a MustHold/MustNotHold infers the
                         // appropriate cond literal under its justification, the

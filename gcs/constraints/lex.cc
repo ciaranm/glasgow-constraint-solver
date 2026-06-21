@@ -125,7 +125,7 @@ namespace
                         WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
                         ProofLevel::Temporary);
             };
-            inference.contradiction(logger, JustifyByWitness{hints::InlineEmit{contradiction_proof}}, reason);
+            inference.contradiction(logger, JustifyExplicitly{contradiction_proof, ThenRUP::Yes}, reason);
         }
 
         auto emit_not_d = [&](const ReasonLiterals & r, size_t k) -> void {
@@ -157,7 +157,7 @@ namespace
 
         inference.infer_all(logger,
             {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] <= b1_alpha.second},
-            JustifyByWitness{hints::InlineEmit{tighten_proof}}, reason);
+            JustifyExplicitly{tighten_proof, ThenRUP::Yes}, reason);
 
         auto nb1_alpha = state.bounds(vars_1[alpha]);
         auto nb2_alpha = state.bounds(vars_2[alpha]);
@@ -202,7 +202,7 @@ namespace
                             emit_not_d(r, k);
                         emit_not_prefix_equal_if_credited(r);
                     };
-                    inference.contradiction(logger, JustifyByWitness{hints::InlineEmit{contradiction_proof}}, reason);
+                    inference.contradiction(logger, JustifyExplicitly{contradiction_proof, ThenRUP::Yes}, reason);
                 }
 
                 auto force_strict_proof = [&, alpha, n](const ReasonLiterals & r) -> void {
@@ -217,7 +217,7 @@ namespace
                 inference.infer_all(logger,
                     {vars_1[alpha] > nb2_alpha.first,
                         vars_2[alpha] < nb1_alpha.second},
-                    JustifyByWitness{hints::InlineEmit{force_strict_proof}}, reason);
+                    JustifyExplicitly{force_strict_proof, ThenRUP::Yes}, reason);
 
                 auto fb1 = state.bounds(vars_1[alpha]);
                 auto fb2 = state.bounds(vars_2[alpha]);
@@ -323,7 +323,7 @@ namespace
         const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags,
         const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_lt_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags,
-        const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyByWitness<hints::LexUnsatScaffold>>
+        const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>>
     {
         auto n1 = vars_1.size();
         auto n2 = vars_2.size();
@@ -383,17 +383,19 @@ namespace
         if (definitely_holds) {
             auto reason_under_cond_false = reason;
             reason_under_cond_false.push_back(! cond);
-            return reification_verdict::MustHold<JustifyByWitness<hints::LexUnsatScaffold>>{
-                .justification = JustifyByWitness{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_false),
-                    vars_2, vars_1, n, prefix_equal_lt_flags, decision_at_lt_flags}},
+            return reification_verdict::MustHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
+                .justification = JustifyExplicitly{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_false),
+                                                       vars_2, vars_1, n, prefix_equal_lt_flags, decision_at_lt_flags},
+                    ThenRUP::Yes},
                 .reason = std::move(reason)};
         }
         else {
             auto reason_under_cond_true = reason;
             reason_under_cond_true.push_back(cond);
-            return reification_verdict::MustNotHold<JustifyByWitness<hints::LexUnsatScaffold>>{
-                .justification = JustifyByWitness{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_true),
-                    vars_1, vars_2, n, prefix_equal_gt_flags, decision_at_gt_flags}},
+            return reification_verdict::MustNotHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
+                .justification = JustifyExplicitly{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_true),
+                                                       vars_1, vars_2, n, prefix_equal_gt_flags, decision_at_gt_flags},
+                    ThenRUP::Yes},
                 .reason = std::move(reason)};
         }
     }
@@ -629,7 +631,7 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
                                          prefix_equal_lt_flags = _prefix_equal_lt_flags,
                                          decision_at_lt_flags = _decision_at_lt_flags](
                                          const State & state, auto &, ProofLogger * const logger,
-                                         const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyByWitness<hints::LexUnsatScaffold>> {
+                                         const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>> {
         return run_lex_undecided_detection(state, logger,
             vars_1, vars_2, or_equal,
             prefix_equal_gt_flags, decision_at_gt_flags,

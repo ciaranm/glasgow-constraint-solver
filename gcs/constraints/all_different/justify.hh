@@ -61,8 +61,8 @@ namespace gcs::innards
         /**
          * \brief Witness for the trivial SCC deletion: a value is deleted because a
          * single other variable is forced to take it. The justification is plain
-         * RUP (no explicit steps), so this witness has no emit_justification — it is
-         * the pure-RUP capability tier, with only an assertion hint carrying the
+         * RUP (no explicit steps), so this hint has no emit_justification — it is
+         * the pure-RUP capability tier, carrying only an assertion hint with the
          * owning constraint.
          */
         struct AllDifferentForcedValue

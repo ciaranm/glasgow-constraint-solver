@@ -154,16 +154,16 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
                             non_excluded_values.push_back(v);
                     for (const auto & v : non_excluded_values) {
                         inf.infer(logger, x != v,
-                            JustifyByWitness{hints::InlineEmit{
-                                [&logger, x, v, &duplicate_selectors](const ReasonLiterals &) -> void {
-                                    const auto & selector = duplicate_selectors.at(x);
-                                    logger->emit(RUPProofRule{},
-                                        WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i,
-                                        ProofLevel::Temporary);
-                                    logger->emit(RUPProofRule{},
-                                        WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i,
-                                        ProofLevel::Temporary);
-                                }}},
+                            JustifyExplicitly{[&logger, x, v, &duplicate_selectors](const ReasonLiterals &) -> void {
+                                                  const auto & selector = duplicate_selectors.at(x);
+                                                  logger->emit(RUPProofRule{},
+                                                      WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i,
+                                                      ProofLevel::Temporary);
+                                                  logger->emit(RUPProofRule{},
+                                                      WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i,
+                                                      ProofLevel::Temporary);
+                                              },
+                                ThenRUP::Yes},
                             NoReason{});
                     }
                 }

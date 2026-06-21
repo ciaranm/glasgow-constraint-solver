@@ -44,9 +44,9 @@ using fmt::print;
 
 namespace
 {
-    // Coarse model-level hint name for equals's explicit-steps (InlineEmit /
-    // EqualsNoOverlap) witnesses and the reified-verdict fallback annotation. The
-    // pure-RUP inferences use hints::EqualsRUP instead.
+    // Coarse model-level hint name for equals's explicit-steps (JustifyExplicitly,
+    // including the EqualsNoOverlap fat witness) and the reified-verdict fallback
+    // annotation. The pure-RUP inferences use hints::EqualsRUP instead.
     constexpr std::string_view equals_hint = "equals";
 }
 
@@ -142,7 +142,7 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
                     ReasonLiterals not_in_range_reason = reason;
                     not_in_range_reason.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
                     inference.infer_not_in_range(logger, pruned, lo, hi,
-                        JustifyByWitness{hints::InlineEmit{[=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }, equals_hint}},
+                        JustifyExplicitly{[=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }, ThenRUP::Yes, hints::ModelName{equals_hint}},
                         ExplicitReason{std::move(not_in_range_reason)});
                 }
                 else
@@ -187,7 +187,7 @@ namespace
 
     // equals's reified verdicts are either a plain RUP (the singleton / forced
     // cases) or the no-overlap witness; a variant of the two, visited inside infer.
-    using EqualsJustification = std::variant<JustifyUsingRUP<NoHint>, JustifyByWitness<hints::EqualsNoOverlap>>;
+    using EqualsJustification = std::variant<JustifyUsingRUP<NoHint>, JustifyExplicitly<hints::EqualsNoOverlap>>;
 }
 
 ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool neq) :
@@ -360,7 +360,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
             // not equals is forced if there's no overlap between domains
             if (! state.domains_intersect(v1, v2)) {
                 auto [witness, reason] = no_overlap_justification(state, logger, v1, v2, cond);
-                return reification_verdict::MustNotHold<EqualsJustification>{.justification = JustifyByWitness{witness}, .reason = reason};
+                return reification_verdict::MustNotHold<EqualsJustification>{.justification = JustifyExplicitly{witness, ThenRUP::Yes}, .reason = reason};
             }
             return reification_verdict::StillUndecided{};
         }

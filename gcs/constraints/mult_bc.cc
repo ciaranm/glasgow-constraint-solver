@@ -1046,7 +1046,7 @@ namespace
             };
 
             inference.infer(logger, x_var <= largest_possible_quotient,
-                JustifyByWitness{hints::InlineEmit{lower_justf}, false},
+                JustifyExplicitly{lower_justf, ThenRUP::No},
                 ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
 
             var_bounds.at(x_var).first = min(var_bounds.at(x_var).first, largest_possible_quotient);
@@ -1059,7 +1059,7 @@ namespace
             };
 
             inference.infer(logger, x_var >= smallest_possible_quotient,
-                JustifyByWitness{hints::InlineEmit{upper_justf}, false},
+                JustifyExplicitly{upper_justf, ThenRUP::No},
                 ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
         }
         else if (y_min == 0_i && y_max != 0_i && (z_min > 0_i || z_max < 0_i)) {
@@ -1099,17 +1099,17 @@ namespace
             };
 
             if (smallest_possible_quotient > largest_possible_quotient) {
-                inference.infer(logger, FalseLiteral{}, JustifyByWitness{hints::InlineEmit{both_justf}, false},
+                inference.infer(logger, FalseLiteral{}, JustifyExplicitly{both_justf, ThenRUP::No},
                     ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
                         y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
             }
             else {
                 inference.infer(logger, x_var <= largest_possible_quotient,
-                    JustifyByWitness{hints::InlineEmit{upper_justf}, false},
+                    JustifyExplicitly{upper_justf, ThenRUP::No},
                     ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
                         y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
                 inference.infer(logger, x_var >= smallest_possible_quotient,
-                    JustifyByWitness{hints::InlineEmit{lower_justf}, false},
+                    JustifyExplicitly{lower_justf, ThenRUP::No},
                     ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
                         y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
             }
@@ -1267,7 +1267,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             };
 
             inference.infer_all(logger, {v3 <= largest_product, v3 >= smallest_product},
-                JustifyByWitness{hints::InlineEmit{ justf}, false},
+                JustifyExplicitly{justf, ThenRUP::No},
                 ReasonLiterals{v1 >= var_bounds.at(v1).first, v1 <= var_bounds.at(v1).second,
                     v2 >= var_bounds.at(v2).first, v2 <= var_bounds.at(v2).second});
 

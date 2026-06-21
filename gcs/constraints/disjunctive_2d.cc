@@ -515,7 +515,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             if (w_is_var(r)) rvars.push_back(width_var[r]);
                             if (h_is_var(r)) rvars.push_back(height_var[r]);
                         }
-                        inference.contradiction(logger, JustifyByWitness{hints::InlineEmit{justify}},
+                        inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes},
                             generic_reason(state, rvars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
@@ -697,7 +697,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             emit_proof(chain, +1, reason);
                     };
                     inference.infer_greater_than_or_equal(logger, free_pos[i], target,
-                        JustifyByWitness{hints::InlineEmit{justify}}, generic_reason(state, rv));
+                        JustifyExplicitly{justify, ThenRUP::Yes}, generic_reason(state, rv));
                 }
                 // ub-push: i cannot fit above the blocker, push its origin down to
                 // blk_lo - sz -- capped at cur_lo - 1 by the same reasoning.
@@ -722,7 +722,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             emit_proof(chain, -1, reason);
                     };
                     inference.infer_less_than(logger, free_pos[i], target + 1_i,
-                        JustifyByWitness{hints::InlineEmit{justify}}, generic_reason(state, rv));
+                        JustifyExplicitly{justify, ThenRUP::Yes}, generic_reason(state, rv));
                 }
             };
 

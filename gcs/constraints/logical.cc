@@ -154,7 +154,7 @@ namespace
                     vector<ProofLiteral> reason_lits{};
                     for (auto & l : lits)
                         reason_lits.emplace_back(l);
-                    inference.infer(logger, full_reif, JustifyByWitness{hints::InlineEmit{ justf}},
+                    inference.infer(logger, full_reif, JustifyExplicitly{justf, ThenRUP::Yes},
                         ExplicitReason{ReasonLiterals(reason_lits.begin(), reason_lits.end())});
                     return PropagatorState::DisableUntilBacktrack;
                 }

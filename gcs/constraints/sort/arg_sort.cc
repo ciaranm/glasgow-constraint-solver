@@ -326,7 +326,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                     // lines. The inverse channel (p[j]=offset+k -> pos[k]=j) then
                     // makes p[j] != offset+k RUP.
                     inference.infer_not_equal(logger, p[j], pv,
-                        JustifyByWitness{hints::InlineEmit{ [&, k, below](const ReasonLiterals & reason_fn) -> void {
+                        JustifyExplicitly{[&, k, below](const ReasonLiterals & reason_fn) -> void {
                             PolBuilder pol;
                             if (below) {
                                 pol.add(witness.rank_ge[k]);
@@ -343,7 +343,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                                             WPBSum{} + 1_i * ! witness.before[i][k] >= 1_i, ProofLevel::Temporary));
                             }
                             pol.emit(*logger, ProofLevel::Temporary);
-                        }}},
+                        }, ThenRUP::Yes},
                         bounds_reason(state, x));
                 }
                 else {
@@ -378,7 +378,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                     }
 
                     inference.infer_not_equal(logger, p[j], pv,
-                        JustifyByWitness{hints::InlineEmit{ [&, k, U](const ReasonLiterals & reason_fn) -> void {
+                        JustifyExplicitly{[&, k, U](const ReasonLiterals & reason_fn) -> void {
                             // Line A: x[k] <= U => pos[k] <= #possible(U).
                             // For each i that cannot precede k at x[k]=U, the clause
                             // (x[k] >= U+1) v !before[i][k] is RUP from before_fwd +
@@ -414,7 +414,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                                         ProofLevel::Temporary));
                             }
                             polB.emit(*logger, ProofLevel::Temporary);
-                        }}},
+                        }, ThenRUP::Yes},
                         bounds_reason(state, x));
                 }
             }

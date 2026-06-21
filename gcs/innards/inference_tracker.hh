@@ -76,7 +76,7 @@ namespace gcs::innards
 
         // The bookkeeping for a firing (non-NoChange, non-Contradiction) inference:
         // record the affected variable for later replay and mark that propagation
-        // did something. Shared by the witness path (track_witness) and the variant
+        // did something. Shared by the explicit path (track_explicit) and the variant
         // track_impl bodies below.
         auto record_firing_inference(const Inference inf, const Literal & lit) -> void
         {
@@ -100,15 +100,15 @@ namespace gcs::innards
             _did_anything_since_last_call_inside_propagator = true;
         }
 
-        // The witness counterpart of track_impl. Lives in the base class because it
-        // needs no per-tracker behaviour: the witness is consumed (built into proof
-        // steps or an assertion) only when there is a logger, so the Simple,
-        // proofs-off tracker never touches it (pay-for-use) and the same body serves
-        // both trackers. Dispatch onto the witness is compile-time overload
-        // resolution inside infer_witness; no std::function is involved.
-        template <typename Witness_>
-        auto track_witness(ProofLogger * const logger, const Inference inf, const Literal & lit,
-            const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback) -> void
+        // The JustifyExplicitly counterpart of track_impl. Lives in the base class
+        // because it needs no per-tracker behaviour: the emit/hint are consumed (built
+        // into proof steps or an assertion) only when there is a logger, so the
+        // Simple, proofs-off tracker never touches them (pay-for-use) and the same
+        // body serves both trackers. Dispatch is compile-time overload resolution
+        // inside infer_witness; no std::function is involved.
+        template <typename Emit_, typename Hint_>
+        auto track_explicit(ProofLogger * const logger, const Inference inf, const Literal & lit,
+            const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback) -> void
         {
             switch (inf) {
             case Inference::NoChange:
@@ -119,14 +119,14 @@ namespace gcs::innards
             case Inference::Instantiated:
                 if constexpr (Actual_::materialises_reasons)
                     if (logger)
-                        infer_witness(*logger, lit, why.witness, why.then_rup, materialise(reason, _state), fallback);
+                        infer_witness(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
                 record_firing_inference(inf, lit);
                 break;
 
             [[unlikely]] case Inference::Contradiction:
                 if constexpr (Actual_::materialises_reasons)
                     if (logger)
-                        infer_witness(*logger, lit, why.witness, why.then_rup, materialise(reason, _state), fallback);
+                        infer_witness(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};
@@ -151,23 +151,23 @@ namespace gcs::innards
             track(logger, _state.infer(lit), lit, why, snapshotted, assertion_hints);
         }
 
-        // Justify an inference with a typed witness (JustifyByWitness): the
+        // Justify an inference with explicit proof steps (JustifyExplicitly): the
         // pay-for-use, std::function-free explicit-steps path. The fallback
-        // annotation is used in assertion mode only when the witness carries no hint
-        // of its own. There is a witness overload for each plain infer entry point
+        // annotation is used in assertion mode only when the justification carries no
+        // hint of its own. There is an overload for each plain infer entry point
         // (general literal, the typed condition/bound helpers, and contradiction);
-        // each just routes to track_witness instead of track.
-        template <typename Witness_>
-        auto infer(ProofLogger * const logger, const Literal & lit, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        // each just routes to track_explicit instead of track.
+        template <typename Emit_, typename Hint_>
+        auto infer(ProofLogger * const logger, const Literal & lit, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
-            track_witness(logger, _state.infer(lit), lit, why, snapshotted, fallback);
+            track_explicit(logger, _state.infer(lit), lit, why, snapshotted, fallback);
         }
 
         // Visit a variant of justifications and dispatch each alternative to its
         // matching infer overload. This is how the reified dispatcher's verdict —
         // which carries a per-constraint variant of justification shapes (plain
-        // Justification alternatives and/or typed JustifyByWitness) — is applied:
+        // Justification alternatives and/or typed JustifyExplicitly) — is applied:
         // the dispatcher just forwards the verdict's justification here, so the
         // visit lives in infer() rather than at the call site. (The non-template
         // const Justification & overload is preferred for a Justification argument,
@@ -178,46 +178,46 @@ namespace gcs::innards
             std::visit([&](const auto & alt) { infer(logger, lit, alt, reason, fallback); }, why);
         }
 
-        template <IntegerVariableIDLike VarType_, typename Witness_>
-        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
-            track_witness(logger, _state.infer(lit), lit, why, snapshotted, fallback);
+            track_explicit(logger, _state.infer(lit), lit, why, snapshotted, fallback);
         }
 
-        template <typename Witness_>
-        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        template <typename Emit_, typename Hint_>
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             if constexpr (Actual_::materialises_reasons)
                 if (logger)
-                    infer_witness(*logger, FalseLiteral{}, why.witness, why.then_rup, materialise(reason, _state), fallback);
+                    infer_witness(*logger, FalseLiteral{}, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
             throw TrackedPropagationFailed{};
         }
 
-        template <IntegerVariableIDLike VarType_, typename Witness_>
-        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
-            track_witness(logger, _state.infer_equal(var, value), var == value, why, snapshotted, fallback);
+            track_explicit(logger, _state.infer_equal(var, value), var == value, why, snapshotted, fallback);
         }
 
-        template <IntegerVariableIDLike VarType_, typename Witness_>
-        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
-            track_witness(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, fallback);
+            track_explicit(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, fallback);
         }
 
         // A JustifyUsingRUP carrying a typed hint is a RUP inference (no explicit
         // steps) that wants a typed assertion hint. Each overload below turns the
         // hint into an annotation (only when something will be asserted — Off mode
         // builds nothing, so it stays byte-identical to a bare RUP) and delegates to
-        // the plain JustifyUsingRUP{} path. No witness machinery is involved.
+        // the plain JustifyUsingRUP{} path. No explicit-steps machinery is involved.
         template <typename Hint_>
         [[nodiscard]] auto rup_hint_annotation(ProofLogger * const logger, const Hint_ & hint, const std::optional<AssertionAnnotation> & fallback) -> std::optional<AssertionAnnotation>
         {
             if (logger && logger->get_assertion_level() != AssertionLevel::Off)
-                return witness_annotation(*logger, hint, fallback);
+                return hint_annotation(*logger, hint, fallback);
             return fallback;
         }
 
@@ -263,27 +263,27 @@ namespace gcs::innards
             infer_all(logger, lits, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
-        template <IntegerVariableIDLike VarType_, typename Witness_>
-        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
-            track_witness(logger, _state.infer_less_than(var, value), var < value, why, snapshotted, fallback);
+            track_explicit(logger, _state.infer_less_than(var, value), var < value, why, snapshotted, fallback);
         }
 
-        template <IntegerVariableIDLike VarType_, typename Witness_>
-        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
-            track_witness(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, fallback);
+            track_explicit(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, fallback);
         }
 
-        template <IntegerVariableIDLike VarType_, typename Witness_>
-        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             if (lo > hi)
                 return;
             auto snapshotted = snapshot_reason(logger, reason, _state);
-            track_witness(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, snapshotted, fallback);
+            track_explicit(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, snapshotted, fallback);
         }
 
         [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
@@ -349,23 +349,23 @@ namespace gcs::innards
             // scaffolding to batch, so infer each literal in turn. The
             // explicit-steps batching (enter one temporary level, emit the
             // scaffolding once, RUP each inference under it) lives on the
-            // JustifyByWitness infer_all overload below.
+            // JustifyExplicitly infer_all overload below.
             auto snapshotted = snapshot_reason(logger, reason, _state);
             for (const auto & lit : lits)
                 infer(logger, lit, why, snapshotted, assertion_hints);
         }
 
-        // The witness counterpart of infer_all. For an explicit-steps witness it
-        // does the same shared-temporary-level batching as the variant infer_all,
-        // emitting the scaffolding once via emit_justification then RUPing each
-        // inference. A pure-RUP witness has no scaffolding to share, so it falls
-        // through to the per-literal path (each inference RUPs under the reason,
-        // carrying the witness's assertion hint in assert mode).
-        template <typename Witness_>
-        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyByWitness<Witness_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        // The JustifyExplicitly counterpart of infer_all. When the steps end in a
+        // RUP (ThenRUP::Yes) and proofs are Off, it does the shared-temporary-level
+        // batching: emit the scaffolding once via the emit callable, then RUP each
+        // inference under it. Otherwise (assertion mode, or ThenRUP::No) it falls
+        // through to the per-literal path, where each inference carries the
+        // assertion hint in assert mode.
+        template <typename Emit_, typename Hint_>
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
-            if constexpr (Actual_::materialises_reasons && WitnessHasExplicitSteps<Witness_>) {
-                if (logger && logger->get_assertion_level() == AssertionLevel::Off && why.then_rup) {
+            if constexpr (Actual_::materialises_reasons) {
+                if (logger && logger->get_assertion_level() == AssertionLevel::Off && why.then_rup == ThenRUP::Yes) {
                     auto any_will_fire = false;
                     for (const auto & lit : lits)
                         if (_state.test_literal(lit) != LiteralIs::DefinitelyTrue) {
@@ -378,7 +378,7 @@ namespace gcs::innards
                     auto snapshotted = snapshot_reason(logger, reason, _state);
                     ReasonLiterals reason_lits = materialise(snapshotted, _state);
                     auto t = logger->temporary_proof_level();
-                    emit_justification(*logger, why.witness, reason_lits);
+                    emit_explicit_steps(*logger, why.emit, reason_lits);
                     for (const auto & lit : lits)
                         infer(logger, lit, JustifyUsingRUP{}, snapshotted);
                     logger->forget_proof_level(t);

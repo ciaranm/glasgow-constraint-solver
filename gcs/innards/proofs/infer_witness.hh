@@ -21,71 +21,103 @@
 namespace gcs::innards
 {
     /**
-     * \brief A witness has explicit proof steps if it provides an emit_justification
-     * overload (found by ADL). Witnesses that do not are the pure-RUP capability
-     * tier: their inference is RUP-derivable on its own, so eager mode emits just
-     * the RUP (byte-identical to JustifyUsingRUP) and they carry only an assertion
-     * hint. Used to pick the eager strategy without a runtime flag.
+     * \brief Build the assertion annotation for a typed hint.
+     *
+     * Shared by JustifyUsingRUP and JustifyExplicitly: the hint axis is the same for
+     * both. Three tiers, resolved at compile time on the hint type:
+     *
+     *   - if the hint has a \c hint_sexpr overload (found by ADL) it is a structured
+     *     hint: emit the coarse \c hint_name plus the serialised fields;
+     *   - else if it carries a (non-empty) \c hint_name member it is a coarse hint:
+     *     emit just that name;
+     *   - else (NoHint, an empty name, or a bare emit closure) fall back to the
+     *     supplied annotation.
      *
      * \ingroup Innards
      */
-    template <typename Witness_>
-    concept WitnessHasExplicitSteps = requires(ProofLogger & logger, const Witness_ & witness, const ReasonLiterals & reason) {
-        emit_justification(logger, witness, reason);
-    };
-
-    /**
-     * \brief Build the assertion annotation for a typed witness.
-     *
-     * If the witness has a \c hint_sexpr overload (found by ADL) it is a structured
-     * hint: emit the coarse \c hint_name plus the serialised fields. Otherwise, if
-     * the witness carries a non-empty coarse \c hint_name, emit just that; if it is
-     * empty, fall back to the annotation passed to infer() (so the generic closure
-     * escape with no coarse name asserts under the annotation infer() was given,
-     * if any).
-     *
-     * \ingroup Innards
-     */
-    template <typename Witness_>
-    [[nodiscard]] auto witness_annotation(ProofLogger & logger, const Witness_ & witness,
+    template <typename Hint_>
+    [[nodiscard]] auto hint_annotation(ProofLogger & logger, const Hint_ & hint,
         const std::optional<AssertionAnnotation> & fallback) -> std::optional<AssertionAnnotation>
     {
-        if constexpr (requires { hint_sexpr(witness, logger.names_and_ids_tracker()); }) {
-            return AssertionAnnotation{.hint_name = witness.hint_name,
-                .hint_fields = hint_sexpr(witness, logger.names_and_ids_tracker())};
+        if constexpr (requires { hint_sexpr(hint, logger.names_and_ids_tracker()); }) {
+            return AssertionAnnotation{.hint_name = hint.hint_name,
+                .hint_fields = hint_sexpr(hint, logger.names_and_ids_tracker())};
         }
-        else {
-            if (! std::string_view{witness.hint_name}.empty())
-                return AssertionAnnotation{.hint_name = witness.hint_name};
+        else if constexpr (requires { std::string_view{hint.hint_name}; }) {
+            if (! std::string_view{hint.hint_name}.empty())
+                return AssertionAnnotation{.hint_name = hint.hint_name};
             else
                 return fallback;
+        }
+        else {
+            return fallback;
         }
     }
 
     /**
-     * \brief The mode-dispatched back end for a JustifyByWitness inference.
+     * \brief Resolve the assertion annotation for a JustifyExplicitly inference.
      *
-     * The explicit-steps counterpart to ProofLogger::infer's plain arms, resolving
-     * the justification by compile-time overload resolution on the witness type
-     * rather than through a std::function:
+     * Precedence: the explicit \c hint wins if it advertises anything; otherwise the
+     * \c emit's own advertisement is used (a named fat witness that carries its own
+     * \c hint_sexpr / \c hint_name); otherwise the call site's \c fallback. A bare
+     * emit closure advertises nothing, so a closure with no hint resolves straight to
+     * the fallback. This reproduces the old witness-carried annotation exactly while
+     * letting an inline closure carry a separate ModelName / structured hint.
+     *
+     * \ingroup Innards
+     */
+    template <typename Hint_, typename Emit_>
+    [[nodiscard]] auto resolve_annotation(ProofLogger & logger, const Hint_ & hint, const Emit_ & emit,
+        const std::optional<AssertionAnnotation> & fallback) -> std::optional<AssertionAnnotation>
+    {
+        return hint_annotation(logger, hint, hint_annotation(logger, emit, fallback));
+    }
+
+    /**
+     * \brief Emit a JustifyExplicitly's explicit proof steps.
+     *
+     * The \c emit is either a `(const ReasonLiterals &) -> void` callable (an inline
+     * lambda, the common case) or a named struct providing an \c emit_justification
+     * overload by ADL (a fat witness stored in a reification verdict, where the
+     * logger is necessarily deferred to emit time because a lambda type cannot be
+     * named in the verdict's return type). Dispatch is compile time.
+     *
+     * \ingroup Innards
+     */
+    template <typename Emit_>
+    auto emit_explicit_steps(ProofLogger & logger, const Emit_ & emit, const ReasonLiterals & reason) -> void
+    {
+        if constexpr (requires { emit(reason); })
+            emit(reason);
+        else
+            emit_justification(logger, emit, reason);
+    }
+
+    /**
+     * \brief The mode-dispatched back end for a JustifyExplicitly inference.
+     *
+     * The explicit-steps counterpart to ProofLogger::infer's plain arms, taking the
+     * emit and the assertion hint as separate arguments (rather than a std::function
+     * or a bundled "witness"):
      *
      *   - above AssertionLevel::Inferences: nothing (the inference is not asserted);
      *   - assertion mode: assert the inference under its reason, annotated by
-     *     witness_annotation (a typed hint if the witness has \c hint_sexpr);
-     *   - eager mode: run \c emit_justification (the real proof steps) at a
-     *     temporary level, then RUP the inference under the reason when \c then_rup.
+     *     resolve_annotation;
+     *   - eager mode: run the explicit steps at a temporary level, then RUP the
+     *     inference under the reason when \c then_rup is ThenRUP::Yes.
      *
      * A NotInRange conclusion that cannot become a single range literal falls back
      * to one per-value inference, exactly as ProofLogger::infer does.
      *
      * Only ever reached with a non-null logger (the Simple tracker never builds or
-     * consumes the witness), so this is pure proof-on work.
+     * consumes the emit/hint), so this is pure proof-on work.
      *
      * \ingroup Innards
      */
-    template <typename Witness_>
-    auto infer_witness(ProofLogger & logger, const Literal & lit, const Witness_ & witness, bool then_rup,
-        const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & fallback_annotation = std::nullopt) -> void
+    template <typename Emit_, typename Hint_>
+    auto infer_witness(ProofLogger & logger, const Literal & lit, const Emit_ & emit, ThenRUP then_rup,
+        const ReasonLiterals & reason, const Hint_ & hint,
+        const std::optional<AssertionAnnotation> & fallback_annotation = std::nullopt) -> void
     {
         if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
             if (cond->op == VariableConditionOperator::NotInRange) {
@@ -96,7 +128,7 @@ namespace gcs::innards
                                                     .visit(cond->var);
                 if (needs_per_value_fallback) {
                     for (Integer val = cond->value; val <= cond->upper_value; ++val)
-                        infer_witness(logger, cond->var != val, witness, then_rup, reason, fallback_annotation);
+                        infer_witness(logger, cond->var != val, emit, then_rup, reason, hint, fallback_annotation);
                     return;
                 }
             }
@@ -106,19 +138,13 @@ namespace gcs::innards
 
         if (logger.get_assertion_level() != AssertionLevel::Off) {
             if (! is_literally_true(lit)) {
-                auto annotation = witness_annotation(logger, witness, fallback_annotation);
+                auto annotation = resolve_annotation(logger, hint, emit, fallback_annotation);
                 logger.emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
             }
             return;
         }
 
-        // A JustifyByWitness always has explicit steps now; a pure-RUP inference
-        // that only wants an assertion hint uses JustifyUsingRUP{hint} instead.
-        static_assert(WitnessHasExplicitSteps<Witness_>,
-            "JustifyByWitness needs explicit proof steps (an emit_justification overload); "
-            "use JustifyUsingRUP{hint} for a pure-RUP inference that only carries an assertion hint");
-
-        if (then_rup) {
+        if (then_rup == ThenRUP::Yes) {
             overloaded{
                 [&](const TrueLiteral &) {},
                 [&](const FalseLiteral &) {},
@@ -126,40 +152,10 @@ namespace gcs::innards
                 .visit(simplify_literal(logger.names_and_ids_tracker(), lit));
         }
         auto t = logger.temporary_proof_level();
-        emit_justification(logger, witness, reason);
-        if (then_rup)
+        emit_explicit_steps(logger, emit, reason);
+        if (then_rup == ThenRUP::Yes)
             logger.infer(lit, JustifyUsingRUP{}, reason);
         logger.forget_proof_level(t);
-    }
-
-    namespace hints
-    {
-        /**
-         * \brief The tier-3 closure escape: keep an inline emit closure but carry it
-         * through the typed witness path.
-         *
-         * For a justification with no liftable typed witness (the long tail of
-         * one-off explicit steps), this wraps the existing inline \c emit closure so
-         * it flows through JustifyByWitness. It is pay-for-use the same way a typed
-         * witness is — built by value, the closure captures by reference, no
-         * std::function and no heap — and it degrades gracefully: in assertion mode
-         * it has no \c hint_sexpr, so it carries only the coarse \c hint_name (empty
-         * by default, i.e. fall back to infer()'s annotation).
-         *
-         * \ingroup Innards
-         */
-        template <typename Emit_>
-        struct InlineEmit
-        {
-            Emit_ emit;
-            std::string_view hint_name = "";
-        };
-
-        template <typename Emit_>
-        auto emit_justification(ProofLogger &, const InlineEmit<Emit_> & witness, const ReasonLiterals & reason) -> void
-        {
-            witness.emit(reason);
-        }
     }
 }
 

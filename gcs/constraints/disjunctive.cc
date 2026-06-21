@@ -399,7 +399,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         };
 
                         inference.contradiction(logger,
-                            JustifyByWitness{hints::InlineEmit{justify}},
+                            JustifyExplicitly{justify, ThenRUP::Yes},
                             generic_reason(state, starts));
                         return PropagatorState::DisableUntilBacktrack;
                     }
@@ -600,7 +600,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         };
 
                         inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                            JustifyByWitness{hints::InlineEmit{justify}},
+                            JustifyExplicitly{justify, ThenRUP::Yes},
                             generic_reason(state, starts));
                     }
 
@@ -641,7 +641,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         };
 
                         inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                            JustifyByWitness{hints::InlineEmit{justify}},
+                            JustifyExplicitly{justify, ThenRUP::Yes},
                             generic_reason(state, starts));
                     }
                 }
