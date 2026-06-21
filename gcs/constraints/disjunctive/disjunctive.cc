@@ -12,7 +12,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <gcs/proof.hh>
 #include <map>
 #include <memory>
 #include <optional>
@@ -294,7 +293,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
         [starts = _starts, lengths = _length_vals, length_ub = _length_ub, ends = _end,
             active_tasks = _active_tasks, per_task_t_lo = _per_task_t_lo,
             per_task_t_hi = _per_task_t_hi, bridge](State &, auto &, ProofLogger * const logger) -> void {
-            if (! logger)
+            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                 return;
             for (auto i : active_tasks) {
                 if (length_ub[i] == 0_i)
@@ -371,7 +370,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // flags false (RUP under reason) and add them to a clause pol so the
             // separation clause reduces to its before-flag disjunction. No-op in
             // strict mode / for always-positive durations.
-            auto add_escape_pins = [&](PolBuilder & pol, const ReasonFunction & reason, size_t i, size_t j) {
+            auto add_escape_pins = [&](PolBuilder & pol, const ReasonLiterals & reason, size_t i, size_t j) {
                 for (auto r : {i, j})
                     if (zero[r])
                         pol.add(logger->emit_rup_proof_line_under_reason(reason,
@@ -451,7 +450,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             throw UnexpectedException{
                                 "Disjunctive: mand_load > 1 without two contributing tasks"};
 
-                        auto justify = [&, violating_t, pi, pj](const ReasonFunction & reason) -> void {
+                        auto justify = [&, violating_t, pi, pj](const ReasonLiterals & reason) -> void {
                             auto & bf_i = bridge->at(make_pair(pi, violating_t));
                             auto & bf_j = bridge->at(make_pair(pj, violating_t));
 
@@ -551,7 +550,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         if (is_var_len(pj))
                             reason_vars.push_back(length_vars[pj]);
                         inference.contradiction(logger,
-                            JustifyExplicitlyThenRUP{justify},
+                            JustifyExplicitly{justify, ThenRUP::Yes},
                             generic_reason(state, reason_vars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
@@ -586,7 +585,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // reason for the next step's preconditions to close.
                 auto emit_chain_step = [&](size_t j, Integer t, size_t k,
                                            IntegerVariableCondition ext_lit, Integer s_lo_after,
-                                           bool emit_intermediate, const ReasonFunction & reason) -> void {
+                                           bool emit_intermediate, const ReasonLiterals & reason) -> void {
                     auto & bf_k = bridge->at(make_pair(k, t));
                     auto & bf_j = bridge->at(make_pair(j, t));
 
@@ -748,7 +747,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 break;
                         }
 
-                        auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
+                        auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
                             if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                                 return;
                             for (size_t step = 0; step < chain.size(); ++step)
@@ -758,7 +757,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         };
 
                         inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                            JustifyExplicitlyThenRUP{justify},
+                            JustifyExplicitly{justify, ThenRUP::Yes},
                             generic_reason(state, push_reason_vars));
                     }
 
@@ -789,8 +788,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 break;
                         }
 
-                        auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
-                            if (! logger)
+                        auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
+                            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                                 return;
                             // ext_lit (s_j <= t - l_j) == (s_j < s_lo_after).
                             for (size_t step = 0; step < chain.size(); ++step)
@@ -800,7 +799,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         };
 
                         inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                            JustifyExplicitlyThenRUP{justify},
+                            JustifyExplicitly{justify, ThenRUP::Yes},
                             generic_reason(state, push_reason_vars));
                     }
                 }

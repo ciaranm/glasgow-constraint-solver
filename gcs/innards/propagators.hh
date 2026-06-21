@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -82,7 +83,71 @@ namespace gcs::innards
         }
     };
 
-    using InitialisationFunction = std::function<auto(State &, EagerProofLoggingInferenceTracker &, ProofLogger * const)->void>;
+    // Like PropagationFunction, but for initialisers: a type-erased wrapper that
+    // can be invoked with either inference tracker, so the proofs-off initialiser
+    // pass can use the lean SimpleInferenceTracker too. (A plain std::function
+    // would pin the tracker type to one or the other.)
+    class InitialisationFunctionImplBase
+    {
+    public:
+        virtual ~InitialisationFunctionImplBase() = default;
+
+        InitialisationFunctionImplBase() = default;
+        InitialisationFunctionImplBase(const InitialisationFunctionImplBase &) = delete;
+        InitialisationFunctionImplBase(InitialisationFunctionImplBase &&) = default;
+
+        auto operator=(const InitialisationFunctionImplBase &) -> InitialisationFunctionImplBase & = delete;
+        auto operator=(InitialisationFunctionImplBase &&) -> InitialisationFunctionImplBase & = default;
+
+        virtual auto operator()(State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> void = 0;
+        virtual auto operator()(State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> void = 0;
+    };
+
+    template <typename Func_>
+    class InitialisationFunctionImpl : public InitialisationFunctionImplBase
+    {
+    private:
+        Func_ _f;
+
+    public:
+        InitialisationFunctionImpl(Func_ && f) :
+            _f(std::move(f))
+        {
+        }
+
+        auto operator()(State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> void override
+        {
+            _f(state, tracker, logger);
+        }
+
+        auto operator()(State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> void override
+        {
+            _f(state, tracker, logger);
+        }
+    };
+
+    class InitialisationFunction
+    {
+    private:
+        std::unique_ptr<InitialisationFunctionImplBase> _impl;
+
+    public:
+        template <typename Func_>
+        InitialisationFunction(Func_ && f) :
+            _impl(std::make_unique<InitialisationFunctionImpl<Func_>>(std::move(f)))
+        {
+        }
+
+        auto operator()(State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> void
+        {
+            _impl->operator()(state, tracker, logger);
+        }
+
+        auto operator()(State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> void
+        {
+            _impl->operator()(state, tracker, logger);
+        }
+    };
 
     /**
      * \brief Priority for initialisers, controlling the order in which they run.
@@ -227,14 +292,14 @@ namespace gcs::innards
         /**
          * Install an initialiser whose only job is to immediately raise a
          * contradiction with the given Justification (RUP, explicit, or
-         * none) and ReasonFunction. Convenience wrapper around
+         * none) and Reason. Convenience wrapper around
          * install_initialiser; intended for cases where the OPB encoding
          * emitted by define_proof_model collapses to a trivially-false
          * constraint and we want propagation to detect that up front.
          */
         auto install_initial_contradiction(const std::string & explain_yourself,
             Justification why,
-            ReasonFunction reason = ReasonFunction{},
+            Reason reason = NoReason{},
             InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void;
 
         ///@}

@@ -76,14 +76,14 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
             if (other.second == val) {
                 // we're already in a contradicting state
                 inference.infer_not_equal(logger, var, val, JustifyUsingRUP{},
-                    ReasonFunction{[var = other.first, val = val]() { return Reason{{var == val}}; }});
+                    ExplicitReason{ReasonLiterals{{other.first == val}}});
             }
         }
 
         while (i != unassigned.end()) {
             auto other = *i;
             if (other != var) {
-                inference.infer_not_equal(logger, other, val, JustifyUsingRUP{}, ReasonFunction{[var = var, val = val]() { return Reason{{var == val}}; }});
+                inference.infer_not_equal(logger, other, val, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{var == val}}});
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);
                     unassigned.erase(i++);

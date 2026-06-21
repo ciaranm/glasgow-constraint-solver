@@ -5,7 +5,7 @@ using namespace gcs::innards;
 
 auto gcs::innards::justify_not_in_range_across_equality(
     ProofLogger & logger,
-    const ReasonFunction & reason,
+    const ReasonLiterals & reason,
     const SimpleIntegerVariableID & pruned,
     Integer lo,
     Integer hi,

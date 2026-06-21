@@ -1,5 +1,4 @@
 #include <gcs/constraints/all_different/encoding.hh>
-#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -46,7 +45,7 @@ auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
     propagators.install_initialiser(
         [](
             State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.contradiction(logger, JustifyUsingRUP{}, ReasonFunction{});
+            inference.contradiction(logger, JustifyUsingRUP{}, NoReason{});
         },
         InitialiserPriority::SimpleDefinition);
 }

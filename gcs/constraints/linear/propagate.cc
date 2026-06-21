@@ -57,9 +57,9 @@ namespace
         const auto & coeff_vars,
         const vector<pair<Integer, Integer>> & bounds,
         const optional<SimpleIntegerVariableID> & var, bool invert,
-        const optional<Literal> & add_to_reason) -> ReasonFunction
+        const optional<Literal> & add_to_reason) -> Reason
     {
-        Reason reason;
+        ReasonLiterals reason;
         for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
             if (var && get_var(cv) != *var) {
                 if ((get_coeff(cv) < 0_i) != invert) {
@@ -74,7 +74,7 @@ namespace
         if (add_to_reason)
             reason.push_back(*add_to_reason);
 
-        return ReasonFunction{[=]() { return reason; }};
+        return ExplicitReason{reason};
     }
 
     auto infer(auto & inference, ProofLogger * const logger,
@@ -85,19 +85,19 @@ namespace
     {
         if (coeff) {
             if (bounds[p].second >= (1_i + remainder)) {
-                auto justf = [&](const ReasonFunction &) {
+                auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_less_than(logger, var, 1_i + remainder, JustifyExplicitlyThenRUP{justf},
+                inference.infer_less_than(logger, var, 1_i + remainder, JustifyExplicitly{justf, ThenRUP::Yes},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
         else {
             if (bounds[p].first < -remainder) {
-                auto justf = [&](const ReasonFunction &) {
+                auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_greater_than_or_equal(logger, var, -remainder, JustifyExplicitlyThenRUP{justf},
+                inference.infer_greater_than_or_equal(logger, var, -remainder, JustifyExplicitly{justf, ThenRUP::Yes},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
@@ -112,39 +112,39 @@ namespace
         // lots of conditionals to get the rounding right...
         if (coeff > 0_i && remainder >= 0_i) {
             if (bounds[p].second >= (1_i + remainder / coeff)) {
-                auto justf = [&](const ReasonFunction &) {
+                auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_less_than(logger, var, 1_i + remainder / coeff, JustifyExplicitlyThenRUP{justf},
+                inference.infer_less_than(logger, var, 1_i + remainder / coeff, JustifyExplicitly{justf, ThenRUP::Yes},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
         else if (coeff > 0_i && remainder < 0_i) {
             auto div_with_rounding = -((-remainder + coeff - 1_i) / coeff);
             if (bounds[p].second >= 1_i + div_with_rounding) {
-                auto justf = [&](const ReasonFunction &) {
+                auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_less_than(logger, var, 1_i + div_with_rounding, JustifyExplicitlyThenRUP{justf},
+                inference.infer_less_than(logger, var, 1_i + div_with_rounding, JustifyExplicitly{justf, ThenRUP::Yes},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
         else if (coeff < 0_i && remainder >= 0_i) {
             if (bounds[p].first < remainder / coeff) {
-                auto justf = [&](const ReasonFunction &) {
+                auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_greater_than_or_equal(logger, var, remainder / coeff, JustifyExplicitlyThenRUP{justf},
+                inference.infer_greater_than_or_equal(logger, var, remainder / coeff, JustifyExplicitly{justf, ThenRUP::Yes},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }
         else if (coeff < 0_i && remainder < 0_i) {
             auto div_with_rounding = (-remainder + -coeff - 1_i) / -coeff;
             if (bounds[p].first < div_with_rounding) {
-                auto justf = [&](const ReasonFunction &) {
+                auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                inference.infer_greater_than_or_equal(logger, var, div_with_rounding, JustifyExplicitlyThenRUP{justf},
+                inference.infer_greater_than_or_equal(logger, var, div_with_rounding, JustifyExplicitly{justf, ThenRUP::Yes},
                     linear_bounds_reason(coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason), assertion_hint);
             }
         }

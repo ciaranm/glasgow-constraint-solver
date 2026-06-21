@@ -106,7 +106,7 @@ namespace
 
         auto all_vars = vars_1;
         all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
-        auto reason = bounds_reason(state, all_vars, cond);
+        auto reason = eager_reason(bounds_reason(state, all_vars, cond), state);
 
         // Walking off the end means all common-prefix positions are forced
         // equal. Whether that satisfies the constraint depends on
@@ -118,17 +118,17 @@ namespace
             if (equal_prefix_satisfies)
                 return PropagatorState::DisableUntilBacktrack;
 
-            auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
+            auto contradiction_proof = [&, n](const ReasonLiterals & r) -> void {
                 if (! logger) return;
                 for (size_t k = 0; k < n; ++k)
                     logger->emit_rup_proof_line_under_reason(r,
                         WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
                         ProofLevel::Temporary);
             };
-            inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
+            inference.contradiction(logger, JustifyExplicitly{contradiction_proof, ThenRUP::Yes}, reason);
         }
 
-        auto emit_not_d = [&](const ReasonFunction & r, size_t k) -> void {
+        auto emit_not_d = [&](const ReasonLiterals & r, size_t k) -> void {
             logger->emit_rup_proof_line_under_reason(r,
                 WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
                 ProofLevel::Temporary);
@@ -141,7 +141,7 @@ namespace
         auto b1_alpha = state.bounds(vars_1[alpha]);
         auto b2_alpha = state.bounds(vars_2[alpha]);
 
-        auto tighten_proof = [&, alpha](const ReasonFunction & r) -> void {
+        auto tighten_proof = [&, alpha](const ReasonLiterals & r) -> void {
             if (! logger) return;
             for (size_t k = 0; k < alpha; ++k)
                 emit_not_d(r, k);
@@ -157,7 +157,7 @@ namespace
 
         inference.infer_all(logger,
             {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] <= b1_alpha.second},
-            JustifyExplicitlyThenRUP{tighten_proof}, reason);
+            JustifyExplicitly{tighten_proof, ThenRUP::Yes}, reason);
 
         auto nb1_alpha = state.bounds(vars_1[alpha]);
         auto nb2_alpha = state.bounds(vars_2[alpha]);
@@ -188,7 +188,7 @@ namespace
             if (must_force_strict) {
                 bool alpha_candidate = (nb1_alpha.second > nb2_alpha.first);
 
-                auto emit_not_prefix_equal_if_credited = [&](const ReasonFunction & r) -> void {
+                auto emit_not_prefix_equal_if_credited = [&](const ReasonLiterals & r) -> void {
                     if (equal_prefix_satisfies && prefix_blocked)
                         logger->emit_rup_proof_line_under_reason(r,
                             WPBSum{} + 1_i * ! *prefix_equal_flags->at(blocking_position + 1) >= 1_i,
@@ -196,16 +196,16 @@ namespace
                 };
 
                 if (! alpha_candidate) {
-                    auto contradiction_proof = [&, n](const ReasonFunction & r) -> void {
+                    auto contradiction_proof = [&, n](const ReasonLiterals & r) -> void {
                         if (! logger) return;
                         for (size_t k = 0; k < n; ++k)
                             emit_not_d(r, k);
                         emit_not_prefix_equal_if_credited(r);
                     };
-                    inference.contradiction(logger, JustifyExplicitlyThenRUP{contradiction_proof}, reason);
+                    inference.contradiction(logger, JustifyExplicitly{contradiction_proof, ThenRUP::Yes}, reason);
                 }
 
-                auto force_strict_proof = [&, alpha, n](const ReasonFunction & r) -> void {
+                auto force_strict_proof = [&, alpha, n](const ReasonLiterals & r) -> void {
                     if (! logger) return;
                     for (size_t k = 0; k < n; ++k) {
                         if (k == alpha) continue;
@@ -217,7 +217,7 @@ namespace
                 inference.infer_all(logger,
                     {vars_1[alpha] > nb2_alpha.first,
                         vars_2[alpha] < nb1_alpha.second},
-                    JustifyExplicitlyThenRUP{force_strict_proof}, reason);
+                    JustifyExplicitly{force_strict_proof, ThenRUP::Yes}, reason);
 
                 auto fb1 = state.bounds(vars_1[alpha]);
                 auto fb2 = state.bounds(vars_2[alpha]);
@@ -242,7 +242,7 @@ namespace
     auto emit_lex_unsat_scaffold(
         const State & state,
         ProofLogger * const logger,
-        const ReasonFunction & r,
+        const ReasonLiterals & r,
         const vector<IntegerVariableID> & vars_1,
         const vector<IntegerVariableID> & vars_2,
         size_t n,
@@ -276,7 +276,37 @@ namespace
                 WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
                 ProofLevel::Temporary);
     }
+}
 
+namespace gcs::innards::hints
+{
+    // Witness for the lex "unsat scaffold" justification, carried in a reified
+    // verdict. It captures the scaffold inputs (variable scope + reason by value, the
+    // aux-flag tables by
+    // shared_ptr, the State by pointer — valid because the verdict is consumed
+    // synchronously while the constraint is live). No coarse hint name: the original
+    // verdict carried none.
+    struct LexUnsatScaffold
+    {
+        const State * state;
+        ReasonLiterals reason;
+        std::vector<IntegerVariableID> first_vars, second_vars;
+        std::size_t n;
+        std::shared_ptr<std::vector<std::optional<ProofFlag>>> prefix_equal_flags;
+        std::shared_ptr<std::vector<ProofFlag>> decision_at_flags;
+        static constexpr std::string_view hint_name = "";
+    };
+
+    auto emit_justification(ProofLogger & logger, const LexUnsatScaffold & w, const ReasonLiterals &) -> void
+    {
+        if (w.prefix_equal_flags && w.decision_at_flags)
+            emit_lex_unsat_scaffold(*w.state, &logger, w.reason, w.first_vars, w.second_vars, w.n,
+                w.prefix_equal_flags, w.decision_at_flags);
+    }
+}
+
+namespace
+{
     // Detection-only logic for when the reification condition is undecided.
     // Walk through positions: if we can prove the constraint definitely
     // holds (or definitely doesn't hold) from the current bounds, return
@@ -285,7 +315,7 @@ namespace
     // StillUndecided.
     auto run_lex_undecided_detection(
         const State & state,
-        ProofLogger * const logger,
+        ProofLogger * const,
         const vector<IntegerVariableID> & vars_1,
         const vector<IntegerVariableID> & vars_2,
         bool or_equal,
@@ -293,7 +323,7 @@ namespace
         const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags,
         const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_lt_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags,
-        const IntegerVariableCondition & cond) -> ReificationVerdict
+        const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>>
     {
         auto n1 = vars_1.size();
         auto n2 = vars_2.size();
@@ -302,7 +332,7 @@ namespace
 
         auto all_vars = vars_1;
         all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
-        auto reason = bounds_reason(state, all_vars);
+        auto reason = eager_reason(bounds_reason(state, all_vars), state);
 
         size_t k = 0;
         bool definitely_holds = false;
@@ -351,39 +381,21 @@ namespace
         // every aux flag to FALSE, violating it. We pre-emit those
         // ~aux_flag lines so VeriPB's PB unit propagation can chain.
         if (definitely_holds) {
-            auto reason_under_cond_false = [base = reason, cond]() {
-                auto rl = base();
-                rl.push_back(! cond);
-                return rl;
-            };
-            auto justify = [&state, logger, vars_1, vars_2, n,
-                               prefix_equal_lt_flags, decision_at_lt_flags,
-                               reason_under_cond_false](const ReasonFunction &) -> void {
-                if (logger && prefix_equal_lt_flags && decision_at_lt_flags)
-                    emit_lex_unsat_scaffold(state, logger, ReasonFunction{reason_under_cond_false},
-                        vars_2, vars_1, n,
-                        prefix_equal_lt_flags, decision_at_lt_flags);
-            };
-            return reification_verdict::MustHold{
-                .justification = JustifyExplicitlyThenRUP{justify},
+            auto reason_under_cond_false = reason;
+            reason_under_cond_false.push_back(! cond);
+            return reification_verdict::MustHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
+                .justification = JustifyExplicitly{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_false),
+                                                       vars_2, vars_1, n, prefix_equal_lt_flags, decision_at_lt_flags},
+                    ThenRUP::Yes},
                 .reason = std::move(reason)};
         }
         else {
-            auto reason_under_cond_true = [base = reason, cond]() {
-                auto rl = base();
-                rl.push_back(cond);
-                return rl;
-            };
-            auto justify = [&state, logger, vars_1, vars_2, n,
-                               prefix_equal_gt_flags, decision_at_gt_flags,
-                               reason_under_cond_true](const ReasonFunction &) -> void {
-                if (logger && prefix_equal_gt_flags && decision_at_gt_flags)
-                    emit_lex_unsat_scaffold(state, logger, ReasonFunction{reason_under_cond_true},
-                        vars_1, vars_2, n,
-                        prefix_equal_gt_flags, decision_at_gt_flags);
-            };
-            return reification_verdict::MustNotHold{
-                .justification = JustifyExplicitlyThenRUP{justify},
+            auto reason_under_cond_true = reason;
+            reason_under_cond_true.push_back(cond);
+            return reification_verdict::MustNotHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
+                .justification = JustifyExplicitly{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_true),
+                                                       vars_1, vars_2, n, prefix_equal_gt_flags, decision_at_gt_flags},
+                    ThenRUP::Yes},
                 .reason = std::move(reason)};
         }
     }
@@ -645,7 +657,7 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
                                          prefix_equal_lt_flags = _prefix_equal_lt_flags,
                                          decision_at_lt_flags = _decision_at_lt_flags](
                                          const State & state, auto &, ProofLogger * const logger,
-                                         const IntegerVariableCondition & cond) -> ReificationVerdict {
+                                         const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>> {
         return run_lex_undecided_detection(state, logger,
             vars_1, vars_2, or_equal,
             prefix_equal_gt_flags, decision_at_gt_flags,

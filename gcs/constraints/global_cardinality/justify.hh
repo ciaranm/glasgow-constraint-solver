@@ -37,7 +37,7 @@ namespace gcs::innards
 
     auto gcc_capacity_reason(const State &, const std::vector<Integer> & values,
         const std::vector<IntegerVariableID> & counts, const std::vector<std::size_t> & cut_values,
-        const std::vector<IntegerVariableID> & confined) -> Reason;
+        const std::vector<IntegerVariableID> & confined) -> ReasonLiterals;
 
     /**
      * \brief Emit the demand-cut aggregate (dual of the capacity one) for a set
@@ -59,7 +59,7 @@ namespace gcs::innards
 
     auto gcc_demand_reason(const State &, const std::vector<IntegerVariableID> & vars,
         const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts,
-        const std::vector<std::size_t> & cut_values, const std::vector<IntegerVariableID> & potential) -> Reason;
+        const std::vector<std::size_t> & cut_values, const std::vector<IntegerVariableID> & potential) -> ReasonLiterals;
 }
 
 #endif

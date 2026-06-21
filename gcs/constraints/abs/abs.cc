@@ -45,6 +45,42 @@ using fmt::format;
 using fmt::print;
 #endif
 
+namespace gcs::innards::hints
+{
+    // The typed assertion-hint witness for *every* Abs inference -- this is the
+    // entire solver-side surface the external Justifier consumes for abs.
+    //
+    //   - `owner` ties the inference back to its model constraint; the Justifier
+    //     looks up that constraint's two half-reified definition lines (emitted by
+    //     Abs::define_proof_model) to rebuild the proof.
+    //   - `justifier` names the specific sub-rule, so the Justifier can dispatch
+    //     among abs's several derivations -- the per-shape discriminator from #377.
+    //     Each string labels one inference shape (e.g. v2_upper_from_v1); they are
+    //     not 1:1 with the justify_abs_* emit helpers in abs/justify.hh (a shape can
+    //     reuse a helper, and the pure-RUP v1_no_preimage shape has no helper at all).
+    //
+    // No operand data travels in the hint: each abs bound is re-derivable from the
+    // asserted literal + the reason + the definition lines, so carrying it would be
+    // redundant ("the fewer hints, the better"). A constraint whose Justifier genuinely
+    // *cannot* re-derive a value adds a typed field here and serialises it in
+    // hint_sexpr -- see all_different's AllDifferentHall for the multi-field shape.
+    //
+    // One witness serves both proof methods: it rides JustifyUsingRUP for abs's
+    // pure-RUP pruning and JustifyExplicitly for the explicit-steps bounds, because
+    // the assertion-hint axis is orthogonal to *how* the inference is proved.
+    struct AbsJustification
+    {
+        ConstraintID owner;
+        std::string_view justifier;
+        static constexpr std::string_view hint_name = "abs";
+    };
+
+    auto hint_sexpr(const AbsJustification & h, NamesAndIDsTracker &) -> SExpr
+    {
+        return hint_list(hint_constraint_id(h.owner), hint_justifier(h.justifier));
+    }
+}
+
 namespace
 {
     // Collect a set of (lower, upper) pieces (possibly unordered and
@@ -117,7 +153,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
     // is constant we bail out -- the propagator's per-value loop will
     // discover any UNSAT.
     propagators.install_initialiser(
-        [v1 = _v1, v2 = _v2,
+        [v1 = _v1, v2 = _v2, owner = constraint_id(),
             abs_nonneg_le = _abs_nonneg_lines.first,
             abs_nonneg_ge = _abs_nonneg_lines.second,
             abs_neg_le = _abs_neg_lines.first,
@@ -127,11 +163,11 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 return;
 
             inference.infer(logger, v2 >= 0_i,
-                JustifyExplicitlyThenRUP{
-                    [logger, v1, v2, abs_nonneg_ge](const ReasonFunction &) -> void {
-                        justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge);
-                    }},
-                ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                JustifyExplicitly{[logger, v1, v2, abs_nonneg_ge](const ReasonLiterals &) -> void {
+                                      justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge);
+                                  },
+                    ThenRUP::Yes, hints::AbsJustification{owner, "v2_nonneg"}},
+                NoReason{});
 
             auto v2_ub = state.upper_bound(v2);
 
@@ -140,31 +176,31 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             // UNSAT directly.
             if (v2_ub >= 0_i) {
                 inference.infer(logger, v1 <= v2_ub,
-                    JustifyExplicitlyThenRUP{
-                        [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonFunction & r) -> void {
-                            justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
-                        }},
-                    ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonLiterals & r) -> void {
+                                          justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
+                                      },
+                        ThenRUP::Yes, hints::AbsJustification{owner, "v1_upper_from_v2"}},
+                    NoReason{});
             }
 
             // Symmetric flag-collision concern: skip when ub(v2) <= 0.
             if (v2_ub > 0_i) {
                 inference.infer(logger, v1 >= -v2_ub,
-                    JustifyExplicitlyThenRUP{
-                        [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonFunction & r) -> void {
-                            justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
-                        }},
-                    ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_neg_ge](const ReasonLiterals & r) -> void {
+                                          justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
+                                      },
+                        ThenRUP::Yes, hints::AbsJustification{owner, "v1_lower_from_v2"}},
+                    NoReason{});
             }
 
             auto [v1_lb, v1_ub] = state.bounds(v1);
             auto big_m = max(v1_ub, -v1_lb);
             inference.infer(logger, v2 <= big_m,
-                JustifyExplicitlyThenRUP{
-                    [logger, v1, v2, v1_lb, v1_ub, big_m, abs_nonneg_le, abs_neg_le](const ReasonFunction & r) -> void {
-                        justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, big_m, *abs_nonneg_le, *abs_neg_le, r);
-                    }},
-                ReasonFunction{}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                JustifyExplicitly{[logger, v1, v2, v1_lb, v1_ub, big_m, abs_nonneg_le, abs_neg_le](const ReasonLiterals & r) -> void {
+                                      justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, big_m, *abs_nonneg_le, *abs_neg_le, r);
+                                  },
+                    ThenRUP::Yes, hints::AbsJustification{owner, "v2_upper_from_v1"}},
+                NoReason{});
         },
         InitialiserPriority::SimpleDefinition);
 
@@ -175,7 +211,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
     Triggers triggers{.on_change = {_v1, _v2}};
     propagators.install(
         constraint_id(),
-        [v1 = _v1, v2 = _v2,
+        [v1 = _v1, v2 = _v2, owner = constraint_id(),
             abs_nonneg_le = _abs_nonneg_lines.first,
             abs_nonneg_ge = _abs_nonneg_lines.second,
             abs_neg_le = _abs_neg_lines.first,
@@ -199,47 +235,47 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 auto image_ub = max(-v1_lb, v1_ub);
                 if (image_ub < v2_ub) {
                     inference.infer_less_than(logger, v2, image_ub + 1_i,
-                        JustifyExplicitlyThenRUP{
-                            [logger, v1, v2, v1_lb, v1_ub, image_ub, abs_nonneg_le, abs_neg_le](const ReasonFunction & r) -> void {
-                                justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, image_ub, *abs_nonneg_le, *abs_neg_le, r);
-                            }},
-                        ReasonFunction{[v1, v1_lb, v1_ub]() { return Reason{{v1 >= v1_lb, v1 <= v1_ub}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                        JustifyExplicitly{[logger, v1, v2, v1_lb, v1_ub, image_ub, abs_nonneg_le, abs_neg_le](const ReasonLiterals & r) -> void {
+                                              justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, image_ub, *abs_nonneg_le, *abs_neg_le, r);
+                                          },
+                            ThenRUP::Yes, hints::AbsJustification{owner, "v2_upper_from_v1"}},
+                        ExplicitReason{ReasonLiterals{{v1 >= v1_lb, v1 <= v1_ub}}});
                 }
 
                 if (v1_lb >= 1_i && v1_lb > v2_lb) {
                     inference.infer_greater_than_or_equal(logger, v2, v1_lb,
-                        JustifyExplicitlyThenRUP{
-                            [logger, v1, v2, v1_lb, abs_nonneg_ge](const ReasonFunction & r) -> void {
-                                justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonneg, v1_lb, *abs_nonneg_ge, r);
-                            }},
-                        ReasonFunction{[v1, v1_lb]() { return Reason{v1 >= v1_lb}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                        JustifyExplicitly{[logger, v1, v2, v1_lb, abs_nonneg_ge](const ReasonLiterals & r) -> void {
+                                              justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonneg, v1_lb, *abs_nonneg_ge, r);
+                                          },
+                            ThenRUP::Yes, hints::AbsJustification{owner, "v2_lower_from_v1"}},
+                        ExplicitReason{ReasonLiterals{v1 >= v1_lb}});
                 }
                 else if (v1_ub <= -1_i && -v1_ub > v2_lb) {
                     inference.infer_greater_than_or_equal(logger, v2, -v1_ub,
-                        JustifyExplicitlyThenRUP{
-                            [logger, v1, v2, v1_ub, abs_neg_ge](const ReasonFunction & r) -> void {
-                                justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonpos, -v1_ub, *abs_neg_ge, r);
-                            }},
-                        ReasonFunction{[v1, v1_ub]() { return Reason{v1 <= v1_ub}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                        JustifyExplicitly{[logger, v1, v2, v1_ub, abs_neg_ge](const ReasonLiterals & r) -> void {
+                                              justify_abs_v2_lb(*logger, v1, v2, AbsLbSide::Nonpos, -v1_ub, *abs_neg_ge, r);
+                                          },
+                            ThenRUP::Yes, hints::AbsJustification{owner, "v2_lower_from_v1"}},
+                        ExplicitReason{ReasonLiterals{v1 <= v1_ub}});
                 }
             }
 
             // Direction v2 -> v1: tighten v1 from the preimage of v2.
             if (v2_ub < v1_ub) {
                 inference.infer_less_than(logger, v1, v2_ub + 1_i,
-                    JustifyExplicitlyThenRUP{
-                        [logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonFunction & r) -> void {
-                            justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
-                        }},
-                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 <= v2_ub}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonLiterals & r) -> void {
+                                          justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
+                                      },
+                        ThenRUP::Yes, hints::AbsJustification{owner, "v1_upper_from_v2"}},
+                    ExplicitReason{ReasonLiterals{v2 <= v2_ub}});
             }
             if (-v2_ub > v1_lb) {
                 inference.infer_greater_than_or_equal(logger, v1, -v2_ub,
-                    JustifyExplicitlyThenRUP{
-                        [logger, v1, v2, v2_ub, abs_neg_ge](const ReasonFunction & r) -> void {
-                            justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
-                        }},
-                    ReasonFunction{[v2, v2_ub]() { return Reason{v2 <= v2_ub}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_neg_ge](const ReasonLiterals & r) -> void {
+                                          justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
+                                      },
+                        ThenRUP::Yes, hints::AbsJustification{owner, "v1_lower_from_v2"}},
+                    ExplicitReason{ReasonLiterals{v2 <= v2_ub}});
             }
 
             // Interior pruning: remove values in v2 with no preimage in v1,
@@ -266,10 +302,11 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     if (! state.in_domain(v2, val))
                         continue;
                     inference.infer_not_equal(logger, v2, val,
-                        JustifyExplicitlyThenRUP{[logger, v1, v2, val](const ReasonFunction & r) {
-                            justify_abs_hole(*logger, r, v1, v2, val);
-                        }},
-                        ReasonFunction{[v1, val]() { return Reason{{v1 != val, v1 != -val}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                        JustifyExplicitly{[logger, v1, v2, val](const ReasonLiterals & r) {
+                                              justify_abs_hole(*logger, r, v1, v2, val);
+                                          },
+                            ThenRUP::Yes, hints::AbsJustification{owner, "v2_hole"}},
+                        ExplicitReason{ReasonLiterals{{v1 != val, v1 != -val}}});
                 }
             }
 
@@ -291,8 +328,8 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 for (Integer val = clipped_lo; val <= clipped_hi; ++val) {
                     if (! state.in_domain(v1, val))
                         continue;
-                    inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{},
-                        ReasonFunction{[v2, val]() { return Reason{v2 != abs(val)}; }}, AssertionAnnotation{.hint_name = AssertionHintName::Abs});
+                    inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{hints::AbsJustification{owner, "v1_no_preimage"}},
+                        ExplicitReason{ReasonLiterals{v2 != abs(val)}});
                 }
             }
 

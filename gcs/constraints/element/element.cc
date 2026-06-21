@@ -215,6 +215,16 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
     build_implication_constraints(0);
 }
 
+// GCC's -O3 scalar-replacement of aggregates picks apart the small-buffer storage
+// of ReasonLiterals (gch::small_vector<ProofLiteralOrFlag, 2>) used for the reason
+// literals below, then cannot prove one of the resulting temporaries initialised,
+// emitting a -Wmaybe-uninitialized false positive (attributed to the first
+// install() lambda). The reason locals are all default-constructed before use --
+// there is no real uninitialised read -- and clang's analysis does not warn.
+#if defined(__GNUC__) && ! defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagators & propagators) -> void
 {
@@ -319,7 +329,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 };
 
                 if (! look_for_support(0)) {
-                    inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
+                    inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val, JustifyExplicitly{[&](const ReasonLiterals & reason) {
                         // show there's no overlap between array_var and result, for any way the other
                         // index vars are assigned
                         vector<size_t> elem;
@@ -363,7 +373,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                         };
 
                         show_no_support(0);
-                    }},
+                    }, ThenRUP::Yes},
                         generic_reason(state, explored_vars));
                 }
             }
@@ -411,14 +421,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
             auto infer_bound = [&](Integer relevant_bound, bool ge) {
                 auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var <= relevant_bound);
-                Reason reason;
-                auto idx_reason = generic_reason(state, index_vars)();
+                ReasonLiterals reason;
+                auto idx_reason = materialise(generic_reason(state, index_vars), state);
                 reason.insert(reason.end(), idx_reason.begin(), idx_reason.end());
                 for (const auto & var : considered_vars)
                     reason.push_back(ge ? (var >= relevant_bound) : (var <= relevant_bound));
                 reason.push_back(result_var >= current_bounds.first);
                 reason.push_back(result_var <= current_bounds.second);
-                inference.infer(logger, lit_to_infer, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
+                inference.infer(logger, lit_to_infer, JustifyExplicitly{[&](const ReasonLiterals & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WPBSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
@@ -441,8 +451,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                         }
                     };
                     rule_out(0);
-                }},
-                    ReasonFunction{[=]() { return reason; }});
+                }, ThenRUP::Yes},
+                    ExplicitReason{reason});
             };
 
             if (lowest_found && *lowest_found > current_bounds.first)
@@ -486,10 +496,10 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             collect_supported_values(0);
 
             for (auto value : still_to_find_support_for.each()) {
-                Reason reason = generic_reason(state, index_vars)();
+                ReasonLiterals reason = materialise(generic_reason(state, index_vars), state);
                 for (const auto & var : considered_vars)
                     reason.push_back(var != value);
-                inference.infer_not_equal(logger, result_var, value, JustifyExplicitlyThenRUP{[&](const ReasonFunction & reason) {
+                inference.infer_not_equal(logger, result_var, value, JustifyExplicitly{[&](const ReasonLiterals & reason) {
                     // show that it doesn't work for any feasible choice of indices
                     WPBSum sum_so_far;
                     function<auto(unsigned)->void> rule_out = [&](unsigned d) {
@@ -512,8 +522,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                         }
                     };
                     rule_out(0);
-                }},
-                    ReasonFunction{[=]() { return reason; }});
+                }, ThenRUP::Yes},
+                    ExplicitReason{reason});
             }
 
             return PropagatorState::Enable; }, result_triggers);
@@ -523,12 +533,12 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
         Triggers equality_triggers;
         equality_triggers.on_change.insert(equality_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
         equality_triggers.on_change.emplace_back(_result_var);
-        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // if there's only a single possible array variable left, it can only take values
             // that are present in the result variable
             bool index_is_fully_defined = true;
             vector<size_t> elem;
-            Reason index_reason;
+            ReasonLiterals index_reason;
             for (const auto & [p, i] : enumerate(index_vars)) {
                 auto v = state.optional_single_value(i);
                 if (! v) {
@@ -541,12 +551,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
             if (index_is_fully_defined) {
                 auto array_var = get_array_var<dimensions_>(elem, *array);
-                enforce_equality(logger, result_var, array_var, state, inference, index_reason);
+                enforce_equality(logger, result_var, array_var, state, inference, index_reason, owner);
             }
 
             return PropagatorState::Enable; }, equality_triggers);
     }
 }
+#if defined(__GNUC__) && ! defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<Constraint>

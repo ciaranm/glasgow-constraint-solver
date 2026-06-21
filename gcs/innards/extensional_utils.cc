@@ -80,7 +80,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                 // since there's no table for the implicit one.
                 inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, table.vars));
             else
-                inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, ReasonFunction{});
+                inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, NoReason{});
         }
         if (none_feasible && logger && logger->get_assertion_level() != AssertionLevel::Off)
             // selector already empty on entry

@@ -94,18 +94,18 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);
             if (min)
-                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{var <= var_bounds.second}}; }});
+                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{var <= var_bounds.second}}});
             else
-                inference.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{var >= var_bounds.first}}; }});
+                inference.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{var >= var_bounds.first}}});
         }
 
         // each var >= result
         auto result_bounds = state.bounds(result);
         for (auto & var : vars) {
             if (min)
-                inference.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{result >= result_bounds.first}}; }});
+                inference.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{result >= result_bounds.first}}});
             else
-                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, ReasonFunction{[=]() { return Reason{{result <= result_bounds.second}}; }});
+                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{result <= result_bounds.second}}});
         }
 
         // result in union(vars)
@@ -119,17 +119,17 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
             }
 
             if (! found_support) {
-                Reason reason;
+                ReasonLiterals reason;
                 for (auto & var : vars)
                     reason.emplace_back(var != value);
 
-                inference.infer_not_equal(logger, result, value, JustifyExplicitlyThenRUP{[logger, result, value, &selectors](const ReasonFunction & reason) {
+                inference.infer_not_equal(logger, result, value, JustifyExplicitly{[logger, result, value, &selectors](const ReasonLiterals & reason) {
                     // show that none of the selectors work, if we're taking the result to be that value and also
                     // that the value is missing from all of the vars
                     for (const auto & sel : selectors)
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
-                }},
-                    ReasonFunction{[=]() { return reason; }});
+                }, ThenRUP::Yes},
+                    ExplicitReason{reason});
             }
         }
 
@@ -151,7 +151,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
         else if (! support_2) {
             // no, there's only a single var left that has any intersection with result. so, that
             // variable has to lose any values not present in result.
-            Reason reason = generic_reason(state, vector{result})();
+            ReasonLiterals reason = materialise(generic_reason(state, vector{result}), state);
 
             for (auto & var : vars) {
                 if (var == *support_1)
@@ -167,7 +167,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
             // is missing all of result's values, so its model selector must be false. This
             // is value-independent, so the range path emits it once per interval rather
             // than once per removed value.
-            auto rule_out_other_selectors = [&](const ReasonFunction & reason) {
+            auto rule_out_other_selectors = [&](const ReasonLiterals & reason) {
                 for (const auto & [idx, var] : enumerate(vars))
                     if (var != *support_1) {
                         for (const auto & rval : state.each_value_immutable(result))
@@ -187,31 +187,32 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{result});
 
             for (auto [lo, hi] : support_1_set.each_interval_minus(result_set)) {
-                if (both_simple)
-                    inference.infer_not_in_range(logger, *support_1, lo, hi, JustifyExplicitlyThenRUP{[&, lo = lo, hi = hi](const ReasonFunction & reason) {
+                if (both_simple) {
+                    // The support reason is the base reason plus the just-excluded
+                    // interval. ExplicitReason holds an immutable snapshot, so the
+                    // justification (which materialises it once per bridge lemma plus
+                    // once for the conclusion) gets a fresh copy each time rather than
+                    // an accumulating literal.
+                    ReasonLiterals support_reason = reason;
+                    support_reason.emplace_back(not_in_range(result, lo, hi));
+                    inference.infer_not_in_range(logger, *support_1, lo, hi, JustifyExplicitly{[&, lo = lo, hi = hi](const ReasonLiterals & reason) {
                         rule_out_other_selectors(reason);
                         justify_not_in_range_across_equality(*logger, reason,
                             std::get<SimpleIntegerVariableID>(IntegerVariableID{*support_1}), lo, hi,
                             result, lo, hi);
-                    }},
-                        // Built afresh per call: the justification calls the reason once per
-                        // bridge lemma plus once for the conclusion, so a mutable accumulating
-                        // lambda would duplicate the appended literal on each call.
-                        ReasonFunction{[=, base = reason]() {
-                            auto r = base;
-                            r.emplace_back(not_in_range(result, lo, hi));
-                            return r;
-                        }});
+                    }, ThenRUP::Yes},
+                        ExplicitReason{std::move(support_reason)});
+                }
                 else
                     for (Integer val = lo; val <= hi; ++val)
-                        inference.infer(logger, *support_1 != val, JustifyExplicitlyThenRUP{[&, val = val](const ReasonFunction & reason) {
+                        inference.infer(logger, *support_1 != val, JustifyExplicitly{[&, val = val](const ReasonLiterals & reason) {
                             rule_out_other_selectors(reason);
                             // now fish out the supporting variable, and show that it has to have its selector true
                             for (const auto & [idx, var] : enumerate(vars))
                                 if (var == *support_1)
                                     logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
-                        }},
-                            ReasonFunction{[=]() { return reason; }});
+                        }, ThenRUP::Yes},
+                            ExplicitReason{reason});
             }
         }
 

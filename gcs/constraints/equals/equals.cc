@@ -42,18 +42,67 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace
+{
+    // Coarse model-level hint name for equals's explicit-steps (JustifyExplicitly,
+    // including the EqualsNoOverlap fat witness) and the reified-verdict fallback
+    // annotation. The pure-RUP inferences use hints::EqualsRUP instead.
+    constexpr std::string_view equals_hint = "equals";
+}
+
+namespace gcs::innards::hints
+{
+    // Witness for the "domains don't overlap, so the reified equality cannot hold"
+    // justification, carried in a reified verdict (built by no_overlap_justification).
+    // Holds the operands, the bounds
+    // walked over, and the condition; the State pointer is valid because the verdict
+    // is consumed synchronously while the constraint is live.
+    struct EqualsNoOverlap
+    {
+        const State * state;
+        IntegerVariableID v1, v2;
+        std::pair<Integer, Integer> v1_bounds;
+        Literal cond;
+        static constexpr std::string_view hint_name = "equals";
+    };
+
+    auto emit_justification(ProofLogger & logger, const EqualsNoOverlap & w, const ReasonLiterals &) -> void
+    {
+        for (Integer val = w.v1_bounds.first; val <= w.v1_bounds.second; ++val)
+            if (w.state->in_domain(w.v1, val))
+                logger.emit_rup_proof_line(WPBSum{} + 1_i * (w.v1 != val) + 1_i * (w.v2 == val) + 1_i * ! w.cond >= 1_i, ProofLevel::Temporary);
+            else
+                logger.emit_rup_proof_line(WPBSum{} + 1_i * (w.v2 != val) + 1_i * (w.v1 == val) + 1_i * ! w.cond >= 1_i, ProofLevel::Temporary);
+    }
+
+    // The pure-RUP hint for "a value is forced out of the other operand because this
+    // one is fixed to it" (the bare-NotEquals propagator). RUP-derivable, so no
+    // emit_justification; carries the owning constraint id so assertion mode can name
+    // the source.
+    struct EqualsRUP
+    {
+        ConstraintID owner;
+        static constexpr std::string_view hint_name = "equals";
+    };
+
+    auto hint_sexpr(const EqualsRUP & forced, NamesAndIDsTracker &) -> SExpr
+    {
+        return hint_list(hint_constraint_id(forced.owner));
+    }
+}
+
 auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
-    auto & inference, const Reason & reason) -> PropagatorState
+    auto & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState
 {
     auto val1 = state.optional_single_value(v1);
     if (val1) {
-        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 == *val1); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{hints::EqualsRUP{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 == *val1); return r; }()});
         return PropagatorState::DisableUntilBacktrack;
     }
 
     auto val2 = state.optional_single_value(v2);
     if (val2) {
-        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 == *val2); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{hints::EqualsRUP{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 == *val2); return r; }()});
         return PropagatorState::DisableUntilBacktrack;
     }
 
@@ -75,7 +124,7 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
         auto both_simple = std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v1}) &&
             std::holds_alternative<SimpleIntegerVariableID>(IntegerVariableID{v2});
 
-        auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonFunction & r) {
+        auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonLiterals & r) {
             // Plain equality pruned = other, so the flag forces other into the same [lo, hi].
             justify_not_in_range_across_equality(*logger, r,
                 std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi,
@@ -84,22 +133,21 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 
         auto prune = [&](const auto & pruned, const auto & other, const IntervalSet<Integer> & pruned_set, const IntervalSet<Integer> & other_set) {
             for (auto [lo, hi] : pruned_set.each_interval_minus(other_set)) {
-                if (both_simple)
+                if (both_simple) {
+                    // ExplicitReason holds an immutable snapshot (the base reason plus
+                    // the excluded interval), so the justification — which materialises
+                    // it once per bridge lemma plus once for the conclusion — gets a
+                    // fresh copy each time rather than an accumulating element.
+                    ReasonLiterals not_in_range_reason = reason;
+                    not_in_range_reason.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
                     inference.infer_not_in_range(logger, pruned, lo, hi,
-                        JustifyExplicitlyThenRUP{[=](const ReasonFunction & r) { bridge(pruned, other, lo, hi, r); }},
-                        // Build afresh per call: the justification calls the reason once
-                        // per bridge lemma plus once for the conclusion, so a mutable
-                        // accumulating lambda would duplicate the element on each call.
-                        ReasonFunction{[=, base = reason]() {
-                            auto r = base;
-                            r.emplace_back(not_in_range(IntegerVariableID{other}, lo, hi));
-                            return r;
-                        }},
-                        AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+                        JustifyExplicitly{[=](const ReasonLiterals & r) { bridge(pruned, other, lo, hi, r); }, ThenRUP::Yes, hints::ModelName{equals_hint}},
+                        ExplicitReason{std::move(not_in_range_reason)});
+                }
                 else
                     for (Integer val = lo; val <= hi; ++val)
-                        inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{},
-                            ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(other != val); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+                        inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{hints::EqualsRUP{owner}},
+                            ExplicitReason{[&] { auto r = reason; r.emplace_back(other != val); return r; }()});
             }
         };
 
@@ -109,10 +157,10 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
     else {
         auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
         if (bounds1 != bounds2) {
-            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 >= bounds1.first); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
-            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 >= bounds2.first); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
-            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v1 <= bounds1.second); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
-            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{}, ReasonFunction{[=, reason = reason]() mutable { reason.emplace_back(v2 <= bounds2.second); return reason; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{hints::EqualsRUP{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 >= bounds1.first); return r; }()});
+            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{hints::EqualsRUP{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 >= bounds2.first); return r; }()});
+            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{hints::EqualsRUP{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 <= bounds1.second); return r; }()});
+            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{hints::EqualsRUP{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 <= bounds2.second); return r; }()});
         }
     }
 
@@ -121,11 +169,11 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 
 namespace
 {
-    auto no_overlap_justification(const State & state, ProofLogger * const logger,
-        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<JustifyExplicitlyThenRUP, ReasonFunction>
+    auto no_overlap_justification(const State & state, ProofLogger * const,
+        IntegerVariableID v1, IntegerVariableID v2, Literal cond) -> pair<hints::EqualsNoOverlap, Reason>
     {
         auto v1_bounds = state.bounds(v1);
-        Reason reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
+        ReasonLiterals reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
 
         for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
             if (state.in_domain(v1, val))
@@ -133,17 +181,12 @@ namespace
             else
                 reason.emplace_back(v1 != val);
 
-        auto justify = [&state = state, logger = logger, v1 = v1, v2 = v2, v1_bounds = v1_bounds, cond = cond](
-                           const ReasonFunction &) {
-            for (Integer val = v1_bounds.first; val <= v1_bounds.second; ++val)
-                if (state.in_domain(v1, val))
-                    logger->emit_rup_proof_line(WPBSum{} + 1_i * (v1 != val) + 1_i * (v2 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
-                else
-                    logger->emit_rup_proof_line(WPBSum{} + 1_i * (v2 != val) + 1_i * (v1 == val) + 1_i * ! cond >= 1_i, ProofLevel::Temporary);
-        };
-
-        return pair{JustifyExplicitlyThenRUP{justify}, ReasonFunction{[=]() { return reason; }}};
+        return pair{hints::EqualsNoOverlap{&state, v1, v2, v1_bounds, cond}, ExplicitReason{reason}};
     }
+
+    // equals's reified verdicts are either a plain RUP (the singleton / forced
+    // cases) or the no-overlap witness; a variant of the two, visited inside infer.
+    using EqualsJustification = std::variant<JustifyUsingRUP<NoHint>, JustifyExplicitly<hints::EqualsNoOverlap>>;
 }
 
 ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool neq) :
@@ -245,75 +288,78 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
 
 auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
 {
-    auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2](
+    auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, owner = constraint_id()](
                                             const State & state, auto & inference, ProofLogger * const logger,
                                             const Literal & cond) -> PropagatorState {
         return visit([&](auto & v1, auto & v2) {
-            return enforce_equality(logger, v1, v2, state, inference, Reason{cond});
+            return enforce_equality(logger, v1, v2, state, inference, ReasonLiterals{cond}, owner);
         },
             v1, v2);
     };
 
-    auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2](
+    auto v1_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v1});
+    auto v2_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v2});
+    auto v1v2_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v1, _v2});
+    auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, v1_scope, v2_scope, owner = constraint_id()](
                                                 const State & state, auto & inference, ProofLogger * const logger,
                                                 const Literal & cond) -> PropagatorState {
         auto value1 = state.optional_single_value(v1);
         if (value1) {
-            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{},
-                ReasonFunction{[=]() { return Reason{{cond, v1 == *value1}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{hints::EqualsRUP{owner}},
+                ExactSingleValue{ReasonVars{v1_scope.get()}, cond});
             return PropagatorState::DisableUntilBacktrack;
         }
         auto value2 = state.optional_single_value(v2);
         if (value2) {
-            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{},
-                ReasonFunction{[=]() { return Reason{{cond, v2 == *value2}}; }}, AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals});
+            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{hints::EqualsRUP{owner}},
+                ExactSingleValue{ReasonVars{v2_scope.get()}, cond});
             return PropagatorState::DisableUntilBacktrack;
         }
         return PropagatorState::Enable;
     };
 
-    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2](
+    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, v1v2_scope](
                                          const State & state, auto &, ProofLogger * const logger,
-                                         const IntegerVariableCondition & cond) -> ReificationVerdict {
+                                         const IntegerVariableCondition & cond) -> ReificationVerdictFor<EqualsJustification> {
         // Aliased non-constant operands: equality definitely holds regardless of
         // domain. Returning MustHold here lets the dispatcher pin the cond
         // immediately at root, instead of waiting until search fixes v1 to a
         // value and the singleton check below fires.
         if (v1 == v2 && ! is_constant_variable(v1))
-            return reification_verdict::MustHold{
+            return reification_verdict::MustHold<EqualsJustification>{
                 .justification = JustifyUsingRUP{},
-                .reason = ReasonFunction{},
-                .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
+                .reason = NoReason{},
+                .assertion_hint = AssertionAnnotation{.hint_name = equals_hint}};
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
-            auto reason = ReasonFunction{[=]() { return Reason{v1 == *value1, v2 == *value2}; }};
+            auto reason = Reason{ExactSingleValue{ReasonVars{v1v2_scope.get()}, std::nullopt}};
             if (*value1 == *value2)
-                return reification_verdict::MustHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
+                return reification_verdict::MustHold<EqualsJustification>{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = equals_hint}};
             else
-                return reification_verdict::MustNotHold{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
+                return reification_verdict::MustNotHold<EqualsJustification>{.justification = JustifyUsingRUP{}, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = equals_hint}};
         }
         else if (value1) {
             if (! state.in_domain(v2, *value1))
-                return reification_verdict::MustNotHold{
+                return reification_verdict::MustNotHold<EqualsJustification>{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return Reason{v1 == *value1, v2 != *value1}; }},
-                    .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
+                    .reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 != *value1}},
+                    .assertion_hint = AssertionAnnotation{.hint_name = equals_hint}};
             return reification_verdict::StillUndecided{};
         }
         else if (value2) {
             if (! state.in_domain(v1, *value2))
-                return reification_verdict::MustNotHold{
+                return reification_verdict::MustNotHold<EqualsJustification>{
                     .justification = JustifyUsingRUP{},
-                    .reason = ReasonFunction{[=]() { return Reason{v2 == *value2, v1 != *value2}; }},
-                    .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
+                    .reason = ExplicitReason{ReasonLiterals{v2 == *value2, v1 != *value2}},
+                    .assertion_hint = AssertionAnnotation{.hint_name = equals_hint}};
             return reification_verdict::StillUndecided{};
         }
         else {
             // not equals is forced if there's no overlap between domains
             if (! state.domains_intersect(v1, v2)) {
-                auto [just, reason] = no_overlap_justification(state, logger, v1, v2, cond);
-                return reification_verdict::MustNotHold{.justification = just, .reason = reason, .assertion_hint = AssertionAnnotation{.hint_name = AssertionHintName::ReifiedEquals}};
+                auto [witness, reason] = no_overlap_justification(state, logger, v1, v2, cond);
+                return reification_verdict::MustNotHold<EqualsJustification>{.justification = JustifyExplicitly{witness, ThenRUP::Yes}, .reason = reason};
             }
             return reification_verdict::StillUndecided{};
         }
@@ -384,6 +430,6 @@ auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SEx
 }
 
 template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,
-    SimpleInferenceTracker & inference, const Reason & reason) -> PropagatorState;
+    SimpleInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState;
 template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,
-    EagerProofLoggingInferenceTracker & inference, const Reason & reason) -> PropagatorState;
+    EagerProofLoggingInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState;

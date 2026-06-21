@@ -168,8 +168,8 @@ Each constraint in `gcs/constraints/` follows this pattern:
 
 Every inference must be accompanied by a justification:
 - `NoJustificationNeeded` — assertion without proof
-- `JustifyUsingRUP` — reverse unit propagation suffices
-- `JustifyExplicitly{fn}` — callback that adds explicit VeriPB proof steps
+- `JustifyUsingRUP{}` — reverse unit propagation suffices (optionally `JustifyUsingRUP{hints::Foo{...}}` to carry a typed assertion hint)
+- `JustifyExplicitly{emit, ThenRUP::Yes}` — `emit` is a `(const ReasonLiterals &) -> void` callback (or a named fat-witness struct, for a reification verdict) that writes explicit VeriPB proof steps. `ThenRUP` is mandatory: `Yes` RUPs the inferred literal after the steps, `No` lets the steps conclude it. An optional third argument is a typed assertion hint, shared with `JustifyUsingRUP`.
 
 ### Testing Pattern
 

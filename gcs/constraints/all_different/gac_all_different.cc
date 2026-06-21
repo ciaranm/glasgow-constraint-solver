@@ -46,6 +46,7 @@ using std::is_same_v;
 using std::make_shared;
 using std::map;
 using std::min;
+using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
@@ -66,6 +67,32 @@ using std::print;
 using fmt::format;
 using fmt::print;
 #endif
+
+namespace gcs::innards::hints
+{
+    auto hint_sexpr(const AllDifferentHall & hall, NamesAndIDsTracker & names) -> SExpr
+    {
+        vector<SExpr> hall_var_terms;
+        for (const auto & v : hall.hall_vars)
+            hall_var_terms.push_back(names.s_expr_term_of(v));
+        return hint_list(
+            hint_constraint_id(hall.owner),
+            hint_list(SExpr::atom("hall_vars"), SExpr::list(move(hall_var_terms))),
+            hint_list(SExpr::atom("hall_vals"), hint_seq(hall.hall_vals)),
+            hint_justifier(AllDifferentHall::justifier));
+    }
+
+    auto emit_justification(ProofLogger & logger, const AllDifferentHall & hall, const ReasonLiterals &) -> void
+    {
+        justify_all_different_hall_set_or_violator(logger, *hall.all_vars, hall.hall_vars, hall.hall_vals,
+            *hall.value_am1_constraint_numbers);
+    }
+
+    auto hint_sexpr(const AllDifferentForcedValue & forced, NamesAndIDsTracker &) -> SExpr
+    {
+        return hint_list(hint_constraint_id(forced.owner));
+    }
+}
 
 GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) :
     _vars(move(v))
@@ -194,6 +221,28 @@ namespace
         }
     }
 
+    // Build the typed Hall witness shared by both GAC all_different Hall shapes
+    // (the matching-too-small contradiction and the SCC Hall-set deletion). The
+    // hall set and values are the serialisable part of the witness; the variable
+    // scope and the at-most-one cache are carried as emit context (both owned by
+    // the constraint, so valid for the whole solve, including any later replay).
+    // emit_justification reproduces the original closure, calling the existing Hall
+    // justifier; hint_sexpr serialises only the Hall set for assert mode.
+    auto hall_witness(
+        const vector<IntegerVariableID> & vars,
+        const vector<IntegerVariableID> & hall_variable_ids,
+        const vector<Integer> & hall_value_nrs,
+        const ConstraintID & constraint_id,
+        map<Integer, ProofLine> & value_am1_constraint_numbers) -> hints::AllDifferentHall
+    {
+        return hints::AllDifferentHall{
+            .hall_vars = hall_variable_ids,
+            .hall_vals = hall_value_nrs,
+            .owner = constraint_id,
+            .all_vars = &vars,
+            .value_am1_constraint_numbers = &value_am1_constraint_numbers};
+    }
+
     auto prove_matching_is_too_small(
         const ConstraintID & constraint_id,
         const vector<IntegerVariableID> & vars,
@@ -201,11 +250,11 @@ namespace
         const vector<Integer> & excluded,
         size_t n_right,
         map<Integer, ProofLine> & value_am1_constraint_numbers,
-        const State & state,
-        ProofLogger * const logger,
+        const State &,
+        ProofLogger * const,
         const vector<pair<Left, Right>> & edges,
         const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> std::tuple<JustifyExplicitlyThenRUP, ReasonFunction, optional<AssertionAnnotation>>
+        const vector<optional<Right>> & matching) -> std::tuple<hints::AllDifferentHall, Reason>
     {
         vector<optional<Left>> inverse_matching(n_right, nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -261,36 +310,23 @@ namespace
             if (hall_values[v.offset])
                 hall_value_nrs.push_back(vals[v.offset]);
 
-        optional<AssertionAnnotation> assertion_annotation;
-        if (logger && logger->get_assertion_level() != AssertionLevel::Off) {
-            vector<SExpr> hall_var_terms;
-            for (const auto & v : hall_variable_ids)
-                hall_var_terms.push_back(logger->names_and_ids_tracker().s_expr_term_of(v));
-            assertion_annotation = std::make_optional(AssertionAnnotation{
-                .hint_name = AssertionHintName::AllDifferent,
-                .hint_fields = hint_list(
-                    hint_list(AssertionHintIdentifier::constraint_id, constraint_id),
-                    hint_list(AssertionHintIdentifier::hall_vars, SExpr::list(move(hall_var_terms))),
-                    hint_list(AssertionHintIdentifier::hall_vals, hint_seq(hall_value_nrs)),
-                    hint_list(AssertionHintIdentifier::justifier, AssertionHintIdentifier::hall_set_or_violator))});
-        }
-
         return tuple{
-            JustifyExplicitlyThenRUP{
-                [vars, logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](const ReasonFunction &) -> void {
-                    justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
-                }},
-            ReasonFunction{[hall_variable_ids, excluded, &state]() -> Reason {
-                auto reason = generic_reason(state, hall_variable_ids)();
-                for (const auto & v : hall_variable_ids)
-                    for (const auto & s : excluded)
-                        reason.emplace_back(v != s);
-                return reason;
-            }},
-            assertion_annotation};
+            hall_witness(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
+            Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
+                                      out = materialise(generic_reason(st, hall_variable_ids), st);
+                                      for (const auto & v : hall_variable_ids)
+                                          for (const auto & s : excluded)
+                                              out.emplace_back(v != s);
+                                  }}}};
     }
 
     using Vertex = variant<Left, Right>;
+
+    // The two justification shapes a single SCC deletion can take: a Hall set (real
+    // explicit steps) or a single forced value (pure RUP). A typed variant rather
+    // than an optional, so each shape names itself and carries its own assertion
+    // hint — there is no separate annotation channel.
+    using DeletionJustification = variant<hints::AllDifferentForcedValue, hints::AllDifferentHall>;
 
     auto vertex_to_offset(
         const vector<IntegerVariableID> & vars,
@@ -310,12 +346,12 @@ namespace
         const vector<Integer> & excluded,
         size_t n_right,
         map<Integer, ProofLine> & value_am1_constraint_numbers,
-        const State & state,
-        ProofLogger * const logger,
+        const State &,
+        ProofLogger * const,
         const vector<vector<Right>> & edges_out_from_variable,
         const vector<vector<Left>> & edges_out_from_value,
         const Right delete_value,
-        const vector<int> & components) -> tuple<Justification, ReasonFunction, optional<AssertionAnnotation>>
+        const vector<int> & components) -> tuple<DeletionJustification, Reason>
     {
         // we know a hall set exists, but we have to find it. starting
         // from but not including the end of the edge we're deleting,
@@ -373,15 +409,9 @@ namespace
             if (edges_out_from_value[delete_value.offset].empty())
                 throw UnexpectedException{"missing edge out from value in trivial scc"};
 
-            optional<AssertionAnnotation> assertion_annotation;
-            if (logger && logger->get_assertion_level() != AssertionLevel::Off)
-                assertion_annotation = std::make_optional(AssertionAnnotation{
-                    .hint_name = AssertionHintName::AllDifferent,
-                    .hint_fields = hint_list(hint_list(AssertionHintIdentifier::constraint_id, constraint_id))});
-
-            return tuple{Justification{JustifyUsingRUP{}},
-                ReasonFunction{[=]() { return Reason{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}; }},
-                assertion_annotation};
+            return tuple{
+                DeletionJustification{hints::AllDifferentForcedValue{constraint_id}},
+                Reason{ExplicitReason{ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}}}};
         }
         else {
             // a hall set is at work
@@ -390,33 +420,14 @@ namespace
                 if (hall_right[v.offset])
                     hall_value_nrs.push_back(vals[v.offset]);
 
-            optional<AssertionAnnotation> assertion_annotation;
-            if (logger && logger->get_assertion_level() != AssertionLevel::Off) {
-                vector<SExpr> hall_var_terms;
-                for (const auto & v : hall_variable_ids)
-                    hall_var_terms.push_back(logger->names_and_ids_tracker().s_expr_term_of(v));
-                assertion_annotation = std::make_optional(AssertionAnnotation{
-                    .hint_name = AssertionHintName::AllDifferent,
-                    .hint_fields = hint_list(
-                        hint_list(AssertionHintIdentifier::constraint_id, constraint_id),
-                        hint_list(AssertionHintIdentifier::hall_vars, SExpr::list(move(hall_var_terms))),
-                        hint_list(AssertionHintIdentifier::hall_vals, hint_seq(hall_value_nrs)),
-                        hint_list(AssertionHintIdentifier::justifier, AssertionHintIdentifier::hall_set_or_violator))});
-            }
-
-            return tuple{Justification{JustifyExplicitlyThenRUP{
-                             [vars, logger, &value_am1_constraint_numbers, hall_variable_ids, hall_value_nrs](
-                                 const ReasonFunction &) -> void {
-                                 justify_all_different_hall_set_or_violator(*logger, vars, hall_variable_ids, hall_value_nrs, value_am1_constraint_numbers);
-                             }}},
-                ReasonFunction{[hall_variable_ids, excluded, &state]() -> Reason {
-                    auto reason = generic_reason(state, hall_variable_ids)();
-                    for (const auto & v : hall_variable_ids)
-                        for (const auto & s : excluded)
-                            reason.emplace_back(v != s);
-                    return reason;
-                }},
-                assertion_annotation};
+            return tuple{
+                DeletionJustification{hall_witness(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers)},
+                Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
+                                          out = materialise(generic_reason(st, hall_variable_ids), st);
+                                          for (const auto & v : hall_variable_ids)
+                                              for (const auto & s : excluded)
+                                                  out.emplace_back(v != s);
+                                      }}}};
         }
     }
 }
@@ -464,8 +475,10 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [just, reason, annotation] = prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, edges, left_covered, matching);
-        return tracker.infer(logger, FalseLiteral{}, just, reason, annotation);
+        auto [witness, reason] = prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, edges, left_covered, matching);
+        return tracker.infer(logger, FalseLiteral{},
+            JustifyExplicitly{[&logger, w = witness](const ReasonLiterals & r) { emit_justification(*logger, w, r); }, ThenRUP::Yes, move(witness)},
+            reason);
     }
 
     // we have a matching that uses every variable. however, some edges may
@@ -631,9 +644,15 @@ auto gcs::innards::propagate_gac_all_different(
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [just, reason, annotation] = prove_deletion_using_sccs(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger,
+        auto [justification, reason] = prove_deletion_using_sccs(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        tracker.infer_all(logger, deletions_by_scc[scc], just, reason, annotation);
+        visit(overloaded{
+                  [&](hints::AllDifferentForcedValue & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); },
+                  [&](hints::AllDifferentHall & w) {
+                      tracker.infer_all(logger, deletions_by_scc[scc],
+                          JustifyExplicitly{[&logger, wc = w](const ReasonLiterals & r) { emit_justification(*logger, wc, r); }, ThenRUP::Yes, move(w)}, reason);
+                  }},
+            justification);
     }
 }
 

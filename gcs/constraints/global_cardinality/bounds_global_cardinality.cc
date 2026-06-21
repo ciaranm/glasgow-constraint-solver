@@ -128,8 +128,8 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
             // it, and forces the variables into a value whose lower demand can
             // only just be met.
             for (const auto & [j, value] : enumerate(values)) {
-                Reason fixed_eq;  // var == value, for variables fixed to value
-                Reason absent_ne; // var != value, for variables without value
+                ReasonLiterals fixed_eq;  // var == value, for variables fixed to value
+                ReasonLiterals absent_ne; // var != value, for variables without value
                 Integer must = 0_i, can = 0_i;
                 for (const auto & var : vars) {
                     if (state.in_domain(var, value)) {
@@ -148,37 +148,37 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                 // c_j >= must: the fixed variables alone force the count up.
                 if (must > lb_j)
                     inference.infer(logger, counts[j] >= must, JustifyUsingRUP{},
-                        ReasonFunction{[fixed_eq]() -> Reason { return fixed_eq; }});
+                        ExplicitReason{fixed_eq});
 
                 // c_j <= can: only the variables that can still take value may
                 // contribute to the count.
                 if (can < ub_j)
                     inference.infer(logger, counts[j] <= can, JustifyUsingRUP{},
-                        ReasonFunction{[absent_ne]() -> Reason { return absent_ne; }});
+                        ExplicitReason{absent_ne});
 
                 // Saturated capacity: if as many variables are already fixed to
                 // value as the count's upper bound allows, no other variable may
                 // take it.
                 if (must == ub_j) {
-                    Reason sat = fixed_eq;
+                    ReasonLiterals sat = fixed_eq;
                     sat.emplace_back(counts[j] <= ub_j);
                     for (const auto & var : vars)
                         if (state.in_domain(var, value) && ! state.has_single_value(var))
                             inference.infer(logger, var != value, JustifyUsingRUP{},
-                                ReasonFunction{[sat]() -> Reason { return sat; }});
+                                ExplicitReason{sat});
                 }
 
                 // Just-met demand: if only `can` variables can take value and the
                 // count's lower bound needs all of them, each is forced to value.
                 if (can == lb_j && can > 0_i) {
-                    Reason force = absent_ne;
+                    ReasonLiterals force = absent_ne;
                     force.emplace_back(counts[j] >= lb_j);
                     for (const auto & var : vars)
                         if (state.in_domain(var, value) && ! state.has_single_value(var))
                             for (const auto & w : state.each_value_mutable(var))
                                 if (w != value)
                                     inference.infer(logger, var != w, JustifyUsingRUP{},
-                                        ReasonFunction{[force]() -> Reason { return force; }});
+                                        ExplicitReason{force});
                 }
             }
 
@@ -250,8 +250,8 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         pb.emit(*logger, ProofLevel::Temporary);
                     };
 
-                    auto capacity_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> Reason {
-                        Reason r;
+                    auto capacity_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> ReasonLiterals {
+                        ReasonLiterals r;
                         for (const auto & var : confined) {
                             auto [v_lo, v_hi] = state.bounds(var);
                             for (Integer s = v_lo; s <= v_hi; ++s)
@@ -275,8 +275,8 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                     // boundary). These two true facts are asserted; everything
                     // built on top of them is real, so the surrounding Hall
                     // combinatorics is genuinely checked.
-                    auto demand_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> Reason {
-                        Reason r;
+                    auto demand_reason = [&, a = a, b = b](optional<std::size_t> exclude) -> ReasonLiterals {
+                        ReasonLiterals r;
                         for (const auto & var : vars)
                             if (! domain_meets_hall(var))
                                 for (const auto & val : hall)
@@ -301,21 +301,22 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                             // The final RUP closes c_j >= L; its reason supplies
                             // c_v <= ub_v (v != j), discharging the gevars.
                             inference.infer(logger, counts[j] >= lower,
-                                JustifyExplicitlyThenRUP{[&, a = a, b = b, j = j](const ReasonFunction &) {
-                                    auto & tracker = logger->names_and_ids_tracker();
-                                    PolBuilder pb;
-                                    for (std::size_t v = a; v <= b; ++v)
-                                        if (v != j) {
-                                            pb.add(*count_lines[v].first);
-                                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
-                                                pb.add_for_literal(tracker, counts[v] <= state.bounds(counts[v]).second);
-                                        }
-                                    for (const auto & var : confined)
-                                        pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(var));
-                                    pb.add(*count_lines[j].first);
-                                    pb.emit(*logger, ProofLevel::Temporary);
-                                }},
-                                ReasonFunction{[&, j = j]() { return capacity_reason(j); }});
+                                JustifyExplicitly{[&, a = a, b = b, j = j](const ReasonLiterals &) {
+                                                      auto & tracker = logger->names_and_ids_tracker();
+                                                      PolBuilder pb;
+                                                      for (std::size_t v = a; v <= b; ++v)
+                                                          if (v != j) {
+                                                              pb.add(*count_lines[v].first);
+                                                              if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                                                                  pb.add_for_literal(tracker, counts[v] <= state.bounds(counts[v]).second);
+                                                          }
+                                                      for (const auto & var : confined)
+                                                          pb.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(var));
+                                                      pb.add(*count_lines[j].first);
+                                                      pb.emit(*logger, ProofLevel::Temporary);
+                                                  },
+                                    ThenRUP::Yes},
+                                LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = capacity_reason(j); }});
                         auto upper = potential_count - (demand - lb_j);
                         if (upper < ub_j)
                             // Dual: at-most-one over H per potential variable, the
@@ -323,32 +324,33 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                             // c_v >= lb_v for v != j, and the j count line GE_j;
                             // RUP-closes c_j <= U, the reason discharging the gevars.
                             inference.infer(logger, counts[j] <= upper,
-                                JustifyExplicitlyThenRUP{[&, a = a, b = b, j = j](const ReasonFunction &) {
-                                    auto & tracker = logger->names_and_ids_tracker();
-                                    PolBuilder pb;
-                                    for (const auto & var : potential) {
-                                        vector<IntegerVariableCondition> atoms;
-                                        for (const auto & val : hall)
-                                            atoms.push_back(var == val);
-                                        pb.add(recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Temporary, atoms,
-                                            [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
-                                                return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
-                                            }));
-                                    }
-                                    for (std::size_t v = a; v <= b; ++v)
-                                        if (v != j) {
-                                            pb.add(*count_lines[v].second);
-                                            if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
-                                                pb.add_for_literal(tracker, counts[v] >= state.bounds(counts[v]).first);
-                                        }
-                                    pb.add(*count_lines[j].second);
-                                    pb.emit(*logger, ProofLevel::Temporary);
-                                }},
-                                ReasonFunction{[&, j = j]() { return demand_reason(j); }});
+                                JustifyExplicitly{[&, a = a, b = b, j = j](const ReasonLiterals &) {
+                                                      auto & tracker = logger->names_and_ids_tracker();
+                                                      PolBuilder pb;
+                                                      for (const auto & var : potential) {
+                                                          vector<IntegerVariableCondition> atoms;
+                                                          for (const auto & val : hall)
+                                                              atoms.push_back(var == val);
+                                                          pb.add(recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Temporary, atoms,
+                                                              [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
+                                                                  return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
+                                                              }));
+                                                      }
+                                                      for (std::size_t v = a; v <= b; ++v)
+                                                          if (v != j) {
+                                                              pb.add(*count_lines[v].second);
+                                                              if (! holds_alternative<ConstantIntegerVariableID>(counts[v]))
+                                                                  pb.add_for_literal(tracker, counts[v] >= state.bounds(counts[v]).first);
+                                                          }
+                                                      pb.add(*count_lines[j].second);
+                                                      pb.emit(*logger, ProofLevel::Temporary);
+                                                  },
+                                    ThenRUP::Yes},
+                                LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = demand_reason(j); }});
                     }
 
                     if (confined_count > cap) {
-                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, ReasonFunction{[&]() { return capacity_reason(nullopt); }});
+                        inference.contradiction(logger, JustifyExplicitly{[&](const ReasonLiterals &) { emit_capacity_pol(nullopt); }, ThenRUP::Yes}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
                     }
                     else if (confined_count == cap) {
                         for (const auto & var : vars) {
@@ -356,7 +358,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                 continue;
                             for (const auto & val : hall)
                                 if (state.in_domain(var, val))
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_capacity_pol(nullopt); }}, ReasonFunction{[&]() { return capacity_reason(nullopt); }});
+                                    inference.infer(logger, var != val, JustifyExplicitly{[&](const ReasonLiterals &) { emit_capacity_pol(nullopt); }, ThenRUP::Yes}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
                         }
                     }
 
@@ -392,13 +394,13 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                     };
 
                     if (potential_count < demand) {
-                        inference.contradiction(logger, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) { emit_demand_pol(nullopt, 0_i); }}, ReasonFunction{[&]() { return demand_reason(nullopt); }});
+                        inference.contradiction(logger, JustifyExplicitly{[&](const ReasonLiterals &) { emit_demand_pol(nullopt, 0_i); }, ThenRUP::Yes}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
                     }
                     else if (potential_count == demand) {
                         for (const auto & var : potential)
                             for (const auto & val : state.each_value_mutable(var))
                                 if (! hall.contains(val))
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&, var = var, val = val](const ReasonFunction &) { emit_demand_pol(var, val); }}, ReasonFunction{[&]() { return demand_reason(nullopt); }});
+                                    inference.infer(logger, var != val, JustifyExplicitly{[&, var = var, val = val](const ReasonLiterals &) { emit_demand_pol(var, val); }, ThenRUP::Yes}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
                     }
                 }
             }

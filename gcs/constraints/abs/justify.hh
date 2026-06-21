@@ -10,14 +10,14 @@ namespace gcs::innards
     // from dom(v1).
     auto justify_abs_hole(
         ProofLogger & logger,
-        const ReasonFunction & reason,
+        const ReasonLiterals & reason,
         IntegerVariableID v1,
         IntegerVariableID v2,
         Integer val) -> void;
 
     // The bound proofs below share their resolution shape between the
     // prepare-time initialiser and the run-time propagator. The initialiser
-    // calls them with an empty ReasonFunction (the operand bound RUPs from
+    // calls them with empty ReasonLiterals (the operand bound RUPs from
     // the encoding's initial domain); the propagator passes its reason in
     // so the operand bound RUPs under that literal instead. In both cases
     // the helper short-circuits when v1 is constant -- the encoding's
@@ -54,7 +54,7 @@ namespace gcs::innards
         AbsLbSide side,
         Integer v2_lb,
         ProofLine abs_ge,
-        const ReasonFunction & reason) -> void;
+        const ReasonLiterals & reason) -> void;
 
     // v1 <= v2_ub.
     auto justify_abs_v1_le_v2_ub(
@@ -63,7 +63,7 @@ namespace gcs::innards
         IntegerVariableID v2,
         Integer v2_ub,
         ProofLine abs_nonneg_ge,
-        const ReasonFunction & reason) -> void;
+        const ReasonLiterals & reason) -> void;
 
     // v1 >= -v2_ub.
     auto justify_abs_v1_ge_neg_v2_ub(
@@ -72,7 +72,7 @@ namespace gcs::innards
         IntegerVariableID v2,
         Integer v2_ub,
         ProofLine abs_neg_ge,
-        const ReasonFunction & reason) -> void;
+        const ReasonLiterals & reason) -> void;
 
     // v2 <= big_m, where big_m = max(-v1_lb, v1_ub).
     auto justify_abs_v2_le_big_m(
@@ -84,7 +84,7 @@ namespace gcs::innards
         Integer big_m,
         ProofLine abs_nonneg_le,
         ProofLine abs_neg_le,
-        const ReasonFunction & reason) -> void;
+        const ReasonLiterals & reason) -> void;
 }
 
 #endif

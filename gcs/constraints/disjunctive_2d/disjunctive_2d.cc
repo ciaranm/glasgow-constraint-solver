@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <gcs/proof.hh>
 #include <map>
 #include <memory>
 #include <sstream>
@@ -394,7 +393,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // relevant sizes are >= 1, so pin those flags false (RUP) and add the
             // lines to the clause pol so it reduces to the before-flag
             // disjunction. No-op in strict mode / for always-positive sizes.
-            auto add_escape_pins = [&](PolBuilder & pol, const ReasonFunction & reason, size_t i, size_t j) {
+            auto add_escape_pins = [&](PolBuilder & pol, const ReasonLiterals & reason, size_t i, size_t j) {
                 for (auto r : {i, j}) {
                     if (zero_w[r])
                         pol.add(logger->emit_rup_proof_line_under_reason(reason,
@@ -428,7 +427,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         auto p = max(lst_xi, lst_xj);
                         auto q = max(lst_yi, lst_yj);
 
-                        auto justify = [&, i, j, p, q](const ReasonFunction & reason) -> void {
+                        auto justify = [&, i, j, p, q](const ReasonLiterals & reason) -> void {
                             // Pin "rect r spans coord on this axis" = 1 under the
                             // bounds reason: before, then after, then active (UP
                             // can't chase active's AND-gate in one step). For a
@@ -519,7 +518,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             if (w_is_var(r)) rvars.push_back(width_var[r]);
                             if (h_is_var(r)) rvars.push_back(height_var[r]);
                         }
-                        inference.contradiction(logger, JustifyExplicitlyThenRUP{justify},
+                        inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes},
                             generic_reason(state, rvars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
@@ -587,7 +586,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                 // elimination), then one chain step per blocked free-cell. dir
                 // = +1 for an lb-push (ext_lit: pos > t), -1 for a ub-push.
                 auto emit_proof = [&, i, j, forced_col, sz](const vector<ChainStep> & chain, int dir,
-                                      const ReasonFunction & reason) {
+                                      const ReasonLiterals & reason) {
                     // Materialise end >= pos_lb + lb(size) (for a variable size).
                     auto materialise_end = [&](const optional<ProofOnlySimpleIntegerVariableID> & end_opt,
                                                const optional<ProofLine> & end_ge, IntegerVariableID pos,
@@ -696,12 +695,12 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         if (! found)
                             break;
                     }
-                    auto justify = [&, chain](const ReasonFunction & reason) -> void {
+                    auto justify = [&, chain](const ReasonLiterals & reason) -> void {
                         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             emit_proof(chain, +1, reason);
                     };
                     inference.infer_greater_than_or_equal(logger, free_pos[i], target,
-                        JustifyExplicitlyThenRUP{justify}, generic_reason(state, rv));
+                        JustifyExplicitly{justify, ThenRUP::Yes}, generic_reason(state, rv));
                 }
                 // ub-push: i cannot fit above the blocker, push its origin down to
                 // blk_lo - sz -- capped at cur_lo - 1 by the same reasoning.
@@ -721,12 +720,12 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                         if (! found)
                             break;
                     }
-                    auto justify = [&, chain](const ReasonFunction & reason) -> void {
+                    auto justify = [&, chain](const ReasonLiterals & reason) -> void {
                         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             emit_proof(chain, -1, reason);
                     };
                     inference.infer_less_than(logger, free_pos[i], target + 1_i,
-                        JustifyExplicitlyThenRUP{justify}, generic_reason(state, rv));
+                        JustifyExplicitly{justify, ThenRUP::Yes}, generic_reason(state, rv));
                 }
             };
 

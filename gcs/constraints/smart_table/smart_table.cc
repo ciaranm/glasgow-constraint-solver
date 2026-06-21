@@ -164,9 +164,9 @@ namespace
     }
 
     auto log_filtering_inference(ProofLogger * const logger, const ProofFlag * tuple_selector, const Literal & lit,
-        const State &, auto &, const ReasonFunction & reason)
+        const State & state, auto &, const Reason & reason)
     {
-        logger->emit_rup_proof_line_under_reason(reason,
+        logger->emit_rup_proof_line_under_reason(eager_reason(reason, state),
             WPBSum{} + 1_i * (! *tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
@@ -175,7 +175,7 @@ namespace
     // so passing nullptr is safe in that case and avoids forming a reference into an
     // empty pb_selectors vector at the call site.
     auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag * tuple_selector,
-        const State & state, auto & inference, const ReasonFunction &, ProofLogger * const logger) -> void
+        const State & state, auto & inference, const ReasonLiterals &, ProofLogger * const logger) -> void
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
@@ -348,7 +348,7 @@ namespace
 
     [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
         const ProofFlag * tuple_selector, const State & state, auto & inference,
-        const ReasonFunction & reason, ProofLogger * const logger) -> bool
+        const ReasonLiterals & reason, ProofLogger * const logger) -> bool
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
@@ -389,7 +389,7 @@ namespace
 
     auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
         VariableDomainMap & unsupported, const ProofFlag * tuple_selector, const State & state,
-        auto & inference, const ReasonFunction & reason, ProofLogger * const logger) -> void
+        auto & inference, const ReasonLiterals & reason, ProofLogger * const logger) -> void
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
@@ -443,7 +443,7 @@ namespace
     }
 
     auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
-        const SmartTuples & tuples, const vector<Forest> & forests, const State & state, auto & inference, const ReasonFunction & reason,
+        const SmartTuples & tuples, const vector<Forest> & forests, const State & state, auto & inference, const ReasonLiterals & reason,
         vector<ProofFlag> pb_selectors, ProofLogger * const logger, bool short_reasons) -> void
     {
         VariableDomainMap unsupported{};
@@ -477,7 +477,7 @@ namespace
                 // First pass of filtering supported_by_tree and check of validity
                 if (! filter_and_check_valid(tree, supported_by_tree, pb_selector, state, inference, reason, logger)) {
                     // Not feasible
-                    inference.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, ReasonFunction{});
+                    inference.infer_equal(logger, selectors[tuple_idx], 0_i, NoJustificationNeeded{}, NoReason{});
                     break;
                 }
 
@@ -503,11 +503,11 @@ namespace
 
         auto unsupported_sum = WPBSum{};
 
-        ReasonFunction reason_to_use;
+        Reason reason_to_use;
         ProofLine reason_definition_1, reason_definition_2;
         if (logger && short_reasons) {
             auto reason_sum = WPBSum{};
-            for (const auto & lit : reason()) {
+            for (const auto & lit : reason) {
                 reason_sum += 1_i * get<ProofLiteral>(lit);
             }
             // We will manually delete this later.
@@ -524,7 +524,7 @@ namespace
 
         if (! some_tuple_still_feasible) {
             if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                auto justf = [&](const ReasonFunction & reason) -> void {
+                auto justf = [&](const ReasonLiterals & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
                         logger->emit_rup_proof_line_under_reason(
                             reason,
@@ -534,7 +534,7 @@ namespace
                             ProofLevel::Temporary);
                     }
                 };
-                inference.contradiction(logger, JustifyExplicitlyThenRUP{justf}, reason_to_use);
+                inference.contradiction(logger, JustifyExplicitly{justf, ThenRUP::Yes}, reason_to_use);
                 // if (short_reasons) {
                 //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
                 // }
@@ -548,7 +548,7 @@ namespace
 
             for (const auto & var : vars) {
                 for (const auto & value : unsupported[var]) {
-                    auto justf = [&](const ReasonFunction & reason) -> void {
+                    auto justf = [&](const ReasonLiterals & reason) -> void {
                         for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
                             logger->emit_rup_proof_line_under_reason(
                                 reason,
@@ -558,7 +558,7 @@ namespace
                                 ProofLevel::Temporary);
                         }
                     };
-                    inference.infer_not_equal(logger, var, value, JustifyExplicitlyThenRUP{justf}, reason_to_use);
+                    inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf, ThenRUP::Yes}, reason_to_use);
                 }
             }
             // if (short_reasons) {
@@ -568,7 +568,7 @@ namespace
         else {
             for (const auto & var : vars) {
                 for (const auto & value : unsupported[var]) {
-                    inference.infer_not_equal(logger, var, value, JustifyUsingRUP{}, ReasonFunction{});
+                    inference.infer_not_equal(logger, var, value, JustifyUsingRUP{}, NoReason{});
                 }
             }
         }
@@ -945,7 +945,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         constraint_id(),
         [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors), short_reasons = _short_reasons](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            auto reason = generic_reason(state, vars);
+            auto reason = eager_reason(generic_reason(state, vars), state);
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger, short_reasons);
             return PropagatorState::Enable;
         },

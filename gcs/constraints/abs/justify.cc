@@ -25,7 +25,7 @@ namespace
 
 auto gcs::innards::justify_abs_hole(
     ProofLogger & logger,
-    const ReasonFunction & reason,
+    const ReasonLiterals & reason,
     IntegerVariableID v1,
     IntegerVariableID v2,
     Integer val) -> void
@@ -63,7 +63,7 @@ auto gcs::innards::justify_abs_v2_lb(
     AbsLbSide side,
     Integer v2_lb,
     ProofLine abs_ge,
-    const ReasonFunction & reason) -> void
+    const ReasonLiterals & reason) -> void
 {
     if (holds_alternative<ConstantIntegerVariableID>(v1))
         return;
@@ -91,7 +91,7 @@ auto gcs::innards::justify_abs_v1_le_v2_ub(
     IntegerVariableID v2,
     Integer v2_ub,
     ProofLine abs_nonneg_ge,
-    const ReasonFunction & reason) -> void
+    const ReasonLiterals & reason) -> void
 {
     if (holds_alternative<ConstantIntegerVariableID>(v1))
         return;
@@ -113,7 +113,7 @@ auto gcs::innards::justify_abs_v1_ge_neg_v2_ub(
     IntegerVariableID v2,
     Integer v2_ub,
     ProofLine abs_neg_ge,
-    const ReasonFunction & reason) -> void
+    const ReasonLiterals & reason) -> void
 {
     if (holds_alternative<ConstantIntegerVariableID>(v1))
         return;
@@ -138,7 +138,7 @@ auto gcs::innards::justify_abs_v2_le_big_m(
     Integer big_m,
     ProofLine abs_nonneg_le,
     ProofLine abs_neg_le,
-    const ReasonFunction & reason) -> void
+    const ReasonLiterals & reason) -> void
 {
     if (holds_alternative<ConstantIntegerVariableID>(v1))
         return;
