@@ -53,8 +53,8 @@ namespace
 namespace gcs::innards::hints
 {
     // Witness for the "domains don't overlap, so the reified equality cannot hold"
-    // justification, carried in a reified verdict (was an inline JustifyByData
-    // closure built by no_overlap_justification). Holds the operands, the bounds
+    // justification, carried in a reified verdict (built by no_overlap_justification).
+    // Holds the operands, the bounds
     // walked over, and the condition; the State pointer is valid because the verdict
     // is consumed synchronously while the constraint is live.
     struct EqualsNoOverlap
@@ -75,11 +75,10 @@ namespace gcs::innards::hints
                 logger.emit_rup_proof_line(WPBSum{} + 1_i * (w.v2 != val) + 1_i * (w.v1 == val) + 1_i * ! w.cond >= 1_i, ProofLevel::Temporary);
     }
 
-    // PROTOTYPE: the pure-RUP hint for "a value is forced out of the other operand
-    // because this one is fixed to it" (the bare-NotEquals propagator). RUP-derivable,
-    // so no emit_justification; carries the owning constraint id so assertion mode can
-    // name the source. Replaces JustifyUsingRUP{hints::EqualsRUP{owner}} with
-    // JustifyUsingRUP{hints::EqualsRUP{owner}}.
+    // The pure-RUP hint for "a value is forced out of the other operand because this
+    // one is fixed to it" (the bare-NotEquals propagator). RUP-derivable, so no
+    // emit_justification; carries the owning constraint id so assertion mode can name
+    // the source.
     struct EqualsRUP
     {
         ConstraintID owner;

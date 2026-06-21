@@ -281,8 +281,8 @@ namespace
 namespace gcs::innards::hints
 {
     // Witness for the lex "unsat scaffold" justification, carried in a reified
-    // verdict. Was an inline JustifyByData closure; it captures the scaffold inputs
-    // the same way (variable scope + reason by value, the aux-flag tables by
+    // verdict. It captures the scaffold inputs (variable scope + reason by value, the
+    // aux-flag tables by
     // shared_ptr, the State by pointer — valid because the verdict is consumed
     // synchronously while the constraint is live). No coarse hint name: the original
     // verdict carried none.

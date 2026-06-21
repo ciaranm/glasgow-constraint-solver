@@ -55,7 +55,9 @@ namespace gcs::innards::hints
     //     Abs::define_proof_model) to rebuild the proof.
     //   - `justifier` names the specific sub-rule, so the Justifier can dispatch
     //     among abs's several derivations -- the per-shape discriminator from #377.
-    //     The names mirror the justify_abs_* helpers in abs/justify.hh.
+    //     Each string labels one inference shape (e.g. v2_upper_from_v1); they are
+    //     not 1:1 with the justify_abs_* emit helpers in abs/justify.hh (a shape can
+    //     reuse a helper, and the pure-RUP v1_no_preimage shape has no helper at all).
     //
     // No operand data travels in the hint: each abs bound is re-derivable from the
     // asserted literal + the reason + the definition lines, so carrying it would be

@@ -78,10 +78,10 @@ namespace
 namespace gcs::innards::hints
 {
     // Witness for the reified linear-inequality "condition forced" justification,
-    // carried in a reified verdict (was an inline JustifyByData closure). Templated
+    // carried in a reified verdict. Templated
     // on the sanitised coefficient-vector type that tidy_up_linear produces and the
-    // install-time visit deduces; it carries that and the proof lines by value (as
-    // the original closure captured them) and the State by pointer (the verdict is
+    // install-time visit deduces; it carries that and the proof lines by value and
+    // the State by pointer (the verdict is
     // consumed synchronously while the constraint is live). No coarse hint name: the
     // original verdict carried none.
     template <typename CoeffVars_>
