@@ -1,70 +1,118 @@
-# Redesigning `infer()` (DRAFT — ambitious, exploratory)
+# Redesigning `infer()` (implemented; exploratory design notes retained)
 
 **Scope:** rethink the *whole* inference triple — what is inferred, its reason,
 and its justification — as one declarative, mode-driven mechanism. This subsumes
 the reason-only change in `reasons-improvement.md` and generalises PR #302
 (*Annotated Assertions*) from the justification side into the same model.
 
-This is a north-star sketch. It is intentionally larger than
-`reasons-improvement.md`; that doc is the safe first slice you can ship and stop
-at. Read this for where `infer()` *could* go.
+The body below is a north-star sketch — intentionally larger than
+`reasons-improvement.md` (the safe first slice). It was largely implemented on the
+`302-then-347` branch: read the **IMPLEMENTED** section next for the authoritative
+as-built picture (it wins over the body wherever they differ), and the body for the
+reasoning and the roads not taken.
 
-## IMPLEMENTED (2026-06-19) — what was actually built
+## IMPLEMENTED — what was actually built (authoritative)
 
-The reason layer (`reasons-improvement.md`) and this justification layer are both
-implemented on the `302-then-347` branch. The exploratory body below is the
-design we worked from; where it differs from the code, **this section wins**.
+The reason layer (`reasons-improvement.md`) and this justification layer both
+landed on the `302-then-347` branch (PR #378). The exploratory body below is the
+design we worked from; **where it differs from the code, this section wins.** The
+mechanism evolved past the first cut — the `JustifyByData` of the original note is
+gone (see "Justification dispatch" below) — so this section is kept current with
+HEAD rather than dated.
 
 As built:
 
 - **Reason layer** — the `Reason` variant + `materialise()`, deferred in the
-  inference tracker; `ReasonFunction` and its bridge are gone. (See
-  `reasons-improvement.md`'s implemented note.)
-- **Justification dispatch** — `JustifyByData { emit, annotation, then_rup }`
-  (`gcs/innards/justification.hh`) is now the *sole* explicit-justification
-  alternative of `Justification`: it replaced and deleted `JustifyExplicitlyOnly`
-  / `JustifyExplicitlyThenRUP` (`then_rup` picks the shape). `emit` is an
-  `ExplicitJustificationFunction` (`void(const ReasonLiterals&)`), so existing
-  justification closures moved over unchanged. `ProofLogger::infer` dispatches by
-  mode: **eager** runs `emit`, then RUPs the inference if `then_rup`
-  (byte-identical to the old closures); **assert** uses `annotation` if set, else
-  the annotation passed to `infer()`, and never runs `emit`.
-- **A typed hint** is attached via the `annotation` closure, which calls the
-  witness's `hint_sexpr(const Data&, NamesAndIDsTracker&)`. There is no
-  `justify_with` / `if constexpr` capability switch any more (it was removed):
-  constraints with a typed witness build the annotation explicitly (a small
-  per-constraint helper), and coarse-only constraints leave `annotation` empty and
-  pass `hints::<name>` through `infer()`'s parameter.
-- **Names** — coarse model-level names live as `inline constexpr std::string_view`
-  in `gcs/innards/hint_names.hh` (`gcs::innards::hints`), one place, no repetition;
-  fine per-shape `justifier` keywords stay on the witness structs.
-- **Worked examples** — `all_different` GAC (both Hall shapes; `emit` ignores the
-  reason, captures per-constraint state) and `plus` (`emit` reads the reason
-  positionally; `plus_bound` + `emit_justification` is the witness-driven-emit
-  example, no `hint_sexpr` so coarse name only).
+  inference tracker; the eager `ReasonFunction` and its `LegacyReasonFunction`
+  bridge are gone. One opt-in `LazyReasonFn = std::function` escape hatch remains,
+  used only by genuinely-lazy `LazyReasonOver` reasons (the gcc flow-cut,
+  all_different's Hall justification). (See `reasons-improvement.md`'s implemented
+  note.)
+- **Justification dispatch** — not one `JustifyByData` struct but **two mirrored
+  templated forms** in `gcs/innards/justification.hh`:
+  - `JustifyUsingRUP<Hint_ = NoHint>` — RUP suffices;
+  - `JustifyExplicitly<Emit_, Hint_ = NoHint>{emit, then_rup, hint}` — explicit
+    proof steps.
+
+  They share the `Hint_` axis (a typed assertion hint, below), which is
+  **orthogonal to how the inference is proved**. `then_rup` is a mandatory
+  `enum class ThenRUP { Yes, No }` (was a bare `bool`): `Yes` RUPs the inferred
+  literal after the steps, `No` lets the steps conclude it. The `Justification`
+  variant holds only the plain nameless forms
+  `{JustifyUsingRUP<NoHint>, AssertRatherThanJustifying, NoJustificationNeeded}`;
+  the templated/hinted forms are selected by **overload resolution** in
+  `ProofLogger::infer`, not stored in the variant. Mode dispatch: **Off** runs
+  `emit` then RUPs if `then_rup == Yes` (byte-identical to the old closures),
+  ignoring the hint; **assertion modes** assert the inference under its reason with
+  the resolved annotation and never run `emit`; above `AssertionLevel::Inferences`
+  nothing is emitted. The back end is `gcs/innards/proofs/infer_explicitly.hh`
+  (`infer_explicitly`).
+- **`emit` is a value, not a `std::function`** — `(const ReasonLiterals &) -> void`,
+  built at the call site (a lambda in the common case; a storable struct with
+  `operator()` for backtrack replay). Where a reification *verdict's return type
+  must name the justification* — a lambda type cannot be named — the witness is a
+  named "fat" struct providing an ADL `emit_justification(logger, witness, reason)`
+  instead. `emit_explicit_steps` picks closure-vs-fat-witness by `if constexpr`
+  (compile time). The Simple (proofs-off) tracker never touches `emit` or the hint,
+  so Off mode pays only for constructing the (usually empty) call-site objects.
+- **Typed assertion hints, names decentralised.** Each structured hint is a struct
+  in `namespace gcs::innards::hints` (reopened per constraint) — the enumerable
+  "interface the justifier supports". A witness carries: a
+  `static constexpr std::string_view hint_name` (the coarse model-level name, the
+  2nd annotation field); an optional `static constexpr std::string_view justifier`
+  (the fine per-shape sub-rule keyword, serialised into `hint_fields` — answers
+  #377: one constraint, several inference shapes); an ADL
+  `hint_sexpr(witness, NamesAndIDsTracker&) -> SExpr` (the wire schema, in one
+  place); and an optional ADL `emit_justification(...)` (explicit steps; absent for
+  pure-RUP witnesses). There is **no central `hint_names.hh` and no `hint_name`
+  enum** — the body's "Why the central enum should go" was taken to its conclusion.
+  Coarse names live in three decentralised forms: on the witness (`hint_name`); as a
+  per-file `constexpr std::string_view <name>_hint` where a constraint reuses one
+  across sites (`equals_hint`, `linear_equality_hint`); and as
+  `hints::ModelName{name}` — the minimal name-only tier — at inline-closure sites
+  that want a coarse name without a struct. `hint_annotation` selects
+  NoHint / `ModelName` / structured at compile time; `resolve_annotation` gives
+  3-tier precedence (explicit `hint` → `emit`'s own advertisement → the call site's
+  fallback annotation), reproducing the old witness-carried annotation exactly.
+- **Coverage.** Typed witnesses are in use in ~7 constraints — abs, plus, equals,
+  lex, linear equality, linear inequality, and all_different (GAC). **abs is the
+  canonical reference conversion** (commit `4c85dfe8`): a single
+  `hints::AbsJustification{owner, justifier}` rides *both* `JustifyUsingRUP` (abs's
+  pure-RUP pruning) and `JustifyExplicitly` (its ~10 explicit bounds), carries no
+  operand data (re-derivable), and serialises to one `hint_sexpr` →
+  `((constraint_id _N) (justifier <sub-rule>))`; the eager `emit` closures are
+  untouched. It is the "add a constraint to the Justifier → here is your
+  solver-side change" template.
 
 **The one substantive departure from the body below: there is no logger-side
 per-constraint proof-data store.** The body proposes `logger.constraint_proof_data
-<AllDifferentDef>(owner)` so `emit_justification` can reach a constraint's mutable
-proof state (all_different's at-most-one line cache) by owner without the witness
-carrying it. We built that, then removed it: the cache is a `shared_ptr` member of
-the `Constraint`, which outlives the whole search, so `emit` may simply **capture**
-it — valid even for backtrack-time replay (G4). So a constraint that needs
-persistent proof state captures it; the witness stays the small, serialisable
-thing that `hint_sexpr` turns into the wire form (the only path crossing to the
-external justifier). Anywhere the body says "reach `def` via the store / owner",
-read "captured by the `emit` closure". `emit_justification` is therefore a free
-function only where the witness alone suffices (e.g. `plus`); `all_different`
-builds its `JustifyByData` from a local `hall_justification` helper whose `emit`
-captures the scope and at-most-one cache.
+<AllDifferentDef>(owner)` so an `emit` can reach a constraint's mutable proof state
+(all_different's at-most-one line cache) by owner. We built that, then removed it:
+that state is owned by the `Constraint`, which outlives the whole search, so `emit`
+reaches it **directly** — an inline closure *captures* it, or (where the verdict
+must name the justification) a fat witness like `hints::AllDifferentHall` stores
+*pointers* to it (`all_vars`, `value_am1_constraint_numbers`), read only by
+`emit_justification` and never serialised by `hint_sexpr`. Both are valid even for
+backtrack-time replay (G4); the serialised subset stays small. Anywhere the body
+says "reach `def` via the store / owner", read "captured by the emit closure, or
+carried as non-serialised pointers on the fat witness".
 
-Still deferred (consistent with the body's "open questions"): the witness is built
-even in proofs-off mode (the `gather`-deferral would gate it; the proofs-off cost
-is now just closure construction, not a domain walk); the coarse `hint_name` is a
-per-call-site literal, not derived from the owner's model type; capability tiers
-beyond witness-complete (re-derivable, eager-only) are not modelled — every hint
-so far is witness-complete; and Plan B is not yet rolled out past the two worked
-examples (per Matthew: fewer hints, expand when the external Justifier needs them).
+Still deferred (consistent with the body's "open questions"):
+- the witness is still built even in plain eager-proof mode, which runs `emit` and
+  never reads the hint — the body's `gather`-deferral (build the witness only in a
+  mode that consumes it) is not done. The proofs-off cost is already nil (the Simple
+  tracker builds neither emit nor hint), and `NoHint` is `[[no_unique_address]]`, so
+  this only bites the typed-hint sites under eager proofs;
+- the coarse `hint_name` is a per-call-site / per-witness literal, not derived from
+  the owner's model type;
+- capability tiers beyond witness-complete are not *formally* modelled, though abs
+  is in practice the "re-derivable, tiny witness" case (empty of operand data);
+- assertion modes above `Definitions` need Matthew's veripb branch — stock VeriPB
+  3.0.2 caps there — so there is **no ctest coverage of assertion-mode output**;
+  behaviour preservation rests on the Off-mode proofs being byte-identical (they
+  are, across the suite);
+- Plan B is rolled out to the ~7 constraints above, not the whole set (per Matthew:
+  fewer hints, expand when the external Justifier needs them).
 
 ## The abstraction
 
@@ -637,12 +685,14 @@ auto hint_sexpr(const HallData & d, NamesAndIDsTracker & names) -> SExpr
 }
 
 // eager / lazy C++ steps: reach `def` via the owner, reuse the existing free fn, ignore the reason.
-// NOTE (superseded — see "IMPLEMENTED" at top): the store was removed. As built,
-// all_different does not define emit_justification(HallData); its JustifyByData
-// emit closure CAPTURES `all_variables` + the at-most-one cache (both owned by
-// the Constraint, which outlives search) and calls justify_all_different_hall_
-// set_or_violator directly. Read `logger.constraint_proof_data<...>(owner)` here
-// as "captured by the closure".
+// NOTE (superseded — see "IMPLEMENTED" at top): the logger-side store was removed,
+// and `HallData` here is, as built, the fat witness `hints::AllDifferentHall`. It
+// DOES define emit_justification, but reaches the constraint's `all_variables` +
+// at-most-one cache through non-serialised POINTERS it carries (`all_vars`,
+// `value_am1_constraint_numbers`) — both owned by the Constraint, which outlives
+// search — and calls justify_all_different_hall_set_or_violator directly. Read
+// `logger.constraint_proof_data<...>(owner)` here as "read off the fat witness's
+// pointers"; `hint_sexpr` serialises only the clean subset (owner + hall set).
 auto emit_justification(ProofLogger & logger, const HallData & d, const ReasonLiterals &) -> void
 {
     auto & def = logger.constraint_proof_data<AllDifferentDef>(d.owner);     // { all_variables, value_am1_constraint_numbers }
