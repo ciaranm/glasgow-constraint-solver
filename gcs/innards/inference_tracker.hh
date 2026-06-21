@@ -4,7 +4,7 @@
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/justification.hh>
-#include <gcs/innards/proofs/infer_witness.hh>
+#include <gcs/innards/proofs/infer_explicitly.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 
@@ -105,7 +105,7 @@ namespace gcs::innards
         // into proof steps or an assertion) only when there is a logger, so the
         // Simple, proofs-off tracker never touches them (pay-for-use) and the same
         // body serves both trackers. Dispatch is compile-time overload resolution
-        // inside infer_witness; no std::function is involved.
+        // inside infer_explicitly; no std::function is involved.
         template <typename Emit_, typename Hint_>
         auto track_explicit(ProofLogger * const logger, const Inference inf, const Literal & lit,
             const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback) -> void
@@ -119,14 +119,14 @@ namespace gcs::innards
             case Inference::Instantiated:
                 if constexpr (Actual_::materialises_reasons)
                     if (logger)
-                        infer_witness(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
+                        infer_explicitly(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
                 record_firing_inference(inf, lit);
                 break;
 
             [[unlikely]] case Inference::Contradiction:
                 if constexpr (Actual_::materialises_reasons)
                     if (logger)
-                        infer_witness(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
+                        infer_explicitly(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
                 throw TrackedPropagationFailed{};
@@ -190,7 +190,7 @@ namespace gcs::innards
         {
             if constexpr (Actual_::materialises_reasons)
                 if (logger)
-                    infer_witness(*logger, FalseLiteral{}, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
+                    infer_explicitly(*logger, FalseLiteral{}, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
             throw TrackedPropagationFailed{};
         }
 

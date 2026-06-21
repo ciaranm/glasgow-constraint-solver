@@ -1,5 +1,5 @@
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_INFER_WITNESS_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_INFER_WITNESS_HH
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_INFER_EXPLICITLY_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_INFER_EXPLICITLY_HH
 
 #include <gcs/expression.hh>
 #include <gcs/innards/assertion_hints.hh>
@@ -98,7 +98,7 @@ namespace gcs::innards
      *
      * The explicit-steps counterpart to ProofLogger::infer's plain arms, taking the
      * emit and the assertion hint as separate arguments (rather than a std::function
-     * or a bundled "witness"):
+     * or a single bundled justification struct):
      *
      *   - above AssertionLevel::Inferences: nothing (the inference is not asserted);
      *   - assertion mode: assert the inference under its reason, annotated by
@@ -115,7 +115,7 @@ namespace gcs::innards
      * \ingroup Innards
      */
     template <typename Emit_, typename Hint_>
-    auto infer_witness(ProofLogger & logger, const Literal & lit, const Emit_ & emit, ThenRUP then_rup,
+    auto infer_explicitly(ProofLogger & logger, const Literal & lit, const Emit_ & emit, ThenRUP then_rup,
         const ReasonLiterals & reason, const Hint_ & hint,
         const std::optional<AssertionAnnotation> & fallback_annotation = std::nullopt) -> void
     {
@@ -128,7 +128,7 @@ namespace gcs::innards
                                                     .visit(cond->var);
                 if (needs_per_value_fallback) {
                     for (Integer val = cond->value; val <= cond->upper_value; ++val)
-                        infer_witness(logger, cond->var != val, emit, then_rup, reason, hint, fallback_annotation);
+                        infer_explicitly(logger, cond->var != val, emit, then_rup, reason, hint, fallback_annotation);
                     return;
                 }
             }

@@ -325,7 +325,7 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         // At AssertionLevel::Definitions we can assert some inferences and not others (since the needed constraints for the justifications will
         // still be present). At higher levels, we need to assert all inferences.
         // Explicit-steps justifications are JustifyExplicitly, handled by
-        // infer_witness(); this variant only carries the plain ones, so the
+        // infer_explicitly(); this variant only carries the plain ones, so the
         // annotation is just the one passed in.
         if (! is_literally_true(lit) && ! std::holds_alternative<NoJustificationNeeded>(why)) {
             emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
