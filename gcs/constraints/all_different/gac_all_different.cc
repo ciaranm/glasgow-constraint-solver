@@ -76,10 +76,10 @@ namespace gcs::innards::hints
         for (const auto & v : hall.hall_vars)
             hall_var_terms.push_back(names.s_expr_term_of(v));
         return hint_list(
-            hint_list(SExpr::atom("constraint_id"), hall.owner),
+            hint_constraint_id(hall.owner),
             hint_list(SExpr::atom("hall_vars"), SExpr::list(move(hall_var_terms))),
             hint_list(SExpr::atom("hall_vals"), hint_seq(hall.hall_vals)),
-            hint_list(SExpr::atom("justifier"), SExpr::atom(string{AllDifferentHall::justifier})));
+            hint_justifier(AllDifferentHall::justifier));
     }
 
     auto emit_justification(ProofLogger & logger, const AllDifferentHall & hall, const ReasonLiterals &) -> void
@@ -90,7 +90,7 @@ namespace gcs::innards::hints
 
     auto hint_sexpr(const AllDifferentForcedValue & forced, NamesAndIDsTracker &) -> SExpr
     {
-        return hint_list(hint_list(SExpr::atom("constraint_id"), forced.owner));
+        return hint_list(hint_constraint_id(forced.owner));
     }
 }
 

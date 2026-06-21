@@ -87,6 +87,26 @@ namespace gcs::innards
     }
 
     /**
+     * \brief The two ubiquitous hint fields, as named constructors.
+     *
+     * Almost every typed hint carries the owning constraint id, and the multi-shape
+     * ones add a per-shape \c justifier keyword. These spell those two
+     * `(constraint_id <id>)` / `(justifier <name>)` field pairs once, so each
+     * witness's \c hint_sexpr names them rather than respelling the atom pairs.
+     *
+     * \ingroup Innards
+     */
+    inline auto hint_constraint_id(const ConstraintID & owner) -> SExpr
+    {
+        return hint_list(SExpr::atom("constraint_id"), owner);
+    }
+
+    inline auto hint_justifier(std::string_view justifier) -> SExpr
+    {
+        return hint_list(SExpr::atom("justifier"), SExpr::atom(std::string{justifier}));
+    }
+
+    /**
      * \brief An annotation for an annotated assertion step.
      *
      * \ingroup Innards

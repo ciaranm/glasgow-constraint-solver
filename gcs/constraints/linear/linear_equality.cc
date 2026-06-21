@@ -82,7 +82,7 @@ namespace gcs::innards::hints
 
     auto hint_sexpr(const LinearEqualityRUP & h, NamesAndIDsTracker &) -> SExpr
     {
-        return hint_list(hint_list(SExpr::atom("constraint_id"), h.owner));
+        return hint_list(hint_constraint_id(h.owner));
     }
 }
 

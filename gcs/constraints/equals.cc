@@ -87,7 +87,7 @@ namespace gcs::innards::hints
 
     auto hint_sexpr(const EqualsRUP & forced, NamesAndIDsTracker &) -> SExpr
     {
-        return hint_list(hint_list(SExpr::atom("constraint_id"), forced.owner));
+        return hint_list(hint_constraint_id(forced.owner));
     }
 }
 

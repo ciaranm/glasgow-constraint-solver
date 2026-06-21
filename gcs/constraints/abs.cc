@@ -77,9 +77,7 @@ namespace gcs::innards::hints
 
     auto hint_sexpr(const AbsJustification & h, NamesAndIDsTracker &) -> SExpr
     {
-        return hint_list(
-            hint_list(SExpr::atom("constraint_id"), h.owner),
-            hint_list(SExpr::atom("justifier"), SExpr::atom(std::string{h.justifier})));
+        return hint_list(hint_constraint_id(h.owner), hint_justifier(h.justifier));
     }
 }
 
