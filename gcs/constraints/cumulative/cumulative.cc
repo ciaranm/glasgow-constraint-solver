@@ -372,7 +372,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             // variable height it is "contrib >= lb(h_i)" with coefficient 1
             // (contrib is the proof-only product h_i·active in C_t). The
             // before/after RUPs give VeriPB the units to chase active's AND-gate.
-            auto pin_contributor = [&](const ReasonFunction & reason, size_t i, Integer t)
+            auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t)
                 -> std::pair<ProofLine, Integer> {
                 auto fi = (t - per_task_t_lo[i]).raw_value;
                 logger->emit_rup_proof_line_under_reason(reason,
@@ -396,7 +396,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             // variable height it deposits contrib_j + lb(h_j)·ext_lit ≥ lb(h_j)
             // (vacuous when ext_lit holds, "contrib_j ≥ lb(h_j)" otherwise) and
             // returns that line with coefficient 1.
-            auto pin_pushed = [&](const ReasonFunction & reason, size_t j_idx, Integer t,
+            auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t,
                                   IntegerVariableCondition ext_lit, Integer s_lo_after) -> std::pair<ProofLine, Integer> {
                 auto fj = (t - per_task_t_lo[j_idx]).raw_value;
                 logger->emit_rup_proof_line_under_reason(reason,
@@ -463,7 +463,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                             contributing.push_back(i);
                     }
 
-                    auto justify = [&, violating_t, contributing](const ReasonFunction & reason) -> void {
+                    auto justify = [&, violating_t, contributing](const ReasonLiterals & reason) -> void {
                         if (! logger) return;
                         // Pin every contributing task's guaranteed load at
                         // violating_t, then combine those lines with C_t in a
@@ -479,7 +479,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         pol.emit(*logger, ProofLevel::Temporary);
                     };
 
-                    inference.contradiction(logger, JustifyExplicitlyThenRUP{justify},
+                    inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes},
                         generic_reason(state, reason_vars));
                     return PropagatorState::DisableUntilBacktrack;
                 }
@@ -511,7 +511,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                                        const vector<size_t> & contributing,
                                        IntegerVariableCondition ext_lit, Integer s_lo_after,
                                        bool emit_intermediate,
-                                       const ReasonFunction & reason) -> void {
+                                       const ReasonLiterals & reason) -> void {
                 // (a) Pin each task i ≠ j mandatory at t under the reason, and
                 // (b) pin the pushed task j under the EXTENDED reason. Then
                 // (c) combine all pinned load lines with C_t in one pol. After
@@ -591,7 +591,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         if (! found) break;
                     }
 
-                    auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
+                    auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
                         if (! logger) return;
                         for (size_t step = 0; step < chain.size(); ++step)
                             emit_chain_step(j, chain[step].t, chain[step].contributing,
@@ -600,7 +600,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     };
 
                     inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                        JustifyExplicitlyThenRUP{justify},
+                        JustifyExplicitly{justify, ThenRUP::Yes},
                         generic_reason(state, reason_vars));
                 }
 
@@ -625,7 +625,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         if (! found) break;
                     }
 
-                    auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
+                    auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
                         if (! logger) return;
                         for (size_t step = 0; step < chain.size(); ++step)
                             emit_chain_step(j, chain[step].t, chain[step].contributing,
@@ -634,7 +634,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     };
 
                     inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                        JustifyExplicitlyThenRUP{justify},
+                        JustifyExplicitly{justify, ThenRUP::Yes},
                         generic_reason(state, reason_vars));
                 }
             }

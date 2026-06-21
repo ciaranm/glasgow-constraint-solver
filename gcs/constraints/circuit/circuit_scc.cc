@@ -101,7 +101,7 @@ namespace
     {
         const State & state;
         ProofLogger & logger;
-        const ReasonFunction & reason;
+        const ReasonLiterals & reason;
         const vector<IntegerVariableID> & succ;
         const long root;
         PosVarDataMap & pos_var_data;
@@ -110,7 +110,7 @@ namespace
         PosAllDiffData & pos_alldiff_data;
         const SCCOptions & options;
 
-        SCCProofContext(const State & state, ProofLogger & logger, const ReasonFunction & reason, const vector<IntegerVariableID> & succ,
+        SCCProofContext(const State & state, ProofLogger & logger, const ReasonLiterals & reason, const vector<IntegerVariableID> & succ,
             SCCProofData & proof_data, const long root, const SCCOptions & options) :
             state(state),
             logger(logger),
@@ -1004,7 +1004,7 @@ namespace
             WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
     }
 
-    auto explore(const State & state, auto & inference, ProofLogger * const logger, const ReasonFunction & reason,
+    auto explore(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason,
         const long & node, const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data,
         const SCCOptions & options)
         -> vector<pair<long, long>>
@@ -1040,10 +1040,10 @@ namespace
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
                             prove_skipped_subtree(ctx, node, next_node, data.prev_subroot);
                         }
-                        inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, ReasonFunction{});
+                        inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, NoReason{});
                     }
                     else {
-                        inference.infer(logger, succ[node] != w, JustifyUsingRUP{}, ReasonFunction{});
+                        inference.infer(logger, succ[node] != w, JustifyUsingRUP{}, NoReason{});
                     }
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
@@ -1066,7 +1066,7 @@ namespace
         const State & state,
         auto & inference,
         ProofLogger * const logger,
-        const ReasonFunction & reason,
+        const ReasonLiterals & reason,
         const vector<IntegerVariableID> & succ,
         const SCCOptions & options,
         SCCProofData & proof_data)
@@ -1096,11 +1096,11 @@ namespace
 
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, from_node, options);
                             prove_reachable_set_too_small(ctx, succ[from_node] != Integer{to_node});
-                            inference.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, ReasonFunction{});
+                            inference.infer(logger, succ[from_node] == Integer{to_node}, NoJustificationNeeded{}, NoReason{});
                         }
                         else {
 
-                            inference.infer(logger, succ[from_node] == Integer{to_node}, JustifyUsingRUP{}, ReasonFunction{});
+                            inference.infer(logger, succ[from_node] == Integer{to_node}, JustifyUsingRUP{}, NoReason{});
                         }
                     }
                 }
@@ -1137,7 +1137,7 @@ namespace
         const State & state,
         auto & inference,
         ProofLogger * const logger,
-        const ReasonFunction & reason,
+        const ReasonLiterals & reason,
         const vector<IntegerVariableID> & succ,
         const SCCOptions & scc_options,
         const ConstraintStateHandle & pos_var_data_handle,
@@ -1198,18 +1198,18 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
             pos_alldiff_data_handle = pos_alldiff_data_handle,
             unassigned_handle = unassigned_handle,
             options = scc_options](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            auto reason = generic_reason(state, succ);
+            ReasonLiterals reason = eager_reason(generic_reason(state, succ), state);
 
             if (logger && options.short_reasons) {
                 auto reason_sum = WPBSum{};
-                for (const auto & lit : reason()) {
+                for (const auto & lit : reason) {
                     reason_sum += 1_i * get<ProofLiteral>(lit);
                 }
                 // We will manually delete this later.
                 auto [_reason_short, _line1, _line2] =
                     logger->create_proof_flag_reifying(reason_sum >= Integer(reason_sum.terms.size()), "sr", ProofLevel::Current);
                 ProofFlag reason_short = _reason_short;
-                reason = singleton_reason(reason_short);
+                reason = eager_reason(singleton_reason(reason_short), state);
             }
 
             propagate_circuit_using_scc(state, inference, logger, reason,

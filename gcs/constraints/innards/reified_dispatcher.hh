@@ -35,21 +35,25 @@ namespace gcs::innards
          * dispatcher will infer the appropriate cond literal using the
          * given justification and reason.
          */
+        template <typename Justification_ = Justification>
         struct MustHold
         {
-            Justification justification;
-            ReasonFunction reason;
+            Justification_ justification;
+            Reason reason;
             std::optional<AssertionAnnotation> assertion_hint = std::nullopt;
+            static constexpr bool affirmative = true;
         };
 
         /**
          * \brief The constraint cannot hold. Same shape as MustHold.
          */
+        template <typename Justification_ = Justification>
         struct MustNotHold
         {
-            Justification justification;
-            ReasonFunction reason;
+            Justification_ justification;
+            Reason reason;
             std::optional<AssertionAnnotation> assertion_hint = std::nullopt;
+            static constexpr bool affirmative = false;
         };
     }
 
@@ -60,10 +64,16 @@ namespace gcs::innards
      * the cond inference, and the dispatcher decides whether and which
      * literal to infer).
      */
-    using ReificationVerdict = std::variant<
+    template <typename Justification_ = Justification>
+    using ReificationVerdictFor = std::variant<
         reification_verdict::StillUndecided,
-        reification_verdict::MustHold,
-        reification_verdict::MustNotHold>;
+        reification_verdict::MustHold<Justification_>,
+        reification_verdict::MustNotHold<Justification_>>;
+
+    // The default verdict, whose justification is the plain Justification variant.
+    // Constraints that put typed witnesses in a verdict name their own justification
+    // type and use ReificationVerdictFor<That> instead.
+    using ReificationVerdict = ReificationVerdictFor<>;
 
     /**
      * \brief Install a single propagator that dispatches on the current state
@@ -139,21 +149,28 @@ namespace gcs::innards
                         return enforce_constraint_must_not_hold(state, inference, logger, reif.cond);
                     },
                     [&](const evaluated_reif::Undecided & reif) {
-                        return overloaded{
-                            [&](const reification_verdict::StillUndecided &) {
+                        // The verdict's justification type varies per constraint
+                        // (plain Justification, a single typed JustifyExplicitly, or a
+                        // variant of justification shapes), so dispatch generically:
+                        // StillUndecided enables; a MustHold/MustNotHold infers the
+                        // appropriate cond literal under its justification, the
+                        // affirmative tag picking which literal. Forwarding
+                        // v.justification to infer() pushes any variant-visit into
+                        // infer() itself.
+                        return std::visit([&](const auto & v) -> PropagatorState {
+                            using V = std::decay_t<decltype(v)>;
+                            if constexpr (std::is_same_v<V, reification_verdict::StillUndecided>)
                                 return PropagatorState::Enable;
-                            },
-                            [&](const reification_verdict::MustHold & h) {
-                                if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
-                                    inference.infer(logger, *lit, h.justification, h.reason, h.assertion_hint);
+                            else {
+                                auto lit = V::affirmative
+                                    ? reif.cond_to_infer_if_constraint_must_hold()
+                                    : reif.cond_to_infer_if_constraint_must_not_hold();
+                                if (lit)
+                                    inference.infer(logger, *lit, v.justification, v.reason, v.assertion_hint);
                                 return PropagatorState::DisableUntilBacktrack;
-                            },
-                            [&](const reification_verdict::MustNotHold & n) {
-                                if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                    inference.infer(logger, *lit, n.justification, n.reason, n.assertion_hint);
-                                return PropagatorState::DisableUntilBacktrack;
-                            }}
-                            .visit(infer_cond_when_undecided(state, inference, logger, reif.cond));
+                            }
+                        },
+                            infer_cond_when_undecided(state, inference, logger, reif.cond));
                     },
                     [&](const evaluated_reif::Deactivated &) {
                         return PropagatorState::DisableUntilBacktrack;

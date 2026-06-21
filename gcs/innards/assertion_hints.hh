@@ -10,6 +10,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 #include <version>
@@ -26,101 +27,19 @@ namespace gcs::innards
 {
 
     /**
-     * \brief The allowed names for annotated assertions.
-     *
-     * \ingroup Innards
-     * \sa AssertionAnnotation
-     */
-    enum class AssertionHintName
-    {
-        None,
-        AllDifferent,
-        ReifiedEquals,
-        Abs,
-        ReifiedLinearEquality,
-        InitialBound,
-        BoundLink,
-        Backtrack,
-        SolxBlock,
-        SoliImprove,
-    };
-
-    /**
-     * \brief An assertion hint can be written as a string
-     *
-     * \ingroup Innards
-     */
-    inline auto operator<<(std::ostream & s, const AssertionHintName & hint_name) -> std::ostream &
-    {
-        switch (hint_name) {
-        case AssertionHintName::None:
-            return s << "None";
-        case AssertionHintName::AllDifferent:
-            return s << "AllDifferent";
-        case AssertionHintName::ReifiedEquals:
-            return s << "ReifiedEquals";
-        case AssertionHintName::Abs:
-            return s << "Abs";
-        case AssertionHintName::ReifiedLinearEquality:
-            return s << "ReifiedLinearEquality";
-        case AssertionHintName::InitialBound:
-            return s << "InitialBound";
-        case AssertionHintName::BoundLink:
-            return s << "BoundLink";
-        case AssertionHintName::Backtrack:
-            return s << "Backtrack";
-        case AssertionHintName::SolxBlock:
-            return s << "SolxBlock";
-        case AssertionHintName::SoliImprove:
-            return s << "SoliImprove";
-        }
-        return s;
-    }
-
-    /**
-     * \brief Keywords that can be used in an assertion hint.
-     *
-     * \ingroup Innards
-     */
-    enum class AssertionHintIdentifier
-    {
-        constraint_id,
-        hall_vars,
-        hall_vals,
-        justifier,
-        hall_set_or_violator,
-    };
-
-    inline auto as_string(AssertionHintIdentifier identifier) -> std::string
-    {
-        switch (identifier) {
-        case AssertionHintIdentifier::constraint_id:
-            return "constraint_id";
-        case AssertionHintIdentifier::hall_vars:
-            return "hall_vars";
-        case AssertionHintIdentifier::hall_vals:
-            return "hall_vals";
-        case AssertionHintIdentifier::justifier:
-            return "justifier";
-        case AssertionHintIdentifier::hall_set_or_violator:
-            return "hall_set_or_violator";
-        }
-        return "";
-    }
-
-    /**
      * \brief Render a single hint field as an s-expression atom.
+     *
+     * Field keys are plain s-expression atoms (e.g. \c SExpr::atom("hall_vars")),
+     * not a fixed enum: the vocabulary of a hint's fields lives with that hint's
+     * typed Data struct in \c gcs::innards::hints, not in one central list. The
+     * \c hint_sexpr overloads below cover the leaf field values; per-hint Data
+     * structs add their own \c hint_sexpr overload next to the constraint.
      *
      * \ingroup Innards
      */
     inline auto hint_sexpr(SExpr expr) -> SExpr
     {
         return expr;
-    }
-
-    inline auto hint_sexpr(AssertionHintIdentifier identifier) -> SExpr
-    {
-        return SExpr::atom(as_string(identifier));
     }
 
     inline auto hint_sexpr(const ProofLineLabel & label) -> SExpr
@@ -168,6 +87,26 @@ namespace gcs::innards
     }
 
     /**
+     * \brief The two ubiquitous hint fields, as named constructors.
+     *
+     * Almost every typed hint carries the owning constraint id, and the multi-shape
+     * ones add a per-shape \c justifier keyword. These spell those two
+     * `(constraint_id <id>)` / `(justifier <name>)` field pairs once, so each
+     * witness's \c hint_sexpr names them rather than respelling the atom pairs.
+     *
+     * \ingroup Innards
+     */
+    inline auto hint_constraint_id(const ConstraintID & owner) -> SExpr
+    {
+        return hint_list(SExpr::atom("constraint_id"), owner);
+    }
+
+    inline auto hint_justifier(std::string_view justifier) -> SExpr
+    {
+        return hint_list(SExpr::atom("justifier"), SExpr::atom(std::string{justifier}));
+    }
+
+    /**
      * \brief An annotation for an annotated assertion step.
      *
      * \ingroup Innards
@@ -175,7 +114,12 @@ namespace gcs::innards
     struct AssertionAnnotation
     {
         std::vector<ProofLineLabel> derivable_from = {};
-        AssertionHintName hint_name = AssertionHintName::None;
+        // A coarse, model-level constraint-type name (e.g. "all_different",
+        // "abs"), carried in the second annotation field for vanilla-VeriPB
+        // statistics. The fine, per-justification-shape discriminator (the
+        // "justifier" keyword) lives in hint_fields, set by the typed Data
+        // struct. A string literal, so this stays allocation-free.
+        std::string_view hint_name = "";
         std::optional<SExpr> hint_fields = std::nullopt;
     };
 

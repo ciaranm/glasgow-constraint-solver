@@ -46,10 +46,10 @@ auto gcs::innards::emit_gcc_capacity_pol(ProofLogger & logger, const State & sta
 
 auto gcs::innards::gcc_capacity_reason(const State & state, const vector<Integer> & values,
     const vector<IntegerVariableID> & counts, const vector<size_t> & cut_values,
-    const vector<IntegerVariableID> & confined) -> Reason
+    const vector<IntegerVariableID> & confined) -> ReasonLiterals
 {
     auto hall = hall_set(values, cut_values);
-    Reason r;
+    ReasonLiterals r;
     for (const auto & var : confined) {
         auto [v_lo, v_hi] = state.bounds(var);
         for (Integer s = v_lo; s <= v_hi; ++s)
@@ -99,7 +99,7 @@ auto gcs::innards::emit_gcc_demand_pol(ProofLogger & logger, const State & state
 
 auto gcs::innards::gcc_demand_reason(const State & state, const vector<IntegerVariableID> & vars,
     const vector<Integer> & values, const vector<IntegerVariableID> & counts,
-    const vector<size_t> & cut_values, const vector<IntegerVariableID> & potential) -> Reason
+    const vector<size_t> & cut_values, const vector<IntegerVariableID> & potential) -> ReasonLiterals
 {
     auto hall = hall_set(values, cut_values);
     auto meets_hall = [&](const IntegerVariableID & var) {
@@ -109,7 +109,7 @@ auto gcs::innards::gcc_demand_reason(const State & state, const vector<IntegerVa
         return false;
     };
     (void)potential;
-    Reason r;
+    ReasonLiterals r;
     for (const auto & var : vars)
         if (! meets_hall(var))
             for (const auto & val : hall)

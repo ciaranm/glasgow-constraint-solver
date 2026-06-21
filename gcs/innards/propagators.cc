@@ -99,7 +99,7 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         if (optional_model)
             optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var >= val);
         install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-            inference.infer(logger, var >= val, JustifyUsingRUP{}, ReasonFunction{});
+            inference.infer(logger, var >= val, JustifyUsingRUP{}, NoReason{});
         });
         return;
     case Upper:
@@ -108,7 +108,7 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         if (optional_model)
             optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var <= val);
         install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-            inference.infer(logger, var <= val, JustifyUsingRUP{}, ReasonFunction{});
+            inference.infer(logger, var <= val, JustifyUsingRUP{}, NoReason{});
         });
         return;
     }
@@ -145,7 +145,7 @@ auto Propagators::install_initialiser(InitialisationFunction && f, InitialiserPr
     _imp->initialisation_functions_by_priority[to_underlying(priority)].emplace_back(move(f));
 }
 
-auto Propagators::install_initial_contradiction(const string &, Justification why, ReasonFunction reason, InitialiserPriority priority) -> void
+auto Propagators::install_initial_contradiction(const string &, Justification why, Reason reason, InitialiserPriority priority) -> void
 {
     install_initialiser(
         [why = move(why), reason = move(reason)](const State &, auto & inference, ProofLogger * const logger) -> void {
@@ -158,9 +158,16 @@ auto Propagators::initialise(State & state, ProofLogger * const logger) const ->
 {
     for (auto & bucket : _imp->initialisation_functions_by_priority) {
         for (auto & f : bucket) {
-            EagerProofLoggingInferenceTracker inf(state);
             try {
-                f(state, inf, logger);
+                // As in propagate(): with no logger, run the lean tracker.
+                if (logger) {
+                    EagerProofLoggingInferenceTracker inf(state);
+                    f(state, inf, logger);
+                }
+                else {
+                    SimpleInferenceTracker inf(state);
+                    f(state, inf, logger);
+                }
             }
             catch (const TrackedPropagationFailed &) {
                 return false;
@@ -231,46 +238,59 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         _imp->idle_end = orig_idle_end;
     });
 
-    EagerProofLoggingInferenceTracker tracker{state};
-
-    bool contradiction = false;
-    while (! contradiction) {
-        if (0 == _imp->enqueued_end) {
-            for (const auto & [v, inf] : tracker.each_inference())
-                requeue(v, inf);
-            tracker.reset();
-        }
-
-        if (0 == _imp->enqueued_end)
-            break;
-
-        int propagator_id = _imp->queue[--_imp->enqueued_end];
-        try {
-            ++_imp->total_propagations;
-            auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
-            if (tracker.did_anything_since_last_call_by_propagation_queue())
-                ++_imp->effectful_propagations;
-            switch (propagator_state) {
-            case PropagatorState::Enable:
-                break;
-            case PropagatorState::DisableUntilBacktrack:
-                --_imp->idle_end;
-                auto being_swapped_item = _imp->queue[_imp->idle_end];
-                swap(_imp->queue[_imp->enqueued_end], _imp->queue[_imp->idle_end]);
-                swap(_imp->lookup[propagator_id], _imp->lookup[being_swapped_item]);
-                break;
+    // The loop body is identical for either tracker (it only uses the shared base
+    // interface plus the dual-overloaded propagation-function call), so run it on a
+    // generic lambda. With no logger we use the lean SimpleInferenceTracker, whose
+    // proofs-off path carries no reason snapshotting or proof-logging code.
+    auto run = [&](auto & tracker) -> bool {
+        bool contradiction = false;
+        while (! contradiction) {
+            if (0 == _imp->enqueued_end) {
+                for (const auto & [v, inf] : tracker.each_inference())
+                    requeue(v, inf);
+                tracker.reset();
             }
-        }
-        catch (const TrackedPropagationFailed &) {
-            contradiction = true;
-            ++_imp->contradicting_propagations;
+
+            if (0 == _imp->enqueued_end)
+                break;
+
+            int propagator_id = _imp->queue[--_imp->enqueued_end];
+            try {
+                ++_imp->total_propagations;
+                auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
+                if (tracker.did_anything_since_last_call_by_propagation_queue())
+                    ++_imp->effectful_propagations;
+                switch (propagator_state) {
+                case PropagatorState::Enable:
+                    break;
+                case PropagatorState::DisableUntilBacktrack:
+                    --_imp->idle_end;
+                    auto being_swapped_item = _imp->queue[_imp->idle_end];
+                    swap(_imp->queue[_imp->enqueued_end], _imp->queue[_imp->idle_end]);
+                    swap(_imp->lookup[propagator_id], _imp->lookup[being_swapped_item]);
+                    break;
+                }
+            }
+            catch (const TrackedPropagationFailed &) {
+                contradiction = true;
+                ++_imp->contradicting_propagations;
+            }
+
+            if (contradiction || (optional_abort_flag && optional_abort_flag->load()))
+                break;
         }
 
-        if (contradiction || (optional_abort_flag && optional_abort_flag->load()))
-            break;
+        return ! contradiction;
+    };
+
+    if (logger) {
+        EagerProofLoggingInferenceTracker tracker{state};
+        return run(tracker);
     }
-
-    return ! contradiction;
+    else {
+        SimpleInferenceTracker tracker{state};
+        return run(tracker);
+    }
 }
 
 auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void

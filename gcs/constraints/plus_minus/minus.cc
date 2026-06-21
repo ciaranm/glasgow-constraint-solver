@@ -61,31 +61,31 @@ namespace
             LE
         };
 
-        auto justify = [&](Conclude c) -> JustifyExplicitlyThenRUP {
-            return JustifyExplicitlyThenRUP{
-                [c, sum_line, logger](const ReasonFunction & reason) {
-                    auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
-                    if (! sum_line_value)
-                        return;
+        auto justify = [&](Conclude c) {
+            return JustifyExplicitly{[c, sum_line, logger](const ReasonLiterals & reason) {
+                                         auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
+                                         if (! sum_line_value)
+                                             return;
 
-                    PolBuilder b;
-                    b.add(*sum_line_value);
+                                         PolBuilder b;
+                                         b.add(*sum_line_value);
 
-                    // Constants in WPBSum are baked into the OPB sum_line directly
-                    // (see emit_inequality_to.cc:58–60), so a reason literal whose
-                    // variable is a ConstantIntegerVariableID already contributes
-                    // to sum_line and doesn't need (or have) a pol-side defining
-                    // line — need_pol_item_defining_literal would throw on it.
-                    // Issue #166.
-                    for (size_t i = 0; i < 2; ++i) {
-                        auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason().at(i))));
-                        if (holds_alternative<ConstantIntegerVariableID>(lit.var))
-                            continue;
-                        b.add_for_literal(logger->names_and_ids_tracker(), lit);
-                    }
+                                         // Constants in WPBSum are baked into the OPB sum_line directly
+                                         // (see emit_inequality_to.cc:58–60), so a reason literal whose
+                                         // variable is a ConstantIntegerVariableID already contributes
+                                         // to sum_line and doesn't need (or have) a pol-side defining
+                                         // line — need_pol_item_defining_literal would throw on it.
+                                         // Issue #166.
+                                         for (size_t i = 0; i < 2; ++i) {
+                                             auto lit = get<IntegerVariableCondition>(get<Literal>(get<ProofLiteral>(reason.at(i))));
+                                             if (holds_alternative<ConstantIntegerVariableID>(lit.var))
+                                                 continue;
+                                             b.add_for_literal(logger->names_and_ids_tracker(), lit);
+                                         }
 
-                    b.emit(*logger, ProofLevel::Temporary);
-                }};
+                                         b.emit(*logger, ProofLevel::Temporary);
+                                     },
+                ThenRUP::Yes};
         };
 
         // Conclude side picked so the OPB sum_line half contributes the same
@@ -96,32 +96,32 @@ namespace
         // min(result) = min(a) - max(b);
         inference.infer(logger, result >= a_vals.first - b_vals.second,
             justify(Conclude::LE),
-            [=]() { return Reason{a >= a_vals.first, b <= b_vals.second}; });
+            ExplicitReason{ReasonLiterals{a >= a_vals.first, b <= b_vals.second}});
 
         // max(result) = max(a) - min(b);
         inference.infer(logger, result <= a_vals.second - b_vals.first,
             justify(Conclude::GE),
-            [=]() { return Reason{a <= a_vals.second, b >= b_vals.first}; });
+            ExplicitReason{ReasonLiterals{a <= a_vals.second, b >= b_vals.first}});
 
         // min(a) = min(result) + min(b);
         inference.infer(logger, a >= result_vals.first + b_vals.first,
             justify(Conclude::GE),
-            [=]() { return Reason{result >= result_vals.first, b >= b_vals.first}; });
+            ExplicitReason{ReasonLiterals{result >= result_vals.first, b >= b_vals.first}});
 
         // max(a) = max(result) + max(b);
         inference.infer(logger, a <= result_vals.second + b_vals.second,
             justify(Conclude::LE),
-            [=]() { return Reason{result <= result_vals.second, b <= b_vals.second}; });
+            ExplicitReason{ReasonLiterals{result <= result_vals.second, b <= b_vals.second}});
 
         // min(b) = min(a) - max(result);
         inference.infer(logger, b >= a_vals.first - result_vals.second,
             justify(Conclude::LE),
-            [=]() { return Reason{a >= a_vals.first, result <= result_vals.second}; });
+            ExplicitReason{ReasonLiterals{a >= a_vals.first, result <= result_vals.second}});
 
         // max(b) = max(a) - min(result);
         inference.infer(logger, b <= a_vals.second - result_vals.first,
             justify(Conclude::GE),
-            [=]() { return Reason{a <= a_vals.second, result >= result_vals.first}; });
+            ExplicitReason{ReasonLiterals{a <= a_vals.second, result >= result_vals.first}});
 
         return PropagatorState::Enable;
     }

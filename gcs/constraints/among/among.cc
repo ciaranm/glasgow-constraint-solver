@@ -153,54 +153,53 @@ auto Among::install_propagators(Propagators & propagators) -> void
             // we now know how many variables definitely match, and how
             // many can't match, so we can derive bounds on the how many
             // variable.
-            auto vars_reason = generic_reason(state, vars);
-            inference.infer(logger, how_many >= must_match_count, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) -> void {
-                // Combine the (sum <= how_many) half of the Among encoding with the
-                // at-least-one constraint for each must_match variable. After UP zeroes
-                // the (var == v) literals for v outside the variable's current domain
-                // (which, for must_match vars, includes everything outside voi), the
-                // resulting line collapses to (how_many >= must_match_count) — directly
-                // RUP-implying the inference. Without this scaffolding, RUP needs to
-                // re-derive at-least-one over voi from the bit encoding for each
-                // must_match var, which is not reliable when domains have width > 1.
-                if (sum_line.first && must_match_count > 0_i) {
-                    PolBuilder b;
-                    b.add(*sum_line.first);
-                    for (const auto & m : must_match_vars) {
-                        // Constants in must_match are folded into sum_line.first's RHS at OPB
-                        // emission, so they don't need (and don't have) an at-least-one line.
-                        if (holds_alternative<ConstantIntegerVariableID>(m))
-                            continue;
-                        b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
-                    }
-                    b.emit(*logger, ProofLevel::Temporary);
-                }
-            }},
+            auto vars_reason = eager_reason(generic_reason(state, vars), state);
+            inference.infer(logger, how_many >= must_match_count, JustifyExplicitly{[&](const ReasonLiterals &) -> void {
+                                                                                        // Combine the (sum <= how_many) half of the Among encoding with the
+                                                                                        // at-least-one constraint for each must_match variable. After UP zeroes
+                                                                                        // the (var == v) literals for v outside the variable's current domain
+                                                                                        // (which, for must_match vars, includes everything outside voi), the
+                                                                                        // resulting line collapses to (how_many >= must_match_count) — directly
+                                                                                        // RUP-implying the inference. Without this scaffolding, RUP needs to
+                                                                                        // re-derive at-least-one over voi from the bit encoding for each
+                                                                                        // must_match var, which is not reliable when domains have width > 1.
+                                                                                        if (sum_line.first && must_match_count > 0_i) {
+                                                                                            PolBuilder b;
+                                                                                            b.add(*sum_line.first);
+                                                                                            for (const auto & m : must_match_vars) {
+                                                                                                // Constants in must_match are folded into sum_line.first's RHS at OPB
+                                                                                                // emission, so they don't need (and don't have) an at-least-one line.
+                                                                                                if (holds_alternative<ConstantIntegerVariableID>(m))
+                                                                                                    continue;
+                                                                                                b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
+                                                                                            }
+                                                                                            b.emit(*logger, ProofLevel::Temporary);
+                                                                                        }
+                                                                                    },
+                                                                      ThenRUP::Yes},
                 vars_reason);
             auto less_than_this_many = Integer(vars.size()) - must_not_match_count + 1_i;
-            inference.infer(logger, how_many < less_than_this_many, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) -> void {
-                // for any variable that isn't ruled out, show that it can contribute at
-                // most one to the count.
-                if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
-                    PolBuilder b;
-                    b.add(*sum_line.second);
-                    for (const auto & var : can_be_either_or_must_vars)
-                        b.add(am1_lines->at(var));
-                    b.emit(*logger, ProofLevel::Temporary);
-                }
-            }},
+            inference.infer(logger, how_many < less_than_this_many, JustifyExplicitly{[&](const ReasonLiterals &) -> void {
+                                                                                          // for any variable that isn't ruled out, show that it can contribute at
+                                                                                          // most one to the count.
+                                                                                          if (sum_line.second && ! empty(can_be_either_or_must_vars) && values_of_interest.size() > 1) {
+                                                                                              PolBuilder b;
+                                                                                              b.add(*sum_line.second);
+                                                                                              for (const auto & var : can_be_either_or_must_vars)
+                                                                                                  b.add(am1_lines->at(var));
+                                                                                              b.emit(*logger, ProofLevel::Temporary);
+                                                                                          }
+                                                                                      },
+                                                                        ThenRUP::Yes},
                 vars_reason);
 
             // potentially now we know that any undecided variables must actually be either
             // matching or not matching.
             auto [at_least_how_many, at_most_how_many] = state.bounds(how_many);
 
-            auto vars_and_bounds_reason = [&vars_reason, how_many, at_least_how_many, at_most_how_many]() {
-                auto result = vars_reason();
-                result.push_back(how_many >= at_least_how_many);
-                result.push_back(how_many <= at_most_how_many);
-                return result;
-            };
+            auto vars_and_bounds_reason = vars_reason;
+            vars_and_bounds_reason.push_back(how_many >= at_least_how_many);
+            vars_and_bounds_reason.push_back(how_many <= at_most_how_many);
 
             // if we have enough definitely matching values, nothing else can match
             if (must_match_count == at_most_how_many) {
@@ -223,24 +222,25 @@ auto Among::install_propagators(Propagators & propagators) -> void
                         for (const auto & val : values_of_interest)
                             inferences.push_back(var != val);
 
-                        inference.infer_all(logger, inferences, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) -> void {
-                            // We need to bound the sum from BELOW: must_match vars each
-                            // contribute at least one to the Among sum, so combining the
-                            // (sum <= how_many) half with at-least-one constraints for
-                            // every must_match var derives that any extra contribution
-                            // from a non-must-match variable conflicts with the fixed
-                            // how_many = must_match_count value.
-                            if (sum_line.first && ! empty(must_match_vars)) {
-                                PolBuilder b;
-                                b.add(*sum_line.first);
-                                for (const auto & m : must_match_vars) {
-                                    if (holds_alternative<ConstantIntegerVariableID>(m))
-                                        continue;
-                                    b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
-                                }
-                                b.emit(*logger, ProofLevel::Temporary);
-                            }
-                        }},
+                        inference.infer_all(logger, inferences, JustifyExplicitly{[&](const ReasonLiterals &) -> void {
+                                                                                      // We need to bound the sum from BELOW: must_match vars each
+                                                                                      // contribute at least one to the Among sum, so combining the
+                                                                                      // (sum <= how_many) half with at-least-one constraints for
+                                                                                      // every must_match var derives that any extra contribution
+                                                                                      // from a non-must-match variable conflicts with the fixed
+                                                                                      // how_many = must_match_count value.
+                                                                                      if (sum_line.first && ! empty(must_match_vars)) {
+                                                                                          PolBuilder b;
+                                                                                          b.add(*sum_line.first);
+                                                                                          for (const auto & m : must_match_vars) {
+                                                                                              if (holds_alternative<ConstantIntegerVariableID>(m))
+                                                                                                  continue;
+                                                                                              b.add(logger->names_and_ids_tracker().need_constraint_saying_variable_takes_at_least_one_value(m));
+                                                                                          }
+                                                                                          b.emit(*logger, ProofLevel::Temporary);
+                                                                                      }
+                                                                                  },
+                                                                    ThenRUP::Yes},
                             vars_and_bounds_reason);
                     }
                 }
@@ -273,26 +273,27 @@ auto Among::install_propagators(Propagators & propagators) -> void
                         if (might_match)
                             for (const auto & val : state.each_value_mutable(var))
                                 if (! contains(values_of_interest, val)) {
-                                    inference.infer(logger, var != val, JustifyExplicitlyThenRUP{[&](const ReasonFunction &) {
-                                        // need to point out that if var == val then var != voi for each voi
-                                        for (const auto & voi : values_of_interest)
-                                            logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
+                                    inference.infer(logger, var != val, JustifyExplicitly{[&](const ReasonLiterals &) {
+                                                                                              // need to point out that if var == val then var != voi for each voi
+                                                                                              for (const auto & voi : values_of_interest)
+                                                                                                  logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
 
-                                        // now every other variable that contributes to the sum is
-                                        // capped at one — must_match vars (whose AM1 lines bound their
-                                        // contribution to the at-most-must_match_count tally) AND every
-                                        // other can_be_either var.
-                                        if (sum_line.second && values_of_interest.size() > 1) {
-                                            PolBuilder b;
-                                            b.add(*sum_line.second);
-                                            for (const auto & m : must_match_vars)
-                                                b.add(am1_lines->at(m));
-                                            for (const auto & other_var : can_be_either_vars)
-                                                if (var != other_var)
-                                                    b.add(am1_lines->at(other_var));
-                                            b.emit(*logger, ProofLevel::Temporary);
-                                        }
-                                    }},
+                                                                                              // now every other variable that contributes to the sum is
+                                                                                              // capped at one — must_match vars (whose AM1 lines bound their
+                                                                                              // contribution to the at-most-must_match_count tally) AND every
+                                                                                              // other can_be_either var.
+                                                                                              if (sum_line.second && values_of_interest.size() > 1) {
+                                                                                                  PolBuilder b;
+                                                                                                  b.add(*sum_line.second);
+                                                                                                  for (const auto & m : must_match_vars)
+                                                                                                      b.add(am1_lines->at(m));
+                                                                                                  for (const auto & other_var : can_be_either_vars)
+                                                                                                      if (var != other_var)
+                                                                                                          b.add(am1_lines->at(other_var));
+                                                                                                  b.emit(*logger, ProofLevel::Temporary);
+                                                                                              }
+                                                                                          },
+                                                                            ThenRUP::Yes},
                                         vars_and_bounds_reason);
                                 }
                     }
