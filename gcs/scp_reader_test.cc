@@ -1,6 +1,7 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/all_equal.hh>
+#include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/element.hh>
@@ -8,6 +9,7 @@
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/increasing.hh>
 #include <gcs/constraints/linear.hh>
+#include <gcs/constraints/min_max.hh>
 #include <gcs/current_state.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
@@ -19,6 +21,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -117,6 +120,27 @@ TEST_CASE("read_scp: the increasing family enumerates correctly")
         CHECK((s.at("X") >= s.at("Y") && s.at("Y") >= s.at("Z")));
     for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (Z 0 3) ) ( (_1 strictly_decreasing (X Y Z)) ) )"))
         CHECK((s.at("X") > s.at("Y") && s.at("Y") > s.at("Z")));
+}
+
+TEST_CASE("read_scp: circuit enumerates the Hamiltonian cycles")
+{
+    // Successor of each of three nodes; the only single cycles are the two
+    // directed 3-cycles.
+    auto solutions = enumerate(R"(
+        (
+            ( (A 0 2) (B 0 2) (C 0 2) )
+            ( (_1 circuit (A B C)) )
+        ))");
+
+    CHECK(solutions == set<map<string, long long>>{{{"A", 1}, {"B", 2}, {"C", 0}}, {{"A", 2}, {"B", 0}, {"C", 1}}});
+}
+
+TEST_CASE("read_scp: array_min / array_max enumerate correctly")
+{
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) (R 0 2) ) ( (_1 array_min (X Y Z) R) ) )"))
+        CHECK(s.at("R") == std::min({s.at("X"), s.at("Y"), s.at("Z")}));
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) (R 0 2) ) ( (_1 array_max (X Y Z) R) ) )"))
+        CHECK(s.at("R") == std::max({s.at("X"), s.at("Y"), s.at("Z")}));
 }
 
 TEST_CASE("read_scp: in with a mix of integer and variable values")

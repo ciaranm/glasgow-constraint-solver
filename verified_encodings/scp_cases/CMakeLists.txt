@@ -213,3 +213,25 @@ add_scp_chain_test(inverse_sat  none)
 add_scp_chain_test(in_const_sat  none)
 add_scp_chain_test(in_var_sat    none)
 add_scp_chain_test(in_unsat      none)
+
+# none (chain-only): circuit. The solver's writer already emits cake's shape
+# (id circuit (succ...)); its embedded all_different sub-encoding even matches
+# cake (the #355 x[id][i_j] conform), but the Hamiltonicity / position-variable
+# layer is encoded differently (the solver's p[N_posK] position vars) and the
+# successor eq/ge literals trip #358 -- so it chain-verifies but is far from
+# byte-match. circuit_sat enumerates the two 3-node cycles; circuit_unsat
+# confines successors to {0,1} so two of the four nodes are unreachable.
+add_scp_chain_test(circuit_sat    none)
+add_scp_chain_test(circuit_unsat  none)
+
+# none (chain-only): array_min / array_max. cake now FULLY reifies the per-value
+# selector x[id][i] <=> (var = result) (it used to half-reify, which left the
+# at-least-one unpinnable at a solution -- that fix unblocks enumeration). The
+# solver's encoding matches cake's exactly once its selector is named x[id][i]
+# (the create_proof_flag(ConstraintID, {i}) two-level form, as for all_different)
+# instead of the old f[idx][arrayminmax] -- the propagator's RUP steps reference
+# it by name, so the names must agree for enumeration to verify. Stays none (the
+# eq/ge literal variable encoding still diverges, #358).
+add_scp_chain_test(array_min_sat    none)
+add_scp_chain_test(array_max_sat    none)
+add_scp_chain_test(array_min_unsat  none)
