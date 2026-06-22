@@ -111,6 +111,37 @@ auto In::prepare(Propagators &, State & initial_state, ProofModel * const) -> bo
 
 auto In::define_proof_model(ProofModel & model) -> void
 {
+    // Pure-constant In: with no non-constant source variables, `var` must equal
+    // one of the constants in _val_vals. That is exactly the conjunction
+    //   var >= min  ∧  var <= max  ∧  ⋀_{h a hole} var != h
+    // where the holes are the integers strictly between min and max that are not
+    // in the value set (e.g. Y in {3,5,8} becomes [Y>=3] ∧ [Y<=8] ∧ Y!=4 ∧ Y!=6 ∧
+    // Y!=7). We emit this as a single "at least n" constraint — every literal has
+    // coefficient 1 and the right-hand side equals the number of literals, so unit
+    // propagation forces them all true — rather than one unit line per conjunct,
+    // keeping the OPB compact. That makes every In inference for this case RUP
+    // (see install_propagators). When there is at least one non-constant source
+    // variable we fall through to the selector + at-least-one encoding below.
+    //
+    // emit_inequality_to simplifies each literal and folds a literally-true
+    // conjunct (e.g. an upper bound past the variable's own maximum) into the
+    // right-hand side, while a literally-false one drops from the sum but not the
+    // count — leaving an unsatisfiable `... >= n`, which is the correct UNSAT — so
+    // no domain-range guard is needed here.
+    if (_var_vals.empty() && ! _val_vals.empty()) {
+        WPBSum sum;
+        Integer count = 2_i; // the two bounds
+        sum += 1_i * (_var >= _val_vals.front());
+        sum += 1_i * (_var <= _val_vals.back());
+        for (size_t i = 0; i + 1 < _val_vals.size(); ++i)
+            for (auto h = _val_vals[i] + 1_i; h < _val_vals[i + 1]; h = h + 1_i) {
+                sum += 1_i * (_var != h);
+                count += 1_i;
+            }
+        model.add_constraint("In", "var is one of these", move(sum) >= count);
+        return;
+    }
+
     WPBSum sum;
 
     for (const auto & v : _val_vals)
@@ -147,23 +178,19 @@ auto In::install_propagators(Propagators & propagators) -> void
         return;
     }
 
-    Triggers triggers;
-    triggers.on_change.emplace_back(_var);
-    for (const auto & V : _var_vals)
-        triggers.on_change.emplace_back(V);
-
-    propagators.install(
-        constraint_id(),
-        [var = _var, var_vals = _var_vals, val_vals = _val_vals, selectors = _selectors](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            // Step 1: filter dom(var) — drop any value that no source supports.
-            if (var_vals.empty()) {
-                // The initial-domain shape (create_integer_variable(vector) posts In
-                // over constants): each contiguous run of unsupported values is one
-                // interval conclusion, RUP with no reason since asserting var in
-                // [lo, hi] walks the order chain past every supported value into the
-                // at-least-one. Collect the runs first so the domain is not mutated
-                // mid-iteration.
+    // Pure-constant In: the conjunction model encoding (define_proof_model)
+    // already forces var into the value set, so the domain filtering follows
+    // immediately from the definition and is established once, at the root, with
+    // no justification needed — the model does all the proof work, so no per-run
+    // proof line is emitted. Domains only ever shrink afterwards, so there is
+    // nothing left to propagate: the initialiser does the filtering and the
+    // propagator disables itself on its first call.
+    if (_var_vals.empty()) {
+        propagators.install_initialiser(
+            [var = _var, val_vals = _val_vals](
+                State & state, auto & inference, ProofLogger * const logger) -> void {
+                // Collect the unsupported runs first so the domain is not mutated
+                // mid-iteration, then drop each as one interval, no justification needed.
                 vector<pair<Integer, Integer>> runs;
                 for (auto v : state.each_value_immutable(var)) {
                     if (binary_search(val_vals, v))
@@ -174,36 +201,56 @@ auto In::install_propagators(Propagators & propagators) -> void
                         runs.emplace_back(v, v);
                 }
                 for (const auto & [lo, hi] : runs)
-                    inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{}, ReasonFunction{});
-            }
-            else {
-                for (auto v : state.each_value_mutable(var)) {
-                    if (binary_search(val_vals, v))
-                        continue;
+                    inference.infer_not_in_range(logger, var, lo, hi, NoJustificationNeeded{}, ReasonFunction{});
+            });
 
-                    bool supported_by_var = false;
-                    for (const auto & V : var_vals) {
-                        if (state.in_domain(V, v)) {
-                            supported_by_var = true;
-                            break;
-                        }
+        propagators.install(
+            constraint_id(),
+            [](const State &, auto &, ProofLogger * const) -> PropagatorState {
+                return PropagatorState::DisableUntilBacktrack;
+            },
+            Triggers{});
+        return;
+    }
+
+    Triggers triggers;
+    triggers.on_change.emplace_back(_var);
+    for (const auto & V : _var_vals)
+        triggers.on_change.emplace_back(V);
+
+    propagators.install(
+        constraint_id(),
+        [var = _var, var_vals = _var_vals, val_vals = _val_vals, selectors = _selectors](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // Step 1: filter dom(var) — drop any value that no source supports.
+            // (The pure-constant case never reaches here; it is handled by an
+            // initialiser, so var_vals is always non-empty in this propagator.)
+            for (auto v : state.each_value_mutable(var)) {
+                if (binary_search(val_vals, v))
+                    continue;
+
+                bool supported_by_var = false;
+                for (const auto & V : var_vals) {
+                    if (state.in_domain(V, v)) {
+                        supported_by_var = true;
+                        break;
                     }
-                    if (supported_by_var)
-                        continue;
-
-                    Reason reason;
-                    for (const auto & V : var_vals)
-                        reason.emplace_back(V != v);
-
-                    inference.infer_not_equal(logger, var, v,
-                        JustifyExplicitlyThenRUP{[logger, var, v, &selectors](const ReasonFunction & reason) {
-                            for (const auto & sel : selectors)
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i,
-                                    ProofLevel::Temporary);
-                        }},
-                        ReasonFunction{[=]() { return reason; }});
                 }
+                if (supported_by_var)
+                    continue;
+
+                Reason reason;
+                for (const auto & V : var_vals)
+                    reason.emplace_back(V != v);
+
+                inference.infer_not_equal(logger, var, v,
+                    JustifyExplicitlyThenRUP{[logger, var, v, &selectors](const ReasonFunction & reason) {
+                        for (const auto & sel : selectors)
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i,
+                                ProofLevel::Temporary);
+                    }},
+                    ReasonFunction{[=]() { return reason; }});
             }
 
             // Step 2: identify which V_i's still have any value in dom(var).
