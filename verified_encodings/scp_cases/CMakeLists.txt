@@ -235,3 +235,50 @@ add_scp_chain_test(circuit_unsat  none)
 add_scp_chain_test(array_min_sat    none)
 add_scp_chain_test(array_max_sat    none)
 add_scp_chain_test(array_min_unsat  none)
+
+# none (chain-only): lexicographic comparison. cake reuses the scalar comparison
+# keywords over two lists -- lex_{greater,less}_{than,equal}[_if|_iff] -- and the
+# solver now emits that (the or-equal forms became lex_greater_equal /
+# lex_less_equal, not ..._than_equal, and the reification condition is the
+# (var op val) triple cake expects). The solver's prefix-equality and decision
+# flags are renamed to cake's x[id][i][pref] and x[id][i][dec] (the greater
+# direction) / x[id][i][inc] (the less direction), via the
+# create_proof_flag(ConstraintID, {i}, stem) form -- the propagator's RUP steps
+# reference them by name, so the names must agree for enumeration to verify. The
+# single pref set is shared across both directions (as cake does), so the
+# fully-reified _iff verifies too -- each direction redundantly defines the
+# shared pref under its half of the condition. Stays none (the operands' eq/ge
+# literal encoding still diverges, #358). All four directions verify plain (sat +
+# unsat), half-reified (_if) and fully-reified (_iff). unsat confines the two
+# lists to disjoint ranges so the comparison cannot hold; the reified cases
+# enumerate both branches of the condition.
+add_scp_chain_test(lex_greater_than_sat       none)
+add_scp_chain_test(lex_greater_than_unsat     none)
+add_scp_chain_test(lex_greater_equal_sat      none)
+add_scp_chain_test(lex_greater_equal_unsat    none)
+add_scp_chain_test(lex_less_than_sat          none)
+add_scp_chain_test(lex_less_than_unsat        none)
+add_scp_chain_test(lex_less_equal_sat         none)
+add_scp_chain_test(lex_less_equal_unsat       none)
+add_scp_chain_test(lex_greater_than_if_sat    none)
+add_scp_chain_test(lex_less_equal_if_sat      none)
+add_scp_chain_test(lex_greater_than_iff_sat   none)
+add_scp_chain_test(lex_greater_equal_iff_sat  none)
+add_scp_chain_test(lex_less_than_iff_sat      none)
+add_scp_chain_test(lex_less_equal_iff_sat     none)
+
+# none (chain-only): global cardinality. The solver's writer already emits cake's
+# keywords (bounds/gac globalcardinality[closed]) over (vars)(values)(counts);
+# the encoding is the per-value count constraint Sum_i (x_i = values[j]) =
+# counts[j] (the closed forms add an at-least-one over the cover values per
+# variable). cake defines the eq/ge literals eagerly, so it chain-verifies but
+# does not byte-match (#358). The open (sat + unsat) and GAC (sat + unsat) cases
+# verify, as does closed enumeration (closed_sat confines 0..2 vars to {0,1}).
+# closed_unsat is omitted: its refutation derives the contradiction through the
+# eq-literal ladder, which is exactly where the lazy-vs-eager encoding (#358)
+# diverges, so that proof shape does not yet line up against cake's OPB.
+add_scp_chain_test(global_cardinality_sat         none)
+add_scp_chain_test(global_cardinality_unsat       none)
+add_scp_chain_test(global_cardinality_closed_sat  none)
+add_scp_chain_test(global_cardinality_gac_sat     none)
+add_scp_chain_test(global_cardinality_gac_unsat   none)

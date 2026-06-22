@@ -6,9 +6,11 @@
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/global_cardinality.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/increasing.hh>
 #include <gcs/constraints/inverse.hh>
+#include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/logical.hh>
@@ -197,6 +199,65 @@ namespace
             label);
     }
 
+    // The lexicographic family: (label lex_<less|greater>_<than|equal>[_if|_iff]
+    // [(cond)] (a...) (b...)), in cake_pb_cp's names -- the same comparison
+    // keywords as the scalar family, but over two lists. The keyword carries the
+    // swapped / or-equal / reification flags exactly as the general
+    // LexCompareGreaterThanOrMaybeEqual constructor takes them, so this
+    // reconstructs the object the writer serialised. (cake supports the plain,
+    // _if and _iff forms; the writer can also emit _not / _not_if for the
+    // MustNotHold / NotIf reifications, which round-trip here but have no cake
+    // counterpart, so they are not exercised by the verified chain.)
+    auto read_lex(Problem & problem, const map<string, IntegerVariableID> & variables,
+        const string & op, const vector<SExpr> & terms, const string & label) -> void
+    {
+        string rest = op.substr(sizeof("lex_") - 1);
+        bool vars_swapped = ! rest.starts_with("greater_");
+        rest = rest.substr(vars_swapped ? sizeof("less_") - 1 : sizeof("greater_") - 1);
+        bool or_equal = rest.starts_with("equal");
+        rest = rest.substr(or_equal ? sizeof("equal") - 1 : sizeof("than") - 1);
+        // `rest` is now "" / "_not" (no condition term) or "_if" / "_iff" /
+        // "_not_if" (a (cond) term at terms[2]).
+
+        ReificationCondition cond = reif::MustHold{};
+        std::size_t list1_index = 2;
+        if (rest.empty()) {
+            if (terms.size() != 4)
+                throw ScpReadError{"lex '" + op + "' is (label op (a...) (b...))"};
+        }
+        else if (rest == "_not") {
+            cond = reif::MustNotHold{};
+            if (terms.size() != 4)
+                throw ScpReadError{"lex '" + op + "' is (label op (a...) (b...))"};
+        }
+        else {
+            if (terms.size() != 5)
+                throw ScpReadError{"reified lex '" + op + "' is (label op (cond) (a...) (b...))"};
+            auto condition = resolve_condition(variables, terms[2]);
+            if (rest == "_if")
+                cond = reif::If{condition};
+            else if (rest == "_iff")
+                cond = reif::Iff{condition};
+            else if (rest == "_not_if")
+                cond = reif::NotIf{condition};
+            else
+                throw ScpReadError{"unknown lex comparison '" + op + "'"};
+            list1_index = 3;
+        }
+
+        // The writer emits the "greater" form unswapped (a = vars_1, b = vars_2)
+        // and the "less" form swapped (a = vars_2, b = vars_1), so undo that to
+        // recover the constructor's (vars_1, vars_2), mirroring read_comparison.
+        auto first = resolve_variable_list(variables, terms[list1_index], "the first lex list");
+        auto second = resolve_variable_list(variables, terms[list1_index + 1], "the second lex list");
+        post_constraint(problem,
+            LexCompareGreaterThanOrMaybeEqual{
+                vars_swapped ? second : first,
+                vars_swapped ? first : second,
+                cond, or_equal, vars_swapped},
+            label);
+    }
+
     // The linear family: (label lin_<equals|not_equals|lin_less_equal>[_if|_iff]
     // [(cond)] (c1 v1 c2 v2 ...) value). The keyword selects the constraint and
     // its reification, matching the general ReifiedLinear* constructors. (The
@@ -319,6 +380,26 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             else
                 post_constraint(problem, ArrayMax{move(vars), result}, label);
         }
+        else if (op == "boundsglobalcardinality" || op == "boundsglobalcardinalityclosed" ||
+            op == "gacglobalcardinality" || op == "gacglobalcardinalityclosed") {
+            // (label <kw> (vars...) (values...) (counts...)): for each j, the
+            // number of vars equal to values[j] is counts[j]; the `closed` forms
+            // additionally confine every var to the cover values. The keyword
+            // selects the bounds vs GAC propagator and the closure, matching the
+            // writer. cake_pb_cp parses all four under the same keywords.
+            if (terms.size() != 5)
+                throw ScpReadError{"global cardinality is (label " + op + " (vars...) (values...) (counts...))"};
+            auto vars = resolve_variable_list(variables, terms[2], "the global cardinality variable list");
+            vector<Integer> values;
+            for (const auto & v : children_of(terms[3], "the global cardinality value list"))
+                values.push_back(as_integer(v));
+            auto counts = resolve_variable_list(variables, terms[4], "the global cardinality count list");
+            bool closed = op.ends_with("closed");
+            if (op.starts_with("gac"))
+                post_constraint(problem, GACGlobalCardinality{move(vars), move(values), move(counts), closed}, label);
+            else
+                post_constraint(problem, BoundsGlobalCardinality{move(vars), move(values), move(counts), closed}, label);
+        }
         else if (op == "increasing" || op == "strictly_increasing" || op == "decreasing" || op == "strictly_decreasing") {
             // The keyword carries the strict / descending flags that IncreasingChain
             // takes directly (the inverse of how the writer derives the keyword).
@@ -432,6 +513,9 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 Minus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]),
                     resolve_variable(variables, terms[4])},
                 label);
+        }
+        else if (op.starts_with("lex_")) {
+            read_lex(problem, variables, op, terms, label);
         }
         else if (op.starts_with("less_") || op.starts_with("greater_")) {
             read_comparison(problem, variables, op, terms, label);

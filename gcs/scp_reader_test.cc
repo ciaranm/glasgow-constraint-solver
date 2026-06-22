@@ -6,8 +6,10 @@
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/global_cardinality.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/increasing.hh>
+#include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/current_state.hh>
@@ -143,6 +145,49 @@ TEST_CASE("read_scp: array_min / array_max enumerate correctly")
         CHECK(s.at("R") == std::max({s.at("X"), s.at("Y"), s.at("Z")}));
 }
 
+TEST_CASE("read_scp: lex comparisons enumerate correctly")
+{
+    // (A B) >lex (C D): A > C, or A == C and B > D.
+    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) (D 0 2) ) ( (_1 lex_greater_than (A B) (C D)) ) )"))
+        CHECK(((s.at("A") > s.at("C")) || (s.at("A") == s.at("C") && s.at("B") > s.at("D"))));
+    // (A B) <=lex (C D): A < C, or A == C and B <= D.
+    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) (D 0 2) ) ( (_1 lex_less_equal (A B) (C D)) ) )"))
+        CHECK(((s.at("A") < s.at("C")) || (s.at("A") == s.at("C") && s.at("B") <= s.at("D"))));
+}
+
+TEST_CASE("read_scp: a half-reified lex comparison enumerates correctly")
+{
+    // Z == 1  =>  (A B) >lex (C D) (a half reification: Z == 0 leaves it free).
+    for (const auto & s : enumerate("( ( (Z 0 1) (A 0 1) (B 0 1) (C 0 1) (D 0 1) ) ( (_1 lex_greater_than_if (Z = 1) (A B) (C D)) ) )"))
+        if (s.at("Z") == 1)
+            CHECK(((s.at("A") > s.at("C")) || (s.at("A") == s.at("C") && s.at("B") > s.at("D"))));
+}
+
+TEST_CASE("read_scp: a fully-reified lex comparison enumerates correctly")
+{
+    // Z == 1  iff  (A B) <=lex (C D).
+    for (const auto & s : enumerate("( ( (Z 0 1) (A 0 1) (B 0 1) (C 0 1) (D 0 1) ) ( (_1 lex_less_equal_iff (Z = 1) (A B) (C D)) ) )")) {
+        bool le = (s.at("A") < s.at("C")) || (s.at("A") == s.at("C") && s.at("B") <= s.at("D"));
+        CHECK((s.at("Z") == 1) == le);
+    }
+}
+
+TEST_CASE("read_scp: global cardinality enumerates correctly")
+{
+    // CA counts the 0s among X, Y, Z; CB counts the 1s.
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) (CA 0 3) (CB 0 3) ) ( (_1 boundsglobalcardinality (X Y Z) (0 1) (CA CB)) ) )")) {
+        CHECK(s.at("CA") == (s.at("X") == 0) + (s.at("Y") == 0) + (s.at("Z") == 0));
+        CHECK(s.at("CB") == (s.at("X") == 1) + (s.at("Y") == 1) + (s.at("Z") == 1));
+    }
+    // The closed form additionally confines every variable to a cover value, so
+    // the value 2 is excluded (the gac keyword selects the GAC propagator; the
+    // solution set is the same).
+    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) (CA 0 3) (CB 0 3) ) ( (_1 gacglobalcardinalityclosed (X Y Z) (0 1) (CA CB)) ) )")) {
+        CHECK((s.at("X") == 0 || s.at("X") == 1));
+        CHECK(s.at("CA") + s.at("CB") == 3);
+    }
+}
+
 TEST_CASE("read_scp: in with a mix of integer and variable values")
 {
     // V in {0, 3} (constants) or = W (a variable).
@@ -188,6 +233,26 @@ TEST_CASE("read_scp: comparisons survive write -> read -> write unchanged")
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_cmp_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: lex comparisons survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto a0 = original.create_integer_variable(0_i, 2_i, "A0");
+    auto a1 = original.create_integer_variable(0_i, 2_i, "A1");
+    auto b0 = original.create_integer_variable(0_i, 2_i, "B0");
+    auto b1 = original.create_integer_variable(0_i, 2_i, "B1");
+    auto c = original.create_integer_variable(0_i, 1_i, "C");
+    original.post(LexGreaterThan{{a0, a1}, {b0, b1}});                // plain greater
+    original.post(LexLessThanEqualIff{{a0, a1}, {b0, b1}, c == 1_i}); // or-equal, swapped on write, reified
+    auto scp_a = prove_to_scp(original, "scp_reader_lex_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_lex_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());
