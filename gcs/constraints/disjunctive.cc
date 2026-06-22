@@ -122,23 +122,19 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
         else {
             if (initial_state.lower_bound(_lengths[i]) < 0_i)
                 throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
-            // Variable durations in non-strict mode need the zero-length escape
-            // machinery; that lands in a later PR of the #384 stack.
-            if (! _strict)
-                throw InvalidProblemDefinitionException{
-                    "Disjunctive: variable durations are not yet supported in non-strict mode"};
             _length_ub[i] = initial_state.upper_bound(_lengths[i]);
         }
     }
 
-    // In non-strict mode, zero-length tasks are dropped: they cannot constrain
-    // any other task. In strict mode, every task participates (a zero-length
-    // task at time t is forbidden from sitting strictly inside any other
-    // task's active interval). With constant durations the distinction is
-    // fully resolved here.
+    // In non-strict mode, a task that is definitely zero-length cannot constrain
+    // any other task, so drop it. A constant zero is dropped here; a variable
+    // duration that *can* be zero stays active and gets a zero-length escape
+    // flag (it might still take a positive value during search). In strict mode
+    // every task participates (a zero-length task may not sit strictly inside
+    // another's active interval).
     _active_tasks.reserve(n);
     for (size_t i = 0; i < n; ++i) {
-        if (! _strict && _length_vals[i] == 0_i)
+        if (! _strict && is_constant_variable(_lengths[i]) && _length_vals[i] == 0_i)
             continue;
         _active_tasks.push_back(i);
     }
@@ -157,6 +153,17 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
         _per_task_t_lo[i] = s_lo;
         _per_task_t_hi[i] = s_hi + _length_ub[i] - 1_i;
     }
+
+    // Non-strict mode: note which active tasks' durations can be 0, so
+    // define_proof_model can add a zero-length escape to the separation clause.
+    // The propagator already ignores zero-mandatory tasks via lb(l).
+    _can_be_zero.assign(n, 0);
+    if (! _strict)
+        for (auto i : _active_tasks)
+            _can_be_zero[i] = (! is_constant_variable(_lengths[i]) &&
+                                  initial_state.lower_bound(_lengths[i]) == 0_i)
+                ? 1
+                : 0;
 
     return true;
 }
@@ -197,6 +204,16 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
         _end[i] = end;
     }
 
+    // Non-strict mode: a "duration <= 0" escape flag per can-be-zero task, added
+    // as a disjunct to the separation clause below (a zero-length task does not
+    // constrain). nullopt otherwise.
+    _zero.assign(_starts.size(), nullopt);
+    for (auto i : _active_tasks)
+        if (_can_be_zero[i])
+            _zero[i] = model.create_proof_flag_fully_reifying(
+                "disjzero", "Disjunctive", "task has zero duration",
+                WPBSum{} + 1_i * _lengths[i] <= 0_i);
+
     // before_{i,j} <-> s_i + l_i <= s_j. For a constant duration this folds to
     // s_i - s_j <= -l (byte-identical to the constant-only implementation); for
     // a variable duration the length term stays on the left.
@@ -215,8 +232,13 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
             auto j = _active_tasks[b];
             auto data_ij = emit_before(i, j);
             auto data_ji = emit_before(j, i);
+            // A zero-length task escapes the separation clause (non-strict).
+            auto clause_sum = WPBSum{} + 1_i * data_ij.flag + 1_i * data_ji.flag;
+            for (auto r : {i, j})
+                if (_zero[r])
+                    clause_sum += 1_i * *_zero[r];
             auto clause = model.add_constraint("Disjunctive", "one task must finish first",
-                WPBSum{} + 1_i * data_ij.flag + 1_i * data_ji.flag >= 1_i);
+                move(clause_sum) >= 1_i);
             _before_flags.emplace(std::make_pair(i, j), data_ij);
             _before_flags.emplace(std::make_pair(j, i), data_ji);
             _clause_lines.emplace(std::make_pair(i, j), clause);
@@ -305,9 +327,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths),
-            end_ge = move(_end_ge), end_le = move(_end_le), active_tasks = move(_active_tasks),
-            before_flags = move(_before_flags), clause_lines = move(_clause_lines),
-            bridge](
+            end_ge = move(_end_ge), end_le = move(_end_le), zero = move(_zero), strict = _strict,
+            active_tasks = move(_active_tasks), before_flags = move(_before_flags),
+            clause_lines = move(_clause_lines), bridge](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
@@ -336,6 +358,19 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 pb.add_for_literal(logger->names_and_ids_tracker(),
                     length_vars[i] >= state.lower_bound(length_vars[i]));
                 pb.emit(*logger, ProofLevel::Temporary);
+            };
+
+            // Non-strict mode: every task involved in a contradiction / push has
+            // a positive guaranteed duration (it contributes a mandatory part or
+            // footprint), so its zero-length escape flag is false. Pin those
+            // flags false (RUP under reason) and add them to a clause pol so the
+            // separation clause reduces to its before-flag disjunction. No-op in
+            // strict mode / for always-positive durations.
+            auto add_escape_pins = [&](PolBuilder & pol, const ReasonFunction & reason, size_t i, size_t j) {
+                for (auto r : {i, j})
+                    if (zero[r])
+                        pol.add(logger->emit_rup_proof_line_under_reason(reason,
+                            WPBSum{} + 1_i * *zero[r] <= 0_i, ProofLevel::Temporary));
             };
 
             // Time-table consistency, specialised to heights = 1 and
@@ -481,14 +516,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 // active flags' AND-gate forward reifs, and
                                 // the clause supplies the E_ij + E_ji >= 1
                                 // that closes the case split.
-                                return PolBuilder{}
-                                    .add(L1)
-                                    .add(L2)
-                                    .add(clause_line)
-                                    .add(bfi.active_fwd)
-                                    .add(bfj.active_fwd)
-                                    .saturate()
-                                    .emit(*logger, ProofLevel::Temporary);
+                                PolBuilder am1;
+                                am1.add(L1).add(L2).add(clause_line).add(bfi.active_fwd).add(bfj.active_fwd);
+                                add_escape_pins(am1, reason, ti, tj);
+                                return am1.saturate().emit(*logger, ProofLevel::Temporary);
                             };
 
                             auto atmost1_line = innards::recover_am1<ProofFlag>(
@@ -609,14 +640,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         auto L1 = Lpol(e_ij.forward_line, bfi, bfj, end_le[ti]);
                         auto L2 = Lpol(e_ji.forward_line, bfj, bfi, end_le[tj]);
 
-                        return PolBuilder{}
-                            .add(L1)
-                            .add(L2)
-                            .add(clause_line)
-                            .add(bfi.active_fwd)
-                            .add(bfj.active_fwd)
-                            .saturate()
-                            .emit(*logger, ProofLevel::Temporary);
+                        PolBuilder am1;
+                        am1.add(L1).add(L2).add(clause_line).add(bfi.active_fwd).add(bfj.active_fwd);
+                        add_escape_pins(am1, reason, ti, tj);
+                        return am1.saturate().emit(*logger, ProofLevel::Temporary);
                     };
                     auto atmost1_line = innards::recover_am1<ProofFlag>(
                         *logger, ProofLevel::Top,
@@ -778,9 +805,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // (constant 0, or a variable duration currently fixed to 0) with a
             // fixed start sits strictly inside another task's open active
             // interval, where that task has a fixed start and a fixed positive
-            // duration. (Non-strict mode never sees constant zero-length tasks
-            // in active_tasks — dropped at prepare() time — and does not yet
-            // admit variable durations.)
+            // duration. Non-strict mode skips this entirely: a zero-length task
+            // floats freely (and the separation clause's zero escape allows it).
             //
             // The proof is JustifyUsingRUP: at this all-fixed leaf the
             // declarative pairwise encoding alone is enough. With s_z, s_k (and
@@ -789,6 +815,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // before_{k,z} = (vk + l_k <= vz) UPs to 0, contradicting the
             // encoded clause before_{z,k} + before_{k,z} >= 1.
             for (auto z : active_tasks) {
+                if (! strict)
+                    break;
                 if (max_len(z) > 0_i)
                     continue;
                 if (! state.has_single_value(starts[z]))
