@@ -313,11 +313,12 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
         }
         else if (op == "in") {
             if (terms.size() != 4)
-                throw ScpReadError{"in takes a variable and a list: (label in var (values...))"};
+                throw ScpReadError{"in takes a list and a variable: (label in (values...) var)"};
             // The value list is just a list of variables; an integer value is a
-            // ConstantIntegerVariableID, which In folds back into a constant.
+            // ConstantIntegerVariableID, which In folds back into a constant. The
+            // list comes first, then the variable, matching cake_pb_cp's parser.
             post_constraint(problem,
-                In{resolve_variable(variables, terms[2]), resolve_variable_list(variables, terms[3], "the in value list")}, label);
+                In{resolve_variable(variables, terms[3]), resolve_variable_list(variables, terms[2], "the in value list")}, label);
         }
         else if (op == "element") {
             // (label element (X0 ... Xn-1) (index off) result): result = Xs[index - off].

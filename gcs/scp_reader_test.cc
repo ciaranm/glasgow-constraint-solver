@@ -125,7 +125,7 @@ TEST_CASE("read_scp: in with a mix of integer and variable values")
     auto solutions = enumerate(R"(
         (
             ( (V 0 5) (W 0 5) )
-            ( (_1 in V (0 3 W)) )
+            ( (_1 in (0 3 W) V) )
         ))");
 
     for (const auto & s : solutions)

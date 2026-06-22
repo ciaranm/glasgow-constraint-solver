@@ -286,8 +286,11 @@ auto In::s_expr(const ProofModel * const model) const -> SExpr
         vals.push_back(tracker.s_expr_term_of(v));
     for (const auto & v : _val_vals)
         vals.push_back(SExpr::atom(v.to_string()));
+    // cake_pb_cp's `in` parser takes the candidate list first, then the
+    // variable: (id in (values...) var). Emit that order so the workflow-2
+    // re-derivation parses (it rejects the variable-first form outright).
     return SExpr::list({SExpr::atom(as_string(_constraint_id)),
         SExpr::atom("in"),
-        tracker.s_expr_term_of(_var),
-        SExpr::list(std::move(vals))});
+        SExpr::list(std::move(vals)),
+        tracker.s_expr_term_of(_var)});
 }

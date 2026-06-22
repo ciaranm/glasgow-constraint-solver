@@ -189,3 +189,16 @@ add_scp_chain_test(parity_unsat  none)
 # encoding gap as element (#358) (cake's full ge0 ladder + eq0 <=> ge0 & ~ge1),
 # and its clauses are unlabelled vs cake -- so no opbdiff byte-match yet.
 add_scp_chain_test(inverse_sat  none)
+
+# none (chain-only): `in` (membership). cake_pb_cp's parser takes the candidate
+# list first then the variable -- (id in (values...) var) -- and the solver now
+# emits that order (it previously emitted the variable first, which cake rejected
+# outright). A constant candidate contributes a fixed eq literal and a variable
+# candidate a reified selector, summed at-least-one; that's the same lean shape
+# cake uses, so it chain-verifies. Byte-match stays gated by the eq-literal
+# variable encoding (#358), as for the element / nvalue family. in_var exercises
+# a variable candidate (V == W) alongside a constant; in_unsat forces the domain
+# empty (Y in {5} with Y in 0..3).
+add_scp_chain_test(in_const_sat  none)
+add_scp_chain_test(in_var_sat    none)
+add_scp_chain_test(in_unsat      none)
