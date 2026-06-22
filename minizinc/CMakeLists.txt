@@ -55,6 +55,12 @@ set_tests_properties(minizinc-disjunctive PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-disjunctivestrict COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctivestricttest true true)
 set_tests_properties(minizinc-disjunctivestrict PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-disjunctive-var COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctivevartest true true)
+set_tests_properties(minizinc-disjunctive-var PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-disjunctive-var-nonstrict COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctivevarnonstricttest true true)
+set_tests_properties(minizinc-disjunctive-var-nonstrict PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-diffn COMMAND ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ diffntest true true)
 set_tests_properties(minizinc-diffn PROPERTIES SKIP_RETURN_CODE 66)
 

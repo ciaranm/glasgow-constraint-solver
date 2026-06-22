@@ -671,9 +671,9 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (id == "glasgow_disjunctive" || id == "glasgow_disjunctive_strict") {
                 const auto & starts = arg_as_array_of_var(data, args, 0);
-                auto lengths = arg_as_array_of_integer(data, args, 1);
+                const auto & lengths = arg_as_array_of_var(data, args, 1);
                 auto strict = (id == "glasgow_disjunctive_strict");
-                problem.post(Disjunctive{starts, *lengths, strict});
+                problem.post(Disjunctive{starts, lengths, strict});
             }
             else if (id == "glasgow_diffn" || id == "glasgow_diffn_nonstrict") {
                 const auto & xs = arg_as_array_of_var(data, args, 0);

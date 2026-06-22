@@ -483,10 +483,11 @@ namespace
             _problem.post(Disjunctive{starts, lengths_i, ! zeroIgnored});
         }
 
-        auto buildConstraintNoOverlap(string, vector<XVariable *> &,
-            vector<XVariable *> &, bool) -> void override
+        auto buildConstraintNoOverlap(string, vector<XVariable *> & origins,
+            vector<XVariable *> & lengths, bool zeroIgnored) -> void override
         {
-            report_unsupported("noOverlap", "variable-length Disjunctive not yet supported (#146)");
+            // 1D noOverlap with variable lengths.
+            _problem.post(Disjunctive{need_variables(origins), need_variables(lengths), ! zeroIgnored});
         }
 
         auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins,

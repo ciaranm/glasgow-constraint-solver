@@ -47,7 +47,7 @@ equivalent for that frontend's vocabulary).
 | maximum / minimum (constraint) | `ArrayMax` / `ArrayMin` | ✓ | ✓ (basic with `XCondition`; indexed form pending) | ? |
 | element | `Element` / `Element2D` | ✓ | ✓ (1D vector and constant-list; 2D matrix variable + constant) | ? |
 | channel (inverse) | `Inverse` | ✓ | ✓ (1- and 2-list inverse; one-to-many form `s UNSUPPORTED`) | ? |
-| noOverlap (Disjunctive) | `Disjunctive` (1D) / `Disjunctive2D` (2D, var sizes)[^disj] | ✓ (1D + 2D `diffn`, var sizes) | ✓ (1D + 2D, var sizes) | ? |
+| noOverlap (Disjunctive) | `Disjunctive` (1D, var durations) / `Disjunctive2D` (2D, var sizes)[^disj] | ✓ (1D + 2D `diffn`, var durations/sizes) | ✓ (1D + 2D, var durations/sizes) | ? |
 | cumulative | `Cumulative`[^cum] | ✓ (var s/d/r/b) | ✓ (var s/d/r/b) | ? |
 | binPacking | solver gap (#148) | ? | solver gap (#148) | ? |
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
@@ -77,14 +77,14 @@ addressed.
 
 ## Solver gaps tracked elsewhere
 
-- [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive`: 1D shipped (variable starts, constant lengths, strict and non-strict). `Disjunctive2D` (2D `noOverlap` / `diffn`) shipped: variable origins, constant *or* variable sizes (rotation), strict and non-strict (incl. zero-area sizes via a reified zero-size escape clause), pairwise time-table strength, fully VeriPB-certified (variable sizes via the Cumulative end-proxy technique). k-D, optional tasks, and a sweep / cumulative-relaxation propagator are open follow-ups under the same issue.
+- [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive`: 1D shipped (variable starts, constant *or* variable durations, strict and non-strict incl. zero-length escape; variable durations via the Cumulative end-proxy technique, fully VeriPB-certified — see #384). `Disjunctive2D` (2D `noOverlap` / `diffn`) shipped: variable origins, constant *or* variable sizes (rotation), strict and non-strict (incl. zero-area sizes via a reified zero-size escape clause), pairwise time-table strength, fully VeriPB-certified. k-D, optional tasks, and a sweep / cumulative-relaxation propagator are open follow-ups under the same issue.
 - [#147](https://github.com/ciaranm/glasgow-constraint-solver/issues/147) — `Cumulative`: full `cumulative(var s, var d, var r, var b)` shipped with time-table propagation and VeriPB proofs (the `(le, int)` and `(le, var)` XCSP3 conditions). Edge-finding and energetic (stronger-than-time-table) propagation are open follow-ups under the same issue.
 - [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`
 - [#149](https://github.com/ciaranm/glasgow-constraint-solver/issues/149) — `MDD`
 
 [^cum]: Time-table propagation (mandatory-part load profile with bound pushes), now over variable origins, durations, demands, and capacity; every inference is VeriPB-certified — see [`cumulative-proof-logging.md`](cumulative-proof-logging.md). MiniZinc forwards `s`/`d`/`r`/`b` straight to `glasgow_cumulative` (constants pass through as constant variables); XCSP3 handles all four constant/variable length×height overloads and a constant- or variable-capacity `le` condition. Edge-finding / energetic reasoning remain out of scope.
 
-[^disj]: 1D `Disjunctive`: variable starts, constant lengths, strict/non-strict resolved at construction; time-table specialised to heights=1, capacity=1. 2D `Disjunctive2D` (non-overlapping rectangles, variable origins, constant or variable sizes): pairwise time-table — mandatory-box overlap is a contradiction, and a pair forced to overlap on one axis is pushed apart on the other. Both are fully proof-logged via the declarative pairwise OPB encoding plus a propagator-introduced bridge ([`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)); 2D adds a 4-way separation clause and per-axis bridge flags. Outside the envelope (variable lengths/sizes, k-D, optional tasks): MiniZinc errors at flattening via `fix()`; XCSP3 raises an unsupported error.
+[^disj]: 1D `Disjunctive`: variable starts, constant *or* variable durations, strict/non-strict; time-table specialised to heights=1, capacity=1 (variable durations via the Cumulative end-proxy technique, with a reified zero-length escape clause in non-strict mode). 2D `Disjunctive2D` (non-overlapping rectangles, variable origins, constant or variable sizes): pairwise time-table — mandatory-box overlap is a contradiction, and a pair forced to overlap on one axis is pushed apart on the other. Both are fully proof-logged via the declarative pairwise OPB encoding plus a propagator-introduced bridge ([`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)); 2D adds a 4-way separation clause and per-axis bridge flags. Outside the envelope (k-D, optional tasks): XCSP3 raises an unsupported error.
 
 ## Related documents
 
