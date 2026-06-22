@@ -50,21 +50,42 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace
+{
+    auto const_value_of(const IntegerVariableID & v) -> Integer
+    {
+        return std::get<ConstantIntegerVariableID>(v).const_value;
+    }
+
+    auto as_constant_var_ids(const vector<Integer> & vals) -> vector<IntegerVariableID>
+    {
+        vector<IntegerVariableID> result;
+        result.reserve(vals.size());
+        for (const auto & v : vals)
+            result.push_back(constant_variable(v));
+        return result;
+    }
+}
+
 Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<Integer> lengths, bool strict) :
     _starts(move(starts)),
-    _lengths(move(lengths)),
+    _lengths(as_constant_var_ids(lengths)),
     _strict(strict)
 {
     if (_starts.size() != _lengths.size())
         throw InvalidProblemDefinitionException{"Disjunctive: starts and lengths must have the same size"};
-    for (auto & l : _lengths)
+    for (const auto & l : lengths)
         if (l < 0_i)
             throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
 }
 
 auto Disjunctive::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Disjunctive>(_starts, _lengths, _strict);
+    vector<Integer> lengths;
+    lengths.reserve(_lengths.size());
+    for (const auto & l : _lengths)
+        lengths.push_back(const_value_of(l));
+    return make_unique<Disjunctive>(_starts, move(lengths), _strict);
 }
 
 auto Disjunctive::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -80,15 +101,30 @@ auto Disjunctive::install(Propagators & propagators, State & initial_state, Proo
 
 auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
+    auto n = _starts.size();
+
+    // Resolve length snapshots. _length_vals is the constant value (0
+    // placeholder for a variable, unused until variable durations land);
+    // _length_ub is the initial upper bound used to size the window.
+    _length_vals.assign(n, 0_i);
+    _length_ub.assign(n, 0_i);
+    for (size_t i = 0; i < n; ++i) {
+        if (is_constant_variable(_lengths[i])) {
+            _length_vals[i] = const_value_of(_lengths[i]);
+            _length_ub[i] = const_value_of(_lengths[i]);
+        }
+        else
+            _length_ub[i] = initial_state.upper_bound(_lengths[i]);
+    }
+
     // In non-strict mode, zero-length tasks are dropped: they cannot constrain
     // any other task. In strict mode, every task participates (a zero-length
     // task at time t is forbidden from sitting strictly inside any other
-    // task's active interval). Because lengths are constant, the distinction
-    // is fully resolved here.
-    auto n = _starts.size();
+    // task's active interval). With constant durations the distinction is
+    // fully resolved here.
     _active_tasks.reserve(n);
     for (size_t i = 0; i < n; ++i) {
-        if (! _strict && _lengths[i] == 0_i)
+        if (! _strict && _length_vals[i] == 0_i)
             continue;
         _active_tasks.push_back(i);
     }
@@ -97,15 +133,15 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
         return false;
 
     // Per-task possible-active window from root bounds. Only meaningful for
-    // positive-length tasks; consumers gate on lengths[i] > 0_i.
+    // positive-length tasks; consumers gate on length_ub[i] > 0_i.
     _per_task_t_lo.assign(n, 0_i);
     _per_task_t_hi.assign(n, 0_i);
     for (auto i : _active_tasks) {
-        if (_lengths[i] == 0_i)
+        if (_length_ub[i] == 0_i)
             continue;
         auto [s_lo, s_hi] = initial_state.bounds(_starts[i]);
         _per_task_t_lo[i] = s_lo;
-        _per_task_t_hi[i] = s_hi + _lengths[i] - 1_i;
+        _per_task_t_hi[i] = s_hi + _length_ub[i] - 1_i;
     }
 
     return true;
@@ -132,7 +168,7 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
         auto flag = model.create_proof_flag("disjbefore");
         auto [fwd, rev] = model.add_two_way_reified_constraint(
             "Disjunctive", "first task finishes before second starts",
-            WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] <= -_lengths[i],
+            WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] <= -_length_vals[i],
             flag);
         return BeforeFlagData{flag, fwd, rev};
     };
@@ -191,7 +227,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
     auto bridge = make_shared<BridgeMap>();
 
     propagators.install_initialiser(
-        [starts = _starts, lengths = _lengths, active_tasks = _active_tasks,
+        [starts = _starts, lengths = _length_vals, active_tasks = _active_tasks,
             per_task_t_lo = _per_task_t_lo, per_task_t_hi = _per_task_t_hi,
             bridge](State &, auto &, ProofLogger * const logger) -> void {
             if (! logger)
@@ -221,7 +257,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [starts = move(_starts), lengths = move(_lengths),
+        [starts = move(_starts), lengths = move(_length_vals),
             active_tasks = move(_active_tasks),
             before_flags = move(_before_flags), clause_lines = move(_clause_lines),
             bridge](
@@ -689,7 +725,7 @@ auto Disjunctive::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & v : _starts)
         starts.push_back(tracker.s_expr_term_of(v));
     for (const auto & l : _lengths)
-        lengths.push_back(SExpr::atom(l.to_string()));
+        lengths.push_back(SExpr::atom(const_value_of(l).to_string()));
     return SExpr::list({SExpr::atom(as_string(_constraint_id)),
         SExpr::atom(_strict ? "disjunctive_strict" : "disjunctive"),
         SExpr::list(std::move(starts)),
