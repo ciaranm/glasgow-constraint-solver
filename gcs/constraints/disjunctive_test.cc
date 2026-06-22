@@ -383,6 +383,10 @@ auto main(int argc, char * argv[]) -> int
         {{{0, 2}, {0, 2}}, {{0, 2}, {1, 1}}},
         // Forced overlap at the root: starts pinned, minimum durations collide.
         {{{0, 1}, {0, 1}}, {{2, 3}, {2, 3}}},
+        // Wider domains so variable-duration tasks get bound-PUSHED, not just
+        // contradiction-pruned (exercises emit_chain_step's end-proxy).
+        {{{0, 6}, {0, 6}}, {{2, 3}, {2, 3}}},
+        {{{0, 6}, {0, 6}, {0, 6}}, {{1, 3}, {1, 3}, {1, 3}}},
     };
 
     // Variable-duration random cases (n=2 or 3, narrow horizons, durations 0-2).

@@ -319,6 +319,25 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             auto max_len = [&](size_t i) -> Integer {
                 return is_var_len(i) ? state.upper_bound(length_vars[i]) : lengths[i];
             };
+
+            // For a variable-duration task, materialise end_i >= s_lo + lb(l_i)
+            // via a pol over the captured end >= s+l line plus the start and
+            // length order-literals, so the after-flag RUP closes single-variable
+            // in end. A constant start is folded into end_ge's RHS and so
+            // contributes no literal (a constant has no pol-defining literal).
+            // No-op for a constant duration (after is already single-variable).
+            auto materialise_end = [&](size_t i, Integer s_lo) -> void {
+                if (! is_var_len(i))
+                    return;
+                PolBuilder pb;
+                pb.add(*end_ge[i]);
+                if (! is_constant_variable(starts[i]))
+                    pb.add_for_literal(logger->names_and_ids_tracker(), starts[i] >= s_lo);
+                pb.add_for_literal(logger->names_and_ids_tracker(),
+                    length_vars[i] >= state.lower_bound(length_vars[i]));
+                pb.emit(*logger, ProofLevel::Temporary);
+            };
+
             // Time-table consistency, specialised to heights = 1 and
             // capacity = 1. Mandatory part of task i is [lst_i, eet_i)
             // where lst_i = ub(s_i) and eet_i = lb(s_i) + l_i: the slice it
@@ -407,20 +426,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             auto pin = [&](const BridgeFlags & bf, size_t r) -> ProofLine {
                                 logger->emit_rup_proof_line_under_reason(reason,
                                     WPBSum{} + 1_i * bf.before >= 1_i, ProofLevel::Temporary);
-                                if (is_var_len(r)) {
-                                    // Materialise end >= lb(s) + lb(l). A constant
-                                    // start is already folded into end_ge's RHS, so
-                                    // only a variable start contributes a literal
-                                    // (a constant has no pol-defining literal).
-                                    PolBuilder pb;
-                                    pb.add(*end_ge[r]);
-                                    if (! is_constant_variable(starts[r]))
-                                        pb.add_for_literal(logger->names_and_ids_tracker(),
-                                            starts[r] >= state.lower_bound(starts[r]));
-                                    pb.add_for_literal(logger->names_and_ids_tracker(),
-                                        length_vars[r] >= state.lower_bound(length_vars[r]));
-                                    pb.emit(*logger, ProofLevel::Temporary);
-                                }
+                                // A mandatory task has s_r + l_r >= lb(s_r) + lb(l_r) > vt.
+                                materialise_end(r, state.lower_bound(starts[r]));
                                 logger->emit_rup_proof_line_under_reason(reason,
                                     WPBSum{} + 1_i * bf.after >= 1_i, ProofLevel::Temporary);
                                 return logger->emit_rup_proof_line_under_reason(reason,
@@ -513,25 +520,25 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         return PropagatorState::DisableUntilBacktrack;
                     }
 
-                // Bound-push proofs (emit_chain_step) don't yet thread the
-                // end-proxy through their pair_ne pol, so for now pushes only
-                // run when every active task has a constant duration. Variable
-                // durations still get full contradiction proofs above; their
-                // pushes land in a later PR of the #384 stack.
-                bool any_var_len = false;
+                // Variable durations join the reason for the push proofs (the
+                // end-proxy materialisations and mandatory parts read lb(l)).
+                // For a constant-only instance this is just the starts, leaving
+                // the proof byte-identical.
+                auto push_reason_vars = starts;
                 for (auto i : active_tasks)
-                    if (is_var_len(i)) {
-                        any_var_len = true;
-                        break;
-                    }
+                    if (is_var_len(i))
+                        push_reason_vars.push_back(length_vars[i]);
 
-                // One step of an lb/ub-push chain: a blocked time t and the
-                // single blocking task k (whose mandatory part covers t).
-                // For h = 1, c = 1, one blocker is enough to overflow with j.
+                // One step of an lb/ub-push chain: a blocked time t, the single
+                // blocking task k (whose mandatory part covers t), and the start
+                // lower bound that, with lb(l_j), forces after_{j,t} = 1 (the
+                // running bound for lb-push, t - lb(l_j) + 1 for ub-push). For
+                // h = 1, c = 1, one blocker is enough to overflow with j.
                 struct ChainStep
                 {
                     Integer t;
                     size_t k;
+                    Integer s_lo_after;
                 };
 
                 // Per-step proof emitter, used for the lb-push chain. Mirrors
@@ -541,17 +548,18 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 // advance the step is meant to derive; `emit_intermediate`
                 // controls whether ext_lit is then explicitly RUPped under
                 // reason for the next step's preconditions to close.
-                auto emit_chain_step = [logger, &before_flags, &clause_lines, &bridge](
-                                           size_t j, Integer t, size_t k,
-                                           IntegerVariableCondition ext_lit,
-                                           bool emit_intermediate,
-                                           const ReasonFunction & reason) -> void {
+                auto emit_chain_step = [&](size_t j, Integer t, size_t k,
+                                           IntegerVariableCondition ext_lit, Integer s_lo_after,
+                                           bool emit_intermediate, const ReasonFunction & reason) -> void {
                     auto & bf_k = bridge->at(make_pair(k, t));
                     auto & bf_j = bridge->at(make_pair(j, t));
 
-                    // (a) Pin A_{k,t} = 1 under reason via before / after / active.
+                    // (a) Pin A_{k,t} = 1 under reason via before / after /
+                    // active. The mandatory blocker k has s_k + l_k >= lb(s_k) +
+                    // lb(l_k) > t, so materialise its end before the after RUP.
                     logger->emit_rup_proof_line_under_reason(reason,
                         WPBSum{} + 1_i * bf_k.before >= 1_i, ProofLevel::Temporary);
+                    materialise_end(k, state.lower_bound(starts[k]));
                     logger->emit_rup_proof_line_under_reason(reason,
                         WPBSum{} + 1_i * bf_k.after >= 1_i, ProofLevel::Temporary);
                     auto A_k_line = logger->emit_rup_proof_line_under_reason(reason,
@@ -561,10 +569,12 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     // ¬ext_lit}. Each line carries ext_lit as an extra
                     // disjunct, so VeriPB checks the RUP under
                     // "reason ∧ ¬ext_lit" which is exactly where j is also
-                    // active at t.
+                    // active at t. For a variable duration, s_lo_after + lb(l_j)
+                    // >= t+1 materialises end_j so after_{j,t} = 1.
                     logger->emit_rup_proof_line_under_reason(reason,
                         WPBSum{} + 1_i * bf_j.before + 1_i * ext_lit >= 1_i,
                         ProofLevel::Temporary);
+                    materialise_end(j, s_lo_after);
                     logger->emit_rup_proof_line_under_reason(reason,
                         WPBSum{} + 1_i * bf_j.after + 1_i * ext_lit >= 1_i,
                         ProofLevel::Temporary);
@@ -573,14 +583,12 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         ProofLevel::Temporary);
 
                     // (c) Pairwise at-most-one between A_{j,t} and A_{k,t} via
-                    // recover_am1 + the same three-step pair_ne pol as the
-                    // contradiction proof.
+                    // recover_am1 + the same pair_ne pol as the contradiction
+                    // proof (end_le threaded for variable durations).
                     map<ProofFlag, size_t> flag_to_task;
                     flag_to_task.emplace(bf_j.active, j);
                     flag_to_task.emplace(bf_k.active, k);
-                    auto pair_ne = [logger, &before_flags, &clause_lines, &bridge,
-                                       t, &flag_to_task](
-                                       const ProofFlag & a, const ProofFlag & b) -> ProofLine {
+                    auto pair_ne = [&](const ProofFlag & a, const ProofFlag & b) -> ProofLine {
                         auto ti = flag_to_task.at(a);
                         auto tj = flag_to_task.at(b);
                         auto & bfi = bridge->at(make_pair(ti, t));
@@ -590,19 +598,16 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         auto clause_line = clause_lines.at(
                             make_pair(min(ti, tj), max(ti, tj)));
 
-                        auto L1 = PolBuilder{}
-                                      .add(e_ij.forward_line)
-                                      .add(bfi.after_fwd)
-                                      .add(bfj.before_fwd)
-                                      .saturate()
-                                      .emit(*logger, ProofLevel::Temporary);
-
-                        auto L2 = PolBuilder{}
-                                      .add(e_ji.forward_line)
-                                      .add(bfj.after_fwd)
-                                      .add(bfi.before_fwd)
-                                      .saturate()
-                                      .emit(*logger, ProofLevel::Temporary);
+                        auto Lpol = [&](ProofLine before_line, const BridgeFlags & aft,
+                                        const BridgeFlags & bef, const optional<ProofLine> & aft_end_le) -> ProofLine {
+                            PolBuilder pol;
+                            pol.add(before_line).add(aft.after_fwd).add(bef.before_fwd);
+                            if (aft_end_le)
+                                pol.add(*aft_end_le);
+                            return pol.saturate().emit(*logger, ProofLevel::Temporary);
+                        };
+                        auto L1 = Lpol(e_ij.forward_line, bfi, bfj, end_le[ti]);
+                        auto L2 = Lpol(e_ji.forward_line, bfj, bfi, end_le[tj]);
 
                         return PolBuilder{}
                             .add(L1)
@@ -648,19 +653,15 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 };
 
                 for (auto j : active_tasks) {
-                    // See any_var_len above: skip pushes entirely when any
-                    // duration is variable (PR3 of #384 lifts this).
-                    if (any_var_len)
-                        break;
-                    if (lengths[j] == 0_i)
+                    if (min_len(j) == 0_i)
                         continue;
                     auto [cur_lb, cur_ub] = state.bounds(starts[j]);
                     if (cur_lb == cur_ub)
                         continue;
 
-                    auto lst_j = cur_ub, eet_j = cur_lb + lengths[j];
+                    auto lst_j = cur_ub, eet_j = cur_lb + min_len(j);
                     auto fits_at = [&](Integer s) -> bool {
-                        for (Integer t = s; t < s + lengths[j]; ++t) {
+                        for (Integer t = s; t < s + min_len(j); ++t) {
                             auto load = mand_load[(t - t_lo).raw_value];
                             if (lst_j < eet_j && t >= lst_j && t < eet_j)
                                 --load;
@@ -681,10 +682,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         // First task (≠ j) whose mandatory part covers t.
                         // One is enough for the h = 1, c = 1 chain step.
                         for (auto i : active_tasks) {
-                            if (i == j || lengths[i] == 0_i)
+                            if (i == j || min_len(i) == 0_i)
                                 continue;
                             auto lst_i = state.upper_bound(starts[i]);
-                            auto eet_i = state.lower_bound(starts[i]) + lengths[i];
+                            auto eet_i = state.lower_bound(starts[i]) + min_len(i);
                             if (lst_i < eet_i && t >= lst_i && t < eet_i)
                                 return i;
                         }
@@ -704,9 +705,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         Integer running_bound = cur_lb;
                         while (running_bound < new_lb) {
                             bool found = false;
-                            for (Integer t = running_bound + lengths[j] - 1_i; t >= running_bound; --t)
+                            for (Integer t = running_bound + min_len(j) - 1_i; t >= running_bound; --t)
                                 if (is_blocked_at(t)) {
-                                    chain.push_back(ChainStep{t, blocker_at(t)});
+                                    chain.push_back(ChainStep{t, blocker_at(t), running_bound});
                                     running_bound = t + 1_i;
                                     found = true;
                                     break;
@@ -720,13 +721,13 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 return;
                             for (size_t step = 0; step < chain.size(); ++step)
                                 emit_chain_step(j, chain[step].t, chain[step].k,
-                                    starts[j] > chain[step].t,
+                                    starts[j] > chain[step].t, chain[step].s_lo_after,
                                     step + 1 < chain.size(), reason);
                         };
 
                         inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
                             JustifyExplicitlyThenRUP{justify},
-                            generic_reason(state, starts));
+                            generic_reason(state, push_reason_vars));
                     }
 
                     // ub-push: mirror of lb-push, scanning downward. At each
@@ -745,10 +746,10 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         Integer running_bound = cur_ub;
                         while (running_bound > new_ub) {
                             bool found = false;
-                            for (Integer t = running_bound; t <= running_bound + lengths[j] - 1_i; ++t)
+                            for (Integer t = running_bound; t <= running_bound + min_len(j) - 1_i; ++t)
                                 if (is_blocked_at(t)) {
-                                    chain.push_back(ChainStep{t, blocker_at(t)});
-                                    running_bound = t - lengths[j];
+                                    chain.push_back(ChainStep{t, blocker_at(t), t - min_len(j) + 1_i});
+                                    running_bound = t - min_len(j);
                                     found = true;
                                     break;
                                 }
@@ -759,15 +760,16 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         auto justify = [&, j, chain](const ReasonFunction & reason) -> void {
                             if (! logger)
                                 return;
+                            // ext_lit (s_j <= t - l_j) == (s_j < s_lo_after).
                             for (size_t step = 0; step < chain.size(); ++step)
                                 emit_chain_step(j, chain[step].t, chain[step].k,
-                                    starts[j] < chain[step].t - lengths[j] + 1_i,
+                                    starts[j] < chain[step].s_lo_after, chain[step].s_lo_after,
                                     step + 1 < chain.size(), reason);
                         };
 
                         inference.infer_less_than(logger, starts[j], new_ub + 1_i,
                             JustifyExplicitlyThenRUP{justify},
-                            generic_reason(state, starts));
+                            generic_reason(state, push_reason_vars));
                     }
                 }
             }
