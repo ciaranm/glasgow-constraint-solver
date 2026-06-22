@@ -26,6 +26,7 @@ using std::make_unique;
 using std::move;
 using std::string;
 using std::stringstream;
+using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
@@ -63,8 +64,15 @@ auto AllEqual::prepare(Propagators &, State &, ProofModel * const) -> bool
 
 auto AllEqual::define_proof_model(ProofModel & model) -> void
 {
+    // cake_pb_cp labels each consecutive-pair equality's two halves
+    // @c[id][<i>le] (vars[i+1] - vars[i] >= 0) and @c[id][<i>ge]
+    // (vars[i] - vars[i+1] >= 0). Match those so the encoding lines up with
+    // cake's. The proof never references these lines by name (the propagator
+    // justifies its prunings by RUP), so this is a pure OPB-definition rename.
+    auto id_label = as_string(_constraint_id);
     for (size_t i = 0; i + 1 < _vars.size(); ++i)
-        model.add_constraint("AllEqual", "chain step",
+        model.add_labelled_constraint(id_label, to_string(i) + "le", to_string(i) + "ge",
+            "AllEqual", "chain step",
             WPBSum{} + 1_i * _vars[i] + -1_i * _vars[i + 1] == 0_i);
 }
 

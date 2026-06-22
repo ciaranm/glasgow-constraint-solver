@@ -65,6 +65,17 @@ add_scp_chain_test(lin_not_equals_unsat strict)
 add_scp_chain_test(all_different_unsat  strict)
 add_scp_chain_test(all_different_sat    strict)
 
+# strict: all_equal. cake labels each consecutive-pair equality's two halves
+# @c[id][<i>le] (vars[i+1] - vars[i] >= 0) and @c[id][<i>ge] (vars[i] - vars[i+1]
+# >= 0); the solver's chain-step equality now emits those labels via the
+# add_labelled_constraint equality overload (was an unlabelled add_constraint).
+# all_equal is pure comparison (no eq/ge ladder), so labelling alone byte-matches
+# cake -- no #358 involvement. The proof never references the lines by name (the
+# propagator prunes by RUP), so it's a pure OPB-definition rename. Domains stay
+# off the {0,1} boundary (sat 0..3; unsat uses disjoint 0..2 / 3..5).
+add_scp_chain_test(all_equal_sat    strict)
+add_scp_chain_test(all_equal_unsat  strict)
+
 # strict: count, the second keystone consumer (#354) and a sterner test -- unlike
 # all_different, its propagator references the per-position equality flag by name in
 # its RUP steps. Its flags are now x[id][i][ge|le|eq] (created via the
