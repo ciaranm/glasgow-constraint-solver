@@ -46,9 +46,16 @@ namespace gcs
     {
     private:
         std::vector<IntegerVariableID> _starts;
-        std::vector<Integer> _lengths;
+        std::vector<IntegerVariableID> _lengths;
         bool _strict;
         std::vector<std::size_t> _active_tasks;
+
+        // Length snapshots resolved in prepare(). _length_vals holds the
+        // constant value for a constant duration (0 placeholder for a variable
+        // one, unused until variable durations land); _length_ub holds the
+        // initial upper bound, used to size the possible-active window.
+        std::vector<Integer> _length_vals;
+        std::vector<Integer> _length_ub;
 
         // Per-task possible-active window computed from initial bounds in
         // prepare(). Only populated for positive-length active tasks; indexed
