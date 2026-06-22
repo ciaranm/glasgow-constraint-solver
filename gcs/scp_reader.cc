@@ -1,6 +1,7 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/all_equal.hh>
+#include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/element.hh>
@@ -11,6 +12,7 @@
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/logical.hh>
+#include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/minus.hh>
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/parity.hh>
@@ -300,6 +302,22 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             if (terms.size() != 3)
                 throw ScpReadError{"all_equal takes one list: (label all_equal (vars...))"};
             post_constraint(problem, AllEqual{resolve_variable_list(variables, terms[2], "the all_equal variable list")}, label);
+        }
+        else if (op == "circuit") {
+            if (terms.size() != 3)
+                throw ScpReadError{"circuit takes one list: (label circuit (succ...))"};
+            post_constraint(problem, Circuit{resolve_variable_list(variables, terms[2], "the circuit successor list")}, label);
+        }
+        else if (op == "array_min" || op == "array_max") {
+            // (label array_min (vars...) result): result = min/max of the array.
+            if (terms.size() != 4)
+                throw ScpReadError{"the array aggregate takes a list and a result: (label " + op + " (vars...) result)"};
+            auto vars = resolve_variable_list(variables, terms[2], "the array aggregate variable list");
+            auto result = resolve_variable(variables, terms[3]);
+            if (op == "array_min")
+                post_constraint(problem, ArrayMin{move(vars), result}, label);
+            else
+                post_constraint(problem, ArrayMax{move(vars), result}, label);
         }
         else if (op == "increasing" || op == "strictly_increasing" || op == "decreasing" || op == "strictly_decreasing") {
             // The keyword carries the strict / descending flags that IncreasingChain

@@ -13,16 +13,6 @@
 
 #include <sstream>
 
-#include <version>
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-#include <format>
-#include <print>
-#else
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#endif
-
 #include <algorithm>
 #include <sstream>
 #include <string>
@@ -37,14 +27,6 @@ using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::any_of;
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-using std::format;
-using std::print;
-#else
-using fmt::format;
-using fmt::print;
-#endif
 
 ArrayMinMax::ArrayMinMax(vector<IntegerVariableID> vars, const IntegerVariableID result, bool min) :
     _vars(move(vars)),
@@ -85,9 +67,12 @@ auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
 
     WPBSum al1_selector;
 
-    // (for min) f_i <-> var[i] <= result, i.e. var - result <= 0
+    // (for min) f_i <-> var[i] <= result, i.e. var - result <= 0. Name the
+    // selector x[id][i] (the position-indexed two-level form) so it matches
+    // cake_pb_cp's per-value selector by name -- the propagator's RUP steps
+    // reference it, so workflow-2 enumeration needs the names to agree.
     for (const auto & [id, var] : enumerate(_vars)) {
-        auto selector = model.create_proof_flag(format("arrayminmax{}", id));
+        auto selector = model.create_proof_flag(_constraint_id, std::vector<long long>{static_cast<long long>(id)});
         _selectors.push_back(selector);
         model.add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
         model.add_constraint("ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
@@ -239,7 +224,9 @@ auto ArrayMinMax::s_expr(const innards::ProofModel * const model) const -> SExpr
     std::vector<SExpr> vars;
     for (const auto & v : _vars)
         vars.push_back(tracker.s_expr_term_of(v));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(_min ? "min" : "max"),
+    // cake_pb_cp's array aggregate keyword is array_min / array_max with shape
+    // (id array_min (Xs) Y); a bare min / max is its *binary* op (X op Y = Z).
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(_min ? "array_min" : "array_max"),
         SExpr::list(std::move(vars)),
         tracker.s_expr_term_of(_result)});
 }
