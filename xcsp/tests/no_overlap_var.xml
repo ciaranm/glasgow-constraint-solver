@@ -1,0 +1,16 @@
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="s1"> 0..4 </var>
+        <var id="s2"> 0..4 </var>
+        <var id="s3"> 0..4 </var>
+        <var id="d1"> 1..2 </var>
+        <var id="d2"> 1..2 </var>
+        <var id="d3"> 1..2 </var>
+    </variables>
+    <constraints>
+        <noOverlap>
+            <origins> s1 s2 s3 </origins>
+            <lengths> d1 d2 d3 </lengths>
+        </noOverlap>
+    </constraints>
+</instance>

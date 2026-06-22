@@ -248,12 +248,26 @@ Whenever an inference fires, the relevant sizes are `≥ 1`, so the
 contradiction / reduced-clause pol pins those escape flags false (RUP from
 `size ≥ 1`) before using the clause.
 
+## Variable durations
+
+1D `Disjunctive` supports variable durations too, with the same machinery
+one dimension down from `Disjunctive2D`'s variable sizes. For a variable
+`l_i` the encoded `before` flag keeps the duration term on the left
+(`s_i + l_i ≤ s_j`), and the bridge "after" flag `s_i + l_i ≥ t+1` is
+two-variable, so it is reified on a proof-only `end_i = s_i + l_i`
+(single-variable `end_i ≥ t+1`). Two definition lines are kept:
+`end_i ≥ s_i + l_i` to materialise `end`'s bound when pinning `after = 1`
+(`end_i ≥ s_lo + lb(l_i)` for the relevant start lower bound — the running
+bound for an lb-push, `t − lb(l_i) + 1` for an ub-push, `lb(s_i)` for a
+mandatory task), and `end_i ≤ s_i + l_i` to cancel `end` back to
+`s_i + l_i` in the at-most-one pol so the duration term cancels exactly. A
+constant start folds into `end_ge`'s RHS and contributes no order-literal.
+Mandatory parts and footprints use `lb(l_i)`, and the variable durations
+join the reason. In non-strict mode a variable duration that can be 0 gets
+the same `duration ≤ 0` escape flag as a zero-area rectangle.
+
 ## Open follow-ups
 
-- **Variable lengths.** The OPB encoding generalises directly
-  (`s_i + l_i ≤ s_j` is still pseudo-Boolean over the bit
-  decompositions), but the bridge derivation per `(task, t)` would
-  need to account for `l_i` being a variable rather than a constant.
 - **Optional tasks (`*_opt`).** A presence flag per task gates the
   encoded pairwise clauses; the bridge gets a per-(task, t) flag
   that's only meaningful when the task is present.
