@@ -17,9 +17,10 @@
 namespace gcs
 {
     /**
-     * \brief Disjunctive2D (2D non-overlap, a.k.a. <code>diffn</code>) constraint,
-     * basic case: rectangles with variable origins and constant sizes. No two
-     * rectangles may overlap in area.
+     * \brief Disjunctive2D (2D non-overlap, a.k.a. <code>diffn</code>)
+     * constraint: rectangles with variable origins; the widths and heights may
+     * each be variables or constants (constants pass through as
+     * ConstantIntegerVariableID). No two rectangles may overlap in area.
      *
      * Rectangle <em>i</em> occupies <em>[xs[i], xs[i] + widths[i]) &times;
      * [ys[i], ys[i] + heights[i])</em>. Two rectangles do not overlap iff they
@@ -40,7 +41,7 @@ namespace gcs
      * the constraint is infeasible, and if a pair is forced to overlap in one
      * dimension their positions are pushed apart in the other. Stronger
      * reasoning (the cumulative relaxation, a 2D sweep, edge-finding) and
-     * variable sizes / k dimensions are left for future work.
+     * k dimensions are left for future work.
      *
      * \ingroup Constraints
      */
@@ -57,8 +58,7 @@ namespace gcs
         // Size snapshots resolved in prepare(). _*_vals holds the constant
         // value for a constant size (0 for a variable one, where the variable
         // is used instead); _*_ub holds the initial upper bound (used for the
-        // possible-active window and the active-rect filter). Until the
-        // variable-size milestone lands, sizes must be constant.
+        // possible-active window and the active-rect filter).
         std::vector<Integer> _width_vals, _width_ub;
         std::vector<Integer> _height_vals, _height_ub;
         // Non-strict mode: whether each rectangle's width/height can be 0
