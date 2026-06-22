@@ -420,21 +420,28 @@ namespace
         const vector<IntegerVariableID> & vars_2,
         bool or_equal,
         const optional<HalfReifyOnConjunctionOf> & cond_half_reify,
-        const string & flag_prefix) -> DirectionFlags
+        const ConstraintID & constraint_id,
+        const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal,
+        const string & dec_stem) -> DirectionFlags
     {
         auto n1 = vars_1.size();
         auto n2 = vars_2.size();
         auto n = min(n1, n2);
         bool equal_prefix_satisfies = (n1 > n2) || (or_equal && n1 == n2);
 
+        // The prefix-equality set is created once by the caller and SHARED
+        // across both directions: x[id][i][pref] is the symmetric predicate
+        // vars_1[0..i-1] == vars_2[0..i-1], the same for the greater and less
+        // directions. cake shares it too, so this sharing is what lets the
+        // reified _iff line up against cake's OPB (each direction redundantly
+        // defines the shared pref under its own half of the condition). Only the
+        // decision flag is per-direction: cake names it x[id][i][dec] for the
+        // greater side and x[id][i][inc] for the less side.
         DirectionFlags d;
-        d.prefix_equal = make_shared<vector<optional<ProofFlag>>>();
+        d.prefix_equal = prefix_equal;
         d.decision_at = make_shared<vector<ProofFlag>>();
-        d.prefix_equal->push_back(nullopt);
-        for (size_t i = 1; i <= n; ++i)
-            d.prefix_equal->push_back(model.create_proof_flag(format("lex_{}_prefix_equal_{}", flag_prefix, i)));
         for (size_t i = 0; i < n; ++i)
-            d.decision_at->push_back(model.create_proof_flag(format("lex_{}_decision_at_{}", flag_prefix, i)));
+            d.decision_at->push_back(model.create_proof_flag(constraint_id, std::vector<long long>{static_cast<long long>(i)}, dec_stem));
 
         auto with_cond = [&](HalfReifyOnConjunctionOf base) {
             if (cond_half_reify)
@@ -564,15 +571,34 @@ auto LexCompareGreaterThanOrMaybeEqual::define_proof_model(ProofModel & model) -
         }}
         .visit(_reif_cond);
 
+    // One prefix-equality set, x[id][i][pref], SHARED across both directions:
+    // the flag means vars_1[0..i-1] == vars_2[0..i-1], which is symmetric in the
+    // two lists, so the greater and less directions are the same prefix
+    // predicate. cake shares it too, which is what makes the reified _iff verify
+    // against cake's OPB -- each direction redundantly defines the shared pref
+    // under its own half of the condition. The directions then differ only in
+    // the decision-flag stem, which cake keys to the comparison DIRECTION:
+    // "dec" for the greater side, "inc" for the less side. The primary (gt)
+    // build encodes the user's "less" comparison when _vars_swapped, so it takes
+    // "inc" then; the secondary (lt) build (reified _iff / _not) takes the
+    // opposite.
+    auto common_prefix = std::min(_vars_1.size(), _vars_2.size());
+    auto prefix_equal = make_shared<vector<optional<ProofFlag>>>();
+    prefix_equal->push_back(nullopt);
+    for (size_t i = 1; i <= common_prefix; ++i)
+        prefix_equal->push_back(model.create_proof_flag(_constraint_id, std::vector<long long>{static_cast<long long>(i)}, "pref"));
+
+    string gt_dec_stem = _vars_swapped ? "inc" : "dec";
+    string lt_dec_stem = _vars_swapped ? "dec" : "inc";
     if (need_gt_direction) {
         auto gt = build_lex_direction_encoding(model,
-            _vars_1, _vars_2, _or_equal, half_reify_for_gt, "gt");
+            _vars_1, _vars_2, _or_equal, half_reify_for_gt, _constraint_id, prefix_equal, gt_dec_stem);
         _prefix_equal_gt_flags = gt.prefix_equal;
         _decision_at_gt_flags = gt.decision_at;
     }
     if (need_lt_direction) {
         auto lt = build_lex_direction_encoding(model,
-            _vars_2, _vars_1, ! _or_equal, half_reify_for_lt, "lt");
+            _vars_2, _vars_1, ! _or_equal, half_reify_for_lt, _constraint_id, prefix_equal, lt_dec_stem);
         _prefix_equal_lt_flags = lt.prefix_equal;
         _decision_at_lt_flags = lt.decision_at;
     }
@@ -645,22 +671,26 @@ auto LexCompareGreaterThanOrMaybeEqual::s_expr(const innards::ProofModel * const
         [](const reif::Iff &) -> string { return "_iff"; }}
                              .visit(_reif_cond);
 
-    string cmp = format("lex_{}_than{}{}",
+    // cake_pb_cp's lex keywords are lex_{greater,less}_{than,equal}[_if|_iff]:
+    // the or-equal forms are lex_greater_equal / lex_less_equal (not
+    // ..._than_equal). It parses these through the same comparison-op reader as
+    // the scalar family, dispatching to its lex encoder when the operands are
+    // lists. Its >/< flag layout differs from ours (it builds both directions
+    // for the reified iff), so the chain verifies but the literals do not
+    // byte-match -- a `none`-mode case in the harness.
+    string cmp = format("lex_{}_{}{}",
         _vars_swapped ? "less" : "greater",
-        _or_equal ? "_equal" : "",
+        _or_equal ? "equal" : "than",
         reif_suffix);
 
-    auto cond_lit = overloaded{
-        [](const reif::MustHold &) -> optional<IntegerVariableCondition> { return nullopt; },
-        [](const reif::MustNotHold &) -> optional<IntegerVariableCondition> { return nullopt; },
-        [](const reif::If & r) -> optional<IntegerVariableCondition> { return r.cond; },
-        [](const reif::NotIf & r) -> optional<IntegerVariableCondition> { return r.cond; },
-        [](const reif::Iff & r) -> optional<IntegerVariableCondition> { return r.cond; }}
-                        .visit(_reif_cond);
-
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cmp)};
-    if (cond_lit)
-        terms.push_back(tracker.s_expr_term_of(*cond_lit));
+    // Emit the reification condition as cake's (var op value) triple, exactly as
+    // the scalar comparison writer does: s_expr_term_of(ReificationCondition)
+    // renders the triple (and nullopt for the unconditional MustHold /
+    // MustNotHold). Visiting for the bare condition literal instead would hit
+    // the Literal overload and emit a bare variable atom, which cake rejects.
+    if (auto cond = tracker.s_expr_term_of(_reif_cond))
+        terms.push_back(std::move(*cond));
 
     auto & first = _vars_swapped ? _vars_2 : _vars_1;
     auto & second = _vars_swapped ? _vars_1 : _vars_2;
