@@ -8,6 +8,7 @@
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <utility>
@@ -93,6 +94,13 @@ namespace gcs
         std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end;
         std::vector<std::optional<innards::ProofLine>> _end_ge;
         std::vector<std::optional<innards::ProofLine>> _end_le;
+
+        // Non-strict mode: whether each task's duration can be 0 (std::uint8_t
+        // rather than the vector<bool> bitset specialisation), and, for those
+        // tasks, a reified "duration <= 0" flag that escapes the separation
+        // clause (a zero-length task does not constrain in non-strict mode).
+        std::vector<std::uint8_t> _can_be_zero;
+        std::vector<std::optional<innards::ProofFlag>> _zero;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
