@@ -147,6 +147,136 @@ namespace
 
         check_results(proof_name, expected, actual);
     }
+
+    // Variable-duration test (strict only — non-strict variable durations are
+    // rejected in prepare for now). Each task has a start range and a duration
+    // spec {lo, hi}; lo == hi is a constant duration, lo < hi a variable one.
+    // Enumerated variables appear in every solution vector as: starts (task
+    // order), then the variable durations (task order).
+    auto run_var_disjunctive_test(bool proofs, const string & mode,
+        const vector<pair<int, int>> & start_ranges,
+        const vector<pair<int, int>> & length_specs) -> void
+    {
+        auto n = start_ranges.size();
+        vector<bool> lvar(n);
+        for (size_t i = 0; i < n; ++i)
+            lvar[i] = length_specs[i].first != length_specs[i].second;
+
+        print(cerr, "disjunctive_strict var starts={} lspecs={}{}", start_ranges,
+            length_specs, proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto is_satisfying = [&](const vector<int> & vals) {
+            vector<int> l(n);
+            size_t k = n;
+            for (size_t i = 0; i < n; ++i)
+                l[i] = lvar[i] ? vals.at(k++) : length_specs[i].first;
+            for (size_t i = 0; i < n; ++i)
+                for (size_t j = i + 1; j < n; ++j) {
+                    bool i_before_j = vals[i] + l[i] <= vals[j];
+                    bool j_before_i = vals[j] + l[j] <= vals[i];
+                    if (! i_before_j && ! j_before_i)
+                        return false;
+                }
+            return true;
+        };
+
+        vector<pair<int, int>> all_ranges = start_ranges;
+        for (size_t i = 0; i < n; ++i)
+            if (lvar[i])
+                all_ranges.push_back(length_specs[i]);
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, is_satisfying, all_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> starts, lengths_v, all_vars;
+        for (auto & [lo, hi] : start_ranges) {
+            auto v = p.create_integer_variable(Integer{lo}, Integer{hi});
+            starts.push_back(v);
+            all_vars.push_back(v);
+        }
+        for (size_t i = 0; i < n; ++i) {
+            if (lvar[i]) {
+                auto lv = p.create_integer_variable(
+                    Integer{length_specs[i].first}, Integer{length_specs[i].second});
+                lengths_v.push_back(lv);
+                all_vars.push_back(lv);
+            }
+            else
+                lengths_v.push_back(constant_variable(Integer{length_specs[i].first}));
+        }
+
+        p.post(Disjunctive{starts, lengths_v, true});
+
+        auto proof_name = proofs ? make_optional("disjunctive_test_" + mode + "_var") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
+        check_results(proof_name, expected, actual);
+    }
+
+    // Constant-start variable-duration test: every start is a true
+    // ConstantIntegerVariableID (not a singleton variable), exercising the
+    // constant-start branch of the end-proxy materialisation (a constant start
+    // contributes no order-literal to the pol — it is folded into end_ge). Only
+    // the variable durations are enumerated; the fixed starts feed the checker.
+    auto run_const_start_var_len_test(bool proofs, const string & mode,
+        const vector<int> & const_starts, const vector<pair<int, int>> & length_specs) -> void
+    {
+        auto n = const_starts.size();
+        vector<bool> lvar(n);
+        for (size_t i = 0; i < n; ++i)
+            lvar[i] = length_specs[i].first != length_specs[i].second;
+
+        print(cerr, "disjunctive_strict const-start starts={} lspecs={}{}", const_starts,
+            length_specs, proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto is_satisfying = [&](const vector<int> & vals) {
+            vector<int> l(n);
+            size_t k = 0;
+            for (size_t i = 0; i < n; ++i)
+                l[i] = lvar[i] ? vals.at(k++) : length_specs[i].first;
+            for (size_t i = 0; i < n; ++i)
+                for (size_t j = i + 1; j < n; ++j) {
+                    bool i_before_j = const_starts[i] + l[i] <= const_starts[j];
+                    bool j_before_i = const_starts[j] + l[j] <= const_starts[i];
+                    if (! i_before_j && ! j_before_i)
+                        return false;
+                }
+            return true;
+        };
+
+        vector<pair<int, int>> all_ranges;
+        for (size_t i = 0; i < n; ++i)
+            if (lvar[i])
+                all_ranges.push_back(length_specs[i]);
+
+        set<vector<int>> expected, actual;
+        build_expected(expected, is_satisfying, all_ranges);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        vector<IntegerVariableID> starts, lengths_v, all_vars;
+        for (size_t i = 0; i < n; ++i)
+            starts.push_back(constant_variable(Integer{const_starts[i]}));
+        for (size_t i = 0; i < n; ++i) {
+            if (lvar[i]) {
+                auto lv = p.create_integer_variable(
+                    Integer{length_specs[i].first}, Integer{length_specs[i].second});
+                lengths_v.push_back(lv);
+                all_vars.push_back(lv);
+            }
+            else
+                lengths_v.push_back(constant_variable(Integer{length_specs[i].first}));
+        }
+
+        p.post(Disjunctive{starts, lengths_v, true});
+
+        auto proof_name = proofs ? make_optional("disjunctive_test_" + mode + "_cstart") : nullopt;
+        solve_for_tests(p, proof_name, actual, tuple{all_vars});
+        check_results(proof_name, expected, actual);
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -237,11 +367,72 @@ auto main(int argc, char * argv[]) -> int
         data.emplace_back(random_instance(n_dist(rand), 4, 3));
     }
 
+    // Variable-duration instances (strict only; non-strict variable durations
+    // are rejected in prepare). Each entry: { start_ranges, length_specs },
+    // where a length spec {lo, hi} is constant when lo == hi, variable when
+    // lo < hi.
+    vector<pair<vector<pair<int, int>>, vector<pair<int, int>>>> var_data = {
+        // Two tasks, both variable durations.
+        {{{0, 3}, {0, 3}}, {{1, 2}, {1, 2}}},
+        // Mixed: one variable, one constant duration.
+        {{{0, 3}, {0, 3}}, {{1, 3}, {2, 2}}},
+        // Three tasks, variable durations, tight horizon.
+        {{{0, 3}, {0, 3}, {0, 3}}, {{1, 2}, {1, 2}, {1, 2}}},
+        // A duration that can be zero (strict: a zero-length task is still
+        // forbidden strictly inside another's interval).
+        {{{0, 2}, {0, 2}}, {{0, 2}, {1, 1}}},
+        // Forced overlap at the root: starts pinned, minimum durations collide.
+        {{{0, 1}, {0, 1}}, {{2, 3}, {2, 3}}},
+    };
+
+    // Variable-duration random cases (n=2 or 3, narrow horizons, durations 0-2).
+    auto random_var_instance = [&](int nn)
+        -> pair<vector<pair<int, int>>, vector<pair<int, int>>> {
+        uniform_int_distribution<> lo_dist(0, 3), span_dist(0, 3), llo_dist(0, 2), lspan_dist(0, 2);
+        vector<pair<int, int>> sr, ls;
+        for (int i = 0; i < nn; ++i) {
+            auto lo = lo_dist(rand), span = span_dist(rand);
+            sr.emplace_back(lo, min(lo + span, 3));
+            auto llo = llo_dist(rand), lspan = lspan_dist(rand);
+            ls.emplace_back(llo, min(llo + lspan, 2));
+        }
+        return {sr, ls};
+    };
+    for (int k = 0; k < 20; ++k) {
+        uniform_int_distribution<> n_dist(2, 3);
+        var_data.emplace_back(random_var_instance(n_dist(rand)));
+    }
+
+    // Constant-start variable-duration instances (strict only). Each entry:
+    // { const_start_values, length_specs }.
+    vector<pair<vector<int>, vector<pair<int, int>>>> cstart_data = {
+        // Two constant-start tasks, variable durations; the gap forces shortness.
+        {{0, 1}, {{1, 2}, {1, 2}}},
+        // Mixed: variable + constant duration on constant starts.
+        {{0, 2}, {{1, 3}, {2, 2}}},
+        // Three constant starts, variable durations.
+        {{0, 2, 4}, {{1, 2}, {1, 2}, {1, 2}}},
+        // Forced overlap: pinned starts, minimum durations collide.
+        {{0, 1}, {{2, 3}, {2, 3}}},
+        // A duration that can be zero on a constant start (strict zero-inside).
+        {{1, 0}, {{0, 2}, {2, 2}}},
+    };
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
         for (auto & [sr, lens] : data)
             run_disjunctive_test(proofs, mode, strict, view_cfg, sr, lens);
+
+        // Variable-duration cases run in strict mode only (non-strict variable
+        // durations are rejected in prepare) and only when not view-wrapping,
+        // to avoid duplicating coverage under every wrap.
+        if (strict && run_dup) {
+            for (auto & [sr, ls] : var_data)
+                run_var_disjunctive_test(proofs, mode, sr, ls);
+            for (auto & [cs, ls] : cstart_data)
+                run_const_start_var_len_test(proofs, mode, cs, ls);
+        }
 
         // Dup tests use bare variables (the harness duplicates a handle into
         // several task positions); only run them when no wrapping is in

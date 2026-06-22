@@ -3,20 +3,24 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
 namespace gcs
 {
     /**
-     * \brief Disjunctive (1D non-overlap) constraint, basic case: tasks with
-     * variable origins and constant durations. No two tasks may occupy the
-     * same time point.
+     * \brief Disjunctive (1D non-overlap) constraint: tasks with variable
+     * origins; the durations may each be variables or constants (constants pass
+     * through as ConstantIntegerVariableID). No two tasks may occupy the same
+     * time point. In non-strict mode, durations must currently be constant
+     * (variable non-strict durations are future work).
      *
      * A task <em>i</em> is active at time <em>t</em> iff
      * <em>starts[i] &le; t &lt; starts[i] + lengths[i]</em>. For every pair of
@@ -31,8 +35,9 @@ namespace gcs
      * and CPMpy's <code>NoOverlap</code>. In non-strict mode, zero-length
      * tasks are dropped at install time and place no constraint on the other
      * tasks &mdash; equivalent to MiniZinc's <code>disjunctive</code> and
-     * XCSP3's <code>zeroIgnored = true</code>. Because lengths are constant,
-     * the distinction is fully resolved at construction.
+     * XCSP3's <code>zeroIgnored = true</code>. With constant durations the
+     * distinction is fully resolved at construction; with variable durations a
+     * task may become zero-length during search.
      *
      * Propagation is time-table consistent at heights = 1, capacity = 1:
      * mandatory parts of distinct tasks may not overlap, and each task's
@@ -52,8 +57,8 @@ namespace gcs
 
         // Length snapshots resolved in prepare(). _length_vals holds the
         // constant value for a constant duration (0 placeholder for a variable
-        // one, unused until variable durations land); _length_ub holds the
-        // initial upper bound, used to size the possible-active window.
+        // one, where _lengths[i] is read from the state instead); _length_ub
+        // holds the initial upper bound, used to size the possible-active window.
         std::vector<Integer> _length_vals;
         std::vector<Integer> _length_ub;
 
@@ -79,11 +84,33 @@ namespace gcs
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_flags;
         std::map<std::pair<std::size_t, std::size_t>, innards::ProofLine> _clause_lines;
 
+        // For a task whose duration varies, a proof-only end = s + l on which
+        // that task's "after" bridge flag is reified (a single variable keeps
+        // the after pin RUP-friendly). Both definition directions are captured:
+        // _end_ge is end >= s+l (materialises end's bound), _end_le is end <= s+l
+        // (cancels end back to s+l in the before-flag pol). nullopt for a task
+        // whose duration is constant (those reify after on s directly).
+        std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end;
+        std::vector<std::optional<innards::ProofLine>> _end_ge;
+        std::vector<std::optional<innards::ProofLine>> _end_le;
+
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
+        /**
+         * \brief General form: durations may be variables or constants
+         * (constants pass through as ConstantIntegerVariableID).
+         */
+        explicit Disjunctive(std::vector<IntegerVariableID> starts,
+            std::vector<IntegerVariableID> lengths,
+            bool strict = true);
+
+        /**
+         * \brief Convenience form for constant durations. Delegates to the
+         * general constructor.
+         */
         explicit Disjunctive(std::vector<IntegerVariableID> starts,
             std::vector<Integer> lengths,
             bool strict = true);
