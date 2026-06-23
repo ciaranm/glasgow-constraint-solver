@@ -446,11 +446,6 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integ
 {
 }
 
-auto Regular::symbols() const -> const vector<Integer> &
-{
-    return _symbols;
-}
-
 auto Regular::clone() const -> unique_ptr<Constraint>
 {
     return unique_ptr<Constraint>(new Regular(_vars, _num_states, _transitions, _final_states, _symbols, _short_reasons, _regex));
@@ -515,7 +510,10 @@ auto Regular::define_proof_model(ProofModel & model) -> void
         WPBSum exactly_1_true{};
         _state_at_pos_flags.emplace_back();
         for (long q = 0; q < _num_states; ++q) {
-            _state_at_pos_flags[idx].emplace_back(model.create_proof_flag(format("state{}is{}", idx, q)));
+            // cake_pb_cp names the "in state q at position idx" flag x[id][idx_q][st];
+            // match it so the proof's state literals line up with cake's OPB.
+            _state_at_pos_flags[idx].emplace_back(model.create_proof_flag(
+                _constraint_id, vector<long long>{static_cast<long long>(idx), static_cast<long long>(q)}, "st"));
             exactly_1_true += 1_i * _state_at_pos_flags[idx][q];
         }
         model.add_constraint(move(exactly_1_true) == 1_i);
@@ -570,24 +568,22 @@ auto Regular::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
 
-    vector<SExpr> syms;
-    for (const auto & sym : symbols())
-        syms.push_back(SExpr::atom(sym.to_string()));
-
-    // The old textual form wrapped the per-state list inside one extra pair of
-    // parentheses (the `((` ... `))` around the loop), so the transitions term
-    // is an outer list containing a single inner list of per-state edge lists.
+    // One edge list per state, in state order: position i holds the edges out of
+    // state i, and each edge is (symbol target) -- reading `symbol` moves from
+    // state i to state `target`. This is the shape cake_pb_cp's regular parser
+    // expects: `(vars...) nstates ((edges-of-0) (edges-of-1) ...) (finals...)`,
+    // with no separate alphabet list (cake recovers the symbols from the edges).
+    // A non-deterministic automaton emits several edges with the same symbol.
     vector<SExpr> states;
-    for (size_t i = 0; i < _transitions.size(); i++) {
+    for (long i = 0; i < _num_states; ++i) {
         vector<SExpr> edges;
-        for (const auto & tran : _transitions[i]) {
-            for (const auto & target : tran.second)
-                edges.push_back(SExpr::list({SExpr::atom(tran.first.to_string()),
-                    SExpr::atom(std::to_string(target))}));
-        }
+        if (static_cast<size_t>(i) < _transitions.size())
+            for (const auto & tran : _transitions[i])
+                for (const auto & target : tran.second)
+                    edges.push_back(SExpr::list({SExpr::atom(tran.first.to_string()),
+                        SExpr::atom(std::to_string(target))}));
         states.push_back(SExpr::list(move(edges)));
     }
-    auto transitions_term = SExpr::list({SExpr::list(move(states))});
 
     vector<SExpr> finals;
     for (const auto & f : _final_states)
@@ -597,7 +593,6 @@ auto Regular::s_expr(const ProofModel * const model) const -> SExpr
         SExpr::atom("regular"),
         SExpr::list(move(vars)),
         SExpr::atom(std::to_string(_num_states)),
-        SExpr::list(move(syms)),
-        std::move(transitions_term),
+        SExpr::list(move(states)),
         SExpr::list(move(finals))});
 }

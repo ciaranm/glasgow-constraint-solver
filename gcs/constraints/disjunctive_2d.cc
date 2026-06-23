@@ -206,9 +206,13 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
     // before_{i,j} ⇔ pos_i + size_i ≤ pos_j. For a constant size this folds to
     // pos_i − pos_j ≤ −size (proof byte-identical to the constant-size case);
     // for a variable size the size term stays on the left.
-    auto emit_before = [&](IntegerVariableID pos_i, IntegerVariableID size_i, Integer size_val_i,
+    auto emit_before = [&](size_t idx_i, size_t idx_j, const std::string & axis_stem,
+                           IntegerVariableID pos_i, IntegerVariableID size_i, Integer size_val_i,
                            IntegerVariableID pos_j) -> BeforeFlagData {
-        auto flag = model.create_proof_flag("disj2dbefore");
+        // cake_pb_cp names the "rectangle i precedes j on this axis" flag
+        // x[id][i_j][bx] (x axis) / x[id][i_j][by] (y axis); match it.
+        auto flag = model.create_proof_flag(_constraint_id,
+            vector<long long>{static_cast<long long>(idx_i), static_cast<long long>(idx_j)}, axis_stem);
         auto ineq = is_constant_variable(size_i)
             ? (WPBSum{} + 1_i * pos_i + -1_i * pos_j <= -size_val_i)
             : (WPBSum{} + 1_i * pos_i + 1_i * size_i + -1_i * pos_j <= 0_i);
@@ -247,13 +251,14 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
     _zero_w.assign(_xs.size(), nullopt);
     _zero_h.assign(_xs.size(), nullopt);
     for (auto i : _active_rects) {
+        // cake_pb_cp names the zero-size escapes x[id][i][zw] / x[id][i][zh].
         if (_can_be_zero_w[i])
             _zero_w[i] = model.create_proof_flag_fully_reifying(
-                "d2dzerow", "Disjunctive2D", "rectangle has zero width",
+                _constraint_id, vector<long long>{static_cast<long long>(i)}, "zw",
                 WPBSum{} + 1_i * _widths[i] <= 0_i);
         if (_can_be_zero_h[i])
             _zero_h[i] = model.create_proof_flag_fully_reifying(
-                "d2dzeroh", "Disjunctive2D", "rectangle has zero height",
+                _constraint_id, vector<long long>{static_cast<long long>(i)}, "zh",
                 WPBSum{} + 1_i * _heights[i] <= 0_i);
     }
 
@@ -261,10 +266,10 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
         auto i = _active_rects[a];
         for (size_t b = a + 1; b < _active_rects.size(); ++b) {
             auto j = _active_rects[b];
-            auto bx_ij = emit_before(_xs[i], _widths[i], _width_vals[i], _xs[j]);
-            auto bx_ji = emit_before(_xs[j], _widths[j], _width_vals[j], _xs[i]);
-            auto by_ij = emit_before(_ys[i], _heights[i], _height_vals[i], _ys[j]);
-            auto by_ji = emit_before(_ys[j], _heights[j], _height_vals[j], _ys[i]);
+            auto bx_ij = emit_before(i, j, "bx", _xs[i], _widths[i], _width_vals[i], _xs[j]);
+            auto bx_ji = emit_before(j, i, "bx", _xs[j], _widths[j], _width_vals[j], _xs[i]);
+            auto by_ij = emit_before(i, j, "by", _ys[i], _heights[i], _height_vals[i], _ys[j]);
+            auto by_ji = emit_before(j, i, "by", _ys[j], _heights[j], _height_vals[j], _ys[i]);
             // A zero-area rectangle escapes the separation clause.
             auto clause_sum = WPBSum{} + 1_i * bx_ij.flag + 1_i * bx_ji.flag + 1_i * by_ij.flag + 1_i * by_ji.flag;
             for (auto r : {i, j}) {

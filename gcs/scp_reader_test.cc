@@ -4,6 +4,8 @@
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
+#include <gcs/constraints/disjunctive.hh>
+#include <gcs/constraints/disjunctive_2d.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/global_cardinality.hh>
@@ -12,6 +14,7 @@
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/min_max.hh>
+#include <gcs/constraints/regular/regular.hh>
 #include <gcs/current_state.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
@@ -33,6 +36,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 using namespace gcs;
@@ -405,6 +409,73 @@ TEST_CASE("read_scp: all_equal and the increasing family survive write -> read -
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_aeqinc_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: regular enumerates correctly")
+{
+    // A 2-state parity DFA over {0,1}: state 0 = an even number of 1s read so
+    // far (the start state and the only accepting state), state 1 = odd; reading
+    // a 1 toggles the state. So the accepted words are those with an even number
+    // of 1s.
+    for (const auto & s : enumerate("( ( (X0 0 1) (X1 0 1) (X2 0 1) ) ( (_1 regular (X0 X1 X2) 2 ( ((0 0) (1 1)) ((0 1) (1 0)) ) (0)) ) )"))
+        CHECK((s.at("X0") + s.at("X1") + s.at("X2")) % 2 == 0);
+}
+
+TEST_CASE("read_scp: disjunctive enumerates correctly")
+{
+    // Two length-2 tasks in 0..3 must not overlap, so their starts differ by at
+    // least 2. The strict keyword variant builds the same solution set for
+    // positive lengths.
+    for (const auto & s : enumerate("( ( (S0 0 3) (S1 0 3) ) ( (_1 disjunctive (S0 S1) (2 2)) ) )")) {
+        auto d = s.at("S0") - s.at("S1");
+        CHECK((d >= 2 || d <= -2));
+    }
+    for (const auto & s : enumerate("( ( (S0 0 3) (S1 0 3) ) ( (_1 disjunctive_strict (S0 S1) (2 2)) ) )")) {
+        auto d = s.at("S0") - s.at("S1");
+        CHECK((d >= 2 || d <= -2));
+    }
+    // Variable durations are allowed too: the length list may name variables.
+    for (const auto & s : enumerate("( ( (S0 0 4) (S1 0 4) (D 1 2) ) ( (_1 disjunctive (S0 S1) (D D)) ) )")) {
+        auto d = s.at("S0") - s.at("S1");
+        CHECK((d >= s.at("D") || d <= -s.at("D")));
+    }
+}
+
+TEST_CASE("read_scp: disjunctive2d enumerates correctly")
+{
+    // Two 2x2 rectangles in a 0..3 x 0..3 grid must not overlap, so they are
+    // separated in x or in y.
+    for (const auto & s : enumerate("( ( (X0 0 3) (X1 0 3) (Y0 0 3) (Y1 0 3) ) ( (_1 disjunctive2d (X0 X1) (Y0 Y1) (2 2) (2 2)) ) )")) {
+        auto dx = s.at("X0") - s.at("X1");
+        auto dy = s.at("Y0") - s.at("Y1");
+        CHECK((dx >= 2 || dx <= -2 || dy >= 2 || dy <= -2));
+    }
+}
+
+TEST_CASE("read_scp: regular, disjunctive and disjunctive2d survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x0 = original.create_integer_variable(0_i, 1_i, "X0");
+    auto x1 = original.create_integer_variable(0_i, 1_i, "X1");
+    auto s0 = original.create_integer_variable(0_i, 3_i, "S0");
+    auto s1 = original.create_integer_variable(0_i, 3_i, "S1");
+    auto y0 = original.create_integer_variable(0_i, 3_i, "Y0");
+    auto y1 = original.create_integer_variable(0_i, 3_i, "Y1");
+    original.post(Regular{std::vector<IntegerVariableID>{x0, x1}, 2,
+        std::vector<std::unordered_map<Integer, long>>{{{0_i, 0}, {1_i, 1}}, {{0_i, 1}, {1_i, 0}}},
+        std::vector<long>{0}});
+    original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}});        // strict -> disjunctive_strict
+    original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}, false}); // non-strict -> disjunctive
+    original.post(Disjunctive2D{std::vector<IntegerVariableID>{s0, s1}, std::vector<IntegerVariableID>{y0, y1},
+        std::vector<Integer>{2_i, 2_i}, std::vector<Integer>{2_i, 2_i}, false});
+    auto scp_a = prove_to_scp(original, "scp_reader_regdisj_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_regdisj_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

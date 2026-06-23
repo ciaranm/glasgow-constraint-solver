@@ -41,8 +41,6 @@ namespace gcs
         innards::ConstraintStateHandle _graph_idx;
         std::set<Integer> _opb_alphabet;
 
-        [[nodiscard]] auto symbols() const -> const std::vector<Integer> &;
-
         // Copy-style constructor used by clone(): takes the internal multi-target
         // representation (and the regex, if any) directly.
         Regular(std::vector<IntegerVariableID> vars, long num_states,

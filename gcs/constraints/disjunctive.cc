@@ -210,15 +210,19 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
     _zero.assign(_starts.size(), nullopt);
     for (auto i : _active_tasks)
         if (_can_be_zero[i])
+            // cake_pb_cp names the zero-duration escape x[id][i][zw].
             _zero[i] = model.create_proof_flag_fully_reifying(
-                "disjzero", "Disjunctive", "task has zero duration",
+                _constraint_id, vector<long long>{static_cast<long long>(i)}, "zw",
                 WPBSum{} + 1_i * _lengths[i] <= 0_i);
 
     // before_{i,j} <-> s_i + l_i <= s_j. For a constant duration this folds to
     // s_i - s_j <= -l (byte-identical to the constant-only implementation); for
     // a variable duration the length term stays on the left.
     auto emit_before = [&](size_t i, size_t j) -> BeforeFlagData {
-        auto flag = model.create_proof_flag("disjbefore");
+        // cake_pb_cp names the "task i finishes before task j starts" flag
+        // x[id][i_j][bf]; match it for verified-encoding compatibility.
+        auto flag = model.create_proof_flag(_constraint_id,
+            vector<long long>{static_cast<long long>(i), static_cast<long long>(j)}, "bf");
         auto ineq = is_constant_variable(_lengths[i])
             ? (WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] <= -_length_vals[i])
             : (WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] + -1_i * _starts[j] <= 0_i);
