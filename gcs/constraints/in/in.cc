@@ -1,0 +1,296 @@
+#include <gcs/constraints/in/in.hh>
+#include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/literal.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/innards/reason.hh>
+#include <gcs/innards/s_expr.hh>
+#include <gcs/innards/state.hh>
+
+#include <util/enumerate.hh>
+
+#include <algorithm>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <format>
+#include <print>
+#else
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#endif
+
+using namespace gcs;
+using namespace gcs::innards;
+
+using std::erase_if;
+using std::make_unique;
+using std::move;
+using std::optional;
+using std::pair;
+using std::string;
+using std::unique_ptr;
+using std::vector;
+using std::ranges::any_of;
+using std::ranges::binary_search;
+using std::ranges::sort;
+using std::ranges::unique;
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::format;
+using std::print;
+#else
+using fmt::format;
+using fmt::print;
+#endif
+
+In::In(IntegerVariableID var, vector<IntegerVariableID> vars, vector<Integer> vals) :
+    _var(var),
+    _var_vals(move(vars)),
+    _val_vals(move(vals))
+{
+}
+
+In::In(IntegerVariableID var, vector<IntegerVariableID> vals) :
+    _var(var),
+    _var_vals(move(vals))
+{
+}
+
+In::In(IntegerVariableID var, vector<Integer> vals) :
+    _var(var),
+    _val_vals(move(vals))
+{
+}
+
+auto In::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<In>(_var, _var_vals, _val_vals);
+}
+
+auto In::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto In::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    erase_if(_var_vals, [&](const IntegerVariableID & v) -> bool {
+        auto const_val = initial_state.optional_single_value(v);
+        if (const_val)
+            _val_vals.push_back(*const_val);
+        return const_val.has_value();
+    });
+
+    sort(_val_vals);
+    _val_vals.erase(unique(_val_vals).begin(), _val_vals.end());
+
+    if (_var_vals.empty() && _val_vals.empty()) {
+        // No sources means the constraint is UNSAT. The encoding naturally
+        // collapses to `WPBSum{} >= 1_i` (i.e. `0 ≥ 1`), so we let
+        // define_proof_model run unchanged and install a contradiction
+        // initialiser instead of the regular propagator.
+        _has_no_values = true;
+    }
+
+    return true;
+}
+
+auto In::define_proof_model(ProofModel & model) -> void
+{
+    WPBSum sum;
+
+    for (const auto & v : _val_vals)
+        if (! is_literally_false(_var == v))
+            sum += 1_i * (_var == v);
+
+    // For each non-constant V_i, fully reify three flags:
+    //   lt_i ⇔ var < V_i
+    //   gt_i ⇔ var > V_i
+    //   sel_i ⇔ ¬lt_i ∧ ¬gt_i  (i.e. sel_i ⇔ var = V_i)
+    // Mirrors the encoding used by Count. Full reification of every
+    // proof flag is the project rule for new OPB encodings.
+    for (const auto & [idx, V] : enumerate(_var_vals)) {
+        auto lt = model.create_proof_flag_fully_reifying(format("inlt{}", idx),
+            "In", "var less than", WPBSum{} + 1_i * _var + -1_i * V <= -1_i);
+        auto gt = model.create_proof_flag_fully_reifying(format("ingt{}", idx),
+            "In", "var greater than", WPBSum{} + 1_i * _var + -1_i * V >= 1_i);
+        auto sel = model.create_proof_flag_fully_reifying(format("in{}", idx),
+            "In", "var equal", WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i);
+        _selectors.push_back(sel);
+
+        sum += 1_i * sel;
+    }
+
+    model.add_constraint("In", "var is one of these", sum >= 1_i);
+}
+
+auto In::install_propagators(Propagators & propagators) -> void
+{
+    if (_has_no_values) {
+        propagators.install_initial_contradiction(
+            "No values or variables present for an 'In' constraint",
+            JustifyUsingRUP{});
+        return;
+    }
+
+    Triggers triggers;
+    triggers.on_change.emplace_back(_var);
+    for (const auto & V : _var_vals)
+        triggers.on_change.emplace_back(V);
+
+    propagators.install(
+        constraint_id(),
+        [var = _var, var_vals = _var_vals, val_vals = _val_vals, selectors = _selectors](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // Step 1: filter dom(var) — drop any value that no source supports.
+            if (var_vals.empty()) {
+                // The initial-domain shape (create_integer_variable(vector) posts In
+                // over constants): each contiguous run of unsupported values is one
+                // interval conclusion, RUP with no reason since asserting var in
+                // [lo, hi] walks the order chain past every supported value into the
+                // at-least-one. Collect the runs first so the domain is not mutated
+                // mid-iteration.
+                vector<pair<Integer, Integer>> runs;
+                for (auto v : state.each_value_immutable(var)) {
+                    if (binary_search(val_vals, v))
+                        continue;
+                    if (! runs.empty() && runs.back().second + 1_i == v)
+                        runs.back().second = v;
+                    else
+                        runs.emplace_back(v, v);
+                }
+                for (const auto & [lo, hi] : runs)
+                    inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{}, ReasonFunction{});
+            }
+            else {
+                for (auto v : state.each_value_mutable(var)) {
+                    if (binary_search(val_vals, v))
+                        continue;
+
+                    bool supported_by_var = false;
+                    for (const auto & V : var_vals) {
+                        if (state.in_domain(V, v)) {
+                            supported_by_var = true;
+                            break;
+                        }
+                    }
+                    if (supported_by_var)
+                        continue;
+
+                    Reason reason;
+                    for (const auto & V : var_vals)
+                        reason.emplace_back(V != v);
+
+                    inference.infer_not_equal(logger, var, v,
+                        JustifyExplicitlyThenRUP{[logger, var, v, &selectors](const ReasonFunction & reason) {
+                            for (const auto & sel : selectors)
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i,
+                                    ProofLevel::Temporary);
+                        }},
+                        ReasonFunction{[=]() { return reason; }});
+                }
+            }
+
+            // Step 2: identify which V_i's still have any value in dom(var).
+            optional<size_t> support_1, support_2;
+            for (const auto & [i, V] : enumerate(var_vals)) {
+                bool overlaps = any_of(state.each_value_immutable(V),
+                    [&](Integer w) { return state.in_domain(var, w); });
+                if (overlaps) {
+                    if (! support_1)
+                        support_1 = i;
+                    else {
+                        support_2 = i;
+                        break;
+                    }
+                }
+            }
+
+            // Does any constant in val_vals lie in dom(var)?
+            bool const_supports = any_of(val_vals,
+                [&](Integer c) { return state.in_domain(var, c); });
+
+            // Step 3: if no constant supports and exactly one V_i supports, that V_i must
+            // equal var, so prune V_i to dom(var).
+            if (! const_supports && support_1 && ! support_2) {
+                size_t i = *support_1;
+                const auto & V = var_vals[i];
+
+                for (auto val : state.each_value_mutable(V)) {
+                    if (state.in_domain(var, val))
+                        continue;
+
+                    Reason reason = generic_reason(state, vector{var})();
+                    for (const auto & [j, V_j] : enumerate(var_vals)) {
+                        if (j == i)
+                            continue;
+                        for (const auto & w : state.each_value_immutable(var))
+                            reason.emplace_back(V_j != w);
+                    }
+
+                    inference.infer_not_equal(logger, V, val,
+                        JustifyExplicitlyThenRUP{[logger, &state, &var_vals, &selectors, var, i](const ReasonFunction & reason) {
+                            // When var is fixed, dom(var) is a single value and the inner-loop
+                            // scaffolding line `! sel_j + (var != w)` collapses (under the reason's
+                            // `var = w` literal) to the same constraint as the outer `! sel_j`, so
+                            // skip the inner loop entirely.
+                            bool var_fixed = state.has_single_value(var);
+                            for (const auto & [j, V_j] : enumerate(var_vals)) {
+                                if (j == i)
+                                    continue;
+                                if (! var_fixed)
+                                    for (const auto & w : state.each_value_immutable(var))
+                                        logger->emit_rup_proof_line_under_reason(reason,
+                                            WPBSum{} + 1_i * ! selectors[j] + 1_i * (var != w) >= 1_i,
+                                            ProofLevel::Temporary);
+                                logger->emit_rup_proof_line_under_reason(reason,
+                                    WPBSum{} + 1_i * ! selectors[j] >= 1_i,
+                                    ProofLevel::Temporary);
+                            }
+                        }},
+                        ReasonFunction{[=]() { return reason; }});
+                }
+            }
+
+            // If var is fixed to a constant we know is in val_vals, no further propagation
+            // can possibly fire usefully.
+            auto fixed = state.optional_single_value(var);
+            if (fixed && binary_search(val_vals, *fixed))
+                return PropagatorState::DisableUntilBacktrack;
+
+            return PropagatorState::Enable;
+        },
+        triggers);
+}
+
+auto In::s_expr(const ProofModel * const model) const -> SExpr
+{
+    auto & tracker = model->names_and_ids_tracker();
+    vector<SExpr> vals;
+    for (const auto & v : _var_vals)
+        vals.push_back(tracker.s_expr_term_of(v));
+    for (const auto & v : _val_vals)
+        vals.push_back(SExpr::atom(v.to_string()));
+    // cake_pb_cp's `in` parser takes the candidate list first, then the
+    // variable: (id in (values...) var). Emit that order so the workflow-2
+    // re-derivation parses (it rejects the variable-first form outright).
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
+        SExpr::atom("in"),
+        SExpr::list(std::move(vals)),
+        tracker.s_expr_term_of(_var)});
+}

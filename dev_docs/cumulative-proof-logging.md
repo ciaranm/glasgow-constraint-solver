@@ -152,7 +152,7 @@ fact* differing:
 reason ("task `j` is active at `t` given its bounds-so-far") — it's
 what appears as an extra disjunct in PB-form reified lines.
 
-A single helper `emit_chain_step` in `cumulative.cc` emits the four
+A single helper `emit_chain_step` in `cumulative/cumulative.cc` emits the four
 sub-pieces below, parameterised by `j`, `t`, the contributing tasks,
 `ext_lit`, and whether this is the last step.
 
@@ -307,15 +307,17 @@ and the pol differently:
   `end_i = s_i + l_i` (single variable), and the pin first materialises
   `end_i ≥ s_lo + lb(l_i)` with a `pol` over the captured `end ≥ s + l`
   definition line plus the two operand order-literal defining lines
-  (the `plus.cc` pattern). The `after = 1` RUP is then single-variable in
-  `end_i`, exactly like the constant-duration case. `s_lo` is the chain
-  running bound (lb-push), `t − lb(l_j) + 1` (ub-push, i.e. `¬ext_lit`),
-  or `lb(s_i)` (a mandatory task). If either operand is constant it folds
-  into the OPB and `after` is already single-variable — no `end`, no pol.
+  (the `plus_minus/plus.cc` pattern). The `after = 1` RUP is then
+  single-variable in `end_i`, exactly like the constant-duration case.
+  `s_lo` is the chain running bound (lb-push), `t − lb(l_j) + 1`
+  (ub-push, i.e. `¬ext_lit`), or `lb(s_i)` (a mandatory task). If either
+  operand is constant it folds into the OPB and `after` is already
+  single-variable — no `end`, no pol.
 
-The `pin_contributor` / `pin_pushed` helpers in `cumulative.cc` package
-the (a)/(b) emission so the overflow and both push inferences share one
-shape across all constant/variable combinations.
+The `pin_contributor` / `pin_pushed` helpers in
+`cumulative/cumulative.cc` package the (a)/(b) emission so the overflow
+and both push inferences share one shape across all constant/variable
+combinations.
 
 ## Open follow-ups
 

@@ -11,7 +11,7 @@ add_library(glasgow_constraint_solver
         stats.cc
         variable_condition.cc
         variable_id.cc
-        constraints/abs.cc
+        constraints/abs/abs.cc
         constraints/abs/justify.cc
         constraints/all_different/all_different_except.cc
         constraints/all_different/encoding.cc
@@ -19,33 +19,33 @@ add_library(glasgow_constraint_solver
         constraints/all_different/justify.cc
         constraints/all_different/symmetric_all_different.cc
         constraints/all_different/vc_all_different.cc
-        constraints/all_equal.cc
-        constraints/among.cc
-        constraints/arithmetic.cc
-        constraints/at_most_one.cc
+        constraints/all_equal/all_equal.cc
+        constraints/among/among.cc
+        constraints/arithmetic/arithmetic.cc
+        constraints/at_most_one/at_most_one.cc
         constraints/circuit/circuit_base.cc
         constraints/circuit/circuit_prevent.cc
         constraints/circuit/circuit_scc.cc
-        constraints/comparison.cc
-        constraints/count.cc
-        constraints/cumulative.cc
-        constraints/disjunctive.cc
-        constraints/disjunctive_2d.cc
-        constraints/element.cc
-        constraints/equals.cc
+        constraints/comparison/comparison.cc
+        constraints/count/count.cc
+        constraints/cumulative/cumulative.cc
+        constraints/disjunctive/disjunctive.cc
+        constraints/disjunctive_2d/disjunctive_2d.cc
+        constraints/element/element.cc
+        constraints/equals/equals.cc
         constraints/global_cardinality/bounds_global_cardinality.cc
         constraints/global_cardinality/gac_global_cardinality.cc
         constraints/global_cardinality/justify.cc
-        constraints/in.cc
-        constraints/increasing.cc
+        constraints/in/in.cc
+        constraints/increasing/increasing.cc
         constraints/innards/justify_not_in_range.cc
         constraints/innards/recover_am1.cc
         constraints/innards/reified_state.cc
         constraints/innards/triggers.cc
-        constraints/inverse.cc
-        constraints/knapsack.cc
-        constraints/lex.cc
-        constraints/lex_smart_table.cc
+        constraints/inverse/inverse.cc
+        constraints/knapsack/knapsack.cc
+        constraints/lex/lex.cc
+        constraints/lex/lex_smart_table.cc
         constraints/linear/justify.cc
         constraints/linear/linear_equality.cc
         constraints/linear/linear_greater_than_equal.cc
@@ -53,22 +53,22 @@ add_library(glasgow_constraint_solver
         constraints/linear/linear_less_than_equal.cc
         constraints/linear/propagate.cc
         constraints/linear/utils.cc
-        constraints/logical.cc
-        constraints/min_max.cc
-        constraints/minus.cc
-        constraints/mult_bc.cc
-        constraints/n_value.cc
-        constraints/parity.cc
-        constraints/plus.cc
+        constraints/logical/logical.cc
+        constraints/min_max/min_max.cc
+        constraints/plus_minus/minus.cc
+        constraints/mult_bc/mult_bc.cc
+        constraints/n_value/n_value.cc
+        constraints/parity/parity.cc
+        constraints/plus_minus/plus.cc
         constraints/regular/regular.cc
         constraints/regular/regex.cc
-        constraints/seq_precede_chain.cc
-        constraints/smart_table.cc
+        constraints/seq_precede_chain/seq_precede_chain.cc
+        constraints/smart_table/smart_table.cc
         constraints/sort/arg_sort.cc
         constraints/sort/sort.cc
         constraints/table/negative_table.cc
         constraints/table/table.cc
-        constraints/value_precede.cc
+        constraints/value_precede/value_precede.cc
         innards/extensional_utils.cc
         innards/integer_overflow.cc
         innards/literal.cc
@@ -137,47 +137,47 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(array_param_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME array_param_test COMMAND $<TARGET_FILE:array_param_test>)
 
-    add_executable(abs_test constraints/abs_test.cc)
-    add_executable(all_different_test constraints/all_different_test.cc)
+    add_executable(abs_test constraints/abs/abs_test.cc)
+    add_executable(all_different_test constraints/all_different/all_different_test.cc)
     add_executable(all_different_except_test constraints/all_different/all_different_except_test.cc)
-    add_executable(all_equal_test constraints/all_equal_test.cc)
-    add_executable(among_test constraints/among_test.cc)
-    add_executable(arithmetic_test constraints/arithmetic_test.cc)
-    add_executable(at_most_one_test constraints/at_most_one_test.cc)
-    add_executable(comparison_test constraints/comparison_test.cc)
-    add_executable(count_test constraints/count_test.cc)
-    add_executable(cumulative_test constraints/cumulative_test.cc)
-    add_executable(disjunctive_test constraints/disjunctive_test.cc)
-    add_executable(disjunctive_2d_test constraints/disjunctive_2d_test.cc)
-    add_executable(element_test constraints/element_test.cc)
-    add_executable(equals_test constraints/equals_test.cc)
+    add_executable(all_equal_test constraints/all_equal/all_equal_test.cc)
+    add_executable(among_test constraints/among/among_test.cc)
+    add_executable(arithmetic_test constraints/arithmetic/arithmetic_test.cc)
+    add_executable(at_most_one_test constraints/at_most_one/at_most_one_test.cc)
+    add_executable(comparison_test constraints/comparison/comparison_test.cc)
+    add_executable(count_test constraints/count/count_test.cc)
+    add_executable(cumulative_test constraints/cumulative/cumulative_test.cc)
+    add_executable(disjunctive_test constraints/disjunctive/disjunctive_test.cc)
+    add_executable(disjunctive_2d_test constraints/disjunctive_2d/disjunctive_2d_test.cc)
+    add_executable(element_test constraints/element/element_test.cc)
+    add_executable(equals_test constraints/equals/equals_test.cc)
     add_executable(bounds_global_cardinality_test constraints/global_cardinality/bounds_global_cardinality_test.cc)
     add_executable(gac_global_cardinality_test constraints/global_cardinality/gac_global_cardinality_test.cc)
-    add_executable(in_test constraints/in_test.cc)
-    add_executable(increasing_test constraints/increasing_test.cc)
-    add_executable(inverse_test constraints/inverse_test.cc)
-    add_executable(knapsack_test constraints/knapsack_test.cc)
-    add_executable(lex_test constraints/lex_test.cc)
+    add_executable(in_test constraints/in/in_test.cc)
+    add_executable(increasing_test constraints/increasing/increasing_test.cc)
+    add_executable(inverse_test constraints/inverse/inverse_test.cc)
+    add_executable(knapsack_test constraints/knapsack/knapsack_test.cc)
+    add_executable(lex_test constraints/lex/lex_test.cc)
     add_executable(linear_test constraints/linear/linear_test.cc)
     add_executable(linear_constant_test constraints/linear/linear_constant_test.cc)
-    add_executable(logical_test constraints/logical_test.cc)
-    add_executable(min_max_test constraints/min_max_test.cc)
-    add_executable(mult_bc_test constraints/mult_bc_test.cc)
-    add_executable(n_value_test constraints/n_value_test.cc)
-    add_executable(parity_test constraints/parity_test.cc)
-    add_executable(plus_minus_test constraints/plus_minus_test.cc)
+    add_executable(logical_test constraints/logical/logical_test.cc)
+    add_executable(min_max_test constraints/min_max/min_max_test.cc)
+    add_executable(mult_bc_test constraints/mult_bc/mult_bc_test.cc)
+    add_executable(n_value_test constraints/n_value/n_value_test.cc)
+    add_executable(parity_test constraints/parity/parity_test.cc)
+    add_executable(plus_minus_test constraints/plus_minus/plus_minus_test.cc)
     add_executable(regular_test constraints/regular/regular_test.cc)
-    add_executable(seq_precede_chain_test constraints/seq_precede_chain_test.cc)
-    add_executable(smart_table_test constraints/smart_table_test.cc)
-    add_executable(smart_table_dup_test constraints/smart_table_dup_test.cc)
+    add_executable(seq_precede_chain_test constraints/seq_precede_chain/seq_precede_chain_test.cc)
+    add_executable(smart_table_test constraints/smart_table/smart_table_test.cc)
+    add_executable(smart_table_dup_test constraints/smart_table/smart_table_dup_test.cc)
     target_link_libraries(smart_table_dup_test PRIVATE glasgow_constraint_solver)
     add_test(NAME smart_table_dup COMMAND $<TARGET_FILE:smart_table_dup_test>)
     add_executable(sort_test constraints/sort/sort_test.cc)
     add_executable(arg_sort_test constraints/sort/arg_sort_test.cc)
     add_executable(negative_table_test constraints/table/negative_table_test.cc)
     add_executable(symmetric_all_different_test constraints/all_different/symmetric_all_different_test.cc)
-    add_executable(table_test constraints/table_test.cc)
-    add_executable(value_precede_test constraints/value_precede_test.cc)
+    add_executable(table_test constraints/table/table_test.cc)
+    add_executable(value_precede_test constraints/value_precede/value_precede_test.cc)
 
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test

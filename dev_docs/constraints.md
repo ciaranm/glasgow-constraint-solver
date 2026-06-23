@@ -32,30 +32,40 @@ propagators (with their captured state) and the OPB definition remain.
 
 ## File layout
 
-For a constraint named `Foo`:
+Every constraint lives in its own directory. For a constraint named
+`Foo`:
 
 ```
-gcs/constraints/foo.hh        public class declaration
-gcs/constraints/foo.cc        install method + propagator
-gcs/constraints/foo_test.cc   enumeration tests
+gcs/constraints/foo.hh             public umbrella header
+gcs/constraints/foo/foo.hh         public class declaration
+gcs/constraints/foo/foo.cc         install method + propagator
+gcs/constraints/foo/foo_test.cc    enumeration tests
 ```
 
-Then three places to wire it up:
+The top-level `gcs/constraints/foo.hh` is a thin umbrella that just
+`#include`s `gcs/constraints/foo/foo.hh`. Consumers (`gcs.hh`,
+`fzn-glasgow`, examples) always include the umbrella
+`<gcs/constraints/foo.hh>`, so the public include path stays stable no
+matter how the directory's internals are arranged. The class header's
+include guard is directory-qualified (`..._CONSTRAINTS_FOO_FOO_HH`)
+while the umbrella keeps the bare `..._CONSTRAINTS_FOO_HH`.
 
-- `gcs/CMakeLists.txt` — add `foo.cc` to the library sources, and
-  `foo_test` to the test target list.
-- `gcs/gcs.hh` — add `#include <gcs/constraints/foo.hh>`. **This is
-  easy to forget**; downstream consumers (`fzn-glasgow`, examples) get
-  the class via this umbrella header.
+Then two places to wire it up:
 
-### Constraint families
+- `gcs/CMakeLists.txt` — add `constraints/foo/foo.cc` to the library
+  sources, and `foo_test` (built from `constraints/foo/foo_test.cc`) to
+  the test target list.
+- `gcs/gcs.hh` — add `#include <gcs/constraints/foo.hh>` (the
+  umbrella). **This is easy to forget**; downstream consumers
+  (`fzn-glasgow`, examples) get the class via this header.
+
+### Constraints with several files
 
 Some constraints come in groups — multiple algorithms
 (`gac_all_different`, `vc_all_different`), variants
 (`AllDifferentExcept`, `AllDifferentExceptZero`), or shared
-encoding/justify helpers (`encoding.cc`, `justify.cc`). When a new
-constraint shares concepts with an existing one, put its files inside
-the family's subdirectory:
+encoding/justify helpers (`encoding.cc`, `justify.cc`). These all live
+in the same directory, alongside the main class header:
 
 ```
 gcs/constraints/all_different.hh                       public umbrella header
@@ -66,15 +76,10 @@ gcs/constraints/all_different/justify.{hh,cc}          shared proof helper
 gcs/constraints/all_different/*_test.cc                tests
 ```
 
-The umbrella `gcs/constraints/<family>.hh` just `#include`s every
-variant's header (and may add a `using AllDifferent = GACAllDifferent;`
-style alias). `gcs/gcs.hh` then only needs the umbrella, not each
-variant.
-
-Look for an existing family before adding a new top-level
-`gcs/constraints/foo.{hh,cc}`: `all_different/`, `circuit/`,
-`linear/`, `innards/`. A constraint that's genuinely standalone (no
-shared concepts with any existing family) keeps the flat layout.
+Here the umbrella `gcs/constraints/<family>.hh` `#include`s every
+variant's header and may add a `using AllDifferent = GACAllDifferent;`
+style alias to name the default implementation. `gcs/gcs.hh` then only
+needs the umbrella, not each variant.
 
 ## The header
 
@@ -158,7 +163,8 @@ auto Foo::install_propagators(Propagators & propagators) -> void
 
 State that needs to flow between phases (filtered task lists, proof-flag
 handles, cached line numbers) goes on the class as private members.
-`all_equal.cc`, `count.cc`, and `cumulative.cc` are good references.
+`all_equal/all_equal.cc`, `count/count.cc`, and
+`cumulative/cumulative.cc` are good references.
 
 Older constraints (e.g. `Knapsack`) still inline everything in
 `install()`; new code shouldn't follow that — the split form is the
@@ -296,7 +302,7 @@ or longer inference paths.
 The callback in `JustifyExplicitlyThenRUP` receives a `ReasonFunction &`
 and can emit proof lines via `logger->emit_rup_proof_line_under_reason`,
 `logger->emit(RUPProofRule{}, ..., ProofLevel::Temporary)`, and
-similar. See `among.cc` and `lex.cc` for examples of varying
+similar. See `among/among.cc` and `lex/lex.cc` for examples of varying
 complexity.
 
 **Debug aid only:** `AssertRatherThanJustifying` exists as a "trust me"
@@ -687,7 +693,7 @@ correctness work wants the full enumeration check.
    the user actually typed. For constraints that key on a deviewed
    form (e.g. `SmartTable`'s `build_forests` uses the underlying
    `SimpleIntegerVariableID`), the check needs to match that — see
-   `smart_table.cc`'s `deview_for_alias_check` helper.
+   `smart_table/smart_table.cc`'s `deview_for_alias_check` helper.
 
    The discipline above was retro-fitted across the existing
    constraints in PRs #223–#234.
