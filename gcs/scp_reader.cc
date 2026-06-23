@@ -4,6 +4,8 @@
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
+#include <gcs/constraints/disjunctive.hh>
+#include <gcs/constraints/disjunctive_2d.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/global_cardinality.hh>
@@ -19,6 +21,7 @@
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
+#include <gcs/constraints/regular/regular.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/problem.hh>
@@ -28,12 +31,15 @@
 
 #include <charconv>
 #include <optional>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 using std::map;
 using std::move;
 using std::string;
 using std::string_view;
+using std::unordered_map;
 using std::vector;
 
 using namespace gcs;
@@ -316,6 +322,39 @@ namespace
             ReifiedEquals{resolve_variable(variables, terms[v1_index]), resolve_variable(variables, terms[v1_index + 1]), cond, neq},
             label);
     }
+
+    // (label regular (X1 ... Xn) nstates ((edges-of-0) (edges-of-1) ...)
+    // (f1 ... fk)): the Xi spell a word the automaton accepts. The automaton has
+    // `nstates` states (0-based, starting in state 0); the third argument lists,
+    // per state in order, that state's outgoing edges, each an (symbol target)
+    // pair meaning "reading `symbol` moves to state `target`"; (f1 ... fk) are
+    // the accepting states. This is cake_pb_cp's shape, and the inverse of the
+    // writer. cake supports non-deterministic automata, but Regular has no public
+    // multi-target constructor, so the reader rebuilds deterministic automata
+    // only -- two edges on the same symbol in one state are rejected.
+    auto read_regular(Problem & problem, const map<string, IntegerVariableID> & variables,
+        const vector<SExpr> & terms, const string & label) -> void
+    {
+        if (terms.size() != 6)
+            throw ScpReadError{"regular is (label regular (vars...) nstates ((edges)...) (finals...))"};
+        auto vars = resolve_variable_list(variables, terms[2], "the regular variable list");
+        auto num_states = static_cast<long>(as_integer(terms[3]).raw_value);
+        const auto & per_state = children_of(terms[4], "the regular per-state edge lists");
+        vector<unordered_map<Integer, long>> transitions(per_state.size());
+        for (std::size_t q = 0; q < per_state.size(); ++q)
+            for (const auto & edge : children_of(per_state[q], "a regular state's edge list")) {
+                const auto & pair = children_of(edge, "a regular edge");
+                if (pair.size() != 2)
+                    throw ScpReadError{"a regular edge must be (symbol target)"};
+                auto target = static_cast<long>(as_integer(pair[1]).raw_value);
+                if (! transitions[q].emplace(as_integer(pair[0]), target).second)
+                    throw ScpReadError{"the .scp reader rebuilds deterministic automata only: a state has two edges on the same symbol"};
+            }
+        vector<long> finals;
+        for (const auto & f : children_of(terms[5], "the regular final-state list"))
+            finals.push_back(static_cast<long>(as_integer(f).raw_value));
+        post_constraint(problem, Regular{move(vars), num_states, move(transitions), move(finals)}, label);
+    }
 }
 
 auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVariableID>
@@ -513,6 +552,39 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 Minus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]),
                     resolve_variable(variables, terms[4])},
                 label);
+        }
+        else if (op == "disjunctive" || op == "disjunctive_strict") {
+            // (label disjunctive (starts...) (lengths...)): the tasks
+            // [start, start + length) pairwise do not overlap. The strict and
+            // non-strict forms differ only over zero-length tasks (strict keeps
+            // them, non-strict drops them), so they coincide for positive
+            // lengths; the keyword carries the distinction. cake_pb_cp parses
+            // `disjunctive`, which the writer emits for the non-strict form.
+            if (terms.size() != 4)
+                throw ScpReadError{"disjunctive is (label " + op + " (starts...) (lengths...))"};
+            post_constraint(problem,
+                Disjunctive{resolve_variable_list(variables, terms[2], "the disjunctive start list"),
+                    resolve_variable_list(variables, terms[3], "the disjunctive length list"),
+                    op.ends_with("_strict")},
+                label);
+        }
+        else if (op == "disjunctive2d" || op == "disjunctive2d_strict") {
+            // (label disjunctive2d (xs...) (ys...) (widths...) (heights...)): the
+            // rectangles [x, x + w) x [y, y + h) pairwise do not overlap. As for
+            // disjunctive, the keyword carries strict vs non-strict (identical for
+            // positive sizes); cake_pb_cp parses `disjunctive2d`.
+            if (terms.size() != 6)
+                throw ScpReadError{"disjunctive2d is (label " + op + " (xs...) (ys...) (widths...) (heights...))"};
+            post_constraint(problem,
+                Disjunctive2D{resolve_variable_list(variables, terms[2], "the disjunctive2d x list"),
+                    resolve_variable_list(variables, terms[3], "the disjunctive2d y list"),
+                    resolve_variable_list(variables, terms[4], "the disjunctive2d width list"),
+                    resolve_variable_list(variables, terms[5], "the disjunctive2d height list"),
+                    op.ends_with("_strict")},
+                label);
+        }
+        else if (op == "regular") {
+            read_regular(problem, variables, terms, label);
         }
         else if (op.starts_with("lex_")) {
             read_lex(problem, variables, op, terms, label);

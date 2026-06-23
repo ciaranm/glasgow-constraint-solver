@@ -282,3 +282,33 @@ add_scp_chain_test(global_cardinality_unsat       none)
 add_scp_chain_test(global_cardinality_closed_sat  none)
 add_scp_chain_test(global_cardinality_gac_sat     none)
 add_scp_chain_test(global_cardinality_gac_unsat   none)
+
+# none (chain-only): regular (the sequence of variables is a word accepted by a
+# finite automaton). The writer emits cake's shape -- (vars...) nstates
+# ((edges-of-0) (edges-of-1) ...) (finals...), each edge (symbol target) -- and
+# the "in state q at position i" flag is named x[id][i_q][st] (the
+# create_proof_flag(ConstraintID, {i, q}, "st") form), matching cake, so the
+# propagator's RUP steps over the state flags line up against cake's OPB. The
+# transition literals still diverge (cake spells them over eager eq-literals, we
+# over the lazy bits, #358), but the chain verifies anyway: cake defines the
+# bit<->eq linkage, so the bit-basis RUP bridges to cake's eq-basis clauses.
+# sat is a parity DFA (an even number of 1s), unsat an automaton whose only
+# accepting state is unreachable in three steps, ternary_sat a sum-mod-3 DFA over
+# 0..2 -- a wider eq/ge ladder, exercising the bridge off a binary domain.
+add_scp_chain_test(regular_sat          none)
+add_scp_chain_test(regular_unsat        none)
+add_scp_chain_test(regular_ternary_sat  none)
+
+# disjunctive / disjunctive2d are read and written by the solver (see
+# scp_reader_test: enumeration + write->read->write round-trip), and their
+# auxiliary flags are named to match cake -- x[id][i_j][bf] (the "task i finishes
+# before task j" ordering), x[id][i_j][bx]/[by] (the per-axis 2D orderings),
+# x[id][i][zw]/[zh] (zero-size escapes) -- so the encodings agree structurally.
+# But they are NOT chain-tested yet: cake currently HALF-reifies its before flags
+# (flag -> ordering, not the converse), whereas we full-reify by design rule. Our
+# proofs falsify a before flag from the variable bounds by unit propagation, which
+# needs the converse implication; against cake's half-reified OPB that RUP step is
+# underivable, so the chain fails for any non-trivial instance (a single isolated
+# pair can still slip through). This is an upstream cake fix (full-reify the
+# before / separation flags); once it lands, the chain tests drop in here with no
+# further solver-side change.
