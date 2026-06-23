@@ -17,6 +17,7 @@
 #include <fmt/ostream.h>
 #endif
 
+#include <algorithm>
 #include <any>
 #include <cstdio>
 #include <functional>
@@ -45,6 +46,7 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
@@ -574,14 +576,23 @@ auto Regular::s_expr(const ProofModel * const model) const -> SExpr
     // expects: `(vars...) nstates ((edges-of-0) (edges-of-1) ...) (finals...)`,
     // with no separate alphabet list (cake recovers the symbols from the edges).
     // A non-deterministic automaton emits several edges with the same symbol.
+    // _transitions[i] is an unordered_map, so collect the (symbol, target) pairs
+    // and sort them: the written .scp must be byte-stable across standard
+    // libraries (hash iteration order is not portable, which breaks the
+    // write -> read -> write round-trip), and a canonical order does that.
     vector<SExpr> states;
     for (long i = 0; i < _num_states; ++i) {
         vector<SExpr> edges;
-        if (static_cast<size_t>(i) < _transitions.size())
+        if (static_cast<size_t>(i) < _transitions.size()) {
+            vector<std::pair<Integer, long>> sorted_edges;
             for (const auto & tran : _transitions[i])
                 for (const auto & target : tran.second)
-                    edges.push_back(SExpr::list({SExpr::atom(tran.first.to_string()),
-                        SExpr::atom(std::to_string(target))}));
+                    sorted_edges.emplace_back(tran.first, target);
+            sort(sorted_edges);
+            for (const auto & [sym, target] : sorted_edges)
+                edges.push_back(SExpr::list({SExpr::atom(sym.to_string()),
+                    SExpr::atom(std::to_string(target))}));
+        }
         states.push_back(SExpr::list(move(edges)));
     }
 
