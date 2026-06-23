@@ -9,8 +9,8 @@ It is aimed at developers (human and AI) writing new reified constraints, or
 modifying an existing one. Read [constraints.md](constraints.md) first for
 the general structure of any constraint — this document only covers what
 *additionally* applies when the constraint is reified. The runnable
-examples are `gcs/constraints/comparison.cc`, `gcs/constraints/equals.cc`,
-and `gcs/constraints/lex.cc`.
+examples are `gcs/constraints/comparison/comparison.cc`,
+`gcs/constraints/equals/equals.cc`, and `gcs/constraints/lex/lex.cc`.
 
 ## What "reification" means
 
@@ -121,8 +121,8 @@ Each reified constraint hand-rolls an `if (optional_model)` block that calls
 `optional_model->add_constraint(...)`. The conventional pattern dispatches on
 the static `ReificationCondition` and emits one or two PB constraints per
 direction, half-reified on the cond literal as appropriate. Look at
-`comparison.cc` and `equals.cc` for the simplest examples, and `lex.cc` for a
-more complex one with auxiliary flags.
+`comparison/comparison.cc` and `equals/equals.cc` for the simplest
+examples, and `lex/lex.cc` for a more complex one with auxiliary flags.
 
 Key idea: each PB constraint can be *conditioned* on a conjunction of
 literals/flags via the `HalfReifyOnConjunctionOf` parameter to
@@ -204,7 +204,7 @@ fine for outliers — it predates the dispatcher — but it duplicates the
 MustHold/MustNotHold passes between the top-level dispatch and an inner
 re-dispatch inside the Undecided arm.
 
-## Worked example: `LessThan` (in `comparison.cc`)
+## Worked example: `LessThan` (in `comparison/comparison.cc`)
 
 A boiled-down outline of `ReifiedCompareLessThanOrMaybeEqual::install`:
 
@@ -276,7 +276,7 @@ machinery lives entirely in `gcs/constraints/innards/`.
 For most constraints, `JustifyUsingRUP{}` works regardless of which cond
 literal the dispatcher decides to infer — the OPB encoding has the right
 shape and PB unit propagation closes the gap. But if a constraint emits
-*explicit* RUP scaffolding (e.g., `lex.cc`'s
+*explicit* RUP scaffolding (e.g., `lex/lex.cc`'s
 `run_lex_undecided_detection`), the scaffolding's reason may need to
 include `cond` or `¬cond` as a literal, depending on which direction is
 being inferred. Lex currently only fully supports the Iff polarity for
@@ -336,7 +336,7 @@ which would unblock linear_equality's adoption.
 
 1. Public class hierarchy in your header — typically a base class storing
    `ReificationCondition` plus thin `Constraint` / `ConstraintIf` /
-   `ConstraintIff` wrappers (mirror `comparison.hh`).
+   `ConstraintIff` wrappers (mirror `comparison/comparison.hh`).
 2. OPB encoding in `install` guarded by `if (optional_model)`. Decide
    per reif kind whether you need a constraint, its negation, or both;
    half-reify each on the appropriate cond polarity.

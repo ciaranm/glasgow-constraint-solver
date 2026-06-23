@@ -64,7 +64,7 @@ All three reference `mznlib/` as the predicate library directory.
 
 ## Adding a new constraint binding
 
-The general recipe (see `gcs/constraints/lex.cc` and the
+The general recipe (see `gcs/constraints/lex/lex.cc` and the
 `minizinc/{mznlib,tests,fzn_glasgow.cc}` changes that bound it):
 
 1. **Find the right FlatZinc predicate(s) to override.** Look at the

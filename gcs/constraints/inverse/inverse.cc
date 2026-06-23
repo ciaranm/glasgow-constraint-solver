@@ -1,0 +1,202 @@
+#include <gcs/constraints/all_different/gac_all_different.hh>
+#include <gcs/constraints/innards/recover_am1.hh>
+#include <gcs/constraints/inverse/inverse.hh>
+#include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/innards/s_expr.hh>
+#include <gcs/innards/state.hh>
+#include <gcs/integer.hh>
+
+#include <util/enumerate.hh>
+
+#include <version>
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+#include <print>
+#else
+#include <fmt/ostream.h>
+#endif
+
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
+using namespace gcs;
+using namespace gcs::innards;
+
+using std::make_shared;
+using std::map;
+using std::shared_ptr;
+using std::string;
+using std::stringstream;
+using std::unique_ptr;
+using std::vector;
+
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+using std::print;
+#else
+using fmt::print;
+#endif
+
+Inverse::Inverse(vector<IntegerVariableID> x, vector<IntegerVariableID> y, Integer x_start, Integer y_start) :
+    _x(move(x)),
+    _y(move(y)),
+    _x_start(x_start),
+    _y_start(y_start)
+
+{
+    // Intra-array aliasing is always infeasible: if x[i] and x[j] share a
+    // handle then any value v they take demands y[v] = i and y[v] = j at
+    // once. Cross-array aliasing (e.g. inverse(x, x) for involutions) is
+    // legitimate, so only check within each array. Repeated constants are
+    // permitted: they aren't a single variable, they're two slots pinned
+    // to the same value, which is a meaningful (and possibly infeasible)
+    // model — see the #171 regression case in inverse_test.
+    auto throw_if_dup = [](const vector<IntegerVariableID> & arr, const char * which) {
+        for (size_t i = 0; i < arr.size(); ++i) {
+            if (is_constant_variable(arr[i]))
+                continue;
+            for (size_t j = i + 1; j < arr.size(); ++j)
+                if (arr[i] == arr[j])
+                    throw InvalidProblemDefinitionException{string{"Inverse: "} + which +
+                        " array contains the same variable handle twice"};
+        }
+    };
+    throw_if_dup(_x, "first");
+    throw_if_dup(_y, "second");
+}
+
+auto Inverse::clone() const -> unique_ptr<Constraint>
+{
+    return make_unique<Inverse>(_x, _y, _x_start, _y_start);
+}
+
+auto Inverse::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model);
+
+    install_propagators(propagators);
+}
+
+auto Inverse::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    if (_x.size() != _y.size())
+        throw InvalidProblemDefinitionException{"Inverse constraint on different sized arrays"};
+
+    for (const auto & [idx, v] : enumerate(_x)) {
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, 0_i + _y_start, "Inverse", "x index range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, Integer(_y.size()) + _y_start - 1_i, "Inverse", "x index range");
+    }
+
+    for (const auto & [idx, v] : enumerate(_y)) {
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, 0_i + _x_start, "Inverse", "y index range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, Integer(_x.size()) + _x_start - 1_i, "Inverse", "y index range");
+    }
+
+    return true;
+}
+
+auto Inverse::define_proof_model(ProofModel & model) -> void
+{
+    for (const auto & [i, x_i] : enumerate(_x))
+        for (const auto & [j, y_j] : enumerate(_y)) {
+            // x[i] = j -> y[j] = i
+            model.add_constraint("Inverse", "x_i = j -> y[j] = i", WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
+            // y[j] = i -> x[i] = j
+            model.add_constraint("Inverse", "y_j = i -> x[i] = j", WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
+        }
+
+    // Set up the AM1 map only when proof logging is on; the propagator captures it
+    // by value, so it must always be non-null but stays empty when define_proof_model
+    // wasn't called.
+    _x_value_am1s = make_shared<map<Integer, ProofLine>>();
+}
+
+auto Inverse::install_propagators(Propagators & propagators) -> void
+{
+    Triggers triggers;
+    triggers.on_change.insert(triggers.on_change.end(), _x.begin(), _x.end());
+    triggers.on_change.insert(triggers.on_change.end(), _y.begin(), _y.end());
+
+    if (_x_value_am1s) {
+        auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, const State &,
+                              auto &, ProofLogger * const logger, const auto & map) {
+            // recover_am1 requires at least two atoms; with one variable
+            // the at-most-one is trivially true and the map is never read
+            // (gac_all_different's hall-set/scc paths do not fire on a
+            // single variable).
+            if (x.size() < 2)
+                return;
+            for (Integer v = x_start; v < x_start + Integer(x.size()); ++v) {
+                // make an am1 for x[i] = v
+                vector<IntegerVariableCondition> xieqvs;
+                for (const auto & var : x)
+                    xieqvs.push_back(var != v);
+                map->emplace(v, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
+                    return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
+                }));
+            }
+        };
+
+        propagators.install_initialiser([x = _x, x_start = _x_start, x_value_am1s = _x_value_am1s, build_am1s = build_am1s](
+                                            const State & state, auto & inference, ProofLogger * const logger) -> void {
+            build_am1s(x, x_start, state, inference, logger, x_value_am1s);
+        });
+    }
+    else {
+        // No proof model: propagator still captures this map (must be non-null), but it stays empty.
+        _x_value_am1s = make_shared<map<Integer, ProofLine>>();
+    }
+
+    vector<Integer> x_values;
+    for (const auto & [i, _] : enumerate(_x))
+        x_values.push_back(Integer(i) + _x_start);
+
+    propagators.install(constraint_id(), [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
+        for (const auto & [i, x_i] : enumerate(x)) {
+            for (auto x_i_value : state.each_value_mutable(x_i))
+                if (! state.in_domain(y.at((x_i_value - y_start).as_index()), Integer(i) + x_start))
+                    inf.infer(logger, x_i != x_i_value,
+                        JustifyUsingRUP{},
+                        [&]() { return Reason{y.at((x_i_value - y_start).as_index()) != Integer(i) + x_start}; });
+        }
+
+        for (const auto & [i, y_i] : enumerate(y)) {
+            for (auto y_i_value : state.each_value_mutable(y_i))
+                if (! state.in_domain(x.at((y_i_value - x_start).as_index()), Integer(i) + y_start))
+                    inf.infer(logger, y_i != y_i_value,
+                        JustifyUsingRUP{},
+                        [&]() { return Reason{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}; });
+        }
+
+        propagate_gac_all_different(x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);
+
+        return PropagatorState::Enable; }, triggers);
+}
+
+auto Inverse::s_expr(const innards::ProofModel * const model) const -> SExpr
+{
+    auto & tracker = model->names_and_ids_tracker();
+
+    // cake_pb_cp wants each side grouped with its offset: a (list offset) pair,
+    // i.e. `inverse ((X...) offx) ((Y...) offy)`. The outer list wrapping the
+    // whole term is the SExpr::list returned here.
+    std::vector<SExpr> xs;
+    for (const auto & x : _x)
+        xs.push_back(tracker.s_expr_term_of(x));
+    std::vector<SExpr> ys;
+    for (const auto & y : _y)
+        ys.push_back(tracker.s_expr_term_of(y));
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("inverse"),
+        SExpr::list({SExpr::list(std::move(xs)), SExpr::atom(_x_start.to_string())}),
+        SExpr::list({SExpr::list(std::move(ys)), SExpr::atom(_y_start.to_string())})});
+}

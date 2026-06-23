@@ -28,8 +28,8 @@ To build a term, use `innards::SExpr::list({...})` and `SExpr::atom(...)`, with
 `NamesAndIDsTracker::s_expr_term_of(...)` for operands — it has overloads for an
 `IntegerVariableID`, a `Literal` (the and/or/parity inputs), and a
 `ReificationCondition` (returns `nullopt` when unconditional). Integer atoms are
-`SExpr::atom(value.to_string())`. See `abs.cc` (simple) and `in.cc` (sub-lists)
-for the canonical shape.
+`SExpr::atom(value.to_string())`. See `abs/abs.cc` (simple) and
+`in/in.cc` (sub-lists) for the canonical shape.
 
 ### Suspect forms resolved (not enshrined)
 
