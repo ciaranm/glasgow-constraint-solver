@@ -1,4 +1,5 @@
 #include <gcs/constraints/disjunctive/disjunctive.hh>
+#include <gcs/constraints/disjunctive/hints.hh>
 #include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -333,7 +334,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
         [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths),
             end_ge = move(_end_ge), end_le = move(_end_le), zero = move(_zero), strict = _strict,
             active_tasks = move(_active_tasks), before_flags = move(_before_flags),
-            clause_lines = move(_clause_lines), bridge](
+            clause_lines = move(_clause_lines), owner = constraint_id(), bridge](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
@@ -550,7 +551,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         if (is_var_len(pj))
                             reason_vars.push_back(length_vars[pj]);
                         inference.contradiction(logger,
-                            JustifyExplicitly{justify, ThenRUP::Yes},
+                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
                             generic_reason(state, reason_vars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
@@ -757,7 +758,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         };
 
                         inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                            JustifyExplicitly{justify, ThenRUP::Yes},
+                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
                             generic_reason(state, push_reason_vars));
                     }
 
@@ -799,7 +800,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         };
 
                         inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                            JustifyExplicitly{justify, ThenRUP::Yes},
+                            JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
                             generic_reason(state, push_reason_vars));
                     }
                 }
@@ -839,7 +840,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             reason_vars.push_back(length_vars[z]);
                         if (is_var_len(k))
                             reason_vars.push_back(length_vars[k]);
-                        inference.contradiction(logger, JustifyUsingRUP{},
+                        inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive{owner}},
                             generic_reason(state, reason_vars));
                         return PropagatorState::DisableUntilBacktrack;
                     }

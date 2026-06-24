@@ -296,11 +296,24 @@ namespace gcs::innards
          * install_initialiser; intended for cases where the OPB encoding
          * emitted by define_proof_model collapses to a trivially-false
          * constraint and we want propagation to detect that up front.
+         *
+         * Templated on the justification type so a RUP justification can carry
+         * a typed assertion hint (JustifyUsingRUP{hints::Foo{owner}}) and the
+         * up-front contradiction names the constraint it came from, exactly as
+         * the constraint's in-search inferences do.
          */
-        auto install_initial_contradiction(const std::string & explain_yourself,
-            Justification why,
+        template <typename Justification_>
+        auto install_initial_contradiction(const std::string &,
+            Justification_ why,
             Reason reason = NoReason{},
-            InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void;
+            InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void
+        {
+            install_initialiser(
+                [why = std::move(why), reason = std::move(reason)](const State &, auto & inference, ProofLogger * const logger) -> void {
+                    inference.contradiction(logger, why, reason);
+                },
+                priority);
+        }
 
         ///@}
 

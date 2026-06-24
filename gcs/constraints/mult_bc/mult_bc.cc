@@ -1,3 +1,4 @@
+#include <gcs/constraints/mult_bc/hints.hh>
 #include <gcs/constraints/mult_bc/mult_bc.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -1018,7 +1019,8 @@ namespace
         ProofLogger * const logger,
         vector<vector<BitProductData>> & bit_products,
         const bool x_is_first,
-        const vector<ProofLine> & sign_lines)
+        const vector<ProofLine> & sign_lines,
+        const ConstraintID & owner)
         -> void
     {
         // This is based on the case breakdown in JaCoP
@@ -1029,7 +1031,7 @@ namespace
         }
         else if (y_min == 0_i && y_max == 0_i) {
             // y == 0 and 0 not in bounds of z => no possible values for x
-            inference.contradiction(logger, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{y_var == 0_i, z_var != 0_i}});
+            inference.contradiction(logger, JustifyUsingRUP{hints::MultBC{owner}}, ExplicitReason{ReasonLiterals{y_var == 0_i, z_var != 0_i}});
         }
         else if (y_min < 0_i && y_max > 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y contains -1, 0, 1 and z has either all positive or all negative values
@@ -1046,7 +1048,7 @@ namespace
             };
 
             inference.infer(logger, x_var <= largest_possible_quotient,
-                JustifyExplicitly{lower_justf, ThenRUP::No},
+                JustifyExplicitly{lower_justf, ThenRUP::No, hints::MultBC{owner}},
                 ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
 
             var_bounds.at(x_var).first = min(var_bounds.at(x_var).first, largest_possible_quotient);
@@ -1059,18 +1061,18 @@ namespace
             };
 
             inference.infer(logger, x_var >= smallest_possible_quotient,
-                JustifyExplicitly{upper_justf, ThenRUP::No},
+                JustifyExplicitly{upper_justf, ThenRUP::No, hints::MultBC{owner}},
                 ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
         }
         else if (y_min == 0_i && y_max != 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y is either 0 or strictly positive and z has either all positive or all negative values
             filter_quotient(x_var, y_var, z_var, z_min, z_max, 1_i, y_max, all_vars, state,
-                inference, channelling_constraints, mag_var, z_eq_product_lines, logger, bit_products, x_is_first, sign_lines);
+                inference, channelling_constraints, mag_var, z_eq_product_lines, logger, bit_products, x_is_first, sign_lines, owner);
         }
         else if (y_min != 0_i && y_max == 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y is either 0 or strictly negative z has either all positive or all negative values
             filter_quotient(x_var, y_var, z_var, z_min, z_max, y_min, -1_i, all_vars, state, inference,
-                channelling_constraints, mag_var, z_eq_product_lines, logger, bit_products, x_is_first, sign_lines);
+                channelling_constraints, mag_var, z_eq_product_lines, logger, bit_products, x_is_first, sign_lines, owner);
         }
         else if ((y_min > 0_i || y_max < 0_i) && y_min <= y_max) {
             auto smallest_possible_quotient = min({div_ceil(z_min, y_min), div_ceil(z_min, y_max), div_ceil(z_max, y_min), div_ceil(z_max, y_max)});
@@ -1099,17 +1101,17 @@ namespace
             };
 
             if (smallest_possible_quotient > largest_possible_quotient) {
-                inference.infer(logger, FalseLiteral{}, JustifyExplicitly{both_justf, ThenRUP::No},
+                inference.infer(logger, FalseLiteral{}, JustifyExplicitly{both_justf, ThenRUP::No, hints::MultBC{owner}},
                     ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
                         y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
             }
             else {
                 inference.infer(logger, x_var <= largest_possible_quotient,
-                    JustifyExplicitly{upper_justf, ThenRUP::No},
+                    JustifyExplicitly{upper_justf, ThenRUP::No, hints::MultBC{owner}},
                     ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
                         y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
                 inference.infer(logger, x_var >= smallest_possible_quotient,
-                    JustifyExplicitly{lower_justf, ThenRUP::No},
+                    JustifyExplicitly{lower_justf, ThenRUP::No, hints::MultBC{owner}},
                     ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second,
                         y_var >= var_bounds.at(y_var).first, y_var <= var_bounds.at(y_var).second});
             }
@@ -1248,7 +1250,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
     ConstraintStateHandle bit_products_handle = initial_state.add_persistent_constraint_state(bit_products);
 
-    propagators.install(constraint_id(), [v1 = _v1, v2 = _v2, v3 = _v3, bit_products_h = bit_products_handle, channelling_constraints = channelling_constraints, mag_var = mag_var, v3_eq_product_lines = v3_eq_product_lines, sign_lines = sign_lines](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [v1 = _v1, v2 = _v2, v3 = _v3, bit_products_h = bit_products_handle, channelling_constraints = channelling_constraints, mag_var = mag_var, v3_eq_product_lines = v3_eq_product_lines, sign_lines = sign_lines, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         vector<IntegerVariableID> all_vars = {v1, v2, v3};
 
         do {
@@ -1267,17 +1269,17 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             };
 
             inference.infer_all(logger, {v3 <= largest_product, v3 >= smallest_product},
-                JustifyExplicitly{justf, ThenRUP::No},
+                JustifyExplicitly{justf, ThenRUP::No, hints::MultBC{owner}},
                 ReasonLiterals{v1 >= var_bounds.at(v1).first, v1 <= var_bounds.at(v1).second,
                     v2 >= var_bounds.at(v2).first, v2 <= var_bounds.at(v2).second});
 
             auto bounds3 = state.bounds(v3);
             filter_quotient(v1, v2, v3, bounds3.first, bounds3.second, bounds2.first, bounds2.second, all_vars, state, inference,
-                channelling_constraints, mag_var, v3_eq_product_lines, logger, bit_products, true, sign_lines);
+                channelling_constraints, mag_var, v3_eq_product_lines, logger, bit_products, true, sign_lines, owner);
 
             bounds1 = state.bounds(v1);
             filter_quotient(v2, v1, v3, bounds3.first, bounds3.second, bounds1.first, bounds1.second, all_vars, state, inference,
-                channelling_constraints, mag_var, v3_eq_product_lines, logger, bit_products, false, sign_lines);
+                channelling_constraints, mag_var, v3_eq_product_lines, logger, bit_products, false, sign_lines, owner);
         } while (inference.did_anything_since_last_call_inside_propagator());
 
         return PropagatorState::Enable; }, triggers);

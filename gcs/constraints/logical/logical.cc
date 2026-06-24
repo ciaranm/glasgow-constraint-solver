@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/triggers.hh>
+#include <gcs/constraints/logical/hints.hh>
 #include <gcs/constraints/logical/logical.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -49,6 +50,7 @@ namespace
         return result;
     }
 
+    template <typename Hint_>
     auto install_propagators_logical(Propagators & propagators, const ConstraintID & constraint_id, const Literals & lits,
         const Literal & full_reif, LiteralIs reif_state) -> void
     {
@@ -56,10 +58,10 @@ namespace
 
         if (reif_state == DefinitelyTrue) {
             // definitely true, just force all the literals
-            propagators.install_initialiser([full_reif = full_reif, lits = lits](
+            propagators.install_initialiser([full_reif = full_reif, lits = lits, owner = constraint_id](
                                                 const State &, auto & inference, ProofLogger * const logger) {
                 for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{full_reif}}});
+                    inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
             });
             return;
         }
@@ -75,18 +77,18 @@ namespace
         if (saw_false) {
             // we saw a false literal, the reif variable must be forced off and
             // then we don't do anything else
-            propagators.install_initialiser([full_reif = full_reif](
+            propagators.install_initialiser([full_reif = full_reif, owner = constraint_id](
                                                 const State &, auto & inference, ProofLogger * const logger) -> void {
-                inference.infer(logger, ! full_reif, JustifyUsingRUP{}, NoReason{});
+                inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, NoReason{});
             });
             return;
         }
 
-        propagators.install(constraint_id, [lits = lits, full_reif = full_reif](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id, [lits = lits, full_reif = full_reif, owner = constraint_id](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             switch (state.test_literal(full_reif)) {
             case DefinitelyTrue: {
                 for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{full_reif}}});
+                    inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
                 return PropagatorState::DisableUntilBacktrack;
             }
 
@@ -113,7 +115,7 @@ namespace
                     for (auto & lit : lits)
                         why.push_back(lit);
                     why.push_back(! full_reif);
-                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{why});
+                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{why});
                     return PropagatorState::Enable;
                 }
                 else {
@@ -122,7 +124,7 @@ namespace
                         if (l != *undecided1)
                             why.push_back(l);
                     why.push_back(! full_reif);
-                    inference.infer(logger, ! *undecided1, JustifyUsingRUP{}, ExplicitReason{why});
+                    inference.infer(logger, ! *undecided1, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{why});
                     return PropagatorState::DisableUntilBacktrack;
                 }
             }
@@ -142,7 +144,7 @@ namespace
                     }
 
                 if (any_false) {
-                    inference.infer(logger, ! full_reif, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{! *any_false}}});
+                    inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{! *any_false}}});
                     return PropagatorState::DisableUntilBacktrack;
                 }
                 else if (all_true) {
@@ -154,7 +156,7 @@ namespace
                     vector<ProofLiteral> reason_lits{};
                     for (auto & l : lits)
                         reason_lits.emplace_back(l);
-                    inference.infer(logger, full_reif, JustifyExplicitly{justf, ThenRUP::Yes},
+                    inference.infer(logger, full_reif, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}},
                         ExplicitReason{ReasonLiterals(reason_lits.begin(), reason_lits.end())});
                     return PropagatorState::DisableUntilBacktrack;
                 }
@@ -249,7 +251,7 @@ auto And::define_proof_model(ProofModel & model) -> void
 
 auto And::install_propagators(Propagators & propagators) -> void
 {
-    install_propagators_logical(propagators, constraint_id(), _lits, _full_reif, _reif_state);
+    install_propagators_logical<hints::And>(propagators, constraint_id(), _lits, _full_reif, _reif_state);
 }
 
 auto And::s_expr(const innards::ProofModel * const model) const -> SExpr
@@ -314,7 +316,7 @@ auto Or::install_propagators(Propagators & propagators) -> void
     Literals lits = _lits;
     for (auto & l : lits)
         l = ! l;
-    install_propagators_logical(propagators, constraint_id(), move(lits), ! _full_reif, _reif_state);
+    install_propagators_logical<hints::Or>(propagators, constraint_id(), move(lits), ! _full_reif, _reif_state);
 }
 
 auto Or::s_expr(const innards::ProofModel * const model) const -> SExpr

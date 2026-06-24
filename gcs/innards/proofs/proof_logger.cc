@@ -3,6 +3,7 @@
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
+#include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
@@ -207,7 +208,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
         // soli and no links => have to assert the objective improving constraint
         visit([&](const auto & id) {
-            emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = "soli_improve"});
+            emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
         },
             optional_minimise_variable_and_value->first);
     else if (optional_minimise_variable_and_value)
@@ -222,7 +223,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             optional_minimise_variable_and_value->first);
     else if (_imp->assertion_level > AssertionLevel::Definitions) {
         // solx and no links => have to assert the blocking constraint
-        emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = "solx_block"});
+        emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = hints::SolxBlock::hint_name});
     }
     // nothing needs done for solx below AssertionLevel::Links
 }
@@ -234,7 +235,7 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     for (const auto & guess : guesses)
         backtrack += 1_i * ! guess;
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-    emit(assert_or_rup, move(backtrack) >= 1_i, ProofLevel::Current, AssertionAnnotation{.hint_name = "backtrack"});
+    emit(assert_or_rup, move(backtrack) >= 1_i, ProofLevel::Current, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
 }
 
 auto ProofLogger::end_proof() -> void
@@ -408,10 +409,10 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
             }
         },
         [&](const AssertProofRule &) {
-			if (assertion_hint) {
-				rule_line << *assertion_hint;
-	 		}
-			rule_line << ";"; }}
+            if (assertion_hint) {
+                rule_line << *assertion_hint;
+            }
+            rule_line << ";"; }}
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
@@ -452,25 +453,25 @@ auto ProofLogger::emit_under_reason(
 
     overloaded{
         [&](const RUPProofRule & rule) {
-			if(rule.lines) {
-				rule_line << ": ";
-				for (const auto & line : *rule.lines) {
-					rule_line << relative_proof_line(line, _imp->proof_line.number) << " ";
-				}
-				rule_line << " ;";
-			} else {
-				rule_line << ";"; } },
+            if(rule.lines) {
+                rule_line << ": ";
+                for (const auto & line : *rule.lines) {
+                    rule_line << relative_proof_line(line, _imp->proof_line.number) << " ";
+                }
+                rule_line << " ;";
+            } else {
+                rule_line << ";"; } },
         [&](const ImpliesProofRule & rule) { if (rule.line) {
-				rule_line << ": ";
-				rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << " ";
-				rule_line << " ;";
-			} else { rule_line << ";"; } },
-        [&](const AssertProofRule &) { 
-			if (assertion_hint) {
-				rule_line << *assertion_hint;
-	 		}
+                rule_line << ": ";
+                rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << " ";
+                rule_line << " ;";
+            } else { rule_line << ";"; } },
+        [&](const AssertProofRule &) {
+            if (assertion_hint) {
+                rule_line << *assertion_hint;
+            }
 
-			rule_line << ";"; }}
+            rule_line << ";"; }}
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);

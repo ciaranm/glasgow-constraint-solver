@@ -1,6 +1,7 @@
+#include <gcs/constraints/extensional_utils.hh>
+#include <gcs/constraints/table/hints.hh>
 #include <gcs/constraints/table/table.hh>
 #include <gcs/exception.hh>
-#include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -181,7 +182,7 @@ auto Table::install_propagators(Propagators & propagators) -> void
 {
     if (_has_no_tuples) {
         propagators.install_initial_contradiction("Empty table constraint from table",
-            JustifyUsingRUP{});
+            JustifyUsingRUP{hints::Table{constraint_id()}});
         return;
     }
 
@@ -191,7 +192,7 @@ auto Table::install_propagators(Propagators & propagators) -> void
             triggers.on_change.push_back(v);
         triggers.on_change.push_back(_selector);
 
-        propagators.install(constraint_id(), [table = ExtensionalData{_selector, move(_vars), move(tuples)}](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState { return propagate_extensional(table, state, inference, logger); }, triggers);
+        propagators.install(constraint_id(), [table = ExtensionalData{_selector, move(_vars), move(tuples)}, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState { return propagate_extensional(table, state, inference, logger, hints::Table{owner}); }, triggers);
     },
         move(_tuples));
 }

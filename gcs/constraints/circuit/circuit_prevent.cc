@@ -1,6 +1,7 @@
 #include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/constraints/circuit/circuit_prevent.hh>
+#include <gcs/constraints/circuit/hints.hh>
 
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/propagators.hh>
@@ -25,7 +26,7 @@ using std::vector;
 
 namespace
 {
-    auto check_small_cycles(const vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data, const State & state,
+    auto check_small_cycles(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data, const State & state,
         auto & inference, ProofLogger * const logger) -> void
     {
         auto n = succ.size();
@@ -47,7 +48,7 @@ namespace
                             if (cmp_less(cycle_length, n)) {
                                 if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                                     output_cycle_to_proof(succ, j0, cycle_length, pos_var_data, state, *logger);
-                                inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, succ));
+                                inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(state, succ));
                             }
 
                             else
@@ -61,15 +62,16 @@ namespace
 
     auto propagate_circuit_using_prevent(
         const vector<IntegerVariableID> & succ,
+        const ConstraintID & owner,
         const PosVarDataMap & pos_var_data,
         const ConstraintStateHandle & unassigned_handle,
         const State & state,
         auto & inference,
         ProofLogger * const logger) -> void
     {
-        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger);
-        check_small_cycles(succ, pos_var_data, state, inference, logger);
-        prevent_small_cycles(succ, pos_var_data, unassigned_handle, state, inference, logger);
+        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner);
+        check_small_cycles(succ, owner, pos_var_data, state, inference, logger);
+        prevent_small_cycles(succ, owner, pos_var_data, unassigned_handle, state, inference, logger);
     }
 }
 
@@ -94,9 +96,9 @@ auto CircuitPrevent::install(innards::Propagators & propagators, innards::State 
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
     propagators.install(
         constraint_id(),
-        [succ = _succ, pvd = pos_var_data,
+        [succ = _succ, owner = constraint_id(), pvd = pos_var_data,
             unassigned_handle = unassigned_handle](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            propagate_circuit_using_prevent(succ, pvd, unassigned_handle, state, inference, logger);
+            propagate_circuit_using_prevent(succ, owner, pvd, unassigned_handle, state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers);

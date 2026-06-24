@@ -1,5 +1,6 @@
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
@@ -77,22 +78,6 @@ namespace
 
 namespace gcs::innards::hints
 {
-    // Witness for the reified linear-inequality "condition forced" justification,
-    // carried in a reified verdict. Templated
-    // on the sanitised coefficient-vector type that tidy_up_linear produces and the
-    // install-time visit deduces; it carries that and the proof lines by value and
-    // the State by pointer (the verdict is
-    // consumed synchronously while the constraint is live). No coarse hint name: the
-    // original verdict carried none.
-    template <typename CoeffVars_>
-    struct LinearInequalityCond
-    {
-        const State * state;
-        CoeffVars_ coeff_vars;
-        std::pair<std::optional<ProofLine>, std::optional<ProofLine>> proof_lines;
-        static constexpr std::string_view hint_name = "";
-    };
-
     template <typename CoeffVars_>
     auto emit_justification(ProofLogger & logger, const LinearInequalityCond<CoeffVars_> & w, const ReasonLiterals &) -> void
     {
@@ -191,7 +176,7 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
         };
 
         auto infer_cond_when_undecided = [sanitised_cv, sanitised_neg_cv, value = _value, modifier = modifier,
-                                             proof_lines, proof_lines_swapped, vars = vars](
+                                             proof_lines, proof_lines_swapped, vars = vars, owner = constraint_id()](
                                              const State & state, auto &, ProofLogger * const,
                                              const IntegerVariableCondition &) -> ReificationVerdictFor<LinearCondJustification> {
             Integer min_possible = 0_i, max_possible = 0_i;
@@ -210,13 +195,13 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
             if (min_possible > value + modifier) {
                 // cannot possibly hold
                 return reification_verdict::MustNotHold<LinearCondJustification>{
-                    .justification = JustifyExplicitly{hints::LinearInequalityCond<CV>{&state, sanitised_cv, proof_lines}, ThenRUP::Yes},
+                    .justification = JustifyExplicitly{hints::LinearInequalityCond<CV>{{owner}, &state, sanitised_cv, proof_lines}, ThenRUP::Yes},
                     .reason = generic_reason(state, vars)};
             }
             else if (max_possible <= value + modifier) {
                 // must definitely hold
                 return reification_verdict::MustHold<LinearCondJustification>{
-                    .justification = JustifyExplicitly{hints::LinearInequalityCond<NegCV>{&state, sanitised_neg_cv, proof_lines_swapped}, ThenRUP::Yes},
+                    .justification = JustifyExplicitly{hints::LinearInequalityCond<NegCV>{{owner}, &state, sanitised_neg_cv, proof_lines_swapped}, ThenRUP::Yes},
                     .reason = generic_reason(state, vars)};
             }
             else

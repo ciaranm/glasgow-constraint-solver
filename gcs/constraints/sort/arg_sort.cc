@@ -1,5 +1,6 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/sort/arg_sort.hh>
+#include <gcs/constraints/sort/hints.hh>
 #include <gcs/constraints/sort/sortedness.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -196,7 +197,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     channel_triggers.on_bounds.insert(channel_triggers.on_bounds.end(), y_ids.begin(), y_ids.end());
     channel_triggers.on_change.insert(channel_triggers.on_change.end(), _p.begin(), _p.end());
 
-    propagators.install(constraint_id(), [x = _x, y = y_ids, p = _p, offset = _offset, n](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [x = _x, y = y_ids, p = _p, offset = _offset, n, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         for (size_t j = 0; j < n; ++j) {
             auto [ylo, yhi] = state.bounds(y[j]);
 
@@ -209,7 +210,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
 
                 // (1) Disjoint domains rule out position j taking original index k.
                 if (xhi < ylo || xlo > yhi) {
-                    inference.infer_not_equal(logger, p[j], pv, JustifyUsingRUP{},
+                    inference.infer_not_equal(logger, p[j], pv, JustifyUsingRUP{hints::ArgSort{owner}},
                         bounds_reason(state, {x[k], y[j]}));
                 }
             }
@@ -221,16 +222,16 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                 auto [xlo, xhi] = state.bounds(x[k]);
                 auto extra = p[j] == *pj;
                 if (xlo > ylo)
-                    inference.infer_greater_than_or_equal(logger, y[j], xlo, JustifyUsingRUP{},
+                    inference.infer_greater_than_or_equal(logger, y[j], xlo, JustifyUsingRUP{hints::ArgSort{owner}},
                         bounds_reason(state, {x[k]}, extra));
                 if (xhi < yhi)
-                    inference.infer_less_than(logger, y[j], xhi + 1_i, JustifyUsingRUP{},
+                    inference.infer_less_than(logger, y[j], xhi + 1_i, JustifyUsingRUP{hints::ArgSort{owner}},
                         bounds_reason(state, {x[k]}, extra));
                 if (ylo > xlo)
-                    inference.infer_greater_than_or_equal(logger, x[k], ylo, JustifyUsingRUP{},
+                    inference.infer_greater_than_or_equal(logger, x[k], ylo, JustifyUsingRUP{hints::ArgSort{owner}},
                         bounds_reason(state, {y[j]}, extra));
                 if (yhi < xhi)
-                    inference.infer_less_than(logger, x[k], yhi + 1_i, JustifyUsingRUP{},
+                    inference.infer_less_than(logger, x[k], yhi + 1_i, JustifyUsingRUP{hints::ArgSort{owner}},
                         bounds_reason(state, {y[j]}, extra));
             }
         }
@@ -248,7 +249,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     rank_triggers.on_bounds.insert(rank_triggers.on_bounds.end(), _x.begin(), _x.end());
     rank_triggers.on_change.insert(rank_triggers.on_change.end(), _p.begin(), _p.end());
 
-    propagators.install(constraint_id(), [x = _x, p = _p, offset = _offset, n, witness = _witness](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [x = _x, p = _p, offset = _offset, n, witness = _witness, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         for (size_t k = 0; k < n; ++k) {
             auto [lk, uk] = state.bounds(x[k]);
 
@@ -343,7 +344,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                                             WPBSum{} + 1_i * ! witness.before[i][k] >= 1_i, ProofLevel::Temporary));
                             }
                             pol.emit(*logger, ProofLevel::Temporary);
-                        }, ThenRUP::Yes},
+                        }, ThenRUP::Yes, hints::ArgSort{owner}},
                         bounds_reason(state, x));
                 }
                 else {
@@ -414,7 +415,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                                         ProofLevel::Temporary));
                             }
                             polB.emit(*logger, ProofLevel::Temporary);
-                        }, ThenRUP::Yes},
+                        }, ThenRUP::Yes, hints::ArgSort{owner}},
                         bounds_reason(state, x));
                 }
             }

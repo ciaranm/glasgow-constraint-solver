@@ -1,6 +1,7 @@
 #include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
 #include <gcs/constraints/circuit/circuit_scc.hh>
+#include <gcs/constraints/circuit/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -1005,7 +1006,7 @@ namespace
     }
 
     auto explore(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason,
-        const long & node, const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data,
+        const ConstraintID & owner, const long & node, const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data,
         const SCCOptions & options)
         -> vector<pair<long, long>>
     {
@@ -1019,7 +1020,7 @@ namespace
             auto next_node = w.raw_value;
 
             if (data.visit_number[next_node] == -1) {
-                auto w_back_edges = explore(state, inference, logger, reason, next_node, succ, data, proof_data, options);
+                auto w_back_edges = explore(state, inference, logger, reason, owner, next_node, succ, data, proof_data, options);
                 back_edges.insert(back_edges.end(), w_back_edges.begin(), w_back_edges.end());
                 data.lowlink[node] = pos_min(data.lowlink[node], data.lowlink[next_node]);
             }
@@ -1043,7 +1044,7 @@ namespace
                         inference.infer(logger, succ[node] != w, NoJustificationNeeded{}, NoReason{});
                     }
                     else {
-                        inference.infer(logger, succ[node] != w, JustifyUsingRUP{}, NoReason{});
+                        inference.infer(logger, succ[node] != w, JustifyUsingRUP{hints::Circuit{owner}}, NoReason{});
                     }
                 }
                 data.lowlink[node] = pos_min(data.lowlink[node], data.visit_number[next_node]);
@@ -1056,7 +1057,7 @@ namespace
                 auto ctx = SCCProofContext{state, *logger, reason, succ, proof_data, node, options};
                 prove_reachable_set_too_small(ctx);
             }
-            inference.contradiction(logger, JustifyUsingRUP{}, reason);
+            inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason);
         }
         else
             return back_edges;
@@ -1067,6 +1068,7 @@ namespace
         auto & inference,
         ProofLogger * const logger,
         const ReasonLiterals & reason,
+        const ConstraintID & owner,
         const vector<IntegerVariableID> & succ,
         const SCCOptions & options,
         SCCProofData & proof_data)
@@ -1077,7 +1079,7 @@ namespace
         for (const auto & v : state.each_value_mutable(succ[data.root])) {
             auto next_node = v.raw_value;
             if (data.visit_number[next_node] == -1) {
-                auto back_edges = explore(state, inference, logger, reason, next_node, succ, data, proof_data, options);
+                auto back_edges = explore(state, inference, logger, reason, owner, next_node, succ, data, proof_data, options);
 
                 if (back_edges.empty()) {
                     if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
@@ -1085,7 +1087,7 @@ namespace
                         auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, next_node, options);
                         prove_reachable_set_too_small(ctx);
                     }
-                    inference.contradiction(logger, JustifyUsingRUP{}, reason);
+                    inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason);
                 }
                 else if (options.fix_req && back_edges.size() == 1) {
                     auto from_node = back_edges[0].first;
@@ -1100,7 +1102,7 @@ namespace
                         }
                         else {
 
-                            inference.infer(logger, succ[from_node] == Integer{to_node}, JustifyUsingRUP{}, NoReason{});
+                            inference.infer(logger, succ[from_node] == Integer{to_node}, JustifyUsingRUP{hints::Circuit{owner}}, NoReason{});
                         }
                     }
                 }
@@ -1116,7 +1118,7 @@ namespace
                 auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
                 prove_reachable_set_too_small(ctx);
             }
-            inference.contradiction(logger, JustifyUsingRUP{}, reason);
+            inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, reason);
         }
 
         if (options.prune_root && data.start_prev_subtree > 1) {
@@ -1127,7 +1129,7 @@ namespace
                         auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.root, options);
                         prove_reachable_set_too_small(ctx, succ[data.root] == v);
                     }
-                    inference.infer(logger, succ[data.root] != v, JustifyUsingRUP{}, reason);
+                    inference.infer(logger, succ[data.root] != v, JustifyUsingRUP{hints::Circuit{owner}}, reason);
                 }
             }
         }
@@ -1138,6 +1140,7 @@ namespace
         auto & inference,
         ProofLogger * const logger,
         const ReasonLiterals & reason,
+        const ConstraintID & owner,
         const vector<IntegerVariableID> & succ,
         const SCCOptions & scc_options,
         const ConstraintStateHandle & pos_var_data_handle,
@@ -1147,9 +1150,9 @@ namespace
         -> void
     {
         auto & pos_var_data = any_cast<PosVarDataMap &>(state.get_persistent_constraint_state(pos_var_data_handle));
-        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger);
+        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner);
         auto proof_data = SCCProofData{pos_var_data, proof_flag_data_handle, pos_alldiff_data_handle};
-        check_sccs(state, inference, logger, reason, succ, scc_options, proof_data);
+        check_sccs(state, inference, logger, reason, owner, succ, scc_options, proof_data);
         auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
         // Remove any newly assigned vals from unassigned
         auto it = unassigned.begin();
@@ -1159,7 +1162,7 @@ namespace
             else
                 ++it;
         }
-        prevent_small_cycles(succ, pos_var_data, unassigned_handle, state, inference, logger);
+        prevent_small_cycles(succ, owner, pos_var_data, unassigned_handle, state, inference, logger);
     }
 }
 
@@ -1193,6 +1196,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
     propagators.install(
         constraint_id(),
         [succ = _succ,
+            owner = constraint_id(),
             pos_var_data_handle = pos_var_data_handle,
             proof_flag_data_handle = proof_flag_data_handle,
             pos_alldiff_data_handle = pos_alldiff_data_handle,
@@ -1212,7 +1216,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
                 reason = eager_reason(singleton_reason(reason_short), state);
             }
 
-            propagate_circuit_using_scc(state, inference, logger, reason,
+            propagate_circuit_using_scc(state, inference, logger, reason, owner,
                 succ, options, pos_var_data_handle, proof_flag_data_handle, pos_alldiff_data_handle, unassigned_handle);
             return PropagatorState::Enable;
         },

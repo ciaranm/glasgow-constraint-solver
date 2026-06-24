@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_equal/all_equal.hh>
+#include <gcs/constraints/all_equal/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -81,7 +82,7 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
 
-    propagators.install(constraint_id(), [vars = move(_vars)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [vars = move(_vars), owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         auto n = vars.size();
 
         // Tighten each var to [lo, hi] where lo is the largest lower bound
@@ -106,11 +107,11 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
         for (size_t i = 0; i < n; ++i) {
             if (state.lower_bound(vars[i]) < lo)
                 inference.infer_greater_than_or_equal(logger, vars[i], lo,
-                    JustifyUsingRUP{},
+                    JustifyUsingRUP{hints::AllEqual{owner}},
                     ExplicitReason{ReasonLiterals{{argmax_lo >= lo}}});
             if (state.upper_bound(vars[i]) > hi)
                 inference.infer_less_than(logger, vars[i], hi + 1_i,
-                    JustifyUsingRUP{},
+                    JustifyUsingRUP{hints::AllEqual{owner}},
                     ExplicitReason{ReasonLiterals{{argmin_hi <= hi}}});
         }
 
@@ -140,7 +141,7 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
                                 break;
                             }
                         inference.infer_not_equal(logger, vars[i], val,
-                            JustifyUsingRUP{},
+                            JustifyUsingRUP{hints::AllEqual{owner}},
                             ExplicitReason{ReasonLiterals{{witness != val}}});
                     }
                 }

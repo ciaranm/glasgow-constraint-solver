@@ -1,4 +1,5 @@
 #include <gcs/constraints/increasing/increasing.hh>
+#include <gcs/constraints/increasing/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -84,7 +85,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_bounds.insert(triggers.on_bounds.end(), _ordered_vars.begin(), _ordered_vars.end());
 
-    propagators.install(constraint_id(), [vars = move(_ordered_vars), step](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [vars = move(_ordered_vars), step, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         auto n = vars.size();
 
         // Forward sweep: lb(vars[i]) >= lb(vars[i-1]) + step.
@@ -95,7 +96,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
             if (needed > cur_lb) {
                 auto reason_lb = prev_lb;
                 inference.infer_greater_than_or_equal(logger, vars[i], needed,
-                    JustifyUsingRUP{},
+                    JustifyUsingRUP{hints::Increasing{owner}},
                     ExplicitReason{ReasonLiterals{{vars[i - 1] >= reason_lb}}});
                 prev_lb = needed;
             }
@@ -113,7 +114,7 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
             if (needed < cur_ub) {
                 auto reason_ub = prev_ub;
                 inference.infer_less_than(logger, vars[i], needed + 1_i,
-                    JustifyUsingRUP{},
+                    JustifyUsingRUP{hints::Increasing{owner}},
                     ExplicitReason{ReasonLiterals{{vars[i + 1] <= reason_ub}}});
                 prev_ub = needed;
             }

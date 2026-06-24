@@ -1,5 +1,6 @@
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/interval_tree.hh>
+#include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
@@ -714,7 +715,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 return;
 
             ProofRule assert_or_rup = _imp->logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-            auto annotation = AssertionAnnotation{.hint_name = "initial_bound"};
+            auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
             visit([&](auto id) { _imp->logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (id >= v) : (id >= v)) >= 1_i, ProofLevel::Top, annotation); }, id);
         }
         else
@@ -750,16 +751,16 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     };
 
     // implied by the next highest gevar, if there is one?
-    auto link_hint = AssertionAnnotation{.hint_name = "bound_link"};
+    auto link_hint = AssertionAnnotation{.hint_name = hints::BoundLink::hint_name};
     if (higher_gevar != other_gevars.end()) {
         overloaded{
             [&](const ProofOnlySimpleIntegerVariableID & id) {
                 auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
-                emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) { 
-						if (logger->get_assertion_level() > AssertionLevel::Links)
-							return;
-            			ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-						logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint); });
+                emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) {
+                        if (logger->get_assertion_level() > AssertionLevel::Links)
+                            return;
+                        ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+                        logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint); });
             },
             [&](const SimpleIntegerVariableID & id) {
                 if (_imp->assertion_level > AssertionLevel::Links) {
@@ -782,11 +783,11 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         overloaded{
             [&](const ProofOnlySimpleIntegerVariableID & id) {
                 auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
-                emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) { 
-						if (logger->get_assertion_level() > AssertionLevel::Links)
-							return;
-            			ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-						logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint); });
+                emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) {
+                        if (logger->get_assertion_level() > AssertionLevel::Links)
+                            return;
+                        ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+                        logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint); });
             },
             [&](const SimpleIntegerVariableID & id) {
                 if (_imp->assertion_level > AssertionLevel::Links) {

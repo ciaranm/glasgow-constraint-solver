@@ -1,4 +1,5 @@
 #include <gcs/constraints/at_most_one/at_most_one.hh>
+#include <gcs/constraints/at_most_one/hints.hh>
 #include <gcs/constraints/smart_table.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -101,7 +102,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [vars = _vars, val = _val, all_vars = move(all_vars)](
+        [vars = _vars, val = _val, all_vars = move(all_vars), owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // For each candidate value v of `val`: if two or more vars
             // are fixed to v, infer val ≠ v. (RUP from the encoding's
@@ -115,7 +116,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
                     }
                 }
                 if (fixed_to_v >= 2)
-                    inference.infer(logger, val != v, JustifyUsingRUP{},
+                    inference.infer(logger, val != v, JustifyUsingRUP{hints::AtMostOne{owner}},
                         generic_reason(state, all_vars));
             }
 
@@ -136,7 +137,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
                 if (fixed_count == 1) {
                     for (size_t i = 0; cmp_less(i, vars.size()); ++i) {
                         if (i != fixed_idx)
-                            inference.infer(logger, vars[i] != *val_fixed, JustifyUsingRUP{},
+                            inference.infer(logger, vars[i] != *val_fixed, JustifyUsingRUP{hints::AtMostOne{owner}},
                                 generic_reason(state, all_vars));
                     }
                 }

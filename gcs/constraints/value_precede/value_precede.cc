@@ -1,3 +1,4 @@
+#include <gcs/constraints/value_precede/hints.hh>
 #include <gcs/constraints/value_precede/value_precede.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -170,7 +171,7 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
 
         propagators.install(
             constraint_id(),
-            [vars = _vars, s, t](
+            [vars = _vars, s, t, owner = constraint_id()](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 auto n = vars.size();
 
@@ -190,7 +191,7 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
                 auto prune_up_to = (alpha == n) ? n : alpha + 1;
                 for (size_t i = 0; i < prune_up_to; ++i) {
                     if (state.in_domain(vars[i], t))
-                        inference.infer(logger, vars[i] != t, JustifyUsingRUP{}, reason);
+                        inference.infer(logger, vars[i] != t, JustifyUsingRUP{hints::ValuePrecede{owner}}, reason);
                 }
 
                 if (alpha == n)

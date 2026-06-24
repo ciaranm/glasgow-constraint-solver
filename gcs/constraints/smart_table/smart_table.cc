@@ -1,3 +1,4 @@
+#include <gcs/constraints/smart_table/hints.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -444,7 +445,7 @@ namespace
 
     auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
         const SmartTuples & tuples, const vector<Forest> & forests, const State & state, auto & inference, const ReasonLiterals & reason,
-        vector<ProofFlag> pb_selectors, ProofLogger * const logger, bool short_reasons) -> void
+        vector<ProofFlag> pb_selectors, ProofLogger * const logger, bool short_reasons, const ConstraintID & owner) -> void
     {
         VariableDomainMap unsupported{};
         // Initialise unsupported values to everything in each variable's current domain.
@@ -534,13 +535,13 @@ namespace
                             ProofLevel::Temporary);
                     }
                 };
-                inference.contradiction(logger, JustifyExplicitly{justf, ThenRUP::Yes}, reason_to_use);
+                inference.contradiction(logger, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
                 // if (short_reasons) {
                 //     logger->delete_range(reason_definition_1, reason_definition_2 + 1);
                 // }
             }
             else {
-                inference.contradiction(logger, JustifyUsingRUP{}, reason);
+                inference.contradiction(logger, JustifyUsingRUP{hints::SmartTable{owner}}, reason);
             }
             return;
         }
@@ -558,7 +559,7 @@ namespace
                                 ProofLevel::Temporary);
                         }
                     };
-                    inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf, ThenRUP::Yes}, reason_to_use);
+                    inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
                 }
             }
             // if (short_reasons) {
@@ -568,7 +569,7 @@ namespace
         else {
             for (const auto & var : vars) {
                 for (const auto & value : unsupported[var]) {
-                    inference.infer_not_equal(logger, var, value, JustifyUsingRUP{}, NoReason{});
+                    inference.infer_not_equal(logger, var, value, JustifyUsingRUP{hints::SmartTable{owner}}, NoReason{});
                 }
             }
         }
@@ -943,10 +944,10 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
     propagators.install(
         constraint_id(),
-        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors), short_reasons = _short_reasons](
+        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors), short_reasons = _short_reasons, owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = eager_reason(generic_reason(state, vars), state);
-            propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger, short_reasons);
+            propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger, short_reasons, owner);
             return PropagatorState::Enable;
         },
         triggers);

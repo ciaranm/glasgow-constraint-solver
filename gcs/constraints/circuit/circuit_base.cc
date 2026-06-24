@@ -1,6 +1,7 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/circuit/circuit_base.hh>
+#include <gcs/constraints/circuit/hints.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -107,6 +108,7 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
 
 auto gcs::innards::circuit::prevent_small_cycles(
     const vector<IntegerVariableID> & succ,
+    const ConstraintID & owner,
     const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle,
     const State & state,
@@ -132,7 +134,7 @@ auto gcs::innards::circuit::prevent_small_cycles(
                     if (j == j0) {
                         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                             output_cycle_to_proof(succ, j0, length, pos_var_data, state, *logger);
-                        inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, succ));
+                        inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(state, succ));
                     }
                 } while (state.has_single_value(succ[j]));
                 end[j0] = j;
@@ -151,10 +153,10 @@ auto gcs::innards::circuit::prevent_small_cycles(
             auto justf = [&](const ReasonLiterals &) {
                 output_cycle_to_proof(succ, i, length, pos_var_data, state, *logger, Integer{end[i]}, Integer{i});
             };
-            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf, ThenRUP::Yes}, generic_reason(state, succ));
+            inference.infer(logger, succ[end[i]] != Integer{i}, JustifyExplicitly{justf, ThenRUP::Yes, hints::Circuit{owner}}, generic_reason(state, succ));
         }
         else {
-            inference.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{}, generic_reason(state, succ));
+            inference.infer(logger, succ[end[i]] == Integer{i}, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(state, succ));
         }
     }
 }
@@ -231,9 +233,9 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
-        propagators.install(constraint_id(), [succ = _succ](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [succ = _succ, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             for (auto [idx, s] : enumerate(succ)) {
-                inference.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{}, generic_reason(state, succ));
+                inference.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(state, succ));
             }
             return PropagatorState::DisableUntilBacktrack; }, Triggers{});
     }
@@ -252,8 +254,8 @@ auto CircuitBase::s_expr(const innards::ProofModel * const model) const -> SExpr
         SExpr::list(std::move(vars))});
 }
 
-template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,
+template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle, const State & state, SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
 
-template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,
+template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
     const ConstraintStateHandle & unassigned_handle, const State & state, EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;

@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different/encoding.hh>
+#include <gcs/constraints/all_different/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -39,16 +40,20 @@ auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const C
         }
 }
 
+template <typename Hint_>
 auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
-    Propagators & propagators) -> void
+    Propagators & propagators, const Hint_ & hint) -> void
 {
     propagators.install_initialiser(
-        [](
+        [hint](
             State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.contradiction(logger, JustifyUsingRUP{}, NoReason{});
+            inference.contradiction(logger, JustifyUsingRUP{hint}, NoReason{});
         },
         InitialiserPriority::SimpleDefinition);
 }
+
+template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(Propagators &, const hints::AllDifferent &) -> void;
+template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(Propagators &, const hints::AllDifferentExcept &) -> void;
 
 auto gcs::innards::define_clique_not_equals_except_encoding(ProofModel & model,
     const vector<gcs::IntegerVariableID> & vars,

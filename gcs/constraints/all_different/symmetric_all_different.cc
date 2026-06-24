@@ -1,5 +1,6 @@
 #include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/constraints/all_different/gac_all_different.hh>
+#include <gcs/constraints/all_different/hints.hh>
 #include <gcs/constraints/all_different/symmetric_all_different.hh>
 #include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -124,7 +125,7 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
 auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> void
 {
     if (_has_duplicate_vars) {
-        install_clique_duplicate_contradiction_initialiser(propagators);
+        install_clique_duplicate_contradiction_initialiser(propagators, hints::AllDifferent{constraint_id()});
         return;
     }
 
@@ -171,7 +172,7 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
                 for (auto v : state.each_value_mutable(x_i))
                     if (! state.in_domain(vars.at((v - start).as_index()), Integer(i) + start))
                         inf.infer(logger, x_i != v,
-                            JustifyUsingRUP{},
+                            JustifyUsingRUP{hints::AllDifferent{constraint_id}},
                             ExplicitReason{ReasonLiterals{vars.at((v - start).as_index()) != Integer(i) + start}});
             }
 

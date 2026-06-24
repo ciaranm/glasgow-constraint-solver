@@ -1,5 +1,7 @@
 #include <cmath>
-#include <gcs/innards/extensional_utils.hh>
+#include <gcs/constraints/extensional_utils.hh>
+#include <gcs/constraints/linear/hints.hh>
+#include <gcs/constraints/table/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -59,8 +61,9 @@ namespace
     }
 }
 
+template <typename Hint_>
 auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, auto & inference,
-    ProofLogger * const logger) -> PropagatorState
+    ProofLogger * const logger, const Hint_ & hint) -> PropagatorState
 {
     // check whether selectable tuples are still feasible
     visit([&](const auto & tuples) {
@@ -78,13 +81,13 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
             else if (logger && logger->get_assertion_level() != AssertionLevel::Off && state.has_single_value(table.selector))
                 // Last selector val so infeasible -> we need an explicit contradiction at higher assertion levels
                 // since there's no table for the implicit one.
-                inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, table.vars));
+                inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(state, table.vars));
             else
                 inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, NoReason{});
         }
         if (none_feasible && logger && logger->get_assertion_level() != AssertionLevel::Off)
             // selector already empty on entry
-            inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, table.vars));
+            inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(state, table.vars));
     },
         table.tuples);
 
@@ -101,7 +104,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                 }
 
                 if (! supported) {
-                    inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{}, generic_reason(state, table.vars));
+                    inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{hint}, generic_reason(state, table.vars));
                 }
             }
         }
@@ -111,5 +114,17 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
     return PropagatorState::Enable;
 }
 
-template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
-template auto gcs::innards::propagate_extensional(const ExtensionalData & table, const State & state, EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
+// One instantiation per (inference tracker, hint) pair actually used: NoHint for
+// the unnamed AutoTable presolver, hints::Table for Table, hints::LinearEquality
+// for the GAC linear encoding. A new caller with its own hint adds a line here.
+#define GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hint)                                                                                                                   \
+    template auto gcs::innards::propagate_extensional(const ExtensionalData &, const State &, SimpleInferenceTracker &, ProofLogger * const, const hint &)            \
+        -> PropagatorState;                                                                                                                                           \
+    template auto gcs::innards::propagate_extensional(const ExtensionalData &, const State &, EagerProofLoggingInferenceTracker &, ProofLogger * const, const hint &) \
+        -> PropagatorState;
+
+GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(NoHint)
+GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Table)
+GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::LinearEquality)
+
+#undef GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL

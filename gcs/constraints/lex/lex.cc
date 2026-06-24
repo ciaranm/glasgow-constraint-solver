@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/reified_dispatcher.hh>
+#include <gcs/constraints/lex/hints.hh>
 #include <gcs/constraints/lex/lex.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -81,7 +82,7 @@ namespace
         const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_flags,
         const Literal & cond,
-        ConstraintStateHandle state_handle) -> PropagatorState
+        ConstraintStateHandle state_handle, const ConstraintID & owner) -> PropagatorState
     {
         auto n1 = vars_1.size();
         auto n2 = vars_2.size();
@@ -125,7 +126,7 @@ namespace
                         WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i,
                         ProofLevel::Temporary);
             };
-            inference.contradiction(logger, JustifyExplicitly{contradiction_proof, ThenRUP::Yes}, reason);
+            inference.contradiction(logger, JustifyExplicitly{contradiction_proof, ThenRUP::Yes, hints::Lex{owner}}, reason);
         }
 
         auto emit_not_d = [&](const ReasonLiterals & r, size_t k) -> void {
@@ -157,7 +158,7 @@ namespace
 
         inference.infer_all(logger,
             {vars_1[alpha] >= b2_alpha.first, vars_2[alpha] <= b1_alpha.second},
-            JustifyExplicitly{tighten_proof, ThenRUP::Yes}, reason);
+            JustifyExplicitly{tighten_proof, ThenRUP::Yes, hints::Lex{owner}}, reason);
 
         auto nb1_alpha = state.bounds(vars_1[alpha]);
         auto nb2_alpha = state.bounds(vars_2[alpha]);
@@ -202,7 +203,7 @@ namespace
                             emit_not_d(r, k);
                         emit_not_prefix_equal_if_credited(r);
                     };
-                    inference.contradiction(logger, JustifyExplicitly{contradiction_proof, ThenRUP::Yes}, reason);
+                    inference.contradiction(logger, JustifyExplicitly{contradiction_proof, ThenRUP::Yes, hints::Lex{owner}}, reason);
                 }
 
                 auto force_strict_proof = [&, alpha, n](const ReasonLiterals & r) -> void {
@@ -217,7 +218,7 @@ namespace
                 inference.infer_all(logger,
                     {vars_1[alpha] > nb2_alpha.first,
                         vars_2[alpha] < nb1_alpha.second},
-                    JustifyExplicitly{force_strict_proof, ThenRUP::Yes}, reason);
+                    JustifyExplicitly{force_strict_proof, ThenRUP::Yes, hints::Lex{owner}}, reason);
 
                 auto fb1 = state.bounds(vars_1[alpha]);
                 auto fb2 = state.bounds(vars_2[alpha]);
@@ -280,23 +281,6 @@ namespace
 
 namespace gcs::innards::hints
 {
-    // Witness for the lex "unsat scaffold" justification, carried in a reified
-    // verdict. It captures the scaffold inputs (variable scope + reason by value, the
-    // aux-flag tables by
-    // shared_ptr, the State by pointer — valid because the verdict is consumed
-    // synchronously while the constraint is live). No coarse hint name: the original
-    // verdict carried none.
-    struct LexUnsatScaffold
-    {
-        const State * state;
-        ReasonLiterals reason;
-        std::vector<IntegerVariableID> first_vars, second_vars;
-        std::size_t n;
-        std::shared_ptr<std::vector<std::optional<ProofFlag>>> prefix_equal_flags;
-        std::shared_ptr<std::vector<ProofFlag>> decision_at_flags;
-        static constexpr std::string_view hint_name = "";
-    };
-
     auto emit_justification(ProofLogger & logger, const LexUnsatScaffold & w, const ReasonLiterals &) -> void
     {
         if (w.prefix_equal_flags && w.decision_at_flags)
@@ -323,7 +307,7 @@ namespace
         const shared_ptr<vector<ProofFlag>> & decision_at_gt_flags,
         const shared_ptr<vector<optional<ProofFlag>>> & prefix_equal_lt_flags,
         const shared_ptr<vector<ProofFlag>> & decision_at_lt_flags,
-        const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>>
+        const IntegerVariableCondition & cond, const ConstraintID & owner) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>>
     {
         auto n1 = vars_1.size();
         auto n2 = vars_2.size();
@@ -384,7 +368,7 @@ namespace
             auto reason_under_cond_false = reason;
             reason_under_cond_false.push_back(! cond);
             return reification_verdict::MustHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
-                .justification = JustifyExplicitly{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_false),
+                .justification = JustifyExplicitly{hints::LexUnsatScaffold{{owner}, &state, std::move(reason_under_cond_false),
                                                        vars_2, vars_1, n, prefix_equal_lt_flags, decision_at_lt_flags},
                     ThenRUP::Yes},
                 .reason = std::move(reason)};
@@ -393,7 +377,7 @@ namespace
             auto reason_under_cond_true = reason;
             reason_under_cond_true.push_back(cond);
             return reification_verdict::MustNotHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
-                .justification = JustifyExplicitly{hints::LexUnsatScaffold{&state, std::move(reason_under_cond_true),
+                .justification = JustifyExplicitly{hints::LexUnsatScaffold{{owner}, &state, std::move(reason_under_cond_true),
                                                        vars_1, vars_2, n, prefix_equal_gt_flags, decision_at_gt_flags},
                     ThenRUP::Yes},
                 .reason = std::move(reason)};
@@ -629,40 +613,40 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
     auto enforce_constraint_must_hold = [vars_1 = _vars_1, vars_2 = _vars_2, or_equal,
                                             prefix_equal_gt_flags = _prefix_equal_gt_flags,
                                             decision_at_gt_flags = _decision_at_gt_flags,
-                                            state_handle = _state_handle](
+                                            state_handle = _state_handle, owner = constraint_id()](
                                             const State & state, auto & inference, ProofLogger * const logger,
                                             const Literal & cond) -> PropagatorState {
         return run_lex_pass(state, inference, logger,
             vars_1, vars_2, or_equal,
             prefix_equal_gt_flags, decision_at_gt_flags,
-            cond, state_handle);
+            cond, state_handle, owner);
     };
 
     auto enforce_constraint_must_not_hold = [vars_1 = _vars_1, vars_2 = _vars_2, or_equal,
                                                 prefix_equal_lt_flags = _prefix_equal_lt_flags,
                                                 decision_at_lt_flags = _decision_at_lt_flags,
-                                                state_handle = _state_handle](
+                                                state_handle = _state_handle, owner = constraint_id()](
                                                 const State & state, auto & inference, ProofLogger * const logger,
                                                 const Literal & cond) -> PropagatorState {
         // Negation: enforce vars_2 (>|>=) vars_1 with or_equal flipped.
         return run_lex_pass(state, inference, logger,
             vars_2, vars_1, ! or_equal,
             prefix_equal_lt_flags, decision_at_lt_flags,
-            cond, state_handle);
+            cond, state_handle, owner);
     };
 
     auto infer_cond_when_undecided = [vars_1 = move(_vars_1), vars_2 = move(_vars_2), or_equal,
                                          prefix_equal_gt_flags = _prefix_equal_gt_flags,
                                          decision_at_gt_flags = _decision_at_gt_flags,
                                          prefix_equal_lt_flags = _prefix_equal_lt_flags,
-                                         decision_at_lt_flags = _decision_at_lt_flags](
+                                         decision_at_lt_flags = _decision_at_lt_flags, owner = constraint_id()](
                                          const State & state, auto &, ProofLogger * const logger,
                                          const IntegerVariableCondition & cond) -> ReificationVerdictFor<JustifyExplicitly<hints::LexUnsatScaffold>> {
         return run_lex_undecided_detection(state, logger,
             vars_1, vars_2, or_equal,
             prefix_equal_gt_flags, decision_at_gt_flags,
             prefix_equal_lt_flags, decision_at_lt_flags,
-            cond);
+            cond, owner);
     };
 
     install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _reif_cond, triggers,

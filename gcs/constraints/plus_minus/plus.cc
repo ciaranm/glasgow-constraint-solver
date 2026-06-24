@@ -1,3 +1,4 @@
+#include <gcs/constraints/plus_minus/hints.hh>
 #include <gcs/constraints/plus_minus/plus.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -37,31 +38,13 @@ using fmt::print;
 
 namespace gcs::innards::hints
 {
-    // Witness for a plus bound push: the sum-definition line to start the cut
-    // from. The two operand bounds come from the reason (read positionally), so
-    // emit_justification consumes the reason — the opposite of all_different's
-    // Hall emit, which ignores it. A genuinely witness-driven emit (nothing
-    // captured but the witness and logger), in contrast to all_different's, whose
-    // emit must capture per-constraint state. No hint_sexpr overload: plus has no
-    // typed external hint yet (its witness is the reason, already in the
-    // assertion), so it carries only the coarse hint_name.
-    //
-    // pol_line is optional: with no sum line (e.g. proofs without a model) there
-    // is no explicit lemma, just the trailing RUP, so emit does nothing — an
-    // empty-emit explicit step, byte-identical to the pre-witness early return.
-    struct PlusBound
+    auto emit_justification(ProofLogger & logger, const Plus & plus, const ReasonLiterals & reason) -> void
     {
-        std::optional<ProofLine> pol_line;
-        static constexpr std::string_view hint_name = "plus";
-    };
-
-    auto emit_justification(ProofLogger & logger, const PlusBound & d, const ReasonLiterals & reason) -> void
-    {
-        if (! d.pol_line)
+        if (! plus.pol_line)
             return;
 
         PolBuilder b;
-        b.add(*d.pol_line);
+        b.add(*plus.pol_line);
 
         // Constants in WPBSum are baked into the OPB sum_line directly (see
         // emit_inequality_to.cc:58-60), so a reason literal whose variable is a
@@ -84,7 +67,7 @@ namespace
         const State & state,
         auto & inference,
         ProofLogger * const logger,
-        const pair<optional<ProofLine>, optional<ProofLine>> & sum_line) -> PropagatorState
+        const pair<optional<ProofLine>, optional<ProofLine>> & sum_line, const ConstraintID & owner) -> PropagatorState
     {
         auto a_vals = state.bounds(a);
         auto b_vals = state.bounds(b);
@@ -98,7 +81,7 @@ namespace
 
         auto justify = [&](Conclude c) {
             auto sum_line_value = (c == Conclude::LE ? sum_line.first : sum_line.second);
-            return JustifyExplicitly{hints::PlusBound{sum_line_value}, ThenRUP::Yes};
+            return JustifyExplicitly{hints::Plus{owner, sum_line_value}, ThenRUP::Yes};
         };
 
         // min(result) = min(a) + min(b);
@@ -176,9 +159,9 @@ auto Plus::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [a = _a, b = _b, result = _result, sum_line = _sum_line](
+        [a = _a, b = _b, result = _result, sum_line = _sum_line, owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            return propagate_plus(a, b, result, state, inference, logger, sum_line);
+            return propagate_plus(a, b, result, state, inference, logger, sum_line, owner);
         },
         triggers);
 }

@@ -1,5 +1,6 @@
 #include <gcs/constraints/all_different/gac_all_different.hh>
 #include <gcs/constraints/innards/recover_am1.hh>
+#include <gcs/constraints/inverse/hints.hh>
 #include <gcs/constraints/inverse/inverse.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -164,12 +165,12 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
     for (const auto & [i, _] : enumerate(_x))
         x_values.push_back(Integer(i) + _x_start);
 
-    propagators.install(constraint_id(), [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s, constraint_id = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s, constraint_id = constraint_id(), owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
         for (const auto & [i, x_i] : enumerate(x)) {
             for (auto x_i_value : state.each_value_mutable(x_i))
                 if (! state.in_domain(y.at((x_i_value - y_start).as_index()), Integer(i) + x_start))
                     inf.infer(logger, x_i != x_i_value,
-                        JustifyUsingRUP{},
+                        JustifyUsingRUP{hints::Inverse{owner}},
                         ExplicitReason{ReasonLiterals{y.at((x_i_value - y_start).as_index()) != Integer(i) + x_start}});
         }
 
@@ -177,7 +178,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
             for (auto y_i_value : state.each_value_mutable(y_i))
                 if (! state.in_domain(x.at((y_i_value - x_start).as_index()), Integer(i) + y_start))
                     inf.infer(logger, y_i != y_i_value,
-                        JustifyUsingRUP{},
+                        JustifyUsingRUP{hints::Inverse{owner}},
                         ExplicitReason{ReasonLiterals{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}});
         }
 
