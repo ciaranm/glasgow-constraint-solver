@@ -1,6 +1,7 @@
 #include <gcs/constraints/all_different/all_different_except.hh>
 #include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/constraints/all_different/gac_all_different.hh>
+#include <gcs/constraints/all_different/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -130,7 +131,7 @@ auto AllDifferentExcept::define_proof_model(ProofModel & model) -> void
 auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
 {
     if (_has_duplicates && _sanitised_excluded.empty()) {
-        install_clique_duplicate_contradiction_initialiser(propagators);
+        install_clique_duplicate_contradiction_initialiser(propagators, hints::AllDifferentExcept{constraint_id()});
         return;
     }
 
@@ -145,7 +146,8 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
         propagators.install_initialiser(
             [duplicated_vars = move(_duplicated_vars),
                 excluded = _sanitised_excluded,
-                duplicate_selectors = move(_duplicate_selectors)](
+                duplicate_selectors = move(_duplicate_selectors),
+                owner = constraint_id()](
                 const State & state, auto & inf, ProofLogger * const logger) -> void {
                 for (const auto & x : duplicated_vars) {
                     vector<Integer> non_excluded_values;
@@ -163,7 +165,7 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
                                                       WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i,
                                                       ProofLevel::Temporary);
                                               },
-                                ThenRUP::Yes},
+                                ThenRUP::Yes, hints::AllDifferentExcept{owner}},
                             NoReason{});
                     }
                 }

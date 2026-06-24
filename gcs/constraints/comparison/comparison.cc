@@ -1,4 +1,5 @@
 #include <gcs/constraints/comparison/comparison.hh>
+#include <gcs/constraints/comparison/hints.hh>
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 #include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/exception.hh>
@@ -134,16 +135,16 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
         overloaded{
             [&](const evaluated_reif::MustHold & reif) {
                 if (! holds)
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond](
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond, owner = constraint_id()](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
-                        inference.infer(logger, ! cond, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}});
+                        inference.infer(logger, ! cond, JustifyUsingRUP{hints::Comparison{owner}}, ExplicitReason{ReasonLiterals{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}});
                     });
             },
             [&](const evaluated_reif::MustNotHold & reif) {
                 if (holds)
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond](
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond, owner = constraint_id()](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
-                        inference.infer(logger, ! cond, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}});
+                        inference.infer(logger, ! cond, JustifyUsingRUP{hints::Comparison{owner}}, ExplicitReason{ReasonLiterals{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}});
                     });
             },
             [&](const evaluated_reif::Undecided & reif) {
@@ -151,9 +152,9 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
                     ? reif.cond_to_infer_if_constraint_must_hold()
                     : reif.cond_to_infer_if_constraint_must_not_hold();
                 if (lit)
-                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, lit = *lit](
+                    propagators.install_initialiser([v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, lit = *lit, owner = constraint_id()](
                                                         const State &, auto & inference, ProofLogger * const logger) -> void {
-                        inference.infer(logger, lit, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}});
+                        inference.infer(logger, lit, JustifyUsingRUP{hints::Comparison{owner}}, ExplicitReason{ReasonLiterals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}});
                     });
             },
             [](const evaluated_reif::Deactivated &) {
@@ -161,60 +162,60 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
             .visit(_evaluated_cond);
     }
     else {
-        auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal](
+        auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal, owner = constraint_id()](
                                                 const State & state, auto & inference, ProofLogger * const logger,
                                                 const Literal & cond) -> PropagatorState {
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-            inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{},
+            inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{hints::Comparison{owner}},
                 ExplicitReason{ReasonLiterals{{cond, v2 <= v2_bounds.second}}});
-            inference.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{},
+            inference.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{hints::Comparison{owner}},
                 ExplicitReason{ReasonLiterals{{cond, v1 >= v1_bounds.first}}});
             return v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i))
                 ? PropagatorState::DisableUntilBacktrack
                 : PropagatorState::Enable;
         };
 
-        auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal](
+        auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal, owner = constraint_id()](
                                                     const State & state, auto & inference, ProofLogger * const logger,
                                                     const Literal & cond) -> PropagatorState {
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-            inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{},
+            inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{hints::Comparison{owner}},
                 ExplicitReason{ReasonLiterals{{cond, v1 <= v1_bounds.second}}});
-            inference.infer_greater_than_or_equal(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i), JustifyUsingRUP{},
+            inference.infer_greater_than_or_equal(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i), JustifyUsingRUP{hints::Comparison{owner}},
                 ExplicitReason{ReasonLiterals{{cond, v2 >= v2_bounds.first}}});
             return v2_bounds.second < (v1_bounds.first + (! or_equal ? 1_i : 0_i))
                 ? PropagatorState::DisableUntilBacktrack
                 : PropagatorState::Enable;
         };
 
-        auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, or_equal = _or_equal](
+        auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, or_equal = _or_equal, owner = constraint_id()](
                                              const State & state, auto &, ProofLogger * const,
-                                             const IntegerVariableCondition &) -> ReificationVerdict {
+                                             const IntegerVariableCondition &) -> ReificationVerdictFor<JustifyUsingRUP<hints::Comparison>> {
             // Aliased non-constant operands: v1<v2 never (when strict),
             // v1≤v2 always. Returning the resolved verdict here lets the
             // dispatcher pin cond at root instead of relying on bounds
             // shrinking to expose the contradiction.
             if (v1 == v2 && ! is_constant_variable(v1)) {
                 if (or_equal)
-                    return reification_verdict::MustHold<Justification>{
-                        .justification = JustifyUsingRUP{},
+                    return reification_verdict::MustHold<JustifyUsingRUP<hints::Comparison>>{
+                        .justification = JustifyUsingRUP{hints::Comparison{owner}},
                         .reason = NoReason{}};
                 else
-                    return reification_verdict::MustNotHold<Justification>{
-                        .justification = JustifyUsingRUP{},
+                    return reification_verdict::MustNotHold<JustifyUsingRUP<hints::Comparison>>{
+                        .justification = JustifyUsingRUP{hints::Comparison{owner}},
                         .reason = NoReason{}};
             }
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             if (or_equal ? (v1_bounds.second <= v2_bounds.first) : (v1_bounds.second < v2_bounds.first)) {
                 // v1 has to be less than (or equal): constraint must hold.
-                return reification_verdict::MustHold<Justification>{
-                    .justification = JustifyUsingRUP{},
+                return reification_verdict::MustHold<JustifyUsingRUP<hints::Comparison>>{
+                    .justification = JustifyUsingRUP{hints::Comparison{owner}},
                     .reason = ExplicitReason{ReasonLiterals{{v1 <= v1_bounds.second, v2 >= v2_bounds.first}}}};
             }
             else if (or_equal ? (v1_bounds.first > v2_bounds.second) : (v1_bounds.first >= v2_bounds.second)) {
                 // v1 has to be greater than (or equal): constraint cannot hold.
-                return reification_verdict::MustNotHold<Justification>{
-                    .justification = JustifyUsingRUP{},
+                return reification_verdict::MustNotHold<JustifyUsingRUP<hints::Comparison>>{
+                    .justification = JustifyUsingRUP{hints::Comparison{owner}},
                     .reason = ExplicitReason{ReasonLiterals{{v1 >= v1_bounds.first, v2 <= v2_bounds.second}}}};
             }
             else

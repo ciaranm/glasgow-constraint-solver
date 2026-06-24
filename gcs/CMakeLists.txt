@@ -33,6 +33,7 @@ add_library(glasgow_constraint_solver
         constraints/disjunctive_2d/disjunctive_2d.cc
         constraints/element/element.cc
         constraints/equals/equals.cc
+        constraints/extensional_utils.cc
         constraints/global_cardinality/bounds_global_cardinality.cc
         constraints/global_cardinality/gac_global_cardinality.cc
         constraints/global_cardinality/justify.cc
@@ -69,7 +70,6 @@ add_library(glasgow_constraint_solver
         constraints/table/negative_table.cc
         constraints/table/table.cc
         constraints/value_precede/value_precede.cc
-        innards/extensional_utils.cc
         innards/integer_overflow.cc
         innards/literal.cc
         innards/power.cc

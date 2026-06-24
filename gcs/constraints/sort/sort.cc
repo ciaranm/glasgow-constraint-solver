@@ -1,3 +1,4 @@
+#include <gcs/constraints/sort/hints.hh>
 #include <gcs/constraints/sort/sort.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -188,7 +189,7 @@ namespace
         const vector<vector<ProofFlag>> & before, const vector<ProofOnlySimpleIntegerVariableID> & pos,
         const vector<ProofLine> & rank_lines, const vector<ProofLine> & rank_le_lines,
         const vector<ProofLine> & inj_lines, const vector<ProofLine> & al1_lines,
-        const vector<vector<ProofLine>> & anti_lines,
+        const vector<vector<ProofLine>> & anti_lines, const ConstraintID & owner,
         const State & state, Inference_ & inference, ProofLogger * const logger) -> void
     {
         auto n = x.size();
@@ -245,7 +246,7 @@ namespace
                                                   WPBSum{} + 1_i * (y[m] < Integer{V + 1}) + 1_i * (y[m + 1] >= Integer{V + 1}) >= 1_i,
                                                   ProofLevel::Temporary);
                                       },
-                        ThenRUP::Yes},
+                        ThenRUP::Yes, hints::Sort{owner}},
                     reason);
             }
 
@@ -330,7 +331,7 @@ namespace
                                           pol.emit(*logger, ProofLevel::Temporary);
                                       }
                                   },
-                    ThenRUP::Yes},
+                    ThenRUP::Yes, hints::Sort{owner}},
                 reason);
         };
 
@@ -517,7 +518,7 @@ namespace
                                                       WPBSum{} + 1_i * (y[k] >= Integer{L}) + 1_i * (y[k - 1] < Integer{L}) >= 1_i,
                                                       ProofLevel::Temporary);
                                           },
-                            ThenRUP::Yes},
+                            ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 }
                 else if (forced_above >= n - j) {
@@ -578,7 +579,7 @@ namespace
                                                       surj.add(inj_lines[k]);
                                               surj.emit(*logger, ProofLevel::Temporary);
                                           },
-                            ThenRUP::Yes},
+                            ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 }
                 else {
@@ -636,7 +637,7 @@ namespace
                                                       pol.add(inj_lines[static_cast<size_t>(k)]);
                                                   pol.emit(*logger, ProofLevel::Temporary);
                                               },
-                                ThenRUP::Yes},
+                                ThenRUP::Yes, hints::Sort{owner}},
                             reason);
                 }
             }
@@ -675,7 +676,7 @@ namespace
                                                       WPBSum{} + 1_i * (y[k] < Integer{U + 1}) + 1_i * (y[k + 1] >= Integer{U + 1}) >= 1_i,
                                                       ProofLevel::Temporary);
                                           },
-                            ThenRUP::Yes},
+                            ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 }
                 else if (forced_below >= j + 1) {
@@ -757,7 +758,7 @@ namespace
                                                       surj.add(inj_lines[k]);
                                               surj.emit(*logger, ProofLevel::Temporary);
                                           },
-                            ThenRUP::Yes},
+                            ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 }
                 else {
@@ -826,7 +827,7 @@ namespace
                                                       pol.add(inj_lines[static_cast<size_t>(k)]);
                                                   pol.emit(*logger, ProofLevel::Temporary);
                                               },
-                                ThenRUP::Yes},
+                                ThenRUP::Yes, hints::Sort{owner}},
                             reason);
                 }
             }
@@ -849,7 +850,7 @@ namespace
                                                       WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] >= Integer{L}) >= 1_i,
                                                       ProofLevel::Temporary);
                                           },
-                            ThenRUP::Yes},
+                            ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 else {
                     // HALL: lb(x[i]) = ly[jl] with jl = jl_in[i] > lo_i (the SCC
@@ -900,7 +901,7 @@ namespace
                                                       pol.add(inj_lines[static_cast<size_t>(k)]);
                                                   pol.emit(*logger, ProofLevel::Temporary);
                                               },
-                                ThenRUP::Yes},
+                                ThenRUP::Yes, hints::Sort{owner}},
                             reason);
                 }
             }
@@ -916,7 +917,7 @@ namespace
                                                       WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] < Integer{U + 1}) >= 1_i,
                                                       ProofLevel::Temporary);
                                           },
-                            ThenRUP::Yes},
+                            ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 else {
                     // HALL mirror: ub(x[i]) = uy[jh] with jh = jh_in[i] < hi_i-1.
@@ -963,7 +964,7 @@ namespace
                                                       pol.add(inj_lines[static_cast<size_t>(k)]);
                                                   pol.emit(*logger, ProofLevel::Temporary);
                                               },
-                                ThenRUP::Yes},
+                                ThenRUP::Yes, hints::Sort{owner}},
                             reason);
                 }
             }
@@ -1102,8 +1103,8 @@ auto gcs::innards::install_sortedness_propagator(Propagators & propagators, cons
     triggers.on_bounds.insert(triggers.on_bounds.end(), x.begin(), x.end());
     triggers.on_bounds.insert(triggers.on_bounds.end(), y.begin(), y.end());
 
-    propagators.install(constraint_id, [x, y, before = witness.before, pos = witness.pos, rank_lines = witness.rank_ge, rank_le_lines = witness.rank_le, inj_lines, al1_lines, anti_lines](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        propagate_sortedness(x, y, before, pos, rank_lines, rank_le_lines, *inj_lines, *al1_lines, *anti_lines,
+    propagators.install(constraint_id, [x, y, before = witness.before, pos = witness.pos, rank_lines = witness.rank_ge, rank_le_lines = witness.rank_le, inj_lines, al1_lines, anti_lines, owner = constraint_id](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagate_sortedness(x, y, before, pos, rank_lines, rank_le_lines, *inj_lines, *al1_lines, *anti_lines, owner,
             state, inference, logger);
         return PropagatorState::Enable; }, triggers);
 }

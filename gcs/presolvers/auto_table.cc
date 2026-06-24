@@ -1,5 +1,5 @@
+#include <gcs/constraints/extensional_utils.hh>
 #include <gcs/exception.hh>
-#include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/propagators.hh>

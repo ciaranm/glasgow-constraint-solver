@@ -1,4 +1,5 @@
 #include <gcs/constraints/cumulative/cumulative.hh>
+#include <gcs/constraints/cumulative/hints.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -311,7 +312,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             before_flags = move(_before_flags), after_flags = move(_after_flags),
             active_flags = move(_active_flags), contrib_vars = move(_contrib_vars),
             end_def_lines = move(_end_def_lines), capacity_lines = move(_capacity_lines),
-            per_task_t_lo = move(_per_task_t_lo)](
+            per_task_t_lo = move(_per_task_t_lo), owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // The capacity may be a variable: the load profile is infeasible
             // only when it exceeds the *largest* still-allowed capacity, so the
@@ -479,7 +480,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         pol.emit(*logger, ProofLevel::Temporary);
                     };
 
-                    inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes},
+                    inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
                         generic_reason(state, reason_vars));
                     return PropagatorState::DisableUntilBacktrack;
                 }
@@ -600,7 +601,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     };
 
                     inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                        JustifyExplicitly{justify, ThenRUP::Yes},
+                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
                         generic_reason(state, reason_vars));
                 }
 
@@ -634,7 +635,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     };
 
                     inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                        JustifyExplicitly{justify, ThenRUP::Yes},
+                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
                         generic_reason(state, reason_vars));
                 }
             }

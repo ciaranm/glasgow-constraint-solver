@@ -17,7 +17,7 @@ namespace gcs
     {
         auto propagate_non_gac_alldifferent(
             const ConstraintStateHandle & unassigned_handle, const State & state,
-            auto & inference_tracker, ProofLogger * const logger) -> void;
+            auto & inference_tracker, ProofLogger * const logger, const ConstraintID & owner) -> void;
     }
 
     /**

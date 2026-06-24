@@ -37,8 +37,12 @@ namespace gcs
 
         // Install a SimpleDefinition-priority contradiction initialiser that
         // proves the input was unsatisfiable because of a duplicate variable
-        // in a clique-of-not-equals encoding.
-        auto install_clique_duplicate_contradiction_initialiser(Propagators & propagators) -> void;
+        // in a clique-of-not-equals encoding. Templated on the hint type so each
+        // caller (AllDifferent's gac/vc/symmetric propagators, AllDifferentExcept)
+        // names the contradiction with its own constraint. Instantiated in
+        // encoding.cc for hints::AllDifferent and hints::AllDifferentExcept.
+        template <typename Hint_>
+        auto install_clique_duplicate_contradiction_initialiser(Propagators & propagators, const Hint_ & hint) -> void;
     }
 }
 

@@ -1,3 +1,4 @@
+#include <gcs/constraints/n_value/hints.hh>
 #include <gcs/constraints/n_value/n_value.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -100,14 +101,14 @@ auto NValue::install_propagators(Propagators & propagators) -> void
     vector<IntegerVariableID> all_vars = _vars;
     all_vars.push_back(_n_values);
 
-    propagators.install(constraint_id(), [all_vars = move(all_vars), n_values = _n_values, vars = _vars](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [all_vars = move(all_vars), n_values = _n_values, vars = _vars, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         set<Integer> all_possible_values;
         for (const auto & var : vars) {
             for (auto v : state.each_value_immutable(var))
                 all_possible_values.insert(v);
         }
 
-        inference.infer(logger, n_values <= Integer(all_possible_values.size()), JustifyUsingRUP{},
+        inference.infer(logger, n_values <= Integer(all_possible_values.size()), JustifyUsingRUP{hints::NValue{owner}},
             generic_reason(state, all_vars));
 
         set<Integer> all_definite_values;
@@ -120,7 +121,7 @@ auto NValue::install_propagators(Propagators & propagators) -> void
         // The "at least 1" floor only applies when the array is non-empty;
         // an empty array contributes 0 distinct values.
         auto distinct_floor = vars.empty() ? 0_i : 1_i;
-        inference.infer(logger, n_values >= max(distinct_floor, Integer(all_definite_values.size())), JustifyUsingRUP{}, generic_reason(state, all_vars));
+        inference.infer(logger, n_values >= max(distinct_floor, Integer(all_definite_values.size())), JustifyUsingRUP{hints::NValue{owner}}, generic_reason(state, all_vars));
 
         return PropagatorState::Enable; }, triggers);
 }

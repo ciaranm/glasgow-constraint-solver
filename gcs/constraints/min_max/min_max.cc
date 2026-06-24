@@ -1,5 +1,6 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/innards/justify_not_in_range.hh>
+#include <gcs/constraints/min_max/hints.hh>
 #include <gcs/constraints/min_max/min_max.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -89,23 +90,23 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
     for (const auto & v : _vars)
         triggers.on_change.emplace_back(v);
 
-    propagators.install(constraint_id(), [vars = _vars, result = _result, min = _min, selectors = _selectors](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [vars = _vars, result = _result, min = _min, selectors = _selectors, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         // result <= upper bound of each vars
         for (auto & var : vars) {
             auto var_bounds = state.bounds(var);
             if (min)
-                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{var <= var_bounds.second}}});
+                inference.infer_less_than(logger, result, var_bounds.second + 1_i, JustifyUsingRUP{hints::MinMax{owner}}, ExplicitReason{ReasonLiterals{{var <= var_bounds.second}}});
             else
-                inference.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{var >= var_bounds.first}}});
+                inference.infer_greater_than_or_equal(logger, result, var_bounds.first, JustifyUsingRUP{hints::MinMax{owner}}, ExplicitReason{ReasonLiterals{{var >= var_bounds.first}}});
         }
 
         // each var >= result
         auto result_bounds = state.bounds(result);
         for (auto & var : vars) {
             if (min)
-                inference.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{result >= result_bounds.first}}});
+                inference.infer_greater_than_or_equal(logger, var, result_bounds.first, JustifyUsingRUP{hints::MinMax{owner}}, ExplicitReason{ReasonLiterals{{result >= result_bounds.first}}});
             else
-                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{result <= result_bounds.second}}});
+                inference.infer_less_than(logger, var, state.upper_bound(result) + 1_i, JustifyUsingRUP{hints::MinMax{owner}}, ExplicitReason{ReasonLiterals{{result <= result_bounds.second}}});
         }
 
         // result in union(vars)
@@ -128,7 +129,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                     // that the value is missing from all of the vars
                     for (const auto & sel : selectors)
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
-                }, ThenRUP::Yes},
+                }, ThenRUP::Yes, hints::MinMax{owner}},
                     ExplicitReason{reason});
             }
         }
@@ -200,7 +201,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                         justify_not_in_range_across_equality(*logger, reason,
                             std::get<SimpleIntegerVariableID>(IntegerVariableID{*support_1}), lo, hi,
                             result, lo, hi);
-                    }, ThenRUP::Yes},
+                    }, ThenRUP::Yes, hints::MinMax{owner}},
                         ExplicitReason{std::move(support_reason)});
                 }
                 else
@@ -211,7 +212,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                             for (const auto & [idx, var] : enumerate(vars))
                                 if (var == *support_1)
                                     logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
-                        }, ThenRUP::Yes},
+                        }, ThenRUP::Yes, hints::MinMax{owner}},
                             ExplicitReason{reason});
             }
         }

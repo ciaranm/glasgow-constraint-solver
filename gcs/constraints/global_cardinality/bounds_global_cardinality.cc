@@ -1,4 +1,5 @@
 #include <gcs/constraints/global_cardinality/bounds_global_cardinality.hh>
+#include <gcs/constraints/global_cardinality/hints.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -117,7 +118,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
 
     propagators.install(
         constraint_id(),
-        [vars = _vars, values = _values, counts = _counts, count_lines = _count_lines, all_vars = move(all_vars)](
+        [vars = _vars, owner = constraint_id(), values = _values, counts = _counts, count_lines = _count_lines, all_vars = move(all_vars)](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto m = values.size();
 
@@ -147,13 +148,13 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
 
                 // c_j >= must: the fixed variables alone force the count up.
                 if (must > lb_j)
-                    inference.infer(logger, counts[j] >= must, JustifyUsingRUP{},
+                    inference.infer(logger, counts[j] >= must, JustifyUsingRUP{hints::GlobalCardinality{owner}},
                         ExplicitReason{fixed_eq});
 
                 // c_j <= can: only the variables that can still take value may
                 // contribute to the count.
                 if (can < ub_j)
-                    inference.infer(logger, counts[j] <= can, JustifyUsingRUP{},
+                    inference.infer(logger, counts[j] <= can, JustifyUsingRUP{hints::GlobalCardinality{owner}},
                         ExplicitReason{absent_ne});
 
                 // Saturated capacity: if as many variables are already fixed to
@@ -164,7 +165,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                     sat.emplace_back(counts[j] <= ub_j);
                     for (const auto & var : vars)
                         if (state.in_domain(var, value) && ! state.has_single_value(var))
-                            inference.infer(logger, var != value, JustifyUsingRUP{},
+                            inference.infer(logger, var != value, JustifyUsingRUP{hints::GlobalCardinality{owner}},
                                 ExplicitReason{sat});
                 }
 
@@ -177,7 +178,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                         if (state.in_domain(var, value) && ! state.has_single_value(var))
                             for (const auto & w : state.each_value_mutable(var))
                                 if (w != value)
-                                    inference.infer(logger, var != w, JustifyUsingRUP{},
+                                    inference.infer(logger, var != w, JustifyUsingRUP{hints::GlobalCardinality{owner}},
                                         ExplicitReason{force});
                 }
             }
@@ -315,7 +316,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                                       pb.add(*count_lines[j].first);
                                                       pb.emit(*logger, ProofLevel::Temporary);
                                                   },
-                                    ThenRUP::Yes},
+                                    ThenRUP::Yes, hints::GlobalCardinality{owner}},
                                 LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = capacity_reason(j); }});
                         auto upper = potential_count - (demand - lb_j);
                         if (upper < ub_j)
@@ -345,12 +346,12 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                                       pb.add(*count_lines[j].second);
                                                       pb.emit(*logger, ProofLevel::Temporary);
                                                   },
-                                    ThenRUP::Yes},
+                                    ThenRUP::Yes, hints::GlobalCardinality{owner}},
                                 LazyReasonOver{vars, [&, j = j](const State &, ReasonLiterals & out) { out = demand_reason(j); }});
                     }
 
                     if (confined_count > cap) {
-                        inference.contradiction(logger, JustifyExplicitly{[&](const ReasonLiterals &) { emit_capacity_pol(nullopt); }, ThenRUP::Yes}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
+                        inference.contradiction(logger, JustifyExplicitly{[&](const ReasonLiterals &) { emit_capacity_pol(nullopt); }, ThenRUP::Yes, hints::GlobalCardinality{owner}}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
                     }
                     else if (confined_count == cap) {
                         for (const auto & var : vars) {
@@ -358,7 +359,7 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                                 continue;
                             for (const auto & val : hall)
                                 if (state.in_domain(var, val))
-                                    inference.infer(logger, var != val, JustifyExplicitly{[&](const ReasonLiterals &) { emit_capacity_pol(nullopt); }, ThenRUP::Yes}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
+                                    inference.infer(logger, var != val, JustifyExplicitly{[&](const ReasonLiterals &) { emit_capacity_pol(nullopt); }, ThenRUP::Yes, hints::GlobalCardinality{owner}}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = capacity_reason(nullopt); }});
                         }
                     }
 
@@ -394,13 +395,13 @@ auto BoundsGlobalCardinality::install_propagators(Propagators & propagators) -> 
                     };
 
                     if (potential_count < demand) {
-                        inference.contradiction(logger, JustifyExplicitly{[&](const ReasonLiterals &) { emit_demand_pol(nullopt, 0_i); }, ThenRUP::Yes}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
+                        inference.contradiction(logger, JustifyExplicitly{[&](const ReasonLiterals &) { emit_demand_pol(nullopt, 0_i); }, ThenRUP::Yes, hints::GlobalCardinality{owner}}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
                     }
                     else if (potential_count == demand) {
                         for (const auto & var : potential)
                             for (const auto & val : state.each_value_mutable(var))
                                 if (! hall.contains(val))
-                                    inference.infer(logger, var != val, JustifyExplicitly{[&, var = var, val = val](const ReasonLiterals &) { emit_demand_pol(var, val); }, ThenRUP::Yes}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
+                                    inference.infer(logger, var != val, JustifyExplicitly{[&, var = var, val = val](const ReasonLiterals &) { emit_demand_pol(var, val); }, ThenRUP::Yes, hints::GlobalCardinality{owner}}, LazyReasonOver{vars, [&](const State &, ReasonLiterals & out) { out = demand_reason(nullopt); }});
                     }
                 }
             }

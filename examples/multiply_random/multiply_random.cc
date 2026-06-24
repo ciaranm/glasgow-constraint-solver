@@ -41,7 +41,7 @@ auto main(int argc, char * argv[]) -> int
             ("n", "Max bounds from -n..n", cxxopts::value<int>()->default_value("5"))  //
             ("stats", "Print stats")                                                   //
             ("display-problem", "Display problem and solution (if any)")               //
-            ("proof-files-basename", "Path and name of the opb and pbp files",                 //
+            ("proof-files-basename", "Path and name of the opb and pbp files",         //
                 cxxopts::value<string>()->default_value("multiply_random"));           //
 
         options_vars = options.parse(argc, argv);
@@ -91,7 +91,7 @@ auto main(int argc, char * argv[]) -> int
         println(cout, "z in {}..{}", z_lower, z_upper);
     }
     auto stats = solve(
-        p, [&](const CurrentState & s) -> bool { 
+        p, [&](const CurrentState & s) -> bool {
            if (display_problem) {
             println(cout, "solution: x = {}, y = {}, z = {}", s(x), s(y), s(z));
            }

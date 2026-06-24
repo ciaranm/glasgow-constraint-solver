@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/triggers.hh>
+#include <gcs/constraints/parity/hints.hh>
 #include <gcs/constraints/parity/parity.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -96,7 +97,7 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
     for (const auto & l : _lits)
         add_trigger_for(triggers, l);
 
-    propagators.install(constraint_id(), [lits = _lits](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+    propagators.install(constraint_id(), [lits = _lits, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
         long how_many_1 = 0, how_many_unknown = 0;
         optional<Literal> an_unknown;
         ReasonLiterals reason;
@@ -125,15 +126,15 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
             if (how_many_1 % 2 == 1)
                 return PropagatorState::DisableUntilBacktrack;
             else
-                inference.contradiction(logger, JustifyUsingRUP{}, ExplicitReason{reason});
+                inference.contradiction(logger, JustifyUsingRUP{hints::Parity{owner}}, ExplicitReason{reason});
         }
         else {
             if (how_many_1 % 2 == 1) {
-                inference.infer(logger, ! *an_unknown, JustifyUsingRUP{}, ExplicitReason{reason});
+                inference.infer(logger, ! *an_unknown, JustifyUsingRUP{hints::Parity{owner}}, ExplicitReason{reason});
                 return PropagatorState::DisableUntilBacktrack;
             }
             else {
-                inference.infer(logger, *an_unknown, JustifyUsingRUP{}, ExplicitReason{reason});
+                inference.infer(logger, *an_unknown, JustifyUsingRUP{hints::Parity{owner}}, ExplicitReason{reason});
                 return PropagatorState::DisableUntilBacktrack;
             }
         } }, triggers);

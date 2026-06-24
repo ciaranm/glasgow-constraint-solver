@@ -1,3 +1,4 @@
+#include <gcs/constraints/table/hints.hh>
 #include <gcs/constraints/table/negative_table.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -184,7 +185,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
         // case and the "t[pos] is a wildcard" case (since `var == Wildcard` overloads
         // to TrueLiteral, which tests as DefinitelyTrue).
         propagators.install_initialiser(
-            [vars = _vars, tuples = tuples, watches = watches](
+            [vars = _vars, tuples = tuples, watches = watches, owner = constraint_id()](
                 const State & state, auto & inference, ProofLogger * const logger) -> void {
                 const auto & tuple_data = depointinate(tuples);
                 watches->reserve(tuple_data.size());
@@ -204,7 +205,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
 
                     auto w1 = find_unbroken(no_watch);
                     if (! w1) {
-                        inference.contradiction(logger, JustifyUsingRUP{},
+                        inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}},
                             generic_reason(state, vars));
                     }
 
@@ -212,7 +213,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                     if (! w2) {
                         // Unit clause: vars[*w1] != t[*w1] is the only possibly-true
                         // disjunct, so it must hold.
-                        inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{},
+                        inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{hints::NegativeTable{owner}},
                             generic_reason(state, vars));
                         // Mark the tuple as already handled — both watches at the same
                         // position will read as broken on every subsequent fire, and
@@ -227,7 +228,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
 
         propagators.install(
             constraint_id(),
-            [vars = move(_vars), tuples = move(tuples), watches = watches](
+            [vars = move(_vars), tuples = move(tuples), watches = watches, owner = constraint_id()](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 const auto & tuple_data = depointinate(tuples);
 
@@ -258,12 +259,12 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                     if (b1 && b2) {
                         auto new1 = find_unbroken(t, no_watch, no_watch);
                         if (! new1) {
-                            inference.contradiction(logger, JustifyUsingRUP{},
+                            inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}},
                                 generic_reason(state, vars));
                         }
                         auto new2 = find_unbroken(t, *new1, no_watch);
                         if (! new2) {
-                            inference.infer(logger, vars[*new1] != t[*new1], JustifyUsingRUP{},
+                            inference.infer(logger, vars[*new1] != t[*new1], JustifyUsingRUP{hints::NegativeTable{owner}},
                                 generic_reason(state, vars));
                         }
                         else {
@@ -274,7 +275,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                     else if (b1) {
                         auto new1 = find_unbroken(t, w.second, no_watch);
                         if (! new1) {
-                            inference.infer(logger, vars[w.second] != t[w.second], JustifyUsingRUP{},
+                            inference.infer(logger, vars[w.second] != t[w.second], JustifyUsingRUP{hints::NegativeTable{owner}},
                                 generic_reason(state, vars));
                         }
                         else {
@@ -284,7 +285,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                     else {
                         auto new2 = find_unbroken(t, w.first, no_watch);
                         if (! new2) {
-                            inference.infer(logger, vars[w.first] != t[w.first], JustifyUsingRUP{},
+                            inference.infer(logger, vars[w.first] != t[w.first], JustifyUsingRUP{hints::NegativeTable{owner}},
                                 generic_reason(state, vars));
                         }
                         else {

@@ -3,6 +3,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_ASSERTION_HINTS_HH
 
 #include <gcs/constraint_id.hh>
+#include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/integer.hh>
@@ -25,15 +26,16 @@ using fmt::format;
 
 namespace gcs::innards
 {
+    class NamesAndIDsTracker;
 
     /**
-     * \brief Render a single hint field as an s-expression atom.
+     * \brief Render a single hint field's value as an s-expression atom.
      *
-     * Field keys are plain s-expression atoms (e.g. \c SExpr::atom("hall_vars")),
-     * not a fixed enum: the vocabulary of a hint's fields lives with that hint's
-     * typed Data struct in \c gcs::innards::hints, not in one central list. The
-     * \c hint_sexpr overloads below cover the leaf field values; per-hint Data
-     * structs add their own \c hint_sexpr overload next to the constraint.
+     * These \c hint_sexpr overloads cover the leaf field *values* (a label, a
+     * constraint id, an integer). The common field *keys* are named in
+     * \c hints::field (gcs/innards/proofs/hints.hh) so the wire vocabulary the
+     * justifier matches on stays extractable; a per-hint \c hint_sexpr that
+     * serialises extra data names its own keys next to the constraint.
      *
      * \ingroup Innards
      */
@@ -87,23 +89,60 @@ namespace gcs::innards
     }
 
     /**
-     * \brief The two ubiquitous hint fields, as named constructors.
+     * \brief The owning-constraint-id field, as a named constructor.
      *
-     * Almost every typed hint carries the owning constraint id, and the multi-shape
-     * ones add a per-shape \c justifier keyword. These spell those two
-     * `(constraint_id <id>)` / `(justifier <name>)` field pairs once, so each
-     * witness's \c hint_sexpr names them rather than respelling the atom pairs.
+     * Almost every typed hint carries the owning constraint id; the default
+     * \c hint_sexpr (in the \c hints namespace below) spells the
+     * `(constraint_id <id>)` field once so each hint names it rather than
+     * respelling the atom pair. The per-shape `(subhint <name>)` field has its own
+     * spelling, \c hint_subhint.
      *
      * \ingroup Innards
      */
     inline auto hint_constraint_id(const ConstraintID & owner) -> SExpr
     {
-        return hint_list(SExpr::atom("constraint_id"), owner);
+        return hint_list(SExpr::atom(std::string{hints::field::constraint_id}), owner);
     }
 
-    inline auto hint_justifier(std::string_view justifier) -> SExpr
+    namespace hints
     {
-        return hint_list(SExpr::atom("justifier"), SExpr::atom(std::string{justifier}));
+        /**
+         * \brief The `(subhint <name>)` field: the per-shape discriminator for a
+         * constraint family whose internal proof writer distinguishes more than one
+         * inference shape (e.g. all_different's "hall" vs "forced_value"). Spelled
+         * once here so every derived hint struct names it the same way.
+         *
+         * \ingroup Innards
+         */
+        inline auto hint_subhint(std::string_view name) -> SExpr
+        {
+            return hint_list(SExpr::atom(std::string{field::subhint}), SExpr::atom(std::string{name}));
+        }
+
+        /**
+         * \brief The default wire form for a typed assertion hint: the identity
+         * only.
+         *
+         * Emits just `(constraint_id <originator>)`, plus `(subhint <name>)` when the
+         * hint struct names one. It carries NO operand data: everything an external
+         * justifier needs that is re-derivable from the asserted literal, the reason
+         * and the definition lines stays off the wire (the internal proof writer
+         * holds it for its own emission). A constraint opts into serialising more by
+         * defining its own `hint_sexpr` overload next to its hint struct; that is the
+         * single place where the external data is allowed to be a (possibly strict)
+         * subset of the internal data.
+         *
+         * \ingroup Innards
+         */
+        template <typename Hint_>
+            requires requires(const Hint_ & h) { h.originator; }
+        auto hint_sexpr(const Hint_ & h, NamesAndIDsTracker &) -> SExpr
+        {
+            if constexpr (requires { Hint_::subhint_name; })
+                return hint_list(hint_constraint_id(h.originator), hint_subhint(Hint_::subhint_name));
+            else
+                return hint_list(hint_constraint_id(h.originator));
+        }
     }
 
     /**
@@ -115,10 +154,12 @@ namespace gcs::innards
     {
         std::vector<ProofLineLabel> derivable_from = {};
         // A coarse, model-level constraint-type name (e.g. "all_different",
-        // "abs"), carried in the second annotation field for vanilla-VeriPB
-        // statistics. The fine, per-justification-shape discriminator (the
-        // "justifier" keyword) lives in hint_fields, set by the typed Data
-        // struct. A string literal, so this stays allocation-free.
+        // "abs"): the first port-of-call for justification dispatch. A justifier
+        // picks its function by constraint family from this name, and only reads
+        // the structured hint_fields below -- the per-shape "subhint", plus any
+        // data -- when the family alone doesn't determine the function. It is also
+        // what a vanilla VeriPB run can aggregate for statistics. A string literal,
+        // so this stays allocation-free.
         std::string_view hint_name = "";
         std::optional<SExpr> hint_fields = std::nullopt;
     };

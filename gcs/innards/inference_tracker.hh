@@ -263,6 +263,20 @@ namespace gcs::innards
             infer_all(logger, lits, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
+        template <typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            contradiction(logger, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        {
+            infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
+        }
+
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
         auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {

@@ -1,4 +1,5 @@
 #include <cmath>
+#include <gcs/constraints/regular/hints.hh>
 #include <gcs/constraints/regular/regex.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/exception.hh>
@@ -286,7 +287,8 @@ namespace
         const State & state,
         auto & inference,
         ProofLogger * const logger,
-        const bool short_reasons) -> void
+        const bool short_reasons,
+        const ConstraintID & owner) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
         auto gen_reason = eager_reason(generic_reason(state, vars), state);
@@ -306,7 +308,7 @@ namespace
                     break;
                 }
             if (! initial_is_final)
-                inference.contradiction(logger, JustifyUsingRUP{}, gen_reason);
+                inference.contradiction(logger, JustifyUsingRUP{hints::Regular{owner}}, gen_reason);
             return;
         }
 
@@ -372,7 +374,7 @@ namespace
             for (auto val : state.each_value_mutable(vars[i])) {
                 // Clean up domains
                 if (graph.states_supporting[i][val].empty())
-                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{}, reason);
+                    inference.infer_not_equal(logger, vars[i], val, JustifyUsingRUP{hints::Regular{owner}}, reason);
             }
         }
 
@@ -559,8 +561,8 @@ auto Regular::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
-    propagators.install(constraint_id(), [v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = _graph_idx, flags = move(_state_at_pos_flags), sr = _short_reasons](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        propagate_regular(v, n, t, f, flags, g, state, inference, logger, sr);
+    propagators.install(constraint_id(), [v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = _graph_idx, flags = move(_state_at_pos_flags), sr = _short_reasons, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagate_regular(v, n, t, f, flags, g, state, inference, logger, sr, owner);
         return PropagatorState::Enable; }, triggers);
 }
 

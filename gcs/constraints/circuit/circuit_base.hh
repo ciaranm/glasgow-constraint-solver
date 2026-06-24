@@ -61,7 +61,7 @@ namespace gcs::innards::circuit
         const std::optional<Integer> & prevent_idx = std::nullopt,
         const std::optional<Integer> & prevent_value = std::nullopt) -> void;
 
-    auto prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const PosVarDataMap & pos_var_data,
+    auto prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
         const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference_tracker, ProofLogger * const logger) -> void;
 
     /**

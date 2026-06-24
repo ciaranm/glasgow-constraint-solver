@@ -1,6 +1,7 @@
 #include <gcs/constraint.hh>
 #include <gcs/constraints/all_different/encoding.hh>
 #include <gcs/constraints/all_different/gac_all_different.hh>
+#include <gcs/constraints/all_different/hints.hh>
 #include <gcs/constraints/all_different/justify.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/assertion_hints.hh>
@@ -70,27 +71,10 @@ using fmt::print;
 
 namespace gcs::innards::hints
 {
-    auto hint_sexpr(const AllDifferentHall & hall, NamesAndIDsTracker & names) -> SExpr
-    {
-        vector<SExpr> hall_var_terms;
-        for (const auto & v : hall.hall_vars)
-            hall_var_terms.push_back(names.s_expr_term_of(v));
-        return hint_list(
-            hint_constraint_id(hall.owner),
-            hint_list(SExpr::atom("hall_vars"), SExpr::list(move(hall_var_terms))),
-            hint_list(SExpr::atom("hall_vals"), hint_seq(hall.hall_vals)),
-            hint_justifier(AllDifferentHall::justifier));
-    }
-
     auto emit_justification(ProofLogger & logger, const AllDifferentHall & hall, const ReasonLiterals &) -> void
     {
         justify_all_different_hall_set_or_violator(logger, *hall.all_vars, hall.hall_vars, hall.hall_vals,
             *hall.value_am1_constraint_numbers);
-    }
-
-    auto hint_sexpr(const AllDifferentForcedValue & forced, NamesAndIDsTracker &) -> SExpr
-    {
-        return hint_list(hint_constraint_id(forced.owner));
     }
 }
 
@@ -221,26 +205,29 @@ namespace
         }
     }
 
-    // Build the typed Hall witness shared by both GAC all_different Hall shapes
-    // (the matching-too-small contradiction and the SCC Hall-set deletion). The
-    // hall set and values are the serialisable part of the witness; the variable
-    // scope and the at-most-one cache are carried as emit context (both owned by
-    // the constraint, so valid for the whole solve, including any later replay).
-    // emit_justification reproduces the original closure, calling the existing Hall
-    // justifier; hint_sexpr serialises only the Hall set for assert mode.
-    auto hall_witness(
+    // Build the typed Hall hint shared by both GAC all_different Hall shapes (the
+    // matching-too-small contradiction and the SCC Hall-set deletion). The hall set
+    // and values, the variable scope and the at-most-one cache are all emit context
+    // for emit_justification -- the pointers reference constraint-owned data, valid
+    // for the whole solve including any later replay. None of it is serialised: the
+    // hint takes the default identity-plus-subhint wire form, so the assertion names
+    // only the constraint and the "hall" sub-rule.
+    auto hall_hint(
         const vector<IntegerVariableID> & vars,
         const vector<IntegerVariableID> & hall_variable_ids,
         const vector<Integer> & hall_value_nrs,
         const ConstraintID & constraint_id,
         map<Integer, ProofLine> & value_am1_constraint_numbers) -> hints::AllDifferentHall
     {
+        // Aggregate init: the AllDifferent base (originator) first, then the Hall
+        // emit context in declaration order (hall_vars, hall_vals, all_vars,
+        // value_am1_constraint_numbers).
         return hints::AllDifferentHall{
-            .hall_vars = hall_variable_ids,
-            .hall_vals = hall_value_nrs,
-            .owner = constraint_id,
-            .all_vars = &vars,
-            .value_am1_constraint_numbers = &value_am1_constraint_numbers};
+            {constraint_id},
+            hall_variable_ids,
+            hall_value_nrs,
+            &vars,
+            &value_am1_constraint_numbers};
     }
 
     auto prove_matching_is_too_small(
@@ -311,7 +298,7 @@ namespace
                 hall_value_nrs.push_back(vals[v.offset]);
 
         return tuple{
-            hall_witness(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
+            hall_hint(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
             Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
                                       out = materialise(generic_reason(st, hall_variable_ids), st);
                                       for (const auto & v : hall_variable_ids)
@@ -326,7 +313,7 @@ namespace
     // explicit steps) or a single forced value (pure RUP). A typed variant rather
     // than an optional, so each shape names itself and carries its own assertion
     // hint — there is no separate annotation channel.
-    using DeletionJustification = variant<hints::AllDifferentForcedValue, hints::AllDifferentHall>;
+    using DeletionJustification = variant<hints::AllDifferent, hints::AllDifferentHall>;
 
     auto vertex_to_offset(
         const vector<IntegerVariableID> & vars,
@@ -410,7 +397,7 @@ namespace
                 throw UnexpectedException{"missing edge out from value in trivial scc"};
 
             return tuple{
-                DeletionJustification{hints::AllDifferentForcedValue{constraint_id}},
+                DeletionJustification{hints::AllDifferent{constraint_id}},
                 Reason{ExplicitReason{ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}}}};
         }
         else {
@@ -421,7 +408,7 @@ namespace
                     hall_value_nrs.push_back(vals[v.offset]);
 
             return tuple{
-                DeletionJustification{hall_witness(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers)},
+                DeletionJustification{hall_hint(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers)},
                 Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
                                           out = materialise(generic_reason(st, hall_variable_ids), st);
                                           for (const auto & v : hall_variable_ids)
@@ -475,9 +462,9 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [witness, reason] = prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, edges, left_covered, matching);
+        auto [hall, reason] = prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, edges, left_covered, matching);
         return tracker.infer(logger, FalseLiteral{},
-            JustifyExplicitly{[&logger, w = witness](const ReasonLiterals & r) { emit_justification(*logger, w, r); }, ThenRUP::Yes, move(witness)},
+            JustifyExplicitly{[&logger, w = hall](const ReasonLiterals & r) { emit_justification(*logger, w, r); }, ThenRUP::Yes, move(hall)},
             reason);
     }
 
@@ -647,7 +634,7 @@ auto gcs::innards::propagate_gac_all_different(
         auto [justification, reason] = prove_deletion_using_sccs(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger,
             edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
         visit(overloaded{
-                  [&](hints::AllDifferentForcedValue & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); },
+                  [&](hints::AllDifferent & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); },
                   [&](hints::AllDifferentHall & w) {
                       tracker.infer_all(logger, deletions_by_scc[scc],
                           JustifyExplicitly{[&logger, wc = w](const ReasonLiterals & r) { emit_justification(*logger, wc, r); }, ThenRUP::Yes, move(w)}, reason);
@@ -697,7 +684,7 @@ auto GACAllDifferent::define_proof_model(ProofModel & model) -> void
 auto GACAllDifferent::install_propagators(Propagators & propagators) -> void
 {
     if (_has_duplicate_vars) {
-        install_clique_duplicate_contradiction_initialiser(propagators);
+        install_clique_duplicate_contradiction_initialiser(propagators, hints::AllDifferent{constraint_id()});
         return;
     }
 

@@ -1,5 +1,6 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/element/element.hh>
+#include <gcs/constraints/element/hints.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -230,7 +231,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 {
     if (_has_empty_dim) {
         propagators.install_initial_contradiction("NDimensionalElement constraint with no values",
-            JustifyUsingRUP{});
+            JustifyUsingRUP{hints::Element{constraint_id()}});
         return;
     }
 
@@ -275,7 +276,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             if (idx != fixed_dim)
                 index_triggers.on_change.emplace_back(var);
 
-        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, fixed_dim = fixed_dim, array_has_nonconstants = array_has_nonconstants, bounds_only = _bounds_only](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, fixed_dim = fixed_dim, array_has_nonconstants = array_has_nonconstants, bounds_only = _bounds_only, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // for each index variable, update it to only contain values where
             // there's at least one supporting option. result_var's domain is
             // not modified by anything inside the loop body (the only infer_*
@@ -373,7 +374,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                         };
 
                         show_no_support(0);
-                    }, ThenRUP::Yes},
+                    }, ThenRUP::Yes, hints::Element{owner}},
                         generic_reason(state, explored_vars));
                 }
             }
@@ -388,7 +389,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
         result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
         result_triggers.on_bounds.emplace_back(_result_var);
 
-        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // bounds only, so the result variable has to be in the range
             // (rather than the union) of possible values
             vector<size_t> elem;
@@ -451,7 +452,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                         }
                     };
                     rule_out(0);
-                }, ThenRUP::Yes},
+                }, ThenRUP::Yes, hints::Element{owner}},
                     ExplicitReason{reason});
             };
 
@@ -469,7 +470,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             result_triggers.on_change.insert(result_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
         result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
 
-        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        propagators.install(constraint_id(), [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, array_has_nonconstants = array_has_nonconstants, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // the result variable has to be in the union of possible values
             vector<size_t> elem;
             IntervalSet<Integer> still_to_find_support_for = state.copy_of_values(result_var);
@@ -522,7 +523,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                         }
                     };
                     rule_out(0);
-                }, ThenRUP::Yes},
+                }, ThenRUP::Yes, hints::Element{owner}},
                     ExplicitReason{reason});
             }
 

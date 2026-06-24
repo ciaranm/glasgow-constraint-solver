@@ -1,6 +1,6 @@
 #include <gcs/exception.hh>
-#include <gcs/innards/extensional_utils.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
@@ -99,7 +99,7 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         if (optional_model)
             optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var >= val);
         install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-            inference.infer(logger, var >= val, JustifyUsingRUP{}, NoReason{});
+            inference.infer(logger, var >= val, JustifyUsingRUP{}, NoReason{}, AssertionAnnotation{.hint_name = hints::InitialBound::hint_name});
         });
         return;
     case Upper:
@@ -108,7 +108,7 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         if (optional_model)
             optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var <= val);
         install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
-            inference.infer(logger, var <= val, JustifyUsingRUP{}, NoReason{});
+            inference.infer(logger, var <= val, JustifyUsingRUP{}, NoReason{}, AssertionAnnotation{.hint_name = hints::InitialBound::hint_name});
         });
         return;
     }
@@ -143,15 +143,6 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
 auto Propagators::install_initialiser(InitialisationFunction && f, InitialiserPriority priority) -> void
 {
     _imp->initialisation_functions_by_priority[to_underlying(priority)].emplace_back(move(f));
-}
-
-auto Propagators::install_initial_contradiction(const string &, Justification why, Reason reason, InitialiserPriority priority) -> void
-{
-    install_initialiser(
-        [why = move(why), reason = move(reason)](const State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.contradiction(logger, why, reason);
-        },
-        priority);
 }
 
 auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool

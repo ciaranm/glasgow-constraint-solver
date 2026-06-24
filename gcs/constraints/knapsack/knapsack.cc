@@ -1,3 +1,4 @@
+#include <gcs/constraints/knapsack/hints.hh>
 #include <gcs/constraints/knapsack/knapsack.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -103,6 +104,7 @@ namespace
         ProofLogger * const logger,
         const vector<IntegerVariableID> & reason_variables,
         auto & inference,
+        const ConstraintID & owner,
         const vector<Integer> & committed,
         const vector<pair<Integer, Integer>> & bounds,
         const vector<vector<Integer>> & coeffs,
@@ -366,7 +368,7 @@ namespace
                                 ProofLevel::Temporary);
                         }
                     }
-                    inference.infer(logger, vars_including_assigned.at(var_idx) != val, JustifyUsingRUP{},
+                    inference.infer(logger, vars_including_assigned.at(var_idx) != val, JustifyUsingRUP{hints::Knapsack{owner}},
                         eager_reason(generic_reason(state, reason_variables), state));
                 }
             }
@@ -441,7 +443,7 @@ namespace
                 logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(state, reason_variables), state), WPBSum{} >= 1_i, ProofLevel::Temporary);
             }
 
-            inference.contradiction(logger, JustifyUsingRUP{}, eager_reason(generic_reason(state, reason_variables), state));
+            inference.contradiction(logger, JustifyUsingRUP{hints::Knapsack{owner}}, eager_reason(generic_reason(state, reason_variables), state));
         }
         else {
             vector<Literal> inferences;
@@ -500,7 +502,7 @@ namespace
                 }
             }
 
-            inference.infer_all(logger, inferences, JustifyUsingRUP{}, eager_reason(generic_reason(state, reason_variables), state));
+            inference.infer_all(logger, inferences, JustifyUsingRUP{hints::Knapsack{owner}}, eager_reason(generic_reason(state, reason_variables), state));
 
             // now run backwards from the final state, eliminating states that
             // didn't lead to a feasible terminal state, and seeing if any
@@ -532,7 +534,7 @@ namespace
                 auto var = vars_including_assigned.at(undetermined_var_indices.at(var_number));
                 for (auto val : state.each_value_mutable(var)) {
                     if (! supported.contains(val))
-                        inference.infer(logger, var != val, JustifyUsingRUP{}, eager_reason(generic_reason(state, reason_variables), state));
+                        inference.infer(logger, var != val, JustifyUsingRUP{hints::Knapsack{owner}}, eager_reason(generic_reason(state, reason_variables), state));
                 }
             }
         }
@@ -542,6 +544,7 @@ namespace
         const State & state,
         ProofLogger * const logger,
         auto & inference,
+        const ConstraintID & owner,
         const vector<vector<Integer>> & coeffs,
         const vector<IntegerVariableID> & vars,
         const vector<IntegerVariableID> & totals,
@@ -564,12 +567,12 @@ namespace
                 all_vars_assigned.push_back(v == state(v));
 
             for (const auto & [x, t] : enumerate(totals)) {
-                inference.infer(logger, totals.at(x) == committed_sums.at(x), JustifyUsingRUP{}, all_vars_assigned);
+                inference.infer(logger, totals.at(x) == committed_sums.at(x), JustifyUsingRUP{hints::Knapsack{owner}}, all_vars_assigned);
             }
         }
 
         for (const auto & [x, v] : enumerate(totals))
-            inference.infer(logger, v >= committed_sums.at(x), JustifyUsingRUP{}, eager_reason(generic_reason(state, vars), state));
+            inference.infer(logger, v >= committed_sums.at(x), JustifyUsingRUP{hints::Knapsack{owner}}, eager_reason(generic_reason(state, vars), state));
 
         vector<pair<Integer, Integer>> boundses;
         for (auto & t : totals)
@@ -583,10 +586,10 @@ namespace
         reason_variables.insert(reason_variables.end(), vars.begin(), vars.end());
         reason_variables.insert(reason_variables.end(), totals.begin(), totals.end());
         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
-            knapsack_gac<true>(state, logger, reason_variables, inference, committed_sums,
+            knapsack_gac<true>(state, logger, reason_variables, inference, owner, committed_sums,
                 boundses, coeffs, totals, vars, undetermined_vars, eqn_lines);
         else
-            knapsack_gac<false>(state, logger, reason_variables, inference, committed_sums,
+            knapsack_gac<false>(state, logger, reason_variables, inference, owner, committed_sums,
                 boundses, coeffs, totals, vars, undetermined_vars, nullopt);
 
         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
@@ -655,9 +658,9 @@ auto Knapsack::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [coeffs = move(_coeffs), vars = move(_vars), totals = move(_totals), eqns_lines = move(_eqns_lines)](
+        [coeffs = move(_coeffs), vars = move(_vars), totals = move(_totals), eqns_lines = move(_eqns_lines), owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            return knapsack(state, logger, inference, coeffs, vars, totals, eqns_lines);
+            return knapsack(state, logger, inference, owner, coeffs, vars, totals, eqns_lines);
         },
         triggers);
 }

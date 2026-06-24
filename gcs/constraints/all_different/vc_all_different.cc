@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different/encoding.hh>
+#include <gcs/constraints/all_different/hints.hh>
 #include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -49,7 +50,7 @@ using fmt::print;
 #endif
 
 auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
-    const State & state, auto & inference, ProofLogger * const logger) -> void
+    const State & state, auto & inference, ProofLogger * const logger, const ConstraintID & owner) -> void
 {
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
 
@@ -75,7 +76,7 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         for (auto other : to_propagate) {
             if (other.second == val) {
                 // we're already in a contradicting state
-                inference.infer_not_equal(logger, var, val, JustifyUsingRUP{},
+                inference.infer_not_equal(logger, var, val, JustifyUsingRUP{hints::AllDifferent{owner}},
                     ExplicitReason{ReasonLiterals{{other.first == val}}});
             }
         }
@@ -83,7 +84,7 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         while (i != unassigned.end()) {
             auto other = *i;
             if (other != var) {
-                inference.infer_not_equal(logger, other, val, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{{var == val}}});
+                inference.infer_not_equal(logger, other, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{var == val}}});
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);
                     unassigned.erase(i++);
@@ -149,7 +150,7 @@ auto VCAllDifferent::define_proof_model(ProofModel & model) -> void
 auto VCAllDifferent::install_propagators(Propagators & propagators) -> void
 {
     if (_has_duplicate_vars) {
-        install_clique_duplicate_contradiction_initialiser(propagators);
+        install_clique_duplicate_contradiction_initialiser(propagators, hints::AllDifferent{constraint_id()});
         return;
     }
 
@@ -158,18 +159,18 @@ auto VCAllDifferent::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [unassigned_handle = _unassigned_handle](const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
-            propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger);
+        [unassigned_handle = _unassigned_handle, owner = constraint_id()](const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
+            propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger, owner);
             return PropagatorState::Enable;
         },
         triggers);
 }
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
-    SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
+    SimpleInferenceTracker & inference_tracker, ProofLogger * const logger, const ConstraintID & owner) -> void;
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
-    EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
+    EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger, const ConstraintID & owner) -> void;
 
 auto VCAllDifferent::s_expr(const innards::ProofModel * const model) const -> SExpr
 {

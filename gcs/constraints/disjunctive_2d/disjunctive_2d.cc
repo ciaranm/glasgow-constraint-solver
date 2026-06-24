@@ -1,4 +1,5 @@
 #include <gcs/constraints/disjunctive_2d/disjunctive_2d.hh>
+#include <gcs/constraints/disjunctive_2d/hints.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -376,7 +377,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             clause_lines = move(_clause_lines), end_x = move(_end_x), end_y = move(_end_y),
             end_x_ge = move(_end_x_ge), end_x_le = move(_end_x_le), end_y_ge = move(_end_y_ge),
             end_y_le = move(_end_y_le), zero_w = move(_zero_w), zero_h = move(_zero_h),
-            strict = _strict, bridge_x, bridge_y](
+            strict = _strict, owner = constraint_id(), bridge_x, bridge_y](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Pairwise 2D time-table. The mandatory box of rectangle i is
             //   [ub(x_i), lb(x_i)+lb(w_i)) x [ub(y_i), lb(y_i)+lb(h_i))
@@ -518,7 +519,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             if (w_is_var(r)) rvars.push_back(width_var[r]);
                             if (h_is_var(r)) rvars.push_back(height_var[r]);
                         }
-                        inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes},
+                        inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}},
                             generic_reason(state, rvars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
@@ -700,7 +701,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             emit_proof(chain, +1, reason);
                     };
                     inference.infer_greater_than_or_equal(logger, free_pos[i], target,
-                        JustifyExplicitly{justify, ThenRUP::Yes}, generic_reason(state, rv));
+                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, generic_reason(state, rv));
                 }
                 // ub-push: i cannot fit above the blocker, push its origin down to
                 // blk_lo - sz -- capped at cur_lo - 1 by the same reasoning.
@@ -725,7 +726,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             emit_proof(chain, -1, reason);
                     };
                     inference.infer_less_than(logger, free_pos[i], target + 1_i,
-                        JustifyExplicitly{justify, ThenRUP::Yes}, generic_reason(state, rv));
+                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive2D{owner}}, generic_reason(state, rv));
                 }
             };
 
@@ -783,7 +784,7 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                             if (w_is_var(r)) lr.push_back(width_var[r]);
                             if (h_is_var(r)) lr.push_back(height_var[r]);
                         }
-                        inference.contradiction(logger, JustifyUsingRUP{}, generic_reason(state, lr));
+                        inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive2D{owner}}, generic_reason(state, lr));
                         return PropagatorState::DisableUntilBacktrack;
                     }
                 }

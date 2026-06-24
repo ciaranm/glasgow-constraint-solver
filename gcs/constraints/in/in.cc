@@ -1,3 +1,4 @@
+#include <gcs/constraints/in/hints.hh>
 #include <gcs/constraints/in/in.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -143,7 +144,7 @@ auto In::install_propagators(Propagators & propagators) -> void
     if (_has_no_values) {
         propagators.install_initial_contradiction(
             "No values or variables present for an 'In' constraint",
-            JustifyUsingRUP{});
+            JustifyUsingRUP{hints::In{constraint_id()}});
         return;
     }
 
@@ -154,7 +155,7 @@ auto In::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [var = _var, var_vals = _var_vals, val_vals = _val_vals, selectors = _selectors](
+        [var = _var, var_vals = _var_vals, val_vals = _val_vals, selectors = _selectors, owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Step 1: filter dom(var) — drop any value that no source supports.
             if (var_vals.empty()) {
@@ -174,7 +175,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                         runs.emplace_back(v, v);
                 }
                 for (const auto & [lo, hi] : runs)
-                    inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{}, NoReason{});
+                    inference.infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{hints::In{owner}}, NoReason{});
             }
             else {
                 for (auto v : state.each_value_mutable(var)) {
@@ -202,7 +203,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                                                       WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i,
                                                       ProofLevel::Temporary);
                                           },
-                            ThenRUP::Yes},
+                            ThenRUP::Yes, hints::In{owner}},
                         ExplicitReason{reason});
                 }
             }
@@ -264,7 +265,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                                                       ProofLevel::Temporary);
                                               }
                                           },
-                            ThenRUP::Yes},
+                            ThenRUP::Yes, hints::In{owner}},
                         ExplicitReason{reason});
                 }
             }
