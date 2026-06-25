@@ -8,16 +8,7 @@
 namespace gcs::innards::hints
 {
     /**
-     * \brief abs's assertion hint: just the owning constraint.
-     *
-     * abs needs no per-shape discriminator. One justification function reads the
-     * asserted literal and the reason and dispatches on them, so there is nothing
-     * for the wire to disambiguate -- every abs bound is re-derivable from the
-     * asserted literal, the reason and the definition lines. The same hint rides
-     * both JustifyUsingRUP (the pure-RUP pruning) and JustifyExplicitly (the
-     * explicit-steps bounds): the assertion-hint axis is orthogonal to how the
-     * inference is proved. With no own hint_sexpr it takes the default wire form,
-     * `(constraint_id <originator>)`.
+     * \brief abs's assertion hint: just the owning constraint, no subhint.
      *
      * \ingroup Innards
      */

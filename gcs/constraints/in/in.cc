@@ -237,7 +237,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                     if (state.in_domain(var, val))
                         continue;
 
-                    ReasonLiterals reason = materialise(generic_reason(state, vector{var}), state);
+                    ReasonLiterals reason = materialise(generic_reason(vector{var}), state);
                     for (const auto & [j, V_j] : enumerate(var_vals)) {
                         if (j == i)
                             continue;

@@ -352,12 +352,12 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                     // reified)
                                     if (accum == value) {
                                         if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
-                                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(state, all_vars));
+                                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(all_vars));
                                         return PropagatorState::DisableUntilBacktrack;
                                     }
                                     else {
                                         if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(state, all_vars));
+                                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(all_vars));
                                         return PropagatorState::DisableUntilBacktrack;
                                     }
                                 }
@@ -371,7 +371,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                             // no way for the remaining variable to take that value, so the condition
                                             // has to be false
                                             if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                                inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(state, all_vars));
+                                                inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(all_vars));
                                             return PropagatorState::DisableUntilBacktrack;
                                         }
                                         else {
@@ -383,7 +383,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                         // the value that would make the equality work isn't an integer, so the condition
                                         // has to be false
                                         if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(state, all_vars));
+                                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(all_vars));
                                         return PropagatorState::DisableUntilBacktrack;
                                     }
                                 }

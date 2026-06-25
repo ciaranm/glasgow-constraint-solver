@@ -1,48 +1,17 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_JUSTIFICATION_HH
 
-#include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/reason.hh>
 
-#include <string_view>
 #include <utility>
 #include <variant>
 
 namespace gcs::innards
 {
-    /**
-     * \brief The empty hint: a bare justification carrying no assertion hint. This
-     * is what JustifyUsingRUP{} / JustifyExplicitly{emit, then_rup} hold by default
-     * (and hence what lives in the Justification variant).
-     *
-     * \ingroup Innards
-     */
-    struct NoHint
-    {
-    };
-
-    namespace hints
-    {
-        /**
-         * \brief A bare coarse model-level name, with no structured fields.
-         *
-         * The minimal assertion hint: in assertion mode it annotates the inference
-         * with just this name (no \c hint_sexpr), telling the justifier which
-         * constraint family the step came from without serialising any operands. The
-         * tier between NoHint (annotate with nothing, fall back to the call site's
-         * annotation) and a per-constraint typed hint (name plus structured fields).
-         *
-         * \ingroup Innards
-         */
-        struct ModelName
-        {
-            std::string_view hint_name;
-        };
-    }
-
     /**
      * \brief Whether a JustifyExplicitly appends a RUP derivation of the inferred
      * literal after its explicit proof steps, or lets the steps stand alone.

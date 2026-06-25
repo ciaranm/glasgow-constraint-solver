@@ -55,25 +55,6 @@ namespace gcs::innards
     }
 
     /**
-     * \brief Resolve the assertion annotation for a JustifyExplicitly inference.
-     *
-     * Precedence: the explicit \c hint wins if it advertises anything; otherwise the
-     * \c emit's own advertisement is used (a named fat witness that carries its own
-     * \c hint_sexpr / \c hint_name); otherwise the call site's \c fallback. A bare
-     * emit closure advertises nothing, so a closure with no hint resolves straight to
-     * the fallback. This reproduces the old witness-carried annotation exactly while
-     * letting an inline closure carry a separate ModelName / structured hint.
-     *
-     * \ingroup Innards
-     */
-    template <typename Hint_, typename Emit_>
-    [[nodiscard]] auto resolve_annotation(ProofLogger & logger, const Hint_ & hint, const Emit_ & emit,
-        const std::optional<AssertionAnnotation> & fallback) -> std::optional<AssertionAnnotation>
-    {
-        return hint_annotation(logger, hint, hint_annotation(logger, emit, fallback));
-    }
-
-    /**
      * \brief Emit a JustifyExplicitly's explicit proof steps.
      *
      * The \c emit is either a `(const ReasonLiterals &) -> void` callable (an inline
@@ -138,7 +119,12 @@ namespace gcs::innards
 
         if (logger.get_assertion_level() != AssertionLevel::Off) {
             if (! is_literally_true(lit)) {
-                auto annotation = resolve_annotation(logger, hint, emit, fallback_annotation);
+                // Annotation precedence: the explicit hint wins if it advertises
+                // anything; else the emit's own advertisement (a named fat witness
+                // carrying its own hint_sexpr / hint_name); else the call site's
+                // fallback. A bare emit closure advertises nothing, so it resolves
+                // straight to the fallback.
+                auto annotation = hint_annotation(logger, hint, hint_annotation(logger, emit, fallback_annotation));
                 logger.emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
             }
             return;

@@ -304,7 +304,7 @@ auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer 
         // every variable is set, do a sanity check
         if (accum == value) {
             // we've set every variable and have equality
-            inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(state, all_vars_for_reason));
+            inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(all_vars_for_reason));
         }
         else
             return PropagatorState::DisableUntilBacktrack;
@@ -319,7 +319,7 @@ auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer 
                 // the forbidden value is in the domain, so disallow it, and then
                 // we won't do anything else.
                 inference.infer(logger, get_var(*single_unset) != forbidden,
-                    JustifyUsingRUP{hint}, generic_reason(state, all_vars_for_reason));
+                    JustifyUsingRUP{hint}, generic_reason(all_vars_for_reason));
                 return PropagatorState::DisableUntilBacktrack;
             }
             else {

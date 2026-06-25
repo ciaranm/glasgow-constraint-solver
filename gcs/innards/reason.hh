@@ -206,17 +206,16 @@ namespace gcs::innards
      * literal in the reason alongside the variable facts.
      *
      * The domain walk is deferred to materialise(); this just captures the
-     * variable scope. `state` is unused and retained only for call-site
-     * compatibility while the migration is in progress.
+     * variable scope.
      */
-    [[nodiscard]] auto generic_reason(const State & state, const std::vector<IntegerVariableID> & vars,
+    [[nodiscard]] auto generic_reason(const std::vector<IntegerVariableID> & vars,
         const std::optional<Literal> & extra_lit = std::nullopt) -> Reason;
 
     /**
      * \brief Like generic_reason but records only the lower and upper bounds of
      * each variable, omitting any holes in the domain.
      */
-    [[nodiscard]] auto bounds_reason(const State & state, const std::vector<IntegerVariableID> & vars,
+    [[nodiscard]] auto bounds_reason(const std::vector<IntegerVariableID> & vars,
         const std::optional<Literal> & extra_lit = std::nullopt) -> Reason;
 
     [[nodiscard]] auto singleton_reason(const ProofLiteralOrFlag & lit) -> Reason;

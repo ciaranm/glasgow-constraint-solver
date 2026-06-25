@@ -552,7 +552,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                             reason_vars.push_back(length_vars[pj]);
                         inference.contradiction(logger,
                             JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
-                            generic_reason(state, reason_vars));
+                            generic_reason(reason_vars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
 
@@ -759,7 +759,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
                         inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
                             JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
-                            generic_reason(state, push_reason_vars));
+                            generic_reason(push_reason_vars));
                     }
 
                     // ub-push: mirror of lb-push, scanning downward. At each
@@ -801,7 +801,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
                         inference.infer_less_than(logger, starts[j], new_ub + 1_i,
                             JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}},
-                            generic_reason(state, push_reason_vars));
+                            generic_reason(push_reason_vars));
                     }
                 }
             }
@@ -841,7 +841,7 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         if (is_var_len(k))
                             reason_vars.push_back(length_vars[k]);
                         inference.contradiction(logger, JustifyUsingRUP{hints::Disjunctive{owner}},
-                            generic_reason(state, reason_vars));
+                            generic_reason(reason_vars));
                         return PropagatorState::DisableUntilBacktrack;
                     }
                 }

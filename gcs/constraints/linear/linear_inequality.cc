@@ -196,13 +196,13 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
                 // cannot possibly hold
                 return reification_verdict::MustNotHold<LinearCondJustification>{
                     .justification = JustifyExplicitly{hints::LinearInequalityCond<CV>{{owner}, &state, sanitised_cv, proof_lines}, ThenRUP::Yes},
-                    .reason = generic_reason(state, vars)};
+                    .reason = generic_reason(vars)};
             }
             else if (max_possible <= value + modifier) {
                 // must definitely hold
                 return reification_verdict::MustHold<LinearCondJustification>{
                     .justification = JustifyExplicitly{hints::LinearInequalityCond<NegCV>{{owner}, &state, sanitised_neg_cv, proof_lines_swapped}, ThenRUP::Yes},
-                    .reason = generic_reason(state, vars)};
+                    .reason = generic_reason(vars)};
             }
             else
                 return reification_verdict::StillUndecided{};

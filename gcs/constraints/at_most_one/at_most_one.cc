@@ -117,7 +117,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
                 }
                 if (fixed_to_v >= 2)
                     inference.infer(logger, val != v, JustifyUsingRUP{hints::AtMostOne{owner}},
-                        generic_reason(state, all_vars));
+                        generic_reason(all_vars));
             }
 
             // If val is now fixed to v and exactly one var is fixed to v,
@@ -138,7 +138,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
                     for (size_t i = 0; cmp_less(i, vars.size()); ++i) {
                         if (i != fixed_idx)
                             inference.infer(logger, vars[i] != *val_fixed, JustifyUsingRUP{hints::AtMostOne{owner}},
-                                generic_reason(state, all_vars));
+                                generic_reason(all_vars));
                     }
                 }
             }

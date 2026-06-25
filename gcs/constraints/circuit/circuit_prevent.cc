@@ -48,7 +48,7 @@ namespace
                             if (cmp_less(cycle_length, n)) {
                                 if (logger && logger->get_assertion_level() == AssertionLevel::Off)
                                     output_cycle_to_proof(succ, j0, cycle_length, pos_var_data, state, *logger);
-                                inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(state, succ));
+                                inference.contradiction(logger, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(succ));
                             }
 
                             else

@@ -106,13 +106,13 @@ auto gcs::innards::materialise(const Reason & reason, const State & state) -> Re
     return result;
 }
 
-auto gcs::innards::generic_reason(const State &, const std::vector<IntegerVariableID> & vars,
+auto gcs::innards::generic_reason(const std::vector<IntegerVariableID> & vars,
     const optional<Literal> & extra_lit) -> Reason
 {
     return GenericReasonOver{ReasonVars{vars}, extra_lit};
 }
 
-auto gcs::innards::bounds_reason(const State &, const std::vector<IntegerVariableID> & vars,
+auto gcs::innards::bounds_reason(const std::vector<IntegerVariableID> & vars,
     const optional<Literal> & extra_lit) -> Reason
 {
     return BothBoundsReasonOver{ReasonVars{vars}, extra_lit};

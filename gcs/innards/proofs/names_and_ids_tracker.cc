@@ -1177,11 +1177,9 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
 
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
 
-    auto will_define = true;              // We do need to define views properly in the model!
-    auto [link_le, link_ge] = will_define //
-        ? _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
-              WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add)
-        : make_pair(ProofLine{}, ProofLine{});
+    // Views must be defined properly in the model.
+    auto [link_le, link_ge] = _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
+        WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
 
     _imp->view_proof_only_vars.emplace(view, v_id);
     _imp->view_proof_only_to_view.emplace(v_id, view);

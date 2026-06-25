@@ -211,7 +211,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                 // (1) Disjoint domains rule out position j taking original index k.
                 if (xhi < ylo || xlo > yhi) {
                     inference.infer_not_equal(logger, p[j], pv, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason(state, {x[k], y[j]}));
+                        bounds_reason({x[k], y[j]}));
                 }
             }
 
@@ -223,16 +223,16 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                 auto extra = p[j] == *pj;
                 if (xlo > ylo)
                     inference.infer_greater_than_or_equal(logger, y[j], xlo, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason(state, {x[k]}, extra));
+                        bounds_reason({x[k]}, extra));
                 if (xhi < yhi)
                     inference.infer_less_than(logger, y[j], xhi + 1_i, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason(state, {x[k]}, extra));
+                        bounds_reason({x[k]}, extra));
                 if (ylo > xlo)
                     inference.infer_greater_than_or_equal(logger, x[k], ylo, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason(state, {y[j]}, extra));
+                        bounds_reason({y[j]}, extra));
                 if (yhi < xhi)
                     inference.infer_less_than(logger, x[k], yhi + 1_i, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason(state, {y[j]}, extra));
+                        bounds_reason({y[j]}, extra));
             }
         }
 
@@ -345,7 +345,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                             }
                             pol.emit(*logger, ProofLevel::Temporary);
                         }, ThenRUP::Yes, hints::ArgSort{owner}},
-                        bounds_reason(state, x));
+                        bounds_reason(x));
                 }
                 else {
                     // Hole inside [a_k, b_k]: rank j is unreachable because of a
@@ -416,7 +416,7 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                             }
                             polB.emit(*logger, ProofLevel::Temporary);
                         }, ThenRUP::Yes, hints::ArgSort{owner}},
-                        bounds_reason(state, x));
+                        bounds_reason(x));
                 }
             }
         }
