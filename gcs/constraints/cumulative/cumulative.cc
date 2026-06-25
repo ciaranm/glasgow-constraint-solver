@@ -481,7 +481,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     };
 
                     inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
-                        generic_reason(state, reason_vars));
+                        generic_reason(reason_vars));
                     return PropagatorState::DisableUntilBacktrack;
                 }
 
@@ -602,7 +602,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
                     inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
                         JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
-                        generic_reason(state, reason_vars));
+                        generic_reason(reason_vars));
                 }
 
                 // ub-push: mirror image. Pick SMALLEST blocked t in each
@@ -636,7 +636,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
                     inference.infer_less_than(logger, starts[j], new_ub + 1_i,
                         JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
-                        generic_reason(state, reason_vars));
+                        generic_reason(reason_vars));
                 }
             }
 

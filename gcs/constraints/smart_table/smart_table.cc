@@ -946,7 +946,7 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         constraint_id(),
         [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors), short_reasons = _short_reasons, owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            auto reason = eager_reason(generic_reason(state, vars), state);
+            auto reason = eager_reason(generic_reason(vars), state);
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger, short_reasons, owner);
             return PropagatorState::Enable;
         },

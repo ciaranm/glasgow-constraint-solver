@@ -183,7 +183,7 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
                     }
                 }
 
-                auto reason = generic_reason(state, vars);
+                auto reason = generic_reason(vars);
 
                 // Prune t from positions [0, min(alpha+1, n)). If alpha == n
                 // this is all positions; otherwise it's positions 0..alpha

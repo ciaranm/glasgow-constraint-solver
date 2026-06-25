@@ -16,7 +16,6 @@ namespace gcs::innards
         const std::vector<IntegerVariableID> & hall_variables,
         const std::vector<Integer> & hall_values,
         std::map<Integer, ProofLine> & constraint_numbers) -> void;
-
 }
 
 #endif

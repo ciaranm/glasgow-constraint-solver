@@ -291,7 +291,7 @@ namespace
         const ConstraintID & owner) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
-        auto gen_reason = eager_reason(generic_reason(state, vars), state);
+        auto gen_reason = eager_reason(generic_reason(vars), state);
 
         // Degenerate empty sequence (issue #254): with no variables there is
         // nothing to propagate over, but the empty word is accepted only if the

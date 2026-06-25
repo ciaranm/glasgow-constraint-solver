@@ -1202,7 +1202,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
             pos_alldiff_data_handle = pos_alldiff_data_handle,
             unassigned_handle = unassigned_handle,
             options = scc_options](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            ReasonLiterals reason = eager_reason(generic_reason(state, succ), state);
+            ReasonLiterals reason = eager_reason(generic_reason(succ), state);
 
             if (logger && options.short_reasons) {
                 auto reason_sum = WPBSum{};

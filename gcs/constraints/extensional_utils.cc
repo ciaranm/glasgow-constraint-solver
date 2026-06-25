@@ -81,13 +81,13 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
             else if (logger && logger->get_assertion_level() != AssertionLevel::Off && state.has_single_value(table.selector))
                 // Last selector val so infeasible -> we need an explicit contradiction at higher assertion levels
                 // since there's no table for the implicit one.
-                inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(state, table.vars));
+                inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(table.vars));
             else
                 inference.infer(logger, table.selector != Integer(tuple_idx), NoJustificationNeeded{}, NoReason{});
         }
         if (none_feasible && logger && logger->get_assertion_level() != AssertionLevel::Off)
             // selector already empty on entry
-            inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(state, table.vars));
+            inference.contradiction(logger, JustifyUsingRUP{hint}, generic_reason(table.vars));
     },
         table.tuples);
 
@@ -104,7 +104,7 @@ auto gcs::innards::propagate_extensional(const ExtensionalData & table, const St
                 }
 
                 if (! supported) {
-                    inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{hint}, generic_reason(state, table.vars));
+                    inference.infer(logger, table.vars[idx] != val, JustifyUsingRUP{hint}, generic_reason(table.vars));
                 }
             }
         }

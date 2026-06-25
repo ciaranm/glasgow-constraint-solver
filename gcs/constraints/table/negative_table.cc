@@ -206,7 +206,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                     auto w1 = find_unbroken(no_watch);
                     if (! w1) {
                         inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}},
-                            generic_reason(state, vars));
+                            generic_reason(vars));
                     }
 
                     auto w2 = find_unbroken(*w1);
@@ -214,7 +214,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                         // Unit clause: vars[*w1] != t[*w1] is the only possibly-true
                         // disjunct, so it must hold.
                         inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{hints::NegativeTable{owner}},
-                            generic_reason(state, vars));
+                            generic_reason(vars));
                         // Mark the tuple as already handled — both watches at the same
                         // position will read as broken on every subsequent fire, and
                         // any rescue search will discover the inference is now redundant.
@@ -260,12 +260,12 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                         auto new1 = find_unbroken(t, no_watch, no_watch);
                         if (! new1) {
                             inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}},
-                                generic_reason(state, vars));
+                                generic_reason(vars));
                         }
                         auto new2 = find_unbroken(t, *new1, no_watch);
                         if (! new2) {
                             inference.infer(logger, vars[*new1] != t[*new1], JustifyUsingRUP{hints::NegativeTable{owner}},
-                                generic_reason(state, vars));
+                                generic_reason(vars));
                         }
                         else {
                             w.first = *new1;
@@ -276,7 +276,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                         auto new1 = find_unbroken(t, w.second, no_watch);
                         if (! new1) {
                             inference.infer(logger, vars[w.second] != t[w.second], JustifyUsingRUP{hints::NegativeTable{owner}},
-                                generic_reason(state, vars));
+                                generic_reason(vars));
                         }
                         else {
                             w.first = *new1;
@@ -286,7 +286,7 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                         auto new2 = find_unbroken(t, w.first, no_watch);
                         if (! new2) {
                             inference.infer(logger, vars[w.first] != t[w.first], JustifyUsingRUP{hints::NegativeTable{owner}},
-                                generic_reason(state, vars));
+                                generic_reason(vars));
                         }
                         else {
                             w.second = *new2;

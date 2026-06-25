@@ -210,7 +210,7 @@ namespace
 
         vector<IntegerVariableID> all_vars = x;
         all_vars.insert(all_vars.end(), y.begin(), y.end());
-        auto reason = bounds_reason(state, all_vars);
+        auto reason = bounds_reason(all_vars);
 
         // (1) Normalize the y-ranges: they index the sorted output, so the lower
         // bounds are non-decreasing and the upper bounds non-decreasing.

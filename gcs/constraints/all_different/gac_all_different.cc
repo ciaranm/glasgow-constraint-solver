@@ -205,31 +205,6 @@ namespace
         }
     }
 
-    // Build the typed Hall hint shared by both GAC all_different Hall shapes (the
-    // matching-too-small contradiction and the SCC Hall-set deletion). The hall set
-    // and values, the variable scope and the at-most-one cache are all emit context
-    // for emit_justification -- the pointers reference constraint-owned data, valid
-    // for the whole solve including any later replay. None of it is serialised: the
-    // hint takes the default identity-plus-subhint wire form, so the assertion names
-    // only the constraint and the "hall" sub-rule.
-    auto hall_hint(
-        const vector<IntegerVariableID> & vars,
-        const vector<IntegerVariableID> & hall_variable_ids,
-        const vector<Integer> & hall_value_nrs,
-        const ConstraintID & constraint_id,
-        map<Integer, ProofLine> & value_am1_constraint_numbers) -> hints::AllDifferentHall
-    {
-        // Aggregate init: the AllDifferent base (originator) first, then the Hall
-        // emit context in declaration order (hall_vars, hall_vals, all_vars,
-        // value_am1_constraint_numbers).
-        return hints::AllDifferentHall{
-            {constraint_id},
-            hall_variable_ids,
-            hall_value_nrs,
-            &vars,
-            &value_am1_constraint_numbers};
-    }
-
     auto prove_matching_is_too_small(
         const ConstraintID & constraint_id,
         const vector<IntegerVariableID> & vars,
@@ -298,9 +273,9 @@ namespace
                 hall_value_nrs.push_back(vals[v.offset]);
 
         return tuple{
-            hall_hint(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers),
+            hints::AllDifferentHall{{constraint_id}, hall_variable_ids, hall_value_nrs, &vars, &value_am1_constraint_numbers},
             Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
-                                      out = materialise(generic_reason(st, hall_variable_ids), st);
+                                      out = materialise(generic_reason(hall_variable_ids), st);
                                       for (const auto & v : hall_variable_ids)
                                           for (const auto & s : excluded)
                                               out.emplace_back(v != s);
@@ -408,9 +383,9 @@ namespace
                     hall_value_nrs.push_back(vals[v.offset]);
 
             return tuple{
-                DeletionJustification{hall_hint(vars, hall_variable_ids, hall_value_nrs, constraint_id, value_am1_constraint_numbers)},
+                DeletionJustification{hints::AllDifferentHall{{constraint_id}, hall_variable_ids, hall_value_nrs, &vars, &value_am1_constraint_numbers}},
                 Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
-                                          out = materialise(generic_reason(st, hall_variable_ids), st);
+                                          out = materialise(generic_reason(hall_variable_ids), st);
                                           for (const auto & v : hall_variable_ids)
                                               for (const auto & s : excluded)
                                                   out.emplace_back(v != s);

@@ -107,7 +107,7 @@ namespace
 
         auto all_vars = vars_1;
         all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
-        auto reason = eager_reason(bounds_reason(state, all_vars, cond), state);
+        auto reason = eager_reason(bounds_reason(all_vars, cond), state);
 
         // Walking off the end means all common-prefix positions are forced
         // equal. Whether that satisfies the constraint depends on
@@ -316,7 +316,7 @@ namespace
 
         auto all_vars = vars_1;
         all_vars.insert(all_vars.end(), vars_2.begin(), vars_2.end());
-        auto reason = eager_reason(bounds_reason(state, all_vars), state);
+        auto reason = eager_reason(bounds_reason(all_vars), state);
 
         size_t k = 0;
         bool definitely_holds = false;
