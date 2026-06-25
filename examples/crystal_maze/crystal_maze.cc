@@ -28,8 +28,7 @@ using namespace gcs;
 
 using std::cerr;
 using std::cout;
-using std::make_optional;
-using std::nullopt;
+using std::optional;
 using std::pair;
 using std::string;
 using std::to_string;
@@ -104,11 +103,14 @@ auto main(int argc, char * argv[]) -> int
         p.post(LinearEquality{WeightedSum{} + 1_i * xs[x1] + -1_i * xs[x2] + -1_i * diffs.back(), 0_i, options_vars.contains("gac")});
     }
 
-    auto proof_options = options_vars.contains("prove")
-        ? make_optional(options_vars.contains("assert")
-                  ? ProofOptions{options_vars["proof-files-basename"].as<string>()}.set_assertion_level(AssertionLevel::Inferences)
-                  : ProofOptions{options_vars["proof-files-basename"].as<string>()})
-        : nullopt;
+    optional<ProofOptions> proof_options;
+    if (options_vars.contains("prove")) {
+        proof_options = ProofOptions{options_vars["proof-files-basename"].as<string>()};
+        // Only mark the level explicitly when --assert is given, so the
+        // GCS_ASSERTION_LEVEL env var still applies in the plain --prove case.
+        if (options_vars.contains("assert"))
+            proof_options->set_assertion_level(AssertionLevel::Inferences);
+    }
 
     auto stats = solve_with(p,
         SolveCallbacks{
