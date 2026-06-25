@@ -12,7 +12,7 @@ bridge between encoding and propagation, and the third reusable
 proof-logging idea that comes out of it.
 
 For the constraint itself — semantics, propagator, the strict / non-strict
-flag — read `gcs/constraints/disjunctive.{hh,cc}`.
+flag — read `gcs/constraints/disjunctive/disjunctive.{hh,cc}`.
 
 ## The declarative OPB encoding
 
@@ -119,8 +119,8 @@ The result line is recorded at `Top`, and the per-call pol expression
 active=1-under-reason lines) is at `Temporary`.
 
 `recover_am1` had to be taught how to isolate its inner workings from
-a `JustifyExplicitlyThenRUP` context to avoid wiping the framework's
-own scope on exit — see the comment in `recover_am1.cc`.
+a `JustifyExplicitly{…, ThenRUP::Yes}` context to avoid wiping the
+framework's own scope on exit — see the comment in `recover_am1.cc`.
 
 ## The three time-table inferences
 
@@ -155,7 +155,8 @@ declarative pairwise encoding alone is RUP-closable. With `s_z` and
 `s_k` fixed at `vz`, `vk` satisfying `vk < vz < vk + l_k`,
 `before_{z,k}` and `before_{k,z}` both UP to 0 from the unit
 assignments and the encoded clause `before_{z,k} + before_{k,z} ≥ 1`
-unit-fails. So this contradiction uses plain `JustifyUsingRUP{}`.
+unit-fails. So this contradiction is pure RUP — `JustifyUsingRUP{hints::Disjunctive{owner}}`
+(the typed hint is inert in proofs-off mode; the justification is still a bare RUP).
 
 ## The third reusable idea
 
@@ -197,7 +198,7 @@ The disjunctive scaffolding adds a third:
 ## 2D non-overlap (`Disjunctive2D` / `diffn`)
 
 The same recipe lifts one dimension up to non-overlapping rectangles
-(`gcs/constraints/disjunctive_2d.{hh,cc}`), with constant sizes. The
+(`gcs/constraints/disjunctive_2d/disjunctive_2d.{hh,cc}`), with constant sizes. The
 declarative OPB is the `diffn` definition: for each pair and axis `d`,
 `before_{i,j,d} ⇔ pos_{i,d} + size_{i,d} ≤ pos_{j,d}`, plus a single
 **4-way separation clause** per pair

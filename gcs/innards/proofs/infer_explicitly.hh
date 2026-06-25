@@ -83,7 +83,7 @@ namespace gcs::innards
      *
      *   - above AssertionLevel::Inferences: nothing (the inference is not asserted);
      *   - assertion mode: assert the inference under its reason, annotated by
-     *     resolve_annotation;
+     *     the resolved hint (explicit hint, else emit's own, else the fallback);
      *   - eager mode: run the explicit steps at a temporary level, then RUP the
      *     inference under the reason when \c then_rup is ThenRUP::Yes.
      *

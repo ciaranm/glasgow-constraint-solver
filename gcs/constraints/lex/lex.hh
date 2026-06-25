@@ -58,8 +58,8 @@ namespace gcs
      * installed (one for the constraint, one for its negation) with
      * separate flag sets, half-reified on the cond and its negation
      * respectively. Inferences emit RUP scaffolding lines via
-     * JustifyExplicitlyThenRUP so VeriPB's PB unit propagation can verify
-     * each step in isolation.
+     * JustifyExplicitly{…, ThenRUP::Yes} so VeriPB's PB unit propagation can
+     * verify each step in isolation.
      *
      * \ingroup Constraints
      * \ingroup Innards

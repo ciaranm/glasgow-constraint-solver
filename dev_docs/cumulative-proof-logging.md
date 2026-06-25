@@ -7,7 +7,7 @@ set of integer variables with constant coefficients (binPacking,
 disjunctive, energetic-time-table extensions).
 
 For the constraint itself — the basic case, the OPB encoding, the
-time-table algorithm — read `gcs/constraints/cumulative.{hh,cc}`. For
+time-table algorithm — read `gcs/constraints/cumulative/cumulative.{hh,cc}`. For
 the broader proof-logging framework (justifications, the OPB scaffold,
 `emit_rup_proof_line_under_reason`), read [`constraints.md`](constraints.md).
 
@@ -69,7 +69,7 @@ can't be satisfied: the mandatory tasks alone already overflow.
 
 ### Proof emission
 
-In the `JustifyExplicitlyThenRUP` callback:
+In the `JustifyExplicitly{…, ThenRUP::Yes}` emit callback:
 
 1. For each task `i` mandatory at `t`, emit three RUPs under the
    bounds reason:

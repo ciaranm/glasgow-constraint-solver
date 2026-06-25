@@ -190,13 +190,15 @@ automatically on backtrack, use `add_constraint_state` — see the
 
 ## Inference: `change_state_for_*` and the `NoChange` rule
 
-Mutating a variable's domain goes through one of four entry points,
-exposed via the public `infer_*` family:
+Mutating a variable's domain goes through the public `infer_*` family:
 
 - `infer_equal(var, value)` → variable must equal `value`
 - `infer_not_equal(var, value)` → variable must not equal `value`
 - `infer_less_than(var, value)` → variable must be `< value`
 - `infer_greater_than_or_equal(var, value)` → variable must be `≥ value`
+- `infer_not_in_range(var, lo, hi)` → variable must avoid the interval
+  `[lo, hi]` (a single inference for a whole hole-run; see
+  [range_literals_spec.md](range_literals_spec.md))
 
 Each `infer_*` method:
 
@@ -264,12 +266,14 @@ distinction is made by reading the before-state.
 ## `CurrentState`: the public read-only view
 
 `gcs/current_state.hh` defines `CurrentState`, the read-only handle
-that every entry in `SolveCallbacks` receives — `solution`, `trace`,
-`branch`, and `after_proof_started`. It wraps a reference to a `State`
-and exposes only the queries — `bounds`, `in_domain`,
-`optional_single_value`, `each_value_*`, and the `operator()` that
-returns the unique value (or throws) for an instantiated variable.
-It cannot mutate the underlying `State`.
+that the variable-facing `SolveCallbacks` entries receive — `solution`,
+`trace`, `branch`, and `after_proof_started` (the argument-less
+`completed` callback does not). It wraps a reference to a `State`
+and exposes only the queries — `lower_bound`, `upper_bound`, `in_domain`,
+`has_single_value`, `domain_size`, `each_value` / `each_value_reversed`,
+`copy_of_values`, and the `operator()` that returns the unique value (or
+throws) for an instantiated variable. It cannot mutate the underlying
+`State`.
 
 This is the type a typical user-supplied solution callback receives; in
 the typical pattern you call `s(my_var)` to read out the value the
