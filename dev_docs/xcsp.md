@@ -173,16 +173,17 @@ is solved.
 
 ## Honest gaps
 
-Four XCSP3-core constraint families have no propagator yet:
-`noOverlap` (#146 — needs `Disjunctive`), `cumulative` (#147),
-`binPacking` (#148), and `mdd` (#149). The binding overrides each of
+Two XCSP3-core constraint families have no propagator yet:
+`binPacking` (#148) and `mdd` (#149). The binding overrides each of
 their callbacks with a `report_unsupported` call so the parser's
 default uncaught `runtime_error` doesn't terminate the process.
 `main()` also catches `std::runtime_error` as a safety net for any
 other unhandled callback the parser might throw on.
 
 Constraint forms we *partially* support get the same treatment for
-the unsupported cases — e.g. `precedence` with `covered=true`,
+the unsupported cases — e.g. `noOverlap` outside the 1D / 2D
+(`Disjunctive` / `Disjunctive2D`) shapes (#146), `cumulative` with a
+non-`le` condition (#147), `precedence` with `covered=true`,
 `channel` with the one-to-many shape, `nValues` with `<except>`.
 
 ## Testing

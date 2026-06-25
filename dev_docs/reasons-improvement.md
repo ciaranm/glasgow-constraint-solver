@@ -10,8 +10,9 @@ redesign (the `Reason` type defined here is reused there verbatim).
 ## IMPLEMENTED (2026-06-19)
 
 This is built on the `302-then-347` branch. As built: the `Reason` variant
-(`NoReason` / `ExplicitReason` / `{Generic,BothBounds,Lazy}ReasonOver` +
-`Narrowable*`) and `materialise()` live in `gcs/innards/reason.hh`; the
+(`NoReason` / `ExplicitReason` / `ExactSingleValue` /
+`{Generic,BothBounds,Lazy}ReasonOver` + `Narrowable*`) and `materialise()`
+live in `gcs/innards/reason.hh`; the
 materialise is deferred inside the inference tracker (`snapshot_reason` pins the
 eager-vs-lazy timing so eager reasons snapshot pre-inference into an
 `ExplicitReason` and lazy ones materialise post-inference). The old

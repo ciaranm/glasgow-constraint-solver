@@ -170,8 +170,8 @@ namespace gcs::innards
          * grab \c t = \c temporary_proof_level(), emit some Temporary
          * lines, then call \c forget_proof_level(<em>t</em>) to delete
          * just those. Using this pattern inside a context that itself
-         * uses Temporary lines (e.g. inside a \c JustifyExplicitlyThenRUP
-         * callback) is unsafe because the helper's forget will also
+         * uses Temporary lines (e.g. inside a \c JustifyExplicitly
+         * <tt>{…, ThenRUP::Yes}</tt> callback) is unsafe because the helper's forget will also
          * delete the surrounding context's Temporary lines &mdash;
          * isolate via \c enter_proof_level instead.
          */

@@ -249,7 +249,7 @@ To be implemented fresh: partition + splits + coverings + root covering in
 interval reason elements (§4), retiring the env gates once §8 is in place.
 
 *Status (2026-06-11, revised same day): all of the above implemented.
-`need_invar` returns `ProofLiteralOrFlag` (the eq atom for width 1) and
+`need_invar` returns `ProofLiteral` (the eq atom for width 1) and
 maintains §3 in full; `need_direct_encoding_for` performs the singleton
 splits; `In` over constants batches initial-domain gaps (§9.3);
 `GCS_RANGE_INFERENCES` is retired and the Equals holes path is interval-based

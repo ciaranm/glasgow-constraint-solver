@@ -139,13 +139,14 @@ The recommended approach is to use the dispatcher helper:
 #include <gcs/constraints/innards/reified_dispatcher.hh>
 
 auto install_reified_dispatcher(
-    Propagators &, const State & initial_state,
+    Propagators &, const ConstraintID &,
+    const EvaluatedReificationCondition & initial_evaluated,  // precomputed in prepare()
     const ReificationCondition &,
     Triggers,
     auto enforce_constraint_must_hold,       // (state, inference, logger, cond_lit) -> PropagatorState
     auto enforce_constraint_must_not_hold,   // ditto
-    auto infer_cond_when_undecided,          // (state, inference, logger, cond_var) -> ReificationVerdict
-    const std::string & name) -> void;
+    auto infer_cond_when_undecided)          // (state, inference, logger, cond_lit) -> ReificationVerdictFor<…>
+    -> void;
 ```
 
 You provide three callables, one for each non-trivial branch of
@@ -154,7 +155,7 @@ You provide three callables, one for each non-trivial branch of
 1. **`enforce_constraint_must_hold`** — the constraint is currently `TRUE`
    (or unconditional `MustHold`). Propagate the constraint, returning a
    `PropagatorState`. The `cond_lit` parameter is the literal to include in
-   reasons (use it via `bounds_reason(state, vars, cond_lit)` or similar).
+   reasons (use it via `bounds_reason(vars, cond_lit)` or similar).
 
 2. **`enforce_constraint_must_not_hold`** — the constraint is currently
    `FALSE` (or unconditional `MustNotHold`). Propagate the *negation* of
@@ -166,21 +167,35 @@ You provide three callables, one for each non-trivial branch of
    will use the `Undecided` struct's `cond_to_infer_*` methods to decide
    whether (and which) cond literal to actually infer.
 
-The `ReificationVerdict` variant lives in the same header:
+The `ReificationVerdict` variant lives in the same header. `MustHold` /
+`MustNotHold` are templated on the justification type (defaulting to the
+`Justification` variant) so a constraint can carry a typed witness — the
+`ReificationVerdictFor<Justification_>` alias names the variant for a given
+justification, e.g. `ReificationVerdictFor<JustifyUsingRUP<hints::Foo>>`:
 
 ```cpp
 namespace reification_verdict {
-    struct StillUndecided   { };
-    struct MustHold         { Justification justification; ReasonFunction reason; };
-    struct MustNotHold      { Justification justification; ReasonFunction reason; };
+    struct StillUndecided { };
+
+    template <typename Justification_ = Justification>
+    struct MustHold {
+        Justification_ justification;
+        Reason reason;                                       // declarative; materialised on demand
+        std::optional<AssertionAnnotation> assertion_hint = std::nullopt;
+        static constexpr bool affirmative = true;
+    };
+
+    template <typename Justification_ = Justification>
+    struct MustNotHold { /* same shape; affirmative = false */ };
 }
 ```
 
-For `MustHold`/`MustNotHold`, you provide the justification and reason for
-the cond inference. The dispatcher chooses the right cond literal (or skips
-the inference if the reif kind doesn't license one) and feeds them into
-`inference.infer(...)`. `PropagatorState` falls out of the visit:
-`StillUndecided` → `Enable`, anything else → `DisableUntilBacktrack`.
+For `MustHold`/`MustNotHold`, you provide the justification and the
+(declarative) `Reason` for the cond inference; a typed assertion hint may
+ride along via `assertion_hint`. The dispatcher chooses the right cond
+literal (or skips the inference if the reif kind doesn't license one) and
+feeds them into `inference.infer(...)`. `PropagatorState` falls out of the
+visit: `StillUndecided` → `Enable`, anything else → `DisableUntilBacktrack`.
 
 ### What the dispatcher does for you
 
@@ -242,13 +257,12 @@ auto infer_cond_when_undecided = [...](state, _, _, cond) -> ReificationVerdict 
     return reification_verdict::StillUndecided{};
 };
 
-// 3. Install
+// 3. Install (from install_propagators(); _evaluated_cond was computed in prepare())
 Triggers triggers{.on_bounds = {_v1, _v2}};
-install_reified_dispatcher(propagators, state, _reif_cond, triggers,
+install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _reif_cond, triggers,
     std::move(enforce_must_hold),
     std::move(enforce_must_not_hold),
-    std::move(infer_cond_when_undecided),
-    "reified compare");
+    std::move(infer_cond_when_undecided));
 ```
 
 ## Where things live
@@ -292,8 +306,8 @@ install function's local scope — the install function returns long
 before the propagator first runs. Look for `[v1 = _v1, v2 = _v2, ...]`
 init-capture style.
 
-The justification lambdas inside a `JustifyExplicitlyThenRUP` are called
-synchronously from within `inference.infer(...)`, which is called from
+The justification emit lambdas inside a `JustifyExplicitly{…, ThenRUP::Yes}`
+are called synchronously from within `inference.infer(...)`, which is called from
 within the propagator's call. So they *can* capture the State and
 ProofLogger by reference (via `[&state, logger, ...]`) — those references
 live long enough.

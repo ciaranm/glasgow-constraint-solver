@@ -64,6 +64,27 @@ library. For an introduction to *using* the solver, start with the top-level
   distinction that governs which linking clauses are load-bearing — with the
   W1–W5 witness suite as the regression defence against re-simplification.
   Read when touching range/interval reasons, branching, or `infer_not_in_range`.
+- [View proof logging](view-proof-logging.md) — how the proof layer handles
+  views (`ViewOfIntegerVariableID`): the V↔X link constraints that tie a view's
+  proof variable to its underlying variable, and how literals over views are
+  deviewed for emission. Read when touching view handling in proofs.
+- [Proof logging for `Sort` / `ArgSort`](sortedness.md) — the fully-certified
+  Mehlhorn–Thiel sortedness propagator proof: the permutation/root argument and
+  the Hall-band pigeonhole over ranks. A worked companion to `constraints.md`.
+- [Reasons rework (design)](reasons-improvement.md) — the rationale for the
+  declarative `Reason` variant and lazy `materialise()` that replaced the eager
+  `ReasonFunction` thunks. Read alongside `infer-redesign.md`.
+- [Infer rework (implementation notes)](infer-redesign.md) — the as-built
+  justification layer: `JustifyExplicitly` / `JustifyUsingRUP`, the mandatory
+  `ThenRUP` enum, the pay-for-use `SimpleInferenceTracker`, and the typed
+  per-constraint assertion hints (`gcs::innards::hints`).
+- [SCP s-expression migration](scp_s_expr_migration.md) — how constraints expose
+  themselves to the sub-constraint-proof (SCP) writer via `s_expr`, and the
+  status of the per-constraint migration.
+- [Workflow-2 / SCP chain testing](workflow2_testing.md) — the
+  `glasgow_scp_solver` binary and the SCP chain test harness
+  (`run_scp_chain.bash`, `scp_cases/`) for verifying constraint encodings
+  against an external checker.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.

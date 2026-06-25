@@ -55,34 +55,41 @@ As built:
   instead. `emit_explicit_steps` picks closure-vs-fat-witness by `if constexpr`
   (compile time). The Simple (proofs-off) tracker never touches `emit` or the hint,
   so Off mode pays only for constructing the (usually empty) call-site objects.
-- **Typed assertion hints, names decentralised.** Each structured hint is a struct
-  in `namespace gcs::innards::hints` (reopened per constraint) — the enumerable
-  "interface the justifier supports". A witness carries: a
-  `static constexpr std::string_view hint_name` (the coarse model-level name, the
-  2nd annotation field); an optional `static constexpr std::string_view justifier`
-  (the fine per-shape sub-rule keyword, serialised into `hint_fields` — answers
-  #377: one constraint, several inference shapes); an ADL
-  `hint_sexpr(witness, NamesAndIDsTracker&) -> SExpr` (the wire schema, in one
-  place); and an optional ADL `emit_justification(...)` (explicit steps; absent for
-  pure-RUP witnesses). There is **no central `hint_names.hh` and no `hint_name`
-  enum** — the body's "Why the central enum should go" was taken to its conclusion.
-  Coarse names live in three decentralised forms: on the witness (`hint_name`); as a
-  per-file `constexpr std::string_view <name>_hint` where a constraint reuses one
-  across sites (`equals_hint`, `linear_equality_hint`); and as
-  `hints::ModelName{name}` — the minimal name-only tier — at inline-closure sites
-  that want a coarse name without a struct. `hint_annotation` selects
-  NoHint / `ModelName` / structured at compile time; `resolve_annotation` gives
-  3-tier precedence (explicit `hint` → `emit`'s own advertisement → the call site's
-  fallback annotation), reproducing the old witness-carried annotation exactly.
-- **Coverage.** Typed witnesses are in use in ~7 constraints — abs, plus, equals,
-  lex, linear equality, linear inequality, and all_different (GAC). **abs is the
-  canonical reference conversion** (commit `4c85dfe8`): a single
-  `hints::AbsJustification{owner, justifier}` rides *both* `JustifyUsingRUP` (abs's
-  pure-RUP pruning) and `JustifyExplicitly` (its ~10 explicit bounds), carries no
-  operand data (re-derivable), and serialises to one `hint_sexpr` →
-  `((constraint_id _N) (justifier <sub-rule>))`; the eager `emit` closures are
-  untouched. It is the "add a constraint to the Justifier → here is your
-  solver-side change" template.
+- **Typed assertion hints, names decentralised.** Each hint is a struct in
+  `namespace gcs::innards::hints` (reopened per constraint), living in
+  `gcs/constraints/<foo>/hints.hh` — the enumerable "interface the justifier
+  supports". The shape is **base + derived by inheritance**: a base struct holds a
+  `ConstraintID originator` and a `static constexpr std::string_view hint_name`
+  (the coarse model-level name, the 2nd annotation field); a derived struct adds a
+  `static constexpr std::string_view subhint_name` (the fine per-shape sub-rule
+  keyword — answers #377: one constraint, several inference shapes) and/or held
+  data. A generic ADL `hint_sexpr(hint, NamesAndIDsTracker&) -> SExpr` gives the
+  default wire form `(constraint_id <originator>)`, plus `(subhint <name>)` when the
+  struct names a `subhint_name`; a constraint opts into serialising more by defining
+  its own `hint_sexpr` next to the struct. An optional ADL
+  `emit_justification(logger, hint, reason)` supplies the explicit steps for a fat
+  witness (absent for pure-RUP hints). There is **no central `hint_names.hh` and no
+  `hint_name` enum** — the body's "Why the central enum should go" was taken to its
+  conclusion; coarse names live only as the struct's `hint_name` member (the
+  framework-level assertions — `initial_bound`, `backtrack`, … — are bare
+  `hint_name`-only structs in `gcs/innards/proofs/hints.hh`). `hint_annotation`
+  (`infer_explicitly.hh`) selects, at compile time, the structured tier (the hint
+  has a `hint_sexpr`), the coarse tier (a non-empty `hint_name` but no `hint_sexpr`),
+  or the call-site fallback; the precedence (explicit `hint` → `emit`'s own
+  advertisement → fallback) is applied inline at the assertion site, reproducing the
+  old witness-carried annotation exactly.
+- **Coverage.** Typed hints are wired **catalogue-wide** — every constraint with
+  its own inferences (~31) has a `gcs/constraints/<foo>/hints.hh`, from a minimal
+  `{originator}` + `hint_name` up to fat witnesses. **abs is the canonical reference
+  conversion** (commit `4c85dfe8`): a single `hints::Abs{originator}` rides *both*
+  `JustifyUsingRUP` (abs's pure-RUP pruning) and `JustifyExplicitly` (its ~10
+  explicit bounds), carries no operand data (re-derivable), and — having no per-shape
+  `subhint_name` and no own `hint_sexpr` — takes the default wire form
+  `((constraint_id _N))`; the eager `emit` closures are untouched. It is the "add a
+  constraint to the Justifier → here is your solver-side change" template.
+  `all_different` shows the base+derived split: `AllDifferent` (the forced-value
+  deletions) plus `AllDifferentHall : AllDifferent` (the GAC Hall shape — a fat
+  witness carrying non-serialised pointers to the at-most-one line cache).
 
 **The one substantive departure from the body below: there is no logger-side
 per-constraint proof-data store.** The body proposes `logger.constraint_proof_data
@@ -111,8 +118,11 @@ Still deferred (consistent with the body's "open questions"):
   3.0.2 caps there — so there is **no ctest coverage of assertion-mode output**;
   behaviour preservation rests on the Off-mode proofs being byte-identical (they
   are, across the suite);
-- Plan B is rolled out to the ~7 constraints above, not the whole set (per Matthew:
-  fewer hints, expand when the external Justifier needs them).
+- `table`'s hint is infrastructure-only: Table propagates through the shared
+  innards helper `propagate_extensional()`, which can't name a constraint-specific
+  hint without an innards→constraints layering inversion; when that util is made
+  hint-aware, Table is ready. (`arithmetic` / `seq_precede_chain` post no inferences
+  of their own and inherit the hints of what they delegate to.)
 
 ## The abstraction
 

@@ -150,7 +150,7 @@ auto Foo::install_propagators(Propagators & propagators) -> void
 {
     Triggers triggers;
     // ... fill in trigger sets ...
-    propagators.install(
+    propagators.install(constraint_id(),
         [/* captures, typically moving in member fields */](
             const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState {
@@ -271,39 +271,59 @@ first.
 
 ### Reasons
 
-Every inference takes a `ReasonFunction` — a thunk that returns the set
-of literals justifying the inference. The two helpers you usually want:
+Every inference carries a `Reason`: a *declarative* description of the
+literals that justify it, materialised on demand — only when proofs are
+on — by `materialise(reason, state) -> ReasonLiterals`. The `Reason`
+variant covers an explicit literal set (`ExplicitReason`), a set of
+variables by full domain or by bounds (`GenericReasonOver` /
+`BothBoundsReasonOver`), a single instantiated value (`ExactSingleValue`),
+and lazily-computed forms (`LazyReasonOver`, `Narrowable*`). The two
+builders you usually want:
 
 ```cpp
-auto reason = generic_reason(state, vars);  // each variable's current bounds
-auto reason = bounds_reason(state, vars);   // bounds + extras
+auto reason = generic_reason(vars);  // each variable's full domain (bounds + holes)
+auto reason = bounds_reason(vars);   // each variable's lower/upper bounds only
 ```
 
-The reason is what goes into the proof's RUP step. Be honest about it:
-list every variable whose state contributed to the inference.
+Both take an optional trailing extra literal; `singleton_reason(lit)`
+builds a one-literal reason. The reason is what goes into the proof's RUP
+step. Be honest about it: list every variable whose state contributed to
+the inference.
 
 ## Justifications
 
 The `justification` parameter tells the proof logger how to back the
-inference. Four kinds:
+inference. The kinds:
 
-| Justification                  | When to use                                                  |
-|--------------------------------|--------------------------------------------------------------|
-| `NoJustificationNeeded{}`      | Trivial axioms (almost never — usually a code smell)         |
-| `JustifyUsingRUP{}`            | Inference is RUP-derivable from the OPB + reason             |
-| `JustifyExplicitlyThenRUP{f}`  | Emit explicit proof lines via `f`, then close with a RUP     |
-| `JustifyExplicitly{f}`         | Emit explicit proof lines via `f`; no RUP closure            |
+| Justification                           | When to use                                                  |
+|-----------------------------------------|--------------------------------------------------------------|
+| `NoJustificationNeeded{}`               | Trivial axioms (almost never — usually a code smell)         |
+| `JustifyUsingRUP{}`                     | Inference is RUP-derivable from the OPB + reason             |
+| `JustifyExplicitly{emit, ThenRUP::Yes}` | Emit explicit proof lines via `emit`, then close with a RUP  |
+| `JustifyExplicitly{emit, ThenRUP::No}`  | Emit explicit proof lines via `emit`; the steps conclude it  |
 
 The vast majority of inferences want `JustifyUsingRUP{}`. Use
-`JustifyExplicitlyThenRUP` when VeriPB can't unit-propagate to the
-inference on its own — typically for chains involving auxiliary flags
-or longer inference paths.
+`JustifyExplicitly{emit, ThenRUP::Yes}` when VeriPB can't unit-propagate
+to the inference on its own — typically for chains involving auxiliary
+flags or longer inference paths. The `ThenRUP` argument is mandatory:
+`Yes` RUPs the inferred literal after the explicit steps, `No` lets the
+steps conclude it themselves.
 
-The callback in `JustifyExplicitlyThenRUP` receives a `ReasonFunction &`
-and can emit proof lines via `logger->emit_rup_proof_line_under_reason`,
-`logger->emit(RUPProofRule{}, ..., ProofLevel::Temporary)`, and
-similar. See `among/among.cc` and `lex/lex.cc` for examples of varying
-complexity.
+The `emit` callback receives a `const ReasonLiterals &` and can emit
+proof lines via `logger->emit_rup_proof_line_under_reason`,
+`logger->emit(RUPProofRule{}, ..., ProofLevel::Temporary)`, and similar.
+See `among/among.cc` and `lex/lex.cc` for examples of varying complexity.
+
+**Assertion hints (optional).** Both `JustifyUsingRUP` and
+`JustifyExplicitly` take an optional trailing *typed assertion hint*, e.g.
+`JustifyUsingRUP{hints::Foo{owner}}` or `JustifyExplicitly{emit,
+ThenRUP::Yes, hints::Foo{owner}}`. The hint structs live per-constraint in
+`gcs/constraints/<foo>/hints.hh` (namespace `gcs::innards::hints`) and only
+annotate the step in *assertion mode* — an alternative proof mode, selected
+by `AssertionLevel`, in which inferences are asserted under their reason for
+an external justifier rather than fully justified. In normal proofs-off mode
+the hint is inert and the output is byte-identical. See `abs/hints.hh` for
+the minimal shape.
 
 **Debug aid only:** `AssertRatherThanJustifying` exists as a "trust me"
 step that bypasses the justification. Use it temporarily during
@@ -668,10 +688,10 @@ correctness work wants the full enumeration check.
     - **Detect and contradict at root** — when an alias makes the
       constraint trivially unsat but the user's intent is still well-
       formed (e.g. `BinaryEntry`-style table rows). The
-      `AllDifferent` family is the precedent: `prepare()` sorts the
-      array, runs `adjacent_find`, and routes to a one-shot
-      contradiction initialiser (see
-      `gac_all_different.cc:602-634` and
+      `AllDifferent` family is the precedent: it sorts the array, runs
+      `adjacent_find`, and routes to a one-shot contradiction initialiser
+      (see the `adjacent_find` site in
+      `all_different/gac_all_different.cc` and
       `install_clique_duplicate_contradiction_initialiser` in
       `all_different/encoding.cc`).
     - **Throw `InvalidProblemDefinitionException`** at construction

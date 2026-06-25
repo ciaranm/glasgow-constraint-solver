@@ -161,7 +161,7 @@ Not part of the public API. Key components:
 Each constraint in `gcs/constraints/` follows this pattern:
 1. A user-facing struct/class (e.g. `NotEquals`, `AllDifferent`)
 2. An `install` method that registers propagator(s) via `Propagators`
-3. Propagators receive an `InferenceTracker &` and call `infer()` on it with a `Literal`, a `Justification`, and a `ReasonFunction`
+3. Propagators receive an `InferenceTracker &` and call `infer()` on it with a `Literal`, a `Justification`, and a `Reason` (a declarative reason, materialised on demand)
 4. If `Propagators::want_nonpropagating()` is true, the constraint must also define itself in OPB terms for proof logging
 
 ### Justification Types

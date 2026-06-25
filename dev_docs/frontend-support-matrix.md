@@ -31,7 +31,7 @@ equivalent for that frontend's vocabulary).
 
 | Constraint family | gcs propagator | MiniZinc | XCSP3 | CPMpy |
 |---|---|---|---|---|
-| intension (algebraic exprs) | various via tree walk | ✓ | frontend gap (#150) | ? |
+| intension (algebraic exprs) | various via tree walk | ✓ | ✓ (tree walker) | ? |
 | extension (table) | `Table` / `NegativeTable` | ✓ | ✓ | ? |
 | regular | `Regular` | ✓ | ✓ (DFA with named states + transitions) | ? |
 | mdd | solver gap (#149) | ? | solver gap (#149) | ? |
@@ -72,7 +72,7 @@ addressed.
 |---|---|---|---|---|---|
 | half-reified comparisons (`LessThanEqualIf`, …) | partially via `Comparison` + reif | ? | n/a | gap (#61) | |
 | half-reified `And` / `Or` | – | ? | n/a | gap (#61) | |
-| `Among` | `Among` | ? | n/a (use count) | ? | |
+| `Among` | `Among` | ✓ | n/a (use count) | ? | |
 | `SmartTable` | `SmartTable` | ✓ | n/a | ? | Glasgow-specific extension |
 
 ## Solver gaps tracked elsewhere

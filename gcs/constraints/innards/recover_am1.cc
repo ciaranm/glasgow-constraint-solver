@@ -65,7 +65,7 @@ template <typename Literal_>
     // Temporary depth (active_proof_level + 1) — and our cleanup at that
     // depth would wipe out the caller's scope along with our own
     // intermediates. (Concrete failure mode: when the caller is itself
-    // inside JustifyExplicitlyThenRUP, which uses depth active+1 for its
+    // inside a JustifyExplicitly{…, ThenRUP::Yes}, which uses depth active+1 for its
     // callback's Temporary lines, a naive forget at that same depth from
     // inside recover_am1 deletes the framework's just-emitted lines
     // mid-justification.)
@@ -78,7 +78,7 @@ template <typename Literal_>
     // The result itself is emitted *after* restoring the caller's level, so
     // it records at the level the caller asked for: Top callers (in
     // initialisers, caching the line for reuse) get depth 0 as before;
-    // Temporary callers (e.g. inside a JustifyExplicitlyThenRUP that folds
+    // Temporary callers (e.g. inside a JustifyExplicitly{…, ThenRUP::Yes} that folds
     // the result into a further pol) get the caller's Temporary depth, so
     // the line survives our own deeper cleanup and is reclaimed when the
     // caller's scope is forgotten.
