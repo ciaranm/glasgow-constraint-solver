@@ -1,0 +1,39 @@
+name: clang-format
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    # Pin clang-format to the exact version the tree was formatted with.
+    # Formatting output can differ between clang-format releases, so an
+    # unpinned binary would produce spurious failures. The PyPI wheel ships
+    # the upstream LLVM binary, versioned to match.
+    - name: Install clang-format
+      run: pip install clang-format==21.1.8
+
+    - name: Check formatting
+      run: |
+        git ls-files '*.cc' '*.hh' | grep -v '^XCSP3-CPP-Parser/' \
+          | xargs -r clang-format --dry-run --Werror
+
+    - name: How to fix
+      if: failure()
+      run: |
+        echo "Source is not clang-formatted. Run this locally and commit the result:"
+        echo "  git ls-files '*.cc' '*.hh' | grep -v '^XCSP3-CPP-Parser/' | xargs clang-format -i"
