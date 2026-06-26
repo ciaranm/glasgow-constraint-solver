@@ -29,6 +29,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -118,6 +119,24 @@ namespace
         }
         else {
             return get_array_var<dims_remaining_ - 1>(indices, vec.at(indices.at(current_index)), current_index + 1);
+        }
+    }
+
+    // Constant-array sibling of get_array_var: fetch the entry's Integer value
+    // directly. Only instantiated for an Integer-valued array (EntryType_ ==
+    // Integer), where it skips the IntegerVariableID variant construction and the
+    // State round-trip that get_array_var + state.* would otherwise pay per leaf.
+    template <unsigned dims_remaining_, typename T_>
+    auto get_array_value(const vector<size_t> & indices, const T_ & vec, size_t current_index = 0) -> Integer
+    {
+        if constexpr (1 == dims_remaining_) {
+            return vec.at(indices.at(current_index));
+        }
+        else if constexpr (0 == dims_remaining_) {
+            throw UnexpectedException{"NDimensionalElement element fetching code is broken"};
+        }
+        else {
+            return get_array_value<dims_remaining_ - 1>(indices, vec.at(indices.at(current_index)), current_index + 1);
         }
     }
 
@@ -309,18 +328,33 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                         auto do_it_with = [&](Integer x) {
                             elem.push_back((x - index_starts.at(d)).as_index());
                             if (elem.size() == dimensions_) {
-                                auto array_var = get_array_var<dimensions_>(elem, *array);
-                                if (array_has_nonconstants)
-                                    explored_vars.push_back(array_var);
-
-                                if (bounds_only) {
-                                    if (state.lower_bound(array_var) >= looking_for_bounds.first &&
-                                        state.upper_bound(array_var) <= looking_for_bounds.second)
-                                        return true;
+                                if constexpr (std::is_same_v<EntryType_, Integer>) {
+                                    // Constant array: test the value directly, skipping the
+                                    // IntegerVariableID construction and the State round-trip.
+                                    auto value = get_array_value<dimensions_>(elem, *array);
+                                    if (bounds_only) {
+                                        if (value >= looking_for_bounds.first && value <= looking_for_bounds.second)
+                                            return true;
+                                    }
+                                    else {
+                                        if (looking_for.contains(value))
+                                            return true;
+                                    }
                                 }
                                 else {
-                                    if (state.domain_intersects_with(array_var, looking_for))
-                                        return true;
+                                    auto array_var = get_array_var<dimensions_>(elem, *array);
+                                    if (array_has_nonconstants)
+                                        explored_vars.push_back(array_var);
+
+                                    if (bounds_only) {
+                                        if (state.lower_bound(array_var) >= looking_for_bounds.first &&
+                                            state.upper_bound(array_var) <= looking_for_bounds.second)
+                                            return true;
+                                    }
+                                    else {
+                                        if (state.domain_intersects_with(array_var, looking_for))
+                                            return true;
+                                    }
                                 }
                             }
                             else {
@@ -431,13 +465,22 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
 
                         elem.push_back((x - index_starts.at(d)).as_index());
                         if (elem.size() == dimensions_) {
-                            auto array_var = get_array_var<dimensions_>(elem, *array);
-                            if (array_has_nonconstants)
-                                considered_vars.push_back(array_var);
-                            auto array_var_bounds = state.bounds(array_var);
-                            if (current_bounds.second >= array_var_bounds.first && current_bounds.first <= array_var_bounds.second) {
-                                lowest_found = lowest_found ? min(*lowest_found, array_var_bounds.first) : array_var_bounds.first;
-                                highest_found = highest_found ? max(*highest_found, array_var_bounds.second) : array_var_bounds.second;
+                            if constexpr (std::is_same_v<EntryType_, Integer>) {
+                                auto value = get_array_value<dimensions_>(elem, *array);
+                                if (current_bounds.second >= value && current_bounds.first <= value) {
+                                    lowest_found = lowest_found ? min(*lowest_found, value) : value;
+                                    highest_found = highest_found ? max(*highest_found, value) : value;
+                                }
+                            }
+                            else {
+                                auto array_var = get_array_var<dimensions_>(elem, *array);
+                                if (array_has_nonconstants)
+                                    considered_vars.push_back(array_var);
+                                auto array_var_bounds = state.bounds(array_var);
+                                if (current_bounds.second >= array_var_bounds.first && current_bounds.first <= array_var_bounds.second) {
+                                    lowest_found = lowest_found ? min(*lowest_found, array_var_bounds.first) : array_var_bounds.first;
+                                    highest_found = highest_found ? max(*highest_found, array_var_bounds.second) : array_var_bounds.second;
+                                }
                             }
                         }
                         else {
@@ -524,10 +567,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
 
                         elem.push_back((x - index_starts.at(d)).as_index());
                         if (elem.size() == dimensions_) {
-                            auto array_var = get_array_var<dimensions_>(elem, *array);
-                            if (array_has_nonconstants)
-                                considered_vars.push_back(array_var);
-                            state.for_each_value_immutable(array_var, [&](Integer v) { still_to_find_support_for.erase(v); });
+                            if constexpr (std::is_same_v<EntryType_, Integer>) {
+                                still_to_find_support_for.erase(get_array_value<dimensions_>(elem, *array));
+                            }
+                            else {
+                                auto array_var = get_array_var<dimensions_>(elem, *array);
+                                if (array_has_nonconstants)
+                                    considered_vars.push_back(array_var);
+                                state.for_each_value_immutable(array_var, [&](Integer v) { still_to_find_support_for.erase(v); });
+                            }
                         }
                         else {
                             self(self, d + 1);
