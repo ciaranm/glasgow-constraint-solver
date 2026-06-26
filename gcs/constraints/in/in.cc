@@ -181,9 +181,13 @@ auto In::install_propagators(Propagators & propagators) -> void
                     if (supported_by_var)
                         continue;
 
-                    ReasonLiterals reason;
-                    for (const auto & V : var_vals)
-                        reason.emplace_back(V != v);
+                    Reason reason;
+                    if (inference.want_reasons()) {
+                        ReasonLiterals lits;
+                        for (const auto & V : var_vals)
+                            lits.emplace_back(V != v);
+                        reason = ExplicitReason{std::move(lits)};
+                    }
 
                     inference.infer_not_equal(logger, var, v,
                         JustifyExplicitly{//
@@ -193,7 +197,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                                         reason, WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i, ProofLevel::Temporary);
                             },
                             ThenRUP::Yes, hints::In{owner}},
-                        ExplicitReason{reason});
+                        reason);
                 }
             }
 
@@ -224,12 +228,20 @@ auto In::install_propagators(Propagators & propagators) -> void
                     if (state.in_domain(var, val))
                         continue;
 
-                    ReasonLiterals reason = materialise(generic_reason(vector{var}), state);
-                    for (const auto & [j, V_j] : enumerate(var_vals)) {
-                        if (j == i)
-                            continue;
-                        for (const auto & w : state.each_value_immutable(var))
-                            reason.emplace_back(V_j != w);
+                    // var stays a declarative generic_reason (its domain walk is
+                    // deferred and skipped when no reason is read); only the cross-
+                    // product of supporting-selector literals is the explicit extra,
+                    // and the whole O(var_vals x dom(var)) build is guarded.
+                    Reason reason;
+                    if (inference.want_reasons()) {
+                        ReasonLiterals extra;
+                        for (const auto & [j, V_j] : enumerate(var_vals)) {
+                            if (j == i)
+                                continue;
+                            for (const auto & w : state.each_value_immutable(var))
+                                extra.emplace_back(V_j != w);
+                        }
+                        reason = with_extra(generic_reason(vector{var}), std::move(extra));
                     }
 
                     inference.infer_not_equal(logger, V, val,
@@ -251,7 +263,7 @@ auto In::install_propagators(Propagators & propagators) -> void
                                 }
                             },
                             ThenRUP::Yes, hints::In{owner}},
-                        ExplicitReason{reason});
+                        reason);
                 }
             }
 
