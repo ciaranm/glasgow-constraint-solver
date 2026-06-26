@@ -114,8 +114,9 @@ auto main(int argc, char * argv[]) -> int
     p.post(LessThan{grid[0][0], grid[size - 1][0]});
 
     unsigned long long n_solutions = 0;
-    auto stats = solve_with(p,
-        SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return ++n_solutions < 10000; },
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState &) -> bool { return ++n_solutions < 10000; },
             .branch = branch_with(variable_order::dom(grid_flat), value_order::smallest_in())},
         options_vars.contains("prove") ? make_optional<ProofOptions>("magic_square") : nullopt);
 

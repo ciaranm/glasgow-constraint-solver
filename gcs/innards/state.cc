@@ -48,9 +48,11 @@ namespace
     auto deview(const IntegerVariableID & var) -> tuple<DirectIntegerVariableID, bool, Integer>
     {
         return overloaded{
-            [&](const SimpleIntegerVariableID & var) { return tuple{DirectIntegerVariableID{var}, false, 0_i}; },
-            [&](const ConstantIntegerVariableID & var) { return tuple{DirectIntegerVariableID{var}, false, 0_i}; },
-            [&](const ViewOfIntegerVariableID & var) { return tuple{DirectIntegerVariableID{var.actual_variable}, var.negate_first, var.then_add}; },
+            [&](const SimpleIntegerVariableID & var) { return tuple{DirectIntegerVariableID{var}, false, 0_i}; },   //
+            [&](const ConstantIntegerVariableID & var) { return tuple{DirectIntegerVariableID{var}, false, 0_i}; }, //
+            [&](const ViewOfIntegerVariableID & var) {
+                return tuple{DirectIntegerVariableID{var.actual_variable}, var.negate_first, var.then_add};
+            }, //
         }
             .visit(var);
     }
@@ -75,7 +77,11 @@ namespace
     template <typename SimpleFn_, typename ConstantFn_>
     auto visit_actual(const DirectIntegerVariableID & v, SimpleFn_ && sf, ConstantFn_ && cf)
     {
-        return overloaded{sf, cf}.visit(v);
+        return overloaded{
+            sf, //
+            cf  //
+        }
+            .visit(v);
     }
 }
 
@@ -259,8 +265,11 @@ namespace
 
 auto State::infer(const Literal & lit) -> Inference
 {
-    return overloaded{[&](const IntegerVariableCondition & cond) -> Inference { return infer(cond); },
-        [&](const TrueLiteral &) { return Inference::NoChange; }, [&](const FalseLiteral &) { return Inference::Contradiction; }}
+    return overloaded{
+        [&](const IntegerVariableCondition & cond) -> Inference { return infer(cond); }, //
+        [&](const TrueLiteral &) { return Inference::NoChange; },                        //
+        [&](const FalseLiteral &) { return Inference::Contradiction; }                   //
+    }
         .visit(lit);
 }
 
@@ -391,20 +400,22 @@ auto State::add_extra_proof_condition(const Literal & lit) -> void
 auto State::lower_bound(const IntegerVariableID var) const -> Integer
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto raw = overloaded{[&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).upper() : state_of(v).lower(); },
-        [&](const ConstantIntegerVariableID & v) {
-            return v.const_value;
-        }}.visit(actual_var);
+    auto raw = overloaded{
+        [&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).upper() : state_of(v).lower(); }, //
+        [&](const ConstantIntegerVariableID & v) { return v.const_value; }                                           //
+    }
+                   .visit(actual_var);
     return (negate_first ? -raw : raw) + then_add;
 }
 
 auto State::upper_bound(const IntegerVariableID var) const -> Integer
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto raw = overloaded{[&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).lower() : state_of(v).upper(); },
-        [&](const ConstantIntegerVariableID & v) {
-            return v.const_value;
-        }}.visit(actual_var);
+    auto raw = overloaded{
+        [&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).lower() : state_of(v).upper(); }, //
+        [&](const ConstantIntegerVariableID & v) { return v.const_value; }                                           //
+    }
+                   .visit(actual_var);
     return (negate_first ? -raw : raw) + then_add;
 }
 
@@ -435,7 +446,9 @@ auto State::domain_has_holes(const IntegerVariableID var) const -> bool
 {
     auto [actual_var, _1, _2] = deview(var);
     return overloaded{
-        [&](const SimpleIntegerVariableID & v) { return state_of(v).has_holes(); }, [](const ConstantIntegerVariableID &) { return false; }}
+        [&](const SimpleIntegerVariableID & v) { return state_of(v).has_holes(); }, //
+        [](const ConstantIntegerVariableID &) { return false; }                     //
+    }
         .visit(actual_var);
 }
 
@@ -461,8 +474,10 @@ auto State::optional_single_value(const VarType_ & var) const -> optional<Intege
 auto State::has_single_value(const IntegerVariableID var) const -> bool
 {
     auto [actual_var, _1, _2] = deview(var);
-    return overloaded{[&](const SimpleIntegerVariableID & v) { return state_of(v).lower() == state_of(v).upper(); },
-        [](const ConstantIntegerVariableID &) { return true; }}
+    return overloaded{
+        [&](const SimpleIntegerVariableID & v) { return state_of(v).lower() == state_of(v).upper(); }, //
+        [](const ConstantIntegerVariableID &) { return true; }                                         //
+    }
         .visit(actual_var);
 }
 
@@ -471,7 +486,7 @@ auto State::domain_size(const VarType_ & var) const -> Integer
 {
     auto [actual_var, _1, _2] = deview(var);
     return visit_actual(
-        actual_var, [&](const SimpleIntegerVariableID & v) { return Integer(state_of(v).size()); },
+        actual_var, [&](const SimpleIntegerVariableID & v) { return Integer(state_of(v).size()); }, //
         [](const ConstantIntegerVariableID &) { return Integer{1}; });
 }
 
@@ -646,8 +661,11 @@ auto State::guesses() const -> generator<Literal>
 
 auto State::test_literal(const Literal & lit) const -> LiteralIs
 {
-    return overloaded{[&](const IntegerVariableCondition & cond) -> LiteralIs { return test_literal(cond); },
-        [](const TrueLiteral &) { return LiteralIs::DefinitelyTrue; }, [](const FalseLiteral &) { return LiteralIs::DefinitelyFalse; }}
+    return overloaded{
+        [&](const IntegerVariableCondition & cond) -> LiteralIs { return test_literal(cond); }, //
+        [](const TrueLiteral &) { return LiteralIs::DefinitelyTrue; },                          //
+        [](const FalseLiteral &) { return LiteralIs::DefinitelyFalse; }                         //
+    }
         .visit(lit);
 }
 

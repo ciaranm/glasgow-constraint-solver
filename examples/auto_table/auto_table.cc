@@ -78,10 +78,12 @@ auto main(int argc, char * argv[]) -> int
 
     p.add_presolver(AutoTable{vector{v[0], v[1], v[2]}});
 
-    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        println("{} {} {} {} {}", s(v[0]), s(v[1]), s(v[2]), s(v[3]), s(v[4]));
-        return true;
-    }},
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                println("{} {} {} {} {}", s(v[0]), s(v[1]), s(v[2]), s(v[3]), s(v[4]));
+                return true;
+            }},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))

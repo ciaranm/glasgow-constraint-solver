@@ -173,10 +173,12 @@ auto main(int argc, char * argv[]) -> int
     }
 
     vector<tuple<variant<int, pair<int, int>>, vector<int>, vector<variant<int, pair<int, int>>>>> data = {
-        {pair{1, 3}, vector{2, 4, 6, 8}, {pair{1, 10}, pair{1, 10}, pair{1, 10}}},
-        {pair{1, 5}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}}, {pair{1, 1}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
-        {pair{3, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}}, {pair{0, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}},
-        {pair{1, 5}, vector{2, 3, 2, 3, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
+        {pair{1, 3}, vector{2, 4, 6, 8}, {pair{1, 10}, pair{1, 10}, pair{1, 10}}}, //
+        {pair{1, 5}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},       //
+        {pair{1, 1}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},       //
+        {pair{3, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}},          //
+        {pair{0, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}},          //
+        {pair{1, 5}, vector{2, 3, 2, 3, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}}, //
         // Degenerate cases (issue #254): empty array, empty value set,
         // single element, all-constant. Result is a genuine constant.
         {0, vector{2, 3}, {}},                      // empty array: 0 in set (tautology)

@@ -149,10 +149,12 @@ auto run_power_pinned_test(bool proofs, Integer base, Integer exp, pair<long lon
     auto proof_name = proofs ? make_optional<string>("arithmetic_test") : nullopt;
 
     set<long long> actual_results;
-    solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        actual_results.insert(s(v3).raw_value);
-        return true;
-    }},
+    solve_with(p,      //
+        SolveCallbacks{//
+            .solution = [&](const CurrentState & s) -> bool {
+                actual_results.insert(s(v3).raw_value);
+                return true;
+            }},
         proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
 
     println(cerr, " got {} solutions", actual_results.size());
@@ -267,8 +269,12 @@ auto run_dup_arithmetic_test(bool proofs, AliasPattern_, const string & tag, pai
 
 auto main(int, char *[]) -> int
 {
-    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {{{2, 5}, {1, 6}, {1, 12}}, {{1, 6}, {2, 5}, {5, 8}},
-        {{1, 3}, {1, 3}, {0, 10}}, {{1, 3}, {1, 3}, {1, 3}}, {{1, 5}, {6, 8}, {-10, 10}}, {{1, 1}, {2, 4}, {-5, 5}},
+    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {{{2, 5}, {1, 6}, {1, 12}}, //
+        {{1, 6}, {2, 5}, {5, 8}},                                                                    //
+        {{1, 3}, {1, 3}, {0, 10}},                                                                   //
+        {{1, 3}, {1, 3}, {1, 3}},                                                                    //
+        {{1, 5}, {6, 8}, {-10, 10}},                                                                 //
+        {{1, 1}, {2, 4}, {-5, 5}},                                                                   //
         // issue #254: all-fixed (singleton-domain) operands. Each row runs for
         // Plus/Minus/Times/Div/Mod; build_expected gives the per-operation
         // truth, so each tautology direction is hit by exactly one operation
@@ -281,13 +287,19 @@ auto main(int, char *[]) -> int
         {{5, 5}, {0, 0}, {3, 3}},    // Div/Mod by fixed zero: no solution
         {{5, 5}, {2, 2}, {99, 99}}}; // all operations contradicted
 
-    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> power_data = {{{0, 3}, {0, 5}, {-1, 250}},
+    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> power_data = {
+        {{0, 3}, {0, 5}, {-1, 250}}, //
         // issue #254: all-fixed operands for Power, both directions.
-        {{2, 2}, {3, 3}, {8, 8}}, // 2^3 == 8 (tautology)
-        {{2, 2}, {3, 3}, {9, 9}}, // 2^3 != 9 (contradiction)
-        {{2, 2}, {0, 0}, {1, 1}}, // 2^0 == 1 (tautology)
-        {{2, 4}, {0, 4}, {0, 260}}, {{-3, 3}, {0, 4}, {-30, 90}}, {{1, 1}, {-3, 3}, {-2, 2}}, {{-1, 1}, {-3, 3}, {-2, 2}}, {{0, 1}, {-2, 3}, {-1, 2}},
-        {{2, 5}, {-1, 4}, {-5, 700}}};
+        {{2, 2}, {3, 3}, {8, 8}},     // 2^3 == 8 (tautology)
+        {{2, 2}, {3, 3}, {9, 9}},     // 2^3 != 9 (contradiction)
+        {{2, 2}, {0, 0}, {1, 1}},     // 2^0 == 1 (tautology)
+        {{2, 4}, {0, 4}, {0, 260}},   //
+        {{-3, 3}, {0, 4}, {-30, 90}}, //
+        {{1, 1}, {-3, 3}, {-2, 2}},   //
+        {{-1, 1}, {-3, 3}, {-2, 2}},  //
+        {{0, 1}, {-2, 3}, {-1, 2}},   //
+        {{2, 5}, {-1, 4}, {-5, 700}}  //
+    };
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
@@ -341,7 +353,10 @@ auto main(int, char *[]) -> int
         // Dup-variable cases for the GAC-via-Table specialisations. Domains
         // are kept small because the underlying tuple table is materialised.
         // Div/Mod need divisors to avoid zero; the lambdas already guard.
-        vector<pair<pair<int, int>, pair<int, int>>> dup_data = {{{-3, 3}, {-9, 9}}, {{1, 4}, {-5, 5}}};
+        vector<pair<pair<int, int>, pair<int, int>>> dup_data = {
+            {{-3, 3}, {-9, 9}}, //
+            {{1, 4}, {-5, 5}}   //
+        };
         auto plus_sat = [](int a, int b, int c) { return a + b == c; };
         auto minus_sat = [](int a, int b, int c) { return a - b == c; };
         auto times_sat = [](int a, int b, int c) { return a * b == c; };
@@ -371,7 +386,10 @@ auto main(int, char *[]) -> int
         }
 
         // Power dup: kept very small since result range can blow up quickly.
-        vector<pair<pair<int, int>, pair<int, int>>> power_dup_data = {{{0, 3}, {0, 10}}, {{-2, 2}, {-5, 5}}};
+        vector<pair<pair<int, int>, pair<int, int>>> power_dup_data = {
+            {{0, 3}, {0, 10}}, //
+            {{-2, 2}, {-5, 5}} //
+        };
         for (auto & [ar, br] : power_dup_data) {
             run_dup_arithmetic_test<Power>(proofs, AliasV1V2{}, "v1v2", ar, br, power_is_satisfying);
             run_dup_arithmetic_test<Power>(proofs, AliasV1V3{}, "v1v3", ar, br, power_is_satisfying);

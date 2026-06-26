@@ -760,7 +760,9 @@ namespace
         bool seen_middle = false;
 
         auto skip_based_on_assumption = [&](IntegerVariableID var, Integer val, Literal assumption) -> bool {
-            return overloaded{[&](TrueLiteral) { return false; }, [&](FalseLiteral) { return false; },
+            return overloaded{
+                [&](TrueLiteral) { return false; },  //
+                [&](FalseLiteral) { return false; }, //
                 [&](IntegerVariableCondition cond) {
                     if (cond.var == var) {
                         if ((cond.op == VariableConditionOperator::Equal && val != cond.value) ||
@@ -785,7 +787,8 @@ namespace
                             return false;
                         }
                     }
-                }}
+                } //
+            }
                 .visit(assumption);
         };
 

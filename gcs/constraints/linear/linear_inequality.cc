@@ -106,27 +106,29 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
     for (auto & [c, v] : _coeff_vars.terms)
         terms += c * v;
 
-    overloaded{[&](const reif::MustHold &) {
-                   _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
-               },
+    overloaded{
+        [&](const reif::MustHold &) {
+            _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
+        }, //
         [&](const reif::MustNotHold &) {
             _proof_lines =
                 pair{model.add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
-        },
+        }, //
         [&](const reif::If & cond) {
             _proof_lines = pair{
                 model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
-        },
+        }, //
         [&](const reif::NotIf & cond) {
             _proof_lines =
                 pair{model.add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
                     nullopt};
-        },
+        }, //
         [&](const reif::Iff & cond) {
             _proof_lines = pair{
                 model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
                 model.add_constraint("ReifiedLinearInequality", "greater than option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
-        }}
+        } //
+    }
         .visit(_reif_cond);
 }
 
@@ -195,15 +197,18 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
                 if (min_possible > value + modifier) {
                     // cannot possibly hold
                     return reification_verdict::MustNotHold<LinearCondJustification>{
-                        .justification = JustifyExplicitly{hints::LinearInequalityCond<CV>{{owner}, &state, sanitised_cv, proof_lines}, ThenRUP::Yes},
-                        .reason = generic_reason(vars)};
+                        .justification =
+                            JustifyExplicitly{hints::LinearInequalityCond<CV>{{owner}, &state, sanitised_cv, proof_lines}, ThenRUP::Yes}, //
+                        .reason = generic_reason(vars)                                                                                    //
+                    };
                 }
                 else if (max_possible <= value + modifier) {
                     // must definitely hold
                     return reification_verdict::MustHold<LinearCondJustification>{
                         .justification = JustifyExplicitly{hints::LinearInequalityCond<NegCV>{{owner}, &state, sanitised_neg_cv, proof_lines_swapped},
-                            ThenRUP::Yes},
-                        .reason = generic_reason(vars)};
+                            ThenRUP::Yes},             //
+                        .reason = generic_reason(vars) //
+                    };
                 }
                 else
                     return reification_verdict::StillUndecided{};
@@ -220,13 +225,16 @@ auto ReifiedLinearInequality::s_expr(const ProofModel * const model) const -> SE
     auto & tracker = model->names_and_ids_tracker();
 
     // cake_pb_cp's name for the <= form is lin_less_equal (not lin_less_than_equal).
-    auto [rei, cons] = overloaded{[&](const reif::MustHold &) { return make_pair(false, "lin_less_equal"); },
-        [&](const reif::If &) { return make_pair(true, "lin_less_equal_if"); },
-        [&](const reif::Iff &) { return make_pair(true, "lin_less_equal_iff"); },
+    auto [rei, cons] = overloaded{
+        [&](const reif::MustHold &) { return make_pair(false, "lin_less_equal"); }, //
+        [&](const reif::If &) { return make_pair(true, "lin_less_equal_if"); },     //
+        [&](const reif::Iff &) { return make_pair(true, "lin_less_equal_iff"); },   //
         [&](const auto &) {
             throw UnexpectedException{"Unexpected reification type in s_expr"};
             return make_pair(false, "");
-        }}.visit(_reif_cond);
+        } //
+    }
+                           .visit(_reif_cond);
 
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cons)};
     if (rei)

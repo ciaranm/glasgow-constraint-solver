@@ -84,7 +84,9 @@ auto main(int argc, char * argv[]) -> int
     p.post(AllDifferent{xs});
 
     vector<pair<int, int>> edges{
-        {0, 1}, {0, 2}, {0, 3}, {0, 4}, {1, 3}, {1, 4}, {1, 5}, {2, 3}, {2, 6}, {3, 4}, {3, 6}, {3, 7}, {4, 5}, {4, 6}, {4, 7}, {5, 7}, {6, 7}};
+        {0, 1}, {0, 2}, {0, 3}, {0, 4}, {1, 3}, {1, 4}, {1, 5}, {2, 3}, {2, 6}, {3, 4}, {3, 6}, //
+        {3, 7}, {4, 5}, {4, 6}, {4, 7}, {5, 7}, {6, 7}                                          //
+    };
 
     vector<IntegerVariableID> diffs, abs_diffs;
     for (auto & [x1, x2] : edges) {
@@ -111,14 +113,15 @@ auto main(int argc, char * argv[]) -> int
             proof_options->set_assertion_level(AssertionLevel::Inferences);
     }
 
-    auto stats = solve_with(p,
-        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-                           println("  {} {}", s(xs[0]), s(xs[1]));
-                           println("{} {} {} {}", s(xs[2]), s(xs[3]), s(xs[4]), s(xs[5]));
-                           println("  {} {}", s(xs[6]), s(xs[7]));
-                           println("");
-                           return true;
-                       },
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                println("  {} {}", s(xs[0]), s(xs[1]));
+                println("{} {} {} {}", s(xs[2]), s(xs[3]), s(xs[4]), s(xs[5]));
+                println("  {} {}", s(xs[6]), s(xs[7]));
+                println("");
+                return true;
+            },
             .branch = branch_with(variable_order::dom_then_deg(xs), value_order::smallest_first())},
         proof_options);
 

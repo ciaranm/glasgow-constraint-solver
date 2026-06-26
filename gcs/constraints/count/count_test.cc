@@ -164,16 +164,21 @@ auto main(int argc, char * argv[]) -> int
 
     using ArrayEntry = variant<int, pair<int, int>>;
     vector<tuple<variant<int, pair<int, int>>, variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {
-        {pair{1, 2}, pair{1, 2}, {pair{1, 2}, pair{1, 2}}}, {pair{1, 2}, pair{0, 3}, {pair{1, 2}, pair{1, 2}}},
-        {pair{1, 2}, pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}}, {pair{0, 3}, pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{0, 4}, pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}}, {pair{1, 3}, pair{1, 6}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
-        {pair{-1, 3}, pair{0, 5}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}},
-        {pair{1, 4}, pair{-3, 8}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},
-        {pair{0, 4}, pair{-5, 2}, {pair{7, 14}, pair{7, 11}}}, {pair{3, 10}, pair{3, 8}, {pair{-2, 2}, pair{3, 7}, pair{5, 9}, pair{0, 6}}},
-        {pair{1, 9}, pair{-5, 5}, {pair{2, 6}, pair{8, 11}, pair{6, 12}, pair{-3, 0}}},
-        {pair{2, 2}, pair{3, 6}, {pair{5, 9}, pair{-5, 3}, pair{2, 6}}},
+        {pair{1, 2}, pair{1, 2}, {pair{1, 2}, pair{1, 2}}},                                       //
+        {pair{1, 2}, pair{0, 3}, {pair{1, 2}, pair{1, 2}}},                                       //
+        {pair{1, 2}, pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},                           //
+        {pair{0, 3}, pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},                           //
+        {pair{0, 4}, pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},                           //
+        {pair{1, 3}, pair{1, 6}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},                           //
+        {pair{-1, 3}, pair{0, 5}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}},                         //
+        {pair{1, 4}, pair{-3, 8}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}}, //
+        {pair{0, 4}, pair{-5, 2}, {pair{7, 14}, pair{7, 11}}},                                    //
+        {pair{3, 10}, pair{3, 8}, {pair{-2, 2}, pair{3, 7}, pair{5, 9}, pair{0, 6}}},             //
+        {pair{1, 9}, pair{-5, 5}, {pair{2, 6}, pair{8, 11}, pair{6, 12}, pair{-3, 0}}},           //
+        {pair{2, 2}, pair{3, 6}, {pair{5, 9}, pair{-5, 3}, pair{2, 6}}},                          //
         // Constant array entries: voi seen N times where some array slots are fixed.
-        {pair{0, 3}, pair{0, 3}, {1, 2, pair{1, 3}}}, {pair{0, 3}, 2, {pair{1, 4}, 2, pair{1, 4}, 2}},
+        {pair{0, 3}, pair{0, 3}, {1, 2, pair{1, 3}}},    //
+        {pair{0, 3}, 2, {pair{1, 4}, 2, pair{1, 4}, 2}}, //
         // Degenerate cases (issue #254): empty array, single element, all-constant.
         // Genuine ConstantIntegerVariableIDs for how_many / voi / array entries.
         {0, 5, {}},                         // empty array: count of 5 is 0 (tautology)

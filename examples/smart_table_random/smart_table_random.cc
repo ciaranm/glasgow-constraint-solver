@@ -278,7 +278,8 @@ auto main(int argc, char * argv[]) -> int
 
         p.post(SmartTable{vars, tuples, short_reasons});
 
-        auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return false; }},
+        auto stats = solve_with(p,                                                           //
+            SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return false; }}, //
             prove ? make_optional(ProofOptions{proof_prefix}) : nullopt);
 
         if (display_table)

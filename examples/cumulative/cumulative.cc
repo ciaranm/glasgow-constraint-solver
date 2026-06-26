@@ -89,10 +89,12 @@ auto main(int argc, char * argv[]) -> int
 
     p.minimise(makespan);
 
-    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        println("schedule: starts {} makespan {}", starts | std::ranges::views::transform(cref(s)), s(makespan));
-        return true;
-    }},
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                println("schedule: starts {} makespan {}", starts | std::ranges::views::transform(cref(s)), s(makespan));
+                return true;
+            }},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))

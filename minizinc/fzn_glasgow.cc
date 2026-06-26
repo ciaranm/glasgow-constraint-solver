@@ -937,54 +937,55 @@ auto main(int argc, char * argv[]) -> int
         }
 
         bool completed = false, any_solution = false;
-        auto stats = solve_with(problem,
-            SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-                               any_solution = true;
-                               for (const string name : fzn["output"]) {
-                                   if (data.integer_variables.contains(name)) {
-                                       auto vardata = data.integer_variables.at(name);
-                                       if (! s.has_single_value(data.integer_variables.at(name).first))
-                                           throw UnimplementedException{format("Variable {} does not have a unique value", name)};
-                                       if (vardata.second)
-                                           println(cout, "{} = {};", name, s(vardata.first) == 1_i ? "true" : "false");
-                                       else
-                                           println(cout, "{} = {};", name, s(vardata.first));
-                                   }
-                                   else if (data.variable_arrays.contains(name)) {
-                                       vector<string> vals;
-                                       for (auto & v : data.variable_arrays.at(name).first) {
-                                           if (! s.has_single_value(v))
-                                               throw UnimplementedException{format("Variable inside array {} does not have a unique value", name)};
-                                           if (data.variable_arrays.at(name).second)
-                                               vals.push_back(format("{}", s(v) == 1_i ? "true" : "false"));
-                                           else
-                                               vals.push_back(format("{}", s(v)));
-                                       }
-                                       string vals_joined;
-                                       for (size_t i_ = 0; i_ < vals.size(); ++i_) {
-                                           if (i_ > 0)
-                                               vals_joined += ", ";
-                                           vals_joined += vals[i_];
-                                       }
-                                       println(cout, "{} = [{}];", name, vals_joined);
-                                   }
-                                   else
-                                       throw FlatZincInterfaceError{format("Unknown output item {} in {}", name, fznname)};
-                               }
-                               println(cout, "----------");
-                               cout << flush;
-                               if (solution_limit) {
-                                   if (--*solution_limit == 0)
-                                       return false;
-                               }
-                               else if ((! all_solutions) && (! optimisation))
-                                   return false;
+        auto stats = solve_with(problem, //
+            SolveCallbacks{              //
+                .solution = [&](const CurrentState & s) -> bool {
+                    any_solution = true;
+                    for (const string name : fzn["output"]) {
+                        if (data.integer_variables.contains(name)) {
+                            auto vardata = data.integer_variables.at(name);
+                            if (! s.has_single_value(data.integer_variables.at(name).first))
+                                throw UnimplementedException{format("Variable {} does not have a unique value", name)};
+                            if (vardata.second)
+                                println(cout, "{} = {};", name, s(vardata.first) == 1_i ? "true" : "false");
+                            else
+                                println(cout, "{} = {};", name, s(vardata.first));
+                        }
+                        else if (data.variable_arrays.contains(name)) {
+                            vector<string> vals;
+                            for (auto & v : data.variable_arrays.at(name).first) {
+                                if (! s.has_single_value(v))
+                                    throw UnimplementedException{format("Variable inside array {} does not have a unique value", name)};
+                                if (data.variable_arrays.at(name).second)
+                                    vals.push_back(format("{}", s(v) == 1_i ? "true" : "false"));
+                                else
+                                    vals.push_back(format("{}", s(v)));
+                            }
+                            string vals_joined;
+                            for (size_t i_ = 0; i_ < vals.size(); ++i_) {
+                                if (i_ > 0)
+                                    vals_joined += ", ";
+                                vals_joined += vals[i_];
+                            }
+                            println(cout, "{} = [{}];", name, vals_joined);
+                        }
+                        else
+                            throw FlatZincInterfaceError{format("Unknown output item {} in {}", name, fznname)};
+                    }
+                    println(cout, "----------");
+                    cout << flush;
+                    if (solution_limit) {
+                        if (--*solution_limit == 0)
+                            return false;
+                    }
+                    else if ((! all_solutions) && (! optimisation))
+                        return false;
 
-                               // For optimisation, keep searching: each subsequent solution
-                               // strictly improves the objective, until the search is complete
-                               // (optimality proven) or aborted (timeout / signal).
-                               return true;
-                           },
+                    // For optimisation, keep searching: each subsequent solution
+                    // strictly improves the objective, until the search is complete
+                    // (optimality proven) or aborted (timeout / signal).
+                    return true;
+                },
                 .branch = brancher,
                 .completed = [&] { completed = true; }},
             proof_options, &abort_flag);

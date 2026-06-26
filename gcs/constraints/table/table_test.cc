@@ -110,7 +110,11 @@ auto run_wildcard_table_test(
     cerr << flush;
 
     auto entry_matches = [](const IntegerOrWildcard & entry, int val) -> bool {
-        return overloaded{[val](Integer i) { return i.raw_value == val; }, [](Wildcard) { return true; }}.visit(entry);
+        return overloaded{
+            [val](Integer i) { return i.raw_value == val; }, //
+            [](Wildcard) { return true; }                    //
+        }
+            .visit(entry);
     };
 
     set<tuple<int, int, int>> expected, actual;

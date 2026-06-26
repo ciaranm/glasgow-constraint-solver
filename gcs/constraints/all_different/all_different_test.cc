@@ -163,12 +163,12 @@ auto main(int argc, char * argv[]) -> int
 
     vector<tuple<variant<int, pair<int, int>>, variant<int, pair<int, int>>, variant<int, pair<int, int>>, variant<int, pair<int, int>>,
         variant<int, pair<int, int>>, variant<int, pair<int, int>>>>
-        data = {{pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}},
-            {pair{0, 5}, pair{1, 6}, pair{2, 7}, pair{3, 8}, pair{4, 9}, pair{5, 6}},
+        data = {{pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}, pair{1, 6}}, //
+            {pair{0, 5}, pair{1, 6}, pair{2, 7}, pair{3, 8}, pair{4, 9}, pair{5, 6}},     //
             // issue #108: constants in hall set crash prove_matching_is_too_small
-            {pair{-2, 3}, 5, pair{3, 5}, pair{3, 6}, 3, pair{3, 5}},
+            {pair{-2, 3}, 5, pair{3, 5}, pair{3, 6}, 3, pair{3, 5}}, //
             // issue #108: constants in hall set crash prove_deletion_using_sccs
-            {pair{1, 2}, pair{1, 2}, 3, pair{3, 4}, pair{4, 5}, pair{5, 6}},
+            {pair{1, 2}, pair{1, 2}, 3, pair{3, 4}, pair{4, 5}, pair{5, 6}}, //
             // issue #254: fully all-constant arguments (genuine
             // ConstantIntegerVariableIDs), both directions.
             {1, 2, 3, 4, 5, 6},  // all distinct constants (tautology)
@@ -202,8 +202,9 @@ auto main(int argc, char * argv[]) -> int
         // Duplicate-variable cases for both flavours: smallest non-trivial
         // pair, a duplicate among more variables, and two duplicate runs.
         if (run_dup) {
-            for (auto & [unique_domains, positions] :
-                vector<pair<vector<vector<int>>, vector<int>>>{{{{0, 1}}, {0, 0}}, {{{0, 3}, {0, 3}}, {0, 0, 1}}, {{{0, 3}, {0, 3}}, {0, 0, 1, 1}}}) {
+            for (auto & [unique_domains, positions] : vector<pair<vector<vector<int>>, vector<int>>>{{{{0, 1}}, {0, 0}}, //
+                     {{{0, 3}, {0, 3}}, {0, 0, 1}},                                                                      //
+                     {{{0, 3}, {0, 3}}, {0, 0, 1, 1}}}) {
                 run_alldiff_dup_test<GACAllDifferent>(proofs, unique_domains, positions, "gac");
                 run_alldiff_dup_test<VCAllDifferent>(proofs, unique_domains, positions, "vc");
             }

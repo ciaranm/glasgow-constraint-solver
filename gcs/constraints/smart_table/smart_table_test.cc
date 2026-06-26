@@ -146,16 +146,18 @@ auto run_lex_test(bool proofs, const string & mode, int length, vector<pair<int,
 
     bool lex_violated = false;
     optional<ProofOptions> proof_options = proofs ? make_optional(ProofOptions{proof_basename}) : nullopt;
-    solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        vector<Integer> x_sols;
-        vector<Integer> y_sols;
-        for (int i = 0; i < length; ++i) {
-            x_sols.emplace_back(s(x[i]));
-            y_sols.emplace_back(fixed_y ? fixed_y_vals[i] : s(y[i]));
-        }
-        lex_violated = lex_violated || (reverse ? (! check_lex(y_sols, x_sols, or_equal)) : (! check_lex(x_sols, y_sols, or_equal)));
-        return true;
-    }},
+    solve_with(p,      //
+        SolveCallbacks{//
+            .solution = [&](const CurrentState & s) -> bool {
+                vector<Integer> x_sols;
+                vector<Integer> y_sols;
+                for (int i = 0; i < length; ++i) {
+                    x_sols.emplace_back(s(x[i]));
+                    y_sols.emplace_back(fixed_y ? fixed_y_vals[i] : s(y[i]));
+                }
+                lex_violated = lex_violated || (reverse ? (! check_lex(y_sols, x_sols, or_equal)) : (! check_lex(x_sols, y_sols, or_equal)));
+                return true;
+            }},
         proof_options);
 
     if (lex_violated)
@@ -208,13 +210,15 @@ auto run_at_most_1_test(bool proofs, const string & mode, int length, vector<pai
     bool at_most_1_violated = false;
 
     optional<ProofOptions> proof_options = proofs ? make_optional(ProofOptions{proof_basename}) : nullopt;
-    solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        vector<Integer> x_sols;
-        for (int i = 0; i < length; ++i)
-            x_sols.emplace_back(s(x[i]));
-        at_most_1_violated = at_most_1_violated || ! check_at_most_1(x_sols, Integer{length}, at_least, in_set);
-        return true;
-    }},
+    solve_with(p,      //
+        SolveCallbacks{//
+            .solution = [&](const CurrentState & s) -> bool {
+                vector<Integer> x_sols;
+                for (int i = 0; i < length; ++i)
+                    x_sols.emplace_back(s(x[i]));
+                at_most_1_violated = at_most_1_violated || ! check_at_most_1(x_sols, Integer{length}, at_least, in_set);
+                return true;
+            }},
         proof_options);
 
     if (at_most_1_violated)
@@ -285,7 +289,7 @@ auto run_stacked_unary_test(bool proofs, const string & mode) -> void
                                       SmartTable::equals(x[0], 1_i), SmartTable::in_set(x[3], {3_i, 1_i, 2_i, -1_i}),
                                       SmartTable::not_in_set(x[2], {2_i, 0_i}), SmartTable::greater_than(x[1], 1_i), SmartTable::equals(x[2], 0_i)},
             {SmartTable::greater_than_equal(x[3], 1_i), SmartTable::in_set(x[2], {0_i, 3_i, 1_i}), SmartTable::in_set(x[3], {4_i, 1_i}),
-                SmartTable::equals(x[3], 2_i)},
+                SmartTable::equals(x[3], 2_i)}, //
             {SmartTable::equals(x[1], x[0]), SmartTable::less_than_equal(x[3], 2_i), SmartTable::less_than(x[2], 3_i),
                 SmartTable::less_than(x[3], 0_i), SmartTable::in_set(x[1], {3_i, -1_i, 2_i}), SmartTable::greater_than(x[1], 3_i),
                 SmartTable::not_in_set(x[0], {0_i, 1_i})}};
@@ -314,8 +318,10 @@ auto run_stacked_unary_test(bool proofs, const string & mode) -> void
         auto a = p.create_integer_variable(-1_i, 4_i, "a");
         auto b = p.create_integer_variable(-1_i, 4_i, "b");
         auto tuples = SmartTuples{
-            {SmartTable::less_than(a, 3_i), SmartTable::not_equals(a, 1_i), SmartTable::not_in_set(a, {0_i}), SmartTable::greater_than_equal(b, a)},
-            {SmartTable::greater_than_equal(a, 3_i), SmartTable::in_set(b, {4_i, 1_i}), SmartTable::not_equals(b, 4_i)}};
+            {SmartTable::less_than(a, 3_i), SmartTable::not_equals(a, 1_i), SmartTable::not_in_set(a, {0_i}),
+                SmartTable::greater_than_equal(b, a)},                                                                  //
+            {SmartTable::greater_than_equal(a, 3_i), SmartTable::in_set(b, {4_i, 1_i}), SmartTable::not_equals(b, 4_i)} //
+        };
         p.post(SmartTable{{a, b}, tuples});
 
         auto proof_name = proofs ? make_optional(proof_basename) : nullopt;
@@ -338,7 +344,9 @@ auto run_wide_constants_test(bool proofs, const string & mode) -> void
         pair<int, int> y_range;
         int c;
     };
-    for (const auto & [x_range, y_range, c] : vector<Instance>{{{-59, 58}, {-18, 17}, -18}, {{-59, 58}, {-18, 17}, 17}, {{-15, 14}, {-9, 8}, -9}}) {
+    for (const auto & [x_range, y_range, c] : vector<Instance>{{{-59, 58}, {-18, 17}, -18}, //
+             {{-59, 58}, {-18, 17}, 17},                                                    //
+             {{-15, 14}, {-9, 8}, -9}}) {
         print(cerr, "smart table {} x in {}, y in {}, y >= {}{}", mode, x_range, y_range, c, proofs ? " with proofs:" : ":");
         cerr << flush;
         set<tuple<int, int>> expected, actual;
@@ -426,9 +434,15 @@ auto main(int argc, char * argv[]) -> int
     if (argc != 2)
         throw UnimplementedException{};
 
-    vector<pair<int, vector<pair<int, int>>>> data = {// Length    //Ranges
-        {3, {{1, 3}, {1, 2}, {2, 3}}}, {3, {{1, 2}, {1, 2}, {1, 2}}}, {4, {{-3, 0}, {1, 4}, {3, 3}, {3, 3}}}, {4, {{5, 5}, {2, 4}, {0, 4}, {1, 5}}},
-        {5, {{-1, 4}, {3, 6}, {2, 2}, {3, 3}, {3, 5}}}, {5, {{1, 1}, {2, 2}, {3, 3}, {4, 4}, {1, 10}}}};
+    vector<pair<int, vector<pair<int, int>>>> data = {
+        // Length    //Ranges
+        {3, {{1, 3}, {1, 2}, {2, 3}}},                  //
+        {3, {{1, 2}, {1, 2}, {1, 2}}},                  //
+        {4, {{-3, 0}, {1, 4}, {3, 3}, {3, 3}}},         //
+        {4, {{5, 5}, {2, 4}, {0, 4}, {1, 5}}},          //
+        {5, {{-1, 4}, {3, 6}, {2, 2}, {3, 3}, {3, 5}}}, //
+        {5, {{1, 1}, {2, 2}, {3, 3}, {4, 4}, {1, 10}}}  //
+    };
 
     string mode{argv[1]};
 

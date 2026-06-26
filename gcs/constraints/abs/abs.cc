@@ -189,9 +189,10 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 auto image_ub = max(-v1_lb, v1_ub);
                 if (image_ub < v2_ub) {
                     inference.infer_less_than(logger, v2, image_ub + 1_i,
-                        JustifyExplicitly{[logger, v1, v2, v1_lb, v1_ub, image_ub, abs_nonneg_le, abs_neg_le](const ReasonLiterals & r) -> void {
-                                              justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, image_ub, *abs_nonneg_le, *abs_neg_le, r);
-                                          },
+                        JustifyExplicitly{//
+                            [logger, v1, v2, v1_lb, v1_ub, image_ub, abs_nonneg_le, abs_neg_le](const ReasonLiterals & r) -> void {
+                                justify_abs_v2_le_big_m(*logger, v1, v2, v1_lb, v1_ub, image_ub, *abs_nonneg_le, *abs_neg_le, r);
+                            },
                             ThenRUP::Yes, hints::Abs{originator}},
                         ExplicitReason{ReasonLiterals{{v1 >= v1_lb, v1 <= v1_ub}}});
                 }

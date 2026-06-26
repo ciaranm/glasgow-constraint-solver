@@ -81,11 +81,13 @@ namespace
 
     auto add_bound_p_term_to(PolBuilder & builder, const State & state, ProofLogger * const logger, IntegerVariableID var, bool upper) -> void
     {
-        overloaded{[&](const SimpleIntegerVariableID & v) {
-                       builder.add_for_literal(logger->names_and_ids_tracker(), upper ? v <= state.upper_bound(v) : v >= state.lower_bound(v));
-                   },
-            [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; },
-            [&](const ViewOfIntegerVariableID &) { throw UnimplementedException{}; }}
+        overloaded{
+            [&](const SimpleIntegerVariableID & v) {
+                builder.add_for_literal(logger->names_and_ids_tracker(), upper ? v <= state.upper_bound(v) : v >= state.lower_bound(v));
+            },                                                                          //
+            [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; }, //
+            [&](const ViewOfIntegerVariableID &) { throw UnimplementedException{}; }    //
+        }
             .visit(var);
     }
 

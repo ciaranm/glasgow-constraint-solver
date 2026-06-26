@@ -85,11 +85,12 @@ auto main(int argc, char * argv[]) -> int
 
     p.maximise(profit);
 
-    auto stats = solve_with(p,
-        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-                           println("solution: {} profit {} weight {}", items | std::ranges::views::transform(cref(s)), s(profit), s(weight));
-                           return true;
-                       },
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                println("solution: {} profit {} weight {}", items | std::ranges::views::transform(cref(s)), s(profit), s(weight));
+                return true;
+            },
             .branch = branch_with(variable_order::dom_then_deg(items), value_order::smallest_first())},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 

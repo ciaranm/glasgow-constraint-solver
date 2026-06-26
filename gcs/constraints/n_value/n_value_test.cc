@@ -118,14 +118,21 @@ auto main(int argc, char * argv[]) -> int
 
     using ArrayEntry = variant<int, pair<int, int>>;
     vector<tuple<variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {// Boundary: empty array forces result == 0.
-        {pair{0, 3}, {}}, {0, {}},
+        {pair{0, 3}, {}},                                                   //
+        {0, {}},                                                            //
         // Boundary: singleton forces result == 1.
-        {pair{0, 3}, {pair{2, 5}}}, {1, {pair{0, 9}}}, {pair{1, 2}, {pair{1, 2}, pair{1, 2}}}, {pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}}, {pair{1, 3}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
-        {pair{-1, 3}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}}, {pair{1, 4}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},
-        {pair{-5, 5}, {pair{-8, 0}, pair{4, 4}, pair{10, 10}, pair{2, 11}, pair{4, 10}}},
+        {pair{0, 3}, {pair{2, 5}}},                                                       //
+        {1, {pair{0, 9}}},                                                                //
+        {pair{1, 2}, {pair{1, 2}, pair{1, 2}}},                                           //
+        {pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},                               //
+        {pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},                               //
+        {pair{1, 3}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},                               //
+        {pair{-1, 3}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}},                             //
+        {pair{1, 4}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},      //
+        {pair{-5, 5}, {pair{-8, 0}, pair{4, 4}, pair{10, 10}, pair{2, 11}, pair{4, 10}}}, //
         // Constant array entries: pinned values count toward distinct.
-        {pair{0, 5}, {3, pair{1, 4}, 3}}, {pair{0, 5}, {1, 2, 3, pair{0, 5}}},
+        {pair{0, 5}, {3, pair{1, 4}, 3}},    //
+        {pair{0, 5}, {1, 2, 3, pair{0, 5}}}, //
         // Degenerate cases (issue #254): all-constant arrays + genuine constant result.
         {1, {5, 5, 5}},           // all same constant: 1 distinct value (tautology)
         {2, {5, 6, 5}},           // all-constant: 2 distinct values (tautology)

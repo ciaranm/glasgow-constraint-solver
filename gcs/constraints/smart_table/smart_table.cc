@@ -70,9 +70,11 @@ namespace
     // build_forests / build_tree pipeline does.
     auto deview_for_alias_check(const IntegerVariableID & v) -> IntegerVariableID
     {
-        return overloaded{[](const SimpleIntegerVariableID & s) -> IntegerVariableID { return s; },
-            [](const ViewOfIntegerVariableID & view) -> IntegerVariableID { return view.actual_variable; },
-            [](const ConstantIntegerVariableID & c) -> IntegerVariableID { return c; }}
+        return overloaded{
+            [](const SimpleIntegerVariableID & s) -> IntegerVariableID { return s; },                       //
+            [](const ViewOfIntegerVariableID & view) -> IntegerVariableID { return view.actual_variable; }, //
+            [](const ConstantIntegerVariableID & c) -> IntegerVariableID { return c; }                      //
+        }
             .visit(v);
     }
 }
@@ -108,40 +110,46 @@ namespace
     // Annoying workaround access functions to make sure this all works with views
     auto get_for_actual_var(VariableDomainMap & vdom, const IntegerVariableID & v) -> vector<Integer>
     {
-        return overloaded{[&](ConstantIntegerVariableID) -> vector<Integer> { throw UnimplementedException{}; },
+        return overloaded{
+            [&](ConstantIntegerVariableID) -> vector<Integer> { throw UnimplementedException{}; }, //
             [&](ViewOfIntegerVariableID v) -> vector<Integer> {
                 auto vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
                 for (unsigned i = 0; i < vec.size(); i++) {
                     vec[i] = (v.negate_first ? -1_i : 1_i) * vdom[v.actual_variable][i] + v.then_add;
                 }
                 return vec;
-            },
+            }, //
             [&](SimpleIntegerVariableID s) -> vector<Integer> {
                 vector<Integer> vec = vdom.at(s);
                 return vec;
-            }}
+            } //
+        }
             .visit(v);
     }
 
     auto set_for_actual_var(VariableDomainMap & vdom, const IntegerVariableID & v, vector<Integer> & vec) -> void
     {
-        overloaded{[&](ConstantIntegerVariableID) -> void { throw UnimplementedException{}; },
+        overloaded{
+            [&](ConstantIntegerVariableID) -> void { throw UnimplementedException{}; }, //
             [&](ViewOfIntegerVariableID v) -> void {
                 auto mod_vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
                 for (unsigned i = 0; i < vec.size(); i++) {
                     mod_vec[i] = (v.negate_first ? -1_i : 1_i) * (vec[i] - v.then_add);
                 }
                 vdom.at(v.actual_variable) = move(mod_vec);
-            },
-            [&](SimpleIntegerVariableID s) -> void { vdom.at(s) = move(vec); }}
+            },                                                                 //
+            [&](SimpleIntegerVariableID s) -> void { vdom.at(s) = move(vec); } //
+        }
             .visit(v);
     }
 
     auto deview(IntegerVariableID v) -> IntegerVariableID
     {
-        return overloaded{[&](SimpleIntegerVariableID & s) -> IntegerVariableID { return s; },
-            [&](ViewOfIntegerVariableID & v) -> IntegerVariableID { return v.actual_variable; },
-            [&](ConstantIntegerVariableID & c) -> IntegerVariableID { return c; }}
+        return overloaded{
+            [&](SimpleIntegerVariableID & s) -> IntegerVariableID { return s; },                 //
+            [&](ViewOfIntegerVariableID & v) -> IntegerVariableID { return v.actual_variable; }, //
+            [&](ConstantIntegerVariableID & c) -> IntegerVariableID { return c; }                //
+        }
             .visit(v);
     }
 
@@ -161,117 +169,118 @@ namespace
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
-        overloaded{[&](const BinaryEntry & binary_entry) {
-                       vector<Integer> new_dom_1{};
-                       vector<Integer> new_dom_2{};
+        overloaded{
+            [&](const BinaryEntry & binary_entry) {
+                vector<Integer> new_dom_1{};
+                vector<Integer> new_dom_2{};
 
-                       auto dom_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
-                       auto dom_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
-                       sort(dom_1);
-                       sort(dom_2);
+                auto dom_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
+                auto dom_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
+                sort(dom_1);
+                sort(dom_2);
 
-                       switch (binary_entry.constraint_type) {
-                           using enum SmartEntryConstraint;
-                       case LessThan:
-                           copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val > dom_1[0]; });
-                           copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
-                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                               if (new_dom_2.size() < dom_2.size())
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i), state, inference,
-                                       singleton_reason(binary_entry.var_1 >= dom_1[0]));
-                               if (new_dom_1.size() < dom_1.size())
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1], state,
-                                       inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
-                           }
-                           break;
-                       case LessThanEqual:
-                           copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val >= dom_1[0]; });
-                           copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
-                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                               if (new_dom_2.size() < dom_2.size())
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference,
-                                       singleton_reason(binary_entry.var_1 >= dom_1[0]));
-                               if (new_dom_1.size() < dom_1.size())
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i),
-                                       state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
-                           }
-                           break;
-                       case Equal:
-                           set_intersection(dom_1, dom_2, back_inserter(new_dom_1));
-                           new_dom_2 = new_dom_1;
+                switch (binary_entry.constraint_type) {
+                    using enum SmartEntryConstraint;
+                case LessThan:
+                    copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val > dom_1[0]; });
+                    copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                        if (new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i), state, inference,
+                                singleton_reason(binary_entry.var_1 >= dom_1[0]));
+                        if (new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1], state, inference,
+                                singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
+                    }
+                    break;
+                case LessThanEqual:
+                    copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val >= dom_1[0]; });
+                    copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                        if (new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference,
+                                singleton_reason(binary_entry.var_1 >= dom_1[0]));
+                        if (new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state,
+                                inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
+                    }
+                    break;
+                case Equal:
+                    set_intersection(dom_1, dom_2, back_inserter(new_dom_1));
+                    new_dom_2 = new_dom_1;
 
-                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                               // This one seems particularly annoying. Is it necessary? - not sure
-                               if (new_dom_1.size() < dom_1.size()) {
-                                   vector<Integer> discarded_dom1;
-                                   set_difference(dom_1, dom_2, back_inserter(discarded_dom1));
-                                   for (const auto & val : discarded_dom1) {
-                                       log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, inference,
-                                           singleton_reason(binary_entry.var_2 != val));
-                                   }
-                               }
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                        // This one seems particularly annoying. Is it necessary? - not sure
+                        if (new_dom_1.size() < dom_1.size()) {
+                            vector<Integer> discarded_dom1;
+                            set_difference(dom_1, dom_2, back_inserter(discarded_dom1));
+                            for (const auto & val : discarded_dom1) {
+                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, inference,
+                                    singleton_reason(binary_entry.var_2 != val));
+                            }
+                        }
 
-                               if (new_dom_2.size() < dom_2.size()) {
-                                   vector<Integer> discarded_dom2;
-                                   set_difference(dom_2, dom_1, back_inserter(discarded_dom2));
-                                   for (const auto & val : discarded_dom2) {
-                                       log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, inference,
-                                           singleton_reason(binary_entry.var_1 != val));
-                                   }
-                               }
-                           }
-                           break;
-                       case NotEqual:
-                           if (dom_1.size() == 1) {
-                               new_dom_1 = dom_1;
-                               set_difference(dom_2, dom_1, back_inserter(new_dom_2));
-                               if (logger && new_dom_2.size() < dom_2.size() && logger->get_assertion_level() == AssertionLevel::Off) {
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference,
-                                       singleton_reason(binary_entry.var_1 == dom_1[0]));
-                               }
-                           }
-                           else if (dom_2.size() == 1) {
-                               new_dom_2 = dom_2;
-                               set_difference(dom_1, dom_2, back_inserter(new_dom_1));
-                               if (logger && new_dom_1.size() < dom_1.size() && logger->get_assertion_level() == AssertionLevel::Off) {
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference,
-                                       singleton_reason(binary_entry.var_2 == dom_2[0]));
-                               }
-                           }
-                           else {
-                               new_dom_1 = move(dom_1);
-                               new_dom_2 = move(dom_2);
-                           }
-                           break;
-                       case GreaterThan:
-                           copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val > dom_2[0]; });
-                           copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
-                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                               if (new_dom_1.size() < dom_1.size())
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference,
-                                       singleton_reason(binary_entry.var_2 >= dom_2[0]));
-                               if (new_dom_2.size() < dom_2.size())
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state,
-                                       inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
-                           }
-                           break;
-                       case GreaterThanEqual:
-                           copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val >= dom_2[0]; });
-                           copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
-                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                               if (new_dom_1.size() < dom_1.size())
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference,
-                                       singleton_reason(binary_entry.var_2 >= dom_2[0]));
-                               if (new_dom_2.size() < dom_2.size())
-                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i),
-                                       state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
-                           }
-                           break;
-                       default: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
-                       }
-                       set_for_actual_var(supported_by_tree, binary_entry.var_1, new_dom_1);
-                       set_for_actual_var(supported_by_tree, binary_entry.var_2, new_dom_2);
-                   },
+                        if (new_dom_2.size() < dom_2.size()) {
+                            vector<Integer> discarded_dom2;
+                            set_difference(dom_2, dom_1, back_inserter(discarded_dom2));
+                            for (const auto & val : discarded_dom2) {
+                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, inference,
+                                    singleton_reason(binary_entry.var_1 != val));
+                            }
+                        }
+                    }
+                    break;
+                case NotEqual:
+                    if (dom_1.size() == 1) {
+                        new_dom_1 = dom_1;
+                        set_difference(dom_2, dom_1, back_inserter(new_dom_2));
+                        if (logger && new_dom_2.size() < dom_2.size() && logger->get_assertion_level() == AssertionLevel::Off) {
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference,
+                                singleton_reason(binary_entry.var_1 == dom_1[0]));
+                        }
+                    }
+                    else if (dom_2.size() == 1) {
+                        new_dom_2 = dom_2;
+                        set_difference(dom_1, dom_2, back_inserter(new_dom_1));
+                        if (logger && new_dom_1.size() < dom_1.size() && logger->get_assertion_level() == AssertionLevel::Off) {
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference,
+                                singleton_reason(binary_entry.var_2 == dom_2[0]));
+                        }
+                    }
+                    else {
+                        new_dom_1 = move(dom_1);
+                        new_dom_2 = move(dom_2);
+                    }
+                    break;
+                case GreaterThan:
+                    copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val > dom_2[0]; });
+                    copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                        if (new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference,
+                                singleton_reason(binary_entry.var_2 >= dom_2[0]));
+                        if (new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, inference,
+                                singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
+                    }
+                    break;
+                case GreaterThanEqual:
+                    copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val >= dom_2[0]; });
+                    copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
+                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                        if (new_dom_1.size() < dom_1.size())
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference,
+                                singleton_reason(binary_entry.var_2 >= dom_2[0]));
+                        if (new_dom_2.size() < dom_2.size())
+                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state,
+                                inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
+                    }
+                    break;
+                default: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                }
+                set_for_actual_var(supported_by_tree, binary_entry.var_1, new_dom_1);
+                set_for_actual_var(supported_by_tree, binary_entry.var_2, new_dom_2);
+            }, //
             [&](const UnarySetEntry & unary_set_entry) {
                 vector<Integer> new_dom{};
                 auto dom = get_for_actual_var(supported_by_tree, unary_set_entry.var);
@@ -287,7 +296,7 @@ namespace
                 }
 
                 set_for_actual_var(supported_by_tree, unary_set_entry.var, new_dom);
-            },
+            }, //
             [&](const UnaryValueEntry & unary_val_entry) {
                 vector<Integer> new_dom{};
                 auto dom = get_for_actual_var(supported_by_tree, unary_val_entry.var);
@@ -306,7 +315,8 @@ namespace
                 }
 
                 set_for_actual_var(supported_by_tree, unary_val_entry.var, new_dom);
-            }}
+            } //
+        }
             .visit(edge);
     }
 
@@ -319,20 +329,22 @@ namespace
                 filter_edge(edge, supported_by_tree, tuple_selector, state, inference, reason, logger);
 
                 bool domain_became_empty = false;
-                overloaded{[&](const BinaryEntry & binary_entry) {
-                               if (get_for_actual_var(supported_by_tree, binary_entry.var_1).empty())
-                                   domain_became_empty = true;
-                               if (get_for_actual_var(supported_by_tree, binary_entry.var_2).empty())
-                                   domain_became_empty = true;
-                           },
+                overloaded{
+                    [&](const BinaryEntry & binary_entry) {
+                        if (get_for_actual_var(supported_by_tree, binary_entry.var_1).empty())
+                            domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree, binary_entry.var_2).empty())
+                            domain_became_empty = true;
+                    }, //
                     [&](const UnarySetEntry & unary_set_entry) {
                         if (get_for_actual_var(supported_by_tree, unary_set_entry.var).empty())
                             domain_became_empty = true;
-                    },
+                    }, //
                     [&](const UnaryValueEntry & unary_val_entry) {
                         if (get_for_actual_var(supported_by_tree, unary_val_entry.var).empty())
                             domain_became_empty = true;
-                    }}
+                    } //
+                }
                     .visit(edge);
 
                 if (domain_became_empty) {
@@ -361,20 +373,22 @@ namespace
                 filter_edge(edge, supported_by_tree, tuple_selector, state, inference, reason, logger);
 
                 // Collect supported vals for this tree
-                overloaded{[&](const BinaryEntry & binary_entry) {
-                               auto supported_var_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
-                               auto supported_var_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
-                               remove_supported(unsupported, binary_entry.var_1, supported_var_1);
-                               remove_supported(unsupported, binary_entry.var_2, supported_var_2);
-                           },
+                overloaded{
+                    [&](const BinaryEntry & binary_entry) {
+                        auto supported_var_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
+                        auto supported_var_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
+                        remove_supported(unsupported, binary_entry.var_1, supported_var_1);
+                        remove_supported(unsupported, binary_entry.var_2, supported_var_2);
+                    }, //
                     [&](const UnarySetEntry & unary_set_entry) {
                         auto supported = get_for_actual_var(supported_by_tree, unary_set_entry.var);
                         remove_supported(unsupported, unary_set_entry.var, supported);
-                    },
+                    }, //
                     [&](const UnaryValueEntry & unary_val_entry) {
                         auto supported = get_for_actual_var(supported_by_tree, unary_val_entry.var);
                         remove_supported(unsupported, unary_val_entry.var, supported);
-                    }}
+                    } //
+                }
                     .visit(edge);
             }
         }
@@ -385,12 +399,14 @@ namespace
         vector<IntegerVariableID> vars_in_tuple;
         vector<IntegerVariableID> unrestricted;
         for (const auto & entry : tuple) {
-            overloaded{[&](const BinaryEntry & binary_entry) {
-                           vars_in_tuple.emplace_back(binary_entry.var_1);
-                           vars_in_tuple.emplace_back(binary_entry.var_2);
-                       },
-                [&](const UnarySetEntry & unary_set_entry) { vars_in_tuple.emplace_back(unary_set_entry.var); },
-                [&](const UnaryValueEntry & unary_val_entry) { vars_in_tuple.emplace_back(unary_val_entry.var); }}
+            overloaded{
+                [&](const BinaryEntry & binary_entry) {
+                    vars_in_tuple.emplace_back(binary_entry.var_1);
+                    vars_in_tuple.emplace_back(binary_entry.var_2);
+                },                                                                                                //
+                [&](const UnarySetEntry & unary_set_entry) { vars_in_tuple.emplace_back(unary_set_entry.var); },  //
+                [&](const UnaryValueEntry & unary_val_entry) { vars_in_tuple.emplace_back(unary_val_entry.var); } //
+            }
                 .visit(entry);
         }
 
@@ -532,21 +548,23 @@ namespace
         // Note: Perhaps we should build the tree in a "smarter" form e.g. make sure var_1 is always the node
         //       closer to the root.
         for (const auto & edge : adjacent_edges.at(deview(root))) {
-            overloaded{[&](BinaryEntry binary_entry) {
-                           if (! node_visited[deview(binary_entry.var_1)]) {
-                               entry_tree[current_level].emplace_back(edge);
-                               entry_tree.emplace_back();
+            overloaded{
+                [&](BinaryEntry binary_entry) {
+                    if (! node_visited[deview(binary_entry.var_1)]) {
+                        entry_tree[current_level].emplace_back(edge);
+                        entry_tree.emplace_back();
 
-                               build_tree(binary_entry.var_1, current_level + 1, entry_tree, node_visited, adjacent_edges);
-                           }
-                           else if (! node_visited[deview(binary_entry.var_2)]) {
-                               entry_tree[current_level].emplace_back(edge);
-                               entry_tree.emplace_back();
-                               build_tree(binary_entry.var_2, current_level + 1, entry_tree, node_visited, adjacent_edges);
-                           }
-                       },
-                [&](const UnarySetEntry &) { entry_tree[current_level].emplace_back(edge); },
-                [&](const UnaryValueEntry &) { entry_tree[current_level].emplace_back(edge); }}
+                        build_tree(binary_entry.var_1, current_level + 1, entry_tree, node_visited, adjacent_edges);
+                    }
+                    else if (! node_visited[deview(binary_entry.var_2)]) {
+                        entry_tree[current_level].emplace_back(edge);
+                        entry_tree.emplace_back();
+                        build_tree(binary_entry.var_2, current_level + 1, entry_tree, node_visited, adjacent_edges);
+                    }
+                },                                                                             //
+                [&](const UnarySetEntry &) { entry_tree[current_level].emplace_back(edge); },  //
+                [&](const UnaryValueEntry &) { entry_tree[current_level].emplace_back(edge); } //
+            }
                 .visit(edge);
         }
     }
@@ -560,20 +578,22 @@ namespace
 
             // Get all the vars in the tuple and record adjacencies
             for (const auto & entry : current_tuple) {
-                overloaded{[&](const BinaryEntry & binary_entry) {
-                               node_visited[deview(binary_entry.var_1)] = false;
-                               node_visited[deview(binary_entry.var_2)] = false;
-                               adjacent_edges[deview(binary_entry.var_1)].emplace_back(binary_entry);
-                               adjacent_edges[deview(binary_entry.var_2)].emplace_back(binary_entry);
-                           },
+                overloaded{
+                    [&](const BinaryEntry & binary_entry) {
+                        node_visited[deview(binary_entry.var_1)] = false;
+                        node_visited[deview(binary_entry.var_2)] = false;
+                        adjacent_edges[deview(binary_entry.var_1)].emplace_back(binary_entry);
+                        adjacent_edges[deview(binary_entry.var_2)].emplace_back(binary_entry);
+                    }, //
                     [&](const UnaryValueEntry & unary_val_entry) {
                         node_visited[deview(unary_val_entry.var)] = false;
                         adjacent_edges[deview(unary_val_entry.var)].emplace_back(unary_val_entry);
-                    },
+                    }, //
                     [&](const UnarySetEntry & unary_set_entry) {
                         node_visited[deview(unary_set_entry.var)] = false;
                         adjacent_edges[deview(unary_set_entry.var)].emplace_back(unary_set_entry);
-                    }}
+                    } //
+                }
                     .visit(entry);
             }
 
@@ -665,8 +685,11 @@ namespace
 
 auto provable_entry_member(IntegerVariableID v) -> bool
 {
-    return overloaded{[&](ViewOfIntegerVariableID & v) -> bool { return ! v.negate_first && v.then_add >= 0_i; },
-        [&](ConstantIntegerVariableID) -> bool { return false; }, [&](SimpleIntegerVariableID) -> bool { return true; }}
+    return overloaded{
+        [&](ViewOfIntegerVariableID & v) -> bool { return ! v.negate_first && v.then_add >= 0_i; }, //
+        [&](ConstantIntegerVariableID) -> bool { return false; },                                   //
+        [&](SimpleIntegerVariableID) -> bool { return true; }                                       //
+    }
         .visit(v);
 }
 
@@ -678,15 +701,17 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
     map<IntegerVariableID, vector<SmartEntry>> unary_entries{};
     vector<SmartEntry> new_tuple{};
     for (const auto & entry : tuple) {
-        overloaded{[&](BinaryEntry binary_entry) { new_tuple.emplace_back(binary_entry); },
+        overloaded{
+            [&](BinaryEntry binary_entry) { new_tuple.emplace_back(binary_entry); }, //
             [&](UnaryValueEntry value_entry) {
                 auto & entries = unary_entries[value_entry.var];
                 entries.emplace_back(value_entry);
-            },
+            }, //
             [&](UnarySetEntry set_entry) {
                 auto & entries = unary_entries[set_entry.var];
                 entries.emplace_back(set_entry);
-            }}
+            } //
+        }
             .visit(entry);
     }
 
@@ -698,7 +723,8 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
         for (auto v : state.each_value_mutable(var)) {
             bool val_allowed = true;
             for (auto & entry : entries) {
-                overloaded{[&](BinaryEntry) { throw UnexpectedException{"Shouldn't have a binary entry here."}; },
+                overloaded{
+                    [&](BinaryEntry) { throw UnexpectedException{"Shouldn't have a binary entry here."}; }, //
                     [&](UnaryValueEntry value_entry) {
                         switch (value_entry.constraint_type) {
                         case SmartEntryConstraint::LessThan: val_allowed = val_allowed && v < value_entry.value; break;
@@ -710,7 +736,7 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
                         case SmartEntryConstraint::In:
                         case SmartEntryConstraint::NotIn: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                         }
-                    },
+                    }, //
                     [&](UnarySetEntry set_entry) {
                         switch (set_entry.constraint_type) {
                         case SmartEntryConstraint::In:
@@ -726,7 +752,8 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
                         case SmartEntryConstraint::GreaterThan:
                         case SmartEntryConstraint::GreaterThanEqual: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                         }
-                    }}
+                    } //
+                }
                     .visit(entry);
             }
             if (val_allowed) {
@@ -772,18 +799,19 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
             WPBSum entry_flags_sum{};
             WPBSum entry_flags_neg_sum{};
             for (const auto & entry : consolidate_unary_entries(initial_state, _tuples[tuple_idx])) {
-                overloaded{[&](BinaryEntry binary_entry) {
-                               //                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
-                               //                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
-                               //                        }
-                               auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
-                               if (! smart_entry_flags.contains(binary_entry_data))
-                                   smart_entry_flags[binary_entry_data] = make_binary_entry_flag(
-                                       initial_state, *optional_model, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+                overloaded{
+                    [&](BinaryEntry binary_entry) {
+                        //                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
+                        //                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
+                        //                        }
+                        auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+                        if (! smart_entry_flags.contains(binary_entry_data))
+                            smart_entry_flags[binary_entry_data] = make_binary_entry_flag(
+                                initial_state, *optional_model, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
 
-                               entry_flags_sum += 1_i * smart_entry_flags[binary_entry_data];
-                               entry_flags_neg_sum += -1_i * smart_entry_flags[binary_entry_data];
-                           },
+                        entry_flags_sum += 1_i * smart_entry_flags[binary_entry_data];
+                        entry_flags_neg_sum += -1_i * smart_entry_flags[binary_entry_data];
+                    }, //
                     [&](const UnarySetEntry & unary_set_entry) {
                         auto var = unary_set_entry.var;
                         auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? optional_model->create_proof_flag("inset")
@@ -815,12 +843,13 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
                         entry_flags_sum += 1_i * flag;
                         entry_flags_neg_sum += -1_i * flag;
-                    },
+                    }, //
                     [&](UnaryValueEntry unary_value_entry) {
                         Literal l = literal_from_unary_entry(unary_value_entry);
                         entry_flags_sum += 1_i * l;
                         entry_flags_neg_sum += -1_i * l;
-                    }}
+                    } //
+                }
                     .visit(entry);
             }
             auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.terms.size())};
@@ -867,21 +896,23 @@ auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
     vector<SExpr> entries;
     for (const auto & tuple : _tuples) {
         for (const auto & entry : tuple) {
-            overloaded{[&](const BinaryEntry & binary_entry) {
-                           entries.push_back(SExpr::list({tracker.s_expr_term_of(binary_entry.var_1),
-                               SExpr::atom(to_op(binary_entry.constraint_type)), tracker.s_expr_term_of(binary_entry.var_2)}));
-                       },
+            overloaded{
+                [&](const BinaryEntry & binary_entry) {
+                    entries.push_back(SExpr::list({tracker.s_expr_term_of(binary_entry.var_1), SExpr::atom(to_op(binary_entry.constraint_type)),
+                        tracker.s_expr_term_of(binary_entry.var_2)}));
+                }, //
                 [&](const UnaryValueEntry & unary_val_entry) {
                     entries.push_back(SExpr::list({tracker.s_expr_term_of(unary_val_entry.var), SExpr::atom(to_op(unary_val_entry.constraint_type)),
                         SExpr::atom(unary_val_entry.value.to_string())}));
-                },
+                }, //
                 [&](const UnarySetEntry & unary_set_entry) {
                     vector<SExpr> values;
                     for (const auto & value : unary_set_entry.values)
                         values.push_back(SExpr::atom(value.to_string()));
                     entries.push_back(SExpr::list({tracker.s_expr_term_of(unary_set_entry.var), SExpr::atom(to_op(unary_set_entry.constraint_type)),
                         SExpr::list(move(values))}));
-                }}
+                } //
+            }
                 .visit(entry);
         }
     }

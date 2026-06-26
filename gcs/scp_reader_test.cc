@@ -57,13 +57,15 @@ namespace
         auto variables = read_scp(problem, scp);
 
         set<map<string, long long>> solutions;
-        solve_with(problem, SolveCallbacks{.solution = [&](const CurrentState & state) -> bool {
-            map<string, long long> solution;
-            for (const auto & [name, id] : variables)
-                solution.emplace(name, state(id).raw_value);
-            solutions.insert(std::move(solution));
-            return true;
-        }});
+        solve_with(problem, //
+            SolveCallbacks{ //
+                .solution = [&](const CurrentState & state) -> bool {
+                    map<string, long long> solution;
+                    for (const auto & [name, id] : variables)
+                        solution.emplace(name, state(id).raw_value);
+                    solutions.insert(std::move(solution));
+                    return true;
+                }});
         return solutions;
     }
 

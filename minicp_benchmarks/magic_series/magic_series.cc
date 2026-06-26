@@ -88,15 +88,16 @@ auto main(int argc, char * argv[]) -> int
         p.post(move(sum_mul_s) == Integer{size});
     }
 
-    auto stats = solve_with(p,
-        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-                           cout << "solution:";
-                           for (auto & v : series)
-                               cout << " " << s(v);
-                           cout << endl;
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << "solution:";
+                for (auto & v : series)
+                    cout << " " << s(v);
+                cout << endl;
 
-                           return true;
-                       },
+                return true;
+            },
             .branch = branch_with(variable_order::dom(series), value_order::smallest_in())},
         options_vars.contains("prove") ? make_optional<ProofOptions>("magic_series") : nullopt);
 

@@ -140,27 +140,27 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
     // var-in-excluded", so under the hypothesis var = v with v not in
     // excluded, both directions of the selector are simultaneously forced.
     if (_has_duplicates) {
-        propagators.install_initialiser([duplicated_vars = move(_duplicated_vars), excluded = _sanitised_excluded,
-                                            duplicate_selectors = move(_duplicate_selectors),
-                                            owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> void {
-            for (const auto & x : duplicated_vars) {
-                vector<Integer> non_excluded_values;
-                for (const auto & v : state.each_value_immutable(x))
-                    if (find(excluded.begin(), excluded.end(), v) == excluded.end())
-                        non_excluded_values.push_back(v);
-                for (const auto & v : non_excluded_values) {
-                    inf.infer(logger, x != v,
-                        JustifyExplicitly{[&logger, x, v, &duplicate_selectors](const ReasonLiterals &) -> void {
-                                              const auto & selector = duplicate_selectors.at(x);
-                                              logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i, ProofLevel::Temporary);
-                                              logger->emit(
-                                                  RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i, ProofLevel::Temporary);
-                                          },
-                            ThenRUP::Yes, hints::AllDifferentExcept{owner}},
-                        NoReason{});
+        propagators.install_initialiser(
+            [duplicated_vars = move(_duplicated_vars), excluded = _sanitised_excluded, duplicate_selectors = move(_duplicate_selectors),
+                owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> void {
+                for (const auto & x : duplicated_vars) {
+                    vector<Integer> non_excluded_values;
+                    for (const auto & v : state.each_value_immutable(x))
+                        if (find(excluded.begin(), excluded.end(), v) == excluded.end())
+                            non_excluded_values.push_back(v);
+                    for (const auto & v : non_excluded_values) {
+                        inf.infer(logger, x != v,
+                            JustifyExplicitly{//
+                                [&logger, x, v, &duplicate_selectors](const ReasonLiterals &) -> void {
+                                    const auto & selector = duplicate_selectors.at(x);
+                                    logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i, ProofLevel::Temporary);
+                                    logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i, ProofLevel::Temporary);
+                                },
+                                ThenRUP::Yes, hints::AllDifferentExcept{owner}},
+                            NoReason{});
+                    }
                 }
-            }
-        });
+            });
 
         // Dedupe before the propagator runs: bipartite matching can't model
         // duplicate left-vertices correctly, but the initialiser has already

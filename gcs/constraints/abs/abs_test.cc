@@ -123,9 +123,16 @@ auto main(int argc, char * argv[]) -> int
     // only run on the baseline.
     bool run_initialisers = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
-    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {{pair{2, 5}, pair{1, 6}}, {pair{1, 6}, pair{2, 5}},
-        {pair{1, 3}, pair{1, 3}}, {pair{1, 5}, pair{6, 8}}, {pair{1, 1}, pair{2, 4}}, {pair{-5, 5}, pair{-5, 5}}, {pair{-1, 6}, pair{-2, 5}},
-        {pair{1, 3}, pair{-1, 3}}, {pair{-1, 5}, pair{-6, 8}}, {pair{-1, 1}, pair{-2, 4}},
+    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {{pair{2, 5}, pair{1, 6}}, //
+        {pair{1, 6}, pair{2, 5}},                                                                              //
+        {pair{1, 3}, pair{1, 3}},                                                                              //
+        {pair{1, 5}, pair{6, 8}},                                                                              //
+        {pair{1, 1}, pair{2, 4}},                                                                              //
+        {pair{-5, 5}, pair{-5, 5}},                                                                            //
+        {pair{-1, 6}, pair{-2, 5}},                                                                            //
+        {pair{1, 3}, pair{-1, 3}},                                                                             //
+        {pair{-1, 5}, pair{-6, 8}},                                                                            //
+        {pair{-1, 1}, pair{-2, 4}},                                                                            //
         // All-constant arguments (issue #254): both operands are
         // ConstantIntegerVariableIDs, so the constraint reduces to a
         // true/false check on abs(c1) == c2. Both directions are covered.
@@ -184,7 +191,9 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // Bare-handle dup ranges. Skipped under the view-wrap sweep.
-    vector<pair<int, int>> dup_data = {{-3, 3}, {-5, 0}, {0, 5}, {-1, 1}, {2, 5}};
+    vector<pair<int, int>> dup_data = {
+        {-3, 3}, {-5, 0}, {0, 5}, {-1, 1}, {2, 5} //
+    };
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())

@@ -247,14 +247,28 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {{pair{2, 5}, pair{1, 6}}, {pair{1, 6}, pair{2, 5}},
-        {pair{1, 3}, pair{1, 3}}, {pair{1, 5}, pair{6, 8}}, {pair{1, 1}, pair{2, 4}}, {pair{1, 1}, pair{-3, 3}}, {pair{1, 1}, pair{1, 3}},
-        {pair{1, 1}, pair{2, 3}}, {pair{1, 1}, pair{-3, 0}}, {pair{1, 1}, pair{2, 2}}, {pair{2, 2}, pair{1, 1}}, {pair{1, 1}, pair{1, 1}},
-        {pair{-2, -2}, pair{-2, -1}},
+    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {
+        {pair{2, 5}, pair{1, 6}},     //
+        {pair{1, 6}, pair{2, 5}},     //
+        {pair{1, 3}, pair{1, 3}},     //
+        {pair{1, 5}, pair{6, 8}},     //
+        {pair{1, 1}, pair{2, 4}},     //
+        {pair{1, 1}, pair{-3, 3}},    //
+        {pair{1, 1}, pair{1, 3}},     //
+        {pair{1, 1}, pair{2, 3}},     //
+        {pair{1, 1}, pair{-3, 0}},    //
+        {pair{1, 1}, pair{2, 2}},     //
+        {pair{2, 2}, pair{1, 1}},     //
+        {pair{1, 1}, pair{1, 1}},     //
+        {pair{-2, -2}, pair{-2, -1}}, //
         // issue #254: genuine all-constant operands (ConstantIntegerVariableID).
         // Each comparison mode gets both directions via build_expected, e.g.
         // 3<5 holds but 5<3 does not; 4 and 4 are (not) equal as appropriate.
-        {3, 5}, {5, 3}, {4, 4}, {-2, -2}};
+        {3, 5},  //
+        {5, 3},  //
+        {4, 4},  //
+        {-2, -2} //
+    };
 
     random_device rand_dev;
     mt19937 rand(rand_dev());

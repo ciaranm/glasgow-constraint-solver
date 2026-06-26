@@ -440,10 +440,10 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                                        }});
                 else if (! demand_cut.empty())
                     inference.contradiction(logger,
-                        JustifyExplicitly{[&, demand_cut, suppliers](const ReasonLiterals &) {
-                                              emit_gcc_demand_pol(
-                                                  *logger, state, vars, values, counts, count_lines, demand_cut, suppliers, nullopt, nullopt);
-                                          },
+                        JustifyExplicitly{//
+                            [&, demand_cut, suppliers](const ReasonLiterals &) {
+                                emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, demand_cut, suppliers, nullopt, nullopt);
+                            },
                             ThenRUP::Yes, hints::GlobalCardinality{owner}},
                         LazyReasonOver{vars, [&, demand_cut, suppliers](const State &, ReasonLiterals & out) {
                                            out = gcc_demand_reason(state, vars, values, counts, demand_cut, suppliers);
@@ -587,10 +587,10 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                                 potential.push_back(vars[k]);
                         }
                         inference.infer(logger, vars[i] != value,
-                            JustifyExplicitly{[&, cut_values, potential, value = value, i = i](const ReasonLiterals &) {
-                                                  emit_gcc_demand_pol(
-                                                      *logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], value);
-                                              },
+                            JustifyExplicitly{//
+                                [&, cut_values, potential, value = value, i = i](const ReasonLiterals &) {
+                                    emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], value);
+                                },
                                 ThenRUP::Yes, hints::GlobalCardinality{owner}},
                             LazyReasonOver{vars, [&, cut_values, potential](const State &, ReasonLiterals & out) {
                                                out = gcc_demand_reason(state, vars, values, counts, cut_values, potential);
@@ -625,10 +625,10 @@ auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> voi
                 for (const auto & val : state.each_value_mutable(vars[i]))
                     if (! cover.contains(val))
                         inference.infer(logger, vars[i] != val,
-                            JustifyExplicitly{[&, cut_values, potential, val = val, i = i](const ReasonLiterals &) {
-                                                  emit_gcc_demand_pol(
-                                                      *logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], val);
-                                              },
+                            JustifyExplicitly{//
+                                [&, cut_values, potential, val = val, i = i](const ReasonLiterals &) {
+                                    emit_gcc_demand_pol(*logger, state, vars, values, counts, count_lines, cut_values, potential, vars[i], val);
+                                },
                                 ThenRUP::Yes, hints::GlobalCardinality{owner}},
                             LazyReasonOver{vars, [&, cut_values, potential](const State &, ReasonLiterals & out) {
                                                out = gcc_demand_reason(state, vars, values, counts, cut_values, potential);

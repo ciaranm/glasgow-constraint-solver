@@ -341,8 +341,9 @@ namespace
             return reification_verdict::MustHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
                 .justification = JustifyExplicitly{hints::LexUnsatScaffold{{owner}, &state, std::move(reason_under_cond_false), vars_2, vars_1, n,
                                                        prefix_equal_lt_flags, decision_at_lt_flags},
-                    ThenRUP::Yes},
-                .reason = std::move(reason)};
+                    ThenRUP::Yes},          //
+                .reason = std::move(reason) //
+            };
         }
         else {
             auto reason_under_cond_true = reason;
@@ -350,8 +351,9 @@ namespace
             return reification_verdict::MustNotHold<JustifyExplicitly<hints::LexUnsatScaffold>>{
                 .justification = JustifyExplicitly{hints::LexUnsatScaffold{{owner}, &state, std::move(reason_under_cond_true), vars_1, vars_2, n,
                                                        prefix_equal_gt_flags, decision_at_gt_flags},
-                    ThenRUP::Yes},
-                .reason = std::move(reason)};
+                    ThenRUP::Yes},          //
+                .reason = std::move(reason) //
+            };
         }
     }
 
@@ -497,21 +499,24 @@ auto LexCompareGreaterThanOrMaybeEqual::define_proof_model(ProofModel & model) -
     optional<HalfReifyOnConjunctionOf> half_reify_for_gt;
     optional<HalfReifyOnConjunctionOf> half_reify_for_lt;
 
-    overloaded{[&](const reif::MustHold &) { need_gt_direction = true; }, [&](const reif::MustNotHold &) { need_lt_direction = true; },
+    overloaded{
+        [&](const reif::MustHold &) { need_gt_direction = true; },    //
+        [&](const reif::MustNotHold &) { need_lt_direction = true; }, //
         [&](const reif::If & r) {
             need_gt_direction = true;
             half_reify_for_gt = HalfReifyOnConjunctionOf{r.cond};
-        },
+        }, //
         [&](const reif::NotIf & r) {
             need_lt_direction = true;
             half_reify_for_lt = HalfReifyOnConjunctionOf{r.cond};
-        },
+        }, //
         [&](const reif::Iff & r) {
             need_gt_direction = true;
             need_lt_direction = true;
             half_reify_for_gt = HalfReifyOnConjunctionOf{r.cond};
             half_reify_for_lt = HalfReifyOnConjunctionOf{! r.cond};
-        }}
+        } //
+    }
         .visit(_reif_cond);
 
     // One prefix-equality set, x[id][i][pref], SHARED across both directions:
@@ -589,11 +594,14 @@ auto LexCompareGreaterThanOrMaybeEqual::s_expr(const innards::ProofModel * const
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    string reif_suffix = overloaded{[](const reif::MustHold &) -> string { return ""; }, [](const reif::MustNotHold &) -> string { return "_not"; },
-        [](const reif::If &) -> string { return "_if"; }, [](const reif::NotIf &) -> string { return "_not_if"; },
-        [](const reif::Iff &) -> string {
-            return "_iff";
-        }}.visit(_reif_cond);
+    string reif_suffix = overloaded{
+        [](const reif::MustHold &) -> string { return ""; },        //
+        [](const reif::MustNotHold &) -> string { return "_not"; }, //
+        [](const reif::If &) -> string { return "_if"; },           //
+        [](const reif::NotIf &) -> string { return "_not_if"; },    //
+        [](const reif::Iff &) -> string { return "_iff"; }          //
+    }
+                             .visit(_reif_cond);
 
     // cake_pb_cp's lex keywords are lex_{greater,less}_{than,equal}[_if|_iff]:
     // the or-equal forms are lex_greater_equal / lex_less_equal (not

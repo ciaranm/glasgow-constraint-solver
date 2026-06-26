@@ -40,19 +40,22 @@ auto gcs::innards::operator!(const FalseLiteral &) -> TrueLiteral
 
 auto gcs::innards::debug_string(const Literal & lit) -> string
 {
-    return overloaded{[](const IntegerVariableCondition & ilit) -> string {
-                          switch (ilit.op) {
-                              using enum VariableConditionOperator;
-                          case Equal: return format("intvars[{}] = {}", debug_string(ilit.var), ilit.value);
-                          case NotEqual: return format("intvars[{}] != {}", debug_string(ilit.var), ilit.value);
-                          case GreaterEqual: return format("intvars[{}] >= {}", debug_string(ilit.var), ilit.value);
-                          case Less: return format("intvars[{}] < {}", debug_string(ilit.var), ilit.value);
-                          case InRange: return format("intvars[{}] in {}..{}", debug_string(ilit.var), ilit.value, ilit.upper_value);
-                          case NotInRange: return format("intvars[{}] notin {}..{}", debug_string(ilit.var), ilit.value, ilit.upper_value);
-                          }
-                          throw NonExhaustiveSwitch{};
-                      },
-        [](const TrueLiteral &) -> string { return "true"; }, [](const FalseLiteral &) -> string { return "false"; }}
+    return overloaded{
+        [](const IntegerVariableCondition & ilit) -> string {
+            switch (ilit.op) {
+                using enum VariableConditionOperator;
+            case Equal: return format("intvars[{}] = {}", debug_string(ilit.var), ilit.value);
+            case NotEqual: return format("intvars[{}] != {}", debug_string(ilit.var), ilit.value);
+            case GreaterEqual: return format("intvars[{}] >= {}", debug_string(ilit.var), ilit.value);
+            case Less: return format("intvars[{}] < {}", debug_string(ilit.var), ilit.value);
+            case InRange: return format("intvars[{}] in {}..{}", debug_string(ilit.var), ilit.value, ilit.upper_value);
+            case NotInRange: return format("intvars[{}] notin {}..{}", debug_string(ilit.var), ilit.value, ilit.upper_value);
+            }
+            throw NonExhaustiveSwitch{};
+        },                                                     //
+        [](const TrueLiteral &) -> string { return "true"; },  //
+        [](const FalseLiteral &) -> string { return "false"; } //
+    }
         .visit(lit);
 }
 
@@ -67,24 +70,29 @@ auto gcs::innards::debug_string(const Literals & lits) -> string
 
 auto gcs::innards::is_literally_true_or_false(const Literal & lit) -> optional<bool>
 {
-    return overloaded{[](const IntegerVariableCondition & ilit) -> optional<bool> {
-                          return overloaded{[&](SimpleIntegerVariableID) -> optional<bool> { return nullopt; },
-                              [&](ViewOfIntegerVariableID) -> optional<bool> { return nullopt; },
-                              [&](ConstantIntegerVariableID x) -> optional<bool> {
-                                  switch (ilit.op) {
-                                      using enum VariableConditionOperator;
-                                  case Equal: return x.const_value == ilit.value;
-                                  case NotEqual: return x.const_value != ilit.value;
-                                  case GreaterEqual: return x.const_value >= ilit.value;
-                                  case Less: return x.const_value < ilit.value;
-                                  case InRange: return x.const_value >= ilit.value && x.const_value <= ilit.upper_value;
-                                  case NotInRange: return x.const_value < ilit.value || x.const_value > ilit.upper_value;
-                                  }
-                                  throw NonExhaustiveSwitch{};
-                              }}
-                              .visit(ilit.var);
-                      },
-        [](const TrueLiteral &) -> optional<bool> { return true; }, [](const FalseLiteral &) -> optional<bool> { return false; }}
+    return overloaded{
+        [](const IntegerVariableCondition & ilit) -> optional<bool> {
+            return overloaded{
+                [&](SimpleIntegerVariableID) -> optional<bool> { return nullopt; }, //
+                [&](ViewOfIntegerVariableID) -> optional<bool> { return nullopt; },
+                [&](ConstantIntegerVariableID x) -> optional<bool> {
+                    switch (ilit.op) {
+                        using enum VariableConditionOperator;
+                    case Equal: return x.const_value == ilit.value;
+                    case NotEqual: return x.const_value != ilit.value;
+                    case GreaterEqual: return x.const_value >= ilit.value;
+                    case Less: return x.const_value < ilit.value;
+                    case InRange: return x.const_value >= ilit.value && x.const_value <= ilit.upper_value;
+                    case NotInRange: return x.const_value < ilit.value || x.const_value > ilit.upper_value;
+                    }
+                    throw NonExhaustiveSwitch{};
+                } //
+            }
+                .visit(ilit.var);
+        },                                                           //
+        [](const TrueLiteral &) -> optional<bool> { return true; },  //
+        [](const FalseLiteral &) -> optional<bool> { return false; } //
+    }
         .visit(lit);
 }
 

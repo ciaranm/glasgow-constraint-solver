@@ -60,21 +60,25 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 {
     auto val1 = state.optional_single_value(v1);
     if (val1) {
-        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
-            auto r = reason;
-            r.emplace_back(v1 == *val1);
-            return r;
-        }()});
+        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{hints::Equals{owner}},
+            ExplicitReason{//
+                [&] {
+                    auto r = reason;
+                    r.emplace_back(v1 == *val1);
+                    return r;
+                }()});
         return PropagatorState::DisableUntilBacktrack;
     }
 
     auto val2 = state.optional_single_value(v2);
     if (val2) {
-        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
-            auto r = reason;
-            r.emplace_back(v2 == *val2);
-            return r;
-        }()});
+        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{hints::Equals{owner}},
+            ExplicitReason{//
+                [&] {
+                    auto r = reason;
+                    r.emplace_back(v2 == *val2);
+                    return r;
+                }()});
         return PropagatorState::DisableUntilBacktrack;
     }
 
@@ -117,11 +121,13 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
                 }
                 else
                     for (Integer val = lo; val <= hi; ++val)
-                        inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
-                            auto r = reason;
-                            r.emplace_back(other != val);
-                            return r;
-                        }()});
+                        inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{hints::Equals{owner}},
+                            ExplicitReason{//
+                                [&] {
+                                    auto r = reason;
+                                    r.emplace_back(other != val);
+                                    return r;
+                                }()});
             }
         };
 
@@ -131,26 +137,34 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
     else {
         auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
         if (bounds1 != bounds2) {
-            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
-                auto r = reason;
-                r.emplace_back(v1 >= bounds1.first);
-                return r;
-            }()});
-            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
-                auto r = reason;
-                r.emplace_back(v2 >= bounds2.first);
-                return r;
-            }()});
-            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
-                auto r = reason;
-                r.emplace_back(v1 <= bounds1.second);
-                return r;
-            }()});
-            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
-                auto r = reason;
-                r.emplace_back(v2 <= bounds2.second);
-                return r;
-            }()});
+            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{hints::Equals{owner}},
+                ExplicitReason{//
+                    [&] {
+                        auto r = reason;
+                        r.emplace_back(v1 >= bounds1.first);
+                        return r;
+                    }()});
+            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{hints::Equals{owner}},
+                ExplicitReason{//
+                    [&] {
+                        auto r = reason;
+                        r.emplace_back(v2 >= bounds2.first);
+                        return r;
+                    }()});
+            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{hints::Equals{owner}},
+                ExplicitReason{//
+                    [&] {
+                        auto r = reason;
+                        r.emplace_back(v1 <= bounds1.second);
+                        return r;
+                    }()});
+            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{hints::Equals{owner}},
+                ExplicitReason{//
+                    [&] {
+                        auto r = reason;
+                        r.emplace_back(v2 <= bounds2.second);
+                        return r;
+                    }()});
         }
     }
 
@@ -208,11 +222,12 @@ auto ReifiedEquals::prepare(Propagators &, State & initial_state, ProofModel * c
 
 auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
 {
-    overloaded{[&](const reif::MustHold &) {
-                   // cake_pb_cp: V1 = V2 split into le (V1 <= V2) and ge (V1 >= V2).
-                   model.add_labelled_constraint(
-                       as_string(_constraint_id), "le", "ge", "ReifiedEquals", "equals option", WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
-               },
+    overloaded{
+        [&](const reif::MustHold &) {
+            // cake_pb_cp: V1 = V2 split into le (V1 <= V2) and ge (V1 >= V2).
+            model.add_labelled_constraint(
+                as_string(_constraint_id), "le", "ge", "ReifiedEquals", "equals option", WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
+        }, //
         [&](const reif::MustNotHold &) {
             // cake_pb_cp: V1 != V2 split into gt (V1 > V2) and lt (V1 < V2) on a
             // single per-constraint selector b[id][ne] (cake's `nev`): the flag
@@ -222,14 +237,14 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{neflag}});
             model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedEquals", "not equals: less half",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{! neflag}});
-        },
+        }, //
         [&](const reif::If & reif) {
             // cake_pb_cp's encode_equal (-if): the equality split le (V1 <= V2) and
             // ge (V1 >= V2), each half-reified on the condition. Labelled @c[id][le] /
             // @c[id][ge] to match cake's cencode_equal_1.
             model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "ReifiedEquals", "equals option",
                 WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i, HalfReifyOnConjunctionOf{{reif.cond}});
-        },
+        }, //
         [&](const reif::NotIf & reif) {
             // cake_pb_cp's reified not-equal (-if): selectors b[id][gt] / b[id][lt]
             // FULLY reified against the strict comparisons (both the [r] and [f] halves,
@@ -245,7 +260,7 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
             model.add_labelled_constraint(lt_name + "[f]", WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 0_i, HalfReifyOnConjunctionOf{{! ltflag}});
             model.add_labelled_constraint(as_string(_constraint_id), "al1", "ReifiedEquals", "at least one differs",
                 WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * ! reif.cond >= 1_i);
-        },
+        }, //
         [&](const reif::Iff & reif) {
             // cake_pb_cp's encode_equal (-iff): the equality split le/ge half-reified on
             // the condition (@c[id][le] / @c[id][ge], cencode_equal_1); per-side selectors
@@ -264,7 +279,8 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
 
             model.add_labelled_constraint(as_string(_constraint_id), "al1", "ReifiedEquals", "one of less than, equals, greater than",
                 WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * reif.cond >= 1_i);
-        }}
+        } //
+    }
         .visit(_cond);
 }
 
@@ -301,27 +317,39 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         // immediately at root, instead of waiting until search fixes v1 to a
         // value and the singleton check below fires.
         if (v1 == v2 && ! is_constant_variable(v1))
-            return reification_verdict::MustHold<EqualsJustification>{.justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = NoReason{}};
+            return reification_verdict::MustHold<EqualsJustification>{
+                .justification = JustifyUsingRUP{hints::Equals{owner}}, //
+                .reason = NoReason{}                                    //
+            };
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
             auto reason = Reason{ExactSingleValue{ReasonVars{v1v2_scope.get()}, std::nullopt}};
             if (*value1 == *value2)
-                return reification_verdict::MustHold<EqualsJustification>{.justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = reason};
+                return reification_verdict::MustHold<EqualsJustification>{
+                    .justification = JustifyUsingRUP{hints::Equals{owner}}, //
+                    .reason = reason                                        //
+                };
             else
                 return reification_verdict::MustNotHold<EqualsJustification>{
-                    .justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = reason};
+                    .justification = JustifyUsingRUP{hints::Equals{owner}}, //
+                    .reason = reason                                        //
+                };
         }
         else if (value1) {
             if (! state.in_domain(v2, *value1))
                 return reification_verdict::MustNotHold<EqualsJustification>{
-                    .justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 != *value1}}};
+                    .justification = JustifyUsingRUP{hints::Equals{owner}},                //
+                    .reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 != *value1}} //
+                };
             return reification_verdict::StillUndecided{};
         }
         else if (value2) {
             if (! state.in_domain(v1, *value2))
                 return reification_verdict::MustNotHold<EqualsJustification>{
-                    .justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = ExplicitReason{ReasonLiterals{v2 == *value2, v1 != *value2}}};
+                    .justification = JustifyUsingRUP{hints::Equals{owner}},                //
+                    .reason = ExplicitReason{ReasonLiterals{v2 == *value2, v1 != *value2}} //
+                };
             return reification_verdict::StillUndecided{};
         }
         else {
@@ -329,7 +357,9 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
             if (! state.domains_intersect(v1, v2)) {
                 auto [no_overlap, reason] = no_overlap_justification(state, logger, v1, v2, cond, owner);
                 return reification_verdict::MustNotHold<EqualsJustification>{
-                    .justification = JustifyExplicitly{no_overlap, ThenRUP::Yes}, .reason = reason};
+                    .justification = JustifyExplicitly{no_overlap, ThenRUP::Yes}, //
+                    .reason = reason                                              //
+                };
             }
             return reification_verdict::StillUndecided{};
         }
@@ -375,12 +405,14 @@ auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SEx
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    string constraint_type = overloaded{[](const reif::MustHold &) -> string { return "equals"; },
-        [](const reif::MustNotHold &) -> string { return "not_equals"; }, [](const reif::If &) -> string { return "equals_if"; },
-        [](const reif::NotIf &) -> string { return "not_equals_if"; },
-        [&](const reif::Iff &) -> string {
-            return _neq ? "not_equals_iff" : "equals_iff";
-        }}.visit(_cond);
+    string constraint_type = overloaded{
+        [](const reif::MustHold &) -> string { return "equals"; },                          //
+        [](const reif::MustNotHold &) -> string { return "not_equals"; },                   //
+        [](const reif::If &) -> string { return "equals_if"; },                             //
+        [](const reif::NotIf &) -> string { return "not_equals_if"; },                      //
+        [&](const reif::Iff &) -> string { return _neq ? "not_equals_iff" : "equals_iff"; } //
+    }
+                                 .visit(_cond);
 
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type)};
     if (auto cond = tracker.s_expr_term_of(_cond))

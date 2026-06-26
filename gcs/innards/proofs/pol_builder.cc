@@ -76,14 +76,20 @@ auto PolBuilder::add(const XLiteral & lit, Integer coeff, const NamesAndIDsTrack
 
 auto PolBuilder::add_for_literal(NamesAndIDsTracker & tracker, const IntegerVariableCondition & lit) -> PolBuilder &
 {
-    visit(
-        overloaded{[&](const ProofLine & l) { add(l); }, [&](const XLiteral & x) { add(x, tracker); }}, tracker.need_pol_item_defining_literal(lit));
+    visit(overloaded{
+              [&](const ProofLine & l) { add(l); },        //
+              [&](const XLiteral & x) { add(x, tracker); } //
+          },
+        tracker.need_pol_item_defining_literal(lit));
     return *this;
 }
 
 auto PolBuilder::add_for_literal(NamesAndIDsTracker & tracker, const IntegerVariableCondition & lit, Integer coeff) -> PolBuilder &
 {
-    visit(overloaded{[&](const ProofLine & l) { add(l, coeff); }, [&](const XLiteral & x) { add(x, coeff, tracker); }},
+    visit(overloaded{
+              [&](const ProofLine & l) { add(l, coeff); },        //
+              [&](const XLiteral & x) { add(x, coeff, tracker); } //
+          },
         tracker.need_pol_item_defining_literal(lit));
     return *this;
 }
@@ -115,7 +121,8 @@ auto PolBuilder::render(optional<long long> current_max) const -> string
 {
     string out = "pol";
     for (const auto & t : _tokens)
-        out += visit(overloaded{[&](const string & s) -> string { return s; },
+        out += visit(overloaded{
+                         [&](const string & s) -> string { return s; }, //
                          [&](const ProofLine & l) -> string {
                              if (current_max)
                                  return " " + relative_proof_line(l, *current_max);
@@ -123,7 +130,8 @@ auto PolBuilder::render(optional<long long> current_max) const -> string
                                  return " " + std::to_string(n->number);
                              else
                                  return " @" + std::get<ProofLineLabel>(l).label;
-                         }},
+                         } //
+                     },
             t);
     return out + " ;";
 }

@@ -85,12 +85,14 @@ namespace
                     actual_value += get_coeff(cv) * current[idx];
                 }
 
-                bool match = overloaded{[&](const reif::MustHold &) { return actual_value == value; },
-                    [&](const reif::MustNotHold &) { return actual_value != value; }, [&](const reif::If) -> bool { throw UnimplementedException{}; },
-                    [&](const reif::NotIf) -> bool { throw UnimplementedException{}; },
-                    [&](const reif::Iff) -> bool {
-                        throw UnimplementedException{};
-                    }}.visit(cond);
+                bool match = overloaded{
+                    [&](const reif::MustHold &) { return actual_value == value; },      //
+                    [&](const reif::MustNotHold &) { return actual_value != value; },   //
+                    [&](const reif::If) -> bool { throw UnimplementedException{}; },    //
+                    [&](const reif::NotIf) -> bool { throw UnimplementedException{}; }, //
+                    [&](const reif::Iff) -> bool { throw UnimplementedException{}; }    //
+                }
+                                 .visit(cond);
 
                 if (match) {
                     permitted.emplace_back(current.begin(), current.end());
@@ -170,12 +172,13 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
     for (auto & [c, v] : _coeff_vars.terms)
         terms += c * v;
 
-    overloaded{[&](const reif::MustHold &) {
-                   // condition is definitely true, it's just an inequality -- cake_pb_cp
-                   // labels the equality halves le (sum <= value) / ge (sum >= value).
-                   _proof_line = model.add_labelled_constraint(
-                       as_string(_constraint_id), "le", "ge", "ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
-               },
+    overloaded{
+        [&](const reif::MustHold &) {
+            // condition is definitely true, it's just an inequality -- cake_pb_cp
+            // labels the equality halves le (sum <= value) / ge (sum >= value).
+            _proof_line = model.add_labelled_constraint(
+                as_string(_constraint_id), "le", "ge", "ReifiedLinearEquality", "unconditional sum", terms == _value, nullopt);
+        }, //
         [&](const reif::MustNotHold &) {
             // condition is definitely false, the flag implies either greater or
             // less -- cake_pb_cp labels them gt (sum > value) / lt (sum < value),
@@ -185,16 +188,16 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
                 HalfReifyOnConjunctionOf{{neflag}});
             model.add_labelled_constraint(as_string(_constraint_id), "lt", "ReifiedLinearEquality", "not equals: less half", terms <= _value - 1_i,
                 HalfReifyOnConjunctionOf{{! neflag}});
-        },
+        }, //
         [&](const reif::If & cond) {
             _proof_line = model.add_constraint("ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
-        },
+        }, //
         [&](const reif::NotIf & cond) {
             // condition is definitely false, the flag implies either greater or less
             auto neflag = model.create_proof_flag("linne");
             model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{cond.cond, neflag}});
             model.add_constraint("ReifiedLinearEquality", "less than option", terms <= _value - 1_i, HalfReifyOnConjunctionOf{{cond.cond, ! neflag}});
-        },
+        }, //
         [&](const reif::Iff & cond) {
             // condition unknown, the condition implies it is neither greater nor less
             _proof_line = model.add_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
@@ -207,7 +210,8 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
             // lt + eq + gt >= 1
             model.add_constraint(
                 "ReifiedLinearEquality", "one of less than, equals, greater than", WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * cond.cond >= 1_i);
-        }}
+        } //
+    }
         .visit(_reif_cond);
 }
 
@@ -222,8 +226,13 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                 all_vars.push_back(get_var(cv));
         },
         sanitised_cv);
-    overloaded{[&](const reif::MustHold &) {}, [&](const reif::MustNotHold &) {}, [&](const reif::If & cond) { all_vars.push_back(cond.cond.var); },
-        [&](const reif::NotIf & cond) { all_vars.push_back(cond.cond.var); }, [&](const reif::Iff & cond) { all_vars.push_back(cond.cond.var); }}
+    overloaded{
+        [&](const reif::MustHold &) {},                                       //
+        [&](const reif::MustNotHold &) {},                                    //
+        [&](const reif::If & cond) { all_vars.push_back(cond.cond.var); },    //
+        [&](const reif::NotIf & cond) { all_vars.push_back(cond.cond.var); }, //
+        [&](const reif::Iff & cond) { all_vars.push_back(cond.cond.var); }    //
+    }
         .visit(_reif_cond);
 
     if (_gac) {
@@ -257,36 +266,36 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
             sanitised_cv);
     }
     else {
-        overloaded{[&](const evaluated_reif::MustHold & reif) {
-                       // condition is definitely true; with no variable terms left the sum is just
-                       // the (folded-out) constant part, so the equality holds iff _value + modifier == 0
-                       if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != -_value) {
-                           propagators.install_initialiser(
-                               [reason_from_cond = reif.cond, owner = constraint_id()](const State &, auto & inference, ProofLogger * const logger) {
-                                   inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{hints::LinearEquality{owner}},
-                                       ExplicitReason{ReasonLiterals{{reason_from_cond}}});
-                               });
-                       }
+        overloaded{
+            [&](const evaluated_reif::MustHold & reif) {
+                // condition is definitely true; with no variable terms left the sum is just
+                // the (folded-out) constant part, so the equality holds iff _value + modifier == 0
+                if (visit([](const auto & s) { return s.terms.empty(); }, sanitised_cv) && modifier != -_value) {
+                    propagators.install_initialiser(
+                        [reason_from_cond = reif.cond, owner = constraint_id()](const State &, auto & inference, ProofLogger * const logger) {
+                            inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{hints::LinearEquality{owner}},
+                                ExplicitReason{ReasonLiterals{{reason_from_cond}}});
+                        });
+                }
 
-                       // easy case: we're doing bounds consistency, and the condition is fixed
-                       Triggers triggers;
-                       for (auto & [_, v] : _coeff_vars.terms)
-                           triggers.on_bounds.push_back(v);
+                // easy case: we're doing bounds consistency, and the condition is fixed
+                Triggers triggers;
+                for (auto & [_, v] : _coeff_vars.terms)
+                    triggers.on_bounds.push_back(v);
 
-                       visit(
-                           [&, modifier = modifier](const auto & lin) {
-                               propagators.install(
-                                   constraint_id(),
-                                   [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond,
-                                       owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) {
-                                       return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond,
-                                           hints::LinearEquality{owner});
-                                   },
-                                   triggers);
-                           },
-                           sanitised_cv);
-                   },
-
+                visit(
+                    [&, modifier = modifier](const auto & lin) {
+                        propagators.install(
+                            constraint_id(),
+                            [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond,
+                                owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) {
+                                return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond,
+                                    hints::LinearEquality{owner});
+                            },
+                            triggers);
+                    },
+                    sanitised_cv);
+            }, //
             [&](const evaluated_reif::MustNotHold & reif) {
                 // condition is definitely false on a full reification; with no variable terms left
                 // the equality _value + modifier == 0 must NOT hold, so it is violated iff it does
@@ -316,12 +325,10 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                             triggers);
                     },
                     sanitised_cv);
-            },
-
+            }, //
             [&](const evaluated_reif::Deactivated &) {
                 // condition is definitely false, but on a half reification, so we do nothing
-            },
-
+            }, //
             [&](const evaluated_reif::Undecided & reif) {
                 // we care when the condition changes, or once we're down to a single unassigned variable
                 // because that might force the condition one way or (possibly) another.
@@ -337,20 +344,18 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                             [sanitised_cv = sanitised_cv, value = _value + modifier, cond = _reif_cond, proof_line = _proof_line,
                                 all_vars = move(all_vars), owner = constraint_id()](const State & state, auto & inference,
                                 ProofLogger * const logger) -> PropagatorState { // This comment is needed to stop clang-format exploding
-                                return overloaded{[&](const evaluated_reif::MustHold & reif) {
-                                                      // we now know the condition definitely holds, so it's a linear equality
-                                                      return propagate_linear(sanitised_cv, value, state, inference, logger, true, proof_line,
-                                                          reif.cond, hints::LinearEquality{owner});
-                                                  },
-
+                                return overloaded{
+                                    [&](const evaluated_reif::MustHold & reif) {
+                                        // we now know the condition definitely holds, so it's a linear equality
+                                        return propagate_linear(
+                                            sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond, hints::LinearEquality{owner});
+                                    }, //
                                     [&](const evaluated_reif::MustNotHold &) {
                                         // we now know the condition definitely doesn't hold, so it's a linear not-equals
                                         return propagate_linear_not_equals(
                                             sanitised_cv, value, state, inference, logger, all_vars, hints::LinearNotEquals{owner});
-                                    },
-
-                                    [](const evaluated_reif::Deactivated &) { return PropagatorState::DisableUntilBacktrack; },
-
+                                    },                                                                                          //
+                                    [](const evaluated_reif::Deactivated &) { return PropagatorState::DisableUntilBacktrack; }, //
                                     [&](const evaluated_reif::Undecided & reif) {
                                         // we still don't know whether the condition holds. if we're down to a single unassigned
                                         // variable, we might have some information.
@@ -414,13 +419,15 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
                                                 return PropagatorState::DisableUntilBacktrack;
                                             }
                                         }
-                                    }}
+                                    } //
+                                }
                                     .visit(test_reification_condition(state, cond));
                             },
                             triggers);
                     },
                     sanitised_cv);
-            }}
+            } //
+        }
             .visit(_evaluated_cond);
     }
 }
@@ -429,13 +436,14 @@ auto ReifiedLinearEquality::s_expr(const ProofModel * const model) const -> SExp
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    auto [rei, cons] = overloaded{[&](const reif::MustHold &) { return make_pair(false, "lin_equals"); },
-        [&](const reif::If &) { return make_pair(true, "lin_equals_if"); },
-        [&](const reif::Iff &) { return make_pair(true, _flipped_cond ? "lin_not_equals_iff" : "lin_equals_iff"); },
-        [&](const reif::MustNotHold &) { return make_pair(false, "lin_not_equals"); },
-        [&](const reif::NotIf &) {
-            return make_pair(true, "lin_not_equals_if");
-        }}.visit(_reif_cond);
+    auto [rei, cons] = overloaded{
+        [&](const reif::MustHold &) { return make_pair(false, "lin_equals"); },                                      //
+        [&](const reif::If &) { return make_pair(true, "lin_equals_if"); },                                          //
+        [&](const reif::Iff &) { return make_pair(true, _flipped_cond ? "lin_not_equals_iff" : "lin_equals_iff"); }, //
+        [&](const reif::MustNotHold &) { return make_pair(false, "lin_not_equals"); },                               //
+        [&](const reif::NotIf &) { return make_pair(true, "lin_not_equals_if"); }                                    //
+    }
+                           .visit(_reif_cond);
 
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cons)};
     if (rei)
@@ -466,9 +474,11 @@ namespace
     template <typename T_>
     auto literal_to_reif(const Literal & cond) -> ReificationCondition
     {
-        return overloaded{[&](const TrueLiteral &) -> ReificationCondition { return reif::MustHold{}; },
-            [&](const FalseLiteral &) -> ReificationCondition { return reif::MustNotHold{}; },
-            [&](const IntegerVariableCondition & cond) -> ReificationCondition { return T_{cond}; }}
+        return overloaded{
+            [&](const TrueLiteral &) -> ReificationCondition { return reif::MustHold{}; },          //
+            [&](const FalseLiteral &) -> ReificationCondition { return reif::MustNotHold{}; },      //
+            [&](const IntegerVariableCondition & cond) -> ReificationCondition { return T_{cond}; } //
+        }
             .visit(cond);
     }
 }

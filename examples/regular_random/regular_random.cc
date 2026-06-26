@@ -127,7 +127,8 @@ auto main(int argc, char * argv[]) -> int
     auto p = Problem{};
     post_random_regular(p, n, rng, short_reasons);
 
-    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return false; }},
+    auto stats = solve_with(p,                                                           //
+        SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return false; }}, //
         prove ? make_optional(ProofOptions{proof_prefix}) : nullopt);
 
     if (print_stats) {

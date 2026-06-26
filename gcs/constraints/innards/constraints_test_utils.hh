@@ -226,18 +226,20 @@ namespace gcs::test_innards
                 generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{sol}), rest_of_args...);
             }
             else {
-                overloaded{[&](int n) {
-                               sol.push_back(n);
-                               build(pos + 1, sol);
-                               sol.pop_back();
-                           },
+                overloaded{
+                    [&](int n) {
+                        sol.push_back(n);
+                        build(pos + 1, sol);
+                        sol.pop_back();
+                    }, //
                     [&](std::pair<int, int> p) {
                         for (int n = p.first; n <= p.second; ++n) {
                             sol.push_back(n);
                             build(pos + 1, sol);
                             sol.pop_back();
                         }
-                    }}
+                    } //
+                }
                     .visit(range_arg_vec.at(pos));
             }
         };
@@ -383,7 +385,12 @@ namespace gcs::test_innards
             return t(s);
         };
 
-        solve_with(p, SolveCallbacks{.solution = capped_solution, .trace = capped_trace, .branch = random_branch_with_optional_seed(p)},
+        solve_with(p,
+            SolveCallbacks{
+                .solution = capped_solution,                  //
+                .trace = capped_trace,                        //
+                .branch = random_branch_with_optional_seed(p) //
+            },
             proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : std::nullopt);
     }
 

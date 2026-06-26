@@ -113,8 +113,11 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     // returns optional any more (issue #264); a tautology was the only source.
     bool tautological = false;
     for (auto & lit : lits) {
-        overloaded{[&](const TrueLiteral &) { tautological = true; }, [&](const FalseLiteral &) {},
-            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { sum += 1_i * cond; }}
+        overloaded{
+            [&](const TrueLiteral &) { tautological = true; },                              //
+            [&](const FalseLiteral &) {},                                                   //
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { sum += 1_i * cond; } //
+        }
             .visit(simplify_literal(names_and_ids_tracker(), lit));
     }
 
@@ -330,31 +333,35 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
         ++_imp->model_variables;
         advance_constraint_counter();
 
-        overloaded{[&](const SimpleIntegerVariableID & id) {
-                       names_and_ids_tracker().associate_condition_with_xliteral(id == 1_i, eqvar);
-                       names_and_ids_tracker().associate_condition_with_xliteral(id != 1_i, ! eqvar);
-                       names_and_ids_tracker().associate_condition_with_xliteral(id == 0_i, ! eqvar);
-                       names_and_ids_tracker().associate_condition_with_xliteral(id != 0_i, eqvar);
-                       pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> names{eqvar, ! eqvar};
-                       names_and_ids_tracker().track_eqvar(id, 1_i, names);
-                       names_and_ids_tracker().track_eqvar(id, 0_i, names);
-                   },
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) {
+                names_and_ids_tracker().associate_condition_with_xliteral(id == 1_i, eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id != 1_i, ! eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id == 0_i, ! eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id != 0_i, eqvar);
+                pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> names{eqvar, ! eqvar};
+                names_and_ids_tracker().track_eqvar(id, 1_i, names);
+                names_and_ids_tracker().track_eqvar(id, 0_i, names);
+            }, //
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these
-            }}
+            } //
+        }
             .visit(id);
 
         names_and_ids_tracker().track_bits(id, 0_i, {{1_i, eqvar}});
 
-        overloaded{[&](const SimpleIntegerVariableID & id) {
-                       names_and_ids_tracker().associate_condition_with_xliteral(id >= 1_i, eqvar);
-                       names_and_ids_tracker().associate_condition_with_xliteral(id < 1_i, ! eqvar);
-                       pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> names{eqvar, ! eqvar};
-                       names_and_ids_tracker().track_gevar(id, 1_i, names);
-                   },
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) {
+                names_and_ids_tracker().associate_condition_with_xliteral(id >= 1_i, eqvar);
+                names_and_ids_tracker().associate_condition_with_xliteral(id < 1_i, ! eqvar);
+                pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> names{eqvar, ! eqvar};
+                names_and_ids_tracker().track_gevar(id, 1_i, names);
+            }, //
             [](const ProofOnlySimpleIntegerVariableID &) {
                 // currently there's no API for asking for literals for these
-            }}
+            } //
+        }
             .visit(id);
     }
     else {
@@ -439,11 +446,13 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
     names_and_ids_tracker().track_bounds(id, lower, upper);
 
     if (_imp->always_use_full_encoding)
-        overloaded{[&](const SimpleIntegerVariableID & id) {
-                       for (; lower <= upper; ++lower)
-                           names_and_ids_tracker().need_direct_encoding_for(id, lower);
-                   },
-            [&](const ProofOnlySimpleIntegerVariableID &) {}}
+        overloaded{
+            [&](const SimpleIntegerVariableID & id) {
+                for (; lower <= upper; ++lower)
+                    names_and_ids_tracker().need_direct_encoding_for(id, lower);
+            },                                               //
+            [&](const ProofOnlySimpleIntegerVariableID &) {} //
+        }
             .visit(id);
 }
 
@@ -478,11 +487,12 @@ auto ProofModel::finalise() -> void
 
         if (_imp->optional_minimise_variable) {
             full_opb << "min: ";
-            overloaded{[&](const SimpleIntegerVariableID & v) {
-                           for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
-                               full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                       },
-                [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; },
+            overloaded{
+                [&](const SimpleIntegerVariableID & v) {
+                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
+                        full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                },                                                                          //
+                [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; }, //
                 [&](const ViewOfIntegerVariableID & v) {
                     // If the view's been registered (used in a constraint
                     // body during model writing), emit V's own bits.
@@ -498,7 +508,8 @@ auto ProofModel::finalise() -> void
                             full_opb << (v.negate_first ? -bit_value : bit_value) << " " << names_and_ids_tracker().pb_file_string_for(bit_name)
                                      << " ";
                     }
-                }}
+                } //
+            }
                 .visit(*_imp->optional_minimise_variable);
 
             full_opb << ";\n";
@@ -521,8 +532,11 @@ auto ProofModel::finalise() -> void
                         full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
             };
             for (const auto & var : *_imp->preserved_variables) {
-                overloaded{[&](const SimpleIntegerVariableID & v) { emit_underlying(v); }, [&](const ConstantIntegerVariableID &) {},
-                    [&](const ViewOfIntegerVariableID & v) { emit_underlying(v.actual_variable); }}
+                overloaded{
+                    [&](const SimpleIntegerVariableID & v) { emit_underlying(v); },                //
+                    [&](const ConstantIntegerVariableID &) {},                                     //
+                    [&](const ViewOfIntegerVariableID & v) { emit_underlying(v.actual_variable); } //
+                }
                     .visit(var);
             }
 
