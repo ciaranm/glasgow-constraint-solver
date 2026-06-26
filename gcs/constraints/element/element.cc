@@ -10,6 +10,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/innards/variable_id_utils.hh>
 #include <gcs/integer.hh>
 
 #include <util/enumerate.hh>
@@ -29,6 +30,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace gcs;
@@ -232,6 +234,16 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
         return;
     }
 
+    // Specialise on the index variables' concrete type when they are homogeneous,
+    // so the hot per-element iteration skips the variant deview; mixed scopes fall
+    // back to the general IntegerVariableID path.
+    std::visit([&](const auto & index_vars) { install_propagators_impl(propagators, index_vars); }, as_homogeneous(_index_vars));
+}
+
+template <typename EntryType_, unsigned dimensions_>
+template <typename IndexVec_>
+auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Propagators & propagators, const IndexVec_ & index_vars) -> void
+{
     auto array_has_nonconstants = _array_has_nonconstants;
 
     vector<IntegerVariableID> all_array_vars;
@@ -255,7 +267,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
             collect_array_variables(0);
     }
 
-    for (unsigned fixed_dim = 0; fixed_dim != _index_vars.size(); ++fixed_dim) {
+    for (unsigned fixed_dim = 0; fixed_dim != index_vars.size(); ++fixed_dim) {
         Triggers index_triggers;
         if (array_has_nonconstants) {
             if (_bounds_only)
@@ -269,13 +281,13 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
         else
             index_triggers.on_change.emplace_back(_result_var);
 
-        for (const auto & [idx, var] : enumerate(_index_vars))
+        for (const auto & [idx, var] : enumerate(index_vars))
             if (idx != fixed_dim)
                 index_triggers.on_change.emplace_back(var);
 
         propagators.install(
             constraint_id(),
-            [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, fixed_dim = fixed_dim,
+            [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var, fixed_dim = fixed_dim,
                 array_has_nonconstants = array_has_nonconstants, bounds_only = _bounds_only,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // for each index variable, update it to only contain values where
@@ -398,12 +410,12 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
         Triggers result_triggers;
         if (array_has_nonconstants)
             result_triggers.on_bounds.insert(result_triggers.on_bounds.end(), all_array_vars.begin(), all_array_vars.end());
-        result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
+        result_triggers.on_change.insert(result_triggers.on_change.end(), index_vars.begin(), index_vars.end());
         result_triggers.on_bounds.emplace_back(_result_var);
 
         propagators.install(
             constraint_id(),
-            [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var,
+            [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var,
                 array_has_nonconstants = array_has_nonconstants,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // bounds only, so the result variable has to be in the range
@@ -450,7 +462,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                             extra.push_back(ge ? (var >= relevant_bound) : (var <= relevant_bound));
                         extra.push_back(result_var >= current_bounds.first);
                         extra.push_back(result_var <= current_bounds.second);
-                        reason = with_extra(generic_reason(index_vars), std::move(extra));
+                        reason = with_extra(generic_reason(vector<IntegerVariableID>{index_vars.begin(), index_vars.end()}), std::move(extra));
                     }
                     inference.infer(logger, lit_to_infer,
                         JustifyExplicitly{//
@@ -494,11 +506,11 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
         Triggers result_triggers;
         if (array_has_nonconstants)
             result_triggers.on_change.insert(result_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
-        result_triggers.on_change.insert(result_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
+        result_triggers.on_change.insert(result_triggers.on_change.end(), index_vars.begin(), index_vars.end());
 
         propagators.install(
             constraint_id(),
-            [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var,
+            [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var,
                 array_has_nonconstants = array_has_nonconstants,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // the result variable has to be in the union of possible values
@@ -535,7 +547,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                         ReasonLiterals extra;
                         for (const auto & var : considered_vars)
                             extra.push_back(var != value);
-                        reason = with_extra(generic_reason(index_vars), std::move(extra));
+                        reason = with_extra(generic_reason(vector<IntegerVariableID>{index_vars.begin(), index_vars.end()}), std::move(extra));
                     }
                     inference.infer_not_equal(logger, result_var, value,
                         JustifyExplicitly{//
@@ -573,11 +585,11 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
     if (array_has_nonconstants) {
         Triggers equality_triggers;
-        equality_triggers.on_change.insert(equality_triggers.on_change.end(), _index_vars.begin(), _index_vars.end());
+        equality_triggers.on_change.insert(equality_triggers.on_change.end(), index_vars.begin(), index_vars.end());
         equality_triggers.on_change.emplace_back(_result_var);
         propagators.install(
             constraint_id(),
-            [array = _array, index_vars = _index_vars, index_starts = _index_starts, result_var = _result_var, owner = constraint_id()](
+            [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var, owner = constraint_id()](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // if there's only a single possible array variable left, it can only take values
                 // that are present in the result variable

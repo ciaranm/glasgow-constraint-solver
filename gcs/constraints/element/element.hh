@@ -54,6 +54,14 @@ namespace gcs
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
+        // install_propagators dispatches here on the concrete type of the index
+        // variables (all-Simple / all-View / all-constant, else the mixed
+        // IntegerVariableID vector), so the hot per-element iteration is specialised
+        // at install time rather than branching per call. \p IndexVec_ is one of the
+        // alternatives of innards::as_homogeneous()'s result.
+        template <typename IndexVec_>
+        auto install_propagators_impl(innards::Propagators & propagators, const IndexVec_ & index_vars) -> void;
+
     protected:
         explicit NDimensionalElement(IntegerVariableID result_var, IndexVariables, IndexStarts, Array, bool bounds_only);
 
