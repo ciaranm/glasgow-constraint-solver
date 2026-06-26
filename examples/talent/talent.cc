@@ -73,8 +73,13 @@ int main(int argc, char * argv[])
 
     vector<int> actorPay = {1, 1, 1, 1, 1};
     vector<int> sceneDuration = {2, 4, 1, 3, 3, 2, 5, 7, 6};
-    vector<vector<int>> actorInScene = {{1, 1, 0, 1, 0, 1, 1, 0, 1}, {1, 1, 0, 1, 1, 1, 0, 1, 0}, {1, 1, 0, 0, 0, 0, 1, 1, 0},
-        {1, 0, 0, 0, 1, 1, 0, 0, 1}, {0, 0, 1, 0, 1, 1, 1, 1, 0}};
+    vector<vector<int>> actorInScene = {
+        {1, 1, 0, 1, 0, 1, 1, 0, 1}, //
+        {1, 1, 0, 1, 1, 1, 0, 1, 0}, //
+        {1, 1, 0, 0, 0, 0, 1, 1, 0}, //
+        {1, 0, 0, 0, 1, 1, 0, 0, 1}, //
+        {0, 0, 1, 0, 1, 1, 1, 1, 0}  //
+    };
 
     vector<vector<int>> actorsScenes{};
 
@@ -128,11 +133,12 @@ int main(int argc, char * argv[])
     p.post(idle_expr == 0_i);
     p.minimise(idleCost);
 
-    auto stats = solve_with(p,
-        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-                           cout << "Idle Cost: " << s(idleCost) << "\n";
-                           return true;
-                       },
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << "Idle Cost: " << s(idleCost) << "\n";
+                return true;
+            },
             .branch = branch_with(variable_order::dom_then_deg(scene), value_order::smallest_first())},
         options_vars.contains("prove") ? make_optional(ProofOptions{options_vars["proof-files-basename"].as<string>()}) : nullopt);
 

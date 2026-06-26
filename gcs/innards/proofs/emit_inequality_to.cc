@@ -22,17 +22,21 @@ auto gcs::innards::emit_inequality_to(
 
         overloaded{
             [&, w = w](const ProofLiteral & lit) {
-                overloaded{[&](const TrueLiteral &) { rhs += w; }, [&](const FalseLiteral &) {},
+                overloaded{
+                    [&](const TrueLiteral &) { rhs += w; }, //
+                    [&](const FalseLiteral &) {},           //
                     [&]<typename T_>(
-                        const VariableConditionFrom<T_> & cond) { stream << -w << " " << names_and_ids_tracker.pb_file_string_for(cond) << " "; }}
+                        const VariableConditionFrom<T_> & cond) { stream << -w << " " << names_and_ids_tracker.pb_file_string_for(cond) << " "; } //
+                }
                     .visit(simplify_literal(names_and_ids_tracker, lit));
-            },
-            [&, w = w](const ProofFlag & flag) { stream << -w << " " << names_and_ids_tracker.pb_file_string_for(flag) << " "; },
+            },                                                                                                                    //
+            [&, w = w](const ProofFlag & flag) { stream << -w << " " << names_and_ids_tracker.pb_file_string_for(flag) << " "; }, //
             [&, w = w](const IntegerVariableID & var) {
-                overloaded{[&](const SimpleIntegerVariableID & var) {
-                               for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
-                                   stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
-                           },
+                overloaded{
+                    [&](const SimpleIntegerVariableID & var) {
+                        for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
+                            stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
+                    },
                     [&](const ViewOfIntegerVariableID & view) {
                         // Emit V's own bits when the view is registered (the
                         // typical case — views in constraint bodies are
@@ -55,17 +59,18 @@ auto gcs::innards::emit_inequality_to(
                             rhs += w * view.then_add;
                         }
                     },
-                    [&](const ConstantIntegerVariableID & cvar) { rhs += w * cvar.const_value; }}
+                    [&](const ConstantIntegerVariableID & cvar) { rhs += w * cvar.const_value; } //
+                }
                     .visit(var);
-            },
+            }, //
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
                 for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
                     stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
-            },
+            }, //
             [&, w = w](const ProofBitVariable & bit) {
                 auto [_, bit_name] = names_and_ids_tracker.get_bit(bit);
                 stream << -w << " " << names_and_ids_tracker.pb_file_string_for(bit_name) << " ";
-            },
+            }, //
         }
             .visit(v);
     }

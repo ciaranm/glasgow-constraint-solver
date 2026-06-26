@@ -159,24 +159,25 @@ auto Python::solve(bool all_solutions, optional<float> timeout, optional<unsigne
     }
 
     try {
-        auto stats = solve_with(p,
-            SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-                               solution_values.emplace_back();
-                               id_solution_values.emplace_back();
-                               for (auto const & var : vars) {
-                                   solution_values.back()[var.second] = s(var.second).raw_value;
-                                   id_solution_values.back()[var.first] = s(var.second).raw_value;
-                               }
-                               if (callback) {
-                                   (*callback)(id_solution_values.back());
-                               }
-                               if (solution_limit) {
-                                   if (--*solution_limit == 0) {
-                                       return false;
-                                   }
-                               }
-                               return all_solutions; // Keep searching for solutions if all solutions
-                           },
+        auto stats = solve_with(p, //
+            SolveCallbacks{        //
+                .solution = [&](const CurrentState & s) -> bool {
+                    solution_values.emplace_back();
+                    id_solution_values.emplace_back();
+                    for (auto const & var : vars) {
+                        solution_values.back()[var.second] = s(var.second).raw_value;
+                        id_solution_values.back()[var.first] = s(var.second).raw_value;
+                    }
+                    if (callback) {
+                        (*callback)(id_solution_values.back());
+                    }
+                    if (solution_limit) {
+                        if (--*solution_limit == 0) {
+                            return false;
+                        }
+                    }
+                    return all_solutions; // Keep searching for solutions if all solutions
+                },
                 .completed = [&] { completed = true; }},
             prove ? make_optional<ProofOptions>(*proof_location + "/" + *proof_name) : nullopt, &abort_flag);
 

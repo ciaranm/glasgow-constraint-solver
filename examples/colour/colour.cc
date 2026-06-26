@@ -128,11 +128,12 @@ auto main(int argc, char * argv[]) -> int
 
     p.minimise(colours);
 
-    auto stats = solve_with(p,
-        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-                           println("{} colours: {}", s(colours) + 1_i, vertices | transform(cref(s)));
-                           return true;
-                       },
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                println("{} colours: {}", s(colours) + 1_i, vertices | transform(cref(s)));
+                return true;
+            },
             .branch = branch_with(variable_order::dom_then_deg(vertices), value_order::smallest_first())},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 

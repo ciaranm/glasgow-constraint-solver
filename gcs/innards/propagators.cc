@@ -203,17 +203,22 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
     }
     else {
         _imp->enqueued_end = 0;
-        overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
+        overloaded{
+            [&](const TrueLiteral &) {},  //
+            [&](const FalseLiteral &) {}, //
             [&](const IntegerVariableCondition & cond) {
-                overloaded{[&](const SimpleIntegerVariableID & var) {
-                               // trigger all propagators on this var, even if we might not actually
-                               // have instantiated it. bit ugly but easier than tracking.
-                               requeue(var, Inference::Instantiated);
-                           },
-                    [&](const ConstantIntegerVariableID &) {},
-                    [&](const ViewOfIntegerVariableID & var) { requeue(var.actual_variable, Inference::Instantiated); }}
+                overloaded{
+                    [&](const SimpleIntegerVariableID & var) {
+                        // trigger all propagators on this var, even if we might not actually
+                        // have instantiated it. bit ugly but easier than tracking.
+                        requeue(var, Inference::Instantiated);
+                    },                                                                                                  //
+                    [&](const ConstantIntegerVariableID &) {},                                                          //
+                    [&](const ViewOfIntegerVariableID & var) { requeue(var.actual_variable, Inference::Instantiated); } //
+                }
                     .visit(cond.var);
-            }}
+            } //
+        }
             .visit(*lit);
     }
 
@@ -284,61 +289,75 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
 
 auto Propagators::trigger_on_change(IntegerVariableID var, int t) -> void
 {
-    overloaded{[&](const SimpleIntegerVariableID & v) {
-                   if (_imp->iv_triggers.size() <= v.index)
-                       _imp->iv_triggers.resize(v.index + 1);
-                   _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
-                       (1 << to_underlying(Inference::InteriorValuesChanged)) | (1 << to_underlying(Inference::BoundsChanged)) |
-                           (1 << to_underlying(Inference::Instantiated)));
-               },
-        [&](const ViewOfIntegerVariableID & v) { trigger_on_change(v.actual_variable, t); }, [&](const ConstantIntegerVariableID &) {}}
+    overloaded{
+        [&](const SimpleIntegerVariableID & v) {
+            if (_imp->iv_triggers.size() <= v.index)
+                _imp->iv_triggers.resize(v.index + 1);
+            _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t,
+                (1 << to_underlying(Inference::InteriorValuesChanged)) | (1 << to_underlying(Inference::BoundsChanged)) |
+                    (1 << to_underlying(Inference::Instantiated)));
+        },                                                                                   //
+        [&](const ViewOfIntegerVariableID & v) { trigger_on_change(v.actual_variable, t); }, //
+        [&](const ConstantIntegerVariableID &) {}                                            //
+    }
         .visit(var);
 }
 
 auto Propagators::trigger_on_bounds(IntegerVariableID var, int t) -> void
 {
-    overloaded{[&](const SimpleIntegerVariableID & v) {
-                   if (_imp->iv_triggers.size() <= v.index)
-                       _imp->iv_triggers.resize(v.index + 1);
-                   _imp->iv_triggers[v.index].ids_and_masks.emplace_back(
-                       t, (1 << to_underlying(Inference::BoundsChanged)) | (1 << to_underlying(Inference::Instantiated)));
-               },
-        [&](const ViewOfIntegerVariableID & v) { trigger_on_bounds(v.actual_variable, t); }, [&](const ConstantIntegerVariableID &) {}}
+    overloaded{
+        [&](const SimpleIntegerVariableID & v) {
+            if (_imp->iv_triggers.size() <= v.index)
+                _imp->iv_triggers.resize(v.index + 1);
+            _imp->iv_triggers[v.index].ids_and_masks.emplace_back(
+                t, (1 << to_underlying(Inference::BoundsChanged)) | (1 << to_underlying(Inference::Instantiated)));
+        },                                                                                   //
+        [&](const ViewOfIntegerVariableID & v) { trigger_on_bounds(v.actual_variable, t); }, //
+        [&](const ConstantIntegerVariableID &) {}                                            //
+    }
         .visit(var);
 }
 
 auto Propagators::trigger_on_instantiated(IntegerVariableID var, int t) -> void
 {
-    overloaded{[&](const SimpleIntegerVariableID & v) {
-                   if (_imp->iv_triggers.size() <= v.index)
-                       _imp->iv_triggers.resize(v.index + 1);
-                   _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t, (1 << to_underlying(Inference::Instantiated)));
-               },
-        [&](const ViewOfIntegerVariableID & v) { trigger_on_instantiated(v.actual_variable, t); }, [&](const ConstantIntegerVariableID &) {}}
+    overloaded{
+        [&](const SimpleIntegerVariableID & v) {
+            if (_imp->iv_triggers.size() <= v.index)
+                _imp->iv_triggers.resize(v.index + 1);
+            _imp->iv_triggers[v.index].ids_and_masks.emplace_back(t, (1 << to_underlying(Inference::Instantiated)));
+        },                                                                                         //
+        [&](const ViewOfIntegerVariableID & v) { trigger_on_instantiated(v.actual_variable, t); }, //
+        [&](const ConstantIntegerVariableID &) {}                                                  //
+    }
         .visit(var);
 }
 
 auto Propagators::increase_degree(IntegerVariableID var) -> void
 {
-    overloaded{[&](const SimpleIntegerVariableID & v) {
-                   if (_imp->degrees.size() < v.index + 1)
-                       _imp->degrees.resize(v.index + 1);
-                   ++_imp->degrees[v.index];
-               },
-        [&](const ViewOfIntegerVariableID & v) { increase_degree(v.actual_variable); }, [&](const ConstantIntegerVariableID &) {}}
+    overloaded{
+        [&](const SimpleIntegerVariableID & v) {
+            if (_imp->degrees.size() < v.index + 1)
+                _imp->degrees.resize(v.index + 1);
+            ++_imp->degrees[v.index];
+        },                                                                              //
+        [&](const ViewOfIntegerVariableID & v) { increase_degree(v.actual_variable); }, //
+        [&](const ConstantIntegerVariableID &) {}                                       //
+    }
         .visit(var);
 }
 
 auto Propagators::degree_of(IntegerVariableID var) const -> long
 {
-    return overloaded{[&](const SimpleIntegerVariableID & v) -> long {
-                          if (v.index >= _imp->degrees.size())
-                              return 0;
-                          else
-                              return _imp->degrees[v.index];
-                      },
-        [&](const ViewOfIntegerVariableID & v) -> long { return degree_of(v.actual_variable); },
-        [&](const ConstantIntegerVariableID &) -> long { return 0; }}
+    return overloaded{
+        [&](const SimpleIntegerVariableID & v) -> long {
+            if (v.index >= _imp->degrees.size())
+                return 0;
+            else
+                return _imp->degrees[v.index];
+        },                                                                                       //
+        [&](const ViewOfIntegerVariableID & v) -> long { return degree_of(v.actual_variable); }, //
+        [&](const ConstantIntegerVariableID &) -> long { return 0; }                             //
+    }
         .visit(var);
 }
 

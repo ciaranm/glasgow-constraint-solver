@@ -333,7 +333,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
                     if (! look_for_support(0)) {
                         inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val,
-                            JustifyExplicitly{
+                            JustifyExplicitly{//
                                 [&](const ReasonLiterals & reason) {
                                     // show there's no overlap between array_var and result, for any way the other
                                     // index vars are assigned
@@ -441,29 +441,29 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                     reason.push_back(result_var >= current_bounds.first);
                     reason.push_back(result_var <= current_bounds.second);
                     inference.infer(logger, lit_to_infer,
-                        JustifyExplicitly{[&](const ReasonLiterals & reason) {
-                                              // show that it doesn't work for any feasible choice of indices
-                                              WPBSum sum_so_far;
-                                              function<auto(unsigned)->void> rule_out = [&](unsigned d) {
-                                                  for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
-                                                      if (d + 1 == dimensions_)
-                                                          logger->emit_rup_proof_line_under_reason(reason,
-                                                              sum_so_far + 1_i * lit_to_infer + 1_i * (index_vars.at(d) != v) >= 1_i,
-                                                              ProofLevel::Temporary);
-                                                      else {
-                                                          auto save_sum_so_far = sum_so_far;
-                                                          sum_so_far += 1_i * (index_vars.at(d) != v);
-                                                          rule_out(d + 1);
-                                                          sum_so_far = save_sum_so_far;
-                                                      }
-                                                  }
-                                                  if (! sum_so_far.terms.empty()) {
-                                                      logger->emit_rup_proof_line_under_reason(
-                                                          reason, sum_so_far + 1_i * lit_to_infer >= 1_i, ProofLevel::Temporary);
-                                                  }
-                                              };
-                                              rule_out(0);
-                                          },
+                        JustifyExplicitly{//
+                            [&](const ReasonLiterals & reason) {
+                                // show that it doesn't work for any feasible choice of indices
+                                WPBSum sum_so_far;
+                                function<auto(unsigned)->void> rule_out = [&](unsigned d) {
+                                    for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
+                                        if (d + 1 == dimensions_)
+                                            logger->emit_rup_proof_line_under_reason(reason,
+                                                sum_so_far + 1_i * lit_to_infer + 1_i * (index_vars.at(d) != v) >= 1_i, ProofLevel::Temporary);
+                                        else {
+                                            auto save_sum_so_far = sum_so_far;
+                                            sum_so_far += 1_i * (index_vars.at(d) != v);
+                                            rule_out(d + 1);
+                                            sum_so_far = save_sum_so_far;
+                                        }
+                                    }
+                                    if (! sum_so_far.terms.empty()) {
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason, sum_so_far + 1_i * lit_to_infer >= 1_i, ProofLevel::Temporary);
+                                    }
+                                };
+                                rule_out(0);
+                            },
                             ThenRUP::Yes, hints::Element{owner}},
                         ExplicitReason{reason});
                 };
@@ -519,29 +519,30 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                     for (const auto & var : considered_vars)
                         reason.push_back(var != value);
                     inference.infer_not_equal(logger, result_var, value,
-                        JustifyExplicitly{[&](const ReasonLiterals & reason) {
-                                              // show that it doesn't work for any feasible choice of indices
-                                              WPBSum sum_so_far;
-                                              function<auto(unsigned)->void> rule_out = [&](unsigned d) {
-                                                  for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
-                                                      if (d + 1 == dimensions_)
-                                                          logger->emit_rup_proof_line_under_reason(reason,
-                                                              sum_so_far + 1_i * (result_var != value) + 1_i * (index_vars.at(d) != v) >= 1_i,
-                                                              ProofLevel::Temporary);
-                                                      else {
-                                                          auto save_sum_so_far = sum_so_far;
-                                                          sum_so_far += 1_i * (index_vars.at(d) != v);
-                                                          rule_out(d + 1);
-                                                          sum_so_far = save_sum_so_far;
-                                                      }
-                                                  }
-                                                  if (! sum_so_far.terms.empty()) {
-                                                      logger->emit_rup_proof_line_under_reason(
-                                                          reason, sum_so_far + 1_i * (result_var != value) >= 1_i, ProofLevel::Temporary);
-                                                  }
-                                              };
-                                              rule_out(0);
-                                          },
+                        JustifyExplicitly{//
+                            [&](const ReasonLiterals & reason) {
+                                // show that it doesn't work for any feasible choice of indices
+                                WPBSum sum_so_far;
+                                function<auto(unsigned)->void> rule_out = [&](unsigned d) {
+                                    for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
+                                        if (d + 1 == dimensions_)
+                                            logger->emit_rup_proof_line_under_reason(reason,
+                                                sum_so_far + 1_i * (result_var != value) + 1_i * (index_vars.at(d) != v) >= 1_i,
+                                                ProofLevel::Temporary);
+                                        else {
+                                            auto save_sum_so_far = sum_so_far;
+                                            sum_so_far += 1_i * (index_vars.at(d) != v);
+                                            rule_out(d + 1);
+                                            sum_so_far = save_sum_so_far;
+                                        }
+                                    }
+                                    if (! sum_so_far.terms.empty()) {
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason, sum_so_far + 1_i * (result_var != value) >= 1_i, ProofLevel::Temporary);
+                                    }
+                                };
+                                rule_out(0);
+                            },
                             ThenRUP::Yes, hints::Element{owner}},
                         ExplicitReason{reason});
                 }

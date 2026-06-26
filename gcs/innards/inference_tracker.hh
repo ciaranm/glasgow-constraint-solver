@@ -67,9 +67,12 @@ namespace gcs::innards
                 if (! logger)
                     return NoReason{};
 
-                return reason.visit(overloaded{[&](const NoReason &) -> Reason { return NoReason{}; },
-                    [&](const LazyReasonOver &) -> Reason { return reason; }, [&](const NarrowableLazyReasonOver &) -> Reason { return reason; },
-                    [&](const auto &) -> Reason { return ExplicitReason{materialise(reason, state)}; }});
+                return reason.visit(overloaded{
+                    [&](const NoReason &) -> Reason { return NoReason{}; },                            //
+                    [&](const LazyReasonOver &) -> Reason { return reason; },                          //
+                    [&](const NarrowableLazyReasonOver &) -> Reason { return reason; },                //
+                    [&](const auto &) -> Reason { return ExplicitReason{materialise(reason, state)}; } //
+                });
             }
         }
 
@@ -79,13 +82,18 @@ namespace gcs::innards
         // track_impl bodies below.
         auto record_firing_inference(const Inference inf, const Literal & lit) -> void
         {
-            overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
+            overloaded{
+                [&](const TrueLiteral &) {},  //
+                [&](const FalseLiteral &) {}, //
                 [&](const IntegerVariableCondition & cond) {
-                    overloaded{[&](const ConstantIntegerVariableID &) {},
-                        [&](const SimpleIntegerVariableID & var) { _inferences.emplace_back(var, inf); },
-                        [&](const ViewOfIntegerVariableID & var) { _inferences.emplace_back(var.actual_variable, inf); }}
+                    overloaded{
+                        [&](const ConstantIntegerVariableID &) {},                                                       //
+                        [&](const SimpleIntegerVariableID & var) { _inferences.emplace_back(var, inf); },                //
+                        [&](const ViewOfIntegerVariableID & var) { _inferences.emplace_back(var.actual_variable, inf); } //
+                    }
                         .visit(cond.var);
-                }}
+                } //
+            }
                 .visit(lit);
 
             _did_anything_since_last_call_by_propagation_queue = true;
@@ -466,13 +474,18 @@ namespace gcs::innards
             case Inference::InteriorValuesChanged:
             case Inference::BoundsChanged:
             case Inference::Instantiated:
-                overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
+                overloaded{
+                    [&](const TrueLiteral &) {},  //
+                    [&](const FalseLiteral &) {}, //
                     [&](const IntegerVariableCondition & cond) {
-                        overloaded{[&](const ConstantIntegerVariableID &) {},
-                            [&](const SimpleIntegerVariableID & var) { _inferences.emplace_back(var, inf); },
-                            [&](const ViewOfIntegerVariableID & var) { _inferences.emplace_back(var.actual_variable, inf); }}
+                        overloaded{
+                            [&](const ConstantIntegerVariableID &) {},                                                       //
+                            [&](const SimpleIntegerVariableID & var) { _inferences.emplace_back(var, inf); },                //
+                            [&](const ViewOfIntegerVariableID & var) { _inferences.emplace_back(var.actual_variable, inf); } //
+                        }
                             .visit(cond.var);
-                    }}
+                    } //
+                }
                     .visit(lit);
 
                 _did_anything_since_last_call_by_propagation_queue = true;
@@ -513,13 +526,18 @@ namespace gcs::innards
                     logger->infer(lit, just, materialise(reason, _state), assertion_hints);
                 }
 
-                overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
+                overloaded{
+                    [&](const TrueLiteral &) {},  //
+                    [&](const FalseLiteral &) {}, //
                     [&](const IntegerVariableCondition & cond) {
-                        overloaded{[&](const ConstantIntegerVariableID &) {},
-                            [&](const SimpleIntegerVariableID & var) { _inferences.emplace_back(var, inf); },
-                            [&](const ViewOfIntegerVariableID & var) { _inferences.emplace_back(var.actual_variable, inf); }}
+                        overloaded{
+                            [&](const ConstantIntegerVariableID &) {},                                                       //
+                            [&](const SimpleIntegerVariableID & var) { _inferences.emplace_back(var, inf); },                //
+                            [&](const ViewOfIntegerVariableID & var) { _inferences.emplace_back(var.actual_variable, inf); } //
+                        }
                             .visit(cond.var);
-                    }}
+                    } //
+                }
                     .visit(lit);
 
                 _did_anything_since_last_call_by_propagation_queue = true;

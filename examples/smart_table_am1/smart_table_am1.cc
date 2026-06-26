@@ -62,14 +62,16 @@ auto main(int argc, char * argv[]) -> int
 
     p.post(AtMostOneSmartTable{vars, val});
 
-    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        cout << "vars = [ ";
-        for (const auto & var : vars) {
-            cout << s(var) << " ";
-        }
-        cout << "]" << endl;
-        return true;
-    }},
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << "vars = [ ";
+                for (const auto & var : vars) {
+                    cout << s(var) << " ";
+                }
+                cout << "]" << endl;
+                return true;
+            }},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))

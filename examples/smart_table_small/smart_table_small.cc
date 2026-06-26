@@ -60,10 +60,12 @@ auto main(int argc, char * argv[]) -> int
         {SmartTable::equals(A, B), SmartTable::not_equals(A, 1_i), SmartTable::greater_than_equal(B, C)}};
     p.post(SmartTable{{A, B, C}, tuples});
 
-    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        cout << "A = " << s(A) << " B = " << s(B) << " C = " << s(C) << endl;
-        return true;
-    }},
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << "A = " << s(A) << " B = " << s(B) << " C = " << s(C) << endl;
+                return true;
+            }},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))

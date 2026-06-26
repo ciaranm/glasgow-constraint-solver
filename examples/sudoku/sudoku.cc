@@ -93,21 +93,55 @@ auto main(int argc, char * argv[]) -> int
 
     if (options_vars.contains("xv")) {
         // https://www.youtube.com/watch?v=9ATC_uBF8ow
-        predef = {{0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 5, 0, 3, 0, 8, 0, 2, 0}, {2, 0, 5, 0, 3, 0, 6, 0, 9}, {0, 9, 0, 4, 0, 6, 0, 1, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0}};
+        predef = {
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 5, 0, 3, 0, 8, 0, 2, 0}, //
+            {2, 0, 5, 0, 3, 0, 6, 0, 9}, //
+            {0, 9, 0, 4, 0, 6, 0, 1, 0}, //
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}  //
+        };
 
-        horizontal_xvs = {{O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}};
+        horizontal_xvs = {
+            {O, O, O, O, O, O, O, O}, //
+            {O, O, O, O, O, O, O, O}, //
+            {O, O, O, O, O, O, O, O}, //
+            {O, O, O, O, O, O, O, O}, //
+            {O, O, O, O, O, O, O, O}, //
+            {O, O, O, O, O, O, O, O}, //
+            {O, O, O, O, O, O, O, O}, //
+            {O, O, O, O, O, O, O, O}, //
+            {O, O, O, O, O, O, O, O}  //
+        };
 
-        vertical_xvs = {{O, O, O, O, O, O, O, O}, {O, X, O, O, O, O, O, O}, {X, O, X, O, O, O, O, O}, {O, X, O, O, O, O, O, O},
-            {X, O, X, O, O, O, O, O}, {O, X, O, O, O, O, O, O}, {X, O, X, O, O, O, O, O}, {O, X, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}};
+        vertical_xvs = {
+            {O, O, O, O, O, O, O, O}, //
+            {O, X, O, O, O, O, O, O}, //
+            {X, O, X, O, O, O, O, O}, //
+            {O, X, O, O, O, O, O, O}, //
+            {X, O, X, O, O, O, O, O}, //
+            {O, X, O, O, O, O, O, O}, //
+            {X, O, X, O, O, O, O, O}, //
+            {O, X, O, O, O, O, O, O}, //
+            {O, O, O, O, O, O, O, O}  //
+        };
     }
     else {
         // https://abcnews.go.com/blogs/headlines/2012/06/can-you-solve-the-hardest-ever-sudoku
-        predef = {{8, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 3, 6, 0, 0, 0, 0, 0}, {0, 7, 0, 0, 9, 0, 2, 0, 0}, {0, 5, 0, 0, 0, 7, 0, 0, 0},
-            {0, 0, 0, 0, 4, 5, 7, 0, 0}, {0, 0, 0, 1, 0, 0, 0, 3, 0}, {0, 0, 1, 0, 0, 0, 0, 6, 8}, {0, 0, 8, 5, 0, 0, 0, 1, 0},
-            {0, 9, 0, 0, 0, 0, 4, 0, 0}};
+        predef = {
+            {8, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 3, 6, 0, 0, 0, 0, 0}, //
+            {0, 7, 0, 0, 9, 0, 2, 0, 0}, //
+            {0, 5, 0, 0, 0, 7, 0, 0, 0}, //
+            {0, 0, 0, 0, 4, 5, 7, 0, 0}, //
+            {0, 0, 0, 1, 0, 0, 0, 3, 0}, //
+            {0, 0, 1, 0, 0, 0, 0, 6, 8}, //
+            {0, 0, 8, 5, 0, 0, 0, 1, 0}, //
+            {0, 9, 0, 0, 0, 0, 4, 0, 0}  //
+        };
     }
 
     vector<vector<IntegerVariableID>> grid;
@@ -170,20 +204,21 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto stats = solve_with(p,
-        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-                           for (const auto & row : grid) {
-                               bool first = true;
-                               for (const auto & box : row) {
-                                   if (! first)
-                                       print(" ");
-                                   print("{}", s(box));
-                                   first = false;
-                               }
-                               println("");
-                           }
-                           println("");
-                           return options_vars.contains("all");
-                       },
+        SolveCallbacks{//
+            .solution = [&](const CurrentState & s) -> bool {
+                for (const auto & row : grid) {
+                    bool first = true;
+                    for (const auto & box : row) {
+                        if (! first)
+                            print(" ");
+                        print("{}", s(box));
+                        first = false;
+                    }
+                    println("");
+                }
+                println("");
+                return options_vars.contains("all");
+            },
             .trace = [&](const CurrentState & s) -> bool {
                 if (! options_vars.contains("trace"))
                     return true;

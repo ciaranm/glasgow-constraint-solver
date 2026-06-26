@@ -121,30 +121,38 @@ auto main(int argc, char * argv[]) -> int
     }
 
     using Entry = variant<int, pair<int, int>>;
-    vector<vector<Entry>> data = {// Boundary: empty array — UNSAT (0 is even, not odd).
-        {},
+    vector<vector<Entry>> data = {
+        // Boundary: empty array — UNSAT (0 is even, not odd).
+        {}, //
         // Singleton over {0, 1} — only x=1 satisfies.
-        {pair{0, 1}},
+        {pair{0, 1}}, //
         // Existing tight {0,1} cases.
-        {pair{0, 1}, pair{0, 1}}, {pair{0, 1}, pair{0, 1}, pair{0, 1}}, {pair{0, 1}, pair{0, 1}, pair{0, 1}, pair{0, 1}},
+        {pair{0, 1}, pair{0, 1}},                         //
+        {pair{0, 1}, pair{0, 1}, pair{0, 1}},             //
+        {pair{0, 1}, pair{0, 1}, pair{0, 1}, pair{0, 1}}, //
         // Wider non-binary domains — predicate is "nonzero count is odd",
         // so any nonzero value contributes.
-        {pair{0, 4}, pair{0, 4}, pair{0, 4}}, {pair{-3, 3}, pair{-3, 3}},
+        {pair{0, 4}, pair{0, 4}, pair{0, 4}}, //
+        {pair{-3, 3}, pair{-3, 3}},           //
         // Domains that don't include 0 — every entry is nonzero.
-        {pair{1, 5}, pair{1, 5}, pair{1, 5}}, {pair{-3, -1}, pair{1, 3}},
+        {pair{1, 5}, pair{1, 5}, pair{1, 5}}, //
+        {pair{-3, -1}, pair{1, 3}},           //
         // Constant entries: a fixed nonzero contributes 1 to the count;
         // a fixed 0 contributes nothing.
-        {1, pair{0, 3}, pair{0, 3}}, {0, pair{0, 3}, pair{0, 3}}, {3, 0, pair{0, 3}, pair{0, 3}},
+        {1, pair{0, 3}, pair{0, 3}},    //
+        {0, pair{0, 3}, pair{0, 3}},    //
+        {3, 0, pair{0, 3}, pair{0, 3}}, //
         // All-constant infeasible (count = 2, even).
-        {1, 1, 0},
+        {1, 1, 0}, //
         // All-constant feasible (count = 1, odd).
-        {1, 0, 0},
+        {1, 0, 0}, //
         // Single genuine constant (issue #254): one nonzero is odd (tautology).
-        {5},
+        {5}, //
         // Two genuine nonzero constants: count = 2, even (contradiction).
-        {2, 3},
+        {2, 3}, //
         // Longer all-constant: count = 3, odd (tautology).
-        {1, 2, 0, -1}};
+        {1, 2, 0, -1} //
+    };
 
     random_device rand_dev;
     mt19937 rand(rand_dev());

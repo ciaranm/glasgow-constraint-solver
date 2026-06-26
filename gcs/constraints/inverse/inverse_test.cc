@@ -122,23 +122,24 @@ auto main(int argc, char * argv[]) -> int
 
     using Entry = variant<int, pair<int, int>>;
     vector<tuple<vector<Entry>, vector<Entry>>> var_data = {// Boundary: empty arrays — vacuously satisfied.
-        {{}, {}},
+        {{}, {}},                                           //
         // Boundary: singleton — forces both to 0.
-        {{pair{0, 0}}, {pair{0, 0}}}, {{pair{0, 5}}, {pair{0, 5}}},
+        {{pair{0, 0}}, {pair{0, 0}}}, //
+        {{pair{0, 5}}, {pair{0, 5}}}, //
         // Existing hand-rolled cases.
-        {{pair{0, 2}, pair{0, 2}, pair{0, 2}}, {pair{0, 2}, pair{0, 2}, pair{0, 2}}},
-        {{pair{0, 2}, pair{1, 3}, pair{0, 2}, pair{0, 3}}, {pair{0, 3}, pair{1, 2}, pair{1, 3}, pair{0, 3}}},
-        {{pair{0, 2}, pair{0, 2}, pair{0, 2}, pair{0, 4}, pair{0, 4}}, {pair{0, 4}, pair{0, 4}, pair{0, 4}, pair{3, 4}, pair{3, 4}}},
+        {{pair{0, 2}, pair{0, 2}, pair{0, 2}}, {pair{0, 2}, pair{0, 2}, pair{0, 2}}},                                                 //
+        {{pair{0, 2}, pair{1, 3}, pair{0, 2}, pair{0, 3}}, {pair{0, 3}, pair{1, 2}, pair{1, 3}, pair{0, 3}}},                         //
+        {{pair{0, 2}, pair{0, 2}, pair{0, 2}, pair{0, 4}, pair{0, 4}}, {pair{0, 4}, pair{0, 4}, pair{0, 4}, pair{3, 4}, pair{3, 4}}}, //
         // Constant entries pin one inverse pair.
-        {{1, pair{0, 2}, pair{0, 2}}, {pair{0, 2}, 0, pair{0, 2}}},
-        {{pair{0, 3}, pair{0, 3}, 0, pair{0, 3}}, {2, pair{0, 3}, pair{0, 3}, pair{0, 3}}},
+        {{1, pair{0, 2}, pair{0, 2}}, {pair{0, 2}, 0, pair{0, 2}}},                         //
+        {{pair{0, 3}, pair{0, 3}, 0, pair{0, 3}}, {2, pair{0, 3}, pair{0, 3}, pair{0, 3}}}, //
         // Issue #171 regression: two array positions pinned to the same constant
         // makes the constraint infeasible (Inverse forces a permutation). The
         // recovered "AM1" line for the duplicate-pinned value is now a direct
         // `0 ≥ 1` contradiction, which downstream pol expressions sum into a
         // valid contradiction proof.
-        {{3, 2, 3, pair{0, 3}}, {pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}},
-        {{pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, {1, pair{0, 3}, 1, pair{0, 3}}},
+        {{3, 2, 3, pair{0, 3}}, {pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}},          //
+        {{pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, {1, pair{0, 3}, 1, pair{0, 3}}}, //
         // issue #254: fully all-constant arguments, both directions.
         {{0, 1}, {0, 1}},  // identity permutation, consistent (tautology)
         {{1, 0}, {1, 0}},  // swap: x[0]=1<->y[1]=0, x[1]=0<->y[0]=1, consistent (tautology)

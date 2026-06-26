@@ -16,8 +16,10 @@ namespace
 
     auto flatten(const ProofLiteral & lit) -> FlattenedProofLiteral
     {
-        return overloaded{[&](const Literal & lit) { return visit([&](const auto & v) -> FlattenedProofLiteral { return v; }, lit); },
-            [&](const ProofVariableCondition & cond) -> FlattenedProofLiteral { return cond; }}
+        return overloaded{
+            [&](const Literal & lit) { return visit([&](const auto & v) -> FlattenedProofLiteral { return v; }, lit); }, //
+            [&](const ProofVariableCondition & cond) -> FlattenedProofLiteral { return cond; }                           //
+        }
             .visit(lit);
     }
 
@@ -43,14 +45,17 @@ namespace
 
 auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const ProofLiteral & lit) -> SimpleLiteral
 {
-    return overloaded{[&](const TrueLiteral & t) -> SimpleLiteral { return t; }, [&](const FalseLiteral & f) -> SimpleLiteral { return f; },
+    return overloaded{
+        [&](const TrueLiteral & t) -> SimpleLiteral { return t; },  //
+        [&](const FalseLiteral & f) -> SimpleLiteral { return f; }, //
         [&](const IntegerVariableCondition & lit) -> SimpleLiteral {
-            return overloaded{[&](const SimpleIntegerVariableID & var) -> SimpleLiteral {
-                                  auto cond = VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value, lit.upper_value};
-                                  if (is_range_op(lit.op))
-                                      return canonicalise_range(cond);
-                                  return cond;
-                              },
+            return overloaded{
+                [&](const SimpleIntegerVariableID & var) -> SimpleLiteral {
+                    auto cond = VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value, lit.upper_value};
+                    if (is_range_op(lit.op))
+                        return canonicalise_range(cond);
+                    return cond;
+                },
                 [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
                     // Range conditions on views take the per-value fallback at the
                     // producing sites, so none should reach the literal layer: a
@@ -118,14 +123,16 @@ auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const Pr
                                                                                                     : SimpleLiteral{FalseLiteral{}};
                     }
                     throw NonExhaustiveSwitch{};
-                }}
+                } //
+            }
                 .visit(lit.var);
-        },
+        }, //
         [&](const ProofVariableCondition & cond) -> SimpleLiteral {
             auto result = VariableConditionFrom<ProofOnlySimpleIntegerVariableID>{cond.var, cond.op, cond.value, cond.upper_value};
             if (is_range_op(cond.op))
                 return canonicalise_range(result);
             return result;
-        }}
+        } //
+    }
         .visit(flatten(lit));
 }

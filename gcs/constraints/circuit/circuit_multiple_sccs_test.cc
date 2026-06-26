@@ -54,21 +54,23 @@ auto main(int argc, char * argv[]) -> int
 
     bool proofs = can_run_veripb();
     auto proof_name = proofs ? make_optional("circuit_multiple_sccs_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        for (const auto & v : nodes) {
-            cout << s(v) << " ";
-        }
-        cout << endl;
-        cout << 0 << " -> " << s(nodes[0]);
-        auto current = s(nodes[0]);
-        while (current != 0_i) {
-            cout << " -> ";
-            cout << s(nodes[current.as_index()]);
-            current = s(nodes[current.as_index()]);
-        }
-        cout << "\n\n";
-        return true;
-    }},
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                for (const auto & v : nodes) {
+                    cout << s(v) << " ";
+                }
+                cout << endl;
+                cout << 0 << " -> " << s(nodes[0]);
+                auto current = s(nodes[0]);
+                while (current != 0_i) {
+                    cout << " -> ";
+                    cout << s(nodes[current.as_index()]);
+                    current = s(nodes[current.as_index()]);
+                }
+                cout << "\n\n";
+                return true;
+            }},
         proof_name ? make_optional<ProofOptions>(*proof_name) : nullopt);
 
     cout << stats;

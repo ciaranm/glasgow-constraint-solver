@@ -184,7 +184,11 @@ namespace
 
         bool saw_false = false;
         for (auto & l : lits)
-            overloaded{[&](const FalseLiteral &) { saw_false = true; }, [&](const auto &) {}}.visit(l);
+            overloaded{
+                [&](const FalseLiteral &) { saw_false = true; }, //
+                [&](const auto &) {}                             //
+            }
+                .visit(l);
 
         if (saw_false) {
             model.add_constraint("Logical", "saw reif false", Literals{! full_reif});

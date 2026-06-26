@@ -168,12 +168,17 @@ auto main(int argc, char * argv[]) -> int
 
     bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
-    vector<tuple<vector<pair<int, int>>, pair<int, int>>> data = {{{{0, 1}, {0, 1}, {0, 1}}, {0, 1}}, {{{0, 1}, {0, 1}, {0, 1}}, {-1, -1}},
-        {{{0, 1}, {1, 1}, {0, 1}}, {0, 1}}, {{{0, 1}, {0, 0}, {0, 1}}, {0, 1}}, {{{2, 5}, {-2, -1}, {1, 3}, {2, 5}}, {0, 2}},
-        {{{2, 5}, {2, 5}}, {0, 0}}, {{{-2, 1}, {2, 5}, {-2, 1}, {2, 5}}, {-1, 1}}, {{{}}, {0, 1}},
+    vector<tuple<vector<pair<int, int>>, pair<int, int>>> data = {{{{0, 1}, {0, 1}, {0, 1}}, {0, 1}}, //
+        {{{0, 1}, {0, 1}, {0, 1}}, {-1, -1}},                                                         //
+        {{{0, 1}, {1, 1}, {0, 1}}, {0, 1}},                                                           //
+        {{{0, 1}, {0, 0}, {0, 1}}, {0, 1}},                                                           //
+        {{{2, 5}, {-2, -1}, {1, 3}, {2, 5}}, {0, 2}},                                                 //
+        {{{2, 5}, {2, 5}}, {0, 0}},                                                                   //
+        {{{-2, 1}, {2, 5}, {-2, 1}, {2, 5}}, {-1, 1}},                                                //
+        {{{}}, {0, 1}},                                                                               //
         // Degenerate cases (issue #254). Genuinely empty operand array: And() is
         // true, Or() is false, so the reif is pinned accordingly.
-        {{}, {0, 1}},
+        {{}, {0, 1}}, //
         // All-constant operands, both reif directions. Each row runs for both
         // And and Or; build_expected computes the per-connective truth.
         {{{1, 1}, {1, 1}}, {0, 1}},  // all true: And true, Or true

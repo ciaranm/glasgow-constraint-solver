@@ -93,14 +93,17 @@ namespace
 auto gcs::innards::materialise(const Reason & reason, const State & state) -> ReasonLiterals
 {
     ReasonLiterals result;
-    reason.visit(overloaded{[&](const NoReason &) {}, [&](const ExplicitReason & r) { result = r.literals; },
-        [&](const GenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, result); },
-        [&](const BothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, result); },
-        [&](const ExactSingleValue & r) { materialise_exact_single_value(state, *r.vars, r.extra, result); },
-        [&](const LazyReasonOver & r) { r.fn(state, result); },
-        [&](const NarrowableGenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, result); },
-        [&](const NarrowableBothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, result); },
-        [&](const NarrowableLazyReasonOver & r) { r.fn(state, result); }});
+    reason.visit(overloaded{
+        [&](const NoReason &) {},                                                                               //
+        [&](const ExplicitReason & r) { result = r.literals; },                                                 //
+        [&](const GenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, result); },             //
+        [&](const BothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, result); },           //
+        [&](const ExactSingleValue & r) { materialise_exact_single_value(state, *r.vars, r.extra, result); },   //
+        [&](const LazyReasonOver & r) { r.fn(state, result); },                                                 //
+        [&](const NarrowableGenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, result); },   //
+        [&](const NarrowableBothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, result); }, //
+        [&](const NarrowableLazyReasonOver & r) { r.fn(state, result); }                                        //
+    });
     return result;
 }
 

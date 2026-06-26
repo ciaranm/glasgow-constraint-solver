@@ -258,12 +258,13 @@ namespace
                 hall_value_nrs.push_back(vals[v.offset]);
 
         return tuple{hints::AllDifferentHall{{constraint_id}, hall_variable_ids, hall_value_nrs, &vars, &value_am1_constraint_numbers},
-            Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
-                                      out = materialise(generic_reason(hall_variable_ids), st);
-                                      for (const auto & v : hall_variable_ids)
-                                          for (const auto & s : excluded)
-                                              out.emplace_back(v != s);
-                                  }}}};
+            Reason{LazyReasonOver{hall_variable_ids, //
+                [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
+                    out = materialise(generic_reason(hall_variable_ids), st);
+                    for (const auto & v : hall_variable_ids)
+                        for (const auto & s : excluded)
+                            out.emplace_back(v != s);
+                }}}};
     }
 
     using Vertex = variant<Left, Right>;
@@ -276,7 +277,11 @@ namespace
 
     auto vertex_to_offset(const vector<IntegerVariableID> & vars, const vector<Integer> &, Vertex v) -> std::size_t
     {
-        return overloaded{[&](const Left & l) { return l.offset; }, [&](const Right & r) { return vars.size() + r.offset; }}.visit(v);
+        return overloaded{
+            [&](const Left & l) { return l.offset; },               //
+            [&](const Right & r) { return vars.size() + r.offset; } //
+        }
+            .visit(v);
     }
 
     auto prove_deletion_using_sccs(const ConstraintID & constraint_id, const vector<IntegerVariableID> & vars, const vector<Integer> & vals,
@@ -354,12 +359,13 @@ namespace
 
             return tuple{DeletionJustification{
                              hints::AllDifferentHall{{constraint_id}, hall_variable_ids, hall_value_nrs, &vars, &value_am1_constraint_numbers}},
-                Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
-                                          out = materialise(generic_reason(hall_variable_ids), st);
-                                          for (const auto & v : hall_variable_ids)
-                                              for (const auto & s : excluded)
-                                                  out.emplace_back(v != s);
-                                      }}}};
+                Reason{LazyReasonOver{hall_variable_ids, //
+                    [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
+                        out = materialise(generic_reason(hall_variable_ids), st);
+                        for (const auto & v : hall_variable_ids)
+                            for (const auto & s : excluded)
+                                out.emplace_back(v != s);
+                    }}}};
         }
     }
 }
@@ -571,12 +577,14 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         auto [justification, reason] = prove_deletion_using_sccs(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state,
             logger, edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
         visit(
-            overloaded{[&](hints::AllDifferent & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); },
+            overloaded{
+                [&](hints::AllDifferent & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); }, //
                 [&](hints::AllDifferentHall & w) {
                     tracker.infer_all(logger, deletions_by_scc[scc],
                         JustifyExplicitly{[&logger, wc = w](const ReasonLiterals & r) { emit_justification(*logger, wc, r); }, ThenRUP::Yes, move(w)},
                         reason);
-                }},
+                } //
+            },
             justification);
     }
 }

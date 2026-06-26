@@ -232,12 +232,12 @@ namespace
                         break;
                     }
                 inference.contradiction(logger,
-                    JustifyExplicitly{[&y, k1, k2, V = uy[j], logger](const ReasonLiterals &) -> void {
-                                          for (size_t m = k1; m < k2; ++m)
-                                              logger->emit(RUPProofRule{},
-                                                  WPBSum{} + 1_i * (y[m] < Integer{V + 1}) + 1_i * (y[m + 1] >= Integer{V + 1}) >= 1_i,
-                                                  ProofLevel::Temporary);
-                                      },
+                    JustifyExplicitly{//
+                        [&y, k1, k2, V = uy[j], logger](const ReasonLiterals &) -> void {
+                            for (size_t m = k1; m < k2; ++m)
+                                logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (y[m] < Integer{V + 1}) + 1_i * (y[m + 1] >= Integer{V + 1}) >= 1_i,
+                                    ProofLevel::Temporary);
+                        },
                         ThenRUP::Yes, hints::Sort{owner}},
                     reason);
             }
@@ -283,7 +283,7 @@ namespace
                 throw UnexpectedException{"Sort: no Hall violator for an infeasible matching"};
 
             inference.contradiction(logger,
-                JustifyExplicitly{
+                JustifyExplicitly{//
                     [&, S, fa, fb](const ReasonLiterals & reason_lits) -> void {
                         // Normalized y-bound lemmas as RUP chains: NUY[k] : y_k <= uy[k]
                         // (top-down, from y_k <= y_{k+1} <= uy[k+1] and y_k <= ouy[k]);
@@ -501,12 +501,12 @@ namespace
                     // from the sortedness constraint y[k-1] <= y[k]; the closing
                     // RUP walks the chain down to the witnessing earlier position.
                     inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
-                        JustifyExplicitly{[&y, j, L, logger](const ReasonLiterals &) -> void {
-                                              for (size_t k = 1; k <= j; ++k)
-                                                  logger->emit(RUPProofRule{},
-                                                      WPBSum{} + 1_i * (y[k] >= Integer{L}) + 1_i * (y[k - 1] < Integer{L}) >= 1_i,
-                                                      ProofLevel::Temporary);
-                                          },
+                        JustifyExplicitly{//
+                            [&y, j, L, logger](const ReasonLiterals &) -> void {
+                                for (size_t k = 1; k <= j; ++k)
+                                    logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (y[k] >= Integer{L}) + 1_i * (y[k - 1] < Integer{L}) >= 1_i,
+                                        ProofLevel::Temporary);
+                            },
                             ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 }
@@ -588,47 +588,47 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid lb(y) tightening"};
                     else
                         inference.infer_greater_than_or_equal(logger, y[j], Integer{L},
-                            JustifyExplicitly{[&y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, L, logger](
-                                                  const ReasonLiterals & reason_lits) -> void {
-                                                  for (size_t k = n; k-- > 0;)
-                                                      logger->emit_rup_proof_line_under_reason(
-                                                          reason_lits, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
-                                                  for (size_t k = 0; k < n; ++k)
-                                                      logger->emit_rup_proof_line_under_reason(
-                                                          reason_lits, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
-                                                  // BNUY[k], k <= j : (y[j] >= L) v (y[k] <= L-1),
-                                                  // chain down from j (RUP from sortedness + prev).
-                                                  for (size_t k = j + 1; k-- > 0;)
-                                                      logger->emit(RUPProofRule{},
-                                                          WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * (y[k] < Integer{L}) >= 1_i,
-                                                          ProofLevel::Temporary);
-                                                  std::vector<ProofLine> restricted(S.size());
-                                                  for (const auto & [idx, i] : enumerate(S)) {
-                                                      for (long long k = 0; cmp_less(k, n); ++k) {
-                                                          if (k >= fa && k <= fb)
-                                                              continue;
-                                                          if (cmp_less(k, lo_i[i]) || cmp_greater_equal(k, hi_i[i]))
-                                                              logger->emit_rup_proof_line_under_reason(
-                                                                  reason_lits, WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
-                                                          else
-                                                              logger->emit_rup_proof_line_under_reason(reason_lits,
-                                                                  WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * (pos[i] != Integer{k}) >= 1_i,
-                                                                  ProofLevel::Temporary);
-                                                      }
-                                                      WPBSum in_band;
-                                                      in_band += 1_i * (y[j] >= Integer{L});
-                                                      for (long long k = fa; k <= fb; ++k)
-                                                          in_band += 1_i * (pos[i] == Integer{k});
-                                                      restricted[idx] = logger->emit_rup_proof_line_under_reason(
-                                                          reason_lits, move(in_band) >= 1_i, ProofLevel::Temporary);
-                                                  }
-                                                  PolBuilder pol;
-                                                  for (auto l : restricted)
-                                                      pol.add(l);
-                                                  for (long long k = fa; k <= fb; ++k)
-                                                      pol.add(inj_lines[static_cast<size_t>(k)]);
-                                                  pol.emit(*logger, ProofLevel::Temporary);
-                                              },
+                            JustifyExplicitly{//
+                                [&y, &pos, &lo_i, &hi_i, &ly, &uy, &inj_lines, S, fa, fb, n, j, L, logger](
+                                    const ReasonLiterals & reason_lits) -> void {
+                                    for (size_t k = n; k-- > 0;)
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason_lits, WPBSum{} + 1_i * y[k] <= Integer{uy[k]}, ProofLevel::Temporary);
+                                    for (size_t k = 0; k < n; ++k)
+                                        logger->emit_rup_proof_line_under_reason(
+                                            reason_lits, WPBSum{} + 1_i * y[k] >= Integer{ly[k]}, ProofLevel::Temporary);
+                                    // BNUY[k], k <= j : (y[j] >= L) v (y[k] <= L-1),
+                                    // chain down from j (RUP from sortedness + prev).
+                                    for (size_t k = j + 1; k-- > 0;)
+                                        logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * (y[k] < Integer{L}) >= 1_i,
+                                            ProofLevel::Temporary);
+                                    std::vector<ProofLine> restricted(S.size());
+                                    for (const auto & [idx, i] : enumerate(S)) {
+                                        for (long long k = 0; cmp_less(k, n); ++k) {
+                                            if (k >= fa && k <= fb)
+                                                continue;
+                                            if (cmp_less(k, lo_i[i]) || cmp_greater_equal(k, hi_i[i]))
+                                                logger->emit_rup_proof_line_under_reason(
+                                                    reason_lits, WPBSum{} + 1_i * (pos[i] != Integer{k}) >= 1_i, ProofLevel::Temporary);
+                                            else
+                                                logger->emit_rup_proof_line_under_reason(reason_lits,
+                                                    WPBSum{} + 1_i * (y[j] >= Integer{L}) + 1_i * (pos[i] != Integer{k}) >= 1_i,
+                                                    ProofLevel::Temporary);
+                                        }
+                                        WPBSum in_band;
+                                        in_band += 1_i * (y[j] >= Integer{L});
+                                        for (long long k = fa; k <= fb; ++k)
+                                            in_band += 1_i * (pos[i] == Integer{k});
+                                        restricted[idx] =
+                                            logger->emit_rup_proof_line_under_reason(reason_lits, move(in_band) >= 1_i, ProofLevel::Temporary);
+                                    }
+                                    PolBuilder pol;
+                                    for (auto l : restricted)
+                                        pol.add(l);
+                                    for (long long k = fa; k <= fb; ++k)
+                                        pol.add(inj_lines[static_cast<size_t>(k)]);
+                                    pol.emit(*logger, ProofLevel::Temporary);
+                                },
                                 ThenRUP::Yes, hints::Sort{owner}},
                             reason);
                 }
@@ -662,12 +662,12 @@ namespace
                     // to the witnessing later position (whose ub <= U is in the
                     // reason), reaching a contradiction.
                     inference.infer_less_than(logger, y[j], Integer{U + 1},
-                        JustifyExplicitly{[&y, n, j, U, logger](const ReasonLiterals &) -> void {
-                                              for (size_t k = j; k + 1 < n; ++k)
-                                                  logger->emit(RUPProofRule{},
-                                                      WPBSum{} + 1_i * (y[k] < Integer{U + 1}) + 1_i * (y[k + 1] >= Integer{U + 1}) >= 1_i,
-                                                      ProofLevel::Temporary);
-                                          },
+                        JustifyExplicitly{//
+                            [&y, n, j, U, logger](const ReasonLiterals &) -> void {
+                                for (size_t k = j; k + 1 < n; ++k)
+                                    logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (y[k] < Integer{U + 1}) + 1_i * (y[k + 1] >= Integer{U + 1}) >= 1_i,
+                                        ProofLevel::Temporary);
+                            },
                             ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 }
@@ -678,7 +678,7 @@ namespace
                     // permutation lines) surjectivity give y[j] <= U; the count
                     // line "count_U >= j+1" is plain RUP under the reason.
                     inference.infer_less_than(logger, y[j], Integer{U + 1},
-                        JustifyExplicitly{
+                        JustifyExplicitly{//
                             [&x, &y, &before, &pos, &rank_lines, &inj_lines, &al1_lines, n, j, U, logger](
                                 const ReasonLiterals & reason_lits) -> void {
                                 // PIVOT BRIDGE (honest, transitivity-free). For each i, m the
@@ -839,12 +839,12 @@ namespace
                 // for pos[i] then closes it. HALL (jl_in > lo_i): asserted.
                 if (jl_in[i] == lo_i[i])
                     inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
-                        JustifyExplicitly{[&x, &pos, n, i, L, logger](const ReasonLiterals & reason_lits) -> void {
-                                              for (size_t k = 0; k < n; ++k)
-                                                  logger->emit_rup_proof_line_under_reason(reason_lits,
-                                                      WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] >= Integer{L}) >= 1_i,
-                                                      ProofLevel::Temporary);
-                                          },
+                        JustifyExplicitly{//
+                            [&x, &pos, n, i, L, logger](const ReasonLiterals & reason_lits) -> void {
+                                for (size_t k = 0; k < n; ++k)
+                                    logger->emit_rup_proof_line_under_reason(reason_lits,
+                                        WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] >= Integer{L}) >= 1_i, ProofLevel::Temporary);
+                            },
                             ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 else {
@@ -862,7 +862,7 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid lb(x) tightening"};
                     else
                         inference.infer_greater_than_or_equal(logger, x[i], Integer{L},
-                            JustifyExplicitly{
+                            JustifyExplicitly{//
                                 [&x, &y, &pos, &ly, &uy, &inj_lines, S, fa, fb, i, n, L, logger](const ReasonLiterals & reason_lits) -> void {
                                     for (size_t k = n; k-- > 0;)
                                         logger->emit_rup_proof_line_under_reason(
@@ -911,12 +911,12 @@ namespace
                 // uy[hi_i-1] (jh_in[i] == hi_i[i]-1).
                 if (jh_in[i] + 1 == hi_i[i])
                     inference.infer_less_than(logger, x[i], Integer{U + 1},
-                        JustifyExplicitly{[&x, &pos, n, i, U, logger](const ReasonLiterals & reason_lits) -> void {
-                                              for (size_t k = 0; k < n; ++k)
-                                                  logger->emit_rup_proof_line_under_reason(reason_lits,
-                                                      WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] < Integer{U + 1}) >= 1_i,
-                                                      ProofLevel::Temporary);
-                                          },
+                        JustifyExplicitly{//
+                            [&x, &pos, n, i, U, logger](const ReasonLiterals & reason_lits) -> void {
+                                for (size_t k = 0; k < n; ++k)
+                                    logger->emit_rup_proof_line_under_reason(reason_lits,
+                                        WPBSum{} + 1_i * (pos[i] != Integer(k)) + 1_i * (x[i] < Integer{U + 1}) >= 1_i, ProofLevel::Temporary);
+                            },
                             ThenRUP::Yes, hints::Sort{owner}},
                         reason);
                 else {
@@ -931,7 +931,7 @@ namespace
                         throw UnexpectedException{"Sort: no Hall band for a valid ub(x) tightening"};
                     else
                         inference.infer_less_than(logger, x[i], Integer{U + 1},
-                            JustifyExplicitly{
+                            JustifyExplicitly{//
                                 [&x, &y, &pos, &ly, &uy, &inj_lines, S, fa, fb, i, n, U, logger](const ReasonLiterals & reason_lits) -> void {
                                     for (size_t k = n; k-- > 0;)
                                         logger->emit_rup_proof_line_under_reason(

@@ -89,12 +89,16 @@ namespace
     {
         return overloaded{
             [&](const ProofLiteral & lit) {
-                return overloaded{[](const TrueLiteral &) -> string { return "1"; }, [](const FalseLiteral &) -> string { return "0"; },
-                    [&]<typename T_>(const VariableConditionFrom<T_> & var) -> string { return names_and_ids_tracker.pb_file_string_for(var); }}
+                return overloaded{
+                    [](const TrueLiteral &) -> string { return "1"; }, //
+                    [](const FalseLiteral &) -> string { return "0"; },
+                    [&]<typename T_>(const VariableConditionFrom<T_> & var) -> string { return names_and_ids_tracker.pb_file_string_for(var); } //
+                }
                     .visit(simplify_literal(names_and_ids_tracker, lit));
-            },
-            [&](const ProofFlag & flag) { return names_and_ids_tracker.pb_file_string_for(flag); },
-            [&](const ProofBitVariable & bit) { return names_and_ids_tracker.pb_file_string_for(names_and_ids_tracker.get_bit(bit).second); }}
+            },                                                                                                                                //
+            [&](const ProofFlag & flag) { return names_and_ids_tracker.pb_file_string_for(flag); },                                           //
+            [&](const ProofBitVariable & bit) { return names_and_ids_tracker.pb_file_string_for(names_and_ids_tracker.get_bit(bit).second); } //
+        }
             .visit(lit);
     }
 }
@@ -153,9 +157,11 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     _imp->proof << "% solution\n";
 
     for (const auto & [var, val] : all_variables_and_values)
-        overloaded{[&](const ConstantIntegerVariableID &) {},
-            [&](const SimpleIntegerVariableID & var) { names_and_ids_tracker().need_proof_name(var == val); },
-            [&](const ViewOfIntegerVariableID & var) { names_and_ids_tracker().need_proof_name(deview(var == val)); }}
+        overloaded{
+            [&](const ConstantIntegerVariableID &) {},                                                                //
+            [&](const SimpleIntegerVariableID & var) { names_and_ids_tracker().need_proof_name(var == val); },        //
+            [&](const ViewOfIntegerVariableID & var) { names_and_ids_tracker().need_proof_name(deview(var == val)); } //
+        }
             .visit(var);
 
     _imp->proof << (optional_minimise_variable_and_value ? "soli" : "solx");
@@ -166,20 +172,22 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         if (! optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
             blocking_sum += 1_i * (var != val);
 
-        overloaded{[&](const ConstantIntegerVariableID &) {},
+        overloaded{
+            [&](const ConstantIntegerVariableID &) {}, //
             [&](const SimpleIntegerVariableID & var) {
                 if (_imp->assertion_level > AssertionLevel::Definitions)
                     _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(var, val);
                 else
                     _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(var == val);
-            },
+            }, //
             [&](const ViewOfIntegerVariableID & var) {
                 if (_imp->assertion_level > AssertionLevel::Definitions) {
                     _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*names_and_ids_tracker().find_view(var), val);
                 }
                 else
                     _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
-            }}
+            } //
+        }
             .visit(var);
     }
 
@@ -292,11 +300,11 @@ auto ProofLogger::infer(
     if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
         if (cond->op == VariableConditionOperator::NotInRange) {
             auto needs_per_value_fallback = overloaded{
-                [&](const SimpleIntegerVariableID & v) { return ! names_and_ids_tracker().has_bit_representation(v); },
-                [&](const ViewOfIntegerVariableID &) { return true; },
-                [&](const ConstantIntegerVariableID &) {
-                    return false;
-                }}.visit(cond->var);
+                [&](const SimpleIntegerVariableID & v) { return ! names_and_ids_tracker().has_bit_representation(v); }, //
+                [&](const ViewOfIntegerVariableID &) { return true; },                                                  //
+                [&](const ConstantIntegerVariableID &) { return false; }                                                //
+            }
+                                                .visit(cond->var);
             if (needs_per_value_fallback) {
                 for (Integer val = cond->value; val <= cond->upper_value; ++val)
                     infer(cond->var != val, why, reason);
@@ -319,17 +327,19 @@ auto ProofLogger::infer(
         return;
     }
 
-    overloaded{[&]([[maybe_unused]] const JustifyUsingRUP<NoHint> & j) {
-                   if (! is_literally_true(lit)) {
-                       emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
-                   }
-               },
+    overloaded{
+        [&]([[maybe_unused]] const JustifyUsingRUP<NoHint> & j) {
+            if (! is_literally_true(lit)) {
+                emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
+            }
+        }, //
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
             if (! is_literally_true(lit)) {
                 emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
             }
-        },
-        [&](const NoJustificationNeeded &) {}}
+        },                                    //
+        [&](const NoJustificationNeeded &) {} //
+    }
         .visit(why);
 }
 
@@ -360,25 +370,29 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 
     stringstream rule_line;
 
-    rule_line << overloaded{[&](const RUPProofRule &) -> string { return "rup"; }, [&](const ImpliesProofRule &) -> string { return "ia"; },
-                     [&](const AssertProofRule &) -> string { return "a"; }}
+    rule_line << overloaded{
+                     [&](const RUPProofRule &) -> string { return "rup"; },    //
+                     [&](const ImpliesProofRule &) -> string { return "ia"; }, //
+                     [&](const AssertProofRule &) -> string { return "a"; }    //
+                 }
                      .visit(rule)
               << " ";
 
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
-    overloaded{[&](const RUPProofRule & rule) {
-                   if (rule.lines) {
-                       rule_line << ": ";
-                       for (auto & line : *rule.lines) {
-                           rule_line << relative_proof_line(line, _imp->proof_line.number) << ' ';
-                       }
-                       rule_line << " ;";
-                   }
-                   else {
-                       rule_line << ";";
-                   }
-               },
+    overloaded{
+        [&](const RUPProofRule & rule) {
+            if (rule.lines) {
+                rule_line << ": ";
+                for (auto & line : *rule.lines) {
+                    rule_line << relative_proof_line(line, _imp->proof_line.number) << ' ';
+                }
+                rule_line << " ;";
+            }
+            else {
+                rule_line << ";";
+            }
+        }, //
         [&](const ImpliesProofRule & rule) {
             if (rule.line) {
                 rule_line << ": ";
@@ -388,13 +402,14 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
             else {
                 rule_line << ";";
             }
-        },
+        }, //
         [&](const AssertProofRule &) {
             if (assertion_hint) {
                 rule_line << *assertion_hint;
             }
             rule_line << ";";
-        }}
+        } //
+    }
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
@@ -418,8 +433,11 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     log_stacktrace();
     stringstream rule_line;
 
-    rule_line << overloaded{[&](const RUPProofRule &) -> string { return "rup"; }, [&](const ImpliesProofRule &) -> string { return "ia"; },
-                     [&](const AssertProofRule &) -> string { return "a"; }}
+    rule_line << overloaded{
+                     [&](const RUPProofRule &) -> string { return "rup"; },    //
+                     [&](const ImpliesProofRule &) -> string { return "ia"; }, //
+                     [&](const AssertProofRule &) -> string { return "a"; }    //
+                 }
                      .visit(rule)
               << " ";
 
@@ -430,18 +448,19 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
     }
 
-    overloaded{[&](const RUPProofRule & rule) {
-                   if (rule.lines) {
-                       rule_line << ": ";
-                       for (const auto & line : *rule.lines) {
-                           rule_line << relative_proof_line(line, _imp->proof_line.number) << " ";
-                       }
-                       rule_line << " ;";
-                   }
-                   else {
-                       rule_line << ";";
-                   }
-               },
+    overloaded{
+        [&](const RUPProofRule & rule) {
+            if (rule.lines) {
+                rule_line << ": ";
+                for (const auto & line : *rule.lines) {
+                    rule_line << relative_proof_line(line, _imp->proof_line.number) << " ";
+                }
+                rule_line << " ;";
+            }
+            else {
+                rule_line << ";";
+            }
+        }, //
         [&](const ImpliesProofRule & rule) {
             if (rule.line) {
                 rule_line << ": ";
@@ -451,14 +470,15 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
             else {
                 rule_line << ";";
             }
-        },
+        }, //
         [&](const AssertProofRule &) {
             if (assertion_hint) {
                 rule_line << *assertion_hint;
             }
 
             rule_line << ";";
-        }}
+        } //
+    }
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
@@ -595,7 +615,10 @@ auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
         advance_proof_line_number();
         write_indent();
         _imp->proof << "proofgoal ";
-        visit(overloaded{[&](const ProofLine & l) { _imp->proof << relative_proof_line(l, goal_base); }, [&](const string & s) { _imp->proof << s; }},
+        visit(overloaded{
+                  [&](const ProofLine & l) { _imp->proof << relative_proof_line(l, goal_base); }, //
+                  [&](const string & s) { _imp->proof << s; }                                     //
+              },
             proofgoal);
         _imp->proof << "\n";
         _imp->current_indent += INDENT_WIDTH;

@@ -95,12 +95,14 @@ auto main(int argc, char * argv[]) -> int
     }
 
     bool find_all = options_vars.contains("all");
-    auto stats = solve_with(problem, SolveCallbacks{.solution = [&](const CurrentState & state) -> bool {
-        for (const auto & [name, id] : variables)
-            print("{}={} ", name, state(id));
-        println("");
-        return find_all;
-    }},
+    auto stats = solve_with(problem, //
+        SolveCallbacks{              //
+            .solution = [&](const CurrentState & state) -> bool {
+                for (const auto & [name, id] : variables)
+                    print("{}={} ", name, state(id));
+                println("");
+                return find_all;
+            }},
         options_vars.contains("prove") ? make_optional<ProofOptions>(ProofFileNames{options_vars["proof-files-basename"].as<string>()}) : nullopt);
 
     if (options_vars.contains("stats"))

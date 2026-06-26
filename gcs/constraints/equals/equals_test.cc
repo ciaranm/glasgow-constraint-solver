@@ -195,13 +195,24 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {{pair{2, 5}, pair{1, 6}}, {pair{1, 6}, pair{2, 5}},
-        {pair{1, 3}, pair{1, 3}}, {pair{1, 5}, pair{6, 8}}, {pair{1, 1}, pair{2, 4}}, {pair{-2, -2}, pair{-2, -1}}, {pair{1, 3}, pair{5, 8}},
-        {pair{4, 13}, pair{3, 16}}, {pair{-2, 4}, pair{-8, 7}}, {pair{-7, 3}, pair{-10, 5}},
+    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {
+        {pair{2, 5}, pair{1, 6}},     //
+        {pair{1, 6}, pair{2, 5}},     //
+        {pair{1, 3}, pair{1, 3}},     //
+        {pair{1, 5}, pair{6, 8}},     //
+        {pair{1, 1}, pair{2, 4}},     //
+        {pair{-2, -2}, pair{-2, -1}}, //
+        {pair{1, 3}, pair{5, 8}},     //
+        {pair{4, 13}, pair{3, 16}},   //
+        {pair{-2, 4}, pair{-8, 7}},   //
+        {pair{-7, 3}, pair{-10, 5}},  //
         // issue #254: genuine all-constant operands (ConstantIntegerVariableID),
         // both directions. Each Equals/NotEquals (and reified) mode is computed
         // from build_expected: 4==4 holds, 4==5 does not.
-        {4, 4}, {4, 5}, {-3, -3}};
+        {4, 4},  //
+        {4, 5},  //
+        {-3, -3} //
+    };
 
     random_device rand_dev;
     mt19937 rand(get_seed().value_or(rand_dev()));
@@ -218,7 +229,9 @@ auto main(int argc, char * argv[]) -> int
 
     // Bare-handle dup ranges. Skipped under the view-wrap sweep (which
     // mutates positional view-wraps in ways that aren't aliasing-aware).
-    vector<pair<int, int>> dup_data = {{0, 0}, {0, 1}, {0, 5}, {-3, 3}, {2, 5}};
+    vector<pair<int, int>> dup_data = {
+        {0, 0}, {0, 1}, {0, 5}, {-3, 3}, {2, 5} //
+    };
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())

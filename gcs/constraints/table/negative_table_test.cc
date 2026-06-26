@@ -110,7 +110,11 @@ auto run_negative_wildcard_table_test(
     cerr << flush;
 
     auto entry_matches = [](const IntegerOrWildcard & entry, int val) -> bool {
-        return overloaded{[val](Integer i) { return i.raw_value == val; }, [](Wildcard) { return true; }}.visit(entry);
+        return overloaded{
+            [val](Integer i) { return i.raw_value == val; }, //
+            [](Wildcard) { return true; }                    //
+        }
+            .visit(entry);
     };
 
     set<tuple<int, int, int>> expected, actual;
@@ -199,8 +203,8 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     // Three-variable cases.
     run_negative_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{1_i, 1_i, 1_i}, {2_i, 2_i, 2_i}, {3_i, 3_i, 3_i}}); // exclude diagonal
     run_negative_table_test_3(proofs, view_cfg, {1, 2}, {1, 2}, {1, 2},
-        {{1_i, 1_i, 1_i}, {1_i, 1_i, 2_i}, {1_i, 2_i, 1_i}, {1_i, 2_i, 2_i}, {2_i, 1_i, 1_i}, {2_i, 1_i, 2_i}, {2_i, 2_i, 1_i},
-            {2_i, 2_i, 2_i}}); // all forbidden: unsat
+        {{1_i, 1_i, 1_i}, {1_i, 1_i, 2_i}, {1_i, 2_i, 1_i}, {1_i, 2_i, 2_i},      //
+            {2_i, 1_i, 1_i}, {2_i, 1_i, 2_i}, {2_i, 2_i, 1_i}, {2_i, 2_i, 2_i}}); // all forbidden: unsat
     run_negative_table_test_3(proofs, view_cfg, {1, 3}, {2, 4}, {1, 2}, {{1_i, 2_i, 1_i}, {3_i, 4_i, 2_i}});
     run_negative_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3},
         {{1_i, 1_i, 1_i}, {1_i, 1_i, 2_i}, {1_i, 1_i, 3_i}}); // (1,1,*) all forbidden: forces v1!=1 OR v2!=1 (cascade)
@@ -208,7 +212,8 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 
     // Larger forbidden tables to exercise watched-literal scaling.
     run_negative_table_test_3(proofs, view_cfg, {1, 4}, {1, 4}, {1, 4},
-        {{1_i, 1_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 1_i, 4_i}, {2_i, 3_i, 2_i}, {3_i, 4_i, 1_i}, {4_i, 2_i, 3_i}, {4_i, 4_i, 4_i}, {1_i, 3_i, 2_i},
+        {{1_i, 1_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 1_i, 4_i}, {2_i, 3_i, 2_i},    //
+            {3_i, 4_i, 1_i}, {4_i, 2_i, 3_i}, {4_i, 4_i, 4_i}, {1_i, 3_i, 2_i}, //
             {2_i, 2_i, 2_i}, {3_i, 3_i, 3_i}});
 
     // Wildcard cases.

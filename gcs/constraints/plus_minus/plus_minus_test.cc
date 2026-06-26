@@ -176,20 +176,32 @@ auto main(int argc, char * argv[]) -> int
 
     using V12 = variant<int, pair<int, int>, vector<int>>;
     using V3 = variant<int, pair<int, int>>;
-    vector<tuple<V12, V12, V3>> data = {{pair{2, 5}, pair{1, 6}, pair{1, 12}}, {pair{1, 6}, pair{2, 5}, pair{5, 8}},
-        {pair{1, 3}, pair{1, 3}, pair{0, 10}}, {pair{1, 3}, pair{1, 3}, pair{1, 3}}, {pair{1, 5}, pair{6, 8}, pair{-10, 10}},
-        {pair{1, 1}, pair{2, 4}, pair{-5, 5}}, {pair{10, 15}, pair{60, 80}, pair{-100, 100}}, {pair{-10, 0}, pair{-4, 2}, pair{4, 9}},
-        {pair{1, 100}, pair{1, 3}, pair{1, 100}}, {pair{1, 10}, pair{1, 3}, pair{1, 10}}, {pair{1, 10}, pair{1, 10}, pair{1, 20}},
-        {vector{1, 5, 10}, vector{1, 5, 10}, pair{1, 20}}, {vector{1, 2, 3, 5, 6, 10}, vector{1, 2, 3, 5, 8, 9, 10}, pair{1, 20}},
+    vector<tuple<V12, V12, V3>> data = {
+        {pair{2, 5}, pair{1, 6}, pair{1, 12}},                                  //
+        {pair{1, 6}, pair{2, 5}, pair{5, 8}},                                   //
+        {pair{1, 3}, pair{1, 3}, pair{0, 10}},                                  //
+        {pair{1, 3}, pair{1, 3}, pair{1, 3}},                                   //
+        {pair{1, 5}, pair{6, 8}, pair{-10, 10}},                                //
+        {pair{1, 1}, pair{2, 4}, pair{-5, 5}},                                  //
+        {pair{10, 15}, pair{60, 80}, pair{-100, 100}},                          //
+        {pair{-10, 0}, pair{-4, 2}, pair{4, 9}},                                //
+        {pair{1, 100}, pair{1, 3}, pair{1, 100}},                               //
+        {pair{1, 10}, pair{1, 3}, pair{1, 10}},                                 //
+        {pair{1, 10}, pair{1, 10}, pair{1, 20}},                                //
+        {vector{1, 5, 10}, vector{1, 5, 10}, pair{1, 20}},                      //
+        {vector{1, 2, 3, 5, 6, 10}, vector{1, 2, 3, 5, 8, 9, 10}, pair{1, 20}}, //
         // Constant-result regression: x + y == 6 over [1,5] × [1,5].
-        {pair{1, 5}, pair{1, 5}, 6},
+        {pair{1, 5}, pair{1, 5}, 6}, //
         // Constant-operand: x + 2 == z over [1,5] × [3,8].
-        {pair{1, 5}, 2, pair{3, 8}},
+        {pair{1, 5}, 2, pair{3, 8}}, //
         // issue #254: fully all-constant operands (ConstantIntegerVariableID).
         // Each row runs for both Plus and Minus; build_expected gives the
         // per-operation truth, e.g. {2,3,5}: 2+3==5 (Plus SAT) but 2-3!=5
         // (Minus UNSAT); {4,1,3}: 4+1!=3 (Plus UNSAT) but 4-1==3 (Minus SAT).
-        {2, 3, 5}, {4, 1, 3}, {0, 0, 0}};
+        {2, 3, 5}, //
+        {4, 1, 3}, //
+        {0, 0, 0}  //
+    };
 
     // The random sweep mixes constants and bounds-pairs across all three slots
     // via random_bounds_or_constant. v1/v2's variant is wider than the helper's
@@ -206,7 +218,12 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // Bare-handle dup ranges. Skipped under the view-wrap sweep.
-    vector<pair<pair<int, int>, pair<int, int>>> dup_data = {{{0, 5}, {0, 10}}, {{-3, 3}, {-6, 6}}, {{1, 4}, {-5, 5}}, {{0, 0}, {0, 5}}};
+    vector<pair<pair<int, int>, pair<int, int>>> dup_data = {
+        {{0, 5}, {0, 10}},  //
+        {{-3, 3}, {-6, 6}}, //
+        {{1, 4}, {-5, 5}},  //
+        {{0, 0}, {0, 5}}    //
+    };
 
     auto plus_sat = [](int a, int b, int c) { return a + b == c; };
     auto minus_sat = [](int a, int b, int c) { return a - b == c; };

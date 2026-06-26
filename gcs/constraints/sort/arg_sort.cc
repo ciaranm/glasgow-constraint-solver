@@ -375,43 +375,43 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
                         }
 
                         inference.infer_not_equal(logger, p[j], pv,
-                            JustifyExplicitly{[&, k, U](const ReasonLiterals & reason_lits) -> void {
-                                                  // Line A: x[k] <= U => pos[k] <= #possible(U).
-                                                  // For each i that cannot precede k at x[k]=U, the clause
-                                                  // (x[k] >= U+1) v !before[i][k] is RUP from before_fwd +
-                                                  // the bound on x[i]; rank_le[k] folds them in.
-                                                  PolBuilder polA;
-                                                  polA.add(witness.rank_le[k]);
-                                                  for (size_t i = 0; i < n; ++i) {
-                                                      if (i == k)
-                                                          continue;
-                                                      auto [li, ui] = state.bounds(x[i]);
-                                                      bool cannot = (i < k) ? (li.raw_value > U) : (li.raw_value >= U);
-                                                      if (cannot)
-                                                          polA.add(logger->emit_rup_proof_line_under_reason(reason_lits,
-                                                              WPBSum{} + 1_i * (x[k] >= Integer{U + 1}) + 1_i * ! witness.before[i][k] >= 1_i,
-                                                              ProofLevel::Temporary));
-                                                  }
-                                                  polA.emit(*logger, ProofLevel::Temporary);
+                            JustifyExplicitly{//
+                                [&, k, U](const ReasonLiterals & reason_lits) -> void {
+                                    // Line A: x[k] <= U => pos[k] <= #possible(U).
+                                    // For each i that cannot precede k at x[k]=U, the clause
+                                    // (x[k] >= U+1) v !before[i][k] is RUP from before_fwd +
+                                    // the bound on x[i]; rank_le[k] folds them in.
+                                    PolBuilder polA;
+                                    polA.add(witness.rank_le[k]);
+                                    for (size_t i = 0; i < n; ++i) {
+                                        if (i == k)
+                                            continue;
+                                        auto [li, ui] = state.bounds(x[i]);
+                                        bool cannot = (i < k) ? (li.raw_value > U) : (li.raw_value >= U);
+                                        if (cannot)
+                                            polA.add(logger->emit_rup_proof_line_under_reason(reason_lits,
+                                                WPBSum{} + 1_i * (x[k] >= Integer{U + 1}) + 1_i * ! witness.before[i][k] >= 1_i,
+                                                ProofLevel::Temporary));
+                                    }
+                                    polA.emit(*logger, ProofLevel::Temporary);
 
-                                                  // Line B: x[k] >= U+1 => pos[k] >= #forced(U+1).
-                                                  // For each i forced to precede k at x[k]=U+1, the clause
-                                                  // (x[k] <= U) v before[i][k] is RUP from before_rev +
-                                                  // the bound on x[i]; rank_ge[k] folds them in.
-                                                  PolBuilder polB;
-                                                  polB.add(witness.rank_ge[k]);
-                                                  for (size_t i = 0; i < n; ++i) {
-                                                      if (i == k)
-                                                          continue;
-                                                      auto [li, ui] = state.bounds(x[i]);
-                                                      bool forced = (i < k) ? (ui.raw_value <= U + 1) : (ui.raw_value <= U);
-                                                      if (forced)
-                                                          polB.add(logger->emit_rup_proof_line_under_reason(reason_lits,
-                                                              WPBSum{} + 1_i * (x[k] < Integer{U + 1}) + 1_i * witness.before[i][k] >= 1_i,
-                                                              ProofLevel::Temporary));
-                                                  }
-                                                  polB.emit(*logger, ProofLevel::Temporary);
-                                              },
+                                    // Line B: x[k] >= U+1 => pos[k] >= #forced(U+1).
+                                    // For each i forced to precede k at x[k]=U+1, the clause
+                                    // (x[k] <= U) v before[i][k] is RUP from before_rev +
+                                    // the bound on x[i]; rank_ge[k] folds them in.
+                                    PolBuilder polB;
+                                    polB.add(witness.rank_ge[k]);
+                                    for (size_t i = 0; i < n; ++i) {
+                                        if (i == k)
+                                            continue;
+                                        auto [li, ui] = state.bounds(x[i]);
+                                        bool forced = (i < k) ? (ui.raw_value <= U + 1) : (ui.raw_value <= U);
+                                        if (forced)
+                                            polB.add(logger->emit_rup_proof_line_under_reason(reason_lits,
+                                                WPBSum{} + 1_i * (x[k] < Integer{U + 1}) + 1_i * witness.before[i][k] >= 1_i, ProofLevel::Temporary));
+                                    }
+                                    polB.emit(*logger, ProofLevel::Temporary);
+                                },
                                 ThenRUP::Yes, hints::ArgSort{owner}},
                             bounds_reason(x));
                     }

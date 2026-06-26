@@ -136,9 +136,10 @@ auto Among::install_propagators(Propagators & propagators) -> void
             auto not_impossible_start = partition(partitioned_vars, [&](const auto & var) -> bool {
                 return none_of(values_of_interest, [&](const auto & val) -> bool { return state.in_domain(var, val); });
             }).begin();
-            auto can_be_either_start = partition(subrange{not_impossible_start, partitioned_vars.end()}, [&](const auto & var) -> bool {
-                return none_of(state.each_value_immutable(var), [&](const auto & val) -> bool { return ! contains(values_of_interest, val); });
-            }).begin();
+            auto can_be_either_start = partition(subrange{not_impossible_start, partitioned_vars.end()}, //
+                [&](const auto & var) -> bool {
+                    return none_of(state.each_value_immutable(var), [&](const auto & val) -> bool { return ! contains(values_of_interest, val); });
+                }).begin();
 
             auto must_not_match_vars = subrange{partitioned_vars.begin(), not_impossible_start};
             auto must_match_vars = subrange{not_impossible_start, can_be_either_start};

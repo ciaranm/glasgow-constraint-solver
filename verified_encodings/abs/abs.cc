@@ -87,10 +87,12 @@ auto main(int argc, char * argv[]) -> int
     auto y = p.create_integer_variable(4_i, 5_i, "Y");
     p.post(Abs{x, y}); // Y = |X|
 
-    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        println("X = {}, Y = {}", s(x), s(y));
-        return true;
-    }},
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                println("X = {}, Y = {}", s(x), s(y));
+                return true;
+            }},
         options_vars.contains("prove") ? make_optional<ProofOptions>(ProofFileNames{options_vars["proof-files-basename"].as<string>()}) : nullopt);
 
     if (options_vars.contains("stats"))

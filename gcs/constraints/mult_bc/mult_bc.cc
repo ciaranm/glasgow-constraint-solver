@@ -114,13 +114,16 @@ namespace
     auto get_def_line_for_lit(ProofLogger & logger, const IntegerVariableCondition & cond) -> optional<ProofLine>
     {
         auto lower_def = logger.names_and_ids_tracker().need_pol_item_defining_literal(cond);
-        auto proof_line = overloaded{[&](const ProofLine & line) -> optional<ProofLine> { return make_optional(line); },
+        auto proof_line = overloaded{
+            [&](const ProofLine & line) -> optional<ProofLine> { return make_optional(line); }, //
             [&](const XLiteral & xlit) -> optional<ProofLine> {
                 // Seems like a nonsense way to handle this, but anyway...
                 auto axiom =
                     logger.emit_proof_line("ia 1 " + logger.names_and_ids_tracker().pb_file_string_for(xlit) + " >= 0;", ProofLevel::Temporary);
                 return make_optional(axiom);
-            }}.visit(lower_def);
+            } //
+        }
+                              .visit(lower_def);
         return proof_line;
     }
 
@@ -299,19 +302,23 @@ namespace
         auto is_lower_bound = constr.sum.terms[0].coefficient == 1_i;
 
         auto positive_sign = [&](ProofLiteralOrFlag condition) -> bool {
-            return overloaded{[&](ProofLiteral & l) {
-                                  return overloaded{[&](Literal & ll) { return is_literally_true(ll); },
-                                      [&](ProofVariableCondition &) {
-                                          throw UnexpectedException{"Sign should be bit, TrueLiteral{} or FalseLiteral{}."};
-                                          return false;
-                                      }}
-                                      .visit(l);
-                              },
+            return overloaded{
+                [&](ProofLiteral & l) {
+                    return overloaded{
+                        [&](Literal & ll) { return is_literally_true(ll); }, //
+                        [&](ProofVariableCondition &) {
+                            throw UnexpectedException{"Sign should be bit, TrueLiteral{} or FalseLiteral{}."};
+                            return false;
+                        } //
+                    }
+                        .visit(l);
+                }, //
                 [&](ProofFlag &) {
                     throw UnexpectedException{"Sign should be bit, TrueLiteral{} or FalseLiteral{}."};
                     return false;
-                },
-                [&](ProofBitVariable & b) { return ! b.positive; }}
+                },                                                 //
+                [&](ProofBitVariable & b) { return ! b.positive; } //
+            }
                 .visit(condition);
         };
 

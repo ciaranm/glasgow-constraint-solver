@@ -88,21 +88,23 @@ auto main(int argc, char * argv[]) -> int
         p.post(Circuit{nodes});
     }
 
-    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        for (const auto & v : nodes) {
-            cout << s(v) << " ";
-        }
-        cout << endl;
-        cout << 0 << " -> " << s(nodes[0]);
-        auto current = s(nodes[0]);
-        while (current != 0_i) {
-            cout << " -> ";
-            cout << s(nodes[current.as_index()]);
-            current = s(nodes[current.as_index()]);
-        }
-        cout << "\n\n";
-        return true;
-    }},
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                for (const auto & v : nodes) {
+                    cout << s(v) << " ";
+                }
+                cout << endl;
+                cout << 0 << " -> " << s(nodes[0]);
+                auto current = s(nodes[0]);
+                while (current != 0_i) {
+                    cout << " -> ";
+                    cout << s(nodes[current.as_index()]);
+                    current = s(nodes[current.as_index()]);
+                }
+                cout << "\n\n";
+                return true;
+            }},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))

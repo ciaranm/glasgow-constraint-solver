@@ -101,15 +101,17 @@ auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model) 
             model.add_labelled_constraint(as_string(_constraint_id), role, "ReifiedCompareLessThanOrMaybeEqual", rule, ineq, cond);
     };
 
-    overloaded{[&](const reif::MustHold &) { do_less(_v1, _v2, nullopt, _or_equal, "", "condition true"); },
-        [&](const reif::MustNotHold &) { do_less(_v2, _v1, nullopt, ! _or_equal, "", "condition false"); },
-        [&](const reif::If & cond) { do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "", "if condition"); },
-        [&](const reif::NotIf & cond) { do_less(_v2, _v1, HalfReifyOnConjunctionOf{{cond.cond}}, ! _or_equal, "", "if condition"); },
+    overloaded{
+        [&](const reif::MustHold &) { do_less(_v1, _v2, nullopt, _or_equal, "", "condition true"); },                                 //
+        [&](const reif::MustNotHold &) { do_less(_v2, _v1, nullopt, ! _or_equal, "", "condition false"); },                           //
+        [&](const reif::If & cond) { do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "", "if condition"); },      //
+        [&](const reif::NotIf & cond) { do_less(_v2, _v1, HalfReifyOnConjunctionOf{{cond.cond}}, ! _or_equal, "", "if condition"); }, //
         [&](const reif::Iff & cond) {
             // cake_pb_cp labels the !cond half [f] and the cond half [r].
             do_less(_v1, _v2, HalfReifyOnConjunctionOf{{cond.cond}}, _or_equal, "r", "if condition");
             do_less(_v2, _v1, HalfReifyOnConjunctionOf{{! cond.cond}}, ! _or_equal, "f", "if not condition");
-        }}
+        } //
+    }
         .visit(_reif_cond);
 }
 
@@ -120,15 +122,16 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
          * the reification condition, or just giving contradiction, but will never
          * propagate beyond that. */
         bool holds = (_or_equal ? *_v1_is_constant <= *_v2_is_constant : *_v1_is_constant < *_v2_is_constant);
-        overloaded{[&](const evaluated_reif::MustHold & reif) {
-                       if (! holds)
-                           propagators.install_initialiser(
-                               [v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond,
-                                   owner = constraint_id()](const State &, auto & inference, ProofLogger * const logger) -> void {
-                                   inference.infer(logger, ! cond, JustifyUsingRUP{hints::Comparison{owner}},
-                                       ExplicitReason{ReasonLiterals{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}});
-                               });
-                   },
+        overloaded{
+            [&](const evaluated_reif::MustHold & reif) {
+                if (! holds)
+                    propagators.install_initialiser(
+                        [v1 = _v1, v2 = _v2, v1_is_constant = _v1_is_constant, v2_is_constant = _v2_is_constant, cond = reif.cond,
+                            owner = constraint_id()](const State &, auto & inference, ProofLogger * const logger) -> void {
+                            inference.infer(logger, ! cond, JustifyUsingRUP{hints::Comparison{owner}},
+                                ExplicitReason{ReasonLiterals{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}});
+                        });
+            }, //
             [&](const evaluated_reif::MustNotHold & reif) {
                 if (holds)
                     propagators.install_initialiser(
@@ -137,7 +140,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
                             inference.infer(logger, ! cond, JustifyUsingRUP{hints::Comparison{owner}},
                                 ExplicitReason{ReasonLiterals{{cond, v1 == *v1_is_constant, v2 == *v2_is_constant}}});
                         });
-            },
+            }, //
             [&](const evaluated_reif::Undecided & reif) {
                 auto lit = holds ? reif.cond_to_infer_if_constraint_must_hold() : reif.cond_to_infer_if_constraint_must_not_hold();
                 if (lit)
@@ -147,8 +150,9 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
                             inference.infer(logger, lit, JustifyUsingRUP{hints::Comparison{owner}},
                                 ExplicitReason{ReasonLiterals{{v1 == *v1_is_constant, v2 == *v2_is_constant}}});
                         });
-            },
-            [](const evaluated_reif::Deactivated &) {}}
+            },                                         //
+            [](const evaluated_reif::Deactivated &) {} //
+        }
             .visit(_evaluated_cond);
     }
     else {
@@ -182,22 +186,29 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
             if (v1 == v2 && ! is_constant_variable(v1)) {
                 if (or_equal)
                     return reification_verdict::MustHold<JustifyUsingRUP<hints::Comparison>>{
-                        .justification = JustifyUsingRUP{hints::Comparison{owner}}, .reason = NoReason{}};
+                        .justification = JustifyUsingRUP{hints::Comparison{owner}}, //
+                        .reason = NoReason{}                                        //
+                    };
                 else
                     return reification_verdict::MustNotHold<JustifyUsingRUP<hints::Comparison>>{
-                        .justification = JustifyUsingRUP{hints::Comparison{owner}}, .reason = NoReason{}};
+                        .justification = JustifyUsingRUP{hints::Comparison{owner}}, //
+                        .reason = NoReason{}                                        //
+                    };
             }
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
             if (or_equal ? (v1_bounds.second <= v2_bounds.first) : (v1_bounds.second < v2_bounds.first)) {
                 // v1 has to be less than (or equal): constraint must hold.
-                return reification_verdict::MustHold<JustifyUsingRUP<hints::Comparison>>{.justification = JustifyUsingRUP{hints::Comparison{owner}},
-                    .reason = ExplicitReason{ReasonLiterals{{v1 <= v1_bounds.second, v2 >= v2_bounds.first}}}};
+                return reification_verdict::MustHold<JustifyUsingRUP<hints::Comparison>>{
+                    .justification = JustifyUsingRUP{hints::Comparison{owner}},                               //
+                    .reason = ExplicitReason{ReasonLiterals{{v1 <= v1_bounds.second, v2 >= v2_bounds.first}}} //
+                };
             }
             else if (or_equal ? (v1_bounds.first > v2_bounds.second) : (v1_bounds.first >= v2_bounds.second)) {
                 // v1 has to be greater than (or equal): constraint cannot hold.
                 return reification_verdict::MustNotHold<JustifyUsingRUP<hints::Comparison>>{
-                    .justification = JustifyUsingRUP{hints::Comparison{owner}},
-                    .reason = ExplicitReason{ReasonLiterals{{v1 >= v1_bounds.first, v2 <= v2_bounds.second}}}};
+                    .justification = JustifyUsingRUP{hints::Comparison{owner}},                               //
+                    .reason = ExplicitReason{ReasonLiterals{{v1 >= v1_bounds.first, v2 <= v2_bounds.second}}} //
+                };
             }
             else
                 return reification_verdict::StillUndecided{};
@@ -213,11 +224,13 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_expr(const ProofModel * const model) 
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    auto reif_suffix = overloaded{[&](const reif::MustHold &) -> string { return ""; }, [&](const reif::If &) -> string { return "_if"; },
-        [&](const reif::Iff &) -> string { return "_iff"; },
-        [&](const auto &) -> string {
-            throw UnexpectedException{"Unexpected reification type in s_expr"};
-        }}.visit(_reif_cond);
+    auto reif_suffix = overloaded{
+        [&](const reif::MustHold &) -> string { return ""; },                                               //
+        [&](const reif::If &) -> string { return "_if"; },                                                  //
+        [&](const reif::Iff &) -> string { return "_iff"; },                                                //
+        [&](const auto &) -> string { throw UnexpectedException{"Unexpected reification type in s_expr"}; } //
+    }
+                           .visit(_reif_cond);
 
     // cake_pb_cp's names: less_than / less_equal / greater_than / greater_equal.
     string cmp = format("{}_{}{}", _vars_swapped ? "greater" : "less", _or_equal ? "equal" : "than", reif_suffix);

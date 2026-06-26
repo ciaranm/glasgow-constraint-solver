@@ -148,15 +148,23 @@ auto main(int argc, char * argv[]) -> int
     }
 
     using ArrayEntry = variant<int, pair<int, int>>;
-    vector<tuple<variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {// Singleton: result must equal the sole element.
-        {pair{1, 5}, {pair{2, 4}}}, {3, {pair{0, 5}}}, {pair{1, 2}, {pair{1, 2}, pair{1, 2}}}, {pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}}, {pair{1, 3}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
-        {pair{-1, 3}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}}, {pair{1, 4}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},
-        {pair{-5, 5}, {pair{-8, 0}, pair{4, 4}, pair{10, 10}, pair{2, 11}, pair{4, 10}}}, {pair{0, 5}, {pair{4, 12}}},
-        {pair{2, 9}, {pair{-2, 3}, pair{-4, -1}, pair{-3, 5}}}, {pair{2, 5}, {pair{2, 4}, pair{3, 7}, pair{1, 4}}},
-        {pair{-3, 2}, {pair{-1, 7}, pair{-2, 6}, pair{1, 8}, pair{4, 11}}},
+    vector<tuple<variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {              // Singleton: result must equal the sole element.
+        {pair{1, 5}, {pair{2, 4}}},                                                       //
+        {3, {pair{0, 5}}},                                                                //
+        {pair{1, 2}, {pair{1, 2}, pair{1, 2}}},                                           //
+        {pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},                               //
+        {pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},                               //
+        {pair{1, 3}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},                               //
+        {pair{-1, 3}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}},                             //
+        {pair{1, 4}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},      //
+        {pair{-5, 5}, {pair{-8, 0}, pair{4, 4}, pair{10, 10}, pair{2, 11}, pair{4, 10}}}, //
+        {pair{0, 5}, {pair{4, 12}}},                                                      //
+        {pair{2, 9}, {pair{-2, 3}, pair{-4, -1}, pair{-3, 5}}},                           //
+        {pair{2, 5}, {pair{2, 4}, pair{3, 7}, pair{1, 4}}},                               //
+        {pair{-3, 2}, {pair{-1, 7}, pair{-2, 6}, pair{1, 8}, pair{4, 11}}},               //
         // Constant array entries: forced winner / fixed pivot.
-        {pair{-5, 10}, {3, pair{0, 7}, 5}}, {pair{-5, 10}, {pair{0, 4}, 7, pair{1, 6}, pair{2, 9}}},
+        {pair{-5, 10}, {3, pair{0, 7}, 5}},                      //
+        {pair{-5, 10}, {pair{0, 4}, 7, pair{1, 6}, pair{2, 9}}}, //
         // Degenerate cases (issue #254): all-constant arrays + genuine constant
         // result. Each row is run for both Min and Max; build_expected computes
         // the per-direction truth. (Empty array is rejected at construction by

@@ -67,19 +67,21 @@ auto main(int argc, char * argv[]) -> int
 
     p.post(LexSmartTable{x, y});
 
-    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-        cout << "x = [ ";
-        for (const auto & var : x) {
-            cout << s(var) << " ";
-        }
-        cout << "]" << endl;
-        cout << "y = [ ";
-        for (const auto & var : y) {
-            cout << s(var) << " ";
-        }
-        cout << "]\n" << endl;
-        return true;
-    }},
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                cout << "x = [ ";
+                for (const auto & var : x) {
+                    cout << s(var) << " ";
+                }
+                cout << "]" << endl;
+                cout << "y = [ ";
+                for (const auto & var : y) {
+                    cout << s(var) << " ";
+                }
+                cout << "]\n" << endl;
+                return true;
+            }},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))

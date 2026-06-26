@@ -134,8 +134,10 @@ namespace gcs::innards
                 infer_cond_when_undecided = std::move(infer_cond_when_undecided)](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 return overloaded{
-                    [&](const evaluated_reif::MustHold & reif) { return enforce_constraint_must_hold(state, inference, logger, reif.cond); },
-                    [&](const evaluated_reif::MustNotHold & reif) { return enforce_constraint_must_not_hold(state, inference, logger, reif.cond); },
+                    [&](const evaluated_reif::MustHold & reif) { return enforce_constraint_must_hold(state, inference, logger, reif.cond); }, //
+                    [&](const evaluated_reif::MustNotHold & reif) {
+                        return enforce_constraint_must_not_hold(state, inference, logger, reif.cond);
+                    }, //
                     [&](const evaluated_reif::Undecided & reif) {
                         // The verdict's justification type varies per constraint
                         // (plain Justification, a single typed JustifyExplicitly, or a
@@ -159,8 +161,9 @@ namespace gcs::innards
                                 }
                             },
                             infer_cond_when_undecided(state, inference, logger, reif.cond));
-                    },
-                    [&](const evaluated_reif::Deactivated &) { return PropagatorState::DisableUntilBacktrack; }}
+                    },                                                                                          //
+                    [&](const evaluated_reif::Deactivated &) { return PropagatorState::DisableUntilBacktrack; } //
+                }
                     .visit(test_reification_condition(state, reif_cond));
             },
             triggers);

@@ -97,7 +97,13 @@ auto main(int argc, char * argv[]) -> int
     int size = 0;
     if (instance == 5) {
         size = 5;
-        predefs = {{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 5, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}};
+        predefs = {
+            {0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0}, //
+            {0, 0, 5, 0, 0}, //
+            {0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0}  //
+        };
 
         north = {1, 0, 0, 3, 3};
         south = {0, 0, 0, 0, 1};
@@ -106,7 +112,14 @@ auto main(int argc, char * argv[]) -> int
     }
     else if (instance == 6) {
         size = 6;
-        predefs = {{0, 0, 4, 0, 0, 0}, {0, 0, 2, 0, 0, 0}, {0, 0, 0, 0, 2, 0}, {0, 0, 0, 3, 0, 0}, {0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 1}};
+        predefs = {
+            {0, 0, 4, 0, 0, 0}, //
+            {0, 0, 2, 0, 0, 0}, //
+            {0, 0, 0, 0, 2, 0}, //
+            {0, 0, 0, 3, 0, 0}, //
+            {0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 1}  //
+        };
 
         north = {1, 2, 2, 2, 3, 4};
         south = {4, 1, 2, 3, 2, 2};
@@ -115,8 +128,15 @@ auto main(int argc, char * argv[]) -> int
     }
     else if (instance == 7) {
         size = 7;
-        predefs = {{0, 0, 0, 0, 0, 0, 0}, {0, 0, 3, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0}};
+        predefs = {
+            {0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 3, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0}, //
+            {4, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0}  //
+        };
 
         north = {0, 0, 5, 1, 3, 4, 0};
         south = {0, 4, 0, 4, 4, 0, 3};
@@ -125,9 +145,17 @@ auto main(int argc, char * argv[]) -> int
     }
     else if (instance == 9) {
         size = 9;
-        predefs = {{0, 0, 0, 0, 0, 2, 0, 0, 0}, {7, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 6, 2, 0}, {0, 0, 0, 0, 3, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 3, 0, 0, 0, 0, 0, 0},
-            {0, 3, 0, 5, 0, 0, 0, 0, 0}};
+        predefs = {
+            {0, 0, 0, 0, 0, 2, 0, 0, 0}, //
+            {7, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 6, 2, 0}, //
+            {0, 0, 0, 0, 3, 0, 0, 0, 0}, //
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}, //
+            {0, 0, 3, 0, 0, 0, 0, 0, 0}, //
+            {0, 3, 0, 5, 0, 0, 0, 0, 0}  //
+        };
 
         north = {0, 0, 0, 6, 0, 6, 2, 2, 5};
         south = {0, 0, 5, 3, 3, 3, 0, 4, 0};
@@ -228,29 +256,30 @@ auto main(int argc, char * argv[]) -> int
             p.add_presolver(AutoTable{grid[r]});
     }
 
-    auto stats = solve_with(p,
-        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-                           print("  ");
-                           for (int c = 0; c < size; ++c)
-                               print(" {}", (north[c] != 0 ? to_string(north[c]) : " "));
-                           println("");
+    auto stats = solve_with(p, //
+        SolveCallbacks{        //
+            .solution = [&](const CurrentState & s) -> bool {
+                print("  ");
+                for (int c = 0; c < size; ++c)
+                    print(" {}", (north[c] != 0 ? to_string(north[c]) : " "));
+                println("");
 
-                           for (int r = 0; r < size; ++r) {
-                               print("{} ", (west[r] != 0 ? to_string(west[r]) : " "));
-                               for (int c = 0; c < size; ++c)
-                                   print(" {}", s(grid[r][c]));
-                               print("  {}", (east[r] != 0 ? to_string(east[r]) : ""));
-                               println("");
-                           }
+                for (int r = 0; r < size; ++r) {
+                    print("{} ", (west[r] != 0 ? to_string(west[r]) : " "));
+                    for (int c = 0; c < size; ++c)
+                        print(" {}", s(grid[r][c]));
+                    print("  {}", (east[r] != 0 ? to_string(east[r]) : ""));
+                    println("");
+                }
 
-                           print("   ");
-                           for (int c = 0; c < size; ++c)
-                               print(" {}", (south[c] != 0 ? to_string(south[c]) : " "));
-                           println("");
+                print("   ");
+                for (int c = 0; c < size; ++c)
+                    print(" {}", (south[c] != 0 ? to_string(south[c]) : " "));
+                println("");
 
-                           println("");
-                           return true;
-                       },
+                println("");
+                return true;
+            },
             .branch = branch_with(variable_order::dom_then_deg(branch_vars), value_order::smallest_first())},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 

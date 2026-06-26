@@ -30,12 +30,14 @@ auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<Tidied
     SumOf<Weighted<SimpleIntegerVariableID>> simplified_sum;
     Integer modifier{0_i};
     for (const auto & [c, v] : coeff_vars.terms)
-        overloaded{[&, &c = c](const SimpleIntegerVariableID & v) { simplified_sum += c * v; },
-            [&, &c = c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; },
+        overloaded{
+            [&, &c = c](const SimpleIntegerVariableID & v) { simplified_sum += c * v; },         //
+            [&, &c = c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; }, //
             [&, &c = c](const ViewOfIntegerVariableID & v) {
                 simplified_sum += (v.negate_first ? -c : c) * v.actual_variable;
                 modifier -= c * v.then_add;
-            }}
+            } //
+        }
             .visit(v);
 
     sort(simplified_sum.terms,
