@@ -54,31 +54,28 @@ namespace gcs::innards
         ReasonLiterals literals;
     };
 
-    /// Reason recording every value in each variable's domain (bounds + holes), plus an optional extra literal.
+    /// Reason recording every value in each variable's domain (bounds + holes).
+    /// Compose with with_extra() / concat() to add specific literals.
     struct GenericReasonOver
     {
         ReasonVars vars;
-        std::optional<Literal> extra;
     };
 
-    /// Reason recording only the lower and upper bound of each variable, plus an optional extra literal.
+    /// Reason recording only the lower and upper bound of each variable.
+    /// Compose with with_extra() / concat() to add specific literals.
     struct BothBoundsReasonOver
     {
         ReasonVars vars;
-        std::optional<Literal> extra;
     };
 
     /// Reason recording that each variable in `vars` is fixed to exactly its
     /// single current value (`var == value`). Equivalent to BothBoundsReasonOver
-    /// for an already-instantiated variable, but it states the equality directly
-    /// and emits `extra` *first*, matching the literal order of the hand-written
-    /// explicit reasons it replaces, so the proof stays byte-identical. Cheap to
-    /// build off the proofs-off path: it captures the (borrowable) variable scope
-    /// and defers reading the value to materialise().
+    /// for an already-instantiated variable, but states the equality directly.
+    /// Cheap to build off the proofs-off path: it captures the (borrowable)
+    /// variable scope and defers reading the value to materialise().
     struct ExactSingleValue
     {
         ReasonVars vars;
-        std::optional<Literal> extra;
     };
 
     /// Reason whose literals are computed by a bespoke callback reading state; `vars` records the implicated scope.
@@ -99,13 +96,11 @@ namespace gcs::innards
     struct NarrowableGenericReasonOver
     {
         ReasonVars vars;
-        std::optional<Literal> extra;
     };
 
     struct NarrowableBothBoundsReasonOver
     {
         ReasonVars vars;
-        std::optional<Literal> extra;
     };
 
     struct NarrowableLazyReasonOver
@@ -241,6 +236,14 @@ namespace gcs::innards
      */
     [[nodiscard]] auto with_extra(Reason base, ReasonLiterals extra) -> Reason;
     [[nodiscard]] auto with_extra(Reason base, const std::optional<Literal> & extra) -> Reason;
+
+    /**
+     * \brief Concatenate two reasons: \p a's literals materialise first, then
+     * \p b's. NoReason is the identity (so concat degrades to the other operand).
+     * Use when the parts are themselves structured reasons and the order matters
+     * (e.g. a leading condition literal ahead of an ExactSingleValue).
+     */
+    [[nodiscard]] auto concat(Reason a, Reason b) -> Reason;
 
     /**
      * \brief Eagerly materialise a reason into its literal conjunction against
