@@ -4,13 +4,14 @@ AlignOperands: false
 AllowAllArgumentsOnNextLine: true
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: None
-AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortIfStatementsOnASingleLine: Never
 AllowShortLambdasOnASingleLine: All
 BinPackArguments: true
 BinPackParameters: true
 BreakBeforeBraces: Custom
 BreakBeforeInheritanceComma: true
 BreakConstructorInitializers: AfterColon
+BreakTemplateDeclarations: Yes
 BraceWrapping:
   AfterClass: true
   AfterControlStatement: false
@@ -26,17 +27,19 @@ BraceWrapping:
   SplitEmptyFunction: true
   SplitEmptyNamespace: true
   SplitEmptyRecord: true
-ColumnLimit: 0
+ColumnLimit: 150
 ConstructorInitializerAllOnOneLineOrOnePerLine: false
 ContinuationIndentWidth: 4
 FixNamespaceComments: false
 IndentAccessModifiers: false
 IndentCaseLabels: false
 IndentWidth: 4
+LambdaBodyIndentation: Signature
 Language: Cpp
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: All
 PointerAlignment: Middle
+ReflowComments: false
 SortIncludes: true
 SortUsingDeclarations: true
 SpaceAfterLogicalNot: true
