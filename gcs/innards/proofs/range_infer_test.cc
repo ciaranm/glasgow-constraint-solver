@@ -36,9 +36,7 @@ auto main() -> int
 
     p.post(Equals{x, y});
 
-    solve(
-        p, [](const CurrentState &) -> bool { return true; },
-        ProofOptions{"range_infer_test"});
+    solve(p, [](const CurrentState &) -> bool { return true; }, ProofOptions{"range_infer_test"});
 
     return 0;
 }

@@ -47,19 +47,20 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_count_test(bool proofs, const ViewWrapConfig & view_cfg,
-    variant<int, pair<int, int>> result_range, variant<int, pair<int, int>> voi_range,
+auto run_count_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int, pair<int, int>> result_range, variant<int, pair<int, int>> voi_range,
     const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
     // Position 0 = result, 1 = voi, 2..N+1 = array entries.
     int n_positions = 2 + static_cast<int>(array_range.size());
     auto wraps = wraps_for_positions(view_cfg, n_positions);
-    visit([&](auto result, auto voi) { print(cerr, "count [{}] {} {} {} {}", view_wrap_config_label(view_cfg), result, voi, array_range, proofs ? " with proofs:" : ":"); }, result_range, voi_range);
+    visit(
+        [&](auto result, auto voi) {
+            print(cerr, "count [{}] {} {} {} {}", view_wrap_config_label(view_cfg), result, voi, array_range, proofs ? " with proofs:" : ":");
+        },
+        result_range, voi_range);
     cerr << flush;
 
-    auto is_satisfying = [](int v, int n, const vector<int> & a) {
-        return n == count(a.begin(), a.end(), v);
-    };
+    auto is_satisfying = [](int v, int n, const vector<int> & a) { return n == count(a.begin(), a.end(), v); };
 
     set<tuple<int, int, vector<int>>> expected, actual;
     build_expected(expected, is_satisfying, voi_range, result_range, array_range);
@@ -80,7 +81,8 @@ auto run_count_test(bool proofs, const ViewWrapConfig & view_cfg,
     // Those holes are real when the achievable counts are non-contiguous
     // (e.g. array [9,9], voi in [6,15] gives counts {0,2}, so how_many=1 is
     // unsupported but stays within [0,2]). Check how_many at BC accordingly.
-    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{voi, CheckConsistency::GAC}, pair{result, CheckConsistency::BC}, pair{array, CheckConsistency::None}});
+    solve_for_tests_checking_consistency(p, proof_name, expected, actual,
+        tuple{pair{voi, CheckConsistency::GAC}, pair{result, CheckConsistency::BC}, pair{array, CheckConsistency::None}});
 
     check_results(proof_name, expected, actual);
 }
@@ -88,19 +90,21 @@ auto run_count_test(bool proofs, const ViewWrapConfig & view_cfg,
 // Dup-variable test: Count with the same handle appearing in several
 // array positions. Each occurrence is counted independently. Consistency
 // isn't checked on dup runs; see tmp/duplicate_var_audit.md.
-auto run_dup_count_test(bool proofs, const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions, int voi_const, pair<int, int> result_range) -> void
+auto run_dup_count_test(
+    bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, int voi_const, pair<int, int> result_range) -> void
 {
-    print(cerr, "count dup domains={} positions={} voi={} result={}{}",
-        unique_domains, positions, voi_const, result_range, proofs ? " with proofs:" : ":");
+    print(cerr, "count dup domains={} positions={} voi={} result={}{}", unique_domains, positions, voi_const, result_range,
+        proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, vector<int>>> expected, actual;
     build_expected(
-        expected, [&](int r, const vector<int> & vals) -> bool {
+        expected,
+        [&](int r, const vector<int> & vals) -> bool {
             int counted = 0;
             for (auto pos : positions)
-                if (vals.at(pos) == voi_const) ++counted;
+                if (vals.at(pos) == voi_const)
+                    ++counted;
             return r == counted;
         },
         result_range, unique_domains);
@@ -131,7 +135,8 @@ auto run_count_result_in_array_test(bool proofs, pair<int, int> shared_range, in
     // since the array has one entry and we count matches against voi_const.
     set<tuple<int>> expected, actual;
     build_expected(
-        expected, [&](int s) -> bool {
+        expected,
+        [&](int s) -> bool {
             int hits = (s == voi_const) ? 1 : 0;
             return s == hits;
         },
@@ -153,28 +158,22 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 6;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "count view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "count view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
     using ArrayEntry = variant<int, pair<int, int>>;
     vector<tuple<variant<int, pair<int, int>>, variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {
-        {pair{1, 2}, pair{1, 2}, {pair{1, 2}, pair{1, 2}}},
-        {pair{1, 2}, pair{0, 3}, {pair{1, 2}, pair{1, 2}}},
-        {pair{1, 2}, pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{0, 3}, pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{0, 4}, pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{1, 3}, pair{1, 6}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
+        {pair{1, 2}, pair{1, 2}, {pair{1, 2}, pair{1, 2}}}, {pair{1, 2}, pair{0, 3}, {pair{1, 2}, pair{1, 2}}},
+        {pair{1, 2}, pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}}, {pair{0, 3}, pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
+        {pair{0, 4}, pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}}, {pair{1, 3}, pair{1, 6}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
         {pair{-1, 3}, pair{0, 5}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}},
         {pair{1, 4}, pair{-3, 8}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},
-        {pair{0, 4}, pair{-5, 2}, {pair{7, 14}, pair{7, 11}}},
-        {pair{3, 10}, pair{3, 8}, {pair{-2, 2}, pair{3, 7}, pair{5, 9}, pair{0, 6}}},
+        {pair{0, 4}, pair{-5, 2}, {pair{7, 14}, pair{7, 11}}}, {pair{3, 10}, pair{3, 8}, {pair{-2, 2}, pair{3, 7}, pair{5, 9}, pair{0, 6}}},
         {pair{1, 9}, pair{-5, 5}, {pair{2, 6}, pair{8, 11}, pair{6, 12}, pair{-3, 0}}},
         {pair{2, 2}, pair{3, 6}, {pair{5, 9}, pair{-5, 3}, pair{2, 6}}},
         // Constant array entries: voi seen N times where some array slots are fixed.
-        {pair{0, 3}, pair{0, 3}, {1, 2, pair{1, 3}}},
-        {pair{0, 3}, 2, {pair{1, 4}, 2, pair{1, 4}, 2}},
+        {pair{0, 3}, pair{0, 3}, {1, 2, pair{1, 3}}}, {pair{0, 3}, 2, {pair{1, 4}, 2, pair{1, 4}, 2}},
         // Degenerate cases (issue #254): empty array, single element, all-constant.
         // Genuine ConstantIntegerVariableIDs for how_many / voi / array entries.
         {0, 5, {}},                         // empty array: count of 5 is 0 (tautology)
@@ -190,22 +189,22 @@ auto main(int argc, char * argv[]) -> int
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 4);
         auto n_values = n_values_dist(rand);
-        generate_random_data(rand, data, random_bounds(-7, 7, 5, 10), random_bounds(-7, 7, 5, 10),
-            vector{size_t(n_values), random_bounds_or_constant(-5, 8, 3, 8)});
+        generate_random_data(
+            rand, data, random_bounds(-7, 7, 5, 10), random_bounds(-7, 7, 5, 10), vector{size_t(n_values), random_bounds_or_constant(-5, 8, 3, 8)});
     }
 
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 4);
         auto n_values = n_values_dist(rand);
-        generate_random_data(rand, data, random_constant(-7, 7), random_bounds(-7, 7, 5, 10),
-            vector{size_t(n_values), random_bounds_or_constant(-5, 8, 3, 8)});
+        generate_random_data(
+            rand, data, random_constant(-7, 7), random_bounds(-7, 7, 5, 10), vector{size_t(n_values), random_bounds_or_constant(-5, 8, 3, 8)});
     }
 
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 4);
         auto n_values = n_values_dist(rand);
-        generate_random_data(rand, data, random_constant(-7, 7), random_constant(-7, 7),
-            vector{size_t(n_values), random_bounds_or_constant(-5, 8, 3, 8)});
+        generate_random_data(
+            rand, data, random_constant(-7, 7), random_constant(-7, 7), vector{size_t(n_values), random_bounds_or_constant(-5, 8, 3, 8)});
     }
 
     bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);

@@ -25,9 +25,7 @@ auto main() -> int
     p.post(Equals{x, y});
     p.post(Equals{x, w});
 
-    solve(
-        p, [](const CurrentState &) -> bool { return true; },
-        ProofOptions{"range_witness_w5_test"});
+    solve(p, [](const CurrentState &) -> bool { return true; }, ProofOptions{"range_witness_w5_test"});
 
     return 0;
 }

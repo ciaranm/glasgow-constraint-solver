@@ -69,8 +69,7 @@ namespace gcs
     public:
         explicit SmartTable(std::vector<IntegerVariableID> vars, SmartTuples tuples, bool short_reasons = true);
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
 
         [[nodiscard]] static inline auto equals(const IntegerVariableID & a, const IntegerVariableID & b) -> SmartEntry
         {

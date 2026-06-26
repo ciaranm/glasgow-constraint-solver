@@ -66,8 +66,7 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOpti
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");
     for (int loc1 = 0; loc1 < n; loc1++) {
         for (int loc2 = 0; loc2 < n; loc2++) {
-            p.post(LessThanIf{ConstantIntegerVariableID{Integer{distances[loc1][loc2]}}, max_leg,
-                x[loc1] == Integer{loc2}});
+            p.post(LessThanIf{ConstantIntegerVariableID{Integer{distances[loc1][loc2]}}, max_leg, x[loc1] == Integer{loc2}});
         }
     }
 
@@ -112,7 +111,7 @@ auto main(int argc, char * argv[]) -> int
             ("n", "Integer value n.", cxxopts::value<int>()->default_value("3"))           //
             ("seed", "Random seed.", cxxopts::value<int>()->default_value("-1"))           //
             ("stats", "Print statistics")                                                  //
-            ("proof-files-basename", "Path and name of the opb and pbp files",                     //
+            ("proof-files-basename", "Path and name of the opb and pbp files",             //
                 cxxopts::value<string>()->default_value("circuit_random"))                 //
             ("print-distances", "Print the input graph used for the probllem")             //
             ("print-solutions", "Print each solution found while optimising")              //

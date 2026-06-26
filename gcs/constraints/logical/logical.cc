@@ -51,18 +51,18 @@ namespace
     }
 
     template <typename Hint_>
-    auto install_propagators_logical(Propagators & propagators, const ConstraintID & constraint_id, const Literals & lits,
-        const Literal & full_reif, LiteralIs reif_state) -> void
+    auto install_propagators_logical(
+        Propagators & propagators, const ConstraintID & constraint_id, const Literals & lits, const Literal & full_reif, LiteralIs reif_state) -> void
     {
         using enum LiteralIs;
 
         if (reif_state == DefinitelyTrue) {
             // definitely true, just force all the literals
-            propagators.install_initialiser([full_reif = full_reif, lits = lits, owner = constraint_id](
-                                                const State &, auto & inference, ProofLogger * const logger) {
-                for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
-            });
+            propagators.install_initialiser(
+                [full_reif = full_reif, lits = lits, owner = constraint_id](const State &, auto & inference, ProofLogger * const logger) {
+                    for (auto & l : lits)
+                        inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
+                });
             return;
         }
 
@@ -77,99 +77,102 @@ namespace
         if (saw_false) {
             // we saw a false literal, the reif variable must be forced off and
             // then we don't do anything else
-            propagators.install_initialiser([full_reif = full_reif, owner = constraint_id](
-                                                const State &, auto & inference, ProofLogger * const logger) -> void {
-                inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, NoReason{});
-            });
+            propagators.install_initialiser(
+                [full_reif = full_reif, owner = constraint_id](const State &, auto & inference, ProofLogger * const logger) -> void {
+                    inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, NoReason{});
+                });
             return;
         }
 
-        propagators.install(constraint_id, [lits = lits, full_reif = full_reif, owner = constraint_id](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            switch (state.test_literal(full_reif)) {
-            case DefinitelyTrue: {
-                for (auto & l : lits)
-                    inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
-                return PropagatorState::DisableUntilBacktrack;
-            }
-
-            case DefinitelyFalse: {
-                bool any_false = false;
-                optional<Literal> undecided1;
-
-                for (auto & l : lits)
-                    switch (state.test_literal(l)) {
-                    case DefinitelyTrue: break;
-                    case DefinitelyFalse: any_false = true; break;
-                    case Undecided:
-                        if (undecided1)
-                            return PropagatorState::Enable;
-                        else
-                            undecided1 = l;
-                    }
-
-                if (any_false)
-                    return PropagatorState::DisableUntilBacktrack;
-                else if (! undecided1) {
-                    // literals are all true, but reif is false
-                    ReasonLiterals why;
-                    for (auto & lit : lits)
-                        why.push_back(lit);
-                    why.push_back(! full_reif);
-                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{why});
-                    return PropagatorState::Enable;
-                }
-                else {
-                    ReasonLiterals why;
+        propagators.install(
+            constraint_id,
+            [lits = lits, full_reif = full_reif, owner = constraint_id](
+                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                switch (state.test_literal(full_reif)) {
+                case DefinitelyTrue: {
                     for (auto & l : lits)
-                        if (l != *undecided1)
-                            why.push_back(l);
-                    why.push_back(! full_reif);
-                    inference.infer(logger, ! *undecided1, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{why});
+                        inference.infer(logger, l, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{full_reif}}});
                     return PropagatorState::DisableUntilBacktrack;
                 }
-            }
 
-            case Undecided: {
-                optional<Literal> any_false;
-                bool all_true = true;
+                case DefinitelyFalse: {
+                    bool any_false = false;
+                    optional<Literal> undecided1;
 
-                for (auto & l : lits)
-                    switch (state.test_literal(l)) {
-                    case DefinitelyTrue: break;
-                    case DefinitelyFalse:
-                        any_false = l;
-                        all_true = false;
-                        break;
-                    case Undecided: all_true = false; break;
+                    for (auto & l : lits)
+                        switch (state.test_literal(l)) {
+                        case DefinitelyTrue: break;
+                        case DefinitelyFalse: any_false = true; break;
+                        case Undecided:
+                            if (undecided1)
+                                return PropagatorState::Enable;
+                            else
+                                undecided1 = l;
+                        }
+
+                    if (any_false)
+                        return PropagatorState::DisableUntilBacktrack;
+                    else if (! undecided1) {
+                        // literals are all true, but reif is false
+                        ReasonLiterals why;
+                        for (auto & lit : lits)
+                            why.push_back(lit);
+                        why.push_back(! full_reif);
+                        inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{why});
+                        return PropagatorState::Enable;
                     }
-
-                if (any_false) {
-                    inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{! *any_false}}});
-                    return PropagatorState::DisableUntilBacktrack;
-                }
-                else if (all_true) {
-                    auto justf = [&](const ReasonLiterals & reason) {
+                    else {
+                        ReasonLiterals why;
                         for (auto & l : lits)
-                            logger->emit_rup_proof_line_under_reason(reason,
-                                WPBSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
-                    };
-                    vector<ProofLiteral> reason_lits{};
-                    for (auto & l : lits)
-                        reason_lits.emplace_back(l);
-                    inference.infer(logger, full_reif, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}},
-                        ExplicitReason{ReasonLiterals(reason_lits.begin(), reason_lits.end())});
-                    return PropagatorState::DisableUntilBacktrack;
+                            if (l != *undecided1)
+                                why.push_back(l);
+                        why.push_back(! full_reif);
+                        inference.infer(logger, ! *undecided1, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{why});
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
                 }
-                else
-                    return PropagatorState::Enable;
-            }
-            }
 
-            throw NonExhaustiveSwitch{}; }, triggers);
+                case Undecided: {
+                    optional<Literal> any_false;
+                    bool all_true = true;
+
+                    for (auto & l : lits)
+                        switch (state.test_literal(l)) {
+                        case DefinitelyTrue: break;
+                        case DefinitelyFalse:
+                            any_false = l;
+                            all_true = false;
+                            break;
+                        case Undecided: all_true = false; break;
+                        }
+
+                    if (any_false) {
+                        inference.infer(logger, ! full_reif, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{{! *any_false}}});
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+                    else if (all_true) {
+                        auto justf = [&](const ReasonLiterals & reason) {
+                            for (auto & l : lits)
+                                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * l >= 1_i, ProofLevel::Temporary);
+                        };
+                        vector<ProofLiteral> reason_lits{};
+                        for (auto & l : lits)
+                            reason_lits.emplace_back(l);
+                        inference.infer(logger, full_reif, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}},
+                            ExplicitReason{ReasonLiterals(reason_lits.begin(), reason_lits.end())});
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+                    else
+                        return PropagatorState::Enable;
+                }
+                }
+
+                throw NonExhaustiveSwitch{};
+            },
+            triggers);
     }
 
-    auto define_proof_model_logical(ProofModel & model, const Literals & lits,
-        const Literal & full_reif, LiteralIs reif_state) -> void
+    auto define_proof_model_logical(ProofModel & model, const Literals & lits, const Literal & full_reif, LiteralIs reif_state) -> void
     {
         using enum LiteralIs;
 
@@ -181,10 +184,7 @@ namespace
 
         bool saw_false = false;
         for (auto & l : lits)
-            overloaded{
-                [&](const FalseLiteral &) { saw_false = true; },
-                [&](const auto &) {}}
-                .visit(l);
+            overloaded{[&](const FalseLiteral &) { saw_false = true; }, [&](const auto &) {}}.visit(l);
 
         if (saw_false) {
             model.add_constraint("Logical", "saw reif false", Literals{! full_reif});
@@ -206,19 +206,15 @@ namespace
     }
 }
 
-And::And(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) :
-    And(to_lits(vars), full_reif != 0_i)
+And::And(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) : And(to_lits(vars), full_reif != 0_i)
 {
 }
 
-And::And(const vector<IntegerVariableID> & vars) :
-    And(to_lits(vars), TrueLiteral{})
+And::And(const vector<IntegerVariableID> & vars) : And(to_lits(vars), TrueLiteral{})
 {
 }
 
-And::And(Literals l, const Literal & full_reif) :
-    _lits(move(l)),
-    _full_reif(full_reif)
+And::And(Literals l, const Literal & full_reif) : _lits(move(l)), _full_reif(full_reif)
 {
 }
 
@@ -260,24 +256,19 @@ auto And::s_expr(const innards::ProofModel * const model) const -> SExpr
     std::vector<SExpr> lits;
     for (const auto & lit : _lits)
         lits.push_back(tracker.s_expr_term_of(lit));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("and"),
-        SExpr::list(std::move(lits)),
-        tracker.s_expr_term_of(_full_reif)});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("and"), SExpr::list(std::move(lits)), tracker.s_expr_term_of(_full_reif)});
 }
 
-Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) :
-    Or(to_lits(vars), full_reif != 0_i)
+Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) : Or(to_lits(vars), full_reif != 0_i)
 {
 }
 
-Or::Or(const vector<IntegerVariableID> & vars) :
-    Or(to_lits(vars), TrueLiteral{})
+Or::Or(const vector<IntegerVariableID> & vars) : Or(to_lits(vars), TrueLiteral{})
 {
 }
 
-Or::Or(Literals l, const Literal & full_reif) :
-    _lits(move(l)),
-    _full_reif(full_reif)
+Or::Or(Literals l, const Literal & full_reif) : _lits(move(l)), _full_reif(full_reif)
 {
 }
 
@@ -325,7 +316,5 @@ auto Or::s_expr(const innards::ProofModel * const model) const -> SExpr
     std::vector<SExpr> lits;
     for (const auto & lit : _lits)
         lits.push_back(tracker.s_expr_term_of(lit));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("or"),
-        SExpr::list(std::move(lits)),
-        tracker.s_expr_term_of(_full_reif)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("or"), SExpr::list(std::move(lits)), tracker.s_expr_term_of(_full_reif)});
 }

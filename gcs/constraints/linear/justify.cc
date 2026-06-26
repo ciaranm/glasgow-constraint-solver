@@ -12,13 +12,9 @@ using std::optional;
 using std::pair;
 using std::vector;
 
-auto gcs::innards::justify_linear_bounds(
-    ProofLogger & logger,
-    const auto & coeff_vars,
-    const vector<pair<Integer, Integer>> & bounds,
-    const SimpleIntegerVariableID & change_var,
-    bool second_constraint_for_equality,
-    pair<optional<ProofLine>, optional<ProofLine>> proof_lines) -> void
+auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const auto & coeff_vars, const vector<pair<Integer, Integer>> & bounds,
+    const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality, pair<optional<ProofLine>, optional<ProofLine>> proof_lines)
+    -> void
 {
     // Deview mode: the propagator's coeff_vars list is the tidy_up_linear-sanitised
     // form (bare SimpleIntegerVariableIDs), but the OPB sum_line is emitted in the
@@ -49,26 +45,14 @@ auto gcs::innards::justify_linear_bounds(
     pol.emit(logger, ProofLevel::Temporary);
 }
 
-template auto gcs::innards::justify_linear_bounds(
-    ProofLogger & logger,
-    const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
-    const vector<pair<Integer, Integer>> & bounds,
-    const SimpleIntegerVariableID & change_var,
-    bool second_constraint_for_equality,
+template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
+    const vector<pair<Integer, Integer>> & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
     pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
 
-template auto gcs::innards::justify_linear_bounds(
-    ProofLogger & logger,
-    const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
-    const vector<pair<Integer, Integer>> & bounds,
-    const SimpleIntegerVariableID & change_var,
-    bool second_constraint_for_equality,
+template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
+    const vector<pair<Integer, Integer>> & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
     pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
 
-template auto gcs::innards::justify_linear_bounds(
-    ProofLogger & logger,
-    const SumOf<SimpleIntegerVariableID> & coeff_vars,
-    const vector<pair<Integer, Integer>> & bounds,
-    const SimpleIntegerVariableID & change_var,
-    bool second_constraint_for_equality,
+template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<SimpleIntegerVariableID> & coeff_vars,
+    const vector<pair<Integer, Integer>> & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
     pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;

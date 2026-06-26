@@ -20,8 +20,8 @@ namespace
         Problem p;
         auto x = p.create_integer_variable(0_i, 5_i, "x");
         auto y = p.create_integer_variable(0_i, 5_i, "y");
-        (void) x;
-        (void) y;
+        (void)x;
+        (void)y;
         try {
             p.post(SmartTable{{x, y}, tuples});
         }
@@ -48,19 +48,13 @@ auto main(int, char *[]) -> int
     ok &= expect_throw("not_equals(x, x)", SmartTuples{{SmartTable::not_equals(x, x)}});
     // The same on view-aliased operands: x and x + 1 also deview to the
     // same underlying var, so build_forests still collapses them.
-    ok &= expect_throw("not_equals(x, x + 1)",
-        SmartTuples{{SmartTable::not_equals(x, x + 1_i)}});
+    ok &= expect_throw("not_equals(x, x + 1)", SmartTuples{{SmartTable::not_equals(x, x + 1_i)}});
     // The same on negated views (-x deviews to the same underlying).
-    ok &= expect_throw("less_than(x, -x)",
-        SmartTuples{{SmartTable::less_than(x, -x)}});
+    ok &= expect_throw("less_than(x, -x)", SmartTuples{{SmartTable::less_than(x, -x)}});
     // The bad entry is inside a multi-entry tuple alongside good ones.
-    ok &= expect_throw("mixed tuple with dup",
-        SmartTuples{{SmartTable::equals(x, y), SmartTable::greater_than(x, x)}});
+    ok &= expect_throw("mixed tuple with dup", SmartTuples{{SmartTable::equals(x, y), SmartTable::greater_than(x, x)}});
     // And only in one of several tuples in the table.
-    ok &= expect_throw("dup in second tuple",
-        SmartTuples{
-            {SmartTable::equals(x, y)},
-            {SmartTable::not_equals(x, x)}});
+    ok &= expect_throw("dup in second tuple", SmartTuples{{SmartTable::equals(x, y)}, {SmartTable::not_equals(x, x)}});
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

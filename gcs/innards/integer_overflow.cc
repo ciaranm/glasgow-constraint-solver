@@ -13,13 +13,11 @@ using fmt::format;
 using namespace gcs;
 using namespace gcs::innards;
 
-IntegerOverflow::IntegerOverflow(const char * op, long long a, long long b) :
-    UnexpectedException{format("Integer overflow: {} {} {}", a, op, b)}
+IntegerOverflow::IntegerOverflow(const char * op, long long a, long long b) : UnexpectedException{format("Integer overflow: {} {} {}", a, op, b)}
 {
 }
 
-IntegerOverflow::IntegerOverflow(const char * op, long long a) :
-    UnexpectedException{format("Integer overflow: {}{}", op, a)}
+IntegerOverflow::IntegerOverflow(const char * op, long long a) : UnexpectedException{format("Integer overflow: {}{}", op, a)}
 {
 }
 

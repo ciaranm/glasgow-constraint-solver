@@ -23,15 +23,8 @@ namespace gcs::innards
     // mirrored pairing. `other` must be a plain integer variable, equality-linked
     // to `pruned` in the proof model. Pass the same reason the caller hands to
     // infer_not_in_range.
-    auto justify_not_in_range_across_equality(
-        ProofLogger & logger,
-        const ReasonLiterals & reason,
-        const SimpleIntegerVariableID & pruned,
-        Integer lo,
-        Integer hi,
-        IntegerVariableID other,
-        Integer other_lo,
-        Integer other_hi) -> void;
+    auto justify_not_in_range_across_equality(ProofLogger & logger, const ReasonLiterals & reason, const SimpleIntegerVariableID & pruned, Integer lo,
+        Integer hi, IntegerVariableID other, Integer other_lo, Integer other_hi) -> void;
 }
 
 #endif

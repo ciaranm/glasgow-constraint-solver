@@ -39,10 +39,8 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    using TidiedUpLinear = std::variant<
-        SumOf<SimpleIntegerVariableID>,
-        SumOf<PositiveOrNegative<SimpleIntegerVariableID>>,
-        SumOf<Weighted<SimpleIntegerVariableID>>>;
+    using TidiedUpLinear =
+        std::variant<SumOf<SimpleIntegerVariableID>, SumOf<PositiveOrNegative<SimpleIntegerVariableID>>, SumOf<Weighted<SimpleIntegerVariableID>>>;
 
     /**
      * \brief Simplify and classify a linear equation.

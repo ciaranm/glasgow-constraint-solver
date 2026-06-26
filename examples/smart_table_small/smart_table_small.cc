@@ -27,12 +27,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("smart_table_small"))                        //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program Options")                                //
+            ("help", "Display help information")                              //
+            ("prove", "Create a proof")                                       //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",  //
+                cxxopts::value<string>()->default_value("smart_table_small")) //
+            ("stats", "Print solve statistics")                               //
             ;
 
         options_vars = options.parse(argc, argv);
@@ -56,20 +56,15 @@ auto main(int argc, char * argv[]) -> int
     auto B = p.create_integer_variable(1_i, 3_i, "B");
     auto C = p.create_integer_variable(1_i, 3_i, "C");
 
-    auto tuples = SmartTuples{
-        {SmartTable::less_than(A, B), SmartTable::in_set(A, {1_i, 2_i}), SmartTable::equals(C, 3_i)},
+    auto tuples = SmartTuples{{SmartTable::less_than(A, B), SmartTable::in_set(A, {1_i, 2_i}), SmartTable::equals(C, 3_i)},
         {SmartTable::equals(A, B), SmartTable::not_equals(A, 1_i), SmartTable::greater_than_equal(B, C)}};
     p.post(SmartTable{{A, B, C}, tuples});
 
-    auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                cout << "A = " << s(A) << " B = " << s(B) << " C = " << s(C) << endl;
-                return true;
-            }},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+        cout << "A = " << s(A) << " B = " << s(B) << " C = " << s(C) << endl;
+        return true;
+    }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         cout << stats;

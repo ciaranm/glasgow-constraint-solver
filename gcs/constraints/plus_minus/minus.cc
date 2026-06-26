@@ -71,11 +71,8 @@ namespace
     // X-bits (from the deviewed reason reif), preventing cancellation.
     // Keeping b as the user-supplied variable throughout means PolBuilder's
     // add_for_literal always lands on the registered view.
-    auto propagate_minus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,
-        const State & state,
-        auto & inference,
-        ProofLogger * const logger,
-        const pair<optional<ProofLine>, optional<ProofLine>> & sum_line, const ConstraintID & owner) -> PropagatorState
+    auto propagate_minus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result, const State & state, auto & inference,
+        ProofLogger * const logger, const pair<optional<ProofLine>, optional<ProofLine>> & sum_line, const ConstraintID & owner) -> PropagatorState
     {
         auto a_vals = state.bounds(a);
         auto b_vals = state.bounds(b);
@@ -98,43 +95,34 @@ namespace
         // half (-a + b + c >= 0); sum_line.second is "a - b ≥ c" (a - b - c >= 0).
 
         // min(result) = min(a) - max(b);
-        inference.infer(logger, result >= a_vals.first - b_vals.second,
-            justify(Conclude::LE),
+        inference.infer(logger, result >= a_vals.first - b_vals.second, justify(Conclude::LE),
             ExplicitReason{ReasonLiterals{a >= a_vals.first, b <= b_vals.second}});
 
         // max(result) = max(a) - min(b);
-        inference.infer(logger, result <= a_vals.second - b_vals.first,
-            justify(Conclude::GE),
+        inference.infer(logger, result <= a_vals.second - b_vals.first, justify(Conclude::GE),
             ExplicitReason{ReasonLiterals{a <= a_vals.second, b >= b_vals.first}});
 
         // min(a) = min(result) + min(b);
-        inference.infer(logger, a >= result_vals.first + b_vals.first,
-            justify(Conclude::GE),
+        inference.infer(logger, a >= result_vals.first + b_vals.first, justify(Conclude::GE),
             ExplicitReason{ReasonLiterals{result >= result_vals.first, b >= b_vals.first}});
 
         // max(a) = max(result) + max(b);
-        inference.infer(logger, a <= result_vals.second + b_vals.second,
-            justify(Conclude::LE),
+        inference.infer(logger, a <= result_vals.second + b_vals.second, justify(Conclude::LE),
             ExplicitReason{ReasonLiterals{result <= result_vals.second, b <= b_vals.second}});
 
         // min(b) = min(a) - max(result);
-        inference.infer(logger, b >= a_vals.first - result_vals.second,
-            justify(Conclude::LE),
+        inference.infer(logger, b >= a_vals.first - result_vals.second, justify(Conclude::LE),
             ExplicitReason{ReasonLiterals{a >= a_vals.first, result <= result_vals.second}});
 
         // max(b) = max(a) - min(result);
-        inference.infer(logger, b <= a_vals.second - result_vals.first,
-            justify(Conclude::GE),
+        inference.infer(logger, b <= a_vals.second - result_vals.first, justify(Conclude::GE),
             ExplicitReason{ReasonLiterals{a <= a_vals.second, result >= result_vals.first}});
 
         return PropagatorState::Enable;
     }
 }
 
-Minus::Minus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) :
-    _a(a),
-    _b(b),
-    _result(result)
+Minus::Minus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) : _a(a), _b(b), _result(result)
 {
 }
 
@@ -161,8 +149,8 @@ auto Minus::define_proof_model(ProofModel & model) -> void
     // Match those so the encoding byte-matches cake. The {LE, GE} return order is
     // unchanged from the unlabelled add_constraint, so _sum_line still feeds the
     // propagator's Conclude::LE/GE paths correctly.
-    _sum_line = model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "Minus", "sum",
-        WPBSum{} + 1_i * _a + -1_i * _b == 1_i * _result);
+    _sum_line =
+        model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "Minus", "sum", WPBSum{} + 1_i * _a + -1_i * _b == 1_i * _result);
 }
 
 auto Minus::install_propagators(Propagators & propagators) -> void
@@ -172,10 +160,8 @@ auto Minus::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [a = _a, b = _b, result = _result, sum_line = _sum_line, owner = constraint_id()](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            return propagate_minus(a, b, result, state, inference, logger, sum_line, owner);
-        },
+        [a = _a, b = _b, result = _result, sum_line = _sum_line, owner = constraint_id()](const State & state, auto & inference,
+            ProofLogger * const logger) -> PropagatorState { return propagate_minus(a, b, result, state, inference, logger, sum_line, owner); },
         triggers);
 }
 
@@ -184,8 +170,6 @@ auto Minus::s_expr(const innards::ProofModel * const model) const -> SExpr
     auto & tracker = model->names_and_ids_tracker();
 
     // Three flat args (`minus X Y Z`) to match cake_pb_cp's binary prim parse.
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("minus"),
-        tracker.s_expr_term_of(_a),
-        tracker.s_expr_term_of(_b),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("minus"), tracker.s_expr_term_of(_a), tracker.s_expr_term_of(_b),
         tracker.s_expr_term_of(_result)});
 }

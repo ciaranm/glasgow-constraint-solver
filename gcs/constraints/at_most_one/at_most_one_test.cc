@@ -50,8 +50,8 @@ enum class Variant
     SmartTable
 };
 
-auto run_at_most_one_test(Variant variant, bool proofs, const ViewWrapConfig & view_cfg,
-    const vector<pair<int, int>> & ranges, pair<int, int> val_range) -> void
+auto run_at_most_one_test(
+    Variant variant, bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & ranges, pair<int, int> val_range) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, static_cast<int>(ranges.size()));
     auto label = (variant == Variant::Native) ? "at_most_one" : "at_most_one_smart_table";
@@ -59,11 +59,15 @@ auto run_at_most_one_test(Variant variant, bool proofs, const ViewWrapConfig & v
     cerr << flush;
 
     set<tuple<vector<int>, int>> expected, actual;
-    build_expected(expected, [](const vector<int> & vs, int v) {
+    build_expected(
+        expected,
+        [](const vector<int> & vs, int v) {
             int matches = 0;
             for (auto x : vs)
                 matches += (x == v);
-            return matches <= 1; }, ranges, val_range);
+            return matches <= 1;
+        },
+        ranges, val_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
@@ -85,21 +89,21 @@ auto run_at_most_one_test(Variant variant, bool proofs, const ViewWrapConfig & v
 // positions. {x, x, ...} forces x != val (otherwise two occurrences
 // equal val). Consistency isn't checked on dup runs; see
 // tmp/duplicate_var_audit.md.
-auto run_dup_at_most_one_test(Variant variant, bool proofs,
-    const vector<pair<int, int>> & unique_domains, const vector<int> & positions,
-    pair<int, int> val_range) -> void
+auto run_dup_at_most_one_test(
+    Variant variant, bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, pair<int, int> val_range) -> void
 {
     auto label = (variant == Variant::Native) ? "at_most_one" : "at_most_one_smart_table";
-    print(cerr, "{} dup domains={} positions={} val={}{}",
-        label, unique_domains, positions, val_range, proofs ? " with proofs:" : ":");
+    print(cerr, "{} dup domains={} positions={} val={}{}", label, unique_domains, positions, val_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>, int>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & vals, int v) -> bool {
+        expected,
+        [&](const vector<int> & vals, int v) -> bool {
             int matches = 0;
             for (auto pos : positions)
-                if (vals.at(pos) == v) ++matches;
+                if (vals.at(pos) == v)
+                    ++matches;
             return matches <= 1;
         },
         unique_domains, val_range);
@@ -169,8 +173,7 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 5;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "at_most_one view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "at_most_one view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 

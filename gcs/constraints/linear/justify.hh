@@ -12,12 +12,8 @@
 
 namespace gcs::innards
 {
-    auto justify_linear_bounds(
-        ProofLogger & logger,
-        const auto & coeff_vars,
-        const std::vector<std::pair<Integer, Integer>> & bounds,
-        const SimpleIntegerVariableID & which_var_is_changing,
-        bool use_second_constraint_for_equality,
+    auto justify_linear_bounds(ProofLogger & logger, const auto & coeff_vars, const std::vector<std::pair<Integer, Integer>> & bounds,
+        const SimpleIntegerVariableID & which_var_is_changing, bool use_second_constraint_for_equality,
         std::pair<std::optional<ProofLine>, std::optional<ProofLine>> proof_lines) -> void;
 }
 

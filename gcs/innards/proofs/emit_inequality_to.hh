@@ -18,9 +18,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    auto emit_inequality_to(NamesAndIDsTracker &,
-        const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-        std::ostream & stream) -> void;
+    auto emit_inequality_to(NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, std::ostream & stream) -> void;
 }
 
 #endif

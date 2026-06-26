@@ -3,8 +3,6 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 
-
-
 using namespace gcs;
 using namespace gcs::innards;
 
@@ -24,8 +22,7 @@ auto main() -> int
 
     // A variable so the model is not degenerate; the tautology stands on its own
     // and does not mention it.
-    [[maybe_unused]] auto x = model.create_proof_only_integer_variable(
-        0_i, 10_i, "x", IntegerVariableProofRepresentation::Bits);
+    [[maybe_unused]] auto x = model.create_proof_only_integer_variable(0_i, 10_i, "x", IntegerVariableProofRepresentation::Bits);
 
     auto tautology_line = model.add_constraint(Literals{TrueLiteral{}});
 

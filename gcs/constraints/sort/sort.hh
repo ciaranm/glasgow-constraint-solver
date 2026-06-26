@@ -36,8 +36,7 @@ namespace gcs
     public:
         explicit Sort(std::vector<IntegerVariableID> x, std::vector<IntegerVariableID> y);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };

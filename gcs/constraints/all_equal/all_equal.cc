@@ -37,8 +37,7 @@ using std::print;
 using fmt::print;
 #endif
 
-AllEqual::AllEqual(vector<IntegerVariableID> vars) :
-    _vars(move(vars))
+AllEqual::AllEqual(vector<IntegerVariableID> vars) : _vars(move(vars))
 {
 }
 
@@ -72,9 +71,8 @@ auto AllEqual::define_proof_model(ProofModel & model) -> void
     // justifies its prunings by RUP), so this is a pure OPB-definition rename.
     auto id_label = as_string(_constraint_id);
     for (size_t i = 0; i + 1 < _vars.size(); ++i)
-        model.add_labelled_constraint(id_label, to_string(i) + "le", to_string(i) + "ge",
-            "AllEqual", "chain step",
-            WPBSum{} + 1_i * _vars[i] + -1_i * _vars[i + 1] == 0_i);
+        model.add_labelled_constraint(
+            id_label, to_string(i) + "le", to_string(i) + "ge", "AllEqual", "chain step", WPBSum{} + 1_i * _vars[i] + -1_i * _vars[i + 1] == 0_i);
 }
 
 auto AllEqual::install_propagators(Propagators & propagators) -> void
@@ -82,79 +80,80 @@ auto AllEqual::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
 
-    propagators.install(constraint_id(), [vars = move(_vars), owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        auto n = vars.size();
+    propagators.install(
+        constraint_id(),
+        [vars = move(_vars), owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            auto n = vars.size();
 
-        // Tighten each var to [lo, hi] where lo is the largest lower bound
-        // and hi is the smallest upper bound across all vars. Use a fixed
-        // witness var per direction so RUP only has to chain through the
-        // OPB equalities.
-        auto [lo, hi] = state.bounds(vars[0]);
-        auto argmax_lo = vars[0];
-        auto argmin_hi = vars[0];
-        for (size_t i = 1; i < n; ++i) {
-            auto [lbi, ubi] = state.bounds(vars[i]);
-            if (lbi > lo) {
-                lo = lbi;
-                argmax_lo = vars[i];
+            // Tighten each var to [lo, hi] where lo is the largest lower bound
+            // and hi is the smallest upper bound across all vars. Use a fixed
+            // witness var per direction so RUP only has to chain through the
+            // OPB equalities.
+            auto [lo, hi] = state.bounds(vars[0]);
+            auto argmax_lo = vars[0];
+            auto argmin_hi = vars[0];
+            for (size_t i = 1; i < n; ++i) {
+                auto [lbi, ubi] = state.bounds(vars[i]);
+                if (lbi > lo) {
+                    lo = lbi;
+                    argmax_lo = vars[i];
+                }
+                if (ubi < hi) {
+                    hi = ubi;
+                    argmin_hi = vars[i];
+                }
             }
-            if (ubi < hi) {
-                hi = ubi;
-                argmin_hi = vars[i];
-            }
-        }
-
-        for (size_t i = 0; i < n; ++i) {
-            if (state.lower_bound(vars[i]) < lo)
-                inference.infer_greater_than_or_equal(logger, vars[i], lo,
-                    JustifyUsingRUP{hints::AllEqual{owner}},
-                    ExplicitReason{ReasonLiterals{{argmax_lo >= lo}}});
-            if (state.upper_bound(vars[i]) > hi)
-                inference.infer_less_than(logger, vars[i], hi + 1_i,
-                    JustifyUsingRUP{hints::AllEqual{owner}},
-                    ExplicitReason{ReasonLiterals{{argmin_hi <= hi}}});
-        }
-
-        // If any domain has holes, prune every var to the intersection of
-        // all domains. Reason for "vars[i] != val" is "witness != val" for
-        // any var whose domain doesn't contain val.
-        bool any_holes = false;
-        for (const auto & v : vars)
-            if (state.domain_has_holes(v)) {
-                any_holes = true;
-                break;
-            }
-
-        if (any_holes) {
-            auto common = state.copy_of_values(vars[0]);
-            for (size_t i = 1; i < n; ++i)
-                common.intersect_with(state.copy_of_values(vars[i]));
 
             for (size_t i = 0; i < n; ++i) {
-                auto vi_set = state.copy_of_values(vars[i]);
-                for (auto [l, u] : vi_set.each_interval_minus(common)) {
-                    for (Integer val = l; val <= u; ++val) {
-                        IntegerVariableID witness = vars[0];
-                        for (size_t j = 0; j < n; ++j)
-                            if (! state.in_domain(vars[j], val)) {
-                                witness = vars[j];
-                                break;
-                            }
-                        inference.infer_not_equal(logger, vars[i], val,
-                            JustifyUsingRUP{hints::AllEqual{owner}},
-                            ExplicitReason{ReasonLiterals{{witness != val}}});
+                if (state.lower_bound(vars[i]) < lo)
+                    inference.infer_greater_than_or_equal(
+                        logger, vars[i], lo, JustifyUsingRUP{hints::AllEqual{owner}}, ExplicitReason{ReasonLiterals{{argmax_lo >= lo}}});
+                if (state.upper_bound(vars[i]) > hi)
+                    inference.infer_less_than(
+                        logger, vars[i], hi + 1_i, JustifyUsingRUP{hints::AllEqual{owner}}, ExplicitReason{ReasonLiterals{{argmin_hi <= hi}}});
+            }
+
+            // If any domain has holes, prune every var to the intersection of
+            // all domains. Reason for "vars[i] != val" is "witness != val" for
+            // any var whose domain doesn't contain val.
+            bool any_holes = false;
+            for (const auto & v : vars)
+                if (state.domain_has_holes(v)) {
+                    any_holes = true;
+                    break;
+                }
+
+            if (any_holes) {
+                auto common = state.copy_of_values(vars[0]);
+                for (size_t i = 1; i < n; ++i)
+                    common.intersect_with(state.copy_of_values(vars[i]));
+
+                for (size_t i = 0; i < n; ++i) {
+                    auto vi_set = state.copy_of_values(vars[i]);
+                    for (auto [l, u] : vi_set.each_interval_minus(common)) {
+                        for (Integer val = l; val <= u; ++val) {
+                            IntegerVariableID witness = vars[0];
+                            for (size_t j = 0; j < n; ++j)
+                                if (! state.in_domain(vars[j], val)) {
+                                    witness = vars[j];
+                                    break;
+                                }
+                            inference.infer_not_equal(
+                                logger, vars[i], val, JustifyUsingRUP{hints::AllEqual{owner}}, ExplicitReason{ReasonLiterals{{witness != val}}});
+                        }
                     }
                 }
             }
-        }
 
-        // Entailed once any var is single-valued: the chain equalities will
-        // have propagated that value to every other var (or contradicted),
-        // so further calls have nothing to do.
-        if (state.has_single_value(vars[0]))
-            return PropagatorState::DisableUntilBacktrack;
+            // Entailed once any var is single-valued: the chain equalities will
+            // have propagated that value to every other var (or contradicted),
+            // so further calls have nothing to do.
+            if (state.has_single_value(vars[0]))
+                return PropagatorState::DisableUntilBacktrack;
 
-        return PropagatorState::Enable; }, triggers);
+            return PropagatorState::Enable;
+        },
+        triggers);
 }
 
 auto AllEqual::s_expr(const ProofModel * const model) const -> SExpr
@@ -163,6 +162,5 @@ auto AllEqual::s_expr(const ProofModel * const model) const -> SExpr
     std::vector<SExpr> vars;
     for (const auto & v : _vars)
         vars.push_back(tracker.s_expr_term_of(v));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_equal"),
-        SExpr::list(std::move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_equal"), SExpr::list(std::move(vars))});
 }

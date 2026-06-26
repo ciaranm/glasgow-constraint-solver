@@ -22,8 +22,8 @@ namespace gcs
         // appears more than once in `vars`, the resulting pair-of-half-reified
         // constraints is jointly inconsistent — both polarities of the
         // selector are forced false.
-        auto define_clique_not_equals_encoding(ProofModel & model, const ConstraintID & constraint_id,
-            const std::vector<IntegerVariableID> & vars) -> void;
+        auto define_clique_not_equals_encoding(ProofModel & model, const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & vars)
+            -> void;
 
         // Emits the AllDifferentExcept clique encoding. Where the same variable
         // appears more than once in `vars`, the resulting pair-of-half-reified
@@ -31,8 +31,7 @@ namespace gcs
         // the returned map gives one of the per-pair selector flags for each
         // such duplicated variable, so callers can use it as the witness flag
         // in justifications that derive `var != v` for `v` not in `excluded`.
-        auto define_clique_not_equals_except_encoding(ProofModel & model,
-            const std::vector<IntegerVariableID> & vars,
+        auto define_clique_not_equals_except_encoding(ProofModel & model, const std::vector<IntegerVariableID> & vars,
             const std::vector<Integer> & excluded) -> std::map<IntegerVariableID, ProofFlag>;
 
         // Install a SimpleDefinition-priority contradiction initialiser that

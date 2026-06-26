@@ -46,9 +46,7 @@ TEST_CASE("PolBuilder: weighted sum")
 {
     PolBuilder b;
     // First a bare leading term, then weighted ones — mirrors cumulative.cc.
-    b.add(ProofLineNumber{10})
-        .add(ProofLineNumber{20}, 3_i)
-        .add(ProofLineNumber{30}, 5_i);
+    b.add(ProofLineNumber{10}).add(ProofLineNumber{20}, 3_i).add(ProofLineNumber{30}, 5_i);
     CHECK(b.str() == "pol 10 20 3 * + 30 5 * + ;");
 }
 

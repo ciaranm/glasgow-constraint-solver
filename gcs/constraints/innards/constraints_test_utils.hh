@@ -34,11 +34,7 @@ struct std::formatter<std::variant<Ts_...>> : std::formatter<std::string>
     template <typename FormatContext_>
     auto format(const std::variant<Ts_...> & v, FormatContext_ & ctx) const
     {
-        return std::visit(
-            [&](const auto & val) {
-                return std::formatter<std::string>::format(std::format("{}", val), ctx);
-            },
-            v);
+        return std::visit([&](const auto & val) { return std::formatter<std::string>::format(std::format("{}", val), ctx); }, v);
     }
 };
 #else
@@ -131,8 +127,8 @@ namespace gcs::test_innards
         std::pair<int, int> range_arg, RestOfArgs_... rest_of_args) -> void;
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
-    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
-        std::vector<int> vec_arg, RestOfArgs_... rest_of_args) -> void;
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc, std::vector<int> vec_arg,
+        RestOfArgs_... rest_of_args) -> void;
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
@@ -151,16 +147,16 @@ namespace gcs::test_innards
     }
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
-    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
-        std::vector<int> vec_arg, RestOfArgs_... rest_of_args) -> void
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc, std::vector<int> vec_arg,
+        RestOfArgs_... rest_of_args) -> void
     {
         for (int n : vec_arg)
             generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{n}), rest_of_args...);
     }
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_, typename... RestOfArgs_>
-    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
-        int const_arg, RestOfArgs_... rest_of_args) -> void
+    auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc, int const_arg,
+        RestOfArgs_... rest_of_args) -> void
     {
         generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{const_arg}), rest_of_args...);
     }
@@ -196,7 +192,8 @@ namespace gcs::test_innards
     auto generate_expected(ResultsSet_ & expected, IsSatisfying_ is_satisfying, const std::tuple<Accumulated_...> & acc,
         const std::vector<std::vector<std::pair<int, int>>> & range_arg_vec, RestOfArgs_... rest_of_args) -> void
     {
-        std::function<auto(std::size_t, std::size_t, std::vector<std::vector<int>>)->void> build = [&](std::size_t pos1, std::size_t pos2, std::vector<std::vector<int>> sol) -> void {
+        std::function<auto(std::size_t, std::size_t, std::vector<std::vector<int>>)->void> build = [&](std::size_t pos1, std::size_t pos2,
+                                                                                                       std::vector<std::vector<int>> sol) -> void {
             if (pos1 == range_arg_vec.size()) {
                 sol.pop_back();
                 generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{sol}), rest_of_args...);
@@ -229,12 +226,11 @@ namespace gcs::test_innards
                 generate_expected(expected, is_satisfying, std::tuple_cat(acc, std::tuple{sol}), rest_of_args...);
             }
             else {
-                overloaded{
-                    [&](int n) {
-                        sol.push_back(n);
-                        build(pos + 1, sol);
-                        sol.pop_back();
-                    },
+                overloaded{[&](int n) {
+                               sol.push_back(n);
+                               build(pos + 1, sol);
+                               sol.pop_back();
+                           },
                     [&](std::pair<int, int> p) {
                         for (int n = p.first; n <= p.second; ++n) {
                             sol.push_back(n);
@@ -358,7 +354,8 @@ namespace gcs::test_innards
     }
 
     template <typename SolutionCallback_, typename TraceCallback_>
-    auto solve_for_tests_with_callbacks(Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
+    auto solve_for_tests_with_callbacks(
+        Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
         // Apply the optional runtime caps (see env_cap). The wrappers count
         // solutions / internal search nodes and return false to stop the solve
@@ -386,8 +383,7 @@ namespace gcs::test_innards
             return t(s);
         };
 
-        solve_with(p,
-            SolveCallbacks{.solution = capped_solution, .trace = capped_trace, .branch = random_branch_with_optional_seed(p)},
+        solve_with(p, SolveCallbacks{.solution = capped_solution, .trace = capped_trace, .branch = random_branch_with_optional_seed(p)},
             proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : std::nullopt);
     }
 
@@ -400,10 +396,7 @@ namespace gcs::test_innards
      */
     auto check_initialisation_only_for_tests(Problem & p, const std::string & proof_name) -> void
     {
-        solve_with(p,
-            SolveCallbacks{
-                .trace = [](const CurrentState &) -> bool { return false; },
-                .branch = random_branch_with_optional_seed(p)},
+        solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }, .branch = random_branch_with_optional_seed(p)},
             std::make_optional<ProofOptions>(ProofFileNames{proof_name}));
 
         if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
@@ -431,15 +424,10 @@ namespace gcs::test_innards
         solve_for_tests_with_callbacks(
             p, proof_name,
             [&](const CurrentState & s) -> bool {
-                std::apply([&](const auto &... args) {
-                    actual.emplace(extract_from_state(s, args)...);
-                },
-                    vars);
+                std::apply([&](const auto &... args) { actual.emplace(extract_from_state(s, args)...); }, vars);
                 return true;
             },
-            [&](const CurrentState &) -> bool {
-                return true;
-            });
+            [&](const CurrentState &) -> bool { return true; });
     }
 
     enum class CheckConsistency
@@ -472,12 +460,11 @@ namespace gcs::test_innards
     }
 
     template <typename ResultsSet_, typename Get_>
-    auto check_support(const ResultsSet_ & expected, const CurrentState & s,
-        const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, CheckConsistency consistency, const Get_ & get_from_expected) -> void
+    auto check_support(const ResultsSet_ & expected, const CurrentState & s, const std::vector<IntegerVariableID> & all_vars,
+        const IntegerVariableID & var, CheckConsistency consistency, const Get_ & get_from_expected) -> void
     {
         switch (consistency) {
-        case CheckConsistency::None:
-            return;
+        case CheckConsistency::None: return;
 
         case CheckConsistency::GAC:
             for (auto val : s.each_value(var)) {
@@ -510,12 +497,11 @@ namespace gcs::test_innards
     }
 
     template <typename ResultsSet_, typename Get_>
-    auto check_support(const ResultsSet_ & expected, const CurrentState & s,
-        const std::vector<IntegerVariableID> & all_vars, const std::vector<IntegerVariableID> & vars, CheckConsistency consistency, const Get_ & get_from_expected) -> void
+    auto check_support(const ResultsSet_ & expected, const CurrentState & s, const std::vector<IntegerVariableID> & all_vars,
+        const std::vector<IntegerVariableID> & vars, CheckConsistency consistency, const Get_ & get_from_expected) -> void
     {
         switch (consistency) {
-        case CheckConsistency::None:
-            return;
+        case CheckConsistency::None: return;
 
         case CheckConsistency::BC:
             for (const auto & [the_idx, the_var] : enumerate(vars)) {
@@ -570,29 +556,27 @@ namespace gcs::test_innards
         ResultsSet_ & actual, const std::tuple<std::pair<AllArgs_, CheckConsistency>...> & all_vars) -> void
     {
         std::vector<IntegerVariableID> all_vars_as_vector;
-        [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-            (add_to_all_vars(all_vars_as_vector, std::get<i_>(all_vars).first), ...);
-        }(std::index_sequence_for<AllArgs_...>());
+        [&]<std::size_t... i_>(std::index_sequence<i_...>) { (add_to_all_vars(all_vars_as_vector, std::get<i_>(all_vars).first), ...); }(
+            std::index_sequence_for<AllArgs_...>());
         solve_for_tests_with_callbacks(
             p, proof_name,
             [&](const CurrentState & s) -> bool {
-                std::apply([&](const auto &... args) {
-                    actual.emplace(extract_from_state(s, args.first)...);
-                },
-                    all_vars);
+                std::apply([&](const auto &... args) { actual.emplace(extract_from_state(s, args.first)...); }, all_vars);
                 return true;
             },
             [&](const CurrentState & s) -> bool {
                 [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-                    (check_support(expected, s, all_vars_as_vector, std::get<i_>(all_vars).first, std::get<i_>(all_vars).second, [&](const auto & x) { return std::get<i_>(x); }), ...);
+                    (check_support(expected, s, all_vars_as_vector, std::get<i_>(all_vars).first, std::get<i_>(all_vars).second,
+                         [&](const auto & x) { return std::get<i_>(x); }),
+                        ...);
                 }(std::index_sequence_for<AllArgs_...>());
                 return true;
             });
     }
 
     template <typename ResultsSet_, typename... AllArgs_>
-    auto solve_for_tests_checking_gac(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected,
-        ResultsSet_ & actual, const std::tuple<AllArgs_...> & all_vars) -> void
+    auto solve_for_tests_checking_gac(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected, ResultsSet_ & actual,
+        const std::tuple<AllArgs_...> & all_vars) -> void
     {
         auto all_vars_are_gac = [&]<std::size_t... i_>(std::index_sequence<i_...>) {
             return std::make_tuple(std::make_pair(get<i_>(all_vars), CheckConsistency::GAC)...);
@@ -904,7 +888,8 @@ namespace gcs::test_innards
      * the appropriate scalar overload of create_integer_variable_or_constant_with_view.
      */
     template <typename Spec_>
-    auto create_integer_variable_or_constant_vector_with_views(Problem & problem, const std::vector<Spec_> & specs, const std::vector<ViewWrap> & wraps) -> std::vector<IntegerVariableID>
+    auto create_integer_variable_or_constant_vector_with_views(
+        Problem & problem, const std::vector<Spec_> & specs, const std::vector<ViewWrap> & wraps) -> std::vector<IntegerVariableID>
     {
         if (specs.size() != wraps.size())
             throw UnexpectedException{"create_integer_variable_or_constant_vector_with_views: spec / wrap size mismatch"};

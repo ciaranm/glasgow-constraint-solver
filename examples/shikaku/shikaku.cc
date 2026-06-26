@@ -128,14 +128,12 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto instances = built_in_instances();
-    Instance inst = options_vars.contains("file")
-        ? read_instance(options_vars["file"].as<string>())
-        : [&]() {
-              auto name = options_vars["instance"].as<string>();
-              if (! instances.contains(name))
-                  throw std::runtime_error{"no built-in instance named " + name};
-              return instances.at(name);
-          }();
+    Instance inst = options_vars.contains("file") ? read_instance(options_vars["file"].as<string>()) : [&]() {
+        auto name = options_vars["instance"].as<string>();
+        if (! instances.contains(name))
+            throw std::runtime_error{"no built-in instance named " + name};
+        return instances.at(name);
+    }();
 
     auto W = inst.width, H = inst.height;
 
@@ -195,36 +193,32 @@ auto main(int argc, char * argv[]) -> int
 
     auto n = inst.clues.size();
     auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                // Render the tiling: each cell shows a letter identifying the
-                // rectangle (clue) that covers it, so adjacent equal-area
-                // regions are still distinguishable.
-                for (int r = 0; r < H; ++r) {
-                    for (int cc = 0; cc < W; ++cc) {
-                        char owner = '?';
-                        for (size_t k = 0; k < n; ++k) {
-                            auto xk = s(xs[k]).raw_value, yk = s(ys[k]).raw_value;
-                            auto wk = s(ws[k]).raw_value, hk = s(hs[k]).raw_value;
-                            if (xk <= cc && cc < xk + wk && yk <= r && r < yk + hk) {
-                                owner = static_cast<char>((k < 26 ? 'A' : 'a' - 26) + k);
-                                break;
-                            }
-                        }
-                        print("{}", owner);
-                    }
-                    println("");
-                }
-                println("");
-                return true; // keep going: enumerate every solution
-            },
+        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                           // Render the tiling: each cell shows a letter identifying the
+                           // rectangle (clue) that covers it, so adjacent equal-area
+                           // regions are still distinguishable.
+                           for (int r = 0; r < H; ++r) {
+                               for (int cc = 0; cc < W; ++cc) {
+                                   char owner = '?';
+                                   for (size_t k = 0; k < n; ++k) {
+                                       auto xk = s(xs[k]).raw_value, yk = s(ys[k]).raw_value;
+                                       auto wk = s(ws[k]).raw_value, hk = s(hs[k]).raw_value;
+                                       if (xk <= cc && cc < xk + wk && yk <= r && r < yk + hk) {
+                                           owner = static_cast<char>((k < 26 ? 'A' : 'a' - 26) + k);
+                                           break;
+                                       }
+                                   }
+                                   print("{}", owner);
+                               }
+                               println("");
+                           }
+                           println("");
+                           return true; // keep going: enumerate every solution
+                       },
             .branch = branch_with(variable_order::dom_then_deg(branch_vars), value_order::smallest_first())},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
-    println("solutions: {}{}", stats.solutions,
-        stats.solutions == 1 ? " (unique -- the puzzle is well-posed)" : "");
+    println("solutions: {}{}", stats.solutions, stats.solutions == 1 ? " (unique -- the puzzle is well-posed)" : "");
     if (options_vars.contains("stats"))
         print("{}", stats);
 

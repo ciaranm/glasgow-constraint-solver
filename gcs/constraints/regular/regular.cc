@@ -85,17 +85,18 @@ namespace
 
         explicit RegularGraph(long num_vars, long num_states) :
             states_supporting(vector<unordered_map<Integer, set<long>>>(num_vars)),
-            out_edges(vector<vector<unordered_map<long, unordered_set<Integer>>>>(num_vars, vector<unordered_map<long, unordered_set<Integer>>>(num_states))),
+            out_edges(vector<vector<unordered_map<long, unordered_set<Integer>>>>(
+                num_vars, vector<unordered_map<long, unordered_set<Integer>>>(num_states))),
             out_deg(vector<vector<long>>(num_vars, vector<long>(num_states, 0))),
-            in_edges(vector<vector<unordered_map<long, unordered_set<Integer>>>>(num_vars + 1, vector<unordered_map<long, unordered_set<Integer>>>(num_states))),
-            in_deg(vector<vector<long>>(num_vars + 1, vector<long>(num_states, 0))),
-            nodes(vector<set<long>>(num_vars + 1))
+            in_edges(vector<vector<unordered_map<long, unordered_set<Integer>>>>(
+                num_vars + 1, vector<unordered_map<long, unordered_set<Integer>>>(num_states))),
+            in_deg(vector<vector<long>>(num_vars + 1, vector<long>(num_states, 0))), nodes(vector<set<long>>(num_vars + 1))
         {
         }
     };
 
-    auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags,
-        const State &, const ReasonLiterals & reason, string comment = "") -> void
+    auto log_additional_inference(ProofLogger * const logger, const vector<Literal> & literals, const vector<ProofFlag> & proof_flags, const State &,
+        const ReasonLiterals & reason, string comment = "") -> void
     {
         if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
             // Trying to cut down on repeated code
@@ -111,10 +112,9 @@ namespace
         }
     }
 
-    auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars,
-        const long num_states, const vector<unordered_map<Integer, set<long>>> & transitions,
-        const vector<long> & final_states, const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const State & state, const ReasonLiterals & reason, ProofLogger * const logger)
+    auto initialise_graph(RegularGraph & graph, const vector<IntegerVariableID> & vars, const long num_states,
+        const vector<unordered_map<Integer, set<long>>> & transitions, const vector<long> & final_states,
+        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const ReasonLiterals & reason, ProofLogger * const logger)
     {
         auto num_vars = vars.size();
 
@@ -137,17 +137,17 @@ namespace
 
             if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 for (long next_q = 0; next_q < num_states; ++next_q) {
-                    if (graph.nodes[i + 1].contains(next_q)) continue;
+                    if (graph.nodes[i + 1].contains(next_q))
+                        continue;
                     // Want to eliminate this node i.e. prove !state[i+1][next_q]
                     for (const auto & q : graph.nodes[i]) {
                         // So first eliminate each previous state/variable combo
                         for (auto val : state.each_value_mutable(vars[i]))
-                            log_additional_inference(logger, {vars[i] != val},
-                                {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state, reason);
+                            log_additional_inference(
+                                logger, {vars[i] != val}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state, reason);
 
                         // Then eliminate each previous state
-                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]},
-                            state, reason);
+                        log_additional_inference(logger, {}, {! state_at_pos_flags[i][q], ! state_at_pos_flags[i + 1][next_q]}, state, reason);
                     }
 
                     // Finally, can eliminate what we want
@@ -230,8 +230,8 @@ namespace
                     if (! still_supports(graph, i - 1, l, val)) {
                         graph.states_supporting[i - 1][val].erase(l);
                         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
-                            log_additional_inference(logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, reason,
-                                "dec outdeg inner");
+                            log_additional_inference(
+                                logger, {vars[i - 1] != val}, {! state_at_pos_flags[i - 1][l]}, state, reason, "dec outdeg inner");
                     }
                     decrement_outdeg(graph, i - 1, l, vars, state_at_pos_flags, state, reason, logger);
                 }
@@ -242,9 +242,8 @@ namespace
         }
     }
 
-    auto decrement_indeg(RegularGraph & graph, const long i, const long k,
-        const vector<IntegerVariableID> & vars, const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const State & state, const ReasonLiterals & reason, ProofLogger * const logger) -> void
+    auto decrement_indeg(RegularGraph & graph, const long i, const long k, const vector<IntegerVariableID> & vars,
+        const vector<vector<ProofFlag>> & state_at_pos_flags, const State & state, const ReasonLiterals & reason, ProofLogger * const logger) -> void
     {
         graph.in_deg[i][k]--;
         if (graph.in_deg[i][k] == 0 && cmp_less(i, graph.in_deg.size() - 1)) {
@@ -253,8 +252,8 @@ namespace
                 for (const auto & q : graph.nodes[i - 1]) {
                     // So first eliminate each previous state/variable combo
                     for (auto val : state.each_value_mutable(vars[i])) {
-                        log_additional_inference(logger, {vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]},
-                            state, reason);
+                        log_additional_inference(
+                            logger, {vars[i] != val}, {! state_at_pos_flags[i - 1][q], ! state_at_pos_flags[i][k]}, state, reason);
                     }
 
                     // Then eliminate each previous state
@@ -278,17 +277,10 @@ namespace
         }
     }
 
-    auto propagate_regular(const vector<IntegerVariableID> & vars,
-        const long num_states,
-        const vector<unordered_map<Integer, set<long>>> & transitions,
-        const vector<long> & final_states,
-        const vector<vector<ProofFlag>> & state_at_pos_flags,
-        const ConstraintStateHandle & graph_handle,
-        const State & state,
-        auto & inference,
-        ProofLogger * const logger,
-        const bool short_reasons,
-        const ConstraintID & owner) -> void
+    auto propagate_regular(const vector<IntegerVariableID> & vars, const long num_states,
+        const vector<unordered_map<Integer, set<long>>> & transitions, const vector<long> & final_states,
+        const vector<vector<ProofFlag>> & state_at_pos_flags, const ConstraintStateHandle & graph_handle, const State & state, auto & inference,
+        ProofLogger * const logger, const bool short_reasons, const ConstraintID & owner) -> void
     {
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
         auto gen_reason = eager_reason(generic_reason(vars), state);
@@ -401,12 +393,7 @@ namespace
 }
 
 Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
-    _vars(move(v)),
-    _num_states(n),
-    _transitions(t.size()),
-    _final_states(move(f)),
-    _short_reasons(sr),
-    _regex(nullopt)
+    _vars(move(v)), _num_states(n), _transitions(t.size()), _final_states(move(f)), _short_reasons(sr), _regex(nullopt)
 {
     for (size_t q = 0; q < t.size(); ++q)
         for (const auto & [val, target] : t[q])
@@ -416,12 +403,7 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integ
 }
 
 Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> transitions, vector<long> f, bool sr) :
-    _vars(move(v)),
-    _num_states(n),
-    _transitions(n),
-    _final_states(move(f)),
-    _short_reasons(sr),
-    _regex(nullopt)
+    _vars(move(v)), _num_states(n), _transitions(n), _final_states(move(f)), _short_reasons(sr), _regex(nullopt)
 {
     for (size_t i = 0; i < transitions.size(); i++)
         for (size_t j = 0; j < transitions[i].size(); j++)
@@ -430,25 +412,15 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> trans
     _symbols = symbols_of(_transitions);
 }
 
-Regular::Regular(vector<IntegerVariableID> v, string regex, bool sr) :
-    _vars(move(v)),
-    _num_states(0),
-    _short_reasons(sr),
-    _regex(move(regex))
+Regular::Regular(vector<IntegerVariableID> v, string regex, bool sr) : _vars(move(v)), _num_states(0), _short_reasons(sr), _regex(move(regex))
 {
     // The automaton is compiled from the regex in prepare(), once the
     // variables' domains (and hence the alphabet for "." and "[^...]") are known.
 }
 
-Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, set<long>>> t,
-    vector<long> f, vector<Integer> syms, bool sr, optional<string> regex) :
-    _vars(move(v)),
-    _num_states(n),
-    _transitions(move(t)),
-    _final_states(move(f)),
-    _short_reasons(sr),
-    _regex(move(regex)),
-    _symbols(move(syms))
+Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, set<long>>> t, vector<long> f, vector<Integer> syms, bool sr,
+    optional<string> regex) :
+    _vars(move(v)), _num_states(n), _transitions(move(t)), _final_states(move(f)), _short_reasons(sr), _regex(move(regex)), _symbols(move(syms))
 {
 }
 
@@ -518,8 +490,8 @@ auto Regular::define_proof_model(ProofModel & model) -> void
         for (long q = 0; q < _num_states; ++q) {
             // cake_pb_cp names the "in state q at position idx" flag x[id][idx_q][st];
             // match it so the proof's state literals line up with cake's OPB.
-            _state_at_pos_flags[idx].emplace_back(model.create_proof_flag(
-                _constraint_id, vector<long long>{static_cast<long long>(idx), static_cast<long long>(q)}, "st"));
+            _state_at_pos_flags[idx].emplace_back(
+                model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(idx), static_cast<long long>(q)}, "st"));
             exactly_1_true += 1_i * _state_at_pos_flags[idx][q];
         }
         model.add_constraint(move(exactly_1_true) == 1_i);
@@ -540,8 +512,7 @@ auto Regular::define_proof_model(ProofModel & model) -> void
                 const auto & targets = find_transitions(_transitions[q], val);
                 if (targets.empty()) {
                     // No transition for (q, val), so constrain ~(state_i = q /\ X_i = val)
-                    model.add_constraint(
-                        WPBSum{} + 1_i * (_vars[idx] != val) + (1_i * ! _state_at_pos_flags[idx][q]) >= 1_i);
+                    model.add_constraint(WPBSum{} + 1_i * (_vars[idx] != val) + (1_i * ! _state_at_pos_flags[idx][q]) >= 1_i);
                 }
                 else {
                     // state_i = q /\ X_i = val implies state_{i+1} is one of the
@@ -561,9 +532,14 @@ auto Regular::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
 
-    propagators.install(constraint_id(), [v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = _graph_idx, flags = move(_state_at_pos_flags), sr = _short_reasons, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        propagate_regular(v, n, t, f, flags, g, state, inference, logger, sr, owner);
-        return PropagatorState::Enable; }, triggers);
+    propagators.install(
+        constraint_id(),
+        [v = move(_vars), n = _num_states, t = move(_transitions), f = move(_final_states), g = _graph_idx, flags = move(_state_at_pos_flags),
+            sr = _short_reasons, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            propagate_regular(v, n, t, f, flags, g, state, inference, logger, sr, owner);
+            return PropagatorState::Enable;
+        },
+        triggers);
 }
 
 auto Regular::s_expr(const ProofModel * const model) const -> SExpr
@@ -594,8 +570,7 @@ auto Regular::s_expr(const ProofModel * const model) const -> SExpr
                     sorted_edges.emplace_back(tran.first, target);
             sort(sorted_edges);
             for (const auto & [sym, target] : sorted_edges)
-                edges.push_back(SExpr::list({SExpr::atom(sym.to_string()),
-                    SExpr::atom(std::to_string(target))}));
+                edges.push_back(SExpr::list({SExpr::atom(sym.to_string()), SExpr::atom(std::to_string(target))}));
         }
         states.push_back(SExpr::list(move(edges)));
     }
@@ -604,10 +579,6 @@ auto Regular::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & f : _final_states)
         finals.push_back(SExpr::atom(std::to_string(f)));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("regular"),
-        SExpr::list(move(vars)),
-        SExpr::atom(std::to_string(_num_states)),
-        SExpr::list(move(states)),
-        SExpr::list(move(finals))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("regular"), SExpr::list(move(vars)),
+        SExpr::atom(std::to_string(_num_states)), SExpr::list(move(states)), SExpr::list(move(finals))});
 }

@@ -57,22 +57,20 @@ namespace
         auto variables = read_scp(problem, scp);
 
         set<map<string, long long>> solutions;
-        solve_with(problem,
-            SolveCallbacks{.solution = [&](const CurrentState & state) -> bool {
-                map<string, long long> solution;
-                for (const auto & [name, id] : variables)
-                    solution.emplace(name, state(id).raw_value);
-                solutions.insert(std::move(solution));
-                return true;
-            }});
+        solve_with(problem, SolveCallbacks{.solution = [&](const CurrentState & state) -> bool {
+            map<string, long long> solution;
+            for (const auto & [name, id] : variables)
+                solution.emplace(name, state(id).raw_value);
+            solutions.insert(std::move(solution));
+            return true;
+        }});
         return solutions;
     }
 
     // --prove a problem to `basename`, returning the .scp it wrote.
     auto prove_to_scp(Problem & problem, const std::string & basename) -> std::string
     {
-        solve_with(problem, SolveCallbacks{},
-            std::make_optional<ProofOptions>(ProofFileNames{basename}));
+        solve_with(problem, SolveCallbacks{}, std::make_optional<ProofOptions>(ProofFileNames{basename}));
         std::ifstream in{basename + ".scp"};
         std::string scp{std::istreambuf_iterator<char>{in}, std::istreambuf_iterator<char>{}};
         for (auto ext : {".opb", ".pbp", ".scp", ".varmap"})
@@ -465,12 +463,11 @@ TEST_CASE("read_scp: regular, disjunctive and disjunctive2d survive write -> rea
     auto y0 = original.create_integer_variable(0_i, 3_i, "Y0");
     auto y1 = original.create_integer_variable(0_i, 3_i, "Y1");
     original.post(Regular{std::vector<IntegerVariableID>{x0, x1}, 2,
-        std::vector<std::unordered_map<Integer, long>>{{{0_i, 0}, {1_i, 1}}, {{0_i, 1}, {1_i, 0}}},
-        std::vector<long>{0}});
+        std::vector<std::unordered_map<Integer, long>>{{{0_i, 0}, {1_i, 1}}, {{0_i, 1}, {1_i, 0}}}, std::vector<long>{0}});
     original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}});        // strict -> disjunctive_strict
     original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}, false}); // non-strict -> disjunctive
-    original.post(Disjunctive2D{std::vector<IntegerVariableID>{s0, s1}, std::vector<IntegerVariableID>{y0, y1},
-        std::vector<Integer>{2_i, 2_i}, std::vector<Integer>{2_i, 2_i}, false});
+    original.post(Disjunctive2D{std::vector<IntegerVariableID>{s0, s1}, std::vector<IntegerVariableID>{y0, y1}, std::vector<Integer>{2_i, 2_i},
+        std::vector<Integer>{2_i, 2_i}, false});
     auto scp_a = prove_to_scp(original, "scp_reader_regdisj_a");
 
     Problem rebuilt;
@@ -484,8 +481,7 @@ TEST_CASE("read_scp: regular, disjunctive and disjunctive2d survive write -> rea
 TEST_CASE("read_scp: a constant integer can stand in for a variable anywhere")
 {
     // An abs operand that is a constant: Y = |3|.
-    CHECK(enumerate("( ( (Y 0 5) ) ( (_1 abs 3 Y) ) )") ==
-        set<map<string, long long>>{{{"Y", 3}}});
+    CHECK(enumerate("( ( (Y 0 5) ) ( (_1 abs 3 Y) ) )") == set<map<string, long long>>{{{"Y", 3}}});
 
     // A constant member of all_different: A, 1, B all distinct, so A,B in {0,2}.
     auto all_diff = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 all_different (A 1 B)) ) )");

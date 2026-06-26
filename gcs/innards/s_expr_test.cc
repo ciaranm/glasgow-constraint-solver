@@ -44,8 +44,7 @@ TEST_CASE("SExpr: incidental whitespace is normalised away")
     // single canonical form: this is exactly the messy hand-formatting the
     // old string-built constraint writers produced (e.g. "( 0 3)").
     CHECK(format("{}", parse_s_expr("(   0    3 )")) == "(0 3)");
-    CHECK(format("{}", parse_s_expr("  (_1   all_different ( _1 _1 _2 _2))  ")) ==
-        "(_1 all_different (_1 _1 _2 _2))");
+    CHECK(format("{}", parse_s_expr("  (_1   all_different ( _1 _1 _2 _2))  ")) == "(_1 all_different (_1 _1 _2 _2))");
     CHECK(format("{}", parse_s_expr("(a\n\tb\r\n c)")) == "(a b c)");
 }
 
@@ -91,11 +90,7 @@ TEST_CASE("SExpr: reification-condition triples, signs, symbols and commas are a
 
 TEST_CASE("SExpr: the canonical forms the refactored constraints now emit")
 {
-    for (auto s : {
-             "(_1 abs _2 _3)",
-             "(_3 all_different (_1 _1 _2 _2))",
-             "(_1 less_equal _2 _3)",
-             "(_1 less_equal_iff (_2 != 1) _3 _4)",
+    for (auto s : {"(_1 abs _2 _3)", "(_3 all_different (_1 _1 _2 _2))", "(_1 less_equal _2 _3)", "(_1 less_equal_iff (_2 != 1) _3 _4)",
              "(_5 in _2 (0 1 _3))"}) {
         CHECK(format("{}", parse_s_expr(s)) == s);
     }
@@ -132,10 +127,7 @@ TEST_CASE("SExpr: the '#' alternate form drops a list's enclosing parentheses")
 {
     // The `#` form yields a list's body without its outer parens (the s-expr
     // body of a constraint's term).
-    auto body = SExpr::list({SExpr::atom("_1"),
-        SExpr::atom("abs"),
-        parse_s_expr("_2"),
-        parse_s_expr("(-_1 + 17)")});
+    auto body = SExpr::list({SExpr::atom("_1"), SExpr::atom("abs"), parse_s_expr("_2"), parse_s_expr("(-_1 + 17)")});
     CHECK(format("{:#}", body) == "_1 abs _2 (-_1 + 17)");
     CHECK(format("{}", body) == "(_1 abs _2 (-_1 + 17))");
     // Only the outermost list loses its parentheses; nested lists keep theirs.

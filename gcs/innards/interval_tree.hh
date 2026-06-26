@@ -33,12 +33,7 @@ namespace gcs::innards
             unsigned long long priority;
             std::unique_ptr<Node> left, right;
 
-            Node(Integer l, Integer h, unsigned long long p) :
-                lo(l),
-                hi(h),
-                min_hi(h),
-                max_hi(h),
-                priority(p)
+            Node(Integer l, Integer h, unsigned long long p) : lo(l), hi(h), min_hi(h), max_hi(h), priority(p)
             {
             }
         };

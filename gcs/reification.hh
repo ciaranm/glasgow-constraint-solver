@@ -33,12 +33,7 @@ namespace gcs
         };
     }
 
-    using ReificationCondition = std::variant<
-        reif::MustHold,
-        reif::MustNotHold,
-        reif::If,
-        reif::NotIf,
-        reif::Iff>;
+    using ReificationCondition = std::variant<reif::MustHold, reif::MustNotHold, reif::If, reif::NotIf, reif::Iff>;
 }
 
 #endif

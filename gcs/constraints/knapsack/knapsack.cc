@@ -55,20 +55,13 @@ using std::print;
 using fmt::print;
 #endif
 
-Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits,
-    vector<IntegerVariableID> vars, IntegerVariableID weight, IntegerVariableID profit) :
-    _coeffs({move(weights), move(profits)}),
-    _vars(move(vars)),
-    _totals({weight, profit})
+Knapsack::Knapsack(vector<Integer> weights, vector<Integer> profits, vector<IntegerVariableID> vars, IntegerVariableID weight,
+    IntegerVariableID profit) : _coeffs({move(weights), move(profits)}), _vars(move(vars)), _totals({weight, profit})
 {
 }
 
-Knapsack::Knapsack(vector<vector<Integer>> coefficients,
-    vector<IntegerVariableID> vars,
-    vector<IntegerVariableID> totals) :
-    _coeffs(move(coefficients)),
-    _vars(move(vars)),
-    _totals(move(totals))
+Knapsack::Knapsack(vector<vector<Integer>> coefficients, vector<IntegerVariableID> vars, vector<IntegerVariableID> totals) :
+    _coeffs(move(coefficients)), _vars(move(vars)), _totals(move(totals))
 {
 }
 
@@ -88,29 +81,19 @@ namespace
 
     auto add_bound_p_term_to(PolBuilder & builder, const State & state, ProofLogger * const logger, IntegerVariableID var, bool upper) -> void
     {
-        overloaded{
-            [&](const SimpleIntegerVariableID & v) {
-                builder.add_for_literal(logger->names_and_ids_tracker(),
-                    upper ? v <= state.upper_bound(v) : v >= state.lower_bound(v));
-            },
+        overloaded{[&](const SimpleIntegerVariableID & v) {
+                       builder.add_for_literal(logger->names_and_ids_tracker(), upper ? v <= state.upper_bound(v) : v >= state.lower_bound(v));
+                   },
             [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; },
             [&](const ViewOfIntegerVariableID &) { throw UnimplementedException{}; }}
             .visit(var);
     }
 
     template <bool doing_proof_>
-    auto knapsack_gac(
-        const State & state,
-        ProofLogger * const logger,
-        const vector<IntegerVariableID> & reason_variables,
-        auto & inference,
-        const ConstraintID & owner,
-        const vector<Integer> & committed,
-        const vector<pair<Integer, Integer>> & bounds,
-        const vector<vector<Integer>> & coeffs,
-        const vector<IntegerVariableID> & totals,
-        const vector<IntegerVariableID> & vars_including_assigned, const vector<size_t> & undetermined_var_indices,
-        const optional<vector<pair<ProofLine, ProofLine>>> & opb_lines) -> void
+    auto knapsack_gac(const State & state, ProofLogger * const logger, const vector<IntegerVariableID> & reason_variables, auto & inference,
+        const ConstraintID & owner, const vector<Integer> & committed, const vector<pair<Integer, Integer>> & bounds,
+        const vector<vector<Integer>> & coeffs, const vector<IntegerVariableID> & totals, const vector<IntegerVariableID> & vars_including_assigned,
+        const vector<size_t> & undetermined_var_indices, const optional<vector<pair<ProofLine, ProofLine>>> & opb_lines) -> void
     {
         struct NodeInequalityData
         {
@@ -200,18 +183,16 @@ namespace
                         for (const auto & [x, _] : enumerate(totals)) {
                             auto ge_data = growing_layer_ge_datas.at(x).find(new_sums.at(x));
                             if (ge_data == growing_layer_ge_datas.at(x).end()) {
-                                auto [flag, fwd, rev] = logger->create_proof_flag_reifying(
-                                    sums_so_far.at(x) >= new_sums.at(x), "s" + stringify(layer_number) + "x" + stringify(x) + "ge" + stringify(new_sums.at(x)),
-                                    ProofLevel::Temporary);
+                                auto [flag, fwd, rev] = logger->create_proof_flag_reifying(sums_so_far.at(x) >= new_sums.at(x),
+                                    "s" + stringify(layer_number) + "x" + stringify(x) + "ge" + stringify(new_sums.at(x)), ProofLevel::Temporary);
                                 ge_data = growing_layer_ge_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
                             }
                             ge_datas.push_back(ge_data);
 
                             auto le_data = growing_layer_le_datas.at(x).find(new_sums.at(x));
                             if (le_data == growing_layer_le_datas.at(x).end()) {
-                                auto [flag, fwd, rev] = logger->create_proof_flag_reifying(
-                                    sums_so_far.at(x) <= new_sums.at(x), "s" + stringify(layer_number) + "x" + stringify(x) + "le" + stringify(new_sums.at(x)),
-                                    ProofLevel::Temporary);
+                                auto [flag, fwd, rev] = logger->create_proof_flag_reifying(sums_so_far.at(x) <= new_sums.at(x),
+                                    "s" + stringify(layer_number) + "x" + stringify(x) + "le" + stringify(new_sums.at(x)), ProofLevel::Temporary);
                                 le_data = growing_layer_le_datas.at(x).emplace(new_sums.at(x), NodeInequalityData{flag, fwd, rev}).first;
                             }
                             le_datas.push_back(le_data);
@@ -236,8 +217,8 @@ namespace
                                 ges.push_back(g->second);
                             }
 
-                            auto [flag, _1, _2] = logger->create_proof_flag_reifying(all >= Integer(all.terms.size()),
-                                "s" + stringify(layer_number) + "x" + name, ProofLevel::Temporary);
+                            auto [flag, _1, _2] = logger->create_proof_flag_reifying(
+                                all >= Integer(all.terms.size()), "s" + stringify(layer_number) + "x" + name, ProofLevel::Temporary);
                             node_data = growing_layer_nodes.emplace(new_sums, FullNodeData{flag, ges, les, {}}).first;
                         }
                         node_data->second->predecessors.emplace_back(sums, val);
@@ -285,16 +266,13 @@ namespace
                         for (const auto & [x, _] : enumerate(totals)) {
                             if (committed.at(x) + new_sums.at(x) > bounds.at(x).second) {
                                 PolBuilder b;
-                                b.add(ge_datas.at(x)->second.forward_reif_line)
-                                    .add(opb_lines->at(x).first);
+                                b.add(ge_datas.at(x)->second.forward_reif_line).add(opb_lines->at(x).first);
                                 add_bound_p_term_to(b, state, logger, totals.at(x), true);
                                 b.emit(*logger, ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                                    WPBSum{} + 1_i * not_in_ge_states.at(x) + 1_i * not_choice >= 1_i,
-                                    ProofLevel::Temporary);
+                                    WPBSum{} + 1_i * not_in_ge_states.at(x) + 1_i * not_choice >= 1_i, ProofLevel::Temporary);
                                 logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                                    WPBSum{} + 1_i * not_in_full_state + 1_i * not_choice >= 1_i,
-                                    ProofLevel::Temporary);
+                                    WPBSum{} + 1_i * not_in_full_state + 1_i * not_choice >= 1_i, ProofLevel::Temporary);
                                 eliminated = true;
                                 break;
                             }
@@ -319,8 +297,8 @@ namespace
 
                     for (auto & f : feasible_choices)
                         must_pick_one_val += 1_i * (vars_including_assigned.at(var_idx) == f);
-                    logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                        must_pick_one_val >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(
+                        eager_reason(generic_reason(reason_variables), state), must_pick_one_val >= 1_i, ProofLevel::Temporary);
 
                     for (const auto & [x, _] : enumerate(totals)) {
                         auto must_pick_one_le = must_pick_one, must_pick_one_ge = must_pick_one;
@@ -328,13 +306,16 @@ namespace
                             must_pick_one_le += 1_i * f;
                         for (auto & f : feasible_ge_flags.at(x))
                             must_pick_one_ge += 1_i * f;
-                        logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state), must_pick_one_le >= 1_i, ProofLevel::Temporary);
-                        logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state), must_pick_one_ge >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(
+                            eager_reason(generic_reason(reason_variables), state), must_pick_one_le >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(
+                            eager_reason(generic_reason(reason_variables), state), must_pick_one_ge >= 1_i, ProofLevel::Temporary);
                     }
 
                     for (auto & f : feasible_node_flags)
                         must_pick_one_node += 1_i * f;
-                    logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state), must_pick_one_node >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(
+                        eager_reason(generic_reason(reason_variables), state), must_pick_one_node >= 1_i, ProofLevel::Temporary);
                 }
             }
 
@@ -354,7 +335,8 @@ namespace
                 WPBSum must_pick_one;
                 for (auto & [_, data] : growing_layer_nodes)
                     must_pick_one += 1_i * *data->reif_flag;
-                logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state), must_pick_one >= 1_i, ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(
+                    eager_reason(generic_reason(reason_variables), state), must_pick_one >= 1_i, ProofLevel::Temporary);
             }
 
             // we might have some values that never allowed a state to be created
@@ -378,22 +360,20 @@ namespace
 
         // states where the sum is too large are already gone, but we might
         // have remaining states where the final sum is too small.
-        for (auto final_states_iter = completed_layers.back().begin(), final_states_iter_end = completed_layers.back().end(); final_states_iter != final_states_iter_end;) {
+        for (auto final_states_iter = completed_layers.back().begin(), final_states_iter_end = completed_layers.back().end();
+            final_states_iter != final_states_iter_end;) {
             bool eliminated = false;
             for (const auto & [x, _] : enumerate(totals)) {
                 if (committed.at(x) + final_states_iter->first.at(x) < bounds.at(x).first) {
                     if constexpr (doing_proof_) {
                         PolBuilder b;
-                        b.add(final_states_iter->second->les.at(x).forward_reif_line)
-                            .add(opb_lines->at(x).second);
+                        b.add(final_states_iter->second->les.at(x).forward_reif_line).add(opb_lines->at(x).second);
                         add_bound_p_term_to(b, state, logger, totals.at(x), false);
                         b.emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                            WPBSum{} + 1_i * ! final_states_iter->second->les.at(x).reif_flag >= 1_i,
-                            ProofLevel::Temporary);
+                            WPBSum{} + 1_i * ! final_states_iter->second->les.at(x).reif_flag >= 1_i, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                            WPBSum{} + 1_i * ! *final_states_iter->second->reif_flag >= 1_i,
-                            ProofLevel::Temporary);
+                            WPBSum{} + 1_i * ! *final_states_iter->second->reif_flag >= 1_i, ProofLevel::Temporary);
                     }
                     completed_layers.back().erase(final_states_iter++);
                     eliminated = true;
@@ -406,7 +386,8 @@ namespace
         }
 
         // same again, but for interior values that are not bounds
-        for (auto final_states_iter = completed_layers.back().begin(), final_states_iter_end = completed_layers.back().end(); final_states_iter != final_states_iter_end;) {
+        for (auto final_states_iter = completed_layers.back().begin(), final_states_iter_end = completed_layers.back().end();
+            final_states_iter != final_states_iter_end;) {
             bool eliminated = false;
             for (const auto & [x, _] : enumerate(totals)) {
                 auto val = committed.at(x) + final_states_iter->first.at(x);
@@ -421,11 +402,9 @@ namespace
                             .add(opb_lines->at(x).first)
                             .emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                            WPBSum{} + 1_i * ! *final_states_iter->second->reif_flag + 1_i * (totals.at(x) == val) >= 1_i,
-                            ProofLevel::Temporary);
+                            WPBSum{} + 1_i * ! *final_states_iter->second->reif_flag + 1_i * (totals.at(x) == val) >= 1_i, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                            WPBSum{} + 1_i * ! *final_states_iter->second->reif_flag >= 1_i,
-                            ProofLevel::Temporary);
+                            WPBSum{} + 1_i * ! *final_states_iter->second->reif_flag >= 1_i, ProofLevel::Temporary);
                     }
                     completed_layers.back().erase(final_states_iter++);
                     eliminated = true;
@@ -440,7 +419,8 @@ namespace
         if (completed_layers.back().empty()) {
             if constexpr (doing_proof_) {
                 logger->emit_proof_comment("no feasible choices remaining");
-                logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state), WPBSum{} >= 1_i, ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(
+                    eager_reason(generic_reason(reason_variables), state), WPBSum{} >= 1_i, ProofLevel::Temporary);
             }
 
             inference.contradiction(logger, JustifyUsingRUP{hints::Knapsack{owner}}, eager_reason(generic_reason(reason_variables), state));
@@ -450,8 +430,9 @@ namespace
             for (const auto & [the_x, _] : enumerate(totals)) {
                 auto x = the_x; // clang
                 auto [lowest_iter, highest_iter] = minmax_element(completed_layers.back(),
-                    [&](const pair<vector<Integer>, optional<FullNodeData>> & a,
-                        const pair<vector<Integer>, optional<FullNodeData>> & b) { return a.first.at(x) < b.first.at(x); });
+                    [&](const pair<vector<Integer>, optional<FullNodeData>> & a, const pair<vector<Integer>, optional<FullNodeData>> & b) {
+                        return a.first.at(x) < b.first.at(x);
+                    });
 
                 auto lowest = lowest_iter->first.at(x);
                 inferences.emplace_back(totals.at(x) >= committed.at(x) + lowest);
@@ -461,9 +442,8 @@ namespace
 
                 for (auto v : state.each_value_immutable(totals.at(x))) {
                     if (v >= committed.at(x) + lowest && v < committed.at(x) + highest + 1_i)
-                        if (none_of(completed_layers.back(), [&](const pair<vector<Integer>, optional<FullNodeData>> & a) {
-                                return a.first.at(x) + committed.at(x) == v;
-                            }))
+                        if (none_of(completed_layers.back(),
+                                [&](const pair<vector<Integer>, optional<FullNodeData>> & a) { return a.first.at(x) + committed.at(x) == v; }))
                             inferences.emplace_back(totals.at(x) != v);
                 }
 
@@ -474,31 +454,21 @@ namespace
                             continue;
 
                         auto no_support_ge = WPBSum{} + 1_i * ! data->ges.at(x).reif_flag;
-                        PolBuilder{}
-                            .add(opb_lines->at(x).first)
-                            .add(data->ges.at(x).forward_reif_line)
-                            .emit(*logger, ProofLevel::Temporary);
+                        PolBuilder{}.add(opb_lines->at(x).first).add(data->ges.at(x).forward_reif_line).emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                            no_support_ge + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i,
-                            ProofLevel::Temporary);
+                            no_support_ge + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i, ProofLevel::Temporary);
 
                         auto no_support_le = WPBSum{} + 1_i * ! data->les.at(x).reif_flag;
-                        PolBuilder{}
-                            .add(opb_lines->at(x).second)
-                            .add(data->les.at(x).forward_reif_line)
-                            .emit(*logger, ProofLevel::Temporary);
+                        PolBuilder{}.add(opb_lines->at(x).second).add(data->les.at(x).forward_reif_line).emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                            no_support_le + 1_i * (totals.at(x) <= committed.at(x) + highest) >= 1_i,
-                            ProofLevel::Temporary);
+                            no_support_le + 1_i * (totals.at(x) <= committed.at(x) + highest) >= 1_i, ProofLevel::Temporary);
                     }
 
                     logger->emit_proof_comment("deduce overall conclusions");
                     logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                        WPBSum{} + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i,
-                        ProofLevel::Temporary);
+                        WPBSum{} + 1_i * (totals.at(x) >= committed.at(x) + lowest) >= 1_i, ProofLevel::Temporary);
                     logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                        WPBSum{} + 1_i * (totals.at(x) <= committed.at(x) + highest) >= 1_i,
-                        ProofLevel::Temporary);
+                        WPBSum{} + 1_i * (totals.at(x) <= committed.at(x) + highest) >= 1_i, ProofLevel::Temporary);
                 }
             }
 
@@ -508,7 +478,8 @@ namespace
             // didn't lead to a feasible terminal state, and seeing if any
             // further values lose support
             int var_number = undetermined_var_indices.size() - 1;
-            for (auto layer = completed_layers.rbegin(); layer != completed_layers.rend() && next(layer) != completed_layers.rend(); ++layer, --var_number) {
+            for (auto layer = completed_layers.rbegin(); layer != completed_layers.rend() && next(layer) != completed_layers.rend();
+                ++layer, --var_number) {
                 set<vector<Integer>> reached;
                 set<Integer> supported;
                 for (const auto & [_, data] : *layer) {
@@ -525,8 +496,7 @@ namespace
                         if constexpr (doing_proof_)
                             if (state_iter->second->reif_flag)
                                 logger->emit_rup_proof_line_under_reason(eager_reason(generic_reason(reason_variables), state),
-                                    WPBSum{} + 1_i * ! *state_iter->second->reif_flag >= 1_i,
-                                    ProofLevel::Temporary);
+                                    WPBSum{} + 1_i * ! *state_iter->second->reif_flag >= 1_i, ProofLevel::Temporary);
                         next(layer)->erase(state_iter++);
                     }
                 }
@@ -534,20 +504,15 @@ namespace
                 auto var = vars_including_assigned.at(undetermined_var_indices.at(var_number));
                 for (auto val : state.each_value_mutable(var)) {
                     if (! supported.contains(val))
-                        inference.infer(logger, var != val, JustifyUsingRUP{hints::Knapsack{owner}}, eager_reason(generic_reason(reason_variables), state));
+                        inference.infer(
+                            logger, var != val, JustifyUsingRUP{hints::Knapsack{owner}}, eager_reason(generic_reason(reason_variables), state));
                 }
             }
         }
     }
 
-    auto knapsack(
-        const State & state,
-        ProofLogger * const logger,
-        auto & inference,
-        const ConstraintID & owner,
-        const vector<vector<Integer>> & coeffs,
-        const vector<IntegerVariableID> & vars,
-        const vector<IntegerVariableID> & totals,
+    auto knapsack(const State & state, ProofLogger * const logger, auto & inference, const ConstraintID & owner,
+        const vector<vector<Integer>> & coeffs, const vector<IntegerVariableID> & vars, const vector<IntegerVariableID> & totals,
         const vector<pair<ProofLine, ProofLine>> & eqn_lines) -> PropagatorState
     {
         vector<size_t> undetermined_vars;
@@ -586,11 +551,11 @@ namespace
         reason_variables.insert(reason_variables.end(), vars.begin(), vars.end());
         reason_variables.insert(reason_variables.end(), totals.begin(), totals.end());
         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
-            knapsack_gac<true>(state, logger, reason_variables, inference, owner, committed_sums,
-                boundses, coeffs, totals, vars, undetermined_vars, eqn_lines);
+            knapsack_gac<true>(
+                state, logger, reason_variables, inference, owner, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, eqn_lines);
         else
-            knapsack_gac<false>(state, logger, reason_variables, inference, owner, committed_sums,
-                boundses, coeffs, totals, vars, undetermined_vars, nullopt);
+            knapsack_gac<false>(
+                state, logger, reason_variables, inference, owner, committed_sums, boundses, coeffs, totals, vars, undetermined_vars, nullopt);
 
         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
             logger->forget_proof_level(temporary_proof_level);
@@ -685,9 +650,6 @@ auto Knapsack::s_expr(const innards::ProofModel * const model) const -> SExpr
     for (const auto & t : _totals)
         totals.push_back(tracker.s_expr_term_of(t));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("knapsack"),
-        SExpr::list(move(coeff_rows)),
-        SExpr::list(move(vars)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("knapsack"), SExpr::list(move(coeff_rows)), SExpr::list(move(vars)),
         SExpr::list(move(totals))});
 }

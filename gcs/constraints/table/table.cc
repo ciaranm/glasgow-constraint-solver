@@ -45,9 +45,7 @@ using fmt::print;
 using fmt::println;
 #endif
 
-Table::Table(vector<IntegerVariableID> v, ExtensionalTuples t) :
-    _vars(move(v)),
-    _tuples(move(t))
+Table::Table(vector<IntegerVariableID> v, ExtensionalTuples t) : _vars(move(v)), _tuples(move(t))
 {
 }
 
@@ -123,22 +121,23 @@ auto Table::install(Propagators & propagators, State & initial_state, ProofModel
 
 auto Table::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
-    visit([&](auto & tuples) {
-        if (depointinate(tuples).empty()) {
-            // No allowed tuples means the constraint is UNSAT. We let
-            // define_proof_model emit a trivially-false `0 >= 1` constraint
-            // (which is morally what an empty selector domain encodes), and
-            // install_propagators installs a contradiction initialiser. Skip
-            // the selector allocation: an empty range [0, -1] would be
-            // invalid, and the propagator won't run anyway.
-            _has_no_tuples = true;
-            return;
-        }
-        for (auto & tuple : depointinate(tuples))
-            if (tuple.size() != _vars.size())
-                throw InvalidProblemDefinitionException{"table size mismatch"};
-        _selector = initial_state.allocate_integer_variable_with_state(0_i, Integer(depointinate(tuples).size() - 1));
-    },
+    visit(
+        [&](auto & tuples) {
+            if (depointinate(tuples).empty()) {
+                // No allowed tuples means the constraint is UNSAT. We let
+                // define_proof_model emit a trivially-false `0 >= 1` constraint
+                // (which is morally what an empty selector domain encodes), and
+                // install_propagators installs a contradiction initialiser. Skip
+                // the selector allocation: an empty range [0, -1] would be
+                // invalid, and the propagator won't run anyway.
+                _has_no_tuples = true;
+                return;
+            }
+            for (auto & tuple : depointinate(tuples))
+                if (tuple.size() != _vars.size())
+                    throw InvalidProblemDefinitionException{"table size mismatch"};
+            _selector = initial_state.allocate_integer_variable_with_state(0_i, Integer(depointinate(tuples).size() - 1));
+        },
         _tuples);
 
     return true;
@@ -152,48 +151,54 @@ auto Table::define_proof_model(ProofModel & model) -> void
         return;
     }
 
-    visit([&](auto && tuples) {
-        model.set_up_integer_variable(_selector, 0_i, Integer(depointinate(tuples).size() - 1),
-            "aux_table" + to_string(_selector.index),
-            IntegerVariableProofRepresentation::DirectOnly);
+    visit(
+        [&](auto && tuples) {
+            model.set_up_integer_variable(_selector, 0_i, Integer(depointinate(tuples).size() - 1), "aux_table" + to_string(_selector.index),
+                IntegerVariableProofRepresentation::DirectOnly);
 
-        // pb encoding, if necessary
-        for (const auto & [tuple_idx, tuple] : enumerate(depointinate(tuples))) {
-            // selector == tuple_idx -> /\_i vars[i] == tuple[i]
-            bool infeasible = false;
-            WPBSum lits;
-            lits += Integer(tuple.size()) * (_selector != Integer(tuple_idx));
-            for (const auto & [var_idx, var] : enumerate(_vars)) {
-                if (is_immediately_infeasible(var, tuple[var_idx]))
-                    infeasible = true;
+            // pb encoding, if necessary
+            for (const auto & [tuple_idx, tuple] : enumerate(depointinate(tuples))) {
+                // selector == tuple_idx -> /\_i vars[i] == tuple[i]
+                bool infeasible = false;
+                WPBSum lits;
+                lits += Integer(tuple.size()) * (_selector != Integer(tuple_idx));
+                for (const auto & [var_idx, var] : enumerate(_vars)) {
+                    if (is_immediately_infeasible(var, tuple[var_idx]))
+                        infeasible = true;
+                    else
+                        add_lit_unless_immediately_true(lits, var, tuple[var_idx]);
+                }
+                if (infeasible)
+                    model.add_constraint({_selector != Integer(tuple_idx)});
                 else
-                    add_lit_unless_immediately_true(lits, var, tuple[var_idx]);
+                    model.add_constraint(lits >= Integer(lits.terms.size() - 1));
             }
-            if (infeasible)
-                model.add_constraint({_selector != Integer(tuple_idx)});
-            else
-                model.add_constraint(lits >= Integer(lits.terms.size() - 1));
-        }
-    },
+        },
         move(_tuples));
 }
 
 auto Table::install_propagators(Propagators & propagators) -> void
 {
     if (_has_no_tuples) {
-        propagators.install_initial_contradiction("Empty table constraint from table",
-            JustifyUsingRUP{hints::Table{constraint_id()}});
+        propagators.install_initial_contradiction("Empty table constraint from table", JustifyUsingRUP{hints::Table{constraint_id()}});
         return;
     }
 
-    visit([&](auto && tuples) {
-        Triggers triggers;
-        for (auto & v : _vars)
-            triggers.on_change.push_back(v);
-        triggers.on_change.push_back(_selector);
+    visit(
+        [&](auto && tuples) {
+            Triggers triggers;
+            for (auto & v : _vars)
+                triggers.on_change.push_back(v);
+            triggers.on_change.push_back(_selector);
 
-        propagators.install(constraint_id(), [table = ExtensionalData{_selector, move(_vars), move(tuples)}, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState { return propagate_extensional(table, state, inference, logger, hints::Table{owner}); }, triggers);
-    },
+            propagators.install(
+                constraint_id(),
+                [table = ExtensionalData{_selector, move(_vars), move(tuples)}, owner = constraint_id()](
+                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    return propagate_extensional(table, state, inference, logger, hints::Table{owner});
+                },
+                triggers);
+        },
         move(_tuples));
 }
 
@@ -201,20 +206,19 @@ auto Table::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
     vector<SExpr> tuple_terms;
-    visit([&](const auto & tuples) {
-        for (const auto & t : depointinate(tuples)) {
-            vector<SExpr> row;
-            for (const auto & v : t)
-                row.push_back(SExpr::atom(tuple_entry_as_string(v)));
-            tuple_terms.push_back(SExpr::list(std::move(row)));
-        }
-    },
+    visit(
+        [&](const auto & tuples) {
+            for (const auto & t : depointinate(tuples)) {
+                vector<SExpr> row;
+                for (const auto & v : t)
+                    row.push_back(SExpr::atom(tuple_entry_as_string(v)));
+                tuple_terms.push_back(SExpr::list(std::move(row)));
+            }
+        },
         _tuples);
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("table"),
-        SExpr::list(std::move(tuple_terms)),
-        SExpr::list(std::move(vars))});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("table"), SExpr::list(std::move(tuple_terms)), SExpr::list(std::move(vars))});
 }

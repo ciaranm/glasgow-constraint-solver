@@ -47,9 +47,7 @@ using std::print;
 using fmt::print;
 #endif
 
-SymmetricAllDifferent::SymmetricAllDifferent(vector<IntegerVariableID> vars, Integer start) :
-    _vars(move(vars)),
-    _start(start)
+SymmetricAllDifferent::SymmetricAllDifferent(vector<IntegerVariableID> vars, Integer start) : _vars(move(vars)), _start(start)
 {
 }
 
@@ -134,21 +132,20 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
     auto n = vars.size();
 
     if (_value_am1s && n >= 2) {
-        propagators.install_initialiser(
-            [vars, start, n, value_am1s = _value_am1s](
-                const State &, auto &, ProofLogger * const logger) -> void {
-                if (! logger || logger->get_assertion_level() >= AssertionLevel::Off)
-                    return;
-                for (Integer v = start; v < start + Integer(n); ++v) {
-                    vector<IntegerVariableCondition> xieqvs;
-                    for (const auto & var : vars)
-                        xieqvs.push_back(var != v);
-                    value_am1s->emplace(v, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
-                        return logger->emit(RUPProofRule{},
-                            WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
-                    }));
-                }
-            });
+        propagators.install_initialiser([vars, start, n, value_am1s = _value_am1s](const State &, auto &, ProofLogger * const logger) -> void {
+            if (! logger || logger->get_assertion_level() >= AssertionLevel::Off)
+                return;
+            for (Integer v = start; v < start + Integer(n); ++v) {
+                vector<IntegerVariableCondition> xieqvs;
+                for (const auto & var : vars)
+                    xieqvs.push_back(var != v);
+                value_am1s->emplace(v,
+                    recover_am1<IntegerVariableCondition>(
+                        *logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
+                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
+                        }));
+            }
+        });
     }
 
     if (! _value_am1s)
@@ -171,8 +168,7 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
             for (const auto & [i, x_i] : enumerate(vars)) {
                 for (auto v : state.each_value_mutable(x_i))
                     if (! state.in_domain(vars.at((v - start).as_index()), Integer(i) + start))
-                        inf.infer(logger, x_i != v,
-                            JustifyUsingRUP{hints::AllDifferent{constraint_id}},
+                        inf.infer(logger, x_i != v, JustifyUsingRUP{hints::AllDifferent{constraint_id}},
                             ExplicitReason{ReasonLiterals{vars.at((v - start).as_index()) != Integer(i) + start}});
             }
 
@@ -188,8 +184,6 @@ auto SymmetricAllDifferent::s_expr(const ProofModel * const model) const -> SExp
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("symmetric_all_different"),
-        SExpr::list(std::move(vars)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("symmetric_all_different"), SExpr::list(std::move(vars)),
         SExpr::atom(_start.to_string())});
 }

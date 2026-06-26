@@ -22,16 +22,14 @@ using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
-AutoTable::AutoTable(const vector<IntegerVariableID> & v) :
-    _vars(v)
+AutoTable::AutoTable(const vector<IntegerVariableID> & v) : _vars(v)
 {
 }
 
 namespace
 {
-    auto solve_subproblem(unsigned depth, SimpleTuples & tuples, const vector<IntegerVariableID> & vars,
-        Propagators & propagators, State & state, const optional<Literal> & this_branch_guess,
-        ProofLogger * const logger, SimpleIntegerVariableID selector_var_id) -> void
+    auto solve_subproblem(unsigned depth, SimpleTuples & tuples, const vector<IntegerVariableID> & vars, Propagators & propagators, State & state,
+        const optional<Literal> & this_branch_guess, ProofLogger * const logger, SimpleIntegerVariableID selector_var_id) -> void
     {
         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
             logger->enter_proof_level(depth + 1);
@@ -59,10 +57,9 @@ namespace
                         reverse_implication += 1_i * (v != state(v));
                     }
 
-                    logger->emit_red_proof_line(forward_implication >= Integer(vars.size()),
-                        {{selector_var_id == sel_value, FalseLiteral{}}}, ProofLevel::Top);
-                    logger->emit_red_proof_line(reverse_implication >= 1_i,
-                        {{selector_var_id == sel_value, TrueLiteral{}}}, ProofLevel::Top);
+                    logger->emit_red_proof_line(
+                        forward_implication >= Integer(vars.size()), {{selector_var_id == sel_value, FalseLiteral{}}}, ProofLevel::Top);
+                    logger->emit_red_proof_line(reverse_implication >= 1_i, {{selector_var_id == sel_value, TrueLiteral{}}}, ProofLevel::Top);
                     state.add_extra_proof_condition(selector_var_id != sel_value);
                 }
 
@@ -121,7 +118,12 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
     // A presolver-derived propagator has no posted-constraint identity of its own.
-    propagators.install(CurrentlyUnnamedConstraint{}, [data = move(data)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState { return propagate_extensional(data, state, inference, logger); }, triggers);
+    propagators.install(
+        CurrentlyUnnamedConstraint{},
+        [data = move(data)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            return propagate_extensional(data, state, inference, logger);
+        },
+        triggers);
 
     return true;
 }

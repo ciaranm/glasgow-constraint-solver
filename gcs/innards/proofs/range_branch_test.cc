@@ -15,10 +15,8 @@ auto main() -> int
     auto y = p.create_integer_variable(0_i, 4_i, "y");
     p.post(NotEquals{x, y});
 
-    solve_with(
-        p,
-        SolveCallbacks{
-            .solution = [](const CurrentState &) -> bool { return true; },
+    solve_with(p,
+        SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; },
             .branch = branch_with(variable_order::random(p, 1), value_order::reject_random_interval(1))},
         ProofOptions{"range_branch_test"});
 

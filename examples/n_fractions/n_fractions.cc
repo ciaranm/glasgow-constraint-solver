@@ -48,12 +48,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("n_fractions"))                              //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program Options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("n_fractions"))      //
+            ("stats", "Print solve statistics")                              //
             ;
 
         options.add_options()                                                                   //
@@ -150,11 +150,8 @@ auto main(int argc, char * argv[]) -> int
         return true;
     };
 
-    auto stats = solve(
-        p, solution_callback,
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+    auto stats = solve(p, solution_callback,
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

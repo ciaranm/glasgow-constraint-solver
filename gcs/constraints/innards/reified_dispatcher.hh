@@ -65,9 +65,7 @@ namespace gcs::innards
      * literal to infer).
      */
     template <typename Justification_ = Justification>
-    using ReificationVerdictFor = std::variant<
-        reification_verdict::StillUndecided,
-        reification_verdict::MustHold<Justification_>,
+    using ReificationVerdictFor = std::variant<reification_verdict::StillUndecided, reification_verdict::MustHold<Justification_>,
         reification_verdict::MustNotHold<Justification_>>;
 
     // The default verdict, whose justification is the plain Justification variant.
@@ -117,14 +115,9 @@ namespace gcs::innards
      * If `initial_evaluated` is Deactivated, no propagator is installed.
      */
     template <typename EnforceMustHold_, typename EnforceMustNotHold_, typename InferCondWhenUndecided_>
-    auto install_reified_dispatcher(
-        Propagators & propagators,
-        const ConstraintID & constraint_id,
-        const EvaluatedReificationCondition & initial_evaluated,
-        const ReificationCondition & reif_cond,
-        Triggers triggers,
-        EnforceMustHold_ enforce_constraint_must_hold,
-        EnforceMustNotHold_ enforce_constraint_must_not_hold,
+    auto install_reified_dispatcher(Propagators & propagators, const ConstraintID & constraint_id,
+        const EvaluatedReificationCondition & initial_evaluated, const ReificationCondition & reif_cond, Triggers triggers,
+        EnforceMustHold_ enforce_constraint_must_hold, EnforceMustNotHold_ enforce_constraint_must_not_hold,
         InferCondWhenUndecided_ infer_cond_when_undecided) -> void
     {
         if (std::holds_alternative<evaluated_reif::Deactivated>(initial_evaluated))
@@ -136,18 +129,13 @@ namespace gcs::innards
 
         propagators.install(
             constraint_id,
-            [reif_cond,
-                enforce_constraint_must_hold = std::move(enforce_constraint_must_hold),
+            [reif_cond, enforce_constraint_must_hold = std::move(enforce_constraint_must_hold),
                 enforce_constraint_must_not_hold = std::move(enforce_constraint_must_not_hold),
                 infer_cond_when_undecided = std::move(infer_cond_when_undecided)](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 return overloaded{
-                    [&](const evaluated_reif::MustHold & reif) {
-                        return enforce_constraint_must_hold(state, inference, logger, reif.cond);
-                    },
-                    [&](const evaluated_reif::MustNotHold & reif) {
-                        return enforce_constraint_must_not_hold(state, inference, logger, reif.cond);
-                    },
+                    [&](const evaluated_reif::MustHold & reif) { return enforce_constraint_must_hold(state, inference, logger, reif.cond); },
+                    [&](const evaluated_reif::MustNotHold & reif) { return enforce_constraint_must_not_hold(state, inference, logger, reif.cond); },
                     [&](const evaluated_reif::Undecided & reif) {
                         // The verdict's justification type varies per constraint
                         // (plain Justification, a single typed JustifyExplicitly, or a
@@ -157,24 +145,22 @@ namespace gcs::innards
                         // affirmative tag picking which literal. Forwarding
                         // v.justification to infer() pushes any variant-visit into
                         // infer() itself.
-                        return std::visit([&](const auto & v) -> PropagatorState {
-                            using V = std::decay_t<decltype(v)>;
-                            if constexpr (std::is_same_v<V, reification_verdict::StillUndecided>)
-                                return PropagatorState::Enable;
-                            else {
-                                auto lit = V::affirmative
-                                    ? reif.cond_to_infer_if_constraint_must_hold()
-                                    : reif.cond_to_infer_if_constraint_must_not_hold();
-                                if (lit)
-                                    inference.infer(logger, *lit, v.justification, v.reason, v.assertion_hint);
-                                return PropagatorState::DisableUntilBacktrack;
-                            }
-                        },
+                        return std::visit(
+                            [&](const auto & v) -> PropagatorState {
+                                using V = std::decay_t<decltype(v)>;
+                                if constexpr (std::is_same_v<V, reification_verdict::StillUndecided>)
+                                    return PropagatorState::Enable;
+                                else {
+                                    auto lit = V::affirmative ? reif.cond_to_infer_if_constraint_must_hold()
+                                                              : reif.cond_to_infer_if_constraint_must_not_hold();
+                                    if (lit)
+                                        inference.infer(logger, *lit, v.justification, v.reason, v.assertion_hint);
+                                    return PropagatorState::DisableUntilBacktrack;
+                                }
+                            },
                             infer_cond_when_undecided(state, inference, logger, reif.cond));
                     },
-                    [&](const evaluated_reif::Deactivated &) {
-                        return PropagatorState::DisableUntilBacktrack;
-                    }}
+                    [&](const evaluated_reif::Deactivated &) { return PropagatorState::DisableUntilBacktrack; }}
                     .visit(test_reification_condition(state, reif_cond));
             },
             triggers);

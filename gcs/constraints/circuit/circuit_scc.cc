@@ -78,13 +78,8 @@ namespace
         long prev_subroot;
 
         explicit SCCPropagatorData(size_t n) :
-            count(1),
-            lowlink(vector<long>(n, -1)),
-            visit_number(vector<long>(n, -1)),
-            start_prev_subtree(0),
-            end_prev_subtree(0),
-            root(select_root(n)),
-            prev_subroot(root)
+            count(1), lowlink(vector<long>(n, -1)), visit_number(vector<long>(n, -1)), start_prev_subtree(0), end_prev_subtree(0),
+            root(select_root(n)), prev_subroot(root)
         {
             lowlink[root] = 0;
             visit_number[root] = 0;
@@ -113,32 +108,16 @@ namespace
 
         SCCProofContext(const State & state, ProofLogger & logger, const ReasonLiterals & reason, const vector<IntegerVariableID> & succ,
             SCCProofData & proof_data, const long root, const SCCOptions & options) :
-            state(state),
-            logger(logger),
-            reason(reason),
-            succ(succ),
-            root(root),
-            pos_var_data(proof_data.pos_var_data),
-            flag_data(any_cast<map<long, ShiftedPosDataMaps> &>(
-                state.get_persistent_constraint_state(proof_data.proof_flag_data_handle))),
+            state(state), logger(logger), reason(reason), succ(succ), root(root), pos_var_data(proof_data.pos_var_data),
+            flag_data(any_cast<map<long, ShiftedPosDataMaps> &>(state.get_persistent_constraint_state(proof_data.proof_flag_data_handle))),
             root_flag_data(flag_data[root]),
-            pos_alldiff_data(any_cast<PosAllDiffData &>(
-                state.get_persistent_constraint_state(proof_data.pos_alldiff_data_handle))),
-            options(options)
+            pos_alldiff_data(any_cast<PosAllDiffData &>(state.get_persistent_constraint_state(proof_data.pos_alldiff_data_handle))), options(options)
         {
         }
 
         SCCProofContext(SCCProofContext & other, const long root) :
-            state(other.state),
-            logger(other.logger),
-            reason(other.reason),
-            succ(other.succ),
-            root(root),
-            pos_var_data(other.pos_var_data),
-            flag_data(other.flag_data),
-            root_flag_data(flag_data[root]),
-            pos_alldiff_data(other.pos_alldiff_data),
-            options(other.options)
+            state(other.state), logger(other.logger), reason(other.reason), succ(other.succ), root(root), pos_var_data(other.pos_var_data),
+            flag_data(other.flag_data), root_flag_data(flag_data[root]), pos_alldiff_data(other.pos_alldiff_data), options(other.options)
         {
         }
     };
@@ -185,13 +164,11 @@ namespace
             add_sat(p_line, shifted_pos_geq[i][l + 1].backwards_reif_line);
             p_line.emit(ctx.logger, ProofLevel::Temporary);
 
-            ctx.logger.emit_proof_comment(format("Not both: {}={} and {}={}",
-                shifted_pos_eq[i][k].comment_name, k,
-                shifted_pos_eq[i][l].comment_name, l));
+            ctx.logger.emit_proof_comment(
+                format("Not both: {}={} and {}={}", shifted_pos_eq[i][k].comment_name, k, shifted_pos_eq[i][l].comment_name, l));
 
             neq_line = ctx.logger.emit_rup_proof_line(
-                WPBSum{} + 1_i * ! shifted_pos_eq[i][k].flag + 1_i * ! shifted_pos_eq[i][l].flag >= 1_i,
-                ProofLevel::Top);
+                WPBSum{} + 1_i * ! shifted_pos_eq[i][k].flag + 1_i * ! shifted_pos_eq[i][l].flag >= 1_i, ProofLevel::Top);
 
             shifted_pos_eq[i][l].neq_lines[k] = neq_line;
         }
@@ -202,9 +179,8 @@ namespace
                 return shifted_pos[i][l].neq_lines[k];
             }
 
-            ctx.logger.emit_proof_comment(format("Not both:{}={} and {}={}",
-                ctx.pos_var_data.at(i).comment_name, k,
-                ctx.pos_var_data.at(i).comment_name, l));
+            ctx.logger.emit_proof_comment(
+                format("Not both:{}={} and {}={}", ctx.pos_var_data.at(i).comment_name, k, ctx.pos_var_data.at(i).comment_name, l));
 
             neq_line = ctx.logger.emit_rup_proof_line(
                 WPBSum{} + 1_i * (ctx.pos_var_data.at(i).var != Integer{k}) + 1_i * (ctx.pos_var_data.at(i).var != Integer{l}) >= 1_i,
@@ -249,24 +225,20 @@ namespace
         else if (values.size() == 1) {
             auto idx = *values.begin();
             if (using_shifted_pos) {
-                ctx.logger.emit_proof_comment("AM1 " +
-                    ctx.root_flag_data.shifted_pos_eq[node][*values.begin()].comment_name);
-                return ctx.logger.emit_rup_proof_line(
-                    WPBSum{} + 1_i * ! (ctx.root_flag_data.shifted_pos_eq[node][idx].flag) >= 0_i,
-                    ProofLevel::Top);
+                ctx.logger.emit_proof_comment("AM1 " + ctx.root_flag_data.shifted_pos_eq[node][*values.begin()].comment_name);
+                return ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * ! (ctx.root_flag_data.shifted_pos_eq[node][idx].flag) >= 0_i, ProofLevel::Top);
             }
             else {
                 ctx.logger.emit_proof_comment(format("AM1 p[{}]", node));
-                return ctx.logger.emit_rup_proof_line(
-                    WPBSum{} + 1_i * ! (ctx.pos_var_data.at(node).var == Integer{idx}) >= 0_i,
-                    ProofLevel::Top);
+                return ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * ! (ctx.pos_var_data.at(node).var == Integer{idx}) >= 0_i, ProofLevel::Top);
             }
         }
         else
             throw UnexpectedException{"trying to prove an AM1 over zero values?"};
     }
 
-    auto prove_at_most_1_pos_using_contradiction(SCCProofContext & ctx, const long & node, const set<long> & values, bool using_shifted_pos) -> ProofLine
+    auto prove_at_most_1_pos_using_contradiction(SCCProofContext & ctx, const long & node, const set<long> & values, bool using_shifted_pos)
+        -> ProofLine
     {
         auto am1_sum = WPBSum{};
         if (using_shifted_pos) {
@@ -285,10 +257,7 @@ namespace
                     auto geq_this_val_plus_1 = geq_data.at(node).at(val + 1);
                     auto geq_next_val = geq_data.at(node).at(next_val);
                     auto geq_next_val_plus_1 = geq_data.at(node).at(next_val + 1);
-                    PolBuilder{}
-                        .add(geq_this_val.backwards_reif_line)
-                        .add(geq_next_val.forwards_reif_line)
-                        .emit(logger, ProofLevel::Temporary);
+                    PolBuilder{}.add(geq_this_val.backwards_reif_line).add(geq_next_val.forwards_reif_line).emit(logger, ProofLevel::Temporary);
                     PolBuilder{}
                         .add(geq_this_val_plus_1.backwards_reif_line)
                         .add(geq_next_val.forwards_reif_line)
@@ -349,8 +318,7 @@ namespace
             pb_sum += 1_i * (ctx.pos_var_data.at(i).var == 0_i);
         }
         ctx.logger.emit_proof_comment("AL1 p[i] = 0");
-        ctx.pos_alldiff_data.at_least_1_lines[0] =
-            ctx.logger.emit_rup_proof_line(pb_sum >= 1_i, ProofLevel::Top);
+        ctx.pos_alldiff_data.at_least_1_lines[0] = ctx.logger.emit_rup_proof_line(pb_sum >= 1_i, ProofLevel::Top);
         auto last_al1_line = ctx.pos_alldiff_data.at_least_1_lines[0];
         for (long j = 1; j < n; j++) {
             pb_sum = WPBSum{};
@@ -359,16 +327,14 @@ namespace
                 auto next_pos_vars = WPBSum{};
                 for (long k = 0; k < n; k++) {
                     next_pos_vars += 1_i * (ctx.pos_var_data.at(k).var == Integer{j});
-                    ctx.logger.emit_rup_proof_line(
-                        WPBSum{} + 1_i * ! (ctx.pos_var_data.at(i).var == Integer{j - 1}) +
+                    ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * ! (ctx.pos_var_data.at(i).var == Integer{j - 1}) +
                                 1_i * ! (ctx.succ[i] == Integer{k}) + 1_i * (ctx.pos_var_data.at(k).var == Integer{j}) >=
                             1_i,
                         ProofLevel::Top);
                 }
 
                 add_sat(p_line,
-                    ctx.logger.emit_rup_proof_line(
-                        next_pos_vars + 1_i * ! (ctx.pos_var_data.at(i).var == Integer{j - 1}) >= 1_i, ProofLevel::Top));
+                    ctx.logger.emit_rup_proof_line(next_pos_vars + 1_i * ! (ctx.pos_var_data.at(i).var == Integer{j - 1}) >= 1_i, ProofLevel::Top));
             }
             ctx.logger.emit_proof_comment(format("AL1 p[i] = {}", j));
             add_sat(p_line, last_al1_line);
@@ -407,8 +373,7 @@ namespace
             greater_than_flag = ctx.logger.create_proof_flag(flag_name);
 
             auto forwards_reif_line = ctx.logger.emit_red_proof_lines_forward_reifying(
-                WPBSum{} + 1_i * ctx.pos_var_data.at(j).var + -1_i * ctx.pos_var_data.at(i).var >= 1_i,
-                greater_than_flag, ProofLevel::Top);
+                WPBSum{} + 1_i * ctx.pos_var_data.at(j).var + -1_i * ctx.pos_var_data.at(i).var >= 1_i, greater_than_flag, ProofLevel::Top);
 
             if (ctx.pos_alldiff_data.at_least_1_lines.empty()) {
                 prove_pos_alldiff_lines(ctx);
@@ -425,7 +390,8 @@ namespace
                         // Prove p[i] = k is not possible
                         // First add all AL1 lines except for k
                         for (const auto & [val, al1_line] : ctx.pos_alldiff_data.at_least_1_lines) {
-                            if (val == k) continue;
+                            if (val == k)
+                                continue;
                             add_sat(p_line, al1_line);
                         }
 
@@ -444,19 +410,17 @@ namespace
                 subproofs.value().emplace(forwards_reif_line, subproof);
 
                 backwards_reif_line = ctx.logger.emit_red_proof_lines_reverse_reifying(
-                    WPBSum{} + 1_i * ctx.pos_var_data.at(j).var + -1_i * ctx.pos_var_data.at(i).var >= 0_i,
-                    greater_than_flag, ProofLevel::Top, subproofs);
+                    WPBSum{} + 1_i * ctx.pos_var_data.at(j).var + -1_i * ctx.pos_var_data.at(i).var >= 0_i, greater_than_flag, ProofLevel::Top,
+                    subproofs);
             }
             else {
                 // If i == root, d[r, i] is just "false"
                 // I think this should maybe be forwards, but it's working anyway???
                 backwards_reif_line = ctx.logger.emit_red_proof_lines_reverse_reifying(
-                    WPBSum{} + 1_i * ctx.pos_var_data.at(j).var + -1_i * ctx.pos_var_data.at(i).var >= 1_i,
-                    greater_than_flag, ProofLevel::Top);
+                    WPBSum{} + 1_i * ctx.pos_var_data.at(j).var + -1_i * ctx.pos_var_data.at(i).var >= 1_i, greater_than_flag, ProofLevel::Top);
             }
 
-            gt_data[i] = ProofFlagData{
-                flag_name, greater_than_flag, forwards_reif_line, backwards_reif_line, {}};
+            gt_data[i] = ProofFlagData{flag_name, greater_than_flag, forwards_reif_line, backwards_reif_line, {}};
             return gt_data[i];
         }
     }
@@ -471,13 +435,14 @@ namespace
         greater_than_flag_data = create_flag_for_greater_than(ctx, ctx.root, i);
         auto greater_than_flag = greater_than_flag_data.flag;
 
-        auto maybe_create_and_emplace_flag_data =
-            [&ctx](ProofFlagDataMap & flag_data, const long i, const long dist, const WPBSumLE & definition, const string & name, const string & name_suffix) {
-                if (! flag_data[i].contains(dist)) {
-                    auto [flag, forwards_reif_line, backwards_reif_line] = ctx.logger.create_proof_flag_reifying(definition, name + name_suffix, ProofLevel::Top);
-                    flag_data[i][dist] = ProofFlagData{name, flag, forwards_reif_line, backwards_reif_line, {}};
-                }
-            };
+        auto maybe_create_and_emplace_flag_data = [&ctx](ProofFlagDataMap & flag_data, const long i, const long dist, const WPBSumLE & definition,
+                                                      const string & name, const string & name_suffix) {
+            if (! flag_data[i].contains(dist)) {
+                auto [flag, forwards_reif_line, backwards_reif_line] =
+                    ctx.logger.create_proof_flag_reifying(definition, name + name_suffix, ProofLevel::Top);
+                flag_data[i][dist] = ProofFlagData{name, flag, forwards_reif_line, backwards_reif_line, {}};
+            }
+        };
 
         // q[r,i]gej <=> pos[i] - pos[r] + nd[r,i] >= j
         maybe_create_and_emplace_flag_data(ctx.root_flag_data.shifted_pos_geq, i, dist,
@@ -486,7 +451,8 @@ namespace
 
         // q[r,i]gej+1 <=> pos[i] - pos[r] + nd[r,i] >= j+1
         maybe_create_and_emplace_flag_data(ctx.root_flag_data.shifted_pos_geq, i, dist + 1,
-            WPBSum{} + 1_i * ctx.pos_var_data.at(i).var + -1_i * ctx.pos_var_data.at(ctx.root).var + Integer{n} * greater_than_flag >= Integer{dist + 1},
+            WPBSum{} + 1_i * ctx.pos_var_data.at(i).var + -1_i * ctx.pos_var_data.at(ctx.root).var + Integer{n} * greater_than_flag >=
+                Integer{dist + 1},
             format("q[{}][{}]", ctx.root, i), format("ge{}", dist + 1));
 
         // q[r,i]eqj <=> q[r,i]gej /\ ~q[r,i]gej+1
@@ -503,21 +469,16 @@ namespace
         auto line = ProofLine{};
         if (ctx.root != 0) {
             create_shifted_pos(ctx, ctx.root, 0);
-            line = ctx.logger.emit_rup_proof_line(
-                WPBSum{} + 1_i * ctx.root_flag_data.shifted_pos_eq[ctx.root][0].flag >= 1_i,
-                ProofLevel::Current);
+            line = ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * ctx.root_flag_data.shifted_pos_eq[ctx.root][0].flag >= 1_i, ProofLevel::Current);
         }
         else {
-            line = ctx.logger.emit_rup_proof_line(
-                WPBSum{} + 1_i * (ctx.pos_var_data.at(ctx.root).var == 0_i) >= 1_i,
-                ProofLevel::Current);
+            line = ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * (ctx.pos_var_data.at(ctx.root).var == 0_i) >= 1_i, ProofLevel::Current);
         }
 
         return line;
     }
 
-    auto prove_mid_is_at_least(SCCProofContext & ctx,
-        const OrderingAssumption & ordering, const long & val, const Literal & assumption)
+    auto prove_mid_is_at_least(SCCProofContext & ctx, const OrderingAssumption & ordering, const long & val, const Literal & assumption)
     {
         // The ordering assumption assumes we will see "middle" before "last" when we start at "first"
         // If we haven't seen middle yet under our assumptions we can prove (shift)pos[middle] >= val
@@ -538,9 +499,8 @@ namespace
                 ProofLevel::Current);
         }
         else {
-            ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} + 1_i * (ctx.pos_var_data.at(mid).var >= Integer{val}) >= 1_i,
-                ProofLevel::Current);
+            ctx.logger.emit_rup_proof_line_under_reason(
+                ctx.reason, WPBSum{} + 1_i * (ctx.pos_var_data.at(mid).var >= Integer{val}) >= 1_i, ProofLevel::Current);
         }
     }
 
@@ -595,10 +555,8 @@ namespace
                     .add(shifted_pos_geq.at(next_node).at(count + 1).forwards_reif_line)
                     .emit(ctx.logger, ProofLevel::Temporary);
 
-                ctx.logger.emit_proof_comment(format("Next implies: succ[{}] = {} and {} = {} => {} = {}",
-                    node, next_node,
-                    shifted_pos_eq[node][count - 1].comment_name, count - 1,
-                    shifted_pos_eq[next_node][count].comment_name, count));
+                ctx.logger.emit_proof_comment(format("Next implies: succ[{}] = {} and {} = {} => {} = {}", node, next_node,
+                    shifted_pos_eq[node][count - 1].comment_name, count - 1, shifted_pos_eq[next_node][count].comment_name, count));
 
                 // RUP shifted_pos[node][count-1] /\ succ[node] = next_node => shifted_pos[next_node][i]
                 successor_implies_line = ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
@@ -619,18 +577,18 @@ namespace
                     .saturate()
                     .emit(ctx.logger, ProofLevel::Temporary);
 
-                ctx.logger.emit_proof_comment(format("Next implies: succ[{}] = {} and {} = {} => 0 >= 1",
-                    node, next_node,
-                    shifted_pos_eq[node][count - 1].comment_name, count - 1));
+                ctx.logger.emit_proof_comment(format(
+                    "Next implies: succ[{}] = {} and {} = {} => 0 >= 1", node, next_node, shifted_pos_eq[node][count - 1].comment_name, count - 1));
 
-                successor_implies_line = ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * (! shifted_pos_eq[node][count - 1].flag) + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
+                successor_implies_line = ctx.logger.emit_rup_proof_line(
+                    WPBSum{} + 1_i * (! shifted_pos_eq[node][count - 1].flag) + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i,
+                    ProofLevel::Current);
             }
         }
         else {
             // Not using shifted pos, just use the actual pos values
             // succ[node] == next_node /\ pos[node] == count - 1 => pos[next_node] == count
-            successor_implies_line = ctx.logger.emit_rup_proof_line(
-                WPBSum{} + 1_i * (ctx.pos_var_data.at(node).var != Integer{count - 1}) +
+            successor_implies_line = ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * (ctx.pos_var_data.at(node).var != Integer{count - 1}) +
                         1_i * (ctx.succ[node] != Integer{next_node}) + 1_i * (ctx.pos_var_data.at(next_node).var == Integer{count}) >=
                     1_i,
                 ProofLevel::Current);
@@ -672,24 +630,22 @@ namespace
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
             add_sat(temp_p_line, leq_and_geq);
-            add_sat(temp_p_line, ctx.logger.emit_rup_proof_line(WPBSum{} + -1_i * ctx.pos_var_data.at(next_node).var + 1_i * ctx.pos_var_data.at(middle).var >= Integer{-n + 1}, ProofLevel::Temporary));
+            add_sat(temp_p_line,
+                ctx.logger.emit_rup_proof_line(
+                    WPBSum{} + -1_i * ctx.pos_var_data.at(next_node).var + 1_i * ctx.pos_var_data.at(middle).var >= Integer{-n + 1},
+                    ProofLevel::Temporary));
             ctx.logger.emit_proof_comment("Step 4");
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
             ctx.logger.emit_proof_comment("Step 5");
             ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} +
-                        1_i * ! ctx.flag_data[ctx.root].greater_than[middle].flag +
-                        1_i * ! ctx.flag_data[next_node].greater_than[middle].flag +
-                        1_i * ! shifted_pos_eq[middle][count].flag +
-                        1_i * (! shifted_pos_eq[next_node][count].flag) >=
+                WPBSum{} + 1_i * ! ctx.flag_data[ctx.root].greater_than[middle].flag + 1_i * ! ctx.flag_data[next_node].greater_than[middle].flag +
+                        1_i * ! shifted_pos_eq[middle][count].flag + 1_i * (! shifted_pos_eq[next_node][count].flag) >=
                     1_i,
                 ProofLevel::Temporary);
 
             ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} +
-                        1_i * ! ctx.flag_data[next_node].greater_than[middle].flag +
-                        1_i * ! shifted_pos_eq[middle][count].flag +
+                WPBSum{} + 1_i * ! ctx.flag_data[next_node].greater_than[middle].flag + 1_i * ! shifted_pos_eq[middle][count].flag +
                         1_i * (! shifted_pos_eq[next_node][count].flag) >=
                     1_i,
                 ProofLevel::Temporary);
@@ -700,37 +656,32 @@ namespace
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
             add_sat(temp_p_line, geq_and_leq);
-            add_sat(temp_p_line, ctx.logger.emit_rup_proof_line(WPBSum{} + -1_i * ctx.pos_var_data.at(middle).var + 1_i * ctx.pos_var_data.at(next_node).var >= Integer{-n + 1}, ProofLevel::Temporary));
+            add_sat(temp_p_line,
+                ctx.logger.emit_rup_proof_line(
+                    WPBSum{} + -1_i * ctx.pos_var_data.at(middle).var + 1_i * ctx.pos_var_data.at(next_node).var >= Integer{-n + 1},
+                    ProofLevel::Temporary));
             ctx.logger.emit_proof_comment("Step 7");
             temp_p_line.emit(ctx.logger, ProofLevel::Temporary);
 
             ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} +
-                        1_i * ! ctx.flag_data[ctx.root].greater_than[next_node].flag +
-                        1_i * ctx.flag_data[next_node].greater_than[middle].flag +
-                        1_i * ! shifted_pos_eq[middle][count].flag +
-                        1_i * (! shifted_pos_eq[next_node][count].flag) >=
+                WPBSum{} + 1_i * ! ctx.flag_data[ctx.root].greater_than[next_node].flag + 1_i * ctx.flag_data[next_node].greater_than[middle].flag +
+                        1_i * ! shifted_pos_eq[middle][count].flag + 1_i * (! shifted_pos_eq[next_node][count].flag) >=
                     1_i,
                 ProofLevel::Temporary);
 
             ctx.logger.emit_proof_comment("Step 8");
             ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} + 1_i * ! ctx.flag_data[next_node].greater_than[middle].flag +
-                        1_i * ! shifted_pos_eq[middle][count].flag +
+                WPBSum{} + 1_i * ! ctx.flag_data[next_node].greater_than[middle].flag + 1_i * ! shifted_pos_eq[middle][count].flag +
                         1_i * (! shifted_pos_eq[next_node][count].flag) >=
                     1_i,
                 ProofLevel::Temporary);
 
             succesor_implies_not_mid_line = ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} + 1_i * ! shifted_pos_eq[middle][count].flag +
-                        1_i * (! shifted_pos_eq[next_node][count].flag) >=
-                    1_i,
-                ProofLevel::Current);
+                WPBSum{} + 1_i * ! shifted_pos_eq[middle][count].flag + 1_i * (! shifted_pos_eq[next_node][count].flag) >= 1_i, ProofLevel::Current);
         }
         else {
             succesor_implies_not_mid_line = ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                WPBSum{} +
-                        1_i * ! (ctx.pos_var_data.at(middle).var == Integer{count}) +
+                WPBSum{} + 1_i * ! (ctx.pos_var_data.at(middle).var == Integer{count}) +
                         1_i * ! (ctx.pos_var_data.at(next_node).var == Integer{count}) >=
                     1_i,
                 ProofLevel::Temporary);
@@ -739,8 +690,8 @@ namespace
         return succesor_implies_not_mid_line;
     }
 
-    auto prove_exclude_last_based_on_ordering(SCCProofContext & ctx, const OrderingAssumption & ordering, const long & root, const long & count,
-        const Literal & assumption) -> ProofLine
+    auto prove_exclude_last_based_on_ordering(
+        SCCProofContext & ctx, const OrderingAssumption & ordering, const long & root, const long & count, const Literal & assumption) -> ProofLine
     {
         // Based on an ordering assumption and the fact we haven't seen
         auto mid = ordering.middle;
@@ -761,7 +712,10 @@ namespace
             add_sat(p_line, shifted_pos_geq[last][count].backwards_reif_line);
             add_sat(p_line, ctx.flag_data[mid].greater_than[last].backwards_reif_line);
 
-            add_sat(p_line, ctx.logger.emit_rup_proof_line(WPBSum{} + 1_i * ctx.flag_data[root].greater_than[last].flag + 1_i * ctx.flag_data[last].greater_than[root].flag >= 1_i, ProofLevel::Temporary));
+            add_sat(p_line,
+                ctx.logger.emit_rup_proof_line(
+                    WPBSum{} + 1_i * ctx.flag_data[root].greater_than[last].flag + 1_i * ctx.flag_data[last].greater_than[root].flag >= 1_i,
+                    ProofLevel::Temporary));
 
             p_line.emit(ctx.logger, ProofLevel::Temporary);
             exclusion_line = ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
@@ -777,7 +731,8 @@ namespace
         return exclusion_line;
     }
 
-    auto prove_reachable_set_too_small(SCCProofContext & ctx, const Literal & assumption = TrueLiteral{}, const optional<OrderingAssumption> & ordering = nullopt) -> void
+    auto prove_reachable_set_too_small(
+        SCCProofContext & ctx, const Literal & assumption = TrueLiteral{}, const optional<OrderingAssumption> & ordering = nullopt) -> void
     {
         ctx.logger.emit_proof_comment(format("REACHABLE SET from {}", ctx.root));
 
@@ -805,13 +760,7 @@ namespace
         bool seen_middle = false;
 
         auto skip_based_on_assumption = [&](IntegerVariableID var, Integer val, Literal assumption) -> bool {
-            return overloaded{
-                [&](TrueLiteral) {
-                    return false;
-                },
-                [&](FalseLiteral) {
-                    return false;
-                },
+            return overloaded{[&](TrueLiteral) { return false; }, [&](FalseLiteral) { return false; },
                 [&](IntegerVariableCondition cond) {
                     if (cond.var == var) {
                         if ((cond.op == VariableConditionOperator::Equal && val != cond.value) ||
@@ -863,8 +812,7 @@ namespace
 
                     all_values_seen[next_node].insert(count);
 
-                    add_sat(add_for_node_implies_at_least_1,
-                        prove_pos_and_node_implies_next_node(ctx, node, next_node, count));
+                    add_sat(add_for_node_implies_at_least_1, prove_pos_and_node_implies_next_node(ctx, node, next_node, count));
 
                     if (ordering && next_node == ordering.value().last && ! seen_middle) {
                         // Ordering says that since we haven't seen "middle" yet, we can't visit "last"
@@ -888,17 +836,15 @@ namespace
                 }
 
                 add_sat(add_for_node_implies_at_least_1,
-                    ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-                        possible_next_nodes_sum + 1_i * ! assumption >= 1_i, ProofLevel::Temporary));
+                    ctx.logger.emit_rup_proof_line_under_reason(
+                        ctx.reason, possible_next_nodes_sum + 1_i * ! assumption >= 1_i, ProofLevel::Temporary));
 
-                add_sat(add_for_at_least_1,
-                    add_for_node_implies_at_least_1.emit(ctx.logger, ProofLevel::Current));
+                add_sat(add_for_at_least_1, add_for_node_implies_at_least_1.emit(ctx.logger, ProofLevel::Current));
                 ++add_for_at_least_1_count;
 
                 if (ordering && ! seen_middle) {
                     if (! add_for_node_implies_not_mid.empty()) {
-                        add_sat(add_for_not_mid,
-                            add_for_node_implies_not_mid.emit(ctx.logger, ProofLevel::Current));
+                        add_sat(add_for_not_mid, add_for_node_implies_not_mid.emit(ctx.logger, ProofLevel::Current));
                     }
                 }
             }
@@ -909,8 +855,7 @@ namespace
             last_al1_line = add_for_at_least_1.emit(ctx.logger, ProofLevel::Current);
             if (exclude_based_on_ordering) {
                 PolBuilder new_last_al1_line;
-                add_sat(new_last_al1_line,
-                    prove_exclude_last_based_on_ordering(ctx, ordering.value(), ctx.root, count, assumption));
+                add_sat(new_last_al1_line, prove_exclude_last_based_on_ordering(ctx, ordering.value(), ctx.root, count, assumption));
                 add_sat(new_last_al1_line, last_al1_line);
                 last_al1_line = new_last_al1_line.emit(ctx.logger, ProofLevel::Current);
             }
@@ -932,8 +877,7 @@ namespace
 
         // At most one lines
         for (const auto & node : all_reached_nodes) {
-            add_sat(contradiction_line,
-                prove_at_most_1_pos(ctx, node, all_values_seen[node], using_shifted_pos));
+            add_sat(contradiction_line, prove_at_most_1_pos(ctx, node, all_values_seen[node], using_shifted_pos));
         }
 
         ctx.logger.emit_proof_comment("Hall violator gives contradiction: ");
@@ -947,14 +891,9 @@ namespace
         auto next_gt_subroot = create_flag_for_greater_than(ctx, next_node, skipped_subroot);
 
         auto node_then_subroot_then_root = ctx.logger.create_proof_flag_reifying(
-            WPBSum{} + 1_i * ! root_gt_next.flag + 1_i * ! subroot_gt_root.flag + 1_i * ! next_gt_subroot.flag >= 2_i,
-            "ord1", ProofLevel::Current);
+            WPBSum{} + 1_i * ! root_gt_next.flag + 1_i * ! subroot_gt_root.flag + 1_i * ! next_gt_subroot.flag >= 2_i, "ord1", ProofLevel::Current);
 
-        OrderingAssumption ordering1{
-            get<0>(node_then_subroot_then_root),
-            next_node,
-            skipped_subroot,
-            ctx.root};
+        OrderingAssumption ordering1{get<0>(node_then_subroot_then_root), next_node, skipped_subroot, ctx.root};
 
         auto next_node_root_ctx = SCCProofContext(ctx, next_node);
         prove_reachable_set_too_small(next_node_root_ctx, ctx.succ[node] == Integer{next_node}, ordering1);
@@ -965,11 +904,7 @@ namespace
         auto subroot_then_node_then_root = ctx.logger.create_proof_flag_reifying(
             WPBSum{} + 1_i * ! subroot_gt_node.flag + 1_i * ! node_gt_root.flag + 1_i * subroot_gt_root.flag >= 2_i, "ord2", ProofLevel::Current);
 
-        OrderingAssumption ordering2{
-            get<0>(subroot_then_node_then_root),
-            skipped_subroot,
-            node,
-            ctx.root};
+        OrderingAssumption ordering2{get<0>(subroot_then_node_then_root), skipped_subroot, node, ctx.root};
 
         auto skipped_subroot_ctx = SCCProofContext(ctx, skipped_subroot);
         prove_reachable_set_too_small(skipped_subroot_ctx, ctx.succ[node] == Integer{next_node}, ordering2);
@@ -979,9 +914,7 @@ namespace
             .add(root_gt_next.forwards_reif_line)
             .emit(ctx.logger, ProofLevel::Temporary);
         auto rup1 = ctx.logger.emit_rup_proof_line(
-            WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) +
-                    1_i * ! root_gt_next.flag + 1_i * ! node_gt_root.flag >=
-                1_i,
+            WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) + 1_i * ! root_gt_next.flag + 1_i * ! node_gt_root.flag >= 1_i,
             ProofLevel::Current);
         PolBuilder{}
             .add(ctx.pos_var_data.at(node).plus_one_lines.at(next_node).leq_line)
@@ -989,9 +922,7 @@ namespace
             .add(subroot_gt_node.forwards_reif_line)
             .emit(ctx.logger, ProofLevel::Temporary);
         auto rup2 = ctx.logger.emit_rup_proof_line(
-            WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) +
-                    1_i * ! next_gt_subroot.flag + 1_i * ! subroot_gt_node.flag >=
-                1_i,
+            WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) + 1_i * ! next_gt_subroot.flag + 1_i * ! subroot_gt_node.flag >= 1_i,
             ProofLevel::Current);
         PolBuilder{}
             .add(rup1)
@@ -1001,13 +932,11 @@ namespace
             .saturate()
             .emit(ctx.logger, ProofLevel::Current);
 
-        ctx.logger.emit_rup_proof_line_under_reason(ctx.reason,
-            WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
+        ctx.logger.emit_rup_proof_line_under_reason(ctx.reason, WPBSum{} + 1_i * (ctx.succ[node] != Integer{next_node}) >= 1_i, ProofLevel::Current);
     }
 
-    auto explore(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason,
-        const ConstraintID & owner, const long & node, const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data,
-        const SCCOptions & options)
+    auto explore(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason, const ConstraintID & owner,
+        const long & node, const vector<IntegerVariableID> & succ, SCCPropagatorData & data, SCCProofData & proof_data, const SCCOptions & options)
         -> vector<pair<long, long>>
     {
         data.visit_number[node] = data.count;
@@ -1032,7 +961,8 @@ namespace
                 else if (options.prune_skip && data.visit_number[next_node] < data.start_prev_subtree) {
                     if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                         if (next_node == data.root) {
-                            logger->emit_proof_comment(format("Pruning edge to the root from a subtree other than the first ({}, {})", node, next_node));
+                            logger->emit_proof_comment(
+                                format("Pruning edge to the root from a subtree other than the first ({}, {})", node, next_node));
                             auto ctx = SCCProofContext(state, *logger, reason, succ, proof_data, data.prev_subroot, options);
                             prove_reachable_set_too_small(ctx, succ[node] == w);
                         }
@@ -1063,16 +993,8 @@ namespace
             return back_edges;
     }
 
-    auto check_sccs(
-        const State & state,
-        auto & inference,
-        ProofLogger * const logger,
-        const ReasonLiterals & reason,
-        const ConstraintID & owner,
-        const vector<IntegerVariableID> & succ,
-        const SCCOptions & options,
-        SCCProofData & proof_data)
-        -> void
+    auto check_sccs(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason, const ConstraintID & owner,
+        const vector<IntegerVariableID> & succ, const SCCOptions & options, SCCProofData & proof_data) -> void
     {
         auto data = SCCPropagatorData(succ.size());
 
@@ -1135,19 +1057,10 @@ namespace
         }
     }
 
-    auto propagate_circuit_using_scc(
-        const State & state,
-        auto & inference,
-        ProofLogger * const logger,
-        const ReasonLiterals & reason,
-        const ConstraintID & owner,
-        const vector<IntegerVariableID> & succ,
-        const SCCOptions & scc_options,
-        const ConstraintStateHandle & pos_var_data_handle,
-        const ConstraintStateHandle & proof_flag_data_handle,
-        const ConstraintStateHandle & pos_alldiff_data_handle,
-        const ConstraintStateHandle & unassigned_handle)
-        -> void
+    auto propagate_circuit_using_scc(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason,
+        const ConstraintID & owner, const vector<IntegerVariableID> & succ, const SCCOptions & scc_options,
+        const ConstraintStateHandle & pos_var_data_handle, const ConstraintStateHandle & proof_flag_data_handle,
+        const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void
     {
         auto & pos_var_data = any_cast<PosVarDataMap &>(state.get_persistent_constraint_state(pos_var_data_handle));
         propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner);
@@ -1167,8 +1080,7 @@ namespace
 }
 
 CircuitSCC::CircuitSCC(std::vector<IntegerVariableID> var, bool gacAllDifferent, const SCCOptions s) :
-    CircuitBase(std::move(var), gacAllDifferent),
-    scc_options(s)
+    CircuitBase(std::move(var), gacAllDifferent), scc_options(s)
 {
 }
 
@@ -1195,12 +1107,8 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
     triggers.on_change = {_succ.begin(), _succ.end()};
     propagators.install(
         constraint_id(),
-        [succ = _succ,
-            owner = constraint_id(),
-            pos_var_data_handle = pos_var_data_handle,
-            proof_flag_data_handle = proof_flag_data_handle,
-            pos_alldiff_data_handle = pos_alldiff_data_handle,
-            unassigned_handle = unassigned_handle,
+        [succ = _succ, owner = constraint_id(), pos_var_data_handle = pos_var_data_handle, proof_flag_data_handle = proof_flag_data_handle,
+            pos_alldiff_data_handle = pos_alldiff_data_handle, unassigned_handle = unassigned_handle,
             options = scc_options](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             ReasonLiterals reason = eager_reason(generic_reason(succ), state);
 
@@ -1216,8 +1124,8 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
                 reason = eager_reason(singleton_reason(reason_short), state);
             }
 
-            propagate_circuit_using_scc(state, inference, logger, reason, owner,
-                succ, options, pos_var_data_handle, proof_flag_data_handle, pos_alldiff_data_handle, unassigned_handle);
+            propagate_circuit_using_scc(state, inference, logger, reason, owner, succ, options, pos_var_data_handle, proof_flag_data_handle,
+                pos_alldiff_data_handle, unassigned_handle);
             return PropagatorState::Enable;
         },
         triggers);

@@ -29,14 +29,9 @@ using std::chrono::steady_clock;
 
 namespace
 {
-    auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem,
-        Propagators & propagators, State & state, const optional<Literal> & this_branch_guess,
-        SolveCallbacks & callbacks,
-        ProofLogger * const logger,
-        bool & this_subtree_contains_solution,
-        Integer & number_of_solutions,
-        optional<Integer> & objective_value,
-        atomic<bool> * optional_abort_flag) -> bool
+    auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, Propagators & propagators, State & state,
+        const optional<Literal> & this_branch_guess, SolveCallbacks & callbacks, ProofLogger * const logger, bool & this_subtree_contains_solution,
+        Integer & number_of_solutions, optional<Integer> & objective_value, atomic<bool> * optional_abort_flag) -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -54,9 +49,8 @@ namespace
             if (optional_abort_flag && optional_abort_flag->load())
                 return false;
 
-            auto create_branch_generator = callbacks.branch
-                ? callbacks.branch
-                : branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
+            auto create_branch_generator =
+                callbacks.branch ? callbacks.branch : branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
             auto branch_generator = create_branch_generator(state.current(), propagators);
             auto branch_iter = branch_generator.begin();
 
@@ -65,7 +59,10 @@ namespace
                     vector<pair<IntegerVariableID, Integer>> vars_and_values;
                     for (const auto & v : problem.all_normal_variables())
                         vars_and_values.emplace_back(v, state(v));
-                    logger->solution(vars_and_values, problem.optional_minimise_variable() ? make_optional(pair{*problem.optional_minimise_variable(), state(*problem.optional_minimise_variable())}) : nullopt);
+                    logger->solution(vars_and_values,
+                        problem.optional_minimise_variable()
+                            ? make_optional(pair{*problem.optional_minimise_variable(), state(*problem.optional_minimise_variable())})
+                            : nullopt);
                 }
 
                 if (problem.optional_minimise_variable())
@@ -92,8 +89,8 @@ namespace
                     auto timestamp = state.new_epoch();
                     state.guess(guess);
                     bool child_contains_solution = false;
-                    if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess,
-                            callbacks, logger, child_contains_solution, number_of_solutions, objective_value, optional_abort_flag))
+                    if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess, callbacks, logger, child_contains_solution,
+                            number_of_solutions, objective_value, optional_abort_flag))
                         result = false;
 
                     if (child_contains_solution)
@@ -126,9 +123,8 @@ namespace
     }
 }
 
-auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
-    const optional<ProofOptions> & optional_proof_options,
-    atomic<bool> * optional_abort_flag) -> Stats
+auto gcs::solve_with(
+    Problem & problem, SolveCallbacks callbacks, const optional<ProofOptions> & optional_proof_options, atomic<bool> * optional_abort_flag) -> Stats
 {
     Stats stats;
     auto start_time = steady_clock::now();
@@ -203,8 +199,8 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
             if (optional_proof) {
                 if (problem.optional_minimise_variable()) {
                     if (objective_value)
-                        optional_proof->logger()->conclude_bounds(*problem.optional_minimise_variable(),
-                            objective_lower_bound_for_proof, *objective_value);
+                        optional_proof->logger()->conclude_bounds(
+                            *problem.optional_minimise_variable(), objective_lower_bound_for_proof, *objective_value);
                     else
                         optional_proof->logger()->conclude_none();
                 }
@@ -231,8 +227,7 @@ auto gcs::solve_with(Problem & problem, SolveCallbacks callbacks,
     return stats;
 }
 
-auto gcs::solve(Problem & problem, SolutionCallback callback,
-    const optional<ProofOptions> & proof_options) -> Stats
+auto gcs::solve(Problem & problem, SolutionCallback callback, const optional<ProofOptions> & proof_options) -> Stats
 {
     return solve_with(problem, SolveCallbacks{.solution = callback}, proof_options);
 }

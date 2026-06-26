@@ -29,8 +29,7 @@ namespace gcs
          * Called internally to execute the presolving process. Returns false if
          * unsatisfiability was detected.
          */
-        [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &,
-            innards::ProofLogger * const) -> bool = 0;
+        [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool = 0;
 
         /**
          * Create a copy of the presolver. To be used internally.

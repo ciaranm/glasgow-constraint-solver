@@ -73,14 +73,11 @@ namespace
 auto run_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<variant<int, pair<int, int>>> & domains) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, static_cast<int>(domains.size()));
-    print(cerr, "seq_precede_chain [{}] domains={}{}",
-        view_wrap_config_label(view_cfg), domains, proofs ? " with proofs:" : ":");
+    print(cerr, "seq_precede_chain [{}] domains={}{}", view_wrap_config_label(view_cfg), domains, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
-    build_expected(expected, [](const vector<int> & vs) {
-        return satisfies_seq_precede_chain(vs);
-    }, domains);
+    build_expected(expected, [](const vector<int> & vs) { return satisfies_seq_precede_chain(vs); }, domains);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
@@ -96,8 +93,7 @@ auto run_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<variant
 
 auto run_scale_test(bool proofs) -> void
 {
-    print(cerr, "seq_precede_chain scale (length 5, domain 1..1000){}",
-        proofs ? " with proofs:" : ":");
+    print(cerr, "seq_precede_chain scale (length 5, domain 1..1000){}", proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto start = steady_clock::now();
@@ -171,16 +167,15 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 // array positions. A duplicated occurrence still must satisfy the chain;
 // taking the same value at two positions just means "earliest v" lands
 // at the first. See tmp/duplicate_var_audit.md.
-auto run_dup_seq_precede_chain_test(bool proofs, const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions) -> void
+auto run_dup_seq_precede_chain_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions) -> void
 {
-    print(cerr, "seq_precede_chain dup domains={} positions={}{}",
-        unique_domains, positions, proofs ? " with proofs:" : ":");
+    print(cerr, "seq_precede_chain dup domains={} positions={}{}", unique_domains, positions, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & vals) -> bool {
+        expected,
+        [&](const vector<int> & vals) -> bool {
             vector<int> v;
             for (auto pos : positions)
                 v.push_back(vals.at(pos));
@@ -209,8 +204,8 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 5;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "seq_precede_chain view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(
+            cerr, "seq_precede_chain view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 

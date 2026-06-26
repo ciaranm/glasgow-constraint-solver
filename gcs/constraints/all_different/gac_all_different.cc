@@ -73,13 +73,11 @@ namespace gcs::innards::hints
 {
     auto emit_justification(ProofLogger & logger, const AllDifferentHall & hall, const ReasonLiterals &) -> void
     {
-        justify_all_different_hall_set_or_violator(logger, *hall.all_vars, hall.hall_vars, hall.hall_vals,
-            *hall.value_am1_constraint_numbers);
+        justify_all_different_hall_set_or_violator(logger, *hall.all_vars, hall.hall_vars, hall.hall_vals, *hall.value_am1_constraint_numbers);
     }
 }
 
-GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) :
-    _vars(move(v))
+GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) : _vars(move(v))
 {
 }
 
@@ -104,13 +102,8 @@ namespace
         [[nodiscard]] auto operator<=>(const Right &) const = default;
     };
 
-    auto build_matching(
-        const vector<IntegerVariableID> & vars,
-        size_t n_right,
-        const vector<pair<Left, Right>> & edges,
-        vector<uint8_t> & left_covered,
-        vector<uint8_t> & right_covered,
-        vector<optional<Right>> & matching) -> void
+    auto build_matching(const vector<IntegerVariableID> & vars, size_t n_right, const vector<pair<Left, Right>> & edges,
+        vector<uint8_t> & left_covered, vector<uint8_t> & right_covered, vector<optional<Right>> & matching) -> void
     {
         // start with a greedy matching
         for (const auto & e : edges) {
@@ -205,18 +198,10 @@ namespace
         }
     }
 
-    auto prove_matching_is_too_small(
-        const ConstraintID & constraint_id,
-        const vector<IntegerVariableID> & vars,
-        const vector<Integer> & vals,
-        const vector<Integer> & excluded,
-        size_t n_right,
-        map<Integer, ProofLine> & value_am1_constraint_numbers,
-        const State &,
-        ProofLogger * const,
-        const vector<pair<Left, Right>> & edges,
-        const vector<uint8_t> & left_covered,
-        const vector<optional<Right>> & matching) -> std::tuple<hints::AllDifferentHall, Reason>
+    auto prove_matching_is_too_small(const ConstraintID & constraint_id, const vector<IntegerVariableID> & vars, const vector<Integer> & vals,
+        const vector<Integer> & excluded, size_t n_right, map<Integer, ProofLine> & value_am1_constraint_numbers, const State &, ProofLogger * const,
+        const vector<pair<Left, Right>> & edges, const vector<uint8_t> & left_covered, const vector<optional<Right>> & matching)
+        -> std::tuple<hints::AllDifferentHall, Reason>
     {
         vector<optional<Left>> inverse_matching(n_right, nullopt);
         for (const auto & [l, r] : enumerate(matching))
@@ -272,8 +257,7 @@ namespace
             if (hall_values[v.offset])
                 hall_value_nrs.push_back(vals[v.offset]);
 
-        return tuple{
-            hints::AllDifferentHall{{constraint_id}, hall_variable_ids, hall_value_nrs, &vars, &value_am1_constraint_numbers},
+        return tuple{hints::AllDifferentHall{{constraint_id}, hall_variable_ids, hall_value_nrs, &vars, &value_am1_constraint_numbers},
             Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
                                       out = materialise(generic_reason(hall_variable_ids), st);
                                       for (const auto & v : hall_variable_ids)
@@ -290,29 +274,14 @@ namespace
     // hint — there is no separate annotation channel.
     using DeletionJustification = variant<hints::AllDifferent, hints::AllDifferentHall>;
 
-    auto vertex_to_offset(
-        const vector<IntegerVariableID> & vars,
-        const vector<Integer> &,
-        Vertex v) -> std::size_t
+    auto vertex_to_offset(const vector<IntegerVariableID> & vars, const vector<Integer> &, Vertex v) -> std::size_t
     {
-        return overloaded{
-            [&](const Left & l) { return l.offset; },
-            [&](const Right & r) { return vars.size() + r.offset; }}
-            .visit(v);
+        return overloaded{[&](const Left & l) { return l.offset; }, [&](const Right & r) { return vars.size() + r.offset; }}.visit(v);
     }
 
-    auto prove_deletion_using_sccs(
-        const ConstraintID & constraint_id,
-        const vector<IntegerVariableID> & vars,
-        const vector<Integer> & vals,
-        const vector<Integer> & excluded,
-        size_t n_right,
-        map<Integer, ProofLine> & value_am1_constraint_numbers,
-        const State &,
-        ProofLogger * const,
-        const vector<vector<Right>> & edges_out_from_variable,
-        const vector<vector<Left>> & edges_out_from_value,
-        const Right delete_value,
+    auto prove_deletion_using_sccs(const ConstraintID & constraint_id, const vector<IntegerVariableID> & vars, const vector<Integer> & vals,
+        const vector<Integer> & excluded, size_t n_right, map<Integer, ProofLine> & value_am1_constraint_numbers, const State &, ProofLogger * const,
+        const vector<vector<Right>> & edges_out_from_variable, const vector<vector<Left>> & edges_out_from_value, const Right delete_value,
         const vector<int> & components) -> tuple<DeletionJustification, Reason>
     {
         // we know a hall set exists, but we have to find it. starting
@@ -334,30 +303,31 @@ namespace
             in_to_explore[vertex_to_offset(vars, vals, n)] = 0;
             explored[vertex_to_offset(vars, vals, n)] = 1;
 
-            visit([&](const auto & x) -> void {
-                if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
-                    hall_left[x.offset] = 1;
-                    for (const auto & t : edges_out_from_variable[x.offset]) {
-                        if (care_about_scc == components[vertex_to_offset(vars, vals, t)] && ! explored[vertex_to_offset(vars, vals, t)]) {
-                            if (0 == in_to_explore[vertex_to_offset(vars, vals, t)]) {
-                                to_explore.push_back(t);
-                                in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+            visit(
+                [&](const auto & x) -> void {
+                    if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
+                        hall_left[x.offset] = 1;
+                        for (const auto & t : edges_out_from_variable[x.offset]) {
+                            if (care_about_scc == components[vertex_to_offset(vars, vals, t)] && ! explored[vertex_to_offset(vars, vals, t)]) {
+                                if (0 == in_to_explore[vertex_to_offset(vars, vals, t)]) {
+                                    to_explore.push_back(t);
+                                    in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+                                }
                             }
                         }
                     }
-                }
-                else {
-                    hall_right[x.offset] = 1;
-                    for (const auto & t : edges_out_from_value[x.offset]) {
-                        if (care_about_scc == components[vertex_to_offset(vars, vals, t)] && ! explored[vertex_to_offset(vars, vals, t)]) {
-                            if (0 == in_to_explore[vertex_to_offset(vars, vals, t)]) {
-                                to_explore.push_back(t);
-                                in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+                    else {
+                        hall_right[x.offset] = 1;
+                        for (const auto & t : edges_out_from_value[x.offset]) {
+                            if (care_about_scc == components[vertex_to_offset(vars, vals, t)] && ! explored[vertex_to_offset(vars, vals, t)]) {
+                                if (0 == in_to_explore[vertex_to_offset(vars, vals, t)]) {
+                                    to_explore.push_back(t);
+                                    in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+                                }
                             }
                         }
                     }
-                }
-            },
+                },
                 n);
         }
 
@@ -371,9 +341,9 @@ namespace
             if (edges_out_from_value[delete_value.offset].empty())
                 throw UnexpectedException{"missing edge out from value in trivial scc"};
 
-            return tuple{
-                DeletionJustification{hints::AllDifferent{constraint_id}},
-                Reason{ExplicitReason{ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}}}};
+            return tuple{DeletionJustification{hints::AllDifferent{constraint_id}},
+                Reason{
+                    ExplicitReason{ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}}}};
         }
         else {
             // a hall set is at work
@@ -382,8 +352,8 @@ namespace
                 if (hall_right[v.offset])
                     hall_value_nrs.push_back(vals[v.offset]);
 
-            return tuple{
-                DeletionJustification{hints::AllDifferentHall{{constraint_id}, hall_variable_ids, hall_value_nrs, &vars, &value_am1_constraint_numbers}},
+            return tuple{DeletionJustification{
+                             hints::AllDifferentHall{{constraint_id}, hall_variable_ids, hall_value_nrs, &vars, &value_am1_constraint_numbers}},
                 Reason{LazyReasonOver{hall_variable_ids, [hall_variable_ids, excluded](const State & st, ReasonLiterals & out) {
                                           out = materialise(generic_reason(hall_variable_ids), st);
                                           for (const auto & v : hall_variable_ids)
@@ -394,15 +364,9 @@ namespace
     }
 }
 
-auto gcs::innards::propagate_gac_all_different(
-    const ConstraintID & constraint_id,
-    const vector<IntegerVariableID> & vars,
-    const vector<Integer> & vals,
-    const vector<Integer> & excluded,
-    map<Integer, ProofLine> & value_am1_constraint_numbers,
-    const State & state,
-    auto & tracker,
-    ProofLogger * const logger) -> void
+auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_id, const vector<IntegerVariableID> & vars,
+    const vector<Integer> & vals, const vector<Integer> & excluded, map<Integer, ProofLine> & value_am1_constraint_numbers, const State & state,
+    auto & tracker, ProofLogger * const logger) -> void
 {
     // find a matching to check feasibility
     vector<pair<Left, Right>> edges;
@@ -437,7 +401,8 @@ auto gcs::innards::propagate_gac_all_different(
     if (cmp_not_equal(count(left_covered.begin(), left_covered.end(), 1), vars.size())) {
         // nope. we've got a maximum cardinality matching that leaves at least
         // one thing on the left uncovered.
-        auto [hall, reason] = prove_matching_is_too_small(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, edges, left_covered, matching);
+        auto [hall, reason] = prove_matching_is_too_small(
+            constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger, edges, left_covered, matching);
         return tracker.infer(logger, FalseLiteral{},
             JustifyExplicitly{[&logger, w = hall](const ReasonLiterals & r) { emit_justification(*logger, w, r); }, ThenRUP::Yes, move(hall)},
             reason);
@@ -479,14 +444,10 @@ auto gcs::innards::propagate_gac_all_different(
         for (auto & w : edges_out_from[vertex_to_offset(vars, vals, v)]) {
             if (0 == indices[vertex_to_offset(vars, vals, w)]) {
                 scc(w);
-                lowlinks[vertex_to_offset(vars, vals, v)] = min(
-                    lowlinks[vertex_to_offset(vars, vals, v)],
-                    lowlinks[vertex_to_offset(vars, vals, w)]);
+                lowlinks[vertex_to_offset(vars, vals, v)] = min(lowlinks[vertex_to_offset(vars, vals, v)], lowlinks[vertex_to_offset(vars, vals, w)]);
             }
             else if (enstackinated[vertex_to_offset(vars, vals, w)]) {
-                lowlinks[vertex_to_offset(vars, vals, v)] = min(
-                    lowlinks[vertex_to_offset(vars, vals, v)],
-                    lowlinks[vertex_to_offset(vars, vals, w)]);
+                lowlinks[vertex_to_offset(vars, vals, v)] = min(lowlinks[vertex_to_offset(vars, vals, v)], lowlinks[vertex_to_offset(vars, vals, w)]);
             }
         }
 
@@ -548,32 +509,33 @@ auto gcs::innards::propagate_gac_all_different(
             in_to_explore[vertex_to_offset(vars, vals, v)] = 0;
             explored[vertex_to_offset(vars, vals, v)] = 1;
 
-            visit([&](const auto & x) {
-                if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
-                    for (auto & t : edges_in_to_variable[x.offset]) {
-                        if (t.offset < vals.size())
-                            used_edges[x.offset][t.offset] = 1;
-                        if (! explored[vertex_to_offset(vars, vals, t)]) {
-                            if (! in_to_explore[vertex_to_offset(vars, vals, t)]) {
-                                to_explore.push_back(t);
-                                in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+            visit(
+                [&](const auto & x) {
+                    if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
+                        for (auto & t : edges_in_to_variable[x.offset]) {
+                            if (t.offset < vals.size())
+                                used_edges[x.offset][t.offset] = 1;
+                            if (! explored[vertex_to_offset(vars, vals, t)]) {
+                                if (! in_to_explore[vertex_to_offset(vars, vals, t)]) {
+                                    to_explore.push_back(t);
+                                    in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+                                }
                             }
                         }
                     }
-                }
-                else {
-                    for (auto & t : edges_in_to_value[x.offset]) {
-                        if (x.offset < vals.size())
-                            used_edges[t.offset][x.offset] = 1;
-                        if (! explored[vertex_to_offset(vars, vals, t)]) {
-                            if (! in_to_explore[vertex_to_offset(vars, vals, t)]) {
-                                to_explore.push_back(t);
-                                in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+                    else {
+                        for (auto & t : edges_in_to_value[x.offset]) {
+                            if (x.offset < vals.size())
+                                used_edges[t.offset][x.offset] = 1;
+                            if (! explored[vertex_to_offset(vars, vals, t)]) {
+                                if (! in_to_explore[vertex_to_offset(vars, vals, t)]) {
+                                    to_explore.push_back(t);
+                                    in_to_explore[vertex_to_offset(vars, vals, t)] = 1;
+                                }
                             }
                         }
                     }
-                }
-            },
+                },
                 v);
         }
     }
@@ -606,14 +568,15 @@ auto gcs::innards::propagate_gac_all_different(
         if (! representatives_for_scc[scc])
             continue;
 
-        auto [justification, reason] = prove_deletion_using_sccs(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state, logger,
-            edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
-        visit(overloaded{
-                  [&](hints::AllDifferent & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); },
-                  [&](hints::AllDifferentHall & w) {
-                      tracker.infer_all(logger, deletions_by_scc[scc],
-                          JustifyExplicitly{[&logger, wc = w](const ReasonLiterals & r) { emit_justification(*logger, wc, r); }, ThenRUP::Yes, move(w)}, reason);
-                  }},
+        auto [justification, reason] = prove_deletion_using_sccs(constraint_id, vars, vals, excluded, n_right, value_am1_constraint_numbers, state,
+            logger, edges_out_from_variable, edges_out_from_value, *representatives_for_scc[scc], components);
+        visit(
+            overloaded{[&](hints::AllDifferent & w) { tracker.infer_all(logger, deletions_by_scc[scc], JustifyUsingRUP{w}, reason); },
+                [&](hints::AllDifferentHall & w) {
+                    tracker.infer_all(logger, deletions_by_scc[scc],
+                        JustifyExplicitly{[&logger, wc = w](const ReasonLiterals & r) { emit_justification(*logger, wc, r); }, ThenRUP::Yes, move(w)},
+                        reason);
+                }},
             justification);
     }
 }
@@ -669,36 +632,21 @@ auto GACAllDifferent::install_propagators(Propagators & propagators) -> void
     auto value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
     propagators.install(
         constraint_id(),
-        [vars = move(_sanitised_vars),
-            vals = move(_compressed_vals),
-            value_am1_constraint_numbers = move(value_am1_constraint_numbers),
-            constraint_id = constraint_id()](const State & state, auto & inference,
-            ProofLogger * const logger) -> PropagatorState {
+        [vars = move(_sanitised_vars), vals = move(_compressed_vals), value_am1_constraint_numbers = move(value_am1_constraint_numbers),
+            constraint_id = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             propagate_gac_all_different(constraint_id, vars, vals, vector<Integer>{}, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers);
 }
 
-template auto gcs::innards::propagate_gac_all_different(
-    const ConstraintID & constraint_id,
-    const std::vector<IntegerVariableID> & vars,
-    const std::vector<Integer> & vals,
-    const std::vector<Integer> & excluded,
-    std::map<Integer, ProofLine> & value_am1_constraint_numbers,
-    const State & state,
-    SimpleInferenceTracker & inference_tracker,
-    ProofLogger * const logger) -> void;
+template auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & vars,
+    const std::vector<Integer> & vals, const std::vector<Integer> & excluded, std::map<Integer, ProofLine> & value_am1_constraint_numbers,
+    const State & state, SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
 
-template auto gcs::innards::propagate_gac_all_different(
-    const ConstraintID & constraint_id,
-    const std::vector<IntegerVariableID> & vars,
-    const std::vector<Integer> & vals,
-    const std::vector<Integer> & excluded,
-    std::map<Integer, ProofLine> & value_am1_constraint_numbers,
-    const State & state,
-    EagerProofLoggingInferenceTracker & inference_tracker,
-    ProofLogger * const logger) -> void;
+template auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & vars,
+    const std::vector<Integer> & vals, const std::vector<Integer> & excluded, std::map<Integer, ProofLine> & value_am1_constraint_numbers,
+    const State & state, EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
 
 auto GACAllDifferent::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
@@ -706,7 +654,5 @@ auto GACAllDifferent::s_expr(const innards::ProofModel * const model) const -> S
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("all_different"),
-        SExpr::list(std::move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_different"), SExpr::list(std::move(vars))});
 }

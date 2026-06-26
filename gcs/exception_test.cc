@@ -68,6 +68,5 @@ TEST_CASE("Inverse rejects mismatched array sizes")
     auto y1 = p.create_integer_variable(0_i, 1_i);
     auto y2 = p.create_integer_variable(0_i, 1_i);
     p.post(Inverse{{x1}, {y1, y2}});
-    REQUIRE_THROWS_AS((solve(p, [](const CurrentState &) -> bool { return true; })),
-        InvalidProblemDefinitionException);
+    REQUIRE_THROWS_AS((solve(p, [](const CurrentState &) -> bool { return true; })), InvalidProblemDefinitionException);
 }

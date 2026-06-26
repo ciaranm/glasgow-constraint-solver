@@ -39,8 +39,8 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_alldiffexcept_test(bool proofs, const ViewWrapConfig & view_cfg,
-    const vector<pair<int, int>> & domains, const vector<int> & excluded) -> void
+auto run_alldiffexcept_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & domains, const vector<int> & excluded)
+    -> void
 {
     auto wraps = wraps_for_positions(view_cfg, static_cast<int>(domains.size()));
     print(cerr, "all_different_except [{}] {} excl {}{}", view_wrap_config_label(view_cfg), domains, excluded, proofs ? " with proofs:" : ":");
@@ -76,13 +76,10 @@ auto run_alldiffexcept_test(bool proofs, const ViewWrapConfig & view_cfg,
     check_results(proof_name, expected, actual);
 }
 
-auto run_alldiffexcept_dup_test(bool proofs,
-    const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions,
-    const vector<int> & excluded) -> void
+auto run_alldiffexcept_dup_test(
+    bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, const vector<int> & excluded) -> void
 {
-    print(cerr, "all_different_except domains {} positions {} excl {}{}",
-        unique_domains, positions, excluded, proofs ? " with proofs:" : ":");
+    print(cerr, "all_different_except domains {} positions {} excl {}{}", unique_domains, positions, excluded, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto is_satisfying = [&](vector<int> unique_values) {
@@ -150,9 +147,9 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
     run_alldiffexcept_test(proofs, view_cfg, {{0, 1}, {0, 1}, {0, 2}, {0, 2}}, {0});
 
     // Degenerate all-fixed (issue #254), both directions.
-    run_alldiffexcept_test(proofs, view_cfg, {{2, 2}, {2, 2}}, {2});    // dup of excluded value: allowed (tautology)
-    run_alldiffexcept_test(proofs, view_cfg, {{1, 1}, {2, 2}}, {0});    // distinct constants (tautology)
-    run_alldiffexcept_test(proofs, view_cfg, {{3, 3}, {3, 3}}, {});     // dup, empty excluded set (contradiction)
+    run_alldiffexcept_test(proofs, view_cfg, {{2, 2}, {2, 2}}, {2}); // dup of excluded value: allowed (tautology)
+    run_alldiffexcept_test(proofs, view_cfg, {{1, 1}, {2, 2}}, {0}); // distinct constants (tautology)
+    run_alldiffexcept_test(proofs, view_cfg, {{3, 3}, {3, 3}}, {});  // dup, empty excluded set (contradiction)
 
     if (run_dup) {
         // Same variable in two positions: forces it into the excluded set.
@@ -208,8 +205,8 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 4;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "all_different_except view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(
+            cerr, "all_different_except view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 

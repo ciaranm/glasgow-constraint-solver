@@ -1,5 +1,5 @@
-#include <gcs/constraints/increasing/increasing.hh>
 #include <gcs/constraints/increasing/hints.hh>
+#include <gcs/constraints/increasing/increasing.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -38,9 +38,7 @@ using fmt::print;
 #endif
 
 IncreasingChain::IncreasingChain(vector<IntegerVariableID> vars, bool strict, bool descending) :
-    _vars(move(vars)),
-    _strict(strict),
-    _descending(descending)
+    _vars(move(vars)), _strict(strict), _descending(descending)
 {
 }
 
@@ -74,8 +72,7 @@ auto IncreasingChain::define_proof_model(ProofModel & model) -> void
 {
     auto offset = _strict ? -1_i : 0_i;
     for (size_t i = 0; i + 1 < _ordered_vars.size(); ++i)
-        model.add_constraint("IncreasingChain", "chain step",
-            WPBSum{} + 1_i * _ordered_vars[i] + -1_i * _ordered_vars[i + 1] <= offset);
+        model.add_constraint("IncreasingChain", "chain step", WPBSum{} + 1_i * _ordered_vars[i] + -1_i * _ordered_vars[i + 1] <= offset);
 }
 
 auto IncreasingChain::install_propagators(Propagators & propagators) -> void
@@ -85,66 +82,66 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_bounds.insert(triggers.on_bounds.end(), _ordered_vars.begin(), _ordered_vars.end());
 
-    propagators.install(constraint_id(), [vars = move(_ordered_vars), step, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        auto n = vars.size();
+    propagators.install(
+        constraint_id(),
+        [vars = move(_ordered_vars), step, owner = constraint_id()](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            auto n = vars.size();
 
-        // Forward sweep: lb(vars[i]) >= lb(vars[i-1]) + step.
-        auto prev_lb = state.bounds(vars[0]).first;
-        for (size_t i = 1; i < n; ++i) {
-            auto needed = prev_lb + step;
-            auto cur_lb = state.bounds(vars[i]).first;
-            if (needed > cur_lb) {
-                auto reason_lb = prev_lb;
-                inference.infer_greater_than_or_equal(logger, vars[i], needed,
-                    JustifyUsingRUP{hints::Increasing{owner}},
-                    ExplicitReason{ReasonLiterals{{vars[i - 1] >= reason_lb}}});
-                prev_lb = needed;
+            // Forward sweep: lb(vars[i]) >= lb(vars[i-1]) + step.
+            auto prev_lb = state.bounds(vars[0]).first;
+            for (size_t i = 1; i < n; ++i) {
+                auto needed = prev_lb + step;
+                auto cur_lb = state.bounds(vars[i]).first;
+                if (needed > cur_lb) {
+                    auto reason_lb = prev_lb;
+                    inference.infer_greater_than_or_equal(logger, vars[i], needed, JustifyUsingRUP{hints::Increasing{owner}},
+                        ExplicitReason{ReasonLiterals{{vars[i - 1] >= reason_lb}}});
+                    prev_lb = needed;
+                }
+                else {
+                    prev_lb = cur_lb;
+                }
             }
-            else {
-                prev_lb = cur_lb;
-            }
-        }
 
-        // Backward sweep: ub(vars[i]) <= ub(vars[i+1]) - step.
-        auto prev_ub = state.bounds(vars[n - 1]).second;
-        for (size_t k = 0; k + 1 < n; ++k) {
-            auto i = n - 2 - k;
-            auto needed = prev_ub - step;
-            auto cur_ub = state.bounds(vars[i]).second;
-            if (needed < cur_ub) {
-                auto reason_ub = prev_ub;
-                inference.infer_less_than(logger, vars[i], needed + 1_i,
-                    JustifyUsingRUP{hints::Increasing{owner}},
-                    ExplicitReason{ReasonLiterals{{vars[i + 1] <= reason_ub}}});
-                prev_ub = needed;
+            // Backward sweep: ub(vars[i]) <= ub(vars[i+1]) - step.
+            auto prev_ub = state.bounds(vars[n - 1]).second;
+            for (size_t k = 0; k + 1 < n; ++k) {
+                auto i = n - 2 - k;
+                auto needed = prev_ub - step;
+                auto cur_ub = state.bounds(vars[i]).second;
+                if (needed < cur_ub) {
+                    auto reason_ub = prev_ub;
+                    inference.infer_less_than(logger, vars[i], needed + 1_i, JustifyUsingRUP{hints::Increasing{owner}},
+                        ExplicitReason{ReasonLiterals{{vars[i + 1] <= reason_ub}}});
+                    prev_ub = needed;
+                }
+                else {
+                    prev_ub = cur_ub;
+                }
             }
-            else {
-                prev_ub = cur_ub;
-            }
-        }
 
-        // Entailment: every adjacent pair is already separated by at least step.
-        bool entailed = true;
-        for (size_t i = 0; i + 1 < n; ++i) {
-            if (state.bounds(vars[i]).second + step > state.bounds(vars[i + 1]).first) {
-                entailed = false;
-                break;
+            // Entailment: every adjacent pair is already separated by at least step.
+            bool entailed = true;
+            for (size_t i = 0; i + 1 < n; ++i) {
+                if (state.bounds(vars[i]).second + step > state.bounds(vars[i + 1]).first) {
+                    entailed = false;
+                    break;
+                }
             }
-        }
-        return entailed ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable; }, triggers);
+            return entailed ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
+        },
+        triggers);
 }
 
 auto IncreasingChain::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    const char * keyword = _strict
-        ? (_descending ? "strictly_decreasing" : "strictly_increasing")
-        : (_descending ? "decreasing" : "increasing");
+    const char * keyword = _strict ? (_descending ? "strictly_decreasing" : "strictly_increasing") : (_descending ? "decreasing" : "increasing");
 
     std::vector<SExpr> vars;
     for (const auto & v : _vars)
         vars.push_back(tracker.s_expr_term_of(v));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(keyword),
-        SExpr::list(std::move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(keyword), SExpr::list(std::move(vars))});
 }

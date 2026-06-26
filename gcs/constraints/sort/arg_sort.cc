@@ -53,10 +53,7 @@ using std::print;
 using fmt::print;
 #endif
 
-ArgSort::ArgSort(vector<IntegerVariableID> x, vector<IntegerVariableID> p, Integer offset) :
-    _x(move(x)),
-    _p(move(p)),
-    _offset(offset)
+ArgSort::ArgSort(vector<IntegerVariableID> x, vector<IntegerVariableID> p, Integer offset) : _x(move(x)), _p(move(p)), _offset(offset)
 {
 }
 
@@ -77,8 +74,8 @@ auto ArgSort::install(Propagators & propagators, State & initial_state, ProofMod
     vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
     if (optional_model) {
         for (size_t j = 0; j < _y.size(); ++j)
-            optional_model->set_up_integer_variable(_y[j], _lowest_x, _highest_x,
-                "argsort_y_" + std::to_string(j), IntegerVariableProofRepresentation::Bits);
+            optional_model->set_up_integer_variable(
+                _y[j], _lowest_x, _highest_x, "argsort_y_" + std::to_string(j), IntegerVariableProofRepresentation::Bits);
         _witness = define_sortedness_proof_model(*optional_model, _x, y_ids);
     }
 
@@ -148,9 +145,8 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
     // sorted-value variable, already constrained to be sort(x).)
     for (size_t j = 0; j < n; ++j)
         for (size_t k = 0; k < n; ++k)
-            model.add_constraint("ArgSort", "value channel",
-                WPBSum{} + 1_i * _y[j] + -1_i * _x[k] == 0_i,
-                HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(k)}});
+            model.add_constraint(
+                "ArgSort", "value channel", WPBSum{} + 1_i * _y[j] + -1_i * _x[k] == 0_i, HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(k)}});
 
     // Inverse channel to the stable rank: position j holds element k exactly
     // when element k's stable rank pos[k] is j. This is definitionally true
@@ -159,8 +155,7 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
     // into prunings of p.
     for (size_t j = 0; j < n; ++j)
         for (size_t k = 0; k < n; ++k)
-            model.add_constraint("ArgSort", "rank channel",
-                WPBSum{} + 1_i * _witness.pos[k] == Integer(static_cast<long long>(j)),
+            model.add_constraint("ArgSort", "rank channel", WPBSum{} + 1_i * _witness.pos[k] == Integer(static_cast<long long>(j)),
                 HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(k)}});
 
     // Stable tie-break. The inner Sort already constrains y[j] <= y[j+1], so an
@@ -168,13 +163,9 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
     //   eq_j <-> y[j] >= y[j+1]   (given y non-decreasing, this means equality)
     //   eq_j -> p[j] + 1 <= p[j+1]   (ties broken by original index)
     for (size_t j = 0; j + 1 < n; ++j) {
-        auto eq = model.create_proof_flag_fully_reifying("argsort_eq",
-            "ArgSort", "tie value",
-            WPBSum{} + 1_i * _y[j] + -1_i * _y[j + 1] >= 0_i);
+        auto eq = model.create_proof_flag_fully_reifying("argsort_eq", "ArgSort", "tie value", WPBSum{} + 1_i * _y[j] + -1_i * _y[j + 1] >= 0_i);
 
-        model.add_constraint("ArgSort", "stable tie-break",
-            WPBSum{} + 1_i * _p[j] + -1_i * _p[j + 1] <= -1_i,
-            HalfReifyOnConjunctionOf{{eq}});
+        model.add_constraint("ArgSort", "stable tie-break", WPBSum{} + 1_i * _p[j] + -1_i * _p[j + 1] <= -1_i, HalfReifyOnConjunctionOf{{eq}});
     }
 }
 
@@ -197,46 +188,48 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     channel_triggers.on_bounds.insert(channel_triggers.on_bounds.end(), y_ids.begin(), y_ids.end());
     channel_triggers.on_change.insert(channel_triggers.on_change.end(), _p.begin(), _p.end());
 
-    propagators.install(constraint_id(), [x = _x, y = y_ids, p = _p, offset = _offset, n, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        for (size_t j = 0; j < n; ++j) {
-            auto [ylo, yhi] = state.bounds(y[j]);
+    propagators.install(
+        constraint_id(),
+        [x = _x, y = y_ids, p = _p, offset = _offset, n, owner = constraint_id()](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            for (size_t j = 0; j < n; ++j) {
+                auto [ylo, yhi] = state.bounds(y[j]);
 
-            for (size_t k = 0; k < n; ++k) {
-                auto pv = offset + Integer(static_cast<long long>(k));
-                if (! state.in_domain(p[j], pv))
-                    continue;
+                for (size_t k = 0; k < n; ++k) {
+                    auto pv = offset + Integer(static_cast<long long>(k));
+                    if (! state.in_domain(p[j], pv))
+                        continue;
 
-                auto [xlo, xhi] = state.bounds(x[k]);
+                    auto [xlo, xhi] = state.bounds(x[k]);
 
-                // (1) Disjoint domains rule out position j taking original index k.
-                if (xhi < ylo || xlo > yhi) {
-                    inference.infer_not_equal(logger, p[j], pv, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason({x[k], y[j]}));
+                    // (1) Disjoint domains rule out position j taking original index k.
+                    if (xhi < ylo || xlo > yhi) {
+                        inference.infer_not_equal(logger, p[j], pv, JustifyUsingRUP{hints::ArgSort{owner}}, bounds_reason({x[k], y[j]}));
+                    }
+                }
+
+                // (2) If p[j] is fixed to some index k, x[k] and y[j] are equal:
+                // intersect their bounds in both directions.
+                if (auto pj = state.optional_single_value(p[j])) {
+                    auto k = (*pj - offset).as_index();
+                    auto [xlo, xhi] = state.bounds(x[k]);
+                    auto extra = p[j] == *pj;
+                    if (xlo > ylo)
+                        inference.infer_greater_than_or_equal(
+                            logger, y[j], xlo, JustifyUsingRUP{hints::ArgSort{owner}}, bounds_reason({x[k]}, extra));
+                    if (xhi < yhi)
+                        inference.infer_less_than(logger, y[j], xhi + 1_i, JustifyUsingRUP{hints::ArgSort{owner}}, bounds_reason({x[k]}, extra));
+                    if (ylo > xlo)
+                        inference.infer_greater_than_or_equal(
+                            logger, x[k], ylo, JustifyUsingRUP{hints::ArgSort{owner}}, bounds_reason({y[j]}, extra));
+                    if (yhi < xhi)
+                        inference.infer_less_than(logger, x[k], yhi + 1_i, JustifyUsingRUP{hints::ArgSort{owner}}, bounds_reason({y[j]}, extra));
                 }
             }
 
-            // (2) If p[j] is fixed to some index k, x[k] and y[j] are equal:
-            // intersect their bounds in both directions.
-            if (auto pj = state.optional_single_value(p[j])) {
-                auto k = (*pj - offset).as_index();
-                auto [xlo, xhi] = state.bounds(x[k]);
-                auto extra = p[j] == *pj;
-                if (xlo > ylo)
-                    inference.infer_greater_than_or_equal(logger, y[j], xlo, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason({x[k]}, extra));
-                if (xhi < yhi)
-                    inference.infer_less_than(logger, y[j], xhi + 1_i, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason({x[k]}, extra));
-                if (ylo > xlo)
-                    inference.infer_greater_than_or_equal(logger, x[k], ylo, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason({y[j]}, extra));
-                if (yhi < xhi)
-                    inference.infer_less_than(logger, x[k], yhi + 1_i, JustifyUsingRUP{hints::ArgSort{owner}},
-                        bounds_reason({y[j]}, extra));
-            }
-        }
-
-        return PropagatorState::Enable; }, channel_triggers);
+            return PropagatorState::Enable;
+        },
+        channel_triggers);
 
     // Achievable-rank-set propagator: gives bounds(Z) consistency on p. Element
     // k's stable rank pos[k] (the number of elements before it) lies in
@@ -249,179 +242,185 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     rank_triggers.on_bounds.insert(rank_triggers.on_bounds.end(), _x.begin(), _x.end());
     rank_triggers.on_change.insert(rank_triggers.on_change.end(), _p.begin(), _p.end());
 
-    propagators.install(constraint_id(), [x = _x, p = _p, offset = _offset, n, witness = _witness, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        for (size_t k = 0; k < n; ++k) {
-            auto [lk, uk] = state.bounds(x[k]);
+    propagators.install(
+        constraint_id(),
+        [x = _x, p = _p, offset = _offset, n, witness = _witness, owner = constraint_id()](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            for (size_t k = 0; k < n; ++k) {
+                auto [lk, uk] = state.bounds(x[k]);
 
-            // must_precede[i]: i comes before k in EVERY assignment; can_precede:
-            // in SOME assignment. Stable order: i<k ties to i (use <=), i>k ties
-            // to k (use <). a_k = #must, b_k = #can; pos[k] (the stable rank of k)
-            // lies in [a_k, b_k].
-            vector<bool> must_precede(n, false), can_precede(n, false);
-            long long a_k = 0, b_k = 0;
-            for (size_t i = 0; i < n; ++i) {
-                if (i == k)
-                    continue;
-                auto [li, ui] = state.bounds(x[i]);
-                must_precede[i] = (i < k) ? (ui <= lk) : (ui < lk);
-                can_precede[i] = (i < k) ? (li <= uk) : (li < uk);
-                if (must_precede[i])
-                    ++a_k;
-                if (can_precede[i])
-                    ++b_k;
-            }
-
-            // The achievable rank SET of element k can be a strict subset of the
-            // interval [a_k, b_k]: ties among the other elements make the "number
-            // below k" jump as x[k] crosses their values, leaving holes. For each
-            // candidate value vk of x[k], the count of elements before k can be
-            // any integer in [#forced(vk), #possible(vk)]; the union over vk (it
-            // suffices to sample the O(n) regime breakpoints) is the reachable
-            // set. Position j can hold element k only if j is reachable.
-            vector<bool> reachable(n, false);
-            {
-                vector<long long> cands{lk.raw_value, uk.raw_value};
+                // must_precede[i]: i comes before k in EVERY assignment; can_precede:
+                // in SOME assignment. Stable order: i<k ties to i (use <=), i>k ties
+                // to k (use <). a_k = #must, b_k = #can; pos[k] (the stable rank of k)
+                // lies in [a_k, b_k].
+                vector<bool> must_precede(n, false), can_precede(n, false);
+                long long a_k = 0, b_k = 0;
                 for (size_t i = 0; i < n; ++i) {
                     if (i == k)
                         continue;
                     auto [li, ui] = state.bounds(x[i]);
-                    for (long long t : {li.raw_value, ui.raw_value, li.raw_value + 1, ui.raw_value + 1,
-                             li.raw_value - 1, ui.raw_value - 1})
-                        if (t >= lk.raw_value && t <= uk.raw_value)
-                            cands.push_back(t);
+                    must_precede[i] = (i < k) ? (ui <= lk) : (ui < lk);
+                    can_precede[i] = (i < k) ? (li <= uk) : (li < uk);
+                    if (must_precede[i])
+                        ++a_k;
+                    if (can_precede[i])
+                        ++b_k;
                 }
-                for (long long vk : cands) {
-                    long long forced = 0, possible = 0;
+
+                // The achievable rank SET of element k can be a strict subset of the
+                // interval [a_k, b_k]: ties among the other elements make the "number
+                // below k" jump as x[k] crosses their values, leaving holes. For each
+                // candidate value vk of x[k], the count of elements before k can be
+                // any integer in [#forced(vk), #possible(vk)]; the union over vk (it
+                // suffices to sample the O(n) regime breakpoints) is the reachable
+                // set. Position j can hold element k only if j is reachable.
+                vector<bool> reachable(n, false);
+                {
+                    vector<long long> cands{lk.raw_value, uk.raw_value};
                     for (size_t i = 0; i < n; ++i) {
                         if (i == k)
                             continue;
                         auto [li, ui] = state.bounds(x[i]);
-                        bool f = (i < k) ? (ui.raw_value <= vk) : (ui.raw_value < vk);
-                        bool c = (i < k) ? (li.raw_value <= vk) : (li.raw_value < vk);
-                        if (f)
-                            ++forced;
-                        if (c)
-                            ++possible;
+                        for (long long t : {li.raw_value, ui.raw_value, li.raw_value + 1, ui.raw_value + 1, li.raw_value - 1, ui.raw_value - 1})
+                            if (t >= lk.raw_value && t <= uk.raw_value)
+                                cands.push_back(t);
                     }
-                    for (long long r = forced; r <= possible; ++r)
-                        if (r >= 0 && cmp_less(r, n))
-                            reachable[r] = true;
-                }
-            }
-
-            for (size_t j = 0; j < n; ++j) {
-                if (reachable[j])
-                    continue;
-                auto pv = offset + Integer(static_cast<long long>(k));
-                if (! state.in_domain(p[j], pv))
-                    continue;
-
-                bool below = cmp_less(j, a_k);
-                bool above = cmp_greater(j, b_k);
-                if (below || above) {
-                    // Outside the rank interval: the cross-variable rank deduction
-                    // is not plain RUP, so derive the rank bound by an explicit
-                    // pol, mirroring the Sort propagator. below: pos[k] >= a_k via
-                    // rank_ge[k] + the forced "before[i][k] >= 1" lines; above:
-                    // pos[k] <= b_k via rank_le[k] + the forced "!before[i][k]"
-                    // lines. The inverse channel (p[j]=offset+k -> pos[k]=j) then
-                    // makes p[j] != offset+k RUP.
-                    inference.infer_not_equal(logger, p[j], pv,
-                        JustifyExplicitly{[&, k, below](const ReasonLiterals & reason_lits) -> void {
-                            PolBuilder pol;
-                            if (below) {
-                                pol.add(witness.rank_ge[k]);
-                                for (size_t i = 0; i < n; ++i)
-                                    if (i != k && must_precede[i])
-                                        pol.add(logger->emit_rup_proof_line_under_reason(reason_lits,
-                                            WPBSum{} + 1_i * witness.before[i][k] >= 1_i, ProofLevel::Temporary));
-                            }
-                            else {
-                                pol.add(witness.rank_le[k]);
-                                for (size_t i = 0; i < n; ++i)
-                                    if (i != k && ! can_precede[i])
-                                        pol.add(logger->emit_rup_proof_line_under_reason(reason_lits,
-                                            WPBSum{} + 1_i * ! witness.before[i][k] >= 1_i, ProofLevel::Temporary));
-                            }
-                            pol.emit(*logger, ProofLevel::Temporary);
-                        }, ThenRUP::Yes, hints::ArgSort{owner}},
-                        bounds_reason(x));
-                }
-                else {
-                    // Hole inside [a_k, b_k]: rank j is unreachable because of a
-                    // tie-jump in the "number below k". There is a threshold value
-                    // U with #possible(U) <= j-1 and #forced(U+1) >= j+1, so
-                    //   x[k] <= U   => pos[k] <= #possible(U) <= j-1, and
-                    //   x[k] >= U+1 => pos[k] >= #forced(U+1) >= j+1,
-                    // both excluding pos[k] = j. Prove each side by a pol (mirror
-                    // of the interval case, but pivoting on the constant U instead
-                    // of x[k]'s own bound), then the inverse channel makes
-                    // p[j] != offset+k RUP via the case split on [x[k] >= U+1].
-                    auto possible_at = [&](long long v) {
-                        long long c = 0;
+                    for (long long vk : cands) {
+                        long long forced = 0, possible = 0;
                         for (size_t i = 0; i < n; ++i) {
                             if (i == k)
                                 continue;
                             auto [li, ui] = state.bounds(x[i]);
-                            if ((i < k) ? (li.raw_value <= v) : (li.raw_value < v))
-                                ++c;
+                            bool f = (i < k) ? (ui.raw_value <= vk) : (ui.raw_value < vk);
+                            bool c = (i < k) ? (li.raw_value <= vk) : (li.raw_value < vk);
+                            if (f)
+                                ++forced;
+                            if (c)
+                                ++possible;
                         }
-                        return c;
-                    };
-                    // U = largest value with #possible(U) <= j-1 (exists: a hole
-                    // has #possible(lk) <= j-1 and #possible(uk) = b_k >= j).
-                    long long U = lk.raw_value;
-                    for (long long v = lk.raw_value; v < uk.raw_value; ++v) {
-                        if (cmp_less(possible_at(v + 1), j))
-                            U = v + 1;
-                        else
-                            break;
+                        for (long long r = forced; r <= possible; ++r)
+                            if (r >= 0 && cmp_less(r, n))
+                                reachable[r] = true;
                     }
+                }
 
-                    inference.infer_not_equal(logger, p[j], pv,
-                        JustifyExplicitly{[&, k, U](const ReasonLiterals & reason_lits) -> void {
-                            // Line A: x[k] <= U => pos[k] <= #possible(U).
-                            // For each i that cannot precede k at x[k]=U, the clause
-                            // (x[k] >= U+1) v !before[i][k] is RUP from before_fwd +
-                            // the bound on x[i]; rank_le[k] folds them in.
-                            PolBuilder polA;
-                            polA.add(witness.rank_le[k]);
+                for (size_t j = 0; j < n; ++j) {
+                    if (reachable[j])
+                        continue;
+                    auto pv = offset + Integer(static_cast<long long>(k));
+                    if (! state.in_domain(p[j], pv))
+                        continue;
+
+                    bool below = cmp_less(j, a_k);
+                    bool above = cmp_greater(j, b_k);
+                    if (below || above) {
+                        // Outside the rank interval: the cross-variable rank deduction
+                        // is not plain RUP, so derive the rank bound by an explicit
+                        // pol, mirroring the Sort propagator. below: pos[k] >= a_k via
+                        // rank_ge[k] + the forced "before[i][k] >= 1" lines; above:
+                        // pos[k] <= b_k via rank_le[k] + the forced "!before[i][k]"
+                        // lines. The inverse channel (p[j]=offset+k -> pos[k]=j) then
+                        // makes p[j] != offset+k RUP.
+                        inference.infer_not_equal(logger, p[j], pv,
+                            JustifyExplicitly{[&, k, below](const ReasonLiterals & reason_lits) -> void {
+                                                  PolBuilder pol;
+                                                  if (below) {
+                                                      pol.add(witness.rank_ge[k]);
+                                                      for (size_t i = 0; i < n; ++i)
+                                                          if (i != k && must_precede[i])
+                                                              pol.add(logger->emit_rup_proof_line_under_reason(
+                                                                  reason_lits, WPBSum{} + 1_i * witness.before[i][k] >= 1_i, ProofLevel::Temporary));
+                                                  }
+                                                  else {
+                                                      pol.add(witness.rank_le[k]);
+                                                      for (size_t i = 0; i < n; ++i)
+                                                          if (i != k && ! can_precede[i])
+                                                              pol.add(logger->emit_rup_proof_line_under_reason(reason_lits,
+                                                                  WPBSum{} + 1_i * ! witness.before[i][k] >= 1_i, ProofLevel::Temporary));
+                                                  }
+                                                  pol.emit(*logger, ProofLevel::Temporary);
+                                              },
+                                ThenRUP::Yes, hints::ArgSort{owner}},
+                            bounds_reason(x));
+                    }
+                    else {
+                        // Hole inside [a_k, b_k]: rank j is unreachable because of a
+                        // tie-jump in the "number below k". There is a threshold value
+                        // U with #possible(U) <= j-1 and #forced(U+1) >= j+1, so
+                        //   x[k] <= U   => pos[k] <= #possible(U) <= j-1, and
+                        //   x[k] >= U+1 => pos[k] >= #forced(U+1) >= j+1,
+                        // both excluding pos[k] = j. Prove each side by a pol (mirror
+                        // of the interval case, but pivoting on the constant U instead
+                        // of x[k]'s own bound), then the inverse channel makes
+                        // p[j] != offset+k RUP via the case split on [x[k] >= U+1].
+                        auto possible_at = [&](long long v) {
+                            long long c = 0;
                             for (size_t i = 0; i < n; ++i) {
                                 if (i == k)
                                     continue;
                                 auto [li, ui] = state.bounds(x[i]);
-                                bool cannot = (i < k) ? (li.raw_value > U) : (li.raw_value >= U);
-                                if (cannot)
-                                    polA.add(logger->emit_rup_proof_line_under_reason(reason_lits,
-                                        WPBSum{} + 1_i * (x[k] >= Integer{U + 1}) + 1_i * ! witness.before[i][k] >= 1_i,
-                                        ProofLevel::Temporary));
+                                if ((i < k) ? (li.raw_value <= v) : (li.raw_value < v))
+                                    ++c;
                             }
-                            polA.emit(*logger, ProofLevel::Temporary);
+                            return c;
+                        };
+                        // U = largest value with #possible(U) <= j-1 (exists: a hole
+                        // has #possible(lk) <= j-1 and #possible(uk) = b_k >= j).
+                        long long U = lk.raw_value;
+                        for (long long v = lk.raw_value; v < uk.raw_value; ++v) {
+                            if (cmp_less(possible_at(v + 1), j))
+                                U = v + 1;
+                            else
+                                break;
+                        }
 
-                            // Line B: x[k] >= U+1 => pos[k] >= #forced(U+1).
-                            // For each i forced to precede k at x[k]=U+1, the clause
-                            // (x[k] <= U) v before[i][k] is RUP from before_rev +
-                            // the bound on x[i]; rank_ge[k] folds them in.
-                            PolBuilder polB;
-                            polB.add(witness.rank_ge[k]);
-                            for (size_t i = 0; i < n; ++i) {
-                                if (i == k)
-                                    continue;
-                                auto [li, ui] = state.bounds(x[i]);
-                                bool forced = (i < k) ? (ui.raw_value <= U + 1) : (ui.raw_value <= U);
-                                if (forced)
-                                    polB.add(logger->emit_rup_proof_line_under_reason(reason_lits,
-                                        WPBSum{} + 1_i * (x[k] < Integer{U + 1}) + 1_i * witness.before[i][k] >= 1_i,
-                                        ProofLevel::Temporary));
-                            }
-                            polB.emit(*logger, ProofLevel::Temporary);
-                        }, ThenRUP::Yes, hints::ArgSort{owner}},
-                        bounds_reason(x));
+                        inference.infer_not_equal(logger, p[j], pv,
+                            JustifyExplicitly{[&, k, U](const ReasonLiterals & reason_lits) -> void {
+                                                  // Line A: x[k] <= U => pos[k] <= #possible(U).
+                                                  // For each i that cannot precede k at x[k]=U, the clause
+                                                  // (x[k] >= U+1) v !before[i][k] is RUP from before_fwd +
+                                                  // the bound on x[i]; rank_le[k] folds them in.
+                                                  PolBuilder polA;
+                                                  polA.add(witness.rank_le[k]);
+                                                  for (size_t i = 0; i < n; ++i) {
+                                                      if (i == k)
+                                                          continue;
+                                                      auto [li, ui] = state.bounds(x[i]);
+                                                      bool cannot = (i < k) ? (li.raw_value > U) : (li.raw_value >= U);
+                                                      if (cannot)
+                                                          polA.add(logger->emit_rup_proof_line_under_reason(reason_lits,
+                                                              WPBSum{} + 1_i * (x[k] >= Integer{U + 1}) + 1_i * ! witness.before[i][k] >= 1_i,
+                                                              ProofLevel::Temporary));
+                                                  }
+                                                  polA.emit(*logger, ProofLevel::Temporary);
+
+                                                  // Line B: x[k] >= U+1 => pos[k] >= #forced(U+1).
+                                                  // For each i forced to precede k at x[k]=U+1, the clause
+                                                  // (x[k] <= U) v before[i][k] is RUP from before_rev +
+                                                  // the bound on x[i]; rank_ge[k] folds them in.
+                                                  PolBuilder polB;
+                                                  polB.add(witness.rank_ge[k]);
+                                                  for (size_t i = 0; i < n; ++i) {
+                                                      if (i == k)
+                                                          continue;
+                                                      auto [li, ui] = state.bounds(x[i]);
+                                                      bool forced = (i < k) ? (ui.raw_value <= U + 1) : (ui.raw_value <= U);
+                                                      if (forced)
+                                                          polB.add(logger->emit_rup_proof_line_under_reason(reason_lits,
+                                                              WPBSum{} + 1_i * (x[k] < Integer{U + 1}) + 1_i * witness.before[i][k] >= 1_i,
+                                                              ProofLevel::Temporary));
+                                                  }
+                                                  polB.emit(*logger, ProofLevel::Temporary);
+                                              },
+                                ThenRUP::Yes, hints::ArgSort{owner}},
+                            bounds_reason(x));
+                    }
                 }
             }
-        }
 
-        return PropagatorState::Enable; }, rank_triggers);
+            return PropagatorState::Enable;
+        },
+        rank_triggers);
 
     // GAC on the all_different aspect of p (it is a permutation of the n
     // positions). Reuses the framework's matching/Hall propagator and its
@@ -436,9 +435,14 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     Triggers ad_triggers;
     ad_triggers.on_change.insert(ad_triggers.on_change.end(), _p.begin(), _p.end());
 
-    propagators.install(constraint_id(), [p = _p, vals = move(p_vals), am1_lines, constraint_id = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        propagate_gac_all_different(constraint_id, p, vals, vector<Integer>{}, *am1_lines, state, inference, logger);
-        return PropagatorState::Enable; }, ad_triggers);
+    propagators.install(
+        constraint_id(),
+        [p = _p, vals = move(p_vals), am1_lines, constraint_id = constraint_id()](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            propagate_gac_all_different(constraint_id, p, vals, vector<Integer>{}, *am1_lines, state, inference, logger);
+            return PropagatorState::Enable;
+        },
+        ad_triggers);
 
     // No leaf-checking propagator is needed: once every x is fixed, each
     // element k's reachable-rank set collapses to the single stable rank, so the
@@ -462,9 +466,6 @@ auto ArgSort::s_expr(const ProofModel * const model) const -> SExpr
 
     // The offset is a trailing bare atom (not wrapped in its own list), matching
     // the old textual form.
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("arg_sort"),
-        SExpr::list(move(xs)),
-        SExpr::list(move(ps)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("arg_sort"), SExpr::list(move(xs)), SExpr::list(move(ps)),
         SExpr::atom(_offset.to_string())});
 }

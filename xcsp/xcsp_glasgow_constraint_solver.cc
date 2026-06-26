@@ -118,8 +118,7 @@ namespace
     class XCSPCallbacks : public XCSP3CoreCallbacks
     {
     public:
-        explicit XCSPCallbacks(Problem & p) :
-            _problem(p)
+        explicit XCSPCallbacks(Problem & p) : _problem(p)
         {
             intensionUsingString = false;
             recognizeSpecialIntensionCases = false;
@@ -148,8 +147,7 @@ namespace
             _variables.emplace(id, ManagedVariable{nullopt, Integer{*lo}, Integer{*hi}, vals});
         }
 
-        auto buildConstraintExtension(string, vector<XVariable *> x_vars, vector<vector<int>> & x_tuples,
-            bool is_support, bool) -> void override
+        auto buildConstraintExtension(string, vector<XVariable *> x_vars, vector<vector<int>> & x_tuples, bool is_support, bool) -> void override
         {
             auto vars = need_variables(x_vars);
             _most_recent_tuples = make_shared<WildcardTuples>();
@@ -170,8 +168,7 @@ namespace
             post_table(need_variables(x_vars), is_support);
         }
 
-        auto buildConstraintExtension(string, XVariable * x_var, vector<int> & x_tuples,
-            bool is_support, bool) -> void override
+        auto buildConstraintExtension(string, XVariable * x_var, vector<int> & x_tuples, bool is_support, bool) -> void override
         {
             vector<IntegerVariableID> vars{need_variable(x_var->id)};
             _most_recent_tuples = make_shared<WildcardTuples>();
@@ -191,8 +188,7 @@ namespace
             _problem.post(AllDifferent{need_variables(x_vars)});
         }
 
-        auto buildConstraintAlldifferentMatrix(string,
-            vector<vector<XVariable *>> & matrix) -> void override
+        auto buildConstraintAlldifferentMatrix(string, vector<vector<XVariable *>> & matrix) -> void override
         {
             if (matrix.empty())
                 return;
@@ -214,8 +210,7 @@ namespace
             }
         }
 
-        auto buildConstraintLex(string, vector<vector<XVariable *>> & lists,
-            OrderType order) -> void override
+        auto buildConstraintLex(string, vector<vector<XVariable *>> & lists, OrderType order) -> void override
         {
             if (lists.size() < 2)
                 return;
@@ -227,8 +222,7 @@ namespace
                 post_lex_pair(ilists[i], ilists[i + 1], order);
         }
 
-        auto buildConstraintLexMatrix(string, vector<vector<XVariable *>> & matrix,
-            OrderType order) -> void override
+        auto buildConstraintLexMatrix(string, vector<vector<XVariable *>> & matrix, OrderType order) -> void override
         {
             if (matrix.empty())
                 return;
@@ -260,34 +254,23 @@ namespace
             _problem.post(AllEqual{need_variables(x_vars)});
         }
 
-        auto buildConstraintOrdered(string, vector<XVariable *> & x_vars,
-            OrderType order) -> void override
+        auto buildConstraintOrdered(string, vector<XVariable *> & x_vars, OrderType order) -> void override
         {
             auto vars = need_variables(x_vars);
             switch (order) {
                 using enum OrderType;
-            case LE:
-                _problem.post(Increasing{vars});
-                break;
-            case LT:
-                _problem.post(StrictlyIncreasing{vars});
-                break;
-            case GE:
-                _problem.post(Decreasing{vars});
-                break;
-            case GT:
-                _problem.post(StrictlyDecreasing{vars});
-                break;
+            case LE: _problem.post(Increasing{vars}); break;
+            case LT: _problem.post(StrictlyIncreasing{vars}); break;
+            case GE: _problem.post(Decreasing{vars}); break;
+            case GT: _problem.post(StrictlyDecreasing{vars}); break;
             case EQ:
             case NE:
             case IN:
-            case NOTIN:
-                report_unsupported("ordered", "non-ordering order type");
+            case NOTIN: report_unsupported("ordered", "non-ordering order type");
             }
         }
 
-        auto buildConstraintOrdered(string, vector<XVariable *> & x_vars,
-            vector<int> & lengths, OrderType order) -> void override
+        auto buildConstraintOrdered(string, vector<XVariable *> & x_vars, vector<int> & lengths, OrderType order) -> void override
         {
             auto vars = need_variables(x_vars);
             if (lengths.size() + 1 != vars.size())
@@ -300,21 +283,16 @@ namespace
                     // vars[i] + len <= vars[i+1]
                     _problem.post(WeightedSum{} + 1_i * vars[i] + -1_i * vars[i + 1] <= -len);
                     break;
-                case LT:
-                    _problem.post(WeightedSum{} + 1_i * vars[i] + -1_i * vars[i + 1] <= -len - 1_i);
-                    break;
+                case LT: _problem.post(WeightedSum{} + 1_i * vars[i] + -1_i * vars[i + 1] <= -len - 1_i); break;
                 case GE:
                     // vars[i] + len >= vars[i+1]
                     _problem.post(WeightedSum{} + -1_i * vars[i] + 1_i * vars[i + 1] <= len);
                     break;
-                case GT:
-                    _problem.post(WeightedSum{} + -1_i * vars[i] + 1_i * vars[i + 1] <= len - 1_i);
-                    break;
+                case GT: _problem.post(WeightedSum{} + -1_i * vars[i] + 1_i * vars[i + 1] <= len - 1_i); break;
                 case EQ:
                 case NE:
                 case IN:
-                case NOTIN:
-                    report_unsupported("ordered", "non-ordering order type");
+                case NOTIN: report_unsupported("ordered", "non-ordering order type");
                 }
             }
         }
@@ -328,8 +306,7 @@ namespace
             report_unsupported("precedence", "without explicit value list");
         }
 
-        auto buildConstraintPrecedence(string, vector<XVariable *> & x_vars,
-            vector<int> values, bool covered) -> void override
+        auto buildConstraintPrecedence(string, vector<XVariable *> & x_vars, vector<int> values, bool covered) -> void override
         {
             if (covered)
                 report_unsupported("precedence", "covered=true");
@@ -341,8 +318,7 @@ namespace
             _problem.post(ValuePrecede{std::move(chain), vars});
         }
 
-        auto buildConstraintSum(string, vector<XVariable *> & x_vars, vector<int> & coeffs,
-            XCondition & cond) -> void override
+        auto buildConstraintSum(string, vector<XVariable *> & x_vars, vector<int> & coeffs, XCondition & cond) -> void override
         {
             build_sum_common(x_vars, coeffs, cond);
         }
@@ -352,12 +328,10 @@ namespace
             build_sum_common(x_vars, nullopt, cond);
         }
 
-        auto buildConstraintCount(string, vector<XVariable *> & x_vars, vector<int> & values,
-            XCondition & cond) -> void override
+        auto buildConstraintCount(string, vector<XVariable *> & x_vars, vector<int> & values, XCondition & cond) -> void override
         {
             auto vars = need_variables(x_vars);
-            auto how_many = _problem.create_integer_variable(0_i,
-                Integer{static_cast<long long>(vars.size())}, "countresult");
+            auto how_many = _problem.create_integer_variable(0_i, Integer{static_cast<long long>(vars.size())}, "countresult");
             if (values.size() == 1)
                 _problem.post(Count{vars, constant_variable(Integer{values[0]}), how_many});
             else {
@@ -370,8 +344,7 @@ namespace
             apply_count_condition(how_many, cond, "count");
         }
 
-        auto buildConstraintAmong(string, vector<XVariable *> & x_vars,
-            vector<int> & values, int k) -> void override
+        auto buildConstraintAmong(string, vector<XVariable *> & x_vars, vector<int> & values, int k) -> void override
         {
             auto vars = need_variables(x_vars);
             auto how_many = _problem.create_integer_variable(Integer{k}, Integer{k}, "amongresult");
@@ -382,50 +355,43 @@ namespace
             _problem.post(Among{vars, ivals, how_many});
         }
 
-        auto buildConstraintAtMost(string, vector<XVariable *> & x_vars,
-            int value, int k) -> void override
+        auto buildConstraintAtMost(string, vector<XVariable *> & x_vars, int value, int k) -> void override
         {
             auto vars = need_variables(x_vars);
             auto how_many = _problem.create_integer_variable(0_i, Integer{k}, "atmost");
             _problem.post(Count{vars, constant_variable(Integer{value}), how_many});
         }
 
-        auto buildConstraintAtLeast(string, vector<XVariable *> & x_vars,
-            int value, int k) -> void override
+        auto buildConstraintAtLeast(string, vector<XVariable *> & x_vars, int value, int k) -> void override
         {
             auto vars = need_variables(x_vars);
-            auto how_many = _problem.create_integer_variable(Integer{k},
-                Integer{static_cast<long long>(vars.size())}, "atleast");
+            auto how_many = _problem.create_integer_variable(Integer{k}, Integer{static_cast<long long>(vars.size())}, "atleast");
             _problem.post(Count{vars, constant_variable(Integer{value}), how_many});
         }
 
-        auto buildConstraintExactlyK(string, vector<XVariable *> & x_vars,
-            int value, int k) -> void override
+        auto buildConstraintExactlyK(string, vector<XVariable *> & x_vars, int value, int k) -> void override
         {
             auto vars = need_variables(x_vars);
             auto how_many = _problem.create_integer_variable(Integer{k}, Integer{k}, "exactlyk");
             _problem.post(Count{vars, constant_variable(Integer{value}), how_many});
         }
 
-        auto buildConstraintExactlyVariable(string, vector<XVariable *> & x_vars,
-            int value, XVariable * x) -> void override
+        auto buildConstraintExactlyVariable(string, vector<XVariable *> & x_vars, int value, XVariable * x) -> void override
         {
             auto vars = need_variables(x_vars);
             _problem.post(Count{vars, constant_variable(Integer{value}), need_variable(x->id)});
         }
 
-        auto buildConstraintNValues(string, vector<XVariable *> & x_vars,
-            XCondition & cond) -> void override
+        auto buildConstraintNValues(string, vector<XVariable *> & x_vars, XCondition & cond) -> void override
         {
             auto vars = need_variables(x_vars);
-            auto n_values = _problem.create_integer_variable(1_i,
-                Integer{static_cast<long long>(vars.size())}, "nvalues");
+            auto n_values = _problem.create_integer_variable(1_i, Integer{static_cast<long long>(vars.size())}, "nvalues");
             _problem.post(NValue{n_values, vars});
             apply_count_condition(n_values, cond, "nValues");
         }
 
-        auto buildConstraintRegular(string, vector<XVariable *> & x_vars,
-            string start, vector<string> & final, vector<XTransition> & transitions) -> void override
+        auto buildConstraintRegular(string, vector<XVariable *> & x_vars, string start, vector<string> & final, vector<XTransition> & transitions)
+            -> void override
         {
             auto vars = need_variables(x_vars);
 
@@ -467,14 +433,12 @@ namespace
         // uncaught runtime_error) with our standard report_unsupported so
         // main() emits a clean s UNSUPPORTED.
 
-        auto buildConstraintMDD(string, vector<XVariable *> &,
-            vector<XTransition> &) -> void override
+        auto buildConstraintMDD(string, vector<XVariable *> &, vector<XTransition> &) -> void override
         {
             report_unsupported("mdd", "no MDD propagator yet (#149)");
         }
 
-        auto buildConstraintNoOverlap(string, vector<XVariable *> & origins,
-            vector<int> & lengths, bool zeroIgnored) -> void override
+        auto buildConstraintNoOverlap(string, vector<XVariable *> & origins, vector<int> & lengths, bool zeroIgnored) -> void override
         {
             auto starts = need_variables(origins);
             vector<Integer> lengths_i;
@@ -483,15 +447,13 @@ namespace
             _problem.post(Disjunctive{starts, lengths_i, ! zeroIgnored});
         }
 
-        auto buildConstraintNoOverlap(string, vector<XVariable *> & origins,
-            vector<XVariable *> & lengths, bool zeroIgnored) -> void override
+        auto buildConstraintNoOverlap(string, vector<XVariable *> & origins, vector<XVariable *> & lengths, bool zeroIgnored) -> void override
         {
             // 1D noOverlap with variable lengths.
             _problem.post(Disjunctive{need_variables(origins), need_variables(lengths), ! zeroIgnored});
         }
 
-        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins,
-            vector<vector<int>> & lengths, bool zeroIgnored) -> void override
+        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins, vector<vector<int>> & lengths, bool zeroIgnored) -> void override
         {
             // 2D non-overlap (diffn): each origin is [x, y] and each length is
             // [width, height]. Only the 2D constant-size case is supported.
@@ -509,8 +471,8 @@ namespace
             _problem.post(Disjunctive2D{xs, ys, widths, heights, ! zeroIgnored});
         }
 
-        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins,
-            vector<vector<XVariable *>> & lengths, bool zeroIgnored) -> void override
+        auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins, vector<vector<XVariable *>> & lengths, bool zeroIgnored)
+            -> void override
         {
             // 2D non-overlap with variable sizes: each origin is [x, y] and each
             // length is [width, height] (all variables).
@@ -532,8 +494,8 @@ namespace
         // ConstantIntegerVariableID), and the capacity comes from the
         // XCondition (a constant or a variable). Only the `le` condition is
         // meaningful for cumulative.
-        auto post_cumulative(vector<XVariable *> & origins, vector<IntegerVariableID> lengths,
-            vector<IntegerVariableID> heights, XCondition & cond) -> void
+        auto post_cumulative(vector<XVariable *> & origins, vector<IntegerVariableID> lengths, vector<IntegerVariableID> heights, XCondition & cond)
+            -> void
         {
             if (cond.op != OrderType::LE)
                 report_unsupported("cumulative", "only `le` condition is supported (#147)");
@@ -562,64 +524,58 @@ namespace
             return result;
         }
 
-        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
-            vector<int> & lengths, vector<int> & heights, XCondition & cond) -> void override
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins, vector<int> & lengths, vector<int> & heights, XCondition & cond)
+            -> void override
         {
             post_cumulative(origins, as_constant_ids(lengths), as_constant_ids(heights), cond);
         }
 
-        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
-            vector<int> & lengths, vector<XVariable *> & heights, XCondition & cond) -> void override
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins, vector<int> & lengths, vector<XVariable *> & heights, XCondition & cond)
+            -> void override
         {
             post_cumulative(origins, as_constant_ids(lengths), need_variables(heights), cond);
         }
 
-        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
-            vector<XVariable *> & lengths, vector<int> & heights, XCondition & cond) -> void override
+        auto buildConstraintCumulative(string, vector<XVariable *> & origins, vector<XVariable *> & lengths, vector<int> & heights, XCondition & cond)
+            -> void override
         {
             post_cumulative(origins, need_variables(lengths), as_constant_ids(heights), cond);
         }
 
-        auto buildConstraintCumulative(string, vector<XVariable *> & origins,
-            vector<XVariable *> & lengths, vector<XVariable *> & heights, XCondition & cond) -> void override
+        auto buildConstraintCumulative(
+            string, vector<XVariable *> & origins, vector<XVariable *> & lengths, vector<XVariable *> & heights, XCondition & cond) -> void override
         {
             post_cumulative(origins, need_variables(lengths), need_variables(heights), cond);
         }
 
-        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
-            XCondition &) -> void override
+        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &, XCondition &) -> void override
         {
             report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
         }
 
-        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
-            vector<int> &, bool) -> void override
+        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &, vector<int> &, bool) -> void override
         {
             report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
         }
 
-        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
-            vector<XVariable *> &, bool) -> void override
+        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &, vector<XVariable *> &, bool) -> void override
         {
             report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
         }
 
-        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &,
-            vector<XCondition> &, int) -> void override
+        auto buildConstraintBinPacking(string, vector<XVariable *> &, vector<int> &, vector<XCondition> &, int) -> void override
         {
             report_unsupported("binPacking", "no BinPacking propagator yet (#148)");
         }
 
-        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars,
-            int startIndex) -> void override
+        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars, int startIndex) -> void override
         {
             if (startIndex != 0)
                 report_unsupported("circuit", "non-zero startIndex");
             _problem.post(Circuit{need_variables(x_vars)});
         }
 
-        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars,
-            int startIndex, int size) -> void override
+        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars, int startIndex, int size) -> void override
         {
             (void)x_vars;
             (void)startIndex;
@@ -627,8 +583,7 @@ namespace
             report_unsupported("circuit", "fixed-size sub-circuit");
         }
 
-        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars,
-            int startIndex, XVariable * size) -> void override
+        auto buildConstraintCircuit(string, vector<XVariable *> & x_vars, int startIndex, XVariable * size) -> void override
         {
             (void)x_vars;
             (void)startIndex;
@@ -636,19 +591,16 @@ namespace
             report_unsupported("circuit", "variable-size sub-circuit");
         }
 
-        auto buildConstraintInstantiation(string, vector<XVariable *> & x_vars,
-            vector<int> & values) -> void override
+        auto buildConstraintInstantiation(string, vector<XVariable *> & x_vars, vector<int> & values) -> void override
         {
             if (x_vars.size() != values.size())
                 report_unsupported("instantiation", "vars/values size mismatch");
             for (size_t i = 0; i != x_vars.size(); ++i)
-                _problem.post(Equals{need_variable(x_vars[i]->id),
-                    constant_variable(Integer{values[i]})});
+                _problem.post(Equals{need_variable(x_vars[i]->id), constant_variable(Integer{values[i]})});
         }
 
-        auto buildConstraintKnapsack(string, vector<XVariable *> & x_vars,
-            vector<int> & weights, vector<int> & profits,
-            XCondition weightCondition, XCondition & profitCondition) -> void override
+        auto buildConstraintKnapsack(string, vector<XVariable *> & x_vars, vector<int> & weights, vector<int> & profits, XCondition weightCondition,
+            XCondition & profitCondition) -> void override
         {
             if (x_vars.size() != weights.size() || x_vars.size() != profits.size())
                 report_unsupported("knapsack", "vars/weights/profits size mismatch");
@@ -688,8 +640,7 @@ namespace
         // GlobalCardinality constraint (a singleton domain for a constant, a
         // lo..hi domain for an interval). The cover-as-variables forms are left
         // to the base-class default (unsupported).
-        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
-            vector<int> values, vector<int> & occurs, bool closed) -> void override
+        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars, vector<int> values, vector<int> & occurs, bool closed) -> void override
         {
             if (values.size() != occurs.size())
                 report_unsupported("cardinality", "values/occurs size mismatch");
@@ -701,8 +652,8 @@ namespace
             _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts), closed});
         }
 
-        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
-            vector<int> values, vector<XVariable *> & occurs, bool closed) -> void override
+        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars, vector<int> values, vector<XVariable *> & occurs, bool closed)
+            -> void override
         {
             if (values.size() != occurs.size())
                 report_unsupported("cardinality", "values/occurs size mismatch");
@@ -710,8 +661,8 @@ namespace
             _problem.post(GlobalCardinality{move(vars), gcc_cover(values), need_variables(occurs), closed});
         }
 
-        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars,
-            vector<int> values, vector<XInterval> & occurs, bool closed) -> void override
+        auto buildConstraintCardinality(string, vector<XVariable *> & x_vars, vector<int> values, vector<XInterval> & occurs, bool closed)
+            -> void override
         {
             if (values.size() != occurs.size())
                 report_unsupported("cardinality", "values/occurs size mismatch");
@@ -719,8 +670,8 @@ namespace
             vector<IntegerVariableID> counts;
             counts.reserve(occurs.size());
             for (size_t i = 0; i != occurs.size(); ++i)
-                counts.emplace_back(_problem.create_integer_variable(Integer{occurs[i].min}, Integer{occurs[i].max},
-                    "gccoccurs" + std::to_string(i)));
+                counts.emplace_back(
+                    _problem.create_integer_variable(Integer{occurs[i].min}, Integer{occurs[i].max}, "gccoccurs" + std::to_string(i)));
             _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts), closed});
         }
 
@@ -729,16 +680,15 @@ namespace
             post_intension_top_level(tree->root);
         }
 
-        auto buildConstraintElement(string, vector<XVariable *> & x_vars,
-            int startIndex, XVariable * index, RankType rank, int value) -> void override
+        auto buildConstraintElement(string, vector<XVariable *> & x_vars, int startIndex, XVariable * index, RankType rank, int value)
+            -> void override
         {
             check_element_rank(rank);
             auto idx = zero_based_index(index, startIndex);
             _problem.post(Element{constant_variable(Integer{value}), idx, allocate_element_array(x_vars)});
         }
 
-        auto buildConstraintElement(string, vector<int> & vals,
-            int startIndex, XVariable * index, RankType rank, XVariable * value) -> void override
+        auto buildConstraintElement(string, vector<int> & vals, int startIndex, XVariable * index, RankType rank, XVariable * value) -> void override
         {
             check_element_rank(rank);
             auto idx = zero_based_index(index, startIndex);
@@ -746,69 +696,56 @@ namespace
             _problem.post(Element{val, idx, allocate_element_array(vals)});
         }
 
-        auto buildConstraintElement(string, vector<vector<XVariable *>> & matrix,
-            int startRowIndex, XVariable * rowIndex, int startColIndex, XVariable * colIndex,
-            XVariable * value) -> void override
+        auto buildConstraintElement(string, vector<vector<XVariable *>> & matrix, int startRowIndex, XVariable * rowIndex, int startColIndex,
+            XVariable * colIndex, XVariable * value) -> void override
         {
             auto val = need_variable(value->id);
             auto row = need_variable(rowIndex->id);
             auto col = need_variable(colIndex->id);
-            _problem.post(Element2D{val,
-                {row, Integer{startRowIndex}}, {col, Integer{startColIndex}},
-                allocate_element_matrix(matrix)});
+            _problem.post(Element2D{val, {row, Integer{startRowIndex}}, {col, Integer{startColIndex}}, allocate_element_matrix(matrix)});
         }
 
-        auto buildConstraintElement(string, vector<vector<XVariable *>> & matrix,
-            int startRowIndex, XVariable * rowIndex, int startColIndex, XVariable * colIndex,
-            int value) -> void override
+        auto buildConstraintElement(string, vector<vector<XVariable *>> & matrix, int startRowIndex, XVariable * rowIndex, int startColIndex,
+            XVariable * colIndex, int value) -> void override
         {
             auto row = need_variable(rowIndex->id);
             auto col = need_variable(colIndex->id);
-            _problem.post(Element2D{constant_variable(Integer{value}),
-                {row, Integer{startRowIndex}}, {col, Integer{startColIndex}},
-                allocate_element_matrix(matrix)});
+            _problem.post(Element2D{
+                constant_variable(Integer{value}), {row, Integer{startRowIndex}}, {col, Integer{startColIndex}}, allocate_element_matrix(matrix)});
         }
 
-        auto buildConstraintElement(string, vector<vector<int>> & matrix,
-            int startRowIndex, XVariable * rowIndex, int startColIndex, XVariable * colIndex,
-            XVariable * value) -> void override
+        auto buildConstraintElement(string, vector<vector<int>> & matrix, int startRowIndex, XVariable * rowIndex, int startColIndex,
+            XVariable * colIndex, XVariable * value) -> void override
         {
             auto val = need_variable(value->id);
             auto row = need_variable(rowIndex->id);
             auto col = need_variable(colIndex->id);
-            _problem.post(Element2DConstantArray{val,
-                {row, Integer{startRowIndex}}, {col, Integer{startColIndex}},
-                allocate_element_matrix(matrix)});
+            _problem.post(Element2DConstantArray{val, {row, Integer{startRowIndex}}, {col, Integer{startColIndex}}, allocate_element_matrix(matrix)});
         }
 
-        auto buildConstraintMinimum(string, vector<XVariable *> & x_vars,
-            XCondition & cond) -> void override
+        auto buildConstraintMinimum(string, vector<XVariable *> & x_vars, XCondition & cond) -> void override
         {
             build_min_max_common(x_vars, cond, true);
         }
 
-        auto buildConstraintMaximum(string, vector<XVariable *> & x_vars,
-            XCondition & cond) -> void override
+        auto buildConstraintMaximum(string, vector<XVariable *> & x_vars, XCondition & cond) -> void override
         {
             build_min_max_common(x_vars, cond, false);
         }
 
-        auto buildConstraintChannel(string, vector<XVariable *> & x_vars,
-            int startIndex) -> void override
+        auto buildConstraintChannel(string, vector<XVariable *> & x_vars, int startIndex) -> void override
         {
             auto vars = need_variables(x_vars);
             _problem.post(Inverse{vars, vars, Integer{startIndex}, Integer{startIndex}});
         }
 
-        auto buildConstraintChannel(string, vector<XVariable *> & list1, int startIndex1,
-            vector<XVariable *> & list2, int startIndex2) -> void override
+        auto buildConstraintChannel(string, vector<XVariable *> & list1, int startIndex1, vector<XVariable *> & list2, int startIndex2)
+            -> void override
         {
-            _problem.post(Inverse{need_variables(list1), need_variables(list2),
-                Integer{startIndex1}, Integer{startIndex2}});
+            _problem.post(Inverse{need_variables(list1), need_variables(list2), Integer{startIndex1}, Integer{startIndex2}});
         }
 
-        auto buildConstraintChannel(string, vector<XVariable *> & list,
-            int startIndex, XVariable * value) -> void override
+        auto buildConstraintChannel(string, vector<XVariable *> & list, int startIndex, XVariable * value) -> void override
         {
             // One-to-many channeling: list[i] = 1 ⇔ value = i + startIndex.
             // Not yet implemented; needs an EqualsIff chain or a custom
@@ -819,27 +756,23 @@ namespace
             report_unsupported("channel", "one-to-many form (list + value)");
         }
 
-        auto buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> & x_vars,
-            vector<int> & coeffs) -> void override
+        auto buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> & x_vars, vector<int> & coeffs) -> void override
         {
             build_objective_common(type, x_vars, coeffs, false);
         }
 
-        auto buildObjectiveMaximize(ExpressionObjective type, vector<XVariable *> & x_vars,
-            vector<int> & coeffs) -> void override
+        auto buildObjectiveMaximize(ExpressionObjective type, vector<XVariable *> & x_vars, vector<int> & coeffs) -> void override
         {
             build_objective_common(type, x_vars, coeffs, true);
         }
 
-        auto buildObjectiveMinimize(ExpressionObjective type,
-            vector<XVariable *> & x_vars) -> void override
+        auto buildObjectiveMinimize(ExpressionObjective type, vector<XVariable *> & x_vars) -> void override
         {
             vector<int> coefs(x_vars.size(), 1);
             build_objective_common(type, x_vars, coefs, false);
         }
 
-        auto buildObjectiveMaximize(ExpressionObjective type,
-            vector<XVariable *> & x_vars) -> void override
+        auto buildObjectiveMaximize(ExpressionObjective type, vector<XVariable *> & x_vars) -> void override
         {
             vector<int> coefs(x_vars.size(), 1);
             build_objective_common(type, x_vars, coefs, true);
@@ -977,8 +910,7 @@ namespace
             if (startIndex == 0)
                 return idx;
             auto & mv = find_variable(x->id);
-            auto shifted = _problem.create_integer_variable(
-                mv.lower - Integer{startIndex}, mv.upper - Integer{startIndex}, "idx_shifted");
+            auto shifted = _problem.create_integer_variable(mv.lower - Integer{startIndex}, mv.upper - Integer{startIndex}, "idx_shifted");
             _problem.post(WeightedSum{} + 1_i * idx + -1_i * shifted == Integer{startIndex});
             return shifted;
         }
@@ -997,33 +929,22 @@ namespace
                 report_unsupported("element", "non-any rank");
         }
 
-        auto post_lex_pair(const vector<IntegerVariableID> & a,
-            const vector<IntegerVariableID> & b, OrderType order) -> void
+        auto post_lex_pair(const vector<IntegerVariableID> & a, const vector<IntegerVariableID> & b, OrderType order) -> void
         {
             switch (order) {
                 using enum OrderType;
-            case LT:
-                _problem.post(LexLessThan{a, b});
-                break;
-            case LE:
-                _problem.post(LexLessThanEqual{a, b});
-                break;
-            case GT:
-                _problem.post(LexGreaterThan{a, b});
-                break;
-            case GE:
-                _problem.post(LexGreaterEqual{a, b});
-                break;
+            case LT: _problem.post(LexLessThan{a, b}); break;
+            case LE: _problem.post(LexLessThanEqual{a, b}); break;
+            case GT: _problem.post(LexGreaterThan{a, b}); break;
+            case GE: _problem.post(LexGreaterEqual{a, b}); break;
             case EQ:
             case NE:
             case IN:
-            case NOTIN:
-                report_unsupported("lex", "non-ordering order type");
+            case NOTIN: report_unsupported("lex", "non-ordering order type");
             }
         }
 
-        auto build_min_max_common(vector<XVariable *> & x_vars, XCondition & cond,
-            bool is_min) -> void
+        auto build_min_max_common(vector<XVariable *> & x_vars, XCondition & cond, bool is_min) -> void
         {
             optional<Integer> lower, upper;
             vector<IntegerVariableID> vars;
@@ -1034,8 +955,7 @@ namespace
                 lower = lower ? min(*lower, mv.lower) : mv.lower;
                 upper = upper ? max(*upper, mv.upper) : mv.upper;
             }
-            auto result = _problem.create_integer_variable(*lower, *upper,
-                is_min ? "minresult" : "maxresult");
+            auto result = _problem.create_integer_variable(*lower, *upper, is_min ? "minresult" : "maxresult");
             if (is_min)
                 _problem.post(ArrayMin{vars, result});
             else
@@ -1046,54 +966,34 @@ namespace
         // Apply a count-style XCondition to a single result variable:
         // posts `result <op> rhs` directly, where rhs is either a variable
         // or a constant. Used by count, nValues, etc.
-        auto apply_count_condition(IntegerVariableID result, XCondition & xc,
-            const string & ctx) -> void
+        auto apply_count_condition(IntegerVariableID result, XCondition & xc, const string & ctx) -> void
         {
             IntegerVariableID rhs = constant_variable(0_i);
             switch (xc.operandType) {
                 using enum OperandType;
-            case VARIABLE:
-                rhs = need_variable(xc.var);
-                break;
-            case INTEGER:
-                rhs = constant_variable(Integer{xc.val});
-                break;
+            case VARIABLE: rhs = need_variable(xc.var); break;
+            case INTEGER: rhs = constant_variable(Integer{xc.val}); break;
             case INTERVAL:
                 _problem.post(WeightedSum{} + 1_i * result >= Integer{xc.min});
                 _problem.post(WeightedSum{} + 1_i * result <= Integer{xc.max});
                 return;
-            case SET:
-                report_unsupported(ctx, "set condition");
+            case SET: report_unsupported(ctx, "set condition");
             }
 
             switch (xc.op) {
                 using enum OrderType;
-            case LE:
-                _problem.post(LessThanEqual{result, rhs});
-                break;
-            case LT:
-                _problem.post(LessThan{result, rhs});
-                break;
-            case EQ:
-                _problem.post(Equals{result, rhs});
-                break;
-            case GT:
-                _problem.post(GreaterThan{result, rhs});
-                break;
-            case GE:
-                _problem.post(GreaterThanEqual{result, rhs});
-                break;
-            case NE:
-                _problem.post(NotEquals{result, rhs});
-                break;
+            case LE: _problem.post(LessThanEqual{result, rhs}); break;
+            case LT: _problem.post(LessThan{result, rhs}); break;
+            case EQ: _problem.post(Equals{result, rhs}); break;
+            case GT: _problem.post(GreaterThan{result, rhs}); break;
+            case GE: _problem.post(GreaterThanEqual{result, rhs}); break;
+            case NE: _problem.post(NotEquals{result, rhs}); break;
             case IN:
-            case NOTIN:
-                report_unsupported(ctx, "set membership condition");
+            case NOTIN: report_unsupported(ctx, "set membership condition");
             }
         }
 
-        auto build_sum_common(vector<XVariable *> & x_vars, const optional<vector<int>> & coeffs,
-            XCondition & cond) -> void
+        auto build_sum_common(vector<XVariable *> & x_vars, const optional<vector<int>> & coeffs, XCondition & cond) -> void
         {
             WeightedSum cvs;
             Integer range = 0_i;
@@ -1108,35 +1008,19 @@ namespace
             Integer bound = 0_i;
             switch (cond.operandType) {
                 using enum OperandType;
-            case VARIABLE:
-                cvs += -1_i * need_variable(cond.var);
-                break;
-            case INTEGER:
-                bound = Integer{cond.val};
-                break;
-            case INTERVAL:
-                report_unsupported("sum", "interval condition");
-            case SET:
-                report_unsupported("sum", "set condition");
+            case VARIABLE: cvs += -1_i * need_variable(cond.var); break;
+            case INTEGER: bound = Integer{cond.val}; break;
+            case INTERVAL: report_unsupported("sum", "interval condition");
+            case SET: report_unsupported("sum", "set condition");
             }
 
             switch (cond.op) {
                 using enum OrderType;
-            case LE:
-                _problem.post(std::move(cvs) <= bound);
-                break;
-            case LT:
-                _problem.post(std::move(cvs) <= bound - 1_i);
-                break;
-            case EQ:
-                _problem.post(std::move(cvs) == bound);
-                break;
-            case GT:
-                _problem.post(std::move(cvs) >= bound + 1_i);
-                break;
-            case GE:
-                _problem.post(std::move(cvs) >= bound);
-                break;
+            case LE: _problem.post(std::move(cvs) <= bound); break;
+            case LT: _problem.post(std::move(cvs) <= bound - 1_i); break;
+            case EQ: _problem.post(std::move(cvs) == bound); break;
+            case GT: _problem.post(std::move(cvs) >= bound + 1_i); break;
+            case GE: _problem.post(std::move(cvs) >= bound); break;
             case NE: {
                 auto diff = _problem.create_integer_variable(-range, range, "ne");
                 cvs += 1_i * diff;
@@ -1144,13 +1028,11 @@ namespace
                 _problem.post(NotEquals{diff, 0_c});
             } break;
             case IN:
-            case NOTIN:
-                report_unsupported("sum", "set membership condition");
+            case NOTIN: report_unsupported("sum", "set membership condition");
             }
         }
 
-        auto build_objective_common(ExpressionObjective type, vector<XVariable *> & x_vars,
-            vector<int> & coeffs, bool is_max) -> void
+        auto build_objective_common(ExpressionObjective type, vector<XVariable *> & x_vars, vector<int> & coeffs, bool is_max) -> void
         {
             is_optimisation = true;
 
@@ -1306,9 +1188,7 @@ namespace
             case OABS: {
                 auto a = walk_intension(node->parameters.at(0));
                 auto upper = max(abs(a.lower), abs(a.upper));
-                auto lower = (a.lower >= 0_i) ? a.lower
-                    : (a.upper <= 0_i)        ? -a.upper
-                                              : 0_i;
+                auto lower = (a.lower >= 0_i) ? a.lower : (a.upper <= 0_i) ? -a.upper : 0_i;
                 auto r = _problem.create_integer_variable(lower, upper, "absresult");
                 _problem.post(Abs{a.var, r});
                 return {r, lower, upper};
@@ -1345,8 +1225,7 @@ namespace
                         upper = (node->type == OMIN) ? min(upper, sub.upper) : max(upper, sub.upper);
                     }
                 }
-                auto r = _problem.create_integer_variable(lower, upper,
-                    node->type == OMIN ? "minresult" : "maxresult");
+                auto r = _problem.create_integer_variable(lower, upper, node->type == OMIN ? "minresult" : "maxresult");
                 if (node->type == OMIN)
                     _problem.post(ArrayMin{vars, r});
                 else
@@ -1407,17 +1286,12 @@ namespace
                 return reify_binary<EqualsIff>(node, "eqresult");
             }
 
-            case ONE:
-                return reify_binary<NotEqualsIff>(node, "neresult");
+            case ONE: return reify_binary<NotEqualsIff>(node, "neresult");
 
-            case OLT:
-                return reify_binary<LessThanIff>(node, "ltresult");
-            case OLE:
-                return reify_binary<LessThanEqualIff>(node, "leresult");
-            case OGT:
-                return reify_binary<GreaterThanIff>(node, "gtresult");
-            case OGE:
-                return reify_binary<GreaterThanEqualIff>(node, "geresult");
+            case OLT: return reify_binary<LessThanIff>(node, "ltresult");
+            case OLE: return reify_binary<LessThanEqualIff>(node, "leresult");
+            case OGT: return reify_binary<GreaterThanIff>(node, "gtresult");
+            case OGE: return reify_binary<GreaterThanEqualIff>(node, "geresult");
 
             case OIFF: {
                 // For Boolean a, b: r ⇔ (a == b). EqualsIff handles this.
@@ -1474,8 +1348,7 @@ namespace
                 vars.reserve(node->parameters.size());
                 for (auto * p : node->parameters)
                     vars.emplace_back(walk_intension(p).var);
-                auto control = _problem.create_integer_variable(0_i, 1_i,
-                    node->type == OAND ? "andresult" : "orresult");
+                auto control = _problem.create_integer_variable(0_i, 1_i, node->type == OAND ? "andresult" : "orresult");
                 if (node->type == OAND)
                     _problem.post(And{vars, control});
                 else
@@ -1483,9 +1356,7 @@ namespace
                 return {control, 0_i, 1_i};
             }
 
-            default:
-                report_unsupported("intension",
-                    "operator '" + XCSP3Core::operatorToString(node->type) + "' inside expression");
+            default: report_unsupported("intension", "operator '" + XCSP3Core::operatorToString(node->type) + "' inside expression");
             }
         }
 
@@ -1706,34 +1577,31 @@ auto main(int argc, char * argv[]) -> int
         });
     }
 
-    auto stats = solve_with(problem,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                if (callbacks.is_optimisation) {
-                    saved_solution.emplace(s.clone());
-                    cout << "o " << s(*callbacks.objective_variable) << endl;
-                    return true;
-                }
-                else if (options_vars.contains("all")) {
-                    // Stream each solution as a compact tuple line. The
-                    // test runner sorts and diffs these against the cached
-                    // expected output.
-                    cout << "ENUMSOL:";
-                    for (const auto & [n, v] : callbacks.variables())
-                        if (v.id)
-                            cout << " " << n << "=" << s(*v.id);
-                        else
-                            cout << " " << n << "=*";
-                    cout << endl;
-                    return true;
-                }
-                else {
-                    saved_solution.emplace(s.clone());
-                    return false;
-                }
-            }},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("xcsp") : nullopt,
-        &abort_flag);
+    auto stats = solve_with(problem, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+        if (callbacks.is_optimisation) {
+            saved_solution.emplace(s.clone());
+            cout << "o " << s(*callbacks.objective_variable) << endl;
+            return true;
+        }
+        else if (options_vars.contains("all")) {
+            // Stream each solution as a compact tuple line. The
+            // test runner sorts and diffs these against the cached
+            // expected output.
+            cout << "ENUMSOL:";
+            for (const auto & [n, v] : callbacks.variables())
+                if (v.id)
+                    cout << " " << n << "=" << s(*v.id);
+                else
+                    cout << " " << n << "=*";
+            cout << endl;
+            return true;
+        }
+        else {
+            saved_solution.emplace(s.clone());
+            return false;
+        }
+    }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>("xcsp") : nullopt, &abort_flag);
 
     if (timeout_thread.joinable()) {
         {

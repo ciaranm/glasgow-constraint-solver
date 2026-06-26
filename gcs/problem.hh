@@ -131,19 +131,16 @@ namespace gcs
          * upper (inclusive). The final argument gives an optional name that
          * will appear in some output; it does not have to be unique.
          */
-        [[nodiscard]] auto create_integer_variable(
-            Integer lower,
-            Integer upper,
-            const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
+        [[nodiscard]] auto create_integer_variable(Integer lower, Integer upper, const std::optional<std::string> & name = std::nullopt)
+            -> SimpleIntegerVariableID;
 
         /**
          * \brief Create a new integer variable, whose domain is selected from
          * among the chosen values. The final argument gives an optional name that
          * will appear in some output; it does not have to be unique.
          */
-        [[nodiscard]] auto create_integer_variable(
-            const std::vector<Integer> & domain,
-            const std::optional<std::string> & name = std::nullopt) -> SimpleIntegerVariableID;
+        [[nodiscard]] auto create_integer_variable(const std::vector<Integer> & domain, const std::optional<std::string> & name = std::nullopt)
+            -> SimpleIntegerVariableID;
 
         /**
          * \brief Create a vector of how_many integer variables, each of
@@ -151,10 +148,7 @@ namespace gcs
          * gives an optional name that will appear in some output; it does not
          * have to be unique.
          */
-        [[nodiscard]] auto create_integer_variable_vector(
-            std::size_t how_many,
-            Integer lower,
-            Integer upper,
+        [[nodiscard]] auto create_integer_variable_vector(std::size_t how_many, Integer lower, Integer upper,
             const std::optional<std::string> & name = std::nullopt) -> std::vector<IntegerVariableID>;
 
         /**
@@ -169,10 +163,8 @@ namespace gcs
          * Otherwise, use Problem::create_integer_variable_vector instead.
          */
         template <std::size_t n_>
-        [[nodiscard]] auto create_n_integer_variables(
-            Integer lower,
-            Integer upper,
-            const std::optional<std::string> & name = std::nullopt) -> std::array<SimpleIntegerVariableID, n_>;
+        [[nodiscard]] auto create_n_integer_variables(Integer lower, Integer upper, const std::optional<std::string> & name = std::nullopt)
+            -> std::array<SimpleIntegerVariableID, n_>;
 
         auto minimise(IntegerVariableID) -> void;
         auto maximise(IntegerVariableID) -> void;
@@ -184,8 +176,7 @@ namespace gcs
          * @{
          */
 
-        [[nodiscard]] auto create_state_for_new_search(
-            innards::ProofModel * const) const -> innards::State;
+        [[nodiscard]] auto create_state_for_new_search(innards::ProofModel * const) const -> innards::State;
 
         [[nodiscard]] auto create_propagators(innards::State &, innards::ProofModel * const) const -> innards::Propagators;
 
@@ -195,8 +186,7 @@ namespace gcs
 
         [[nodiscard]] auto each_constraint() const -> std::generator<const Constraint &>;
 
-        [[nodiscard]] auto each_variable_with_bounds_and_name() const -> std::generator<
-            std::tuple<IntegerVariableID, Integer, Integer, std::string>>;
+        [[nodiscard]] auto each_variable_with_bounds_and_name() const -> std::generator<std::tuple<IntegerVariableID, Integer, Integer, std::string>>;
 
         /**
          * What is our objective variable, to minimise?
@@ -213,8 +203,7 @@ namespace gcs
         {
             std::array<SimpleIntegerVariableID, n_> result;
 
-            ArrayInitialisationMagicForProblem(
-                Problem * p, Integer l, Integer u, const std::optional<std::string> & name) :
+            ArrayInitialisationMagicForProblem(Problem * p, Integer l, Integer u, const std::optional<std::string> & name) :
                 ArrayInitialisationMagicForProblem(p, l, u, name, std::make_index_sequence<n_>{})
             {
             }
@@ -229,10 +218,8 @@ namespace gcs
     }
 
     template <std::size_t n_>
-    auto Problem::create_n_integer_variables(
-        Integer lower,
-        Integer upper,
-        const std::optional<std::string> & name) -> std::array<SimpleIntegerVariableID, n_>
+    auto Problem::create_n_integer_variables(Integer lower, Integer upper, const std::optional<std::string> & name)
+        -> std::array<SimpleIntegerVariableID, n_>
     {
         innards::ArrayInitialisationMagicForProblem<n_> magic{this, lower, upper, name};
         return magic.result;

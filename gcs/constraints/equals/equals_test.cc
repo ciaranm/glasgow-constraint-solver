@@ -42,14 +42,12 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 template <typename Constraint_>
-auto run_equals_test(const string & which, bool proofs, const ViewWrapConfig & view_cfg,
-    variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range,
-    const function<auto(int, int, int)->bool> & is_satisfying) -> void
+auto run_equals_test(const string & which, bool proofs, const ViewWrapConfig & view_cfg, variant<int, pair<int, int>> v1_range,
+    variant<int, pair<int, int>> v2_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 2);
-    visit([&](auto v1, auto v2) {
-        print(cerr, "equals {} [{}] {} {} {}", which, view_wrap_config_label(view_cfg), v1, v2, proofs ? " with proofs:" : ":");
-    },
+    visit([&](auto v1,
+              auto v2) { print(cerr, "equals {} [{}] {} {} {}", which, view_wrap_config_label(view_cfg), v1, v2, proofs ? " with proofs:" : ":"); },
         v1_range, v2_range);
     cerr << flush;
 
@@ -84,8 +82,8 @@ auto run_equals_test(const string & which, bool proofs, const ViewWrapConfig & v
 // aliasing, and fixing it varies in difficulty per constraint. We
 // verify the solution set and the proof only.
 template <typename Constraint_>
-auto run_dup_equals_test(const string & filename_tag, bool proofs, pair<int, int> x_range,
-    const function<auto(int, int) -> bool> & is_satisfying) -> void
+auto run_dup_equals_test(const string & filename_tag, bool proofs, pair<int, int> x_range, const function<auto(int, int)->bool> & is_satisfying)
+    -> void
 {
     print(cerr, "equals dup {} {} {}", filename_tag, x_range, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -122,22 +120,35 @@ auto run_no_overlap_equals_test(bool proofs) -> void
     pair<int, int> c_range{0, 1};
     set<tuple<int, int, int, int>> expected, actual;
     build_expected(
-        expected, [](int x, int y, int z, int c) -> bool {
-            if (x == 4 && c != 0) return false;
-            if (x == 5 && c != 0) return false;
-            if (x == 6 && c != 0) return false;
-            if (x == 9 && c != 0) return false;
-            if (x == 10 && c != 0) return false;
+        expected,
+        [](int x, int y, int z, int c) -> bool {
+            if (x == 4 && c != 0)
+                return false;
+            if (x == 5 && c != 0)
+                return false;
+            if (x == 6 && c != 0)
+                return false;
+            if (x == 9 && c != 0)
+                return false;
+            if (x == 10 && c != 0)
+                return false;
 
-            if (y == 1 && c != 0) return false;
-            if (y == 2 && c != 0) return false;
-            if (y == 3 && c != 0) return false;
-            if (y == 6 && c != 0) return false;
-            if (y == 7 && c != 0) return false;
-            if (y == 8 && c != 0) return false;
+            if (y == 1 && c != 0)
+                return false;
+            if (y == 2 && c != 0)
+                return false;
+            if (y == 3 && c != 0)
+                return false;
+            if (y == 6 && c != 0)
+                return false;
+            if (y == 7 && c != 0)
+                return false;
+            if (y == 8 && c != 0)
+                return false;
 
             if (z == 1) {
-                if (x != y) return false;
+                if (x != y)
+                    return false;
             }
             return true;
         },
@@ -180,28 +191,17 @@ auto main(int argc, char * argv[]) -> int
     // covers. Skip with a success exit so ctest sees it as benign.
     constexpr int n_positions = 2;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "equals view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "equals view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
-    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {
-        {pair{2, 5}, pair{1, 6}},
-        {pair{1, 6}, pair{2, 5}},
-        {pair{1, 3}, pair{1, 3}},
-        {pair{1, 5}, pair{6, 8}},
-        {pair{1, 1}, pair{2, 4}},
-        {pair{-2, -2}, pair{-2, -1}},
-        {pair{1, 3}, pair{5, 8}},
-        {pair{4, 13}, pair{3, 16}},
-        {pair{-2, 4}, pair{-8, 7}},
-        {pair{-7, 3}, pair{-10, 5}},
+    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {{pair{2, 5}, pair{1, 6}}, {pair{1, 6}, pair{2, 5}},
+        {pair{1, 3}, pair{1, 3}}, {pair{1, 5}, pair{6, 8}}, {pair{1, 1}, pair{2, 4}}, {pair{-2, -2}, pair{-2, -1}}, {pair{1, 3}, pair{5, 8}},
+        {pair{4, 13}, pair{3, 16}}, {pair{-2, 4}, pair{-8, 7}}, {pair{-7, 3}, pair{-10, 5}},
         // issue #254: genuine all-constant operands (ConstantIntegerVariableID),
         // both directions. Each Equals/NotEquals (and reified) mode is computed
         // from build_expected: 4==4 holds, 4==5 does not.
-        {4, 4},
-        {4, 5},
-        {-3, -3}};
+        {4, 4}, {4, 5}, {-3, -3}};
 
     random_device rand_dev;
     mt19937 rand(get_seed().value_or(rand_dev()));
@@ -218,8 +218,7 @@ auto main(int argc, char * argv[]) -> int
 
     // Bare-handle dup ranges. Skipped under the view-wrap sweep (which
     // mutates positional view-wraps in ways that aren't aliasing-aware).
-    vector<pair<int, int>> dup_data = {
-        {0, 0}, {0, 1}, {0, 5}, {-3, 3}, {2, 5}};
+    vector<pair<int, int>> dup_data = {{0, 0}, {0, 1}, {0, 5}, {-3, 3}, {2, 5}};
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
@@ -236,19 +235,14 @@ auto main(int argc, char * argv[]) -> int
         }
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions))
             for (auto & x_range : dup_data) {
-                run_dup_equals_test<Equals>("equals", proofs, x_range,
-                    [](int, int) { return true; });
-                run_dup_equals_test<EqualsIf>("equals_if", proofs, x_range,
-                    [](int, int) { return true; });
-                run_dup_equals_test<EqualsIff>("equals_iff", proofs, x_range,
-                    [](int, int c) { return c == 1; });
-                run_dup_equals_test<NotEqualsIff>("notequals_iff", proofs, x_range,
-                    [](int, int c) { return c == 0; });
+                run_dup_equals_test<Equals>("equals", proofs, x_range, [](int, int) { return true; });
+                run_dup_equals_test<EqualsIf>("equals_if", proofs, x_range, [](int, int) { return true; });
+                run_dup_equals_test<EqualsIff>("equals_iff", proofs, x_range, [](int, int c) { return c == 1; });
+                run_dup_equals_test<NotEqualsIff>("notequals_iff", proofs, x_range, [](int, int c) { return c == 0; });
                 // NotEqualsIf(x, x, c) ≡ c → x ≠ x ≡ ¬c. Was Bucket B
                 // (propagator silent on alias) — fixed by alias check in
                 // ReifiedEquals' infer_cond_when_undecided.
-                run_dup_equals_test<NotEqualsIf>("notequals_if", proofs, x_range,
-                    [](int, int c) { return c == 0; });
+                run_dup_equals_test<NotEqualsIf>("notequals_if", proofs, x_range, [](int, int c) { return c == 0; });
             }
     }
 

@@ -37,9 +37,7 @@ using fmt::print;
 
 template <ArithmeticOperator op_>
 GACArithmetic<op_>::GACArithmetic(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) :
-    _v1(v1),
-    _v2(v2),
-    _result(result)
+    _v1(v1), _v2(v2), _result(result)
 {
 }
 
@@ -126,6 +124,6 @@ auto GACArithmetic<op_>::s_expr(const innards::ProofModel * const model) const -
     // its own outer parens, which write_scp then double-wrapped to ((name ...));
     // returning a structured term wraps exactly once.
     auto & tracker = model->names_and_ids_tracker();
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(op_str),
-        tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2), tracker.s_expr_term_of(_result)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(op_str), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2),
+        tracker.s_expr_term_of(_result)});
 }

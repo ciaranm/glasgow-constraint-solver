@@ -76,11 +76,11 @@ namespace
             // A negated view reverses the order, so the endpoints swap; the result
             // is still a contiguous closed interval.
             if (cond.var.negate_first)
-                return VariableConditionFrom<SimpleIntegerVariableID>{cond.var.actual_variable, cond.op,
-                    cond.var.then_add - cond.upper_value, cond.var.then_add - cond.value};
+                return VariableConditionFrom<SimpleIntegerVariableID>{
+                    cond.var.actual_variable, cond.op, cond.var.then_add - cond.upper_value, cond.var.then_add - cond.value};
             else
-                return VariableConditionFrom<SimpleIntegerVariableID>{cond.var.actual_variable, cond.op,
-                    cond.value - cond.var.then_add, cond.upper_value - cond.var.then_add};
+                return VariableConditionFrom<SimpleIntegerVariableID>{
+                    cond.var.actual_variable, cond.op, cond.value - cond.var.then_add, cond.upper_value - cond.var.then_add};
         }
         throw NonExhaustiveSwitch{};
     }
@@ -89,20 +89,12 @@ namespace
     {
         return overloaded{
             [&](const ProofLiteral & lit) {
-                return overloaded{
-                    [](const TrueLiteral &) -> string { return "1"; },
-                    [](const FalseLiteral &) -> string { return "0"; },
-                    [&]<typename T_>(const VariableConditionFrom<T_> & var) -> string {
-                        return names_and_ids_tracker.pb_file_string_for(var);
-                    }}
+                return overloaded{[](const TrueLiteral &) -> string { return "1"; }, [](const FalseLiteral &) -> string { return "0"; },
+                    [&]<typename T_>(const VariableConditionFrom<T_> & var) -> string { return names_and_ids_tracker.pb_file_string_for(var); }}
                     .visit(simplify_literal(names_and_ids_tracker, lit));
             },
-            [&](const ProofFlag & flag) {
-                return names_and_ids_tracker.pb_file_string_for(flag);
-            },
-            [&](const ProofBitVariable & bit) {
-                return names_and_ids_tracker.pb_file_string_for(names_and_ids_tracker.get_bit(bit).second);
-            }}
+            [&](const ProofFlag & flag) { return names_and_ids_tracker.pb_file_string_for(flag); },
+            [&](const ProofBitVariable & bit) { return names_and_ids_tracker.pb_file_string_for(names_and_ids_tracker.get_bit(bit).second); }}
             .visit(lit);
     }
 }
@@ -120,14 +112,12 @@ struct ProofLogger::Imp
     int current_indent = 0;
     AssertionLevel assertion_level;
 
-    Imp(NamesAndIDsTracker & t) :
-        tracker(t)
+    Imp(NamesAndIDsTracker & t) : tracker(t)
     {
     }
 };
 
-ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker & t) :
-    _imp(make_unique<Imp>(t))
+ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker & t) : _imp(make_unique<Imp>(t))
 {
     _imp->proof_file = proof_options.proof_file_names.proof_file;
     _imp->proof_lines_by_level.resize(2);
@@ -139,9 +129,7 @@ ProofLogger::~ProofLogger() = default;
 auto ProofLogger::log_stacktrace() -> void
 {
 #ifdef __cpp_lib_stacktrace
-    static bool do_logging = []() {
-        return getenv("GCS_VERBOSE_LOGGING");
-    }();
+    static bool do_logging = []() { return getenv("GCS_VERBOSE_LOGGING"); }();
 
     using std::stacktrace;
     if (do_logging) [[unlikely]] {
@@ -165,14 +153,9 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     _imp->proof << "% solution\n";
 
     for (const auto & [var, val] : all_variables_and_values)
-        overloaded{
-            [&](const ConstantIntegerVariableID &) {},
-            [&](const SimpleIntegerVariableID & var) {
-                names_and_ids_tracker().need_proof_name(var == val);
-            },
-            [&](const ViewOfIntegerVariableID & var) {
-                names_and_ids_tracker().need_proof_name(deview(var == val));
-            }}
+        overloaded{[&](const ConstantIntegerVariableID &) {},
+            [&](const SimpleIntegerVariableID & var) { names_and_ids_tracker().need_proof_name(var == val); },
+            [&](const ViewOfIntegerVariableID & var) { names_and_ids_tracker().need_proof_name(deview(var == val)); }}
             .visit(var);
 
     _imp->proof << (optional_minimise_variable_and_value ? "soli" : "solx");
@@ -183,9 +166,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         if (! optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
             blocking_sum += 1_i * (var != val);
 
-        overloaded{
-            [&](const ConstantIntegerVariableID &) {
-            },
+        overloaded{[&](const ConstantIntegerVariableID &) {},
             [&](const SimpleIntegerVariableID & var) {
                 if (_imp->assertion_level > AssertionLevel::Definitions)
                     _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(var, val);
@@ -207,19 +188,22 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
         // soli and no links => have to assert the objective improving constraint
-        visit([&](const auto & id) {
-            emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
-        },
+        visit(
+            [&](const auto & id) {
+                emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top,
+                    AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
+            },
             optional_minimise_variable_and_value->first);
     else if (optional_minimise_variable_and_value)
         // normal soli, emit e line for trimmer
-        visit([&](const auto & id) {
-            _imp->proof << "e ";
-            emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
-            _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
+        visit(
+            [&](const auto & id) {
+                _imp->proof << "e ";
+                emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
+                _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
 
-            emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
-        },
+                emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
+            },
             optional_minimise_variable_and_value->first);
     else if (_imp->assertion_level > AssertionLevel::Definitions) {
         // solx and no links => have to assert the blocking constraint
@@ -296,8 +280,8 @@ auto ProofLogger::conclude_none() -> void
     end_proof();
 }
 
-auto ProofLogger::infer(const Literal & lit, const Justification & why,
-    const ReasonLiterals & reason, const optional<AssertionAnnotation> & annotation) -> void
+auto ProofLogger::infer(
+    const Literal & lit, const Justification & why, const ReasonLiterals & reason, const optional<AssertionAnnotation> & annotation) -> void
 {
     // A range conclusion on a view (folding views into the interval machinery is
     // deferred) or on a plain variable without a bits encoding (no order cuts to
@@ -310,8 +294,9 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
             auto needs_per_value_fallback = overloaded{
                 [&](const SimpleIntegerVariableID & v) { return ! names_and_ids_tracker().has_bit_representation(v); },
                 [&](const ViewOfIntegerVariableID &) { return true; },
-                [&](const ConstantIntegerVariableID &) { return false; }}
-                                                .visit(cond->var);
+                [&](const ConstantIntegerVariableID &) {
+                    return false;
+                }}.visit(cond->var);
             if (needs_per_value_fallback) {
                 for (Integer val = cond->value; val <= cond->upper_value; ++val)
                     infer(cond->var != val, why, reason);
@@ -334,19 +319,17 @@ auto ProofLogger::infer(const Literal & lit, const Justification & why,
         return;
     }
 
-    overloaded{
-        [&]([[maybe_unused]] const JustifyUsingRUP<NoHint> & j) {
-            if (! is_literally_true(lit)) {
-                emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
-            }
-        },
+    overloaded{[&]([[maybe_unused]] const JustifyUsingRUP<NoHint> & j) {
+                   if (! is_literally_true(lit)) {
+                       emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
+                   }
+               },
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
             if (! is_literally_true(lit)) {
                 emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
             }
         },
-        [&](const NoJustificationNeeded &) {
-        }}
+        [&](const NoJustificationNeeded &) {}}
         .visit(why);
 }
 
@@ -369,35 +352,33 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
     _imp->proof << "% " << s << '\n';
 }
 
-auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
+auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
+    const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     log_stacktrace();
 
     stringstream rule_line;
 
-    rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return "rup"; },
-                     [&](const ImpliesProofRule &) -> string { return "ia"; },
+    rule_line << overloaded{[&](const RUPProofRule &) -> string { return "rup"; }, [&](const ImpliesProofRule &) -> string { return "ia"; },
                      [&](const AssertProofRule &) -> string { return "a"; }}
                      .visit(rule)
               << " ";
 
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
-    overloaded{
-        [&](const RUPProofRule & rule) {
-            if (rule.lines) {
-                rule_line << ": ";
-                for (auto & line : *rule.lines) {
-                    rule_line << relative_proof_line(line, _imp->proof_line.number) << ' ';
-                }
-                rule_line << " ;";
-            }
-            else {
-                rule_line << ";";
-            }
-        },
+    overloaded{[&](const RUPProofRule & rule) {
+                   if (rule.lines) {
+                       rule_line << ": ";
+                       for (auto & line : *rule.lines) {
+                           rule_line << relative_proof_line(line, _imp->proof_line.number) << ' ';
+                       }
+                       rule_line << " ;";
+                   }
+                   else {
+                       rule_line << ";";
+                   }
+               },
         [&](const ImpliesProofRule & rule) {
             if (rule.line) {
                 rule_line << ": ";
@@ -412,7 +393,8 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
             if (assertion_hint) {
                 rule_line << *assertion_hint;
             }
-            rule_line << ";"; }}
+            rule_line << ";";
+        }}
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
@@ -425,9 +407,8 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     return line;
 }
 
-auto ProofLogger::emit_under_reason(
-    const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level, const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
+auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
+    const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
     if (! reason.empty())
         names_and_ids_tracker().need_all_proof_names_in(reason);
@@ -437,9 +418,7 @@ auto ProofLogger::emit_under_reason(
     log_stacktrace();
     stringstream rule_line;
 
-    rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return "rup"; },
-                     [&](const ImpliesProofRule &) -> string { return "ia"; },
+    rule_line << overloaded{[&](const RUPProofRule &) -> string { return "rup"; }, [&](const ImpliesProofRule &) -> string { return "ia"; },
                      [&](const AssertProofRule &) -> string { return "a"; }}
                      .visit(rule)
               << " ";
@@ -451,27 +430,35 @@ auto ProofLogger::emit_under_reason(
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
     }
 
-    overloaded{
-        [&](const RUPProofRule & rule) {
-            if(rule.lines) {
-                rule_line << ": ";
-                for (const auto & line : *rule.lines) {
-                    rule_line << relative_proof_line(line, _imp->proof_line.number) << " ";
-                }
-                rule_line << " ;";
-            } else {
-                rule_line << ";"; } },
-        [&](const ImpliesProofRule & rule) { if (rule.line) {
+    overloaded{[&](const RUPProofRule & rule) {
+                   if (rule.lines) {
+                       rule_line << ": ";
+                       for (const auto & line : *rule.lines) {
+                           rule_line << relative_proof_line(line, _imp->proof_line.number) << " ";
+                       }
+                       rule_line << " ;";
+                   }
+                   else {
+                       rule_line << ";";
+                   }
+               },
+        [&](const ImpliesProofRule & rule) {
+            if (rule.line) {
                 rule_line << ": ";
                 rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << " ";
                 rule_line << " ;";
-            } else { rule_line << ";"; } },
+            }
+            else {
+                rule_line << ";";
+            }
+        },
         [&](const AssertProofRule &) {
             if (assertion_hint) {
                 rule_line << *assertion_hint;
             }
 
-            rule_line << ";"; }}
+            rule_line << ";";
+        }}
         .visit(rule);
 
     auto line = emit_proof_line(rule_line.str(), level);
@@ -484,14 +471,14 @@ auto ProofLogger::emit_rup_proof_line(const SumLessThanEqual<Weighted<PseudoBool
     return emit(RUPProofRule{}, ineq, level);
 }
 
-auto ProofLogger::emit_rup_proof_line_under_reason(const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ProofLevel level) -> ProofLine
+auto ProofLogger::emit_rup_proof_line_under_reason(
+    const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     return emit_under_reason(RUPProofRule{}, ineq, level, reason);
 }
 
-auto ProofLogger::emit_rup_proof_line_under_reason_then_deview(const ReasonLiterals & reason,
-    const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
+auto ProofLogger::emit_rup_proof_line_under_reason_then_deview(
+    const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     auto v_form_line = emit_rup_proof_line_under_reason(reason, ineq, level);
     // emit_inequality_to negates the LE inequality to land in PB >= form.
@@ -576,15 +563,9 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
 auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber
 {
     switch (level) {
-    case ProofLevel::Top:
-        _imp->proof_lines_by_level.at(0).insert_at_end(line.number);
-        break;
-    case ProofLevel::Current:
-        _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line.number);
-        break;
-    case ProofLevel::Temporary:
-        _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line.number);
-        break;
+    case ProofLevel::Top: _imp->proof_lines_by_level.at(0).insert_at_end(line.number); break;
+    case ProofLevel::Current: _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line.number); break;
+    case ProofLevel::Temporary: _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line.number); break;
     }
 
     return line;
@@ -614,9 +595,7 @@ auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
         advance_proof_line_number();
         write_indent();
         _imp->proof << "proofgoal ";
-        visit(overloaded{
-                  [&](const ProofLine & l) { _imp->proof << relative_proof_line(l, goal_base); },
-                  [&](const string & s) { _imp->proof << s; }},
+        visit(overloaded{[&](const ProofLine & l) { _imp->proof << relative_proof_line(l, goal_base); }, [&](const string & s) { _imp->proof << s; }},
             proofgoal);
         _imp->proof << "\n";
         _imp->current_indent += INDENT_WIDTH;
@@ -636,8 +615,8 @@ auto ProofLogger::get_current_proof_line() -> ProofLineNumber
 }
 
 auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness,
-    ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproofs) -> ProofLine
+    const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness, ProofLevel level,
+    const std::optional<std::map<ProofGoal, Subproof>> & subproofs) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
@@ -694,8 +673,8 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<W
     return record_proof_line(advance_proof_line_number(), level);
 }
 
-auto ProofLogger::emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
-    ProofLevel level) -> pair<ProofLine, ProofLine>
+auto ProofLogger::emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif, ProofLevel level)
+    -> pair<ProofLine, ProofLine>
 {
     log_stacktrace();
 
@@ -704,8 +683,8 @@ auto ProofLogger::emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<
     return pair{forward_result, reverse_result};
 }
 
-auto ProofLogger::create_proof_flag_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    const string & name, ProofLevel level) -> tuple<ProofFlag, ProofLine, ProofLine>
+auto ProofLogger::create_proof_flag_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, const string & name, ProofLevel level)
+    -> tuple<ProofFlag, ProofLine, ProofLine>
 {
     auto flag = create_proof_flag(name);
     auto lines = emit_red_proof_lines_reifying(ineq, flag, level);
@@ -719,8 +698,8 @@ auto ProofLogger::create_proof_flag(const string & name) -> ProofFlag
 
 auto ProofLogger::delete_range(ProofLine from, ProofLine up_to) -> void
 {
-    _imp->proof << "del range " << relative_proof_line(from, _imp->proof_line.number)
-                << " " << relative_proof_line(up_to, _imp->proof_line.number) << ";\n";
+    _imp->proof << "del range " << relative_proof_line(from, _imp->proof_line.number) << " " << relative_proof_line(up_to, _imp->proof_line.number)
+                << ";\n";
 }
 
 auto ProofLogger::write_indent() -> void

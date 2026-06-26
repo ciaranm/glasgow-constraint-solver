@@ -40,8 +40,7 @@ using std::unordered_set;
 using std::vector;
 using std::ranges::minmax_element;
 
-NamingError::NamingError(const string & w) :
-    MessageException(w)
+NamingError::NamingError(const string & w) : MessageException(w)
 {
 }
 
@@ -58,8 +57,7 @@ struct Problem::Imp
     unsigned long long next_constraint_number = 0;
 };
 
-Problem::Problem() :
-    _imp(make_unique<Imp>())
+Problem::Problem() : _imp(make_unique<Imp>())
 {
 }
 
@@ -99,8 +97,7 @@ auto Problem::check_name(const string & name) -> const string &
     return name;
 }
 
-auto Problem::create_integer_variable(Integer lower, Integer upper,
-    const optional<string> & name) -> SimpleIntegerVariableID
+auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<string> & name) -> SimpleIntegerVariableID
 {
     if (lower > upper)
         throw InvalidProblemDefinitionException{"variable has lower bound > upper bound"};
@@ -127,11 +124,8 @@ auto Problem::create_integer_variable(const vector<Integer> & domain, const opti
     return result;
 }
 
-auto Problem::create_integer_variable_vector(
-    size_t how_many,
-    Integer lower,
-    Integer upper,
-    const optional<string> & name) -> vector<IntegerVariableID>
+auto Problem::create_integer_variable_vector(size_t how_many, Integer lower, Integer upper, const optional<string> & name)
+    -> vector<IntegerVariableID>
 {
     vector<IntegerVariableID> result;
     result.reserve(how_many);
@@ -140,8 +134,7 @@ auto Problem::create_integer_variable_vector(
     return result;
 }
 
-auto Problem::create_state_for_new_search(
-    ProofModel * const model) const -> State
+auto Problem::create_state_for_new_search(ProofModel * const model) const -> State
 {
     auto result = _imp->initial_state.clone();
     if (model) {
@@ -174,8 +167,8 @@ auto Problem::post_autonumbered(const Constraint & c, unsigned long long expecte
     // about to assign matches, so any drift in post order fails loudly here
     // instead of silently relabelling the constraint.
     if (expected_number != _imp->next_constraint_number + 1)
-        throw NamingError{"asked to auto-number constraint _" + to_string(expected_number) +
-            ", but the next auto-number is _" + to_string(_imp->next_constraint_number + 1)};
+        throw NamingError{"asked to auto-number constraint _" + to_string(expected_number) + ", but the next auto-number is _" +
+            to_string(_imp->next_constraint_number + 1)};
     post(c);
 }
 

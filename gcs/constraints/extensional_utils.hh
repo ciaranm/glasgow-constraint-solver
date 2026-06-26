@@ -45,8 +45,8 @@ namespace gcs::innards
      * \sa Table
      */
     template <typename Hint_ = NoHint>
-    auto propagate_extensional(const ExtensionalData &, const State &, auto & inference_tracker,
-        innards::ProofLogger * const, const Hint_ & hint = {}) -> PropagatorState;
+    auto propagate_extensional(
+        const ExtensionalData &, const State &, auto & inference_tracker, innards::ProofLogger * const, const Hint_ & hint = {}) -> PropagatorState;
 }
 
 #endif

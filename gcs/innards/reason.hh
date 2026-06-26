@@ -120,64 +120,51 @@ namespace gcs::innards
     class Reason
     {
     public:
-        using Variant = std::variant<
-            NoReason, ExplicitReason,
-            GenericReasonOver, BothBoundsReasonOver, ExactSingleValue, LazyReasonOver,
+        using Variant = std::variant<NoReason, ExplicitReason, GenericReasonOver, BothBoundsReasonOver, ExactSingleValue, LazyReasonOver,
             NarrowableGenericReasonOver, NarrowableBothBoundsReasonOver, NarrowableLazyReasonOver>;
 
-        Reason() :
-            _variant(NoReason{})
+        Reason() : _variant(NoReason{})
         {
         }
 
-        Reason(NoReason r) :
-            _variant(std::move(r))
+        Reason(NoReason r) : _variant(std::move(r))
         {
         }
 
-        Reason(ExplicitReason r) :
-            _variant(std::move(r))
+        Reason(ExplicitReason r) : _variant(std::move(r))
         {
         }
 
-        Reason(GenericReasonOver r) :
-            _variant(std::move(r))
+        Reason(GenericReasonOver r) : _variant(std::move(r))
         {
         }
 
-        Reason(BothBoundsReasonOver r) :
-            _variant(std::move(r))
+        Reason(BothBoundsReasonOver r) : _variant(std::move(r))
         {
         }
 
-        Reason(ExactSingleValue r) :
-            _variant(std::move(r))
+        Reason(ExactSingleValue r) : _variant(std::move(r))
         {
         }
 
-        Reason(LazyReasonOver r) :
-            _variant(std::move(r))
+        Reason(LazyReasonOver r) : _variant(std::move(r))
         {
         }
 
-        Reason(NarrowableGenericReasonOver r) :
-            _variant(std::move(r))
+        Reason(NarrowableGenericReasonOver r) : _variant(std::move(r))
         {
         }
 
-        Reason(NarrowableBothBoundsReasonOver r) :
-            _variant(std::move(r))
+        Reason(NarrowableBothBoundsReasonOver r) : _variant(std::move(r))
         {
         }
 
-        Reason(NarrowableLazyReasonOver r) :
-            _variant(std::move(r))
+        Reason(NarrowableLazyReasonOver r) : _variant(std::move(r))
         {
         }
 
         /// Materialised literals used verbatim as the reason.
-        Reason(ReasonLiterals literals) :
-            _variant(ExplicitReason{std::move(literals)})
+        Reason(ReasonLiterals literals) : _variant(ExplicitReason{std::move(literals)})
         {
         }
 
@@ -208,15 +195,13 @@ namespace gcs::innards
      * The domain walk is deferred to materialise(); this just captures the
      * variable scope.
      */
-    [[nodiscard]] auto generic_reason(const std::vector<IntegerVariableID> & vars,
-        const std::optional<Literal> & extra_lit = std::nullopt) -> Reason;
+    [[nodiscard]] auto generic_reason(const std::vector<IntegerVariableID> & vars, const std::optional<Literal> & extra_lit = std::nullopt) -> Reason;
 
     /**
      * \brief Like generic_reason but records only the lower and upper bounds of
      * each variable, omitting any holes in the domain.
      */
-    [[nodiscard]] auto bounds_reason(const std::vector<IntegerVariableID> & vars,
-        const std::optional<Literal> & extra_lit = std::nullopt) -> Reason;
+    [[nodiscard]] auto bounds_reason(const std::vector<IntegerVariableID> & vars, const std::optional<Literal> & extra_lit = std::nullopt) -> Reason;
 
     [[nodiscard]] auto singleton_reason(const ProofLiteralOrFlag & lit) -> Reason;
 

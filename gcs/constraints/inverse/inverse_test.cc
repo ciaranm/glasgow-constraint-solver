@@ -53,8 +53,8 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg,
-    const vector<variant<int, pair<int, int>>> & x_range, const vector<variant<int, pair<int, int>>> & y_range) -> void
+auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<variant<int, pair<int, int>>> & x_range,
+    const vector<variant<int, pair<int, int>>> & y_range) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, static_cast<int>(x_range.size() + y_range.size()));
     print(cerr, "inverse [{}] {} {} {}", view_wrap_config_label(view_cfg), x_range, y_range, proofs ? " with proofs:" : ":");
@@ -62,7 +62,8 @@ auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg,
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & x, const vector<int> & y) {
+        expected,
+        [&](const vector<int> & x, const vector<int> & y) {
             // Random sweeps may pick domains that include out-of-range
             // values; the propagator's prepare() trims them but the
             // brute-force predicate runs over raw enumerated values, so
@@ -115,18 +116,15 @@ auto main(int argc, char * argv[]) -> int
     // bare run. The mixed/uniform policies wrap every position regardless.
     constexpr int n_positions = 6;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "inverse view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "inverse view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
     using Entry = variant<int, pair<int, int>>;
-    vector<tuple<vector<Entry>, vector<Entry>>> var_data = {
-        // Boundary: empty arrays — vacuously satisfied.
+    vector<tuple<vector<Entry>, vector<Entry>>> var_data = {// Boundary: empty arrays — vacuously satisfied.
         {{}, {}},
         // Boundary: singleton — forces both to 0.
-        {{pair{0, 0}}, {pair{0, 0}}},
-        {{pair{0, 5}}, {pair{0, 5}}},
+        {{pair{0, 0}}, {pair{0, 0}}}, {{pair{0, 5}}, {pair{0, 5}}},
         // Existing hand-rolled cases.
         {{pair{0, 2}, pair{0, 2}, pair{0, 2}}, {pair{0, 2}, pair{0, 2}, pair{0, 2}}},
         {{pair{0, 2}, pair{1, 3}, pair{0, 2}, pair{0, 3}}, {pair{0, 3}, pair{1, 2}, pair{1, 3}, pair{0, 3}}},

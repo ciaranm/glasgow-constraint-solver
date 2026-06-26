@@ -5,7 +5,6 @@ using namespace gcs::innards;
 
 using std::string;
 
-ProofError::ProofError(const string & w) :
-    MessageException("unexpected problem: " + w)
+ProofError::ProofError(const string & w) : MessageException("unexpected problem: " + w)
 {
 }

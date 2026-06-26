@@ -21,8 +21,7 @@ namespace gcs::innards
     {
         unsigned long long index;
 
-        explicit ProofOnlySimpleIntegerVariableID(unsigned long long x) :
-            index(x)
+        explicit ProofOnlySimpleIntegerVariableID(unsigned long long x) : index(x)
         {
         }
 

@@ -39,9 +39,7 @@ using std::print;
 using fmt::print;
 #endif
 
-NValue::NValue(const IntegerVariableID & n, std::vector<IntegerVariableID> vars) :
-    _n_values(n),
-    _vars(move(vars))
+NValue::NValue(const IntegerVariableID & n, std::vector<IntegerVariableID> vars) : _n_values(n), _vars(move(vars))
 {
 }
 
@@ -83,13 +81,11 @@ auto NValue::define_proof_model(ProofModel & model) -> void
         WPBSum some_eq;
         for (const auto & var : vars)
             some_eq += 1_i * (var == v);
-        auto flag = model.create_proof_flag_values_fully_reifying(_constraint_id, {v.raw_value}, std::nullopt,
-            some_eq >= 1_i);
+        auto flag = model.create_proof_flag_values_fully_reifying(_constraint_id, {v.raw_value}, std::nullopt, some_eq >= 1_i);
         occurrence_sum += 1_i * flag;
     }
     occurrence_sum += -1_i * _n_values;
-    model.add_labelled_constraint(as_string(_constraint_id), "le", "ge",
-        "NValue", "sum of occurrence flags", occurrence_sum == 0_i);
+    model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "NValue", "sum of occurrence flags", occurrence_sum == 0_i);
 }
 
 auto NValue::install_propagators(Propagators & propagators) -> void
@@ -101,29 +97,34 @@ auto NValue::install_propagators(Propagators & propagators) -> void
     vector<IntegerVariableID> all_vars = _vars;
     all_vars.push_back(_n_values);
 
-    propagators.install(constraint_id(), [all_vars = move(all_vars), n_values = _n_values, vars = _vars, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        set<Integer> all_possible_values;
-        for (const auto & var : vars) {
-            for (auto v : state.each_value_immutable(var))
-                all_possible_values.insert(v);
-        }
+    propagators.install(
+        constraint_id(),
+        [all_vars = move(all_vars), n_values = _n_values, vars = _vars, owner = constraint_id()](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            set<Integer> all_possible_values;
+            for (const auto & var : vars) {
+                for (auto v : state.each_value_immutable(var))
+                    all_possible_values.insert(v);
+            }
 
-        inference.infer(logger, n_values <= Integer(all_possible_values.size()), JustifyUsingRUP{hints::NValue{owner}},
-            generic_reason(all_vars));
+            inference.infer(logger, n_values <= Integer(all_possible_values.size()), JustifyUsingRUP{hints::NValue{owner}}, generic_reason(all_vars));
 
-        set<Integer> all_definite_values;
-        for (const auto & var : vars) {
-            auto val = state.optional_single_value(var);
-            if (val)
-                all_definite_values.insert(*val);
-        }
+            set<Integer> all_definite_values;
+            for (const auto & var : vars) {
+                auto val = state.optional_single_value(var);
+                if (val)
+                    all_definite_values.insert(*val);
+            }
 
-        // The "at least 1" floor only applies when the array is non-empty;
-        // an empty array contributes 0 distinct values.
-        auto distinct_floor = vars.empty() ? 0_i : 1_i;
-        inference.infer(logger, n_values >= max(distinct_floor, Integer(all_definite_values.size())), JustifyUsingRUP{hints::NValue{owner}}, generic_reason(all_vars));
+            // The "at least 1" floor only applies when the array is non-empty;
+            // an empty array contributes 0 distinct values.
+            auto distinct_floor = vars.empty() ? 0_i : 1_i;
+            inference.infer(logger, n_values >= max(distinct_floor, Integer(all_definite_values.size())), JustifyUsingRUP{hints::NValue{owner}},
+                generic_reason(all_vars));
 
-        return PropagatorState::Enable; }, triggers);
+            return PropagatorState::Enable;
+        },
+        triggers);
 }
 
 auto NValue::s_expr(const innards::ProofModel * const model) const -> SExpr
@@ -132,7 +133,6 @@ auto NValue::s_expr(const innards::ProofModel * const model) const -> SExpr
     std::vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("nvalue"),
-        SExpr::list(std::move(vars)),
-        tracker.s_expr_term_of(_n_values)});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("nvalue"), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_n_values)});
 }

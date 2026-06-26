@@ -36,7 +36,8 @@ namespace gcs::innards
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
         bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
 
-        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason, assertion_hints);
         }
@@ -66,10 +67,8 @@ namespace gcs::innards
                 if (! logger)
                     return NoReason{};
 
-                return reason.visit(overloaded{
-                    [&](const NoReason &) -> Reason { return NoReason{}; },
-                    [&](const LazyReasonOver &) -> Reason { return reason; },
-                    [&](const NarrowableLazyReasonOver &) -> Reason { return reason; },
+                return reason.visit(overloaded{[&](const NoReason &) -> Reason { return NoReason{}; },
+                    [&](const LazyReasonOver &) -> Reason { return reason; }, [&](const NarrowableLazyReasonOver &) -> Reason { return reason; },
                     [&](const auto &) -> Reason { return ExplicitReason{materialise(reason, state)}; }});
             }
         }
@@ -80,18 +79,11 @@ namespace gcs::innards
         // track_impl bodies below.
         auto record_firing_inference(const Inference inf, const Literal & lit) -> void
         {
-            overloaded{
-                [&](const TrueLiteral &) {},
-                [&](const FalseLiteral &) {},
+            overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
                 [&](const IntegerVariableCondition & cond) {
-                    overloaded{
-                        [&](const ConstantIntegerVariableID &) {},
-                        [&](const SimpleIntegerVariableID & var) {
-                            _inferences.emplace_back(var, inf);
-                        },
-                        [&](const ViewOfIntegerVariableID & var) {
-                            _inferences.emplace_back(var.actual_variable, inf);
-                        }}
+                    overloaded{[&](const ConstantIntegerVariableID &) {},
+                        [&](const SimpleIntegerVariableID & var) { _inferences.emplace_back(var, inf); },
+                        [&](const ViewOfIntegerVariableID & var) { _inferences.emplace_back(var.actual_variable, inf); }}
                         .visit(cond.var);
                 }}
                 .visit(lit);
@@ -107,12 +99,11 @@ namespace gcs::innards
         // body serves both trackers. Dispatch is compile-time overload resolution
         // inside infer_explicitly; no std::function is involved.
         template <typename Emit_, typename Hint_>
-        auto track_explicit(ProofLogger * const logger, const Inference inf, const Literal & lit,
-            const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback) -> void
+        auto track_explicit(ProofLogger * const logger, const Inference inf, const Literal & lit, const JustifyExplicitly<Emit_, Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback) -> void
         {
             switch (inf) {
-            case Inference::NoChange:
-                break;
+            case Inference::NoChange: break;
 
             case Inference::InteriorValuesChanged:
             case Inference::BoundsChanged:
@@ -135,9 +126,7 @@ namespace gcs::innards
 
     public:
         explicit InferenceTrackerBase(State & s) :
-            _state(s),
-            _did_anything_since_last_call_by_propagation_queue(false),
-            _did_anything_since_last_call_inside_propagator(false)
+            _state(s), _did_anything_since_last_call_by_propagation_queue(false), _did_anything_since_last_call_inside_propagator(false)
         {
         }
 
@@ -145,7 +134,8 @@ namespace gcs::innards
 
         auto operator=(const InferenceTrackerBase &) -> InferenceTrackerBase & = delete;
 
-        auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track(logger, _state.infer(lit), lit, why, snapshotted, assertion_hints);
@@ -158,7 +148,8 @@ namespace gcs::innards
         // (general literal, the typed condition/bound helpers, and contradiction);
         // each just routes to track_explicit instead of track.
         template <typename Emit_, typename Hint_>
-        auto infer(ProofLogger * const logger, const Literal & lit, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer(ProofLogger * const logger, const Literal & lit, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_explicit(logger, _state.infer(lit), lit, why, snapshotted, fallback);
@@ -173,20 +164,23 @@ namespace gcs::innards
         // const Justification & overload is preferred for a Justification argument,
         // so the variant overload only catches the per-constraint variants.)
         template <typename... Alts_>
-        auto infer(ProofLogger * const logger, const Literal & lit, const std::variant<Alts_...> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer(ProofLogger * const logger, const Literal & lit, const std::variant<Alts_...> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             std::visit([&](const auto & alt) { infer(logger, lit, alt, reason, fallback); }, why);
         }
 
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
-        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const JustifyExplicitly<Emit_, Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_explicit(logger, _state.infer(lit), lit, why, snapshotted, fallback);
         }
 
         template <typename Emit_, typename Hint_>
-        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             if constexpr (Actual_::materialises_reasons)
                 if (logger)
@@ -195,14 +189,16 @@ namespace gcs::innards
         }
 
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
-        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_explicit(logger, _state.infer_equal(var, value), var == value, why, snapshotted, fallback);
         }
 
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
-        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_explicit(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, fallback);
@@ -214,7 +210,8 @@ namespace gcs::innards
         // builds nothing, so it stays byte-identical to a bare RUP) and delegates to
         // the plain JustifyUsingRUP{} path. No explicit-steps machinery is involved.
         template <typename Hint_>
-        [[nodiscard]] auto rup_hint_annotation(ProofLogger * const logger, const Hint_ & hint, const std::optional<AssertionAnnotation> & fallback) -> std::optional<AssertionAnnotation>
+        [[nodiscard]] auto rup_hint_annotation(ProofLogger * const logger, const Hint_ & hint, const std::optional<AssertionAnnotation> & fallback)
+            -> std::optional<AssertionAnnotation>
         {
             if (logger && logger->get_assertion_level() != AssertionLevel::Off)
                 return hint_annotation(*logger, hint, fallback);
@@ -223,76 +220,87 @@ namespace gcs::innards
 
         template <typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
-        auto infer(ProofLogger * const logger, const Literal & lit, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer(ProofLogger * const logger, const Literal & lit, const JustifyUsingRUP<Hint_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             infer(logger, lit, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
         template <IntegerVariableIDLike VarType_, typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
-        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             infer_equal(logger, var, value, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
         template <IntegerVariableIDLike VarType_, typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
-        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             infer_not_equal(logger, var, value, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
         template <IntegerVariableIDLike VarType_, typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
-        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             infer_less_than(logger, var, value, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
         template <IntegerVariableIDLike VarType_, typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
-        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             infer_greater_than_or_equal(logger, var, value, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
         template <typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
-        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyUsingRUP<Hint_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             infer_all(logger, lits, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
         template <typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
-        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyUsingRUP<Hint_> & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             contradiction(logger, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
         template <IntegerVariableIDLike VarType_, typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
-        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyUsingRUP<Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             infer_not_in_range(logger, var, lo, hi, JustifyUsingRUP{}, reason, rup_hint_annotation(logger, why.hint, fallback));
         }
 
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
-        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_explicit(logger, _state.infer_less_than(var, value), var < value, why, snapshotted, fallback);
         }
 
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
-        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyExplicitly<Emit_, Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_explicit(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, fallback);
         }
 
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
-        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyExplicitly<Emit_, Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             if (lo > hi)
                 return;
@@ -300,7 +308,8 @@ namespace gcs::innards
             track_explicit(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, snapshotted, fallback);
         }
 
-        [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             // No domain change happens here, so the reason materialises against
             // the current state directly (the eager/lazy timing distinction only
@@ -312,42 +321,48 @@ namespace gcs::innards
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto infer(ProofLogger * const logger, const VariableConditionFrom<VarType_> & lit, const Justification & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track(logger, _state.infer(lit), lit, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto infer_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track(logger, _state.infer_equal(var, value), var == value, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track(logger, _state.infer_not_equal(var, value), var != value, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track(logger, _state.infer_less_than(var, value), var < value, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const Justification & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, assertion_hints);
         }
 
         template <IntegerVariableIDLike VarType_>
-        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const Justification & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             // The conclusion is the ordinary range condition; the state update
             // batches the whole removal into one erase_range pass.
@@ -357,7 +372,8 @@ namespace gcs::innards
             track(logger, _state.infer_not_in_range(var, lo, hi), not_in_range(var, lo, hi), why, snapshotted, assertion_hints);
         }
 
-        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const Justification & why, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             // The plain justifications (RUP / assert / none) carry no shared
             // scaffolding to batch, so infer each literal in turn. The
@@ -376,7 +392,8 @@ namespace gcs::innards
         // through to the per-literal path, where each inference carries the
         // assertion hint in assert mode.
         template <typename Emit_, typename Hint_>
-        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
+        auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyExplicitly<Emit_, Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             if constexpr (Actual_::materialises_reasons) {
                 if (logger && logger->get_assertion_level() == AssertionLevel::Off && why.then_rup == ThenRUP::Yes) {
@@ -440,27 +457,20 @@ namespace gcs::innards
         // path skips snapshot_reason and every proof-only block compiles out.
         static constexpr bool materialises_reasons = false;
 
-        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const Reason &, const std::optional<AssertionAnnotation> &) -> void
+        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const Reason &,
+            const std::optional<AssertionAnnotation> &) -> void
         {
             switch (inf) {
-            case Inference::NoChange:
-                break;
+            case Inference::NoChange: break;
 
             case Inference::InteriorValuesChanged:
             case Inference::BoundsChanged:
             case Inference::Instantiated:
-                overloaded{
-                    [&](const TrueLiteral &) {},
-                    [&](const FalseLiteral &) {},
+                overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
                     [&](const IntegerVariableCondition & cond) {
-                        overloaded{
-                            [&](const ConstantIntegerVariableID &) {},
-                            [&](const SimpleIntegerVariableID & var) {
-                                _inferences.emplace_back(var, inf);
-                            },
-                            [&](const ViewOfIntegerVariableID & var) {
-                                _inferences.emplace_back(var.actual_variable, inf);
-                            }}
+                        overloaded{[&](const ConstantIntegerVariableID &) {},
+                            [&](const SimpleIntegerVariableID & var) { _inferences.emplace_back(var, inf); },
+                            [&](const ViewOfIntegerVariableID & var) { _inferences.emplace_back(var.actual_variable, inf); }}
                             .visit(cond.var);
                     }}
                     .visit(lit);
@@ -484,11 +494,11 @@ namespace gcs::innards
 
         static constexpr bool materialises_reasons = true;
 
-        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason,
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
             switch (inf) {
-            case Inference::NoChange:
-                break;
+            case Inference::NoChange: break;
 
             case Inference::InteriorValuesChanged:
             case Inference::BoundsChanged:
@@ -503,18 +513,11 @@ namespace gcs::innards
                     logger->infer(lit, just, materialise(reason, _state), assertion_hints);
                 }
 
-                overloaded{
-                    [&](const TrueLiteral &) {},
-                    [&](const FalseLiteral &) {},
+                overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
                     [&](const IntegerVariableCondition & cond) {
-                        overloaded{
-                            [&](const ConstantIntegerVariableID &) {},
-                            [&](const SimpleIntegerVariableID & var) {
-                                _inferences.emplace_back(var, inf);
-                            },
-                            [&](const ViewOfIntegerVariableID & var) {
-                                _inferences.emplace_back(var.actual_variable, inf);
-                            }}
+                        overloaded{[&](const ConstantIntegerVariableID &) {},
+                            [&](const SimpleIntegerVariableID & var) { _inferences.emplace_back(var, inf); },
+                            [&](const ViewOfIntegerVariableID & var) { _inferences.emplace_back(var.actual_variable, inf); }}
                             .visit(cond.var);
                     }}
                     .visit(lit);

@@ -16,13 +16,8 @@ namespace
 
     auto flatten(const ProofLiteral & lit) -> FlattenedProofLiteral
     {
-        return overloaded{
-            [&](const Literal & lit) {
-                return visit([&](const auto & v) -> FlattenedProofLiteral { return v; }, lit);
-            },
-            [&](const ProofVariableCondition & cond) -> FlattenedProofLiteral {
-                return cond;
-            }}
+        return overloaded{[&](const Literal & lit) { return visit([&](const auto & v) -> FlattenedProofLiteral { return v; }, lit); },
+            [&](const ProofVariableCondition & cond) -> FlattenedProofLiteral { return cond; }}
             .visit(lit);
     }
 
@@ -36,8 +31,7 @@ namespace
         if (cond.value > cond.upper_value)
             return in ? SimpleLiteral{FalseLiteral{}} : SimpleLiteral{TrueLiteral{}};
         if (cond.value == cond.upper_value)
-            return VariableConditionFrom<VarType_>{cond.var,
-                in ? VariableConditionOperator::Equal : VariableConditionOperator::NotEqual, cond.value};
+            return VariableConditionFrom<VarType_>{cond.var, in ? VariableConditionOperator::Equal : VariableConditionOperator::NotEqual, cond.value};
         return cond;
     }
 
@@ -49,17 +43,14 @@ namespace
 
 auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const ProofLiteral & lit) -> SimpleLiteral
 {
-    return overloaded{
-        [&](const TrueLiteral & t) -> SimpleLiteral { return t; },
-        [&](const FalseLiteral & f) -> SimpleLiteral { return f; },
+    return overloaded{[&](const TrueLiteral & t) -> SimpleLiteral { return t; }, [&](const FalseLiteral & f) -> SimpleLiteral { return f; },
         [&](const IntegerVariableCondition & lit) -> SimpleLiteral {
-            return overloaded{
-                [&](const SimpleIntegerVariableID & var) -> SimpleLiteral {
-                    auto cond = VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value, lit.upper_value};
-                    if (is_range_op(lit.op))
-                        return canonicalise_range(cond);
-                    return cond;
-                },
+            return overloaded{[&](const SimpleIntegerVariableID & var) -> SimpleLiteral {
+                                  auto cond = VariableConditionFrom<SimpleIntegerVariableID>{var, lit.op, lit.value, lit.upper_value};
+                                  if (is_range_op(lit.op))
+                                      return canonicalise_range(cond);
+                                  return cond;
+                              },
                 [&](const ViewOfIntegerVariableID & view) -> SimpleLiteral {
                     // Range conditions on views take the per-value fallback at the
                     // producing sites, so none should reach the literal layer: a
@@ -88,19 +79,19 @@ auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const Pr
                         break;
                     case VariableConditionOperator::Less:
                         if (view.negate_first)
-                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
-                                -lit.value + view.then_add + 1_i};
+                            return VariableConditionFrom<SimpleIntegerVariableID>{
+                                view.actual_variable, VariableConditionOperator::GreaterEqual, -lit.value + view.then_add + 1_i};
                         else
-                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
-                                (lit.value - view.then_add)};
+                            return VariableConditionFrom<SimpleIntegerVariableID>{
+                                view.actual_variable, VariableConditionOperator::Less, (lit.value - view.then_add)};
                         break;
                     case VariableConditionOperator::GreaterEqual:
                         if (view.negate_first)
-                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::Less,
-                                -lit.value + view.then_add + 1_i};
+                            return VariableConditionFrom<SimpleIntegerVariableID>{
+                                view.actual_variable, VariableConditionOperator::Less, -lit.value + view.then_add + 1_i};
                         else
-                            return VariableConditionFrom<SimpleIntegerVariableID>{view.actual_variable, VariableConditionOperator::GreaterEqual,
-                                lit.value - view.then_add};
+                            return VariableConditionFrom<SimpleIntegerVariableID>{
+                                view.actual_variable, VariableConditionOperator::GreaterEqual, lit.value - view.then_add};
                         break;
                     case VariableConditionOperator::InRange:
                     case VariableConditionOperator::NotInRange:
@@ -120,9 +111,11 @@ auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const Pr
                     case VariableConditionOperator::GreaterEqual:
                         return cvar.const_value >= lit.value ? SimpleLiteral{TrueLiteral{}} : SimpleLiteral{FalseLiteral{}};
                     case VariableConditionOperator::InRange:
-                        return (cvar.const_value >= lit.value && cvar.const_value <= lit.upper_value) ? SimpleLiteral{TrueLiteral{}} : SimpleLiteral{FalseLiteral{}};
+                        return (cvar.const_value >= lit.value && cvar.const_value <= lit.upper_value) ? SimpleLiteral{TrueLiteral{}}
+                                                                                                      : SimpleLiteral{FalseLiteral{}};
                     case VariableConditionOperator::NotInRange:
-                        return (cvar.const_value < lit.value || cvar.const_value > lit.upper_value) ? SimpleLiteral{TrueLiteral{}} : SimpleLiteral{FalseLiteral{}};
+                        return (cvar.const_value < lit.value || cvar.const_value > lit.upper_value) ? SimpleLiteral{TrueLiteral{}}
+                                                                                                    : SimpleLiteral{FalseLiteral{}};
                     }
                     throw NonExhaustiveSwitch{};
                 }}

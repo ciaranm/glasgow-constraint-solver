@@ -14,15 +14,10 @@ using namespace std::literals::string_literals;
 
 auto gcs::innards::debug_string(const IntegerVariableID & var) -> string
 {
-    return overloaded{
-        [](SimpleIntegerVariableID x) {
-            return "varidx " + to_string(x.index);
-        },
+    return overloaded{[](SimpleIntegerVariableID x) { return "varidx " + to_string(x.index); },
         [](ViewOfIntegerVariableID x) {
             return "view " + (x.negate_first ? "-"s : ""s) + debug_string(x.actual_variable) + " + " + x.then_add.to_string();
         },
-        [](ConstantIntegerVariableID x) {
-            return "const " + x.const_value.to_string();
-        }}
+        [](ConstantIntegerVariableID x) { return "const " + x.const_value.to_string(); }}
         .visit(var);
 }

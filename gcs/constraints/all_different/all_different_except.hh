@@ -62,8 +62,7 @@ namespace gcs
     class AllDifferentExceptZero : public AllDifferentExcept
     {
     public:
-        inline explicit AllDifferentExceptZero(std::vector<IntegerVariableID> vars) :
-            AllDifferentExcept(std::move(vars), {0_i}) {};
+        inline explicit AllDifferentExceptZero(std::vector<IntegerVariableID> vars) : AllDifferentExcept(std::move(vars), {0_i}) {};
     };
 }
 

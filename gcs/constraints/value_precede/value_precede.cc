@@ -44,15 +44,11 @@ using fmt::format;
 using fmt::print;
 #endif
 
-ValuePrecede::ValuePrecede(vector<Integer> chain, vector<IntegerVariableID> vars) :
-    _chain(move(chain)),
-    _vars(move(vars))
+ValuePrecede::ValuePrecede(vector<Integer> chain, vector<IntegerVariableID> vars) : _chain(move(chain)), _vars(move(vars))
 {
 }
 
-ValuePrecede::ValuePrecede(Integer s, Integer t, vector<IntegerVariableID> vars) :
-    _chain({s, t}),
-    _vars(move(vars))
+ValuePrecede::ValuePrecede(Integer s, Integer t, vector<IntegerVariableID> vars) : _chain({s, t}), _vars(move(vars))
 {
 }
 
@@ -98,9 +94,7 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
     for (const auto & v : _chain) {
         if (! pos_vars.contains(v)) {
             auto pv = model.create_proof_only_integer_variable(
-                0_i, Integer{static_cast<long long>(n)},
-                format("value_precede_pos_{}", v),
-                IntegerVariableProofRepresentation::Bits);
+                0_i, Integer{static_cast<long long>(n)}, format("value_precede_pos_{}", v), IntegerVariableProofRepresentation::Bits);
             pos_vars.emplace(v, pv);
         }
     }
@@ -109,9 +103,7 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
         for (size_t i = 0; i < n; ++i) {
             // Upper bound: (vars[i] = v) → pos[v] ≤ i.
             model.add_constraint(
-                "ValuePrecede", "upper bound",
-                WPBSum{} + 1_i * pv <= Integer{static_cast<long long>(i)},
-                HalfReifyOnConjunctionOf{{_vars[i] == v}});
+                "ValuePrecede", "upper bound", WPBSum{} + 1_i * pv <= Integer{static_cast<long long>(i)}, HalfReifyOnConjunctionOf{{_vars[i] == v}});
 
             // Existence: (pos[v] ≤ i) → ∃ k ≤ i, vars[k] = v.
             // PB form: (pos[v] > i) + Σ_{k ≤ i} (vars[k] = v) ≥ 1.
@@ -119,9 +111,7 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
             existence += 1_i * (pv >= Integer{static_cast<long long>(i) + 1});
             for (size_t k = 0; k <= i; ++k)
                 existence += 1_i * (_vars[k] == v);
-            model.add_constraint(
-                "ValuePrecede", "existence",
-                move(existence) >= 1_i);
+            model.add_constraint("ValuePrecede", "existence", move(existence) >= 1_i);
         }
     }
 
@@ -130,15 +120,11 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
         Integer t = _chain[j];
         if (s == t) {
             // pos[s] ≥ n: s must be absent from vars.
-            model.add_constraint(
-                "ValuePrecede", "no s",
-                WPBSum{} + 1_i * pos_vars.at(s) >= Integer{static_cast<long long>(n)});
+            model.add_constraint("ValuePrecede", "no s", WPBSum{} + 1_i * pos_vars.at(s) >= Integer{static_cast<long long>(n)});
         }
         else {
             // (pos[t] ≤ n-1) → pos[t] - pos[s] ≥ 1.
-            model.add_constraint(
-                "ValuePrecede", "precede",
-                WPBSum{} + 1_i * pos_vars.at(t) + (-1_i) * pos_vars.at(s) >= 1_i,
+            model.add_constraint("ValuePrecede", "precede", WPBSum{} + 1_i * pos_vars.at(t) + (-1_i) * pos_vars.at(s) >= 1_i,
                 HalfReifyOnConjunctionOf{{pos_vars.at(t) < Integer{static_cast<long long>(n)}}});
         }
     }
@@ -171,8 +157,7 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
 
         propagators.install(
             constraint_id(),
-            [vars = _vars, s, t, owner = constraint_id()](
-                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            [vars = _vars, s, t, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 auto n = vars.size();
 
                 size_t alpha = n;
@@ -217,7 +202,6 @@ auto ValuePrecede::s_expr(const ProofModel * const model) const -> SExpr
     std::vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("value_precede"),
-        SExpr::list(std::move(chain)),
-        SExpr::list(std::move(vars))});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("value_precede"), SExpr::list(std::move(chain)), SExpr::list(std::move(vars))});
 }

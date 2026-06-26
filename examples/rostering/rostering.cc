@@ -107,9 +107,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
         },
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         cout << stats;

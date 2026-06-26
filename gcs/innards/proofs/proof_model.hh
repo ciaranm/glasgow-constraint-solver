@@ -20,8 +20,7 @@ namespace gcs::innards
     struct StringLiteral
     {
         template <typename T_, std::size_t n_, std::enable_if_t<std::is_same_v<T_, const char>>...>
-        consteval StringLiteral(T_ (&s)[n_]) :
-            value(s)
+        consteval StringLiteral(T_ (&s)[n_]) : value(s)
         {
         }
 
@@ -69,9 +68,7 @@ namespace gcs::innards
         /**
          * Add a pseudo-Boolean constraint to a Proof model.
          */
-        auto add_constraint(
-            const WPBSumLE & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
+        auto add_constraint(const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
 
         /**
          * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
@@ -82,23 +79,18 @@ namespace gcs::innards
          * has previously led to per-call `pol` steps referencing the
          * wrong half of the equation.
          */
-        auto add_constraint(
-            const WPBSumEq & eq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
+        auto add_constraint(const WPBSumEq & eq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt)
+            -> std::pair<ProofLine, ProofLine>;
 
         /**
          * Add a CNF definition to a Proof model.
          */
-        auto add_constraint(
-            const Literals & lits) -> ProofLine;
+        auto add_constraint(const Literals & lits) -> ProofLine;
 
         /**
          * Add a pseudo-Boolean constraint to a Proof model.
          */
-        auto add_constraint(
-            const StringLiteral & constraint_name,
-            const StringLiteral & rule,
-            const WPBSumLE & ineq,
+        auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
 
         /**
@@ -107,10 +99,7 @@ namespace gcs::innards
          * Returns `{LE-half, GE-half}` — see the no-name overload above
          * for the rationale.
          */
-        auto add_constraint(
-            const StringLiteral & constraint_name,
-            const StringLiteral & rule,
-            const WPBSumEq & eq,
+        auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
 
         /**
@@ -125,11 +114,8 @@ namespace gcs::innards
          * Part of moving every constraint reference off line numbers and onto
          * labels.
          */
-        auto add_labelled_constraint(
-            const std::string & constraint_id,
-            const std::string & role_le, const std::string & role_ge,
-            const StringLiteral & constraint_name, const StringLiteral & rule,
-            const WPBSumEq & eq,
+        auto add_labelled_constraint(const std::string & constraint_id, const std::string & role_le, const std::string & role_ge,
+            const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
 
         /**
@@ -139,27 +125,20 @@ namespace gcs::innards
          * (\c i[name][...][f|r]) the caller builds rather than the c[id][role] form.
          */
         auto add_labelled_constraint(
-            const std::string & label, const WPBSumLE & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
+            const std::string & label, const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
 
         /**
          * \brief Like add_constraint for a single inequality, but emits @c[id][role]
          * and returns that label as the ProofLine, so the proof references it by
          * label. The role must match what \c cake_pb_cp emits.
          */
-        auto add_labelled_constraint(
-            const std::string & constraint_id, const std::string & role,
-            const StringLiteral & constraint_name, const StringLiteral & rule,
-            const WPBSumLE & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
+        auto add_labelled_constraint(const std::string & constraint_id, const std::string & role, const StringLiteral & constraint_name,
+            const StringLiteral & rule, const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
 
         /**
          * Add a CNF definition to a Proof model.
          */
-        auto add_constraint(
-            const StringLiteral & constraint_name,
-            const StringLiteral & rule,
-            const Literals & lits) -> ProofLine;
+        auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> ProofLine;
 
         /**
          * \brief Encode `flag ⇔ ineq` in OPB by emitting both halves of the equivalence:
@@ -170,10 +149,7 @@ namespace gcs::innards
          * it easy to forget one direction (leaving the flag UP-free under solution
          * extension) or to compute the negation incorrectly.
          */
-        auto add_two_way_reified_constraint(
-            const StringLiteral & constraint_name,
-            const StringLiteral & rule,
-            const WPBSumLE & ineq,
+        auto add_two_way_reified_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq,
             const ProofFlag & flag) -> std::pair<ProofLine, ProofLine>;
 
         /**
@@ -182,10 +158,7 @@ namespace gcs::innards
          * `add_two_way_reified_constraint`.
          */
         [[nodiscard]] auto create_proof_flag_fully_reifying(
-            const std::string & flag_name,
-            const StringLiteral & constraint_name,
-            const StringLiteral & rule,
-            const WPBSumLE & ineq) -> ProofFlag;
+            const std::string & flag_name, const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq) -> ProofFlag;
 
         /**
          * \brief As create_proof_flag_fully_reifying, but names the flag cake's
@@ -198,10 +171,8 @@ namespace gcs::innards
          * be `b[...]`). The halves carry raw `@` labels and no `* constraint` comment,
          * matching cake (and the variable-encoding @i labels). See issue #354.
          */
-        [[nodiscard]] auto create_proof_flag_fully_reifying(
-            const ConstraintID & id, const std::vector<long long> & indices,
-            const std::optional<std::string> & annotation,
-            const WPBSumLE & ineq) -> ProofFlag;
+        [[nodiscard]] auto create_proof_flag_fully_reifying(const ConstraintID & id, const std::vector<long long> & indices,
+            const std::optional<std::string> & annotation, const WPBSumLE & ineq) -> ProofFlag;
 
         /**
          * \brief As the position-indexed create_proof_flag_fully_reifying above, but
@@ -209,10 +180,8 @@ namespace gcs::innards
          * create_proof_flag_values), with halves under `v[..][r]` / `v[..][f]`.
          * nvalue's per-value occurrence flag is the first consumer. See #354.
          */
-        [[nodiscard]] auto create_proof_flag_values_fully_reifying(
-            const ConstraintID & id, const std::vector<long long> & values,
-            const std::optional<std::string> & annotation,
-            const WPBSumLE & ineq) -> ProofFlag;
+        [[nodiscard]] auto create_proof_flag_values_fully_reifying(const ConstraintID & id, const std::vector<long long> & values,
+            const std::optional<std::string> & annotation, const WPBSumLE & ineq) -> ProofFlag;
 
         ///@}
 
@@ -224,8 +193,8 @@ namespace gcs::innards
         /**
          * Create a variable ID that is used only in proof definitions, not state.
          */
-        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &,
-            const IntegerVariableProofRepresentation enc) -> ProofOnlySimpleIntegerVariableID;
+        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &, const IntegerVariableProofRepresentation enc)
+            -> ProofOnlySimpleIntegerVariableID;
 
         [[nodiscard]] auto create_proof_flag(const std::string & stem) -> ProofFlag;
 
@@ -256,8 +225,8 @@ namespace gcs::innards
          * Set up proof logging for an integer variable with the specified bounds,
          * that is being tracked inside State.
          */
-        auto set_up_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::string &,
-            const std::optional<IntegerVariableProofRepresentation> &) -> void;
+        auto set_up_integer_variable(
+            SimpleIntegerVariableID, Integer, Integer, const std::string &, const std::optional<IntegerVariableProofRepresentation> &) -> void;
 
         /**
          * State that we are solving an optimisation problem, minimising the specified variable.

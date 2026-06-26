@@ -111,15 +111,9 @@ auto Python::add_constant(const string & var_id, long long int constant) -> stri
     return shift_var;
 }
 
-auto Python::solve(
-    bool all_solutions,
-    optional<float> timeout,
-    optional<unsigned long long> solution_limit,
-    const optional<function<void(std::unordered_map<string, long long int>)>> & callback,
-    bool prove,
-    const optional<string> & proof_name,
-    const optional<string> & proof_location)
-    -> std::unordered_map<string, unsigned long long int>
+auto Python::solve(bool all_solutions, optional<float> timeout, optional<unsigned long long> solution_limit,
+    const optional<function<void(std::unordered_map<string, long long int>)>> & callback, bool prove, const optional<string> & proof_name,
+    const optional<string> & proof_location) -> std::unordered_map<string, unsigned long long int>
 {
 #ifdef WRITE_API_CALLS
     api_calls << "solve" << endl;
@@ -165,29 +159,26 @@ auto Python::solve(
     }
 
     try {
-        auto stats = solve_with(
-            p,
-            SolveCallbacks{
-                .solution = [&](const CurrentState & s) -> bool {
-                    solution_values.emplace_back();
-                    id_solution_values.emplace_back();
-                    for (auto const & var : vars) {
-                        solution_values.back()[var.second] = s(var.second).raw_value;
-                        id_solution_values.back()[var.first] = s(var.second).raw_value;
-                    }
-                    if (callback) {
-                        (*callback)(id_solution_values.back());
-                    }
-                    if (solution_limit) {
-                        if (--*solution_limit == 0) {
-                            return false;
-                        }
-                    }
-                    return all_solutions; // Keep searching for solutions if all solutions
-                },
+        auto stats = solve_with(p,
+            SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                               solution_values.emplace_back();
+                               id_solution_values.emplace_back();
+                               for (auto const & var : vars) {
+                                   solution_values.back()[var.second] = s(var.second).raw_value;
+                                   id_solution_values.back()[var.first] = s(var.second).raw_value;
+                               }
+                               if (callback) {
+                                   (*callback)(id_solution_values.back());
+                               }
+                               if (solution_limit) {
+                                   if (--*solution_limit == 0) {
+                                       return false;
+                                   }
+                               }
+                               return all_solutions; // Keep searching for solutions if all solutions
+                           },
                 .completed = [&] { completed = true; }},
-            prove ? make_optional<ProofOptions>(*proof_location + "/" + *proof_name) : nullopt,
-            &abort_flag);
+            prove ? make_optional<ProofOptions>(*proof_location + "/" + *proof_name) : nullopt, &abort_flag);
 
         if (timeout_thread.joinable()) {
             {
@@ -233,7 +224,8 @@ auto Python::get_solution_value(const string & var_id, const long long solution_
     api_calls << "get_solution_value" << endl;
 #endif
     auto var = get_var(var_id);
-    if (solution_values.empty()) return std::nullopt;
+    if (solution_values.empty())
+        return std::nullopt;
     try {
         auto actual_solution_number = solution_number;
         if (solution_number < 0) {
@@ -263,9 +255,7 @@ auto Python::post_abs(const string & var_id_1, const string & var_id_2) -> void
     p.post(Abs(get_var(var_id_1), get_var(var_id_2)));
 }
 
-auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2,
-    const string & result_id, const string & op)
-    -> void
+auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2, const string & result_id, const string & op) -> void
 {
 
     auto var1 = get_var(var_id_1);
@@ -450,14 +440,13 @@ auto Python::post_greater_than_equal_reif(const string & var_id_1, const string 
     }
 }
 
-auto Python::post_count(const vector<string> & var_ids, const string & var_id, const string & count_id)
-    -> void
+auto Python::post_count(const vector<string> & var_ids, const string & var_id, const string & count_id) -> void
 {
     p.post(Count(get_vars(var_ids), get_var(var_id), get_var(count_id)));
 }
 
-auto Python::post_global_cardinality(const vector<string> & var_ids, const vector<long long int> & values,
-    const vector<string> & count_ids, bool closed) -> void
+auto Python::post_global_cardinality(
+    const vector<string> & var_ids, const vector<long long int> & values, const vector<string> & count_ids, bool closed) -> void
 {
     vector<Integer> int_values;
     int_values.reserve(values.size());
@@ -466,9 +455,7 @@ auto Python::post_global_cardinality(const vector<string> & var_ids, const vecto
     p.post(GlobalCardinality(get_vars(var_ids), move(int_values), get_vars(count_ids), closed));
 }
 
-auto Python::post_element(const string & var_id, const string & index_id,
-    const vector<string> & var_ids)
-    -> void
+auto Python::post_element(const string & var_id, const string & index_id, const vector<string> & var_ids) -> void
 {
     auto & array = get_vars_ref(var_ids);
     p.post(Element(get_var(var_id), get_var(index_id), &array));
@@ -550,9 +537,7 @@ auto Python::post_in_vars(const string & var_id, const vector<string> & var_ids)
     p.post(In(get_var(var_id), get_vars(var_ids)));
 }
 
-auto Python::post_linear_equality(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value)
-    -> void
+auto Python::post_linear_equality(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void
 {
 #ifdef WRITE_API_CALLS
     api_calls << "p.post(LinearEquality{WeightedSum{}";
@@ -565,8 +550,7 @@ auto Python::post_linear_equality(const vector<string> & var_ids, const vector<l
     p.post(LinearEquality{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
-auto Python::post_linear_equality_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value, const string & reif)
+auto Python::post_linear_equality_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif)
     -> void
 {
 #ifdef WRITE_API_CALLS
@@ -575,9 +559,7 @@ auto Python::post_linear_equality_iff(const vector<string> & var_ids, const vect
     p.post(LinearEqualityIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
 
-auto Python::post_linear_less_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value)
-    -> void
+auto Python::post_linear_less_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void
 {
 #ifdef WRITE_API_CALLS
     api_calls << "post_linear_less_equal" << endl;
@@ -585,9 +567,8 @@ auto Python::post_linear_less_equal(const vector<string> & var_ids, const vector
     p.post(LinearLessThanEqual{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
-auto Python::post_linear_less_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value, const string & reif)
-    -> void
+auto Python::post_linear_less_equal_iff(
+    const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif) -> void
 {
 #ifdef WRITE_API_CALLS
     api_calls << "post_linear_less_equal_iff" << endl;
@@ -595,9 +576,7 @@ auto Python::post_linear_less_equal_iff(const vector<string> & var_ids, const ve
     p.post(LinearLessThanEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
 
-auto Python::post_linear_greater_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value)
-    -> void
+auto Python::post_linear_greater_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void
 {
 #ifdef WRITE_API_CALLS
     api_calls << "post_linear_greater_equal" << endl;
@@ -605,9 +584,8 @@ auto Python::post_linear_greater_equal(const vector<string> & var_ids, const vec
     p.post(LinearGreaterThanEqual{(make_linear(var_ids, coeffs)), Integer{value}});
 }
 
-auto Python::post_linear_greater_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value, const string & reif)
-    -> void
+auto Python::post_linear_greater_equal_iff(
+    const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif) -> void
 {
 #ifdef WRITE_API_CALLS
     api_calls << "post_linear_greater_equal_iff" << endl;
@@ -615,9 +593,7 @@ auto Python::post_linear_greater_equal_iff(const vector<string> & var_ids, const
     p.post(LinearLessThanEqualIff{(make_linear(var_ids, coeffs)), Integer{value}, get_var(reif) != 0_i});
 }
 
-auto Python::post_linear_not_equal(const vector<string> & var_ids, const vector<long long int> & coeffs,
-    long long int value)
-    -> void
+auto Python::post_linear_not_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void
 {
 #ifdef WRITE_API_CALLS
     api_calls << "post_linear_not_equal" << endl;
@@ -801,14 +777,8 @@ PYBIND11_MODULE(gcspy, m)
         .def("minimise", &Python::minimise)
         .def("negate", &Python::negate)
         .def("add_constant", &Python::add_constant)
-        .def("solve", &Python::solve,
-            py::arg("all_solutions") = true,
-            py::arg("timeout") = nullopt,
-            py::arg("solution_limit") = nullopt,
-            py::arg("callback") = nullopt,
-            py::arg("prove") = false,
-            py::arg("proof_name") = nullopt,
-            py::arg("proof_location") = nullopt)
+        .def("solve", &Python::solve, py::arg("all_solutions") = true, py::arg("timeout") = nullopt, py::arg("solution_limit") = nullopt,
+            py::arg("callback") = nullopt, py::arg("prove") = false, py::arg("proof_name") = nullopt, py::arg("proof_location") = nullopt)
         .def("get_solution_value", &Python::get_solution_value, py::arg("var_id"), py::arg("solution_number") = -1)
         .def("get_proof_filename", &Python::get_proof_filename)
 

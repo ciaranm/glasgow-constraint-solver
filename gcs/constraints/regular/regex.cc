@@ -93,9 +93,7 @@ namespace
             case ']': tokens.push_back({Tok::ClassClose}); break;
             case '-': tokens.push_back({Tok::ClassRange}); break;
             case '^': tokens.push_back({Tok::ClassNeg}); break;
-            default:
-                throw InvalidProblemDefinitionException(
-                    string{"Illegal token in regular expression: '"} + c + "'");
+            default: throw InvalidProblemDefinitionException(string{"Illegal token in regular expression: '"} + c + "'");
             }
             ++i;
         }
@@ -262,22 +260,15 @@ namespace
             auto atom = parse_atom();
             switch (peek()) {
                 using enum Tok;
-            case Star:
-                advance();
-                return make_star(move(atom));
+            case Star: advance(); return make_star(move(atom));
             case Plus: {
                 advance();
                 auto star = make_star(clone(*atom));
                 return make_concat(move(atom), move(star));
             }
-            case Optional:
-                advance();
-                return make_union(move(atom), make_empty());
-            case QuantOpen:
-                advance();
-                return parse_quantifier(*atom);
-            default:
-                return atom;
+            case Optional: advance(); return make_union(move(atom), make_empty());
+            case QuantOpen: advance(); return parse_quantifier(*atom);
+            default: return atom;
             }
         }
 
@@ -306,21 +297,16 @@ namespace
         {
             switch (peek()) {
                 using enum Tok;
-            case Integer:
-                return make_symbols({advance().value});
-            case Any:
-                advance();
-                return make_symbols(alphabet);
-            case ClassOpen:
-                return parse_class();
+            case Integer: return make_symbols({advance().value});
+            case Any: advance(); return make_symbols(alphabet);
+            case ClassOpen: return parse_class();
             case GroupOpen: {
                 advance();
                 auto inner = parse_expression();
                 expect(GroupClose, "')' to close group");
                 return inner;
             }
-            default:
-                fail("expected a symbol, '.', '[' or '('");
+            default: fail("expected a symbol, '.', '[' or '('");
             }
         }
 
@@ -512,8 +498,7 @@ namespace
     {
         switch (node.op) {
             using enum Core;
-        case Empty:
-            return {start};
+        case Empty: return {start};
         case Symbols:
             if (start < sequence.size() && node.symbols.contains(sequence[start]))
                 return {start + 1};
@@ -555,8 +540,7 @@ auto gcs::innards::regex_to_nfa(const string & regex, const vector<Integer> & al
     return build_nfa(*root);
 }
 
-auto gcs::innards::regex_reference_accepts(const string & regex, const vector<Integer> & alphabet,
-    const vector<Integer> & sequence) -> bool
+auto gcs::innards::regex_reference_accepts(const string & regex, const vector<Integer> & alphabet, const vector<Integer> & sequence) -> bool
 {
     set<Integer> alphabet_set(alphabet.begin(), alphabet.end());
     auto root = parse_regex(regex, alphabet_set);

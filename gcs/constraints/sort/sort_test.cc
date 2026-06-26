@@ -66,9 +66,7 @@ namespace
         cerr << flush;
 
         set<tuple<vector<int>, vector<int>>> expected, actual;
-        build_expected(
-            expected, [](const vector<int> & x, const vector<int> & y) { return is_sorted_permutation(x, y); },
-            x_domains, y_domains);
+        build_expected(expected, [](const vector<int> & x, const vector<int> & y) { return is_sorted_permutation(x, y); }, x_domains, y_domains);
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem p;
@@ -82,24 +80,24 @@ namespace
         // The Mehlhorn-Thiel propagator achieves bounds consistency on both x
         // and y (exact 1-D projections), so assert BC at every search node.
         auto proof_name = proofs ? make_optional("sort_test") : nullopt;
-        solve_for_tests_checking_consistency(p, proof_name, expected, actual,
-            tuple{std::make_pair(x, CheckConsistency::BC), std::make_pair(y, CheckConsistency::BC)});
+        solve_for_tests_checking_consistency(
+            p, proof_name, expected, actual, tuple{std::make_pair(x, CheckConsistency::BC), std::make_pair(y, CheckConsistency::BC)});
         check_results(proof_name, expected, actual);
     }
 
     // Dup-variable case: the same handle appears twice in x. The constraint is
     // purely value-based (count multiset equality), so aliasing is handled
     // correctly -- it simply means that value occurs twice.
-    auto run_sort_dup_test(bool proofs, const vector<pair<int, int>> & unique_domains,
-        const vector<int> & x_positions, const vector<int> & y_positions) -> void
+    auto run_sort_dup_test(
+        bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & x_positions, const vector<int> & y_positions) -> void
     {
-        print(cerr, "sort dup domains={} x_pos={} y_pos={}{}", unique_domains, x_positions, y_positions,
-            proofs ? " with proofs:" : ":");
+        print(cerr, "sort dup domains={} x_pos={} y_pos={}{}", unique_domains, x_positions, y_positions, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         set<tuple<vector<int>>> expected, actual;
         build_expected(
-            expected, [&](const vector<int> & vals) {
+            expected,
+            [&](const vector<int> & vals) {
                 vector<int> x, y;
                 for (auto i : x_positions)
                     x.push_back(vals.at(i));
@@ -148,11 +146,11 @@ auto main(int argc, char * argv[]) -> int
 
         // Degenerate (issue #254): empty arrays (vacuously satisfied) and
         // all-fixed inputs/outputs in both directions.
-        run_sort_test(proofs, {}, {});                                            // empty: vacuous
-        run_sort_test(proofs, {{5, 5}}, {{5, 5}});                                // single fixed: y[0]==x[0] (tautology)
-        run_sort_test(proofs, {{3, 3}}, {{2, 2}});                                // single fixed: y[0]!=x[0] (contradiction)
+        run_sort_test(proofs, {}, {});                                             // empty: vacuous
+        run_sort_test(proofs, {{5, 5}}, {{5, 5}});                                 // single fixed: y[0]==x[0] (tautology)
+        run_sort_test(proofs, {{3, 3}}, {{2, 2}});                                 // single fixed: y[0]!=x[0] (contradiction)
         run_sort_test(proofs, {{2, 2}, {1, 1}, {2, 2}}, {{1, 1}, {2, 2}, {2, 2}}); // all fixed, correctly sorted (tautology)
-        run_sort_test(proofs, {{1, 1}, {2, 2}}, {{2, 2}, {1, 1}});                // all fixed, y not sorted (contradiction)
+        run_sort_test(proofs, {{1, 1}, {2, 2}}, {{2, 2}, {1, 1}});                 // all fixed, y not sorted (contradiction)
 
         // n = 4, exercises the matching/SCC on a larger instance.
         run_sort_test(proofs, {{0, 3}, {0, 3}, {0, 3}, {0, 3}}, {{0, 3}, {0, 3}, {0, 3}, {0, 3}});
@@ -174,8 +172,7 @@ auto main(int argc, char * argv[]) -> int
         // (y[0] forces <= the low window, y[3] the high one), a tight band.
         run_sort_test(proofs, {{0, 5}, {2, 3}, {2, 3}, {0, 5}}, {{0, 1}, {2, 3}, {2, 3}, {4, 5}});
         // A 5-element version with two distinct confined groups.
-        run_sort_test(proofs, {{0, 6}, {1, 2}, {1, 2}, {3, 4}, {0, 6}},
-            {{0, 0}, {1, 2}, {1, 2}, {3, 4}, {5, 6}});
+        run_sort_test(proofs, {{0, 6}, {1, 2}, {1, 2}, {3, 4}, {0, 6}}, {{0, 0}, {1, 2}, {1, 2}, {3, 4}, {5, 6}});
 
         // Infeasible y-windows: y[0] in [5,6] but y[1] in [0,1] can't be sorted
         // (exercises the pure-sortedness no-matching contradiction at the root).

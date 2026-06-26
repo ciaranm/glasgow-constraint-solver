@@ -38,13 +38,14 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_n_value_test(bool proofs, const ViewWrapConfig & view_cfg,
-    variant<int, pair<int, int>> result_range, const vector<variant<int, pair<int, int>>> & array_range) -> void
+auto run_n_value_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int, pair<int, int>> result_range,
+    const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
     // Position 0 = result; positions 1..N = array entries.
     int n_positions = 1 + static_cast<int>(array_range.size());
     auto wraps = wraps_for_positions(view_cfg, n_positions);
-    visit([&](auto r) { print(cerr, "nvalue [{}] {} {} {}", view_wrap_config_label(view_cfg), r, array_range, proofs ? " with proofs:" : ":"); }, result_range);
+    visit([&](auto r) { print(cerr, "nvalue [{}] {} {} {}", view_wrap_config_label(view_cfg), r, array_range, proofs ? " with proofs:" : ":"); },
+        result_range);
     cerr << flush;
 
     set<tuple<int, vector<int>>> expected, actual;
@@ -72,16 +73,16 @@ auto run_n_value_test(bool proofs, const ViewWrapConfig & view_cfg,
 // positions. Distinct-value count is unaffected by duplicates (set
 // semantics). Consistency isn't checked on dup runs; see
 // tmp/duplicate_var_audit.md.
-auto run_dup_n_value_test(bool proofs, const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions, pair<int, int> result_range) -> void
+auto run_dup_n_value_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, pair<int, int> result_range)
+    -> void
 {
-    print(cerr, "nvalue dup domains={} positions={} result={}{}",
-        unique_domains, positions, result_range, proofs ? " with proofs:" : ":");
+    print(cerr, "nvalue dup domains={} positions={} result={}{}", unique_domains, positions, result_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, vector<int>>> expected, actual;
     build_expected(
-        expected, [&](int r, const vector<int> & vals) -> bool {
+        expected,
+        [&](int r, const vector<int> & vals) -> bool {
             set<int> distinct;
             for (auto pos : positions)
                 distinct.insert(vals.at(pos));
@@ -111,35 +112,26 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 6;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "n_value view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "n_value view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
     using ArrayEntry = variant<int, pair<int, int>>;
-    vector<tuple<variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {
-        // Boundary: empty array forces result == 0.
-        {pair{0, 3}, {}},
-        {0, {}},
+    vector<tuple<variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {// Boundary: empty array forces result == 0.
+        {pair{0, 3}, {}}, {0, {}},
         // Boundary: singleton forces result == 1.
-        {pair{0, 3}, {pair{2, 5}}},
-        {1, {pair{0, 9}}},
-        {pair{1, 2}, {pair{1, 2}, pair{1, 2}}},
-        {pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{1, 3}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
-        {pair{-1, 3}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}},
-        {pair{1, 4}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},
+        {pair{0, 3}, {pair{2, 5}}}, {1, {pair{0, 9}}}, {pair{1, 2}, {pair{1, 2}, pair{1, 2}}}, {pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
+        {pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}}, {pair{1, 3}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
+        {pair{-1, 3}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}}, {pair{1, 4}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},
         {pair{-5, 5}, {pair{-8, 0}, pair{4, 4}, pair{10, 10}, pair{2, 11}, pair{4, 10}}},
         // Constant array entries: pinned values count toward distinct.
-        {pair{0, 5}, {3, pair{1, 4}, 3}},
-        {pair{0, 5}, {1, 2, 3, pair{0, 5}}},
+        {pair{0, 5}, {3, pair{1, 4}, 3}}, {pair{0, 5}, {1, 2, 3, pair{0, 5}}},
         // Degenerate cases (issue #254): all-constant arrays + genuine constant result.
-        {1, {5, 5, 5}},        // all same constant: 1 distinct value (tautology)
-        {2, {5, 6, 5}},        // all-constant: 2 distinct values (tautology)
-        {1, {5, 6}},           // all-constant: 2 distinct, result can't be 1 (contradiction)
-        {1, {7}},              // single constant element: 1 distinct (tautology)
-        {2, {7}},              // single constant element: result can't be 2 (contradiction)
+        {1, {5, 5, 5}},           // all same constant: 1 distinct value (tautology)
+        {2, {5, 6, 5}},           // all-constant: 2 distinct values (tautology)
+        {1, {5, 6}},              // all-constant: 2 distinct, result can't be 1 (contradiction)
+        {1, {7}},                 // single constant element: 1 distinct (tautology)
+        {2, {7}},                 // single constant element: result can't be 2 (contradiction)
         {2, {5, pair{5, 6}, 6}}}; // mixed: two constants plus a variable
 
     random_device rand_dev;

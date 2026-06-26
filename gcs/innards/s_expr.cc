@@ -11,18 +11,15 @@ using std::vector;
 
 using namespace gcs::innards;
 
-SExprParseError::SExprParseError(const string & w) :
-    MessageException("S-expression error: " + w)
+SExprParseError::SExprParseError(const string & w) : MessageException("S-expression error: " + w)
 {
 }
 
-SExpr::SExpr(string atom) :
-    _value(move(atom))
+SExpr::SExpr(string atom) : _value(move(atom))
 {
 }
 
-SExpr::SExpr(vector<SExpr> list) :
-    _value(move(list))
+SExpr::SExpr(vector<SExpr> list) : _value(move(list))
 {
 }
 

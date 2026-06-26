@@ -54,9 +54,7 @@ auto run_parity_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<
     print(cerr, "parity odd [{}] {} {}", view_wrap_config_label(view_cfg), array_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
-    auto is_satisfying = [](const vector<int> & a) {
-        return count_if(a.begin(), a.end(), [](int x) { return x != 0; }) % 2 == 1;
-    };
+    auto is_satisfying = [](const vector<int> & a) { return count_if(a.begin(), a.end(), [](int x) { return x != 0; }) % 2 == 1; };
 
     set<tuple<vector<int>>> expected, actual;
     build_expected(expected, is_satisfying, array_range);
@@ -78,21 +76,21 @@ auto run_parity_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<
 // positions. Duplicate literals XOR-cancel: ParityOdd({x, x, y}) ≡
 // ParityOdd({y}). Consistency isn't checked on dup runs; see
 // tmp/duplicate_var_audit.md.
-auto run_dup_parity_test(bool proofs, const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions) -> void
+auto run_dup_parity_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions) -> void
 {
-    print(cerr, "parity odd dup domains {} positions {}{}",
-        unique_domains, positions, proofs ? " with proofs:" : ":");
+    print(cerr, "parity odd dup domains {} positions {}{}", unique_domains, positions, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     // Reference predicate: post-cancellation, the parity is the parity
     // of the count of unique-var occurrences with odd multiplicity.
     set<tuple<vector<int>>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & vals) -> bool {
+        expected,
+        [&](const vector<int> & vals) -> bool {
             int trues = 0;
             for (auto pos : positions)
-                if (vals.at(pos) != 0) ++trues;
+                if (vals.at(pos) != 0)
+                    ++trues;
             return trues % 2 == 1;
         },
         unique_domains);
@@ -118,33 +116,25 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 4;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "parity view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "parity view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
     using Entry = variant<int, pair<int, int>>;
-    vector<vector<Entry>> data = {
-        // Boundary: empty array — UNSAT (0 is even, not odd).
+    vector<vector<Entry>> data = {// Boundary: empty array — UNSAT (0 is even, not odd).
         {},
         // Singleton over {0, 1} — only x=1 satisfies.
         {pair{0, 1}},
         // Existing tight {0,1} cases.
-        {pair{0, 1}, pair{0, 1}},
-        {pair{0, 1}, pair{0, 1}, pair{0, 1}},
-        {pair{0, 1}, pair{0, 1}, pair{0, 1}, pair{0, 1}},
+        {pair{0, 1}, pair{0, 1}}, {pair{0, 1}, pair{0, 1}, pair{0, 1}}, {pair{0, 1}, pair{0, 1}, pair{0, 1}, pair{0, 1}},
         // Wider non-binary domains — predicate is "nonzero count is odd",
         // so any nonzero value contributes.
-        {pair{0, 4}, pair{0, 4}, pair{0, 4}},
-        {pair{-3, 3}, pair{-3, 3}},
+        {pair{0, 4}, pair{0, 4}, pair{0, 4}}, {pair{-3, 3}, pair{-3, 3}},
         // Domains that don't include 0 — every entry is nonzero.
-        {pair{1, 5}, pair{1, 5}, pair{1, 5}},
-        {pair{-3, -1}, pair{1, 3}},
+        {pair{1, 5}, pair{1, 5}, pair{1, 5}}, {pair{-3, -1}, pair{1, 3}},
         // Constant entries: a fixed nonzero contributes 1 to the count;
         // a fixed 0 contributes nothing.
-        {1, pair{0, 3}, pair{0, 3}},
-        {0, pair{0, 3}, pair{0, 3}},
-        {3, 0, pair{0, 3}, pair{0, 3}},
+        {1, pair{0, 3}, pair{0, 3}}, {0, pair{0, 3}, pair{0, 3}}, {3, 0, pair{0, 3}, pair{0, 3}},
         // All-constant infeasible (count = 2, even).
         {1, 1, 0},
         // All-constant feasible (count = 1, odd).

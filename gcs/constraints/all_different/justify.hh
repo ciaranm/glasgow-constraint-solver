@@ -10,11 +10,8 @@
 
 namespace gcs::innards
 {
-    auto justify_all_different_hall_set_or_violator(
-        ProofLogger &,
-        const std::vector<IntegerVariableID> & all_variables,
-        const std::vector<IntegerVariableID> & hall_variables,
-        const std::vector<Integer> & hall_values,
+    auto justify_all_different_hall_set_or_violator(ProofLogger &, const std::vector<IntegerVariableID> & all_variables,
+        const std::vector<IntegerVariableID> & hall_variables, const std::vector<Integer> & hall_values,
         std::map<Integer, ProofLine> & constraint_numbers) -> void;
 }
 

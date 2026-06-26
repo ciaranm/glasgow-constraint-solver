@@ -25,8 +25,7 @@ namespace gcs
      *
      * \ingroup SearchHeuristics
      */
-    using BranchVariableSelector = std::function<std::optional<IntegerVariableID>(
-        const CurrentState &, const innards::Propagators &)>;
+    using BranchVariableSelector = std::function<std::optional<IntegerVariableID>(const CurrentState &, const innards::Propagators &)>;
 
     /**
      * Given a branch variable, how do we branch on it? Usually this will be used via the gcs::branch_with()
@@ -38,8 +37,8 @@ namespace gcs
      *
      * \ingroup SearchHeuristics
      */
-    using BranchValueGenerator = std::function<std::generator<IntegerVariableCondition>(
-        const CurrentState &, const innards::Propagators &, const IntegerVariableID &)>;
+    using BranchValueGenerator =
+        std::function<std::generator<IntegerVariableCondition>(const CurrentState &, const innards::Propagators &, const IntegerVariableID &)>;
 
     /**
      * Combine a BranchVariableSelector from gcs::variable_order:: with a BranchValueGenerator
@@ -70,9 +69,8 @@ namespace gcs
          *
          * \ingroup SearchHeuristics
          */
-        using VariableComparator = std::function<auto(const CurrentState &, const innards::Propagators &,
-            const IntegerVariableID &, const IntegerVariableID &)
-                ->bool>;
+        using VariableComparator =
+            std::function<auto(const CurrentState &, const innards::Propagators &, const IntegerVariableID &, const IntegerVariableID &)->bool>;
 
         /**
          * Branch on the smallest non-assigned variable wrt this comparator.

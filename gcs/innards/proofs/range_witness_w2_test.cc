@@ -41,12 +41,9 @@ auto main() -> int
     p.post(Equals{a, b});
     p.post(NotEquals{a, b});
 
-    solve_with(
-        p,
-        SolveCallbacks{
-            .solution = [](const CurrentState &) -> bool { return true; },
-            .branch = branch_sequence(scripted_neq_then_eq_zero(a),
-                branch_with(variable_order::dom_then_deg(p), value_order::smallest_first()))},
+    solve_with(p,
+        SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; },
+            .branch = branch_sequence(scripted_neq_then_eq_zero(a), branch_with(variable_order::dom_then_deg(p), value_order::smallest_first()))},
         ProofOptions{"range_witness_w2_test"});
 
     return 0;

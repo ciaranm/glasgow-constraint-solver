@@ -42,8 +42,7 @@ using namespace gcs::test_innards;
 
 namespace
 {
-    auto enumerate_assignments(set<tuple<vector<int>>> & expected,
-        const vector<vector<int>> & domains,
+    auto enumerate_assignments(set<tuple<vector<int>>> & expected, const vector<vector<int>> & domains,
         const function<auto(const vector<int> &)->bool> & is_satisfying) -> void
     {
         vector<int> current;
@@ -64,8 +63,8 @@ namespace
 
     auto run_symalldiff_test(bool proofs, bool expect_gac, const vector<vector<int>> & domains, int start) -> void
     {
-        print(cerr, "symmetric_all_different {} start {} {}{}", domains, start,
-            expect_gac ? "(GAC)" : "(consistent only)", proofs ? " with proofs:" : ":");
+        print(cerr, "symmetric_all_different {} start {} {}{}", domains, start, expect_gac ? "(GAC)" : "(consistent only)",
+            proofs ? " with proofs:" : ":");
         cerr << flush;
 
         const int n = static_cast<int>(domains.size());
@@ -106,11 +105,9 @@ namespace
         check_results(proof_name, expected, actual);
     }
 
-    auto run_symalldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domains,
-        const vector<int> & positions, int start) -> void
+    auto run_symalldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domains, const vector<int> & positions, int start) -> void
     {
-        print(cerr, "symmetric_all_different domains {} positions {} start {}{}",
-            unique_domains, positions, start, proofs ? " with proofs:" : ":");
+        print(cerr, "symmetric_all_different domains {} positions {} start {}{}", unique_domains, positions, start, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         // Posting the same variable twice in a SymmetricAllDifferent is
@@ -174,8 +171,7 @@ namespace
         // is a 3-cycle (x_0 -> 2 -> x_2 -> 1 -> x_1 -> 0 -> x_0) plus a
         // fixed point, not an involution; the Inverse propagator only
         // checks pair-edges of G, so x_0=2 is not pruned at the root.
-        run_symalldiff_test(proofs, false,
-            {{1, 2}, {0, 2}, {0, 1, 3}, {2, 3}}, 0);
+        run_symalldiff_test(proofs, false, {{1, 2}, {0, 2}, {0, 1, 3}, {2, 3}}, 0);
 
         // Triangle: G = K_3, which has no perfect matching, so the
         // expected set is empty. AllDifferent-GAC accepts the bipartite

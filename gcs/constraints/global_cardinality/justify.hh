@@ -30,14 +30,12 @@ namespace gcs::innards
      * closes any pruning of a W value from a non-confined variable (or a
      * contradiction).
      */
-    auto emit_gcc_capacity_pol(ProofLogger &, const State &,
-        const std::vector<IntegerVariableID> & vars, const std::vector<Integer> & values,
-        const std::vector<IntegerVariableID> & counts, const GCCCountLines & count_lines,
-        const std::vector<std::size_t> & cut_values, const std::vector<IntegerVariableID> & confined) -> void;
+    auto emit_gcc_capacity_pol(ProofLogger &, const State &, const std::vector<IntegerVariableID> & vars, const std::vector<Integer> & values,
+        const std::vector<IntegerVariableID> & counts, const GCCCountLines & count_lines, const std::vector<std::size_t> & cut_values,
+        const std::vector<IntegerVariableID> & confined) -> void;
 
-    auto gcc_capacity_reason(const State &, const std::vector<Integer> & values,
-        const std::vector<IntegerVariableID> & counts, const std::vector<std::size_t> & cut_values,
-        const std::vector<IntegerVariableID> & confined) -> ReasonLiterals;
+    auto gcc_capacity_reason(const State &, const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts,
+        const std::vector<std::size_t> & cut_values, const std::vector<IntegerVariableID> & confined) -> ReasonLiterals;
 
     /**
      * \brief Emit the demand-cut aggregate (dual of the capacity one) for a set
@@ -51,15 +49,13 @@ namespace gcs::innards
      * result is Sum_{i not potential, v in W} x_{i=v} >= demand - |potential|;
      * a wrapping RUP under \ref gcc_demand_reason closes the pruning/contradiction.
      */
-    auto emit_gcc_demand_pol(ProofLogger &, const State &,
-        const std::vector<IntegerVariableID> & vars, const std::vector<Integer> & values,
-        const std::vector<IntegerVariableID> & counts, const GCCCountLines & count_lines,
-        const std::vector<std::size_t> & cut_values, const std::vector<IntegerVariableID> & potential,
-        std::optional<IntegerVariableID> pruned_var, std::optional<Integer> pruned_value) -> void;
+    auto emit_gcc_demand_pol(ProofLogger &, const State &, const std::vector<IntegerVariableID> & vars, const std::vector<Integer> & values,
+        const std::vector<IntegerVariableID> & counts, const GCCCountLines & count_lines, const std::vector<std::size_t> & cut_values,
+        const std::vector<IntegerVariableID> & potential, std::optional<IntegerVariableID> pruned_var, std::optional<Integer> pruned_value) -> void;
 
-    auto gcc_demand_reason(const State &, const std::vector<IntegerVariableID> & vars,
-        const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts,
-        const std::vector<std::size_t> & cut_values, const std::vector<IntegerVariableID> & potential) -> ReasonLiterals;
+    auto gcc_demand_reason(const State &, const std::vector<IntegerVariableID> & vars, const std::vector<Integer> & values,
+        const std::vector<IntegerVariableID> & counts, const std::vector<std::size_t> & cut_values, const std::vector<IntegerVariableID> & potential)
+        -> ReasonLiterals;
 }
 
 #endif

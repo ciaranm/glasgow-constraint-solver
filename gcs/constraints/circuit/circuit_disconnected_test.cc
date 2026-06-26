@@ -24,8 +24,8 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 8;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        cout << "circuit_disconnected view sweep: position " << *view_cfg.single_position
-             << " out of range for n_positions = " << n_positions << "; skipping" << endl;
+        cout << "circuit_disconnected view sweep: position " << *view_cfg.single_position << " out of range for n_positions = " << n_positions
+             << "; skipping" << endl;
         return EXIT_SUCCESS;
     }
     auto wraps = wraps_for_positions(view_cfg, n_positions);

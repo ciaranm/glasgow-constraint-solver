@@ -68,21 +68,20 @@ namespace
 }
 
 template <typename Constraint_, typename V1_, typename V2_, typename V3_>
-auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg,
-    V1_ v1_range, V2_ v2_range, V3_ v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
+auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg, V1_ v1_range, V2_ v2_range, V3_ v3_range,
+    const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
-    visit([&](const auto & v1, const auto & v2, const auto & v3) {
-        print(cerr, "{} [{}] {} {} {} {}", NameOf<Constraint_>::name, view_wrap_config_label(view_cfg), v1, v2, v3, proofs ? " with proofs:" : ":");
-    },
+    visit(
+        [&](const auto & v1, const auto & v2, const auto & v3) {
+            print(
+                cerr, "{} [{}] {} {} {} {}", NameOf<Constraint_>::name, view_wrap_config_label(view_cfg), v1, v2, v3, proofs ? " with proofs:" : ":");
+        },
         v1_range, v2_range, v3_range);
     cerr << flush;
     set<tuple<int, int, int>> expected, actual;
 
-    visit([&](const auto & v1, const auto & v2) {
-        build_expected(expected, is_satisfying, v1, v2, v3_range);
-    },
-        v1_range, v2_range);
+    visit([&](const auto & v1, const auto & v2) { build_expected(expected, is_satisfying, v1, v2, v3_range); }, v1_range, v2_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
@@ -92,7 +91,8 @@ auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg,
     p.post(Constraint_{v1, v2, v3});
 
     auto proof_name = proofs ? make_optional("plus_minus_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::None}, pair{v2, CheckConsistency::None}, pair{v3, CheckConsistency::None}});
+    solve_for_tests_checking_consistency(
+        p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::None}, pair{v2, CheckConsistency::None}, pair{v3, CheckConsistency::None}});
 
     check_results(proof_name, expected, actual);
 }
@@ -104,15 +104,22 @@ auto run_plus_minus_test(bool proofs, const ViewWrapConfig & view_cfg,
 // See tmp/duplicate_var_audit.md.
 namespace
 {
-    struct AliasV1V2 { };
-    struct AliasV1V3 { };
-    struct AliasV2V3 { };
-    struct AliasAll { };
+    struct AliasV1V2
+    {
+    };
+    struct AliasV1V3
+    {
+    };
+    struct AliasV2V3
+    {
+    };
+    struct AliasAll
+    {
+    };
 }
 
 template <typename Constraint_, typename AliasPattern_>
-auto run_dup_plus_minus_test(bool proofs, AliasPattern_, const string & tag,
-    pair<int, int> a_range, pair<int, int> b_range,
+auto run_dup_plus_minus_test(bool proofs, AliasPattern_, const string & tag, pair<int, int> a_range, pair<int, int> b_range,
     const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     print(cerr, "{} dup {} {} {} {}", NameOf<Constraint_>::name, tag, a_range, b_range, proofs ? " with proofs:" : ":");
@@ -163,27 +170,17 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 3;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "plus_minus view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "plus_minus view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
     using V12 = variant<int, pair<int, int>, vector<int>>;
     using V3 = variant<int, pair<int, int>>;
-    vector<tuple<V12, V12, V3>> data = {
-        {pair{2, 5}, pair{1, 6}, pair{1, 12}},
-        {pair{1, 6}, pair{2, 5}, pair{5, 8}},
-        {pair{1, 3}, pair{1, 3}, pair{0, 10}},
-        {pair{1, 3}, pair{1, 3}, pair{1, 3}},
-        {pair{1, 5}, pair{6, 8}, pair{-10, 10}},
-        {pair{1, 1}, pair{2, 4}, pair{-5, 5}},
-        {pair{10, 15}, pair{60, 80}, pair{-100, 100}},
-        {pair{-10, 0}, pair{-4, 2}, pair{4, 9}},
-        {pair{1, 100}, pair{1, 3}, pair{1, 100}},
-        {pair{1, 10}, pair{1, 3}, pair{1, 10}},
-        {pair{1, 10}, pair{1, 10}, pair{1, 20}},
-        {vector{1, 5, 10}, vector{1, 5, 10}, pair{1, 20}},
-        {vector{1, 2, 3, 5, 6, 10}, vector{1, 2, 3, 5, 8, 9, 10}, pair{1, 20}},
+    vector<tuple<V12, V12, V3>> data = {{pair{2, 5}, pair{1, 6}, pair{1, 12}}, {pair{1, 6}, pair{2, 5}, pair{5, 8}},
+        {pair{1, 3}, pair{1, 3}, pair{0, 10}}, {pair{1, 3}, pair{1, 3}, pair{1, 3}}, {pair{1, 5}, pair{6, 8}, pair{-10, 10}},
+        {pair{1, 1}, pair{2, 4}, pair{-5, 5}}, {pair{10, 15}, pair{60, 80}, pair{-100, 100}}, {pair{-10, 0}, pair{-4, 2}, pair{4, 9}},
+        {pair{1, 100}, pair{1, 3}, pair{1, 100}}, {pair{1, 10}, pair{1, 3}, pair{1, 10}}, {pair{1, 10}, pair{1, 10}, pair{1, 20}},
+        {vector{1, 5, 10}, vector{1, 5, 10}, pair{1, 20}}, {vector{1, 2, 3, 5, 6, 10}, vector{1, 2, 3, 5, 8, 9, 10}, pair{1, 20}},
         // Constant-result regression: x + y == 6 over [1,5] × [1,5].
         {pair{1, 5}, pair{1, 5}, 6},
         // Constant-operand: x + 2 == z over [1,5] × [3,8].
@@ -192,17 +189,13 @@ auto main(int argc, char * argv[]) -> int
         // Each row runs for both Plus and Minus; build_expected gives the
         // per-operation truth, e.g. {2,3,5}: 2+3==5 (Plus SAT) but 2-3!=5
         // (Minus UNSAT); {4,1,3}: 4+1!=3 (Plus UNSAT) but 4-1==3 (Minus SAT).
-        {2, 3, 5},
-        {4, 1, 3},
-        {0, 0, 0}};
+        {2, 3, 5}, {4, 1, 3}, {0, 0, 0}};
 
     // The random sweep mixes constants and bounds-pairs across all three slots
     // via random_bounds_or_constant. v1/v2's variant is wider than the helper's
     // return type (because hand-rolled cases include hole-y vector<int> domains
     // that the random sweep doesn't produce), so visit-widen at insertion.
-    auto widen_v12 = [](variant<int, pair<int, int>> v) -> V12 {
-        return visit([](auto x) -> V12 { return x; }, v);
-    };
+    auto widen_v12 = [](variant<int, pair<int, int>> v) -> V12 { return visit([](auto x) -> V12 { return x; }, v); };
     random_device rand_dev;
     mt19937 rand(rand_dev());
     for (int x = 0; x < 10; ++x) {
@@ -213,11 +206,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // Bare-handle dup ranges. Skipped under the view-wrap sweep.
-    vector<pair<pair<int, int>, pair<int, int>>> dup_data = {
-        {{0, 5}, {0, 10}},
-        {{-3, 3}, {-6, 6}},
-        {{1, 4}, {-5, 5}},
-        {{0, 0}, {0, 5}}};
+    vector<pair<pair<int, int>, pair<int, int>>> dup_data = {{{0, 5}, {0, 10}}, {{-3, 3}, {-6, 6}}, {{1, 4}, {-5, 5}}, {{0, 0}, {0, 5}}};
 
     auto plus_sat = [](int a, int b, int c) { return a + b == c; };
     auto minus_sat = [](int a, int b, int c) { return a - b == c; };

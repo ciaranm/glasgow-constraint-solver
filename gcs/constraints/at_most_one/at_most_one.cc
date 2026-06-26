@@ -43,9 +43,7 @@ using fmt::print;
 
 // ----- Native AtMostOne -----------------------------------------------------
 
-AtMostOne::AtMostOne(vector<IntegerVariableID> vars, IntegerVariableID val) :
-    _vars(move(vars)),
-    _val(val)
+AtMostOne::AtMostOne(vector<IntegerVariableID> vars, IntegerVariableID val) : _vars(move(vars)), _val(val)
 {
 }
 
@@ -73,14 +71,13 @@ auto AtMostOne::define_proof_model(ProofModel & model) -> void
     // For each var_i: define flag_i ⇔ (var_i = _val) via a Count-style
     // gt/lt/eq triple, then post sum_i flag_i ≤ 1.
     for (auto & var : _vars) {
-        auto var_minus_val_gt_0 = model.create_proof_flag_fully_reifying("am1g",
-            "AtMostOne", "var greater", WPBSum{} + 1_i * var + -1_i * _val >= 1_i);
+        auto var_minus_val_gt_0 =
+            model.create_proof_flag_fully_reifying("am1g", "AtMostOne", "var greater", WPBSum{} + 1_i * var + -1_i * _val >= 1_i);
 
-        auto var_minus_val_lt_0 = model.create_proof_flag_fully_reifying("am1l",
-            "AtMostOne", "var less", WPBSum{} + 1_i * var + -1_i * _val <= -1_i);
+        auto var_minus_val_lt_0 = model.create_proof_flag_fully_reifying("am1l", "AtMostOne", "var less", WPBSum{} + 1_i * var + -1_i * _val <= -1_i);
 
-        auto eq = model.create_proof_flag_fully_reifying("am1eq",
-            "AtMostOne", "var equal val", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i);
+        auto eq = model.create_proof_flag_fully_reifying(
+            "am1eq", "AtMostOne", "var equal val", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i);
 
         _flags.emplace_back(eq, var_minus_val_gt_0, var_minus_val_lt_0);
     }
@@ -116,8 +113,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
                     }
                 }
                 if (fixed_to_v >= 2)
-                    inference.infer(logger, val != v, JustifyUsingRUP{hints::AtMostOne{owner}},
-                        generic_reason(all_vars));
+                    inference.infer(logger, val != v, JustifyUsingRUP{hints::AtMostOne{owner}}, generic_reason(all_vars));
             }
 
             // If val is now fixed to v and exactly one var is fixed to v,
@@ -137,8 +133,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
                 if (fixed_count == 1) {
                     for (size_t i = 0; cmp_less(i, vars.size()); ++i) {
                         if (i != fixed_idx)
-                            inference.infer(logger, vars[i] != *val_fixed, JustifyUsingRUP{hints::AtMostOne{owner}},
-                                generic_reason(all_vars));
+                            inference.infer(logger, vars[i] != *val_fixed, JustifyUsingRUP{hints::AtMostOne{owner}}, generic_reason(all_vars));
                     }
                 }
             }
@@ -154,17 +149,13 @@ auto AtMostOne::s_expr(const ProofModel * const model) const -> SExpr
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("at_most_one"),
-        SExpr::list(std::move(vars)),
-        tracker.s_expr_term_of(_val)});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("at_most_one"), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
 }
 
 // ----- AtMostOneSmartTable (kept for benchmarking) --------------------------
 
-AtMostOneSmartTable::AtMostOneSmartTable(vector<IntegerVariableID> vars, IntegerVariableID val) :
-    _vars(move(vars)),
-    _val(val)
+AtMostOneSmartTable::AtMostOneSmartTable(vector<IntegerVariableID> vars, IntegerVariableID val) : _vars(move(vars)), _val(val)
 {
 }
 
@@ -173,8 +164,7 @@ auto AtMostOneSmartTable::clone() const -> unique_ptr<Constraint>
     return make_unique<AtMostOneSmartTable>(_vars, _val);
 }
 
-auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_state,
-    ProofModel * const optional_model) && -> void
+auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     // 0 or 1 vars: "at most 1 of n equals val" is vacuously true. The
     // SmartTable below would build empty tuples for n == 0, which means
@@ -206,8 +196,6 @@ auto AtMostOneSmartTable::s_expr(const ProofModel * const model) const -> SExpr
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("at_most_one_smart_table"),
-        SExpr::list(std::move(vars)),
-        tracker.s_expr_term_of(_val)});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("at_most_one_smart_table"), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
 }

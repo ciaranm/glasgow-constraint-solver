@@ -44,16 +44,20 @@ using namespace gcs::test_innards;
 auto run_negative_table_test_2(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, SimpleTuples forbidden) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 2);
-    print(cerr, "negative table 2var [{}] [{},{}] [{},{}] {} tuples{}",
-        view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first, r2.second, forbidden.size(), proofs ? " with proofs:" : ":");
+    print(cerr, "negative table 2var [{}] [{},{}] [{},{}] {} tuples{}", view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first, r2.second,
+        forbidden.size(), proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, int>> expected, actual;
-    build_expected(expected, [&](int a, int b) -> bool {
-        for (const auto & t : forbidden)
-            if (t[0].raw_value == a && t[1].raw_value == b)
-                return false;
-        return true; }, r1, r2);
+    build_expected(
+        expected,
+        [&](int a, int b) -> bool {
+            for (const auto & t : forbidden)
+                if (t[0].raw_value == a && t[1].raw_value == b)
+                    return false;
+            return true;
+        },
+        r1, r2);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
@@ -66,19 +70,24 @@ auto run_negative_table_test_2(bool proofs, const ViewWrapConfig & view_cfg, pai
     check_results(proof_name, expected, actual);
 }
 
-auto run_negative_table_test_3(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3, SimpleTuples forbidden) -> void
+auto run_negative_table_test_3(
+    bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3, SimpleTuples forbidden) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
-    print(cerr, "negative table 3var [{}] [{},{}] [{},{}] [{},{}] {} tuples{}",
-        view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first, r2.second, r3.first, r3.second, forbidden.size(), proofs ? " with proofs:" : ":");
+    print(cerr, "negative table 3var [{}] [{},{}] [{},{}] [{},{}] {} tuples{}", view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first,
+        r2.second, r3.first, r3.second, forbidden.size(), proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, int, int>> expected, actual;
-    build_expected(expected, [&](int a, int b, int c) -> bool {
-        for (const auto & t : forbidden)
-            if (t[0].raw_value == a && t[1].raw_value == b && t[2].raw_value == c)
-                return false;
-        return true; }, r1, r2, r3);
+    build_expected(
+        expected,
+        [&](int a, int b, int c) -> bool {
+            for (const auto & t : forbidden)
+                if (t[0].raw_value == a && t[1].raw_value == b && t[2].raw_value == c)
+                    return false;
+            return true;
+        },
+        r1, r2, r3);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
@@ -92,26 +101,28 @@ auto run_negative_table_test_3(bool proofs, const ViewWrapConfig & view_cfg, pai
     check_results(proof_name, expected, actual);
 }
 
-auto run_negative_wildcard_table_test(bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3, WildcardTuples forbidden) -> void
+auto run_negative_wildcard_table_test(
+    bool proofs, const ViewWrapConfig & view_cfg, pair<int, int> r1, pair<int, int> r2, pair<int, int> r3, WildcardTuples forbidden) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
-    print(cerr, "negative wildcard table [{}] [{},{}] [{},{}] [{},{}] {} tuples{}",
-        view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first, r2.second, r3.first, r3.second, forbidden.size(), proofs ? " with proofs:" : ":");
+    print(cerr, "negative wildcard table [{}] [{},{}] [{},{}] [{},{}] {} tuples{}", view_wrap_config_label(view_cfg), r1.first, r1.second, r2.first,
+        r2.second, r3.first, r3.second, forbidden.size(), proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto entry_matches = [](const IntegerOrWildcard & entry, int val) -> bool {
-        return overloaded{
-            [val](Integer i) { return i.raw_value == val; },
-            [](Wildcard) { return true; }}
-            .visit(entry);
+        return overloaded{[val](Integer i) { return i.raw_value == val; }, [](Wildcard) { return true; }}.visit(entry);
     };
 
     set<tuple<int, int, int>> expected, actual;
-    build_expected(expected, [&](int a, int b, int c) -> bool {
-        for (const auto & t : forbidden)
-            if (entry_matches(t[0], a) && entry_matches(t[1], b) && entry_matches(t[2], c))
-                return false;
-        return true; }, r1, r2, r3);
+    build_expected(
+        expected,
+        [&](int a, int b, int c) -> bool {
+            for (const auto & t : forbidden)
+                if (entry_matches(t[0], a) && entry_matches(t[1], b) && entry_matches(t[2], c))
+                    return false;
+            return true;
+        },
+        r1, r2, r3);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
@@ -129,16 +140,17 @@ auto run_negative_wildcard_table_test(bool proofs, const ViewWrapConfig & view_c
 // positions. Forbidden tuples whose dup positions disagree are
 // vacuously satisfied (the underlying assignment is impossible).
 // Consistency isn't checked on dup runs; see tmp/duplicate_var_audit.md.
-auto run_dup_negative_table_test(bool proofs, const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions, SimpleTuples forbidden) -> void
+auto run_dup_negative_table_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, SimpleTuples forbidden)
+    -> void
 {
-    print(cerr, "negative table dup unique_doms={} positions={} {} tuples{}",
-        unique_domains, positions, forbidden.size(), proofs ? " with proofs:" : ":");
+    print(cerr, "negative table dup unique_doms={} positions={} {} tuples{}", unique_domains, positions, forbidden.size(),
+        proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & unique_vals) -> bool {
+        expected,
+        [&](const vector<int> & unique_vals) -> bool {
             for (const auto & t : forbidden) {
                 bool match = true;
                 for (size_t i = 0; i < positions.size(); ++i)
@@ -146,7 +158,8 @@ auto run_dup_negative_table_test(bool proofs, const vector<pair<int, int>> & uni
                         match = false;
                         break;
                     }
-                if (match) return false;
+                if (match)
+                    return false;
             }
             return true;
         },
@@ -170,53 +183,40 @@ auto run_dup_negative_table_test(bool proofs, const vector<pair<int, int>> & uni
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // Two-variable cases.
-    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3},
-        {{1_i, 1_i}}); // single forbidden
-    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3},
-        {{1_i, 1_i}, {2_i, 2_i}, {3_i, 3_i}}); // exclude diagonal
-    run_negative_table_test_2(proofs, view_cfg, {1, 2}, {1, 2},
-        {{1_i, 1_i}, {1_i, 2_i}, {2_i, 1_i}, {2_i, 2_i}}); // all forbidden: unsat at root
-    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {2, 2},
-        {{1_i, 2_i}}); // singleton domain forces v1!=1 at root (unit at init)
-    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3},
-        {{4_i, 4_i}, {1_i, 1_i}}); // first tuple already infeasible (4 not in dom): satisfied automatically
-    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3},
-        {{1_i, 1_i}, {1_i, 1_i}, {2_i, 2_i}}); // duplicates in forbidden list
+    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3}, {{1_i, 1_i}});                                     // single forbidden
+    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3}, {{1_i, 1_i}, {2_i, 2_i}, {3_i, 3_i}});             // exclude diagonal
+    run_negative_table_test_2(proofs, view_cfg, {1, 2}, {1, 2}, {{1_i, 1_i}, {1_i, 2_i}, {2_i, 1_i}, {2_i, 2_i}}); // all forbidden: unsat at root
+    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {2, 2}, {{1_i, 2_i}}); // singleton domain forces v1!=1 at root (unit at init)
+    run_negative_table_test_2(
+        proofs, view_cfg, {1, 3}, {1, 3}, {{4_i, 4_i}, {1_i, 1_i}}); // first tuple already infeasible (4 not in dom): satisfied automatically
+    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3}, {{1_i, 1_i}, {1_i, 1_i}, {2_i, 2_i}}); // duplicates in forbidden list
     // Degenerate (issue #254): empty forbidden list (all allowed) and all-fixed
     // variables in both directions.
-    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3},
-        {}); // empty forbidden list: every assignment allowed
-    run_negative_table_test_2(proofs, view_cfg, {1, 1}, {2, 2},
-        {{2_i, 1_i}, {3_i, 3_i}}); // fixed (1,2) not forbidden (tautology)
-    run_negative_table_test_2(proofs, view_cfg, {1, 1}, {2, 2},
-        {{1_i, 2_i}}); // fixed (1,2) is forbidden (contradiction)
+    run_negative_table_test_2(proofs, view_cfg, {1, 3}, {1, 3}, {});                       // empty forbidden list: every assignment allowed
+    run_negative_table_test_2(proofs, view_cfg, {1, 1}, {2, 2}, {{2_i, 1_i}, {3_i, 3_i}}); // fixed (1,2) not forbidden (tautology)
+    run_negative_table_test_2(proofs, view_cfg, {1, 1}, {2, 2}, {{1_i, 2_i}});             // fixed (1,2) is forbidden (contradiction)
 
     // Three-variable cases.
-    run_negative_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3},
-        {{1_i, 1_i, 1_i}, {2_i, 2_i, 2_i}, {3_i, 3_i, 3_i}}); // exclude diagonal
+    run_negative_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{1_i, 1_i, 1_i}, {2_i, 2_i, 2_i}, {3_i, 3_i, 3_i}}); // exclude diagonal
     run_negative_table_test_3(proofs, view_cfg, {1, 2}, {1, 2}, {1, 2},
-        {{1_i, 1_i, 1_i}, {1_i, 1_i, 2_i}, {1_i, 2_i, 1_i}, {1_i, 2_i, 2_i},
-            {2_i, 1_i, 1_i}, {2_i, 1_i, 2_i}, {2_i, 2_i, 1_i}, {2_i, 2_i, 2_i}}); // all forbidden: unsat
-    run_negative_table_test_3(proofs, view_cfg, {1, 3}, {2, 4}, {1, 2},
-        {{1_i, 2_i, 1_i}, {3_i, 4_i, 2_i}});
+        {{1_i, 1_i, 1_i}, {1_i, 1_i, 2_i}, {1_i, 2_i, 1_i}, {1_i, 2_i, 2_i}, {2_i, 1_i, 1_i}, {2_i, 1_i, 2_i}, {2_i, 2_i, 1_i},
+            {2_i, 2_i, 2_i}}); // all forbidden: unsat
+    run_negative_table_test_3(proofs, view_cfg, {1, 3}, {2, 4}, {1, 2}, {{1_i, 2_i, 1_i}, {3_i, 4_i, 2_i}});
     run_negative_table_test_3(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3},
         {{1_i, 1_i, 1_i}, {1_i, 1_i, 2_i}, {1_i, 1_i, 3_i}}); // (1,1,*) all forbidden: forces v1!=1 OR v2!=1 (cascade)
-    run_negative_table_test_3(proofs, view_cfg, {-2, 2}, {-2, 2}, {-2, 2},
-        {{-2_i, 0_i, 2_i}, {0_i, 0_i, 0_i}, {2_i, 0_i, -2_i}});
+    run_negative_table_test_3(proofs, view_cfg, {-2, 2}, {-2, 2}, {-2, 2}, {{-2_i, 0_i, 2_i}, {0_i, 0_i, 0_i}, {2_i, 0_i, -2_i}});
 
     // Larger forbidden tables to exercise watched-literal scaling.
     run_negative_table_test_3(proofs, view_cfg, {1, 4}, {1, 4}, {1, 4},
-        {{1_i, 1_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 1_i, 4_i}, {2_i, 3_i, 2_i},
-            {3_i, 4_i, 1_i}, {4_i, 2_i, 3_i}, {4_i, 4_i, 4_i}, {1_i, 3_i, 2_i},
+        {{1_i, 1_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 1_i, 4_i}, {2_i, 3_i, 2_i}, {3_i, 4_i, 1_i}, {4_i, 2_i, 3_i}, {4_i, 4_i, 4_i}, {1_i, 3_i, 2_i},
             {2_i, 2_i, 2_i}, {3_i, 3_i, 3_i}});
 
     // Wildcard cases.
-    run_negative_wildcard_table_test(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3},
-        {{{Wildcard{}, 2_i, Wildcard{}}}}); // forbid all tuples with v2=2
-    run_negative_wildcard_table_test(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3},
-        {{{1_i, Wildcard{}, 3_i}, {2_i, 2_i, Wildcard{}}}}); // mixed wildcard forbids
-    run_negative_wildcard_table_test(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3},
-        {{{Wildcard{}, Wildcard{}, Wildcard{}}}}); // all-wildcard tuple: unsat at root
+    run_negative_wildcard_table_test(proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{{Wildcard{}, 2_i, Wildcard{}}}}); // forbid all tuples with v2=2
+    run_negative_wildcard_table_test(
+        proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{{1_i, Wildcard{}, 3_i}, {2_i, 2_i, Wildcard{}}}}); // mixed wildcard forbids
+    run_negative_wildcard_table_test(
+        proofs, view_cfg, {1, 3}, {1, 3}, {1, 3}, {{{Wildcard{}, Wildcard{}, Wildcard{}}}}); // all-wildcard tuple: unsat at root
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -225,8 +225,7 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 3;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "negative_table view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "negative_table view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
@@ -239,11 +238,9 @@ auto main(int argc, char * argv[]) -> int
         if (run_dup) {
             // {x, y, x} — a forbidden tuple (1, 2, 1) forbids x=1,y=2; tuple
             // (1, 2, 3) is vacuously satisfied (x can't be both 1 and 3).
-            run_dup_negative_table_test(proofs, {{1, 3}, {1, 3}}, {0, 1, 0},
-                {{1_i, 2_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 3_i, 2_i}});
+            run_dup_negative_table_test(proofs, {{1, 3}, {1, 3}}, {0, 1, 0}, {{1_i, 2_i, 1_i}, {1_i, 2_i, 3_i}, {2_i, 3_i, 2_i}});
             // {x, x} — only diagonal tuples actually forbid anything.
-            run_dup_negative_table_test(proofs, {{1, 3}}, {0, 0},
-                {{1_i, 1_i}, {2_i, 3_i}});
+            run_dup_negative_table_test(proofs, {{1, 3}}, {0, 0}, {{1_i, 1_i}, {2_i, 3_i}});
         }
     }
 

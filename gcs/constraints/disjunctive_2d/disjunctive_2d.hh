@@ -111,24 +111,17 @@ namespace gcs
          * \brief General form: widths and heights may be variables or constants
          * (constants pass through as ConstantIntegerVariableID).
          */
-        explicit Disjunctive2D(std::vector<IntegerVariableID> xs,
-            std::vector<IntegerVariableID> ys,
-            std::vector<IntegerVariableID> widths,
-            std::vector<IntegerVariableID> heights,
-            bool strict = true);
+        explicit Disjunctive2D(std::vector<IntegerVariableID> xs, std::vector<IntegerVariableID> ys, std::vector<IntegerVariableID> widths,
+            std::vector<IntegerVariableID> heights, bool strict = true);
 
         /**
          * \brief Convenience form for constant rectangle sizes. Delegates to
          * the general constructor.
          */
-        explicit Disjunctive2D(std::vector<IntegerVariableID> xs,
-            std::vector<IntegerVariableID> ys,
-            std::vector<Integer> widths,
-            std::vector<Integer> heights,
-            bool strict = true);
+        explicit Disjunctive2D(std::vector<IntegerVariableID> xs, std::vector<IntegerVariableID> ys, std::vector<Integer> widths,
+            std::vector<Integer> heights, bool strict = true);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };

@@ -45,8 +45,7 @@ using std::vector;
 using namespace gcs;
 using namespace gcs::innards;
 
-ScpReadError::ScpReadError(const string & w) :
-    MessageException("Error reading .scp: " + w)
+ScpReadError::ScpReadError(const string & w) : MessageException("Error reading .scp: " + w)
 {
 }
 
@@ -147,8 +146,8 @@ namespace
     // pair. `flipped` is the cosmetic not-equals-iff flag (ReifiedEquals::_neq /
     // ReifiedLinearEquality::_flipped_cond). `cond_term` is only read when the
     // form is reified (the (variable op value) triple).
-    auto equality_reification(bool not_equals, bool iff, bool half,
-        const map<string, IntegerVariableID> & variables, const SExpr & cond_term) -> std::pair<ReificationCondition, bool>
+    auto equality_reification(bool not_equals, bool iff, bool half, const map<string, IntegerVariableID> & variables, const SExpr & cond_term)
+        -> std::pair<ReificationCondition, bool>
     {
         if (iff)
             return {ReificationCondition{reif::Iff{resolve_condition(variables, cond_term)}}, not_equals};
@@ -164,8 +163,8 @@ namespace
     // or-equal / reification flags that the general
     // ReifiedCompareLessThanOrMaybeEqual constructor takes directly, so this
     // reconstructs exactly the object the writer serialised.
-    auto read_comparison(Problem & problem, const map<string, IntegerVariableID> & variables,
-        const string & op, const vector<SExpr> & terms, const string & label) -> void
+    auto read_comparison(Problem & problem, const map<string, IntegerVariableID> & variables, const string & op, const vector<SExpr> & terms,
+        const string & label) -> void
     {
         bool vars_swapped = op.starts_with("greater_");
         string rest = op.substr(vars_swapped ? sizeof("greater_") - 1 : sizeof("less_") - 1);
@@ -198,11 +197,7 @@ namespace
         auto first = resolve_variable(variables, terms[v1_index]);
         auto second = resolve_variable(variables, terms[v1_index + 1]);
         post_constraint(problem,
-            ReifiedCompareLessThanOrMaybeEqual{
-                vars_swapped ? second : first,
-                vars_swapped ? first : second,
-                cond, or_equal, vars_swapped},
-            label);
+            ReifiedCompareLessThanOrMaybeEqual{vars_swapped ? second : first, vars_swapped ? first : second, cond, or_equal, vars_swapped}, label);
     }
 
     // The lexicographic family: (label lex_<less|greater>_<than|equal>[_if|_iff]
@@ -214,8 +209,8 @@ namespace
     // _if and _iff forms; the writer can also emit _not / _not_if for the
     // MustNotHold / NotIf reifications, which round-trip here but have no cake
     // counterpart, so they are not exercised by the verified chain.)
-    auto read_lex(Problem & problem, const map<string, IntegerVariableID> & variables,
-        const string & op, const vector<SExpr> & terms, const string & label) -> void
+    auto read_lex(Problem & problem, const map<string, IntegerVariableID> & variables, const string & op, const vector<SExpr> & terms,
+        const string & label) -> void
     {
         string rest = op.substr(sizeof("lex_") - 1);
         bool vars_swapped = ! rest.starts_with("greater_");
@@ -257,11 +252,7 @@ namespace
         auto first = resolve_variable_list(variables, terms[list1_index], "the first lex list");
         auto second = resolve_variable_list(variables, terms[list1_index + 1], "the second lex list");
         post_constraint(problem,
-            LexCompareGreaterThanOrMaybeEqual{
-                vars_swapped ? second : first,
-                vars_swapped ? first : second,
-                cond, or_equal, vars_swapped},
-            label);
+            LexCompareGreaterThanOrMaybeEqual{vars_swapped ? second : first, vars_swapped ? first : second, cond, or_equal, vars_swapped}, label);
     }
 
     // The linear family: (label lin_<equals|not_equals|lin_less_equal>[_if|_iff]
@@ -269,8 +260,8 @@ namespace
     // its reification, matching the general ReifiedLinear* constructors. (The
     // .scp does not record the GAC flag, so it defaults off; that affects
     // propagation strength, not the solution set or the written .scp.)
-    auto read_linear(Problem & problem, const map<string, IntegerVariableID> & variables,
-        const string & op, const vector<SExpr> & terms, const string & label) -> void
+    auto read_linear(Problem & problem, const map<string, IntegerVariableID> & variables, const string & op, const vector<SExpr> & terms,
+        const string & label) -> void
     {
         bool iff = op.ends_with("_iff");
         bool half = ! iff && op.ends_with("_if");
@@ -306,8 +297,8 @@ namespace
 
     // The equals family: (label <equals|not_equals>[_if|_iff] [(cond)] v1 v2),
     // reconstructed via the general ReifiedEquals constructor.
-    auto read_equals(Problem & problem, const map<string, IntegerVariableID> & variables,
-        const string & op, const vector<SExpr> & terms, const string & label) -> void
+    auto read_equals(Problem & problem, const map<string, IntegerVariableID> & variables, const string & op, const vector<SExpr> & terms,
+        const string & label) -> void
     {
         bool iff = op.ends_with("_iff");
         bool half = ! iff && op.ends_with("_if");
@@ -318,9 +309,8 @@ namespace
         std::size_t v1_index = reified ? 3 : 2;
 
         auto [cond, neq] = equality_reification(op.starts_with("not_equals"), iff, half, variables, terms[2]);
-        post_constraint(problem,
-            ReifiedEquals{resolve_variable(variables, terms[v1_index]), resolve_variable(variables, terms[v1_index + 1]), cond, neq},
-            label);
+        post_constraint(
+            problem, ReifiedEquals{resolve_variable(variables, terms[v1_index]), resolve_variable(variables, terms[v1_index + 1]), cond, neq}, label);
     }
 
     // (label regular (X1 ... Xn) nstates ((edges-of-0) (edges-of-1) ...)
@@ -332,8 +322,7 @@ namespace
     // writer. cake supports non-deterministic automata, but Regular has no public
     // multi-target constructor, so the reader rebuilds deterministic automata
     // only -- two edges on the same symbol in one state are rejected.
-    auto read_regular(Problem & problem, const map<string, IntegerVariableID> & variables,
-        const vector<SExpr> & terms, const string & label) -> void
+    auto read_regular(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
     {
         if (terms.size() != 6)
             throw ScpReadError{"regular is (label regular (vars...) nstates ((edges)...) (finals...))"};
@@ -419,8 +408,8 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             else
                 post_constraint(problem, ArrayMax{move(vars), result}, label);
         }
-        else if (op == "boundsglobalcardinality" || op == "boundsglobalcardinalityclosed" ||
-            op == "gacglobalcardinality" || op == "gacglobalcardinalityclosed") {
+        else if (op == "boundsglobalcardinality" || op == "boundsglobalcardinalityclosed" || op == "gacglobalcardinality" ||
+            op == "gacglobalcardinalityclosed") {
             // (label <kw> (vars...) (values...) (counts...)): for each j, the
             // number of vars equal to values[j] is counts[j]; the `closed` forms
             // additionally confine every var to the cover values. The keyword
@@ -445,8 +434,8 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             if (terms.size() != 3)
                 throw ScpReadError{"the increasing family takes one list: (label " + op + " (vars...))"};
             post_constraint(problem,
-                IncreasingChain{resolve_variable_list(variables, terms[2], "the increasing variable list"),
-                    op.starts_with("strictly_"), op.ends_with("decreasing")},
+                IncreasingChain{resolve_variable_list(variables, terms[2], "the increasing variable list"), op.starts_with("strictly_"),
+                    op.ends_with("decreasing")},
                 label);
         }
         else if (op == "in") {
@@ -455,8 +444,8 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             // The value list is just a list of variables; an integer value is a
             // ConstantIntegerVariableID, which In folds back into a constant. The
             // list comes first, then the variable, matching cake_pb_cp's parser.
-            post_constraint(problem,
-                In{resolve_variable(variables, terms[3]), resolve_variable_list(variables, terms[2], "the in value list")}, label);
+            post_constraint(
+                problem, In{resolve_variable(variables, terms[3]), resolve_variable_list(variables, terms[2], "the in value list")}, label);
         }
         else if (op == "element") {
             // (label element (X0 ... Xn-1) (index off) result): result = Xs[index - off].
@@ -468,8 +457,7 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             // Element takes an ArrayParam, so hand it the array by value: the
             // constraint owns it (no external storage to keep alive).
             post_constraint(problem,
-                Element{resolve_variable(variables, terms[4]),
-                    std::pair{resolve_variable(variables, index_pair[0]), as_integer(index_pair[1])},
+                Element{resolve_variable(variables, terms[4]), std::pair{resolve_variable(variables, index_pair[0]), as_integer(index_pair[1])},
                     resolve_variable_list(variables, terms[2], "the element array")},
                 label);
         }
@@ -478,8 +466,8 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             if (terms.size() != 5)
                 throw ScpReadError{"count takes (label count (vars...) value how_many)"};
             post_constraint(problem,
-                Count{resolve_variable_list(variables, terms[2], "the count variable list"),
-                    resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])},
+                Count{resolve_variable_list(variables, terms[2], "the count variable list"), resolve_variable(variables, terms[3]),
+                    resolve_variable(variables, terms[4])},
                 label);
         }
         else if (op == "nvalue") {
@@ -487,9 +475,7 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             if (terms.size() != 4)
                 throw ScpReadError{"nvalue takes (label nvalue (vars...) n_values)"};
             post_constraint(problem,
-                NValue{resolve_variable(variables, terms[3]),
-                    resolve_variable_list(variables, terms[2], "the nvalue variable list")},
-                label);
+                NValue{resolve_variable(variables, terms[3]), resolve_variable_list(variables, terms[2], "the nvalue variable list")}, label);
         }
         else if (op == "inverse") {
             // (label inverse ((X...) offx) ((Y...) offy)): X[i]=j+offy <-> Y[j]=i+offx.
@@ -500,8 +486,7 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             if (a.size() != 2 || b.size() != 2)
                 throw ScpReadError{"each inverse group is ((vars...) offset)"};
             post_constraint(problem,
-                Inverse{resolve_variable_list(variables, a[0], "the inverse X list"),
-                    resolve_variable_list(variables, b[0], "the inverse Y list"),
+                Inverse{resolve_variable_list(variables, a[0], "the inverse X list"), resolve_variable_list(variables, b[0], "the inverse Y list"),
                     as_integer(a[1]), as_integer(b[1])},
                 label);
         }
@@ -509,19 +494,15 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             // (label and (X1 ... Xn) Y): Y <-> all Xi nonzero.
             if (terms.size() != 4)
                 throw ScpReadError{"and takes (label and (vars...) reif)"};
-            post_constraint(problem,
-                And{resolve_variable_list(variables, terms[2], "the and variable list"),
-                    resolve_variable(variables, terms[3])},
-                label);
+            post_constraint(
+                problem, And{resolve_variable_list(variables, terms[2], "the and variable list"), resolve_variable(variables, terms[3])}, label);
         }
         else if (op == "or") {
             // (label or (X1 ... Xn) Y): Y <-> some Xi nonzero.
             if (terms.size() != 4)
                 throw ScpReadError{"or takes (label or (vars...) reif)"};
-            post_constraint(problem,
-                Or{resolve_variable_list(variables, terms[2], "the or variable list"),
-                    resolve_variable(variables, terms[3])},
-                label);
+            post_constraint(
+                problem, Or{resolve_variable_list(variables, terms[2], "the or variable list"), resolve_variable(variables, terms[3])}, label);
         }
         else if (op == "parity") {
             // (label parity (X1 ... Xn) Y): cake encodes Y = XOR(Xi). The solver
@@ -531,27 +512,21 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 throw ScpReadError{"parity takes (label parity (vars...) 1)"};
             if (as_integer(terms[3]) != Integer{1})
                 throw ScpReadError{"parity Y must be the constant 1 (only bare odd parity is supported)"};
-            post_constraint(problem,
-                ParityOdd{resolve_variable_list(variables, terms[2], "the parity variable list")},
-                label);
+            post_constraint(problem, ParityOdd{resolve_variable_list(variables, terms[2], "the parity variable list")}, label);
         }
         else if (op == "plus") {
             // (label plus a b result): a + b = result.
             if (terms.size() != 5)
                 throw ScpReadError{"plus takes (label plus a b result)"};
             post_constraint(problem,
-                Plus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]),
-                    resolve_variable(variables, terms[4])},
-                label);
+                Plus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])}, label);
         }
         else if (op == "minus") {
             // (label minus a b result): a - b = result.
             if (terms.size() != 5)
                 throw ScpReadError{"minus takes (label minus a b result)"};
             post_constraint(problem,
-                Minus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]),
-                    resolve_variable(variables, terms[4])},
-                label);
+                Minus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])}, label);
         }
         else if (op == "disjunctive" || op == "disjunctive_strict") {
             // (label disjunctive (starts...) (lengths...)): the tasks
@@ -564,8 +539,7 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 throw ScpReadError{"disjunctive is (label " + op + " (starts...) (lengths...))"};
             post_constraint(problem,
                 Disjunctive{resolve_variable_list(variables, terms[2], "the disjunctive start list"),
-                    resolve_variable_list(variables, terms[3], "the disjunctive length list"),
-                    op.ends_with("_strict")},
+                    resolve_variable_list(variables, terms[3], "the disjunctive length list"), op.ends_with("_strict")},
                 label);
         }
         else if (op == "disjunctive2d" || op == "disjunctive2d_strict") {
@@ -579,8 +553,7 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 Disjunctive2D{resolve_variable_list(variables, terms[2], "the disjunctive2d x list"),
                     resolve_variable_list(variables, terms[3], "the disjunctive2d y list"),
                     resolve_variable_list(variables, terms[4], "the disjunctive2d width list"),
-                    resolve_variable_list(variables, terms[5], "the disjunctive2d height list"),
-                    op.ends_with("_strict")},
+                    resolve_variable_list(variables, terms[5], "the disjunctive2d height list"), op.ends_with("_strict")},
                 label);
         }
         else if (op == "regular") {

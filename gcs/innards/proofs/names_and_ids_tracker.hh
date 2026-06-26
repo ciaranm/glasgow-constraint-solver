@@ -227,9 +227,7 @@ namespace gcs::innards
          * a `>=`). This is needed to pick the right link half for the
          * cancellation.
          */
-        auto derive_deviewed_form_for(const ProofLine & v_form_line,
-            const SumOf<Weighted<PseudoBooleanTerm>> & lhs,
-            bool le_half) -> void;
+        auto derive_deviewed_form_for(const ProofLine & v_form_line, const SumOf<Weighted<PseudoBooleanTerm>> & lhs, bool le_half) -> void;
 
         /**
          * Say that we will need the diect encoding to exist for a given variable.
@@ -282,8 +280,7 @@ namespace gcs::innards
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_name() etc will work with it.
          */
-        auto create_literals_for_introduced_variable_value(
-            SimpleIntegerVariableID, Integer, const std::string &) -> void;
+        auto create_literals_for_introduced_variable_value(SimpleIntegerVariableID, Integer, const std::string &) -> void;
 
         /**
          * Ensure that a name exists for a given variable condition.
@@ -340,8 +337,7 @@ namespace gcs::innards
          * Call the supplied function for each bit making up the given variable, specifying
          * its raw PB literal and coefficient.
          */
-        auto each_bit(const SimpleOrProofOnlyIntegerVariableID &)
-            -> std::generator<std::pair<Integer, XLiteral>>;
+        auto each_bit(const SimpleOrProofOnlyIntegerVariableID &) -> std::generator<std::pair<Integer, XLiteral>>;
 
         /**
          * Get the name and coefficient for the bit position in the representation of the given var.
@@ -379,15 +375,15 @@ namespace gcs::innards
          * Track that a given equality variable exists, and has a string name
          * and associated defining constraints.
          */
-        auto track_eqvar(SimpleIntegerVariableID, Integer,
-            const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &) -> void;
+        auto track_eqvar(SimpleIntegerVariableID, Integer, const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &)
+            -> void;
 
         /**
          * Track that a given greater-or-equal variable exists, and has a string name
          * and associated defining constraints.
          */
-        auto track_gevar(SimpleIntegerVariableID, Integer,
-            const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &) -> void;
+        auto track_gevar(SimpleIntegerVariableID, Integer, const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &)
+            -> void;
 
         /**
          * Track that an at-least-one constraint exists for a given variable.
@@ -467,7 +463,8 @@ namespace gcs::innards
         /*
          * Allocate an XLiteral with the given semantic meaning.
          */
-        [[nodiscard]] auto allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id, const EqualsOrGreaterEqual & op, Integer value) -> XLiteral;
+        [[nodiscard]] auto allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id, const EqualsOrGreaterEqual & op, Integer value)
+            -> XLiteral;
 
         /**
          * Allocate an XLiteral meaning `lo <= id <= hi`.

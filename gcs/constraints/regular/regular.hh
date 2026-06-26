@@ -43,24 +43,18 @@ namespace gcs
 
         // Copy-style constructor used by clone(): takes the internal multi-target
         // representation (and the regex, if any) directly.
-        Regular(std::vector<IntegerVariableID> vars, long num_states,
-            std::vector<std::unordered_map<Integer, std::set<long>>> transitions,
-            std::vector<long> final_states, std::vector<Integer> symbols,
-            bool short_reasons, std::optional<std::string> regex);
+        Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, std::set<long>>> transitions,
+            std::vector<long> final_states, std::vector<Integer> symbols, bool short_reasons, std::optional<std::string> regex);
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
-        explicit Regular(std::vector<IntegerVariableID> vars,
-            long num_states,
-            std::vector<std::unordered_map<Integer, long>> transitions,
+        explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, long>> transitions,
             std::vector<long> final_states, bool short_reasons = true);
 
-        explicit Regular(std::vector<IntegerVariableID> vars,
-            long num_states,
-            std::vector<std::vector<long>> transitions,
+        explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::vector<long>> transitions,
             std::vector<long> final_states, bool sr = true);
 
         /**
@@ -68,8 +62,7 @@ namespace gcs
          * regular expression. The expression is compiled to an NFA over the
          * contiguous min..max range of the variables' domains.
          */
-        explicit Regular(std::vector<IntegerVariableID> vars,
-            std::string regex, bool short_reasons = true);
+        explicit Regular(std::vector<IntegerVariableID> vars, std::string regex, bool short_reasons = true);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

@@ -115,9 +115,7 @@ namespace gcs
     using ::operator!=;
 }
 
-NegativeTable::NegativeTable(vector<IntegerVariableID> v, ExtensionalTuples t) :
-    _vars(move(v)),
-    _tuples(move(t))
+NegativeTable::NegativeTable(vector<IntegerVariableID> v, ExtensionalTuples t) : _vars(move(v)), _tuples(move(t))
 {
 }
 
@@ -139,25 +137,27 @@ auto NegativeTable::install(Propagators & propagators, State & initial_state, Pr
 
 auto NegativeTable::prepare(Propagators &, State &, ProofModel * const) -> bool
 {
-    visit([&](auto & tuples) {
-        for (auto & tuple : depointinate(tuples))
-            if (tuple.size() != _vars.size())
-                throw InvalidProblemDefinitionException{"table size mismatch"};
-    },
+    visit(
+        [&](auto & tuples) {
+            for (auto & tuple : depointinate(tuples))
+                if (tuple.size() != _vars.size())
+                    throw InvalidProblemDefinitionException{"table size mismatch"};
+        },
         _tuples);
     return true;
 }
 
 auto NegativeTable::define_proof_model(ProofModel & model) -> void
 {
-    visit([&](auto & tuples) {
-        for (auto & t : depointinate(tuples)) {
-            Literals lits;
-            for (const auto & [idx, v] : enumerate(_vars))
-                add_literal(lits, v, t[idx]);
-            model.add_constraint("NegativeTable", "forbidden", move(lits));
-        }
-    },
+    visit(
+        [&](auto & tuples) {
+            for (auto & t : depointinate(tuples)) {
+                Literals lits;
+                for (const auto & [idx, v] : enumerate(_vars))
+                    add_literal(lits, v, t[idx]);
+                model.add_constraint("NegativeTable", "forbidden", move(lits));
+            }
+        },
         _tuples);
 }
 
@@ -178,15 +178,15 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
     // overhead. Using shared_ptr so the initialiser and main propagator share storage.
     auto watches = make_shared<vector<pair<size_t, size_t>>>();
 
-    visit([&, this](auto && tuples) {
-        // Init: walk every tuple, find two watch positions, propagate units, raise
-        // contradictions. A position is unusable as a watch iff `var == t[pos]` is
-        // currently DefinitelyTrue — this captures both the "var is forced to t[pos]"
-        // case and the "t[pos] is a wildcard" case (since `var == Wildcard` overloads
-        // to TrueLiteral, which tests as DefinitelyTrue).
-        propagators.install_initialiser(
-            [vars = _vars, tuples = tuples, watches = watches, owner = constraint_id()](
-                const State & state, auto & inference, ProofLogger * const logger) -> void {
+    visit(
+        [&, this](auto && tuples) {
+            // Init: walk every tuple, find two watch positions, propagate units, raise
+            // contradictions. A position is unusable as a watch iff `var == t[pos]` is
+            // currently DefinitelyTrue — this captures both the "var is forced to t[pos]"
+            // case and the "t[pos] is a wildcard" case (since `var == Wildcard` overloads
+            // to TrueLiteral, which tests as DefinitelyTrue).
+            propagators.install_initialiser([vars = _vars, tuples = tuples, watches = watches, owner = constraint_id()](
+                                                const State & state, auto & inference, ProofLogger * const logger) -> void {
                 const auto & tuple_data = depointinate(tuples);
                 watches->reserve(tuple_data.size());
 
@@ -205,16 +205,14 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
 
                     auto w1 = find_unbroken(no_watch);
                     if (! w1) {
-                        inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}},
-                            generic_reason(vars));
+                        inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
                     }
 
                     auto w2 = find_unbroken(*w1);
                     if (! w2) {
                         // Unit clause: vars[*w1] != t[*w1] is the only possibly-true
                         // disjunct, so it must hold.
-                        inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{hints::NegativeTable{owner}},
-                            generic_reason(vars));
+                        inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
                         // Mark the tuple as already handled — both watches at the same
                         // position will read as broken on every subsequent fire, and
                         // any rescue search will discover the inference is now redundant.
@@ -226,77 +224,75 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
                 }
             });
 
-        propagators.install(
-            constraint_id(),
-            [vars = move(_vars), tuples = move(tuples), watches = watches, owner = constraint_id()](
-                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                const auto & tuple_data = depointinate(tuples);
+            propagators.install(
+                constraint_id(),
+                [vars = move(_vars), tuples = move(tuples), watches = watches, owner = constraint_id()](
+                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    const auto & tuple_data = depointinate(tuples);
 
-                auto is_broken = [&](const auto & t, size_t p) -> bool {
-                    return state.test_literal(vars[p] == t[p]) == LiteralIs::DefinitelyTrue;
-                };
+                    auto is_broken = [&](const auto & t, size_t p) -> bool {
+                        return state.test_literal(vars[p] == t[p]) == LiteralIs::DefinitelyTrue;
+                    };
 
-                auto find_unbroken = [&](const auto & t, size_t skip1, size_t skip2) -> optional<size_t> {
-                    for (size_t p = 0; p < vars.size(); ++p) {
-                        if (p == skip1 || p == skip2)
+                    auto find_unbroken = [&](const auto & t, size_t skip1, size_t skip2) -> optional<size_t> {
+                        for (size_t p = 0; p < vars.size(); ++p) {
+                            if (p == skip1 || p == skip2)
+                                continue;
+                            if (state.test_literal(vars[p] == t[p]) != LiteralIs::DefinitelyTrue)
+                                return p;
+                        }
+                        return nullopt;
+                    };
+
+                    for (size_t ti = 0; ti < tuple_data.size(); ++ti) {
+                        auto & w = (*watches)[ti];
+                        const auto & t = tuple_data[ti];
+
+                        bool b1 = is_broken(t, w.first);
+                        bool b2 = is_broken(t, w.second);
+
+                        if (! b1 && ! b2)
                             continue;
-                        if (state.test_literal(vars[p] == t[p]) != LiteralIs::DefinitelyTrue)
-                            return p;
-                    }
-                    return nullopt;
-                };
 
-                for (size_t ti = 0; ti < tuple_data.size(); ++ti) {
-                    auto & w = (*watches)[ti];
-                    const auto & t = tuple_data[ti];
-
-                    bool b1 = is_broken(t, w.first);
-                    bool b2 = is_broken(t, w.second);
-
-                    if (! b1 && ! b2)
-                        continue;
-
-                    if (b1 && b2) {
-                        auto new1 = find_unbroken(t, no_watch, no_watch);
-                        if (! new1) {
-                            inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}},
-                                generic_reason(vars));
+                        if (b1 && b2) {
+                            auto new1 = find_unbroken(t, no_watch, no_watch);
+                            if (! new1) {
+                                inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                            }
+                            auto new2 = find_unbroken(t, *new1, no_watch);
+                            if (! new2) {
+                                inference.infer(logger, vars[*new1] != t[*new1], JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                            }
+                            else {
+                                w.first = *new1;
+                                w.second = *new2;
+                            }
                         }
-                        auto new2 = find_unbroken(t, *new1, no_watch);
-                        if (! new2) {
-                            inference.infer(logger, vars[*new1] != t[*new1], JustifyUsingRUP{hints::NegativeTable{owner}},
-                                generic_reason(vars));
+                        else if (b1) {
+                            auto new1 = find_unbroken(t, w.second, no_watch);
+                            if (! new1) {
+                                inference.infer(
+                                    logger, vars[w.second] != t[w.second], JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                            }
+                            else {
+                                w.first = *new1;
+                            }
                         }
                         else {
-                            w.first = *new1;
-                            w.second = *new2;
+                            auto new2 = find_unbroken(t, w.first, no_watch);
+                            if (! new2) {
+                                inference.infer(
+                                    logger, vars[w.first] != t[w.first], JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                            }
+                            else {
+                                w.second = *new2;
+                            }
                         }
                     }
-                    else if (b1) {
-                        auto new1 = find_unbroken(t, w.second, no_watch);
-                        if (! new1) {
-                            inference.infer(logger, vars[w.second] != t[w.second], JustifyUsingRUP{hints::NegativeTable{owner}},
-                                generic_reason(vars));
-                        }
-                        else {
-                            w.first = *new1;
-                        }
-                    }
-                    else {
-                        auto new2 = find_unbroken(t, w.first, no_watch);
-                        if (! new2) {
-                            inference.infer(logger, vars[w.first] != t[w.first], JustifyUsingRUP{hints::NegativeTable{owner}},
-                                generic_reason(vars));
-                        }
-                        else {
-                            w.second = *new2;
-                        }
-                    }
-                }
-                return PropagatorState::Enable;
-            },
-            triggers);
-    },
+                    return PropagatorState::Enable;
+                },
+                triggers);
+        },
         _tuples);
 }
 
@@ -304,20 +300,19 @@ auto NegativeTable::s_expr(const innards::ProofModel * const model) const -> SEx
 {
     auto & tracker = model->names_and_ids_tracker();
     vector<SExpr> tuple_terms;
-    visit([&](const auto & tuples) {
-        for (const auto & t : depointinate(tuples)) {
-            vector<SExpr> row;
-            for (const auto & v : t)
-                row.push_back(SExpr::atom(tuple_entry_as_string(v)));
-            tuple_terms.push_back(SExpr::list(std::move(row)));
-        }
-    },
+    visit(
+        [&](const auto & tuples) {
+            for (const auto & t : depointinate(tuples)) {
+                vector<SExpr> row;
+                for (const auto & v : t)
+                    row.push_back(SExpr::atom(tuple_entry_as_string(v)));
+                tuple_terms.push_back(SExpr::list(std::move(row)));
+            }
+        },
         _tuples);
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("negative_table"),
-        SExpr::list(std::move(tuple_terms)),
-        SExpr::list(std::move(vars))});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("negative_table"), SExpr::list(std::move(tuple_terms)), SExpr::list(std::move(vars))});
 }

@@ -43,12 +43,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("ortho_latin"))                              //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program Options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("ortho_latin"))      //
+            ("stats", "Print solve statistics")                              //
             ;
 
         options.add_options()                                                                    //
@@ -123,7 +123,8 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto stats = solve(
-        p, [&](const CurrentState & s) -> bool {
+        p,
+        [&](const CurrentState & s) -> bool {
             for (int x = 0; x < size; ++x) {
                 for (int y = 0; y < size; ++y)
                     print("{},{} ", s(g1[x][y]), s(g2[x][y]));
@@ -133,9 +134,7 @@ auto main(int argc, char * argv[]) -> int
 
             return true;
         },
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

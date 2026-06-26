@@ -19,19 +19,18 @@ using namespace gcs::innards;
 using std::erase_if;
 using std::is_same_v;
 using std::pair;
-using std::ranges::all_of;
-using std::ranges::sort;
 using std::string;
 using std::stringstream;
 using std::variant;
+using std::ranges::all_of;
+using std::ranges::sort;
 
 auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<TidiedUpLinear, Integer>
 {
     SumOf<Weighted<SimpleIntegerVariableID>> simplified_sum;
     Integer modifier{0_i};
     for (const auto & [c, v] : coeff_vars.terms)
-        overloaded{
-            [&, &c = c](const SimpleIntegerVariableID & v) { simplified_sum += c * v; },
+        overloaded{[&, &c = c](const SimpleIntegerVariableID & v) { simplified_sum += c * v; },
             [&, &c = c](const ConstantIntegerVariableID & v) { modifier -= c * v.const_value; },
             [&, &c = c](const ViewOfIntegerVariableID & v) {
                 simplified_sum += (v.negate_first ? -c : c) * v.actual_variable;
@@ -40,9 +39,7 @@ auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<Tidied
             .visit(v);
 
     sort(simplified_sum.terms,
-        [](const Weighted<SimpleIntegerVariableID> & a, const Weighted<SimpleIntegerVariableID> & b) {
-            return a.variable < b.variable;
-        });
+        [](const Weighted<SimpleIntegerVariableID> & a, const Weighted<SimpleIntegerVariableID> & b) { return a.variable < b.variable; });
 
     // same variable appears twice? bring in its coefficient, and rewrite future
     // coefficients to be zero
@@ -58,9 +55,7 @@ auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<Tidied
     }
 
     // remove zero coefficients
-    erase_if(simplified_sum.terms, [](const Weighted<SimpleIntegerVariableID> & cv) {
-        return cv.coefficient == 0_i;
-    });
+    erase_if(simplified_sum.terms, [](const Weighted<SimpleIntegerVariableID> & cv) { return cv.coefficient == 0_i; });
 
     if (all_of(simplified_sum.terms, [](const Weighted<SimpleIntegerVariableID> & cv) { return cv.coefficient == 1_i; })) {
         SumOf<SimpleIntegerVariableID> simple_result;
@@ -68,7 +63,8 @@ auto gcs::innards::tidy_up_linear(const WeightedSum & coeff_vars) -> pair<Tidied
             simple_result.terms.emplace_back(v);
         return pair{simple_result, modifier};
     }
-    else if (all_of(simplified_sum.terms, [](const Weighted<SimpleIntegerVariableID> & cv) { return cv.coefficient == 1_i || cv.coefficient == -1_i; })) {
+    else if (all_of(simplified_sum.terms,
+                 [](const Weighted<SimpleIntegerVariableID> & cv) { return cv.coefficient == 1_i || cv.coefficient == -1_i; })) {
         SumOf<PositiveOrNegative<SimpleIntegerVariableID>> sum_result;
         for (auto & [c, v] : simplified_sum.terms)
             sum_result.terms.push_back(PositiveOrNegative<SimpleIntegerVariableID>{c == 1_i, v});

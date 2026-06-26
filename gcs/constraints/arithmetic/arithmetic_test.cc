@@ -90,15 +90,21 @@ namespace
     };
 
     auto power_is_satisfying = [](int a, int b, int c) -> bool {
-        if (b == 0) return c == 1;
-        if (a == 1) return c == 1;
-        if (a == -1) return c == ((b % 2 == 0) ? 1 : -1);
-        if (b < 0) return false;
-        if (a == 0) return c == 0;
+        if (b == 0)
+            return c == 1;
+        if (a == 1)
+            return c == 1;
+        if (a == -1)
+            return c == ((b % 2 == 0) ? 1 : -1);
+        if (b < 0)
+            return false;
+        if (a == 0)
+            return c == 0;
         long long r = 1;
         for (int i = 0; i < b; ++i) {
             long long next;
-            if (__builtin_mul_overflow(r, static_cast<long long>(a), &next)) return false;
+            if (__builtin_mul_overflow(r, static_cast<long long>(a), &next))
+                return false;
             r = next;
         }
         return r == c;
@@ -106,7 +112,8 @@ namespace
 }
 
 template <typename Arithmetic_>
-auto run_arithmetic_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
+auto run_arithmetic_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range,
+    const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     print(cerr, "arithmetic {} {} {} {} {}", NameOf<Arithmetic_>::name, v1_range, v2_range, v3_range, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -129,9 +136,8 @@ auto run_arithmetic_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2
 
 auto run_power_pinned_test(bool proofs, Integer base, Integer exp, pair<long long, long long> result_range, optional<Integer> expected_result) -> void
 {
-    print(cerr, "arithmetic power pinned base={} exp={} result_range={} expected={} {}",
-        base, exp, result_range, expected_result ? std::to_string(expected_result->raw_value) : "<none>",
-        proofs ? "with proofs:" : ":");
+    print(cerr, "arithmetic power pinned base={} exp={} result_range={} expected={} {}", base, exp, result_range,
+        expected_result ? std::to_string(expected_result->raw_value) : "<none>", proofs ? "with proofs:" : ":");
     cerr << flush;
 
     Problem p;
@@ -143,12 +149,10 @@ auto run_power_pinned_test(bool proofs, Integer base, Integer exp, pair<long lon
     auto proof_name = proofs ? make_optional<string>("arithmetic_test") : nullopt;
 
     set<long long> actual_results;
-    solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                actual_results.insert(s(v3).raw_value);
-                return true;
-            }},
+    solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+        actual_results.insert(s(v3).raw_value);
+        return true;
+    }},
         proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
 
     println(cerr, " got {} solutions", actual_results.size());
@@ -177,13 +181,12 @@ auto run_power_pinned_test(bool proofs, Integer base, Integer exp, pair<long lon
 // in the proof.
 auto run_power_const_base_view_exp_test(bool proofs, int base, pair<int, int> exp_range, int exp_offset, pair<int, int> result_range) -> void
 {
-    print(cerr, "arithmetic power constant base {} view exponent {}+{} result {} {}", base, exp_range, exp_offset, result_range, proofs ? " with proofs:" : ":");
+    print(cerr, "arithmetic power constant base {} view exponent {}+{} result {} {}", base, exp_range, exp_offset, result_range,
+        proofs ? " with proofs:" : ":");
     cerr << flush;
     set<tuple<int, int>> expected, actual;
 
-    build_expected(
-        expected, [&](int e, int r) { return power_is_satisfying(base, e + exp_offset, r); },
-        exp_range, result_range);
+    build_expected(expected, [&](int e, int r) { return power_is_satisfying(base, e + exp_offset, r); }, exp_range, result_range);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
@@ -203,15 +206,22 @@ auto run_power_const_base_view_exp_test(bool proofs, int base, pair<int, int> ex
 // to "weak"; we don't check it. See tmp/duplicate_var_audit.md.
 namespace
 {
-    struct AliasV1V2 { };
-    struct AliasV1V3 { };
-    struct AliasV2V3 { };
-    struct AliasAll { };
+    struct AliasV1V2
+    {
+    };
+    struct AliasV1V3
+    {
+    };
+    struct AliasV2V3
+    {
+    };
+    struct AliasAll
+    {
+    };
 }
 
 template <typename Arithmetic_, typename AliasPattern_>
-auto run_dup_arithmetic_test(bool proofs, AliasPattern_, const string & tag,
-    pair<int, int> a_range, pair<int, int> b_range,
+auto run_dup_arithmetic_test(bool proofs, AliasPattern_, const string & tag, pair<int, int> a_range, pair<int, int> b_range,
     const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     print(cerr, "arithmetic {} dup {} {} {} {}", NameOf<Arithmetic_>::name, tag, a_range, b_range, proofs ? " with proofs:" : ":");
@@ -257,36 +267,26 @@ auto run_dup_arithmetic_test(bool proofs, AliasPattern_, const string & tag,
 
 auto main(int, char *[]) -> int
 {
-    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {
-        {{2, 5}, {1, 6}, {1, 12}},
-        {{1, 6}, {2, 5}, {5, 8}},
-        {{1, 3}, {1, 3}, {0, 10}},
-        {{1, 3}, {1, 3}, {1, 3}},
-        {{1, 5}, {6, 8}, {-10, 10}},
-        {{1, 1}, {2, 4}, {-5, 5}},
+    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {{{2, 5}, {1, 6}, {1, 12}}, {{1, 6}, {2, 5}, {5, 8}},
+        {{1, 3}, {1, 3}, {0, 10}}, {{1, 3}, {1, 3}, {1, 3}}, {{1, 5}, {6, 8}, {-10, 10}}, {{1, 1}, {2, 4}, {-5, 5}},
         // issue #254: all-fixed (singleton-domain) operands. Each row runs for
         // Plus/Minus/Times/Div/Mod; build_expected gives the per-operation
         // truth, so each tautology direction is hit by exactly one operation
         // and the others act as the contradiction direction.
-        {{2, 2}, {3, 3}, {5, 5}},   // Plus: 2+3==5
-        {{5, 5}, {2, 2}, {3, 3}},   // Minus: 5-2==3
-        {{2, 2}, {3, 3}, {6, 6}},   // Times: 2*3==6
-        {{6, 6}, {3, 3}, {2, 2}},   // Div: 6/3==2
-        {{7, 7}, {3, 3}, {1, 1}},   // Mod: 7%3==1
-        {{5, 5}, {0, 0}, {3, 3}},   // Div/Mod by fixed zero: no solution
+        {{2, 2}, {3, 3}, {5, 5}},    // Plus: 2+3==5
+        {{5, 5}, {2, 2}, {3, 3}},    // Minus: 5-2==3
+        {{2, 2}, {3, 3}, {6, 6}},    // Times: 2*3==6
+        {{6, 6}, {3, 3}, {2, 2}},    // Div: 6/3==2
+        {{7, 7}, {3, 3}, {1, 1}},    // Mod: 7%3==1
+        {{5, 5}, {0, 0}, {3, 3}},    // Div/Mod by fixed zero: no solution
         {{5, 5}, {2, 2}, {99, 99}}}; // all operations contradicted
 
-    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> power_data = {
-        {{0, 3}, {0, 5}, {-1, 250}},
+    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> power_data = {{{0, 3}, {0, 5}, {-1, 250}},
         // issue #254: all-fixed operands for Power, both directions.
         {{2, 2}, {3, 3}, {8, 8}}, // 2^3 == 8 (tautology)
         {{2, 2}, {3, 3}, {9, 9}}, // 2^3 != 9 (contradiction)
         {{2, 2}, {0, 0}, {1, 1}}, // 2^0 == 1 (tautology)
-        {{2, 4}, {0, 4}, {0, 260}},
-        {{-3, 3}, {0, 4}, {-30, 90}},
-        {{1, 1}, {-3, 3}, {-2, 2}},
-        {{-1, 1}, {-3, 3}, {-2, 2}},
-        {{0, 1}, {-2, 3}, {-1, 2}},
+        {{2, 4}, {0, 4}, {0, 260}}, {{-3, 3}, {0, 4}, {-30, 90}}, {{1, 1}, {-3, 3}, {-2, 2}}, {{-1, 1}, {-3, 3}, {-2, 2}}, {{0, 1}, {-2, 3}, {-1, 2}},
         {{2, 5}, {-1, 4}, {-5, 700}}};
 
     random_device rand_dev;
@@ -341,9 +341,7 @@ auto main(int, char *[]) -> int
         // Dup-variable cases for the GAC-via-Table specialisations. Domains
         // are kept small because the underlying tuple table is materialised.
         // Div/Mod need divisors to avoid zero; the lambdas already guard.
-        vector<pair<pair<int, int>, pair<int, int>>> dup_data = {
-            {{-3, 3}, {-9, 9}},
-            {{1, 4}, {-5, 5}}};
+        vector<pair<pair<int, int>, pair<int, int>>> dup_data = {{{-3, 3}, {-9, 9}}, {{1, 4}, {-5, 5}}};
         auto plus_sat = [](int a, int b, int c) { return a + b == c; };
         auto minus_sat = [](int a, int b, int c) { return a - b == c; };
         auto times_sat = [](int a, int b, int c) { return a * b == c; };
@@ -373,9 +371,7 @@ auto main(int, char *[]) -> int
         }
 
         // Power dup: kept very small since result range can blow up quickly.
-        vector<pair<pair<int, int>, pair<int, int>>> power_dup_data = {
-            {{0, 3}, {0, 10}},
-            {{-2, 2}, {-5, 5}}};
+        vector<pair<pair<int, int>, pair<int, int>>> power_dup_data = {{{0, 3}, {0, 10}}, {{-2, 2}, {-5, 5}}};
         for (auto & [ar, br] : power_dup_data) {
             run_dup_arithmetic_test<Power>(proofs, AliasV1V2{}, "v1v2", ar, br, power_is_satisfying);
             run_dup_arithmetic_test<Power>(proofs, AliasV1V3{}, "v1v3", ar, br, power_is_satisfying);

@@ -10,8 +10,7 @@
 
 namespace gcs::innards
 {
-    using SimpleLiteral = std::variant<VariableConditionFrom<SimpleIntegerVariableID>,
-        ProofVariableCondition, TrueLiteral, FalseLiteral>;
+    using SimpleLiteral = std::variant<VariableConditionFrom<SimpleIntegerVariableID>, ProofVariableCondition, TrueLiteral, FalseLiteral>;
 
     /**
      * Simplify a ProofLiteral down by removing some of the more awkward possible

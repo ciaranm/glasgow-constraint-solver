@@ -42,10 +42,10 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
-        explicit ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool gac = false, bool flipped_cond = false);
+        explicit ReifiedLinearEquality(
+            WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool gac = false, bool flipped_cond = false);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;

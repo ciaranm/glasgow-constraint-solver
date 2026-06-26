@@ -54,8 +54,8 @@ namespace gcs::innards
      * interpreting the expression, independently of the NFA construction. Returns
      * true iff \a sequence is in the language of \a regex over \a alphabet.
      */
-    [[nodiscard]] auto regex_reference_accepts(const std::string & regex, const std::vector<Integer> & alphabet,
-        const std::vector<Integer> & sequence) -> bool;
+    [[nodiscard]] auto regex_reference_accepts(
+        const std::string & regex, const std::vector<Integer> & alphabet, const std::vector<Integer> & sequence) -> bool;
 }
 
 #endif

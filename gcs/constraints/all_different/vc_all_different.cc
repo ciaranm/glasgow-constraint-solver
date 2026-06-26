@@ -49,8 +49,8 @@ using fmt::format;
 using fmt::print;
 #endif
 
-auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle,
-    const State & state, auto & inference, ProofLogger * const logger, const ConstraintID & owner) -> void
+auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference,
+    ProofLogger * const logger, const ConstraintID & owner) -> void
 {
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
 
@@ -76,15 +76,16 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         for (auto other : to_propagate) {
             if (other.second == val) {
                 // we're already in a contradicting state
-                inference.infer_not_equal(logger, var, val, JustifyUsingRUP{hints::AllDifferent{owner}},
-                    ExplicitReason{ReasonLiterals{{other.first == val}}});
+                inference.infer_not_equal(
+                    logger, var, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{other.first == val}}});
             }
         }
 
         while (i != unassigned.end()) {
             auto other = *i;
             if (other != var) {
-                inference.infer_not_equal(logger, other, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{var == val}}});
+                inference.infer_not_equal(
+                    logger, other, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{var == val}}});
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);
                     unassigned.erase(i++);
@@ -96,8 +97,7 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
     }
 }
 
-VCAllDifferent::VCAllDifferent(vector<IntegerVariableID> v) :
-    _vars(move(v))
+VCAllDifferent::VCAllDifferent(vector<IntegerVariableID> v) : _vars(move(v))
 {
 }
 
@@ -159,7 +159,8 @@ auto VCAllDifferent::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [unassigned_handle = _unassigned_handle, owner = constraint_id()](const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
+        [unassigned_handle = _unassigned_handle, owner = constraint_id()](
+            const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
             propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger, owner);
             return PropagatorState::Enable;
         },
@@ -178,7 +179,5 @@ auto VCAllDifferent::s_expr(const innards::ProofModel * const model) const -> SE
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("all_different"),
-        SExpr::list(std::move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_different"), SExpr::list(std::move(vars))});
 }

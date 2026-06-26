@@ -82,18 +82,14 @@ namespace gcs::innards
         };
     }
 
-    using EvaluatedReificationCondition = std::variant<
-        evaluated_reif::MustHold,
-        evaluated_reif::MustNotHold,
-        evaluated_reif::Undecided,
-        evaluated_reif::Deactivated>;
+    using EvaluatedReificationCondition =
+        std::variant<evaluated_reif::MustHold, evaluated_reif::MustNotHold, evaluated_reif::Undecided, evaluated_reif::Deactivated>;
 
     /**
      * \brief Resolve a static `ReificationCondition` against the current
      * search State to one of the runtime variants above.
      */
-    [[nodiscard]] auto test_reification_condition(const State &, const ReificationCondition &)
-        -> EvaluatedReificationCondition;
+    [[nodiscard]] auto test_reification_condition(const State &, const ReificationCondition &) -> EvaluatedReificationCondition;
 }
 
 #endif
