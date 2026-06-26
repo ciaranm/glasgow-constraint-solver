@@ -142,6 +142,19 @@ namespace gcs::innards
 
         auto operator=(const InferenceTrackerBase &) -> InferenceTrackerBase & = delete;
 
+        // Whether a Reason handed to the infer* methods will actually be read.
+        // Today only the proof-materialising tracker consumes reasons; conflict-
+        // directed search (variable weighting / nogood learning) will also want
+        // them, and crucially without a logger -- so this is deliberately keyed on
+        // the tracker's needs, not on whether proofs are being logged. A propagator
+        // whose reason is expensive to assemble (a ConcatReason allocation, a long
+        // extra-literal walk) should guard that assembly on this query, so it
+        // optimises away whenever nothing will read it.
+        [[nodiscard]] auto want_reasons() const -> bool
+        {
+            return Actual_::materialises_reasons;
+        }
+
         auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason,
             const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {

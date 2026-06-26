@@ -34,6 +34,10 @@ namespace gcs::innards
     // Escape hatch for the bespoke tail: reads state, appends to `out`.
     using LazyReasonFn = std::function<auto(const State &, ReasonLiterals & out)->void>;
 
+    // Forward declaration so ConcatReason can hold a list of sub-reasons (Reason
+    // is self-referential, so the parts live behind std::vector's indirection).
+    class Reason;
+
     /**
      * \brief A declarative description of a reason: cheap to build, copyable,
      * and storable. The domain walk that turns it into ReasonLiterals is
@@ -111,6 +115,21 @@ namespace gcs::innards
     };
 
     /**
+     * \brief Concatenation of sub-reasons: materialises to each part's literals
+     * in order (part order == literal order).
+     *
+     * This is the composable alternative to a per-reason `extra` slot. The parts
+     * are heap-indirected because Reason is self-referential, so building one is
+     * not free -- prefer the with_extra() helper, which degrades to the bare base
+     * reason when there is nothing to add, keeping the common case a flat,
+     * allocation-free reason.
+     */
+    struct ConcatReason
+    {
+        std::vector<Reason> parts;
+    };
+
+    /**
      * \brief A reason for an inference, as a declarative variant.
      *
      * Implemented as a thin wrapper over a std::variant so it can also be
@@ -121,7 +140,7 @@ namespace gcs::innards
     {
     public:
         using Variant = std::variant<NoReason, ExplicitReason, GenericReasonOver, BothBoundsReasonOver, ExactSingleValue, LazyReasonOver,
-            NarrowableGenericReasonOver, NarrowableBothBoundsReasonOver, NarrowableLazyReasonOver>;
+            NarrowableGenericReasonOver, NarrowableBothBoundsReasonOver, NarrowableLazyReasonOver, ConcatReason>;
 
         Reason() : _variant(NoReason{})
         {
@@ -160,6 +179,10 @@ namespace gcs::innards
         }
 
         Reason(NarrowableLazyReasonOver r) : _variant(std::move(r))
+        {
+        }
+
+        Reason(ConcatReason r) : _variant(std::move(r))
         {
         }
 
@@ -204,6 +227,20 @@ namespace gcs::innards
     [[nodiscard]] auto bounds_reason(const std::vector<IntegerVariableID> & vars, const std::optional<Literal> & extra_lit = std::nullopt) -> Reason;
 
     [[nodiscard]] auto singleton_reason(const ProofLiteralOrFlag & lit) -> Reason;
+
+    /**
+     * \brief Compose a base reason with extra literals that materialise *after*
+     * the base's, via a ConcatReason. This is the convenience spelling for the
+     * recurring "structured reason over some variables, plus a handful of
+     * specific literals" shape (Element, MinMax, In, …).
+     *
+     * Degrades to \p base unchanged when there is nothing to add, so the common
+     * (no-extra) path stays a flat, allocation-free reason rather than paying for
+     * a ConcatReason. The \c optional overload is the drop-in for the many sites
+     * that already hold an `optional<Literal>` extra.
+     */
+    [[nodiscard]] auto with_extra(Reason base, ReasonLiterals extra) -> Reason;
+    [[nodiscard]] auto with_extra(Reason base, const std::optional<Literal> & extra) -> Reason;
 
     /**
      * \brief Eagerly materialise a reason into its literal conjunction against
