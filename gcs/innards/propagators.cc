@@ -57,11 +57,17 @@ struct Propagators::Imp
     std::array<vector<InitialisationFunction>, number_of_initialiser_priorities> initialisation_functions_by_priority;
 
     // Every propagation function's index appears exactly once in queue, and lookup[id] always tells
-    // us where that position is. The items from index 0 to enqueued_end - 1 are ready to be
-    // propagated, and the items between enqueued_end and idle_end - 1 do not need to be propagated.
-    // Anything from idle_end onwards is disabled until backtrack.
+    // us where that position is. The ready-to-propagate items are [enqueued_begin, enqueued_end);
+    // we run them oldest-first (FIFO -- empirically far better than a stack, see Schulte & Stuckey,
+    // "Efficient Constraint Propagation Engines"). The items between enqueued_end and idle_end - 1 do
+    // not need to be propagated. Anything from idle_end onwards is disabled until backtrack. Items in
+    // [0, enqueued_begin) have already been propagated this round and become idle again at the next
+    // requeue.
     vector<int> queue, lookup;
-    int enqueued_end = 0, idle_end = 0;
+    int enqueued_begin = 0, enqueued_end = 0, idle_end = 0;
+    // Reused scratch for the disable-until-backtrack propagators of the current round
+    // (see the run loop); a member so it isn't reallocated on every propagate() call.
+    vector<int> to_disable;
 
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
     vector<TriggerIDs> iv_triggers;
@@ -187,21 +193,21 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
     };
 
     if (! lit) {
-        // On the first pass, walk propagators in registration order. Our queue runs
-        // backwards, so push them in reverse.
+        // On the first pass, walk propagators in registration order. The queue runs
+        // oldest-first, so push them forwards.
         _imp->queue.resize(_imp->propagation_functions.size());
         _imp->lookup.resize(_imp->propagation_functions.size());
-        unsigned p = 0;
-        for (int i = _imp->propagation_functions.size() - 1; i >= 0; --i) {
-            _imp->queue[p] = i;
-            _imp->lookup[i] = p;
-            ++p;
+        for (unsigned i = 0; i != _imp->propagation_functions.size(); ++i) {
+            _imp->queue[i] = i;
+            _imp->lookup[i] = i;
         }
 
+        _imp->enqueued_begin = 0;
         _imp->enqueued_end = _imp->propagation_functions.size();
         _imp->idle_end = _imp->propagation_functions.size();
     }
     else {
+        _imp->enqueued_begin = 0;
         _imp->enqueued_end = 0;
         overloaded{
             [&](const TrueLiteral &) {},  //
@@ -231,17 +237,36 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
     // proofs-off path carries no reason snapshotting or proof-logging code.
     auto run = [&](auto & tracker) -> bool {
         bool contradiction = false;
+        _imp->to_disable.clear();
         while (! contradiction) {
-            if (0 == _imp->enqueued_end) {
+            if (_imp->enqueued_begin == _imp->enqueued_end) {
+                // The ready queue has drained. Retire any propagators that asked to be
+                // disabled this round -- deferred to here, where the just-propagated
+                // prefix [0, enqueued_begin) and the idle tail form one contiguous
+                // [0, idle_end) block, so each swap-to-disabled has a valid target even
+                // when the idle region emptied mid-round. lookup[] is kept current by
+                // the swaps, so processing order does not matter.
+                for (auto disable_id : _imp->to_disable) {
+                    --_imp->idle_end;
+                    auto being_swapped_item = _imp->queue[_imp->idle_end];
+                    swap(_imp->queue[_imp->lookup[disable_id]], _imp->queue[_imp->idle_end]);
+                    swap(_imp->lookup[disable_id], _imp->lookup[being_swapped_item]);
+                }
+                _imp->to_disable.clear();
+
+                // Fold the propagated prefix back into the idle region and wake the
+                // propagators triggered by this round's inferences.
+                _imp->enqueued_begin = 0;
+                _imp->enqueued_end = 0;
                 for (const auto & [v, inf] : tracker.each_inference())
                     requeue(v, inf);
                 tracker.reset();
             }
 
-            if (0 == _imp->enqueued_end)
+            if (_imp->enqueued_begin == _imp->enqueued_end)
                 break;
 
-            int propagator_id = _imp->queue[--_imp->enqueued_end];
+            int propagator_id = _imp->queue[_imp->enqueued_begin++];
             try {
                 ++_imp->total_propagations;
                 auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
@@ -249,12 +274,7 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
                     ++_imp->effectful_propagations;
                 switch (propagator_state) {
                 case PropagatorState::Enable: break;
-                case PropagatorState::DisableUntilBacktrack:
-                    --_imp->idle_end;
-                    auto being_swapped_item = _imp->queue[_imp->idle_end];
-                    swap(_imp->queue[_imp->enqueued_end], _imp->queue[_imp->idle_end]);
-                    swap(_imp->lookup[propagator_id], _imp->lookup[being_swapped_item]);
-                    break;
+                case PropagatorState::DisableUntilBacktrack: _imp->to_disable.push_back(propagator_id); break;
                 }
             }
             catch (const TrackedPropagationFailed &) {
