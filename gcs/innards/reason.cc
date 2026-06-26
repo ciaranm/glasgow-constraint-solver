@@ -90,20 +90,35 @@ namespace
     }
 }
 
+namespace
+{
+    // Append a reason's literals to `out` (rather than returning a fresh vector),
+    // so a ConcatReason can lay its parts down one after another in order. The
+    // leaf materialise_* helpers and the LazyReasonFn contract already append.
+    auto append_materialised(const Reason & reason, const State & state, ReasonLiterals & out) -> void
+    {
+        reason.visit(overloaded{
+            [&](const NoReason &) {},                                                                            //
+            [&](const ExplicitReason & r) { out.insert(out.end(), r.literals.begin(), r.literals.end()); },      //
+            [&](const GenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, out); },             //
+            [&](const BothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, out); },           //
+            [&](const ExactSingleValue & r) { materialise_exact_single_value(state, *r.vars, r.extra, out); },   //
+            [&](const LazyReasonOver & r) { r.fn(state, out); },                                                 //
+            [&](const NarrowableGenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, out); },   //
+            [&](const NarrowableBothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, out); }, //
+            [&](const NarrowableLazyReasonOver & r) { r.fn(state, out); },                                       //
+            [&](const ConcatReason & r) {
+                for (const auto & part : r.parts)
+                    append_materialised(part, state, out);
+            } //
+        });
+    }
+}
+
 auto gcs::innards::materialise(const Reason & reason, const State & state) -> ReasonLiterals
 {
     ReasonLiterals result;
-    reason.visit(overloaded{
-        [&](const NoReason &) {},                                                                               //
-        [&](const ExplicitReason & r) { result = r.literals; },                                                 //
-        [&](const GenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, result); },             //
-        [&](const BothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, result); },           //
-        [&](const ExactSingleValue & r) { materialise_exact_single_value(state, *r.vars, r.extra, result); },   //
-        [&](const LazyReasonOver & r) { r.fn(state, result); },                                                 //
-        [&](const NarrowableGenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, result); },   //
-        [&](const NarrowableBothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, result); }, //
-        [&](const NarrowableLazyReasonOver & r) { r.fn(state, result); }                                        //
-    });
+    append_materialised(reason, state, result);
     return result;
 }
 
@@ -120,6 +135,27 @@ auto gcs::innards::bounds_reason(const std::vector<IntegerVariableID> & vars, co
 auto gcs::innards::singleton_reason(const ProofLiteralOrFlag & lit) -> Reason
 {
     return ExplicitReason{ReasonLiterals{lit}};
+}
+
+auto gcs::innards::with_extra(Reason base, ReasonLiterals extra) -> Reason
+{
+    // Nothing to add: keep the bare (often deferred, allocation-free) base rather
+    // than wrapping it in a heap-backed ConcatReason.
+    if (extra.empty())
+        return base;
+
+    std::vector<Reason> parts;
+    parts.reserve(2);
+    parts.push_back(std::move(base));
+    parts.push_back(ExplicitReason{std::move(extra)});
+    return ConcatReason{std::move(parts)};
+}
+
+auto gcs::innards::with_extra(Reason base, const optional<Literal> & extra) -> Reason
+{
+    if (! extra)
+        return base;
+    return with_extra(std::move(base), ReasonLiterals{*extra});
 }
 
 auto gcs::innards::eager_reason(const Reason & reason, const State & state) -> ReasonLiterals
