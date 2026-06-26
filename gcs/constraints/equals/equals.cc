@@ -298,12 +298,14 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
                                                 ProofLogger * const logger, const Literal & cond) -> PropagatorState {
         auto value1 = state.optional_single_value(v1);
         if (value1) {
-            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{hints::Equals{owner}}, ExactSingleValue{ReasonVars{v1_scope.get()}, cond});
+            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{hints::Equals{owner}},
+                concat(singleton_reason(cond), ExactSingleValue{ReasonVars{v1_scope.get()}}));
             return PropagatorState::DisableUntilBacktrack;
         }
         auto value2 = state.optional_single_value(v2);
         if (value2) {
-            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{hints::Equals{owner}}, ExactSingleValue{ReasonVars{v2_scope.get()}, cond});
+            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{hints::Equals{owner}},
+                concat(singleton_reason(cond), ExactSingleValue{ReasonVars{v2_scope.get()}}));
             return PropagatorState::DisableUntilBacktrack;
         }
         return PropagatorState::Enable;
@@ -324,7 +326,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
-            auto reason = Reason{ExactSingleValue{ReasonVars{v1v2_scope.get()}, std::nullopt}};
+            auto reason = Reason{ExactSingleValue{ReasonVars{v1v2_scope.get()}}};
             if (*value1 == *value2)
                 return reification_verdict::MustHold<EqualsJustification>{
                     .justification = JustifyUsingRUP{hints::Equals{owner}}, //
