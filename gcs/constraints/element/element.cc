@@ -13,6 +13,8 @@
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/integer.hh>
 
+#include <gch/small_vector.hpp>
+
 #include <util/enumerate.hh>
 
 #include <version>
@@ -109,7 +111,7 @@ namespace
     }
 
     template <unsigned dims_remaining_, typename T_>
-    auto get_array_var(const vector<size_t> & indices, const T_ & vec, size_t current_index = 0) -> IntegerVariableID
+    auto get_array_var(const auto & indices, const T_ & vec, size_t current_index = 0) -> IntegerVariableID
     {
         if constexpr (1 == dims_remaining_) {
             return as_integer_variable(vec.at(indices.at(current_index)));
@@ -127,7 +129,7 @@ namespace
     // Integer), where it skips the IntegerVariableID variant construction and the
     // State round-trip that get_array_var + state.* would otherwise pay per leaf.
     template <unsigned dims_remaining_, typename T_>
-    auto get_array_value(const vector<size_t> & indices, const T_ & vec, size_t current_index = 0) -> Integer
+    auto get_array_value(const auto & indices, const T_ & vec, size_t current_index = 0) -> Integer
     {
         if constexpr (1 == dims_remaining_) {
             return vec.at(indices.at(current_index));
@@ -213,7 +215,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
     }
 
     HalfReifyOnConjunctionOf reif;
-    vector<size_t> elem;
+    gch::small_vector<size_t, dimensions_> elem;
 
     function<auto(unsigned)->void> build_implication_constraints = [&](unsigned d) {
         auto s = get_dimension_size<dimensions_>(d, *_array);
@@ -267,7 +269,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
 
     vector<IntegerVariableID> all_array_vars;
     {
-        vector<size_t> elem;
+        gch::small_vector<size_t, dimensions_> elem;
         function<auto(unsigned)->void> collect_array_variables = [&](unsigned d) {
             auto s = get_dimension_size<dimensions_>(d, *_array);
             for (size_t x = 0; x != s; ++x) {
@@ -322,7 +324,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 auto want_reason = inference.want_reasons();
 
                 state.for_each_value_mutable(index_vars.at(fixed_dim), [&](Integer test_val) {
-                    vector<size_t> elem;
+                    gch::small_vector<size_t, dimensions_> elem;
                     vector<IntegerVariableID> explored_vars;
                     if (want_reason)
                         explored_vars.push_back(result_var);
@@ -392,7 +394,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                 [&](const ReasonLiterals & reason) {
                                     // show there's no overlap between array_var and result, for any way the other
                                     // index vars are assigned
-                                    vector<size_t> elem;
+                                    gch::small_vector<size_t, dimensions_> elem;
                                     WPBSum sum_so_far;
                                     auto show_no_support = [&](auto && self, unsigned d) -> void {
                                         // again, we're iterating over every dimension recursively, except for the one where
@@ -459,7 +461,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // bounds only, so the result variable has to be in the range
                 // (rather than the union) of possible values
-                vector<size_t> elem;
+                gch::small_vector<size_t, dimensions_> elem;
                 optional<Integer> lowest_found, highest_found;
                 auto current_bounds = state.bounds(result_var);
                 vector<IntegerVariableID> considered_vars;
@@ -562,7 +564,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 array_has_nonconstants = array_has_nonconstants,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // the result variable has to be in the union of possible values
-                vector<size_t> elem;
+                gch::small_vector<size_t, dimensions_> elem;
                 IntervalSet<Integer> still_to_find_support_for = state.copy_of_values(result_var);
                 vector<IntegerVariableID> considered_vars;
                 auto collect_supported_values = [&](auto && self, unsigned d) -> void {
@@ -647,7 +649,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 // if there's only a single possible array variable left, it can only take values
                 // that are present in the result variable
                 bool index_is_fully_defined = true;
-                vector<size_t> elem;
+                gch::small_vector<size_t, dimensions_> elem;
                 ReasonLiterals index_reason;
                 for (const auto & [p, i] : enumerate(index_vars)) {
                     auto v = state.optional_single_value(i);
