@@ -287,11 +287,11 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 auto looking_for = state.copy_of_values(result_var);
                 auto looking_for_bounds = state.bounds(result_var);
 
-                for (const auto & test_val : state.each_value_mutable(index_vars.at(fixed_dim))) {
+                state.for_each_value_mutable(index_vars.at(fixed_dim), [&](Integer test_val) {
                     vector<size_t> elem;
                     vector<IntegerVariableID> explored_vars;
                     explored_vars.push_back(result_var);
-                    function<auto(unsigned)->bool> look_for_support = [&](unsigned d) -> bool {
+                    auto look_for_support = [&](auto && self, unsigned d) -> bool {
                         // we're iterating over every dimension recursively, except for the one where
                         // we're checking support for the fixed test_val.
                         auto do_it_with = [&](Integer x) {
@@ -312,7 +312,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                 }
                             }
                             else {
-                                if (look_for_support(d + 1))
+                                if (self(self, d + 1))
                                     return true;
                             }
                             elem.pop_back();
@@ -323,15 +323,19 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                             return do_it_with(test_val);
                         else {
                             explored_vars.push_back(index_vars.at(d));
-                            for (const auto & x : state.each_value_immutable(index_vars.at(d)))
-                                if (do_it_with(x))
-                                    return true;
-
-                            return false;
+                            bool support_found = false;
+                            state.for_each_value_immutable(index_vars.at(d), [&](Integer x) {
+                                if (do_it_with(x)) {
+                                    support_found = true;
+                                    return false;
+                                }
+                                return true;
+                            });
+                            return support_found;
                         }
                     };
 
-                    if (! look_for_support(0)) {
+                    if (! look_for_support(look_for_support, 0)) {
                         inference.infer_not_equal(logger, index_vars.at(fixed_dim), test_val,
                             JustifyExplicitly{//
                                 [&](const ReasonLiterals & reason) {
@@ -339,7 +343,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                     // index vars are assigned
                                     vector<size_t> elem;
                                     WPBSum sum_so_far;
-                                    function<auto(unsigned)->void> show_no_support = [&](unsigned d) -> void {
+                                    auto show_no_support = [&](auto && self, unsigned d) -> void {
                                         // again, we're iterating over every dimension recursively, except for the one where
                                         // we're checking support for the fixed test_val.
                                         auto do_it_with = [&](Integer x) {
@@ -351,14 +355,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                                     throw UnimplementedException{};
                                                 }
                                                 else {
-                                                    for (const auto & v : state.each_value_immutable(array_var))
+                                                    state.for_each_value_immutable(array_var, [&](Integer v) {
                                                         logger->emit_rup_proof_line_under_reason(reason,
                                                             sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) + 1_i * (array_var != v) >= 1_i,
                                                             ProofLevel::Temporary);
+                                                    });
                                                 }
                                             }
                                             else
-                                                show_no_support(d + 1);
+                                                self(self, d + 1);
 
                                             elem.pop_back();
                                         };
@@ -366,23 +371,23 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                         if (d == fixed_dim)
                                             return do_it_with(test_val);
                                         else {
-                                            for (const auto & x : state.each_value_immutable(index_vars.at(d))) {
+                                            state.for_each_value_immutable(index_vars.at(d), [&](Integer x) {
                                                 auto save_sum_so_far = sum_so_far;
                                                 sum_so_far += 1_i * (index_vars.at(d) != x);
                                                 do_it_with(x);
                                                 logger->emit_rup_proof_line_under_reason(
                                                     reason, sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) >= 1_i, ProofLevel::Temporary);
                                                 sum_so_far = save_sum_so_far;
-                                            }
+                                            });
                                         }
                                     };
 
-                                    show_no_support(0);
+                                    show_no_support(show_no_support, 0);
                                 },
                                 ThenRUP::Yes, hints::Element{owner}},
                             generic_reason(explored_vars));
                     }
-                }
+                });
 
                 return PropagatorState::Enable;
             },
@@ -407,10 +412,10 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 optional<Integer> lowest_found, highest_found;
                 auto current_bounds = state.bounds(result_var);
                 vector<IntegerVariableID> considered_vars;
-                function<auto(unsigned)->void> collect_supported_bounds = [&](unsigned d) {
-                    for (const auto & x : state.each_value_immutable(index_vars.at(d))) {
+                auto collect_supported_bounds = [&](auto && self, unsigned d) -> void {
+                    state.for_each_value_immutable(index_vars.at(d), [&](Integer x) {
                         if (lowest_found && *lowest_found <= current_bounds.first && highest_found && *highest_found >= current_bounds.second)
-                            return;
+                            return false;
 
                         elem.push_back((x - index_starts.at(d)).as_index());
                         if (elem.size() == dimensions_) {
@@ -424,12 +429,13 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                             }
                         }
                         else {
-                            collect_supported_bounds(d + 1);
+                            self(self, d + 1);
                         }
                         elem.pop_back();
-                    }
+                        return true;
+                    });
                 };
-                collect_supported_bounds(0);
+                collect_supported_bounds(collect_supported_bounds, 0);
 
                 auto infer_bound = [&](Integer relevant_bound, bool ge) {
                     auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var <= relevant_bound);
@@ -445,24 +451,24 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                             [&](const ReasonLiterals & reason) {
                                 // show that it doesn't work for any feasible choice of indices
                                 WPBSum sum_so_far;
-                                function<auto(unsigned)->void> rule_out = [&](unsigned d) {
-                                    for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
+                                auto rule_out = [&](auto && self, unsigned d) -> void {
+                                    state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
                                         if (d + 1 == dimensions_)
                                             logger->emit_rup_proof_line_under_reason(reason,
                                                 sum_so_far + 1_i * lit_to_infer + 1_i * (index_vars.at(d) != v) >= 1_i, ProofLevel::Temporary);
                                         else {
                                             auto save_sum_so_far = sum_so_far;
                                             sum_so_far += 1_i * (index_vars.at(d) != v);
-                                            rule_out(d + 1);
+                                            self(self, d + 1);
                                             sum_so_far = save_sum_so_far;
                                         }
-                                    }
+                                    });
                                     if (! sum_so_far.terms.empty()) {
                                         logger->emit_rup_proof_line_under_reason(
                                             reason, sum_so_far + 1_i * lit_to_infer >= 1_i, ProofLevel::Temporary);
                                     }
                                 };
-                                rule_out(0);
+                                rule_out(rule_out, 0);
                             },
                             ThenRUP::Yes, hints::Element{owner}},
                         ExplicitReason{reason});
@@ -493,26 +499,26 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 vector<size_t> elem;
                 IntervalSet<Integer> still_to_find_support_for = state.copy_of_values(result_var);
                 vector<IntegerVariableID> considered_vars;
-                function<auto(unsigned)->void> collect_supported_values = [&](unsigned d) {
-                    for (const auto & x : state.each_value_immutable(index_vars.at(d))) {
+                auto collect_supported_values = [&](auto && self, unsigned d) -> void {
+                    state.for_each_value_immutable(index_vars.at(d), [&](Integer x) {
                         if (still_to_find_support_for.empty())
-                            return;
+                            return false;
 
                         elem.push_back((x - index_starts.at(d)).as_index());
                         if (elem.size() == dimensions_) {
                             auto array_var = get_array_var<dimensions_>(elem, *array);
                             if (array_has_nonconstants)
                                 considered_vars.push_back(array_var);
-                            for (const auto & v : state.each_value_immutable(array_var))
-                                still_to_find_support_for.erase(v);
+                            state.for_each_value_immutable(array_var, [&](Integer v) { still_to_find_support_for.erase(v); });
                         }
                         else {
-                            collect_supported_values(d + 1);
+                            self(self, d + 1);
                         }
                         elem.pop_back();
-                    }
+                        return true;
+                    });
                 };
-                collect_supported_values(0);
+                collect_supported_values(collect_supported_values, 0);
 
                 for (auto value : still_to_find_support_for.each()) {
                     ReasonLiterals reason = materialise(generic_reason(index_vars), state);
@@ -523,8 +529,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                             [&](const ReasonLiterals & reason) {
                                 // show that it doesn't work for any feasible choice of indices
                                 WPBSum sum_so_far;
-                                function<auto(unsigned)->void> rule_out = [&](unsigned d) {
-                                    for (const auto & v : state.each_value_immutable(index_vars.at(d))) {
+                                auto rule_out = [&](auto && self, unsigned d) -> void {
+                                    state.for_each_value_immutable(index_vars.at(d), [&](Integer v) {
                                         if (d + 1 == dimensions_)
                                             logger->emit_rup_proof_line_under_reason(reason,
                                                 sum_so_far + 1_i * (result_var != value) + 1_i * (index_vars.at(d) != v) >= 1_i,
@@ -532,16 +538,16 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                         else {
                                             auto save_sum_so_far = sum_so_far;
                                             sum_so_far += 1_i * (index_vars.at(d) != v);
-                                            rule_out(d + 1);
+                                            self(self, d + 1);
                                             sum_so_far = save_sum_so_far;
                                         }
-                                    }
+                                    });
                                     if (! sum_so_far.terms.empty()) {
                                         logger->emit_rup_proof_line_under_reason(
                                             reason, sum_so_far + 1_i * (result_var != value) >= 1_i, ProofLevel::Temporary);
                                     }
                                 };
-                                rule_out(0);
+                                rule_out(rule_out, 0);
                             },
                             ThenRUP::Yes, hints::Element{owner}},
                         ExplicitReason{reason});
