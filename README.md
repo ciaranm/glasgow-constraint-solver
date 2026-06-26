@@ -335,6 +335,9 @@ In-depth notes on individual subsystems live in the ``dev_docs/`` directory. The
 developers (human or AI) working on the solver itself, not at end users. See ``dev_docs/README.md``
 for an index.
 
+Before submitting a contribution, please read ``CONTRIBUTING.md``. It covers the policy on
+AI-assisted contributions and the formatting (clang-format), build, and test requirements.
+
 How Do We Know It's Correct?
 ============================
 

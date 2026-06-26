@@ -65,7 +65,13 @@ cmake -S . -B build -DGCS_TEST_CAP_DEFAULTS=OFF
 ```
 See `dev_docs/constraints.md` (Testing) for details.
 
-Format code with clang-format (all source is formatted this way).
+Format code with clang-format; all source is formatted this way. Use
+**clang-format 21** to match CI (formatting output differs between major
+releases). Format the whole tree with:
+```shell
+git ls-files '*.cc' '*.hh' | grep -v '^XCSP3-CPP-Parser/' | xargs clang-format -i
+```
+The `clang-format` CI workflow enforces this on every push and pull request.
 
 ## Compiler and Standard Library Support
 

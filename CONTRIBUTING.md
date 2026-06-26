@@ -27,6 +27,25 @@ All contributions should pass both the `release` and `sanitize` build and tests
 before submission, including the full test suite (with VeriPB installed) in
 both modes. See `README.md` for details.
 
+Code Formatting
+===============
+
+All C++ source is formatted with
+[clang-format](https://clang.llvm.org/docs/ClangFormat.html) using the
+`.clang-format` in the repository root. Use **clang-format 21**: formatting
+output can differ between major releases, and CI pins this version, so a
+different one will report spurious changes.
+
+Format the whole tree before submitting:
+
+```shell
+git ls-files '*.cc' '*.hh' | grep -v '^XCSP3-CPP-Parser/' | xargs clang-format -i
+```
+
+The `clang-format` CI workflow runs `clang-format --dry-run --Werror` over the
+same files on every push and pull request, so an unformatted contribution will
+fail the check.
+
 Developer Documentation
 =======================
 
