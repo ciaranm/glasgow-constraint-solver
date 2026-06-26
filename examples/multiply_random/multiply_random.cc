@@ -91,11 +91,13 @@ auto main(int argc, char * argv[]) -> int
         println(cout, "z in {}..{}", z_lower, z_upper);
     }
     auto stats = solve(
-        p, [&](const CurrentState & s) -> bool {
-           if (display_problem) {
-            println(cout, "solution: x = {}, y = {}, z = {}", s(x), s(y), s(z));
-           }
-            return false; },
+        p,
+        [&](const CurrentState & s) -> bool {
+            if (display_problem) {
+                println(cout, "solution: x = {}, y = {}, z = {}", s(x), s(y), s(z));
+            }
+            return false;
+        },
         prove ? std::make_optional(ProofOptions{proof_prefix}) : std::nullopt);
 
     if (print_stats) {

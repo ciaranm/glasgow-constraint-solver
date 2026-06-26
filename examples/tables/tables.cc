@@ -74,26 +74,11 @@ auto main(int argc, char * argv[]) -> int
     auto v3 = p.create_integer_variable(1_i, 4_i, "v3");
     auto v4 = p.create_integer_variable(1_i, 4_i, "v4");
 
-    p.post(Table{
-        {v1, v2, v3},
-        SimpleTuples{
-            {1_i, 2_i, 3_i},
-            {1_i, 3_i, 2_i},
-            {2_i, 1_i, 3_i},
-            {2_i, 3_i, 1_i},
-            {3_i, 1_i, 2_i},
-            {3_i, 2_i, 1_i}}});
+    p.post(Table{{v1, v2, v3}, SimpleTuples{{1_i, 2_i, 3_i}, {1_i, 3_i, 2_i}, {2_i, 1_i, 3_i}, {2_i, 3_i, 1_i}, {3_i, 1_i, 2_i}, {3_i, 2_i, 1_i}}});
 
-    p.post(Table{
-        {v1, v4},
-        WildcardTuples{
-            {1_i, Wildcard{}},
-            {2_i, 2_i},
-            {3_i, 3_i},
-            {4_i, 4_i}}});
+    p.post(Table{{v1, v4}, WildcardTuples{{1_i, Wildcard{}}, {2_i, 2_i}, {3_i, 3_i}, {4_i, 4_i}}});
 
-    p.post(Table{
-        {v1, v2, v3, v4},
+    p.post(Table{{v1, v2, v3, v4},
         WildcardTuples{
             {1_i, 1_i, Wildcard{}, Wildcard{}},
             {Wildcard{}, 1_i, 1_i, Wildcard{}},
@@ -116,9 +101,7 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             },
         },
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

@@ -29,16 +29,15 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("smart_table_am1"))                          //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program Options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("smart_table_am1"))  //
+            ("stats", "Print solve statistics")                              //
             ;
 
-        options.add_options()(
-            "n", "Integer value n: at most 1 out n variables can take the value n.", cxxopts::value<int>()->default_value("3"));
+        options.add_options()("n", "Integer value n: at most 1 out n variables can take the value n.", cxxopts::value<int>()->default_value("3"));
 
         options_vars = options.parse(argc, argv);
     }
@@ -63,19 +62,15 @@ auto main(int argc, char * argv[]) -> int
 
     p.post(AtMostOneSmartTable{vars, val});
 
-    auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                cout << "vars = [ ";
-                for (const auto & var : vars) {
-                    cout << s(var) << " ";
-                }
-                cout << "]" << endl;
-                return true;
-            }},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+        cout << "vars = [ ";
+        for (const auto & var : vars) {
+            cout << s(var) << " ";
+        }
+        cout << "]" << endl;
+        return true;
+    }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         cout << stats;

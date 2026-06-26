@@ -19,10 +19,7 @@ using std::is_same_v;
 using std::vector;
 
 template <typename Literal_>
-[[nodiscard]] auto gcs::innards::recover_am1(
-    ProofLogger & logger,
-    ProofLevel level,
-    const vector<Literal_> & atoms,
+[[nodiscard]] auto gcs::innards::recover_am1(ProofLogger & logger, ProofLevel level, const vector<Literal_> & atoms,
     const function<auto(const Literal_ &, const Literal_ &)->ProofLine> & pair_ne) -> ProofLine
 {
     if (logger.get_assertion_level() > AssertionLevel::Off)
@@ -111,8 +108,8 @@ template <typename Literal_>
     return result;
 }
 
-template auto gcs::innards::recover_am1<IntegerVariableCondition>(
-    ProofLogger &, ProofLevel, const vector<IntegerVariableCondition> &, const function<auto(const IntegerVariableCondition &, const IntegerVariableCondition &)->ProofLine> &) -> ProofLine;
+template auto gcs::innards::recover_am1<IntegerVariableCondition>(ProofLogger &, ProofLevel, const vector<IntegerVariableCondition> &,
+    const function<auto(const IntegerVariableCondition &, const IntegerVariableCondition &)->ProofLine> &) -> ProofLine;
 
 template auto gcs::innards::recover_am1<ProofFlag>(
     ProofLogger &, ProofLevel, const vector<ProofFlag> &, const function<auto(const ProofFlag &, const ProofFlag &)->ProofLine> &) -> ProofLine;

@@ -63,11 +63,8 @@ namespace gcs::innards::hints
 
 namespace
 {
-    auto propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result,
-        const State & state,
-        auto & inference,
-        ProofLogger * const logger,
-        const pair<optional<ProofLine>, optional<ProofLine>> & sum_line, const ConstraintID & owner) -> PropagatorState
+    auto propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result, const State & state, auto & inference,
+        ProofLogger * const logger, const pair<optional<ProofLine>, optional<ProofLine>> & sum_line, const ConstraintID & owner) -> PropagatorState
     {
         auto a_vals = state.bounds(a);
         auto b_vals = state.bounds(b);
@@ -85,43 +82,34 @@ namespace
         };
 
         // min(result) = min(a) + min(b);
-        inference.infer(logger, result >= a_vals.first + b_vals.first,
-            justify(Conclude::LE),
+        inference.infer(logger, result >= a_vals.first + b_vals.first, justify(Conclude::LE),
             ExplicitReason{ReasonLiterals{a >= a_vals.first, b >= b_vals.first}});
 
         // max(result) = max(a) + max(b);
-        inference.infer(logger, result <= a_vals.second + b_vals.second,
-            justify(Conclude::GE),
+        inference.infer(logger, result <= a_vals.second + b_vals.second, justify(Conclude::GE),
             ExplicitReason{ReasonLiterals{a <= a_vals.second, b <= b_vals.second}});
 
         // min(a) = min(result) - max(b);
-        inference.infer(logger, a >= result_vals.first - b_vals.second,
-            justify(Conclude::GE),
+        inference.infer(logger, a >= result_vals.first - b_vals.second, justify(Conclude::GE),
             ExplicitReason{ReasonLiterals{result >= result_vals.first, b <= b_vals.second}});
 
         // max(a) = max(result) - min(b);
-        inference.infer(logger, a <= result_vals.second - b_vals.first,
-            justify(Conclude::LE),
+        inference.infer(logger, a <= result_vals.second - b_vals.first, justify(Conclude::LE),
             ExplicitReason{ReasonLiterals{result <= result_vals.second, b >= b_vals.first}});
 
         // min(b) = min(result) - max(a);
-        inference.infer(logger, b >= result_vals.first - a_vals.second,
-            justify(Conclude::GE),
+        inference.infer(logger, b >= result_vals.first - a_vals.second, justify(Conclude::GE),
             ExplicitReason{ReasonLiterals{result >= result_vals.first, a <= a_vals.second}});
 
         // max(b) = max(result) - min(a);
-        inference.infer(logger, b <= result_vals.second - a_vals.first,
-            justify(Conclude::LE),
+        inference.infer(logger, b <= result_vals.second - a_vals.first, justify(Conclude::LE),
             ExplicitReason{ReasonLiterals{result <= result_vals.second, a >= a_vals.first}});
 
         return PropagatorState::Enable;
     }
 }
 
-Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) :
-    _a(a),
-    _b(b),
-    _result(result)
+Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) : _a(a), _b(b), _result(result)
 {
 }
 
@@ -148,8 +136,7 @@ auto Plus::define_proof_model(ProofModel & model) -> void
     // Match those so the encoding byte-matches cake. The {LE, GE} return order is
     // unchanged from the unlabelled add_constraint, so _sum_line still feeds the
     // propagator's Conclude::LE/GE paths correctly.
-    _sum_line = model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "Plus", "sum",
-        WPBSum{} + 1_i * _a + 1_i * _b == 1_i * _result);
+    _sum_line = model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "Plus", "sum", WPBSum{} + 1_i * _a + 1_i * _b == 1_i * _result);
 }
 
 auto Plus::install_propagators(Propagators & propagators) -> void
@@ -159,10 +146,8 @@ auto Plus::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [a = _a, b = _b, result = _result, sum_line = _sum_line, owner = constraint_id()](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            return propagate_plus(a, b, result, state, inference, logger, sum_line, owner);
-        },
+        [a = _a, b = _b, result = _result, sum_line = _sum_line, owner = constraint_id()](const State & state, auto & inference,
+            ProofLogger * const logger) -> PropagatorState { return propagate_plus(a, b, result, state, inference, logger, sum_line, owner); },
         triggers);
 }
 
@@ -172,8 +157,6 @@ auto Plus::s_expr(const innards::ProofModel * const model) const -> SExpr
 
     // cake_pb_cp's binary prim parse wants three flat args (`plus X Y Z`), not a
     // bracketed list, so X op Y = Z reads as rest = [X; Y; Z].
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("plus"),
-        tracker.s_expr_term_of(_a),
-        tracker.s_expr_term_of(_b),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("plus"), tracker.s_expr_term_of(_a), tracker.s_expr_term_of(_b),
         tracker.s_expr_term_of(_result)});
 }

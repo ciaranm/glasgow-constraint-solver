@@ -144,8 +144,7 @@ struct NamesAndIDsTracker::Imp
     AssertionLevel assertion_level = AssertionLevel::Off;
 };
 
-NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) :
-    _imp(make_unique<Imp>())
+NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) : _imp(make_unique<Imp>())
 {
     _imp->verbose_names = proof_options.verbose_names;
     _imp->assertion_level = proof_options.assertion_level;
@@ -211,8 +210,8 @@ auto NamesAndIDsTracker::start_writing_model(ProofModel * const model) -> void
     _imp->model = model;
 }
 
-auto NamesAndIDsTracker::associate_condition_with_xliteral(
-    const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond, const XLiteral & x) -> void
+auto NamesAndIDsTracker::associate_condition_with_xliteral(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond, const XLiteral & x)
+    -> void
 {
     _imp->variable_conditions_to_x.emplace(cond, x);
 }
@@ -224,10 +223,7 @@ auto NamesAndIDsTracker::track_variable_takes_at_least_one_value(const SimpleOrP
 
 auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
 {
-    return overloaded{
-        [&](const ConstantIntegerVariableID &) -> ProofLine {
-            throw UnimplementedException{};
-        },
+    return overloaded{[&](const ConstantIntegerVariableID &) -> ProofLine { throw UnimplementedException{}; },
         [&](const SimpleIntegerVariableID & var) -> ProofLine {
             auto result = _imp->variable_at_least_one_constraints.find(var);
             if (result == _imp->variable_at_least_one_constraints.end()) {
@@ -270,25 +266,14 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
 
 auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>
 {
-    return overloaded{
-        [&](const ConstantIntegerVariableID &) -> variant<ProofLine, XLiteral> {
-            throw UnimplementedException{};
-        },
+    return overloaded{[&](const ConstantIntegerVariableID &) -> variant<ProofLine, XLiteral> { throw UnimplementedException{}; },
         [&](const SimpleIntegerVariableID & var) -> variant<ProofLine, XLiteral> {
             switch (cond.op) {
                 using enum VariableConditionOperator;
-            case GreaterEqual:
-                need_gevar(var, cond.value);
-                return _imp->gevars_that_exist.at(var).at(cond.value).first;
-            case Less:
-                need_gevar(var, cond.value);
-                return _imp->gevars_that_exist.at(var).at(cond.value).second;
-            case Equal:
-                need_direct_encoding_for(var, cond.value);
-                return _imp->eqvars_that_exist.at(var).at(cond.value).first;
-            case NotEqual:
-                need_direct_encoding_for(var, cond.value);
-                return _imp->eqvars_that_exist.at(var).at(cond.value).second;
+            case GreaterEqual: need_gevar(var, cond.value); return _imp->gevars_that_exist.at(var).at(cond.value).first;
+            case Less: need_gevar(var, cond.value); return _imp->gevars_that_exist.at(var).at(cond.value).second;
+            case Equal: need_direct_encoding_for(var, cond.value); return _imp->eqvars_that_exist.at(var).at(cond.value).first;
+            case NotEqual: need_direct_encoding_for(var, cond.value); return _imp->eqvars_that_exist.at(var).at(cond.value).second;
             case InRange:
                 static_cast<void>(need_invar(var, cond.value, cond.upper_value));
                 return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).first;
@@ -306,21 +291,12 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             if (auto v_id = find_view(var)) {
                 switch (cond.op) {
                     using enum VariableConditionOperator;
-                case GreaterEqual:
-                    need_gevar(*v_id, cond.value);
-                    return _imp->gevars_that_exist.at(*v_id).at(cond.value).first;
-                case Less:
-                    need_gevar(*v_id, cond.value);
-                    return _imp->gevars_that_exist.at(*v_id).at(cond.value).second;
-                case Equal:
-                    need_direct_encoding_for(*v_id, cond.value);
-                    return _imp->eqvars_that_exist.at(*v_id).at(cond.value).first;
-                case NotEqual:
-                    need_direct_encoding_for(*v_id, cond.value);
-                    return _imp->eqvars_that_exist.at(*v_id).at(cond.value).second;
+                case GreaterEqual: need_gevar(*v_id, cond.value); return _imp->gevars_that_exist.at(*v_id).at(cond.value).first;
+                case Less: need_gevar(*v_id, cond.value); return _imp->gevars_that_exist.at(*v_id).at(cond.value).second;
+                case Equal: need_direct_encoding_for(*v_id, cond.value); return _imp->eqvars_that_exist.at(*v_id).at(cond.value).first;
+                case NotEqual: need_direct_encoding_for(*v_id, cond.value); return _imp->eqvars_that_exist.at(*v_id).at(cond.value).second;
                 case InRange:
-                case NotInRange:
-                    throw UnimplementedException{};
+                case NotInRange: throw UnimplementedException{};
                 }
                 throw NonExhaustiveSwitch{};
             }
@@ -336,21 +312,17 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
                     return need_pol_item_defining_literal(var.actual_variable >= -(cond.value - var.then_add) + 1_i);
                 else
                     return need_pol_item_defining_literal(var.actual_variable < cond.value - var.then_add);
-            case Equal:
-                throw UnimplementedException{};
-            case NotEqual:
-                throw UnimplementedException{};
+            case Equal: throw UnimplementedException{};
+            case NotEqual: throw UnimplementedException{};
             case InRange:
-            case NotInRange:
-                throw UnimplementedException{};
+            case NotInRange: throw UnimplementedException{};
             }
             throw NonExhaustiveSwitch{};
         }}
         .visit(cond.var);
 }
 
-auto NamesAndIDsTracker::create_literals_for_introduced_variable_value(
-    SimpleIntegerVariableID id, Integer val, const string & name) -> void
+auto NamesAndIDsTracker::create_literals_for_introduced_variable_value(SimpleIntegerVariableID id, Integer val, const string & name) -> void
 {
     // These literals bypass eqvars_that_exist and the containment structures, which
     // is safe because an introduced variable has no bits encoding, so no range
@@ -366,13 +338,9 @@ auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrPro
     switch (cond.op) {
         using enum VariableConditionOperator;
     case Equal:
-    case NotEqual:
-        need_direct_encoding_for(cond.var, cond.value);
-        break;
+    case NotEqual: need_direct_encoding_for(cond.var, cond.value); break;
     case Less:
-    case GreaterEqual:
-        need_gevar(cond.var, cond.value);
-        break;
+    case GreaterEqual: need_gevar(cond.var, cond.value); break;
     case InRange:
     case NotInRange:
         if (! _imp->variable_conditions_to_x.contains(cond))
@@ -384,16 +352,11 @@ auto NamesAndIDsTracker::need_proof_name(const VariableConditionFrom<SimpleOrPro
 auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBooleanTerm>> & sum) -> void
 {
     for (auto & [_, v] : sum.terms)
-        overloaded{
-            [&](const ProofLiteral & lit) {
-                overloaded{
-                    [&](const TrueLiteral &) {},
-                    [&](const FalseLiteral &) {},
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                        need_proof_name(cond);
-                    }}
-                    .visit(simplify_literal(*this, lit));
-            },
+        overloaded{[&](const ProofLiteral & lit) {
+                       overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
+                           [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
+                           .visit(simplify_literal(*this, lit));
+                   },
             [&](const ProofFlag &) {},
             [&](const IntegerVariableID & var) {
                 // Opportunistically register view bit vectors during model
@@ -404,38 +367,27 @@ auto NamesAndIDsTracker::need_all_proof_names_in(const SumOf<Weighted<PseudoBool
                     if (auto view = std::get_if<ViewOfIntegerVariableID>(&var))
                         static_cast<void>(need_view(*view));
             },
-            [&](const ProofOnlySimpleIntegerVariableID &) {},
-            [&](const ProofBitVariable &) {}}
+            [&](const ProofOnlySimpleIntegerVariableID &) {}, [&](const ProofBitVariable &) {}}
             .visit(v);
 }
 
 auto NamesAndIDsTracker::need_all_proof_names_in(const Literals & lits) -> void
 {
     for (auto & lit : lits)
-        overloaded{
-            [&](const TrueLiteral &) {},
-            [&](const FalseLiteral &) {},
-            [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                need_proof_name(cond);
-            }}
+        overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
             .visit(simplify_literal(*this, lit));
 }
 
 auto NamesAndIDsTracker::need_all_proof_names_in(const HalfReifyOnConjunctionOf & h) -> void
 {
     for (auto & term : h)
-        overloaded{
-            [&](const ProofLiteral & lit) {
-                overloaded{
-                    [&](const TrueLiteral &) {},
-                    [&](const FalseLiteral &) {},
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                        need_proof_name(cond);
-                    }}
-                    .visit(simplify_literal(*this, lit));
-            },
-            [&](const ProofFlag &) {},
-            [&](const ProofBitVariable &) {}}
+        overloaded{[&](const ProofLiteral & lit) {
+                       overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
+                           [&]<typename T_>(const VariableConditionFrom<T_> & cond) { need_proof_name(cond); }}
+                           .visit(simplify_literal(*this, lit));
+                   },
+            [&](const ProofFlag &) {}, [&](const ProofBitVariable &) {}}
             .visit(term);
 }
 
@@ -447,8 +399,7 @@ auto NamesAndIDsTracker::negative_bit_coefficient(const SimpleOrProofOnlyInteger
     return it->second.first;
 }
 
-auto NamesAndIDsTracker::each_bit(const SimpleOrProofOnlyIntegerVariableID & id)
-    -> generator<pair<Integer, XLiteral>>
+auto NamesAndIDsTracker::each_bit(const SimpleOrProofOnlyIntegerVariableID & id) -> generator<pair<Integer, XLiteral>>
 {
     auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(id);
     if (it == _imp->integer_variable_bits_to_size_and_proof_vars.end())
@@ -489,8 +440,8 @@ auto NamesAndIDsTracker::num_bits(const gcs::innards::SimpleOrProofOnlyIntegerVa
     return Integer(it->second.second.size());
 }
 
-auto NamesAndIDsTracker::track_bits(const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff,
-    const vector<pair<Integer, XLiteral>> & bit_vars) -> void
+auto NamesAndIDsTracker::track_bits(
+    const SimpleOrProofOnlyIntegerVariableID & id, Integer negative_coeff, const vector<pair<Integer, XLiteral>> & bit_vars) -> void
 {
     _imp->integer_variable_bits_to_size_and_proof_vars.emplace(id, pair{negative_coeff, bit_vars});
 }
@@ -500,14 +451,14 @@ auto NamesAndIDsTracker::allocate_flag_index() -> unsigned long long
     return _imp->flags.size() / 2;
 }
 
-auto NamesAndIDsTracker::track_eqvar(SimpleIntegerVariableID id, Integer val,
-    const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
+auto NamesAndIDsTracker::track_eqvar(
+    SimpleIntegerVariableID id, Integer val, const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
 {
     _imp->eqvars_that_exist[id].emplace(val, names);
 }
 
-auto NamesAndIDsTracker::track_gevar(SimpleIntegerVariableID id, Integer val,
-    const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
+auto NamesAndIDsTracker::track_gevar(
+    SimpleIntegerVariableID id, Integer val, const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
 {
     _imp->gevars_that_exist[id].emplace(val, names);
 }
@@ -526,19 +477,21 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
-            visit([&](const auto & id) {
-                auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i,
-                    id == v, ProofLevel::Top);
-                forwards_line = _f_line;
-                reverse_line = _r_line;
-            },
+            visit(
+                [&](const auto & id) {
+                    auto [_f_line, _r_line] =
+                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, id == v, ProofLevel::Top);
+                    forwards_line = _f_line;
+                    reverse_line = _r_line;
+                },
                 id);
         }
         else if (! _imp->logger) {
-            visit([&](const auto & id) {
-                forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
-                reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
-            },
+            visit(
+                [&](const auto & id) {
+                    forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
+                    reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
+                },
                 id);
             ++_imp->model_variables;
         }
@@ -546,18 +499,21 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     else if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second == v) {
         // it's an upper bound
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
-            visit([&](const auto & id) {
-                auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
-                forwards_line = _f_line;
-                reverse_line = _r_line;
-            },
+            visit(
+                [&](const auto & id) {
+                    auto [_f_line, _r_line] =
+                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
+                    forwards_line = _f_line;
+                    reverse_line = _r_line;
+                },
                 id);
         }
         else if (! _imp->logger) {
-            visit([&](const auto & id) {
-                forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
-                reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
-            },
+            visit(
+                [&](const auto & id) {
+                    forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
+                    reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
+                },
                 id);
             ++_imp->model_variables;
         }
@@ -565,19 +521,20 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     else {
         // neither a lower nor an upper bound
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links)
-            visit([&](const auto & id) {
-                auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(
-                    WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id > v)) >= 2_i,
-                    id == v, ProofLevel::Top);
-                forwards_line = _f_line;
-                reverse_line = _r_line;
-            },
+            visit(
+                [&](const auto & id) {
+                    auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(
+                        WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id > v)) >= 2_i, id == v, ProofLevel::Top);
+                    forwards_line = _f_line;
+                    reverse_line = _r_line;
+                },
                 id);
         else if (! _imp->logger) {
-            visit([&](const auto & id) {
-                forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
-                reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
-            },
+            visit(
+                [&](const auto & id) {
+                    forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
+                    reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
+                },
                 id);
             ++_imp->model_variables;
         }
@@ -624,7 +581,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
                 if (logger->get_assertion_level() > AssertionLevel::Links)
                     return;
 
-                auto assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+                auto assert_or_rup =
+                    logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
                 logger->emit(assert_or_rup, WPBSum{} + 1_i * ! v_cond + 1_i * x_cond >= 1_i, ProofLevel::Top);
                 logger->emit(assert_or_rup, WPBSum{} + 1_i * ! x_cond + 1_i * v_cond >= 1_i, ProofLevel::Top);
             });
@@ -680,7 +638,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         _imp->gevars_that_exist[id].emplace(v, make_pair(ProofLine{}, ProofLine{})); // Don't output geqvar definitions if using assertions
     }
     else if (_imp->logger) {
-        auto def_lines = visit([&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top); }, id);
+        auto def_lines = visit(
+            [&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top); }, id);
         _imp->gevars_that_exist[id].emplace(v, def_lines);
     }
     else {
@@ -692,17 +651,17 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         const auto & name = name_of(id);
         bool can_label = std::holds_alternative<SimpleIntegerVariableID>(id) && name.find('[') == string::npos && v >= 0_i;
         string ge_label = can_label ? "i[" + name + "][ge" + to_string(v.raw_value) + "]" : "";
-        _imp->gevars_that_exist[id].emplace(v, visit([&](const auto & vid) -> pair<ProofLine, ProofLine> {
-            if (can_label)
-                return pair{
-                    _imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
-                    _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
-            else
-                return pair{
-                    _imp->model->add_constraint(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
-                    _imp->model->add_constraint(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
-        },
-                                                   id));
+        _imp->gevars_that_exist[id].emplace(v,
+            visit(
+                [&](const auto & vid) -> pair<ProofLine, ProofLine> {
+                    if (can_label)
+                        return pair{_imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
+                            _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
+                    else
+                        return pair{_imp->model->add_constraint(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
+                            _imp->model->add_constraint(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
+                },
+                id));
         ++_imp->model_variables;
     }
 
@@ -714,9 +673,14 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
                 return;
 
-            ProofRule assert_or_rup = _imp->logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+            ProofRule assert_or_rup =
+                _imp->logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
             auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
-            visit([&](auto id) { _imp->logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (id >= v) : (id >= v)) >= 1_i, ProofLevel::Top, annotation); }, id);
+            visit(
+                [&](auto id) {
+                    _imp->logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (id >= v) : (id >= v)) >= 1_i, ProofLevel::Top, annotation);
+                },
+                id);
         }
         else
             visit([&](auto id) { _imp->model->add_constraint(WPBSum{} + 1_i * (negated ? ! (id >= v) : (id >= v)) >= 1_i); }, id);
@@ -744,31 +708,31 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     // the shared_ptr capture (the std::function it stores must stay copyable).
     auto make_pol_chain_line = [&](IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> shared_ptr<PolBuilder> {
         auto b = make_shared<PolBuilder>();
-        b->add_for_literal(*this, ! cond1)
-            .add_for_literal(*this, ! cond2)
-            .saturate();
+        b->add_for_literal(*this, ! cond1).add_for_literal(*this, ! cond2).saturate();
         return b;
     };
 
     // implied by the next highest gevar, if there is one?
     auto link_hint = AssertionAnnotation{.hint_name = hints::BoundLink::hint_name};
     if (higher_gevar != other_gevars.end()) {
-        overloaded{
-            [&](const ProofOnlySimpleIntegerVariableID & id) {
-                auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
-                emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) {
-                        if (logger->get_assertion_level() > AssertionLevel::Links)
-                            return;
-                        ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-                        logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint); });
-            },
+        overloaded{[&](const ProofOnlySimpleIntegerVariableID & id) {
+                       auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
+                       emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) {
+                           if (logger->get_assertion_level() > AssertionLevel::Links)
+                               return;
+                           ProofRule assert_or_rup =
+                               logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+                           logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint);
+                       });
+                   },
             [&](const SimpleIntegerVariableID & id) {
                 if (_imp->assertion_level > AssertionLevel::Links) {
                     return;
                 }
                 else if (_imp->assertion_level == AssertionLevel::Links) {
                     auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
-                    emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) { logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint); });
+                    emit_proof_line_now_or_at_start(
+                        [c = chain_con, link_hint](ProofLogger * const logger) { logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint); });
                 }
                 else {
                     auto pol = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
@@ -780,22 +744,25 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
 
     // implies the next lowest gevar, if there is one?
     if (this_gevar != other_gevars.begin()) {
-        overloaded{
-            [&](const ProofOnlySimpleIntegerVariableID & id) {
-                auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
-                emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) {
-                        if (logger->get_assertion_level() > AssertionLevel::Links)
-                            return;
-                        ProofRule assert_or_rup = logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-                        logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint); });
-            },
+        overloaded{[&](const ProofOnlySimpleIntegerVariableID & id) {
+                       auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
+                       emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) {
+                           if (logger->get_assertion_level() > AssertionLevel::Links)
+                               return;
+                           ProofRule assert_or_rup =
+                               logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+                           logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint);
+                       });
+                   },
             [&](const SimpleIntegerVariableID & id) {
                 if (_imp->assertion_level > AssertionLevel::Links) {
                     return;
                 }
                 else if (_imp->assertion_level == AssertionLevel::Links) {
                     auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
-                    emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) { logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint); });
+                    emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) {
+                        logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint);
+                    });
                 }
                 else {
                     auto pol = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
@@ -906,15 +873,16 @@ auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVari
     // literal is its eq atom; nothing fits strictly inside a width-1 literal, so a
     // parent is always a range.
     auto emit_edge = [&](Integer clo, Integer chi, Integer plo, Integer phi) {
-        visit([&](const auto & id) {
-            WPBSum edge;
-            if (clo == chi)
-                edge += 1_i * (id != clo);
-            else
-                edge += 1_i * not_in_range(id, clo, chi);
-            edge += 1_i * in_range(id, plo, phi);
-            _imp->logger->emit_rup_proof_line(move(edge) >= 1_i, ProofLevel::Top);
-        },
+        visit(
+            [&](const auto & id) {
+                WPBSum edge;
+                if (clo == chi)
+                    edge += 1_i * (id != clo);
+                else
+                    edge += 1_i * not_in_range(id, clo, chi);
+                edge += 1_i * in_range(id, plo, phi);
+                _imp->logger->emit_rup_proof_line(move(edge) >= 1_i, ProofLevel::Top);
+            },
             id);
     };
 
@@ -969,9 +937,11 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     auto will_define = _imp->logger->get_assertion_level() <= AssertionLevel::Links;
     // Struggling to get clang-format to behave here...
     auto lines = will_define //
-        ? visit([&](const auto & id) {
-              return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::Top);
-          },
+        ? visit(
+              [&](const auto & id) {
+                  return _imp->logger->emit_red_proof_lines_reifying(
+                      WPBSum{} + (1_i * (id >= lo)) + (1_i * ! (id > hi)) >= 2_i, in_range(id, lo, hi), ProofLevel::Top);
+              },
               id)
         : make_pair(ProofLine{}, ProofLine{});
 
@@ -997,12 +967,13 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
 
 auto NamesAndIDsTracker::append_cell_literal_to(WPBSum & sum, SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> void
 {
-    visit([&](const auto & id) {
-        if (lo == hi)
-            sum += 1_i * (id == lo);
-        else
-            sum += 1_i * in_range(id, lo, hi);
-    },
+    visit(
+        [&](const auto & id) {
+            if (lo == hi)
+                sum += 1_i * (id == lo);
+            else
+                sum += 1_i * in_range(id, lo, hi);
+        },
         id);
 }
 
@@ -1091,9 +1062,7 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
         return visit([&](const auto & id) -> ProofLiteral { return id == lo; }, id);
     }
 
-    auto as_literal = [&]() {
-        return visit([&](const auto & id) -> ProofLiteral { return in_range(id, lo, hi); }, id);
-    };
+    auto as_literal = [&]() { return visit([&](const auto & id) -> ProofLiteral { return in_range(id, lo, hi); }, id); };
 
     auto & for_this_var = _imp->invars_that_exist[id];
     if (for_this_var.contains(pair{lo, hi}))
@@ -1154,17 +1123,14 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
         return it->second;
 
     if (! _imp->model)
-        throw UnimplementedException{
-            "need_view: view introduction during proof-logging phase is not yet supported"};
+        throw UnimplementedException{"need_view: view introduction during proof-logging phase is not yet supported"};
 
     auto bounds_it = _imp->integer_variable_definition_bounds.find(view.actual_variable);
     if (bounds_it == _imp->integer_variable_definition_bounds.end())
         throw ProofError{"need_view: underlying variable's bounds are not registered"};
     auto [x_lo, x_hi] = bounds_it->second;
 
-    auto [v_lo, v_hi] = view.negate_first
-        ? pair{-x_hi + view.then_add, -x_lo + view.then_add}
-        : pair{x_lo + view.then_add, x_hi + view.then_add};
+    auto [v_lo, v_hi] = view.negate_first ? pair{-x_hi + view.then_add, -x_lo + view.then_add} : pair{x_lo + view.then_add, x_hi + view.then_add};
 
     string name = "view_of_" + name_of(view.actual_variable);
     if (view.negate_first)
@@ -1172,14 +1138,13 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     if (view.then_add != 0_i)
         name += "_plus_" + to_string(view.then_add.raw_value);
 
-    auto v_id = _imp->model->create_proof_only_integer_variable(
-        v_lo, v_hi, name, IntegerVariableProofRepresentation::Bits);
+    auto v_id = _imp->model->create_proof_only_integer_variable(v_lo, v_hi, name, IntegerVariableProofRepresentation::Bits);
 
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
 
     // Views must be defined properly in the model.
-    auto [link_le, link_ge] = _imp->model->add_constraint(StringLiteral{"view link"}, StringLiteral{"definitional"},
-        WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
+    auto [link_le, link_ge] = _imp->model->add_constraint(
+        StringLiteral{"view link"}, StringLiteral{"definitional"}, WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
 
     _imp->view_proof_only_vars.emplace(view, v_id);
     _imp->view_proof_only_to_view.emplace(v_id, view);
@@ -1242,9 +1207,7 @@ auto NamesAndIDsTracker::view_link_lines_for(const ProofOnlySimpleIntegerVariabl
     return it->second;
 }
 
-auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
-    const SumOf<Weighted<PseudoBooleanTerm>> & lhs,
-    bool le_half) -> void
+auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line, const SumOf<Weighted<PseudoBooleanTerm>> & lhs, bool le_half) -> void
 {
     // Walk the lhs terms and collect, for each view appearance, the
     // (opb_form_coefficient, view_proof_id) pair. opb_form_coefficient is
@@ -1340,8 +1303,8 @@ auto NamesAndIDsTracker::create_proof_flag(const string & name) -> ProofFlag
     return result;
 }
 
-auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const vector<long long> & indices,
-    const optional<string> & annotation) -> ProofFlag
+auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const vector<long long> & indices, const optional<string> & annotation)
+    -> ProofFlag
 {
     // Mirror cake_pb_cp's Indices flag rendering (cp_to_ilpScript.sml format_flag):
     // x[id][i1_i2..][annotation?] -- the index list joined by '_', the optional
@@ -1367,8 +1330,8 @@ auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const string
     return make_proof_flag_named("b[" + as_string(id) + "][" + annotation + "]");
 }
 
-auto NamesAndIDsTracker::create_proof_flag_values(const ConstraintID & id, const vector<long long> & values,
-    const optional<string> & annotation) -> ProofFlag
+auto NamesAndIDsTracker::create_proof_flag_values(const ConstraintID & id, const vector<long long> & values, const optional<string> & annotation)
+    -> ProofFlag
 {
     // Mirror cake_pb_cp's Values flag rendering (cp_to_ilpScript.sml format_flag):
     // v[id][v1_v2..][annotation?] -- the value list joined by '_', the optional
@@ -1483,8 +1446,7 @@ namespace
     }
 }
 
-auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id,
-    const EqualsOrGreaterEqual & op, Integer value) -> XLiteral
+auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVariableID id, const EqualsOrGreaterEqual & op, Integer value) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
@@ -1493,15 +1455,13 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
         // VeriPB variable names and @labels (VeriPB-dev #191).
         string value_name = value.to_string();
 
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][{}{}]", name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
-            },
+        overloaded{[&](const SimpleIntegerVariableID & id) -> void {
+                       string name = format("i[{}][{}{}]", name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
+                       _imp->xlits_to_verbose_names.emplace(result, name);
+                       _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+                   },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][{}{}]", id.index, name_of(id),
-                    (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
+                string name = format("p[{}_{}][{}{}]", id.index, name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
                 _imp->xlits_to_verbose_names.emplace(result, name);
                 _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
             }}
@@ -1512,11 +1472,10 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
         try {
             nlohmann::json data;
             data["type"] = "condition";
-            overloaded{
-                [&](const SimpleIntegerVariableID & id) -> void {
-                    data["cpvartype"] = "intvar";
-                    data["cpvarid"] = id.index;
-                },
+            overloaded{[&](const SimpleIntegerVariableID & id) -> void {
+                           data["cpvartype"] = "intvar";
+                           data["cpvarid"] = id.index;
+                       },
                 [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
                     data["cpvartype"] = "proofintvar";
                     data["cpvarid"] = id.index;
@@ -1544,16 +1503,13 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
     if (_imp->verbose_names) {
         // Negative values render as `-N` (matching cake); '-' is legal in both
         // VeriPB variable names and @labels (VeriPB-dev #191).
-        auto value_name = [](Integer v) {
-            return v.to_string();
-        };
+        auto value_name = [](Integer v) { return v.to_string(); };
 
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][in{}_{}]", name_of(id), value_name(lo), value_name(hi));
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
-            },
+        overloaded{[&](const SimpleIntegerVariableID & id) -> void {
+                       string name = format("i[{}][in{}_{}]", name_of(id), value_name(lo), value_name(hi));
+                       _imp->xlits_to_verbose_names.emplace(result, name);
+                       _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+                   },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
                 string name = format("p[{}_{}][in{}_{}]", id.index, name_of(id), value_name(lo), value_name(hi));
                 _imp->xlits_to_verbose_names.emplace(result, name);
@@ -1566,11 +1522,10 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
         try {
             nlohmann::json data;
             data["type"] = "condition";
-            overloaded{
-                [&](const SimpleIntegerVariableID & id) -> void {
-                    data["cpvartype"] = "intvar";
-                    data["cpvarid"] = id.index;
-                },
+            overloaded{[&](const SimpleIntegerVariableID & id) -> void {
+                           data["cpvartype"] = "intvar";
+                           data["cpvarid"] = id.index;
+                       },
                 [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
                     data["cpvartype"] = "proofintvar";
                     data["cpvarid"] = id.index;
@@ -1627,12 +1582,11 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][sign]", name_of(id));
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
-            },
+        overloaded{[&](const SimpleIntegerVariableID & id) -> void {
+                       string name = format("i[{}][sign]", name_of(id));
+                       _imp->xlits_to_verbose_names.emplace(result, name);
+                       _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+                   },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
                 string name = format("p[{}_{}][sign]", id.index, name_of(id));
                 _imp->xlits_to_verbose_names.emplace(result, name);
@@ -1645,11 +1599,10 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
         try {
             nlohmann::json data;
             data["type"] = "intvarnegbit";
-            overloaded{
-                [&](const SimpleIntegerVariableID & id) -> void {
-                    data["cpvartype"] = "intvar";
-                    data["cpvarid"] = id.index;
-                },
+            overloaded{[&](const SimpleIntegerVariableID & id) -> void {
+                           data["cpvartype"] = "intvar";
+                           data["cpvarid"] = id.index;
+                       },
                 [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
                     data["cpvartype"] = "proofintvar";
                     data["cpvarid"] = id.index;
@@ -1673,12 +1626,11 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][b{}]", name_of(id), power);
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
-            },
+        overloaded{[&](const SimpleIntegerVariableID & id) -> void {
+                       string name = format("i[{}][b{}]", name_of(id), power);
+                       _imp->xlits_to_verbose_names.emplace(result, name);
+                       _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+                   },
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
                 string name = format("p[{}_{}][b{}]", id.index, name_of(id), power);
                 _imp->xlits_to_verbose_names.emplace(result, name);
@@ -1691,11 +1643,10 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyInteg
         try {
             nlohmann::json data;
             data["type"] = "intvarbit";
-            overloaded{
-                [&](const SimpleIntegerVariableID & id) -> void {
-                    data["cpvartype"] = "intvar";
-                    data["cpvarid"] = id.index;
-                },
+            overloaded{[&](const SimpleIntegerVariableID & id) -> void {
+                           data["cpvartype"] = "intvar";
+                           data["cpvarid"] = id.index;
+                       },
                 [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
                     data["cpvartype"] = "proofintvar";
                     data["cpvarid"] = id.index;
@@ -1737,8 +1688,7 @@ auto NamesAndIDsTracker::name_of(ProofFlag id) const -> const string &
 
 auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
 {
-    return overloaded{
-        [&](const ConstantIntegerVariableID & c) -> string { return c.const_value.to_string(); },
+    return overloaded{[&](const ConstantIntegerVariableID & c) -> string { return c.const_value.to_string(); },
         [&](const SimpleIntegerVariableID & v) -> string { return name_of(v); },
         [&](const ViewOfIntegerVariableID & vv) -> string {
             stringstream name;
@@ -1752,23 +1702,15 @@ auto NamesAndIDsTracker::s_expr_name_of(IntegerVariableID id) const -> string
 
 auto NamesAndIDsTracker::s_expr_name_of(Literal lit) const -> string
 {
-    return overloaded{
-        [](const TrueLiteral &) -> string { return "1"; },
-        [](const FalseLiteral &) -> string { return "0"; },
-        [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> string {
-            return s_expr_name_of(cond.var);
-        },
-        [](const VariableConditionFrom<ProofOnlySimpleIntegerVariableID> &) -> string {
-            throw UnimplementedException{};
-        }}
+    return overloaded{[](const TrueLiteral &) -> string { return "1"; }, [](const FalseLiteral &) -> string { return "0"; },
+        [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) -> string { return s_expr_name_of(cond.var); },
+        [](const VariableConditionFrom<ProofOnlySimpleIntegerVariableID> &) -> string { throw UnimplementedException{}; }}
         .visit(simplify_literal(*this, lit));
 }
 
 auto NamesAndIDsTracker::s_expr_name_of(ReificationCondition cond) const -> string
 {
-    return overloaded{
-        [](const reif::MustHold &) -> string { return ""; },
-        [](const reif::MustNotHold &) -> string { return ""; },
+    return overloaded{[](const reif::MustHold &) -> string { return ""; }, [](const reif::MustNotHold &) -> string { return ""; },
         [&](const auto & reif) -> string { // This is safe, right?
             return "(" + s_expr_name_of(reif.cond.var) + " " + s_expr_name_of(reif.cond.op) + " " + reif.cond.value.to_string() + ")";
         }}
@@ -1798,8 +1740,7 @@ auto NamesAndIDsTracker::s_expr_name_of(VariableConditionOperator op) const -> s
 
 auto NamesAndIDsTracker::s_expr_render_of(IntegerVariableID id) const -> string
 {
-    return overloaded{
-        [&](const ConstantIntegerVariableID & c) -> string { return "(minimize " + c.const_value.to_string() + ")"; },
+    return overloaded{[&](const ConstantIntegerVariableID & c) -> string { return "(minimize " + c.const_value.to_string() + ")"; },
         [&](const SimpleIntegerVariableID & v) -> string { return "(minimize " + name_of(v) + ")"; },
         [&](const ViewOfIntegerVariableID & vv) -> string {
             return "(" + string{vv.negate_first ? "maximize" : "minimize"} + " " + name_of(vv.actual_variable) + ")";
@@ -1839,20 +1780,18 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
     // this means the constraint will always hold, but it's probably useful to have
     // something that syntactically contains all the right variables. so, we can just
     // make the degree of falsity be very low so the constraint always holds.
-    bool contains_false_literal = any_of(half_reif.begin(), half_reif.end(),
-        [&](const auto & flag) {
-            return overloaded{
-                [&](const ProofFlag &) { return false; },
-                [&](const ProofLiteral & pl) {
-                    return overloaded{
-                        [&](Literal lit) { return is_literally_false(lit); },
-                        [&](const ProofVariableCondition &) { return false; },
-                    }
-                        .visit(pl);
-                },
-                [&](const ProofBitVariable &) { return false; }}
-                .visit(flag);
-        });
+    bool contains_false_literal = any_of(half_reif.begin(), half_reif.end(), [&](const auto & flag) {
+        return overloaded{[&](const ProofFlag &) { return false; },
+            [&](const ProofLiteral & pl) {
+                return overloaded{
+                    [&](Literal lit) { return is_literally_false(lit); },
+                    [&](const ProofVariableCondition &) { return false; },
+                }
+                    .visit(pl);
+            },
+            [&](const ProofBitVariable &) { return false; }}
+            .visit(flag);
+    });
 
     // work out how big the reification constant needs to be, by adding together
     // positive terms in the inequality and negating
@@ -1860,18 +1799,13 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
 
     for (auto & [w, v] : ineq.lhs.terms) {
         overloaded{
-            [&, w = w](const ProofLiteral &) {
-                max_contribution_from_positive_terms += max(0_i, w);
-            },
-            [&, w = w](const ProofFlag &) {
-                max_contribution_from_positive_terms += max(0_i, w);
-            },
+            [&, w = w](const ProofLiteral &) { max_contribution_from_positive_terms += max(0_i, w); },
+            [&, w = w](const ProofFlag &) { max_contribution_from_positive_terms += max(0_i, w); },
             [&, w = w](const IntegerVariableID & var) {
-                overloaded{
-                    [&](const SimpleIntegerVariableID & var) {
-                        for (const auto & [bit_value, bit_lit] : each_bit(var))
-                            max_contribution_from_positive_terms += max(0_i, w * bit_value);
-                    },
+                overloaded{[&](const SimpleIntegerVariableID & var) {
+                               for (const auto & [bit_value, bit_lit] : each_bit(var))
+                                   max_contribution_from_positive_terms += max(0_i, w * bit_value);
+                           },
                     [&](const ViewOfIntegerVariableID & view) {
                         // A registered view is *emitted* over its own proof-only
                         // bit-vector (BinEnc(V) directly encodes the view value),
@@ -1901,18 +1835,14 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
                             max_contribution_from_positive_terms += max(0_i, w * view.then_add);
                         }
                     },
-                    [&](const ConstantIntegerVariableID & cvar) {
-                        max_contribution_from_positive_terms += max(0_i, w * cvar.const_value);
-                    }}
+                    [&](const ConstantIntegerVariableID & cvar) { max_contribution_from_positive_terms += max(0_i, w * cvar.const_value); }}
                     .visit(var);
             },
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
                 for (const auto & [bit_value, bit_lit] : each_bit(var))
                     max_contribution_from_positive_terms += max(0_i, w * bit_value);
             },
-            [&, w = w](const ProofBitVariable &) {
-                max_contribution_from_positive_terms += max(0_i, w);
-            },
+            [&, w = w](const ProofBitVariable &) { max_contribution_from_positive_terms += max(0_i, w); },
         }
             .visit(v);
     }
@@ -1925,16 +1855,9 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
 
     WPBSum new_lhs = ineq.lhs;
     for (auto & r : half_reif)
-        overloaded{
-            [&](const ProofFlag & f) {
-                new_lhs += clamped_reif_const * ! f;
-            },
-            [&](const ProofLiteral & lit) {
-                new_lhs += clamped_reif_const * ! lit;
-            },
-            [&](const ProofBitVariable & bit) {
-                new_lhs += clamped_reif_const * ! bit;
-            }}
+        overloaded{[&](const ProofFlag & f) { new_lhs += clamped_reif_const * ! f; },
+            [&](const ProofLiteral & lit) { new_lhs += clamped_reif_const * ! lit; },
+            [&](const ProofBitVariable & bit) { new_lhs += clamped_reif_const * ! bit; }}
             .visit(r);
 
     // if we have a false literal on the left hand side, adjusting the degree of falsity

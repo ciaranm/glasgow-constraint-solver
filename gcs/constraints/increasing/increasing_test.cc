@@ -58,16 +58,20 @@ auto satisfied(const vector<int> & a) -> bool
 {
     for (size_t i = 0; i + 1 < a.size(); ++i) {
         if constexpr (V == IncVariant::Increasing) {
-            if (a[i] > a[i + 1]) return false;
+            if (a[i] > a[i + 1])
+                return false;
         }
         else if constexpr (V == IncVariant::StrictlyIncreasing) {
-            if (a[i] >= a[i + 1]) return false;
+            if (a[i] >= a[i + 1])
+                return false;
         }
         else if constexpr (V == IncVariant::Decreasing) {
-            if (a[i] < a[i + 1]) return false;
+            if (a[i] < a[i + 1])
+                return false;
         }
         else {
-            if (a[i] <= a[i + 1]) return false;
+            if (a[i] <= a[i + 1])
+                return false;
         }
     }
     return true;
@@ -89,10 +93,14 @@ auto post_inc(Problem & p, vector<IntegerVariableID> vars) -> void
 template <IncVariant V>
 auto variant_name() -> const char *
 {
-    if constexpr (V == IncVariant::Increasing) return "increasing";
-    else if constexpr (V == IncVariant::StrictlyIncreasing) return "strictly_increasing";
-    else if constexpr (V == IncVariant::Decreasing) return "decreasing";
-    else return "strictly_decreasing";
+    if constexpr (V == IncVariant::Increasing)
+        return "increasing";
+    else if constexpr (V == IncVariant::StrictlyIncreasing)
+        return "strictly_increasing";
+    else if constexpr (V == IncVariant::Decreasing)
+        return "decreasing";
+    else
+        return "strictly_decreasing";
 }
 
 template <IncVariant V>
@@ -164,16 +172,15 @@ auto run_all_for_variant(bool proofs, const ViewWrapConfig & view_cfg) -> void
 // (x < x / x > x). Consistency isn't checked on dup runs; see
 // tmp/duplicate_var_audit.md.
 template <IncVariant V>
-auto run_dup_inc_test(bool proofs, const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions) -> void
+auto run_dup_inc_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions) -> void
 {
-    print(cerr, "{} dup domains={} positions={}{}", variant_name<V>(),
-        unique_domains, positions, proofs ? " with proofs:" : ":");
+    print(cerr, "{} dup domains={} positions={}{}", variant_name<V>(), unique_domains, positions, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & vals) -> bool {
+        expected,
+        [&](const vector<int> & vals) -> bool {
             vector<int> v;
             for (auto pos : positions)
                 v.push_back(vals.at(pos));
@@ -202,8 +209,7 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 5;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "increasing view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "increasing view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 

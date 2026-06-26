@@ -52,11 +52,10 @@ using namespace gcs::test_innards;
 
 using Range = variant<int, pair<int, int>>;
 
-auto run_gacgcc_test(bool proofs, const vector<Range> & vars_range, const vector<int> & values,
-    const vector<Range> & counts_range, bool closed) -> void
+auto run_gacgcc_test(bool proofs, const vector<Range> & vars_range, const vector<int> & values, const vector<Range> & counts_range, bool closed)
+    -> void
 {
-    print(cerr, "gacgcc vars={} values={} counts={} closed={}{}", vars_range, values, counts_range, closed,
-        proofs ? " with proofs:" : ":");
+    print(cerr, "gacgcc vars={} values={} counts={} closed={}{}", vars_range, values, counts_range, closed, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto is_satisfying = [&](const vector<int> & vars, const vector<int> & counts) -> bool {
@@ -90,8 +89,8 @@ auto run_gacgcc_test(bool proofs, const vector<Range> & vars_range, const vector
     // This propagator achieves GAC on the assignment variables; the count
     // variables get the achievable bounds (not checked for consistency here).
     auto proof_name = proofs ? make_optional("gac_global_cardinality_test") : nullopt;
-    solve_for_tests_checking_consistency(p, proof_name, expected, actual,
-        tuple{pair{vars, CheckConsistency::GAC}, pair{counts, CheckConsistency::None}});
+    solve_for_tests_checking_consistency(
+        p, proof_name, expected, actual, tuple{pair{vars, CheckConsistency::GAC}, pair{counts, CheckConsistency::None}});
     check_results(proof_name, expected, actual);
 }
 
@@ -113,15 +112,15 @@ auto main(int, char *[]) -> int
         {{pair{1, 2}, pair{1, 2}, pair{1, 3}}, {1, 2, 3}, {pair{0, 1}, pair{0, 1}, pair{0, 1}}, false},
         // Degenerate cases (issue #254): empty vars, empty value set, single
         // value, and all-constant vars/counts in both directions.
-        {{}, {1}, {0}, false},                              // empty vars, open: count of 1 is 0 (tautology)
-        {{}, {1}, {1}, false},                              // empty vars, open: count can't be 1 (contradiction)
-        {{}, {1}, {0}, true},                               // empty vars, closed: vacuously satisfied
-        {{5}, {5}, {1}, false},                             // single all-const var matches value (tautology)
-        {{5}, {3}, {1}, false},                             // count of absent value can't be 1 (contradiction)
-        {{1, 1, 2}, {1, 2}, {2, 1}, false},                 // all-const vars + counts, correct (tautology)
-        {{1, 1, 2}, {1, 2}, {1, 1}, false},                 // all-const vars + counts, wrong count (contradiction)
+        {{}, {1}, {0}, false},                                // empty vars, open: count of 1 is 0 (tautology)
+        {{}, {1}, {1}, false},                                // empty vars, open: count can't be 1 (contradiction)
+        {{}, {1}, {0}, true},                                 // empty vars, closed: vacuously satisfied
+        {{5}, {5}, {1}, false},                               // single all-const var matches value (tautology)
+        {{5}, {3}, {1}, false},                               // count of absent value can't be 1 (contradiction)
+        {{1, 1, 2}, {1, 2}, {2, 1}, false},                   // all-const vars + counts, correct (tautology)
+        {{1, 1, 2}, {1, 2}, {1, 1}, false},                   // all-const vars + counts, wrong count (contradiction)
         {{pair{1, 2}, pair{1, 2}}, {1}, {pair{0, 2}}, false}, // single cover value
-        {{pair{1, 2}}, {}, {}, false},                      // empty value set, open: any assignment allowed
+        {{pair{1, 2}}, {}, {}, false},                        // empty value set, open: any assignment allowed
     };
 
     random_device rand_dev;

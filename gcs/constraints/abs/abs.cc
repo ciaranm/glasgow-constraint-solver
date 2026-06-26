@@ -72,9 +72,7 @@ namespace
     }
 }
 
-Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) :
-    _v1(v1),
-    _v2(v2)
+Abs::Abs(const IntegerVariableID v1, const IntegerVariableID v2) : _v1(v1), _v2(v2)
 {
 }
 
@@ -96,10 +94,10 @@ auto Abs::define_proof_model(ProofModel & model) -> void
     // Labels match cake_pb_cp's. cake names the V2 >= V1 half [posle] and the
     // V2 <= V1 half [posge] (i.e. its le/ge track the slack direction, opposite
     // to V2-vs-V1), so the roles go (LE-half, GE-half) = (posge, posle).
-    _abs_nonneg_lines = model.add_labelled_constraint(as_string(_constraint_id), "posge", "posle",
-        "Abs", "non-negative", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
-    _abs_neg_lines = model.add_labelled_constraint(as_string(_constraint_id), "negge", "negle",
-        "Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
+    _abs_nonneg_lines = model.add_labelled_constraint(as_string(_constraint_id), "posge", "posle", "Abs", "non-negative",
+        WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
+    _abs_neg_lines = model.add_labelled_constraint(
+        as_string(_constraint_id), "negge", "negle", "Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
 }
 
 auto Abs::install_propagators(Propagators & propagators) -> void
@@ -118,19 +116,15 @@ auto Abs::install_propagators(Propagators & propagators) -> void
     // is constant we bail out -- the propagator's per-value loop will
     // discover any UNSAT.
     propagators.install_initialiser(
-        [v1 = _v1, v2 = _v2, originator = constraint_id(),
-            abs_nonneg_le = _abs_nonneg_lines.first,
-            abs_nonneg_ge = _abs_nonneg_lines.second,
+        [v1 = _v1, v2 = _v2, originator = constraint_id(), abs_nonneg_le = _abs_nonneg_lines.first, abs_nonneg_ge = _abs_nonneg_lines.second,
             abs_neg_le = _abs_neg_lines.first,
-            abs_neg_ge = _abs_neg_lines.second](
-            State & state, auto & inference, ProofLogger * const logger) -> void {
+            abs_neg_ge = _abs_neg_lines.second](State & state, auto & inference, ProofLogger * const logger) -> void {
             if (holds_alternative<ConstantIntegerVariableID>(v2))
                 return;
 
             inference.infer(logger, v2 >= 0_i,
-                JustifyExplicitly{[logger, v1, v2, abs_nonneg_ge](const ReasonLiterals &) -> void {
-                                      justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge);
-                                  },
+                JustifyExplicitly{
+                    [logger, v1, v2, abs_nonneg_ge](const ReasonLiterals &) -> void { justify_abs_v2_ge_zero(*logger, v1, v2, *abs_nonneg_ge); },
                     ThenRUP::Yes, hints::Abs{originator}},
                 NoReason{});
 
@@ -141,9 +135,8 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             // UNSAT directly.
             if (v2_ub >= 0_i) {
                 inference.infer(logger, v1 <= v2_ub,
-                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonLiterals & r) -> void {
-                                          justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
-                                      },
+                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_nonneg_ge](
+                                          const ReasonLiterals & r) -> void { justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r); },
                         ThenRUP::Yes, hints::Abs{originator}},
                     NoReason{});
             }
@@ -151,9 +144,8 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             // Symmetric flag-collision concern: skip when ub(v2) <= 0.
             if (v2_ub > 0_i) {
                 inference.infer(logger, v1 >= -v2_ub,
-                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_neg_ge](const ReasonLiterals & r) -> void {
-                                          justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
-                                      },
+                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_neg_ge](
+                                          const ReasonLiterals & r) -> void { justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r); },
                         ThenRUP::Yes, hints::Abs{originator}},
                     NoReason{});
             }
@@ -176,12 +168,9 @@ auto Abs::install_propagators(Propagators & propagators) -> void
     Triggers triggers{.on_change = {_v1, _v2}};
     propagators.install(
         constraint_id(),
-        [v1 = _v1, v2 = _v2, originator = constraint_id(),
-            abs_nonneg_le = _abs_nonneg_lines.first,
-            abs_nonneg_ge = _abs_nonneg_lines.second,
+        [v1 = _v1, v2 = _v2, originator = constraint_id(), abs_nonneg_le = _abs_nonneg_lines.first, abs_nonneg_ge = _abs_nonneg_lines.second,
             abs_neg_le = _abs_neg_lines.first,
-            abs_neg_ge = _abs_neg_lines.second](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            abs_neg_ge = _abs_neg_lines.second](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto v1_set = state.copy_of_values(v1);
             auto v2_set = state.copy_of_values(v2);
             auto [v1_lb, v1_ub] = state.bounds(v1);
@@ -228,17 +217,15 @@ auto Abs::install_propagators(Propagators & propagators) -> void
             // Direction v2 -> v1: tighten v1 from the preimage of v2.
             if (v2_ub < v1_ub) {
                 inference.infer_less_than(logger, v1, v2_ub + 1_i,
-                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_nonneg_ge](const ReasonLiterals & r) -> void {
-                                          justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r);
-                                      },
+                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_nonneg_ge](
+                                          const ReasonLiterals & r) -> void { justify_abs_v1_le_v2_ub(*logger, v1, v2, v2_ub, *abs_nonneg_ge, r); },
                         ThenRUP::Yes, hints::Abs{originator}},
                     ExplicitReason{ReasonLiterals{v2 <= v2_ub}});
             }
             if (-v2_ub > v1_lb) {
                 inference.infer_greater_than_or_equal(logger, v1, -v2_ub,
-                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_neg_ge](const ReasonLiterals & r) -> void {
-                                          justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r);
-                                      },
+                    JustifyExplicitly{[logger, v1, v2, v2_ub, abs_neg_ge](
+                                          const ReasonLiterals & r) -> void { justify_abs_v1_ge_neg_v2_ub(*logger, v1, v2, v2_ub, *abs_neg_ge, r); },
                         ThenRUP::Yes, hints::Abs{originator}},
                     ExplicitReason{ReasonLiterals{v2 <= v2_ub}});
             }
@@ -267,9 +254,7 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                     if (! state.in_domain(v2, val))
                         continue;
                     inference.infer_not_equal(logger, v2, val,
-                        JustifyExplicitly{[logger, v1, v2, val](const ReasonLiterals & r) {
-                                              justify_abs_hole(*logger, r, v1, v2, val);
-                                          },
+                        JustifyExplicitly{[logger, v1, v2, val](const ReasonLiterals & r) { justify_abs_hole(*logger, r, v1, v2, val); },
                             ThenRUP::Yes, hints::Abs{originator}},
                         ExplicitReason{ReasonLiterals{{v1 != val, v1 != -val}}});
                 }
@@ -293,8 +278,8 @@ auto Abs::install_propagators(Propagators & propagators) -> void
                 for (Integer val = clipped_lo; val <= clipped_hi; ++val) {
                     if (! state.in_domain(v1, val))
                         continue;
-                    inference.infer_not_equal(logger, v1, val, JustifyUsingRUP{hints::Abs{originator}},
-                        ExplicitReason{ReasonLiterals{v2 != abs(val)}});
+                    inference.infer_not_equal(
+                        logger, v1, val, JustifyUsingRUP{hints::Abs{originator}}, ExplicitReason{ReasonLiterals{v2 != abs(val)}});
                 }
             }
 
@@ -306,8 +291,5 @@ auto Abs::install_propagators(Propagators & propagators) -> void
 auto Abs::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("abs"),
-        tracker.s_expr_term_of(_v1),
-        tracker.s_expr_term_of(_v2)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("abs"), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2)});
 }

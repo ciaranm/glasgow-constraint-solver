@@ -50,17 +50,18 @@ using namespace gcs::test_innards;
 auto run_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & domains) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, static_cast<int>(domains.size()));
-    print(cerr, "all_equal [{}] domains={}{}",
-        view_wrap_config_label(view_cfg), domains, proofs ? " with proofs:" : ":");
+    print(cerr, "all_equal [{}] domains={}{}", view_wrap_config_label(view_cfg), domains, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
-    build_expected(expected, [](const vector<int> & vs) {
-        for (size_t i = 1; i < vs.size(); ++i)
-            if (vs[i] != vs[0])
-                return false;
-        return true;
-    },
+    build_expected(
+        expected,
+        [](const vector<int> & vs) {
+            for (size_t i = 1; i < vs.size(); ++i)
+                if (vs[i] != vs[0])
+                    return false;
+            return true;
+        },
         domains);
     println(cerr, " expecting {} solutions", expected.size());
 
@@ -79,19 +80,20 @@ auto run_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<in
 // (both vacuously satisfiable, no propagator) and tiny all-genuine-constant
 // arrays (ConstantIntegerVariableID) in both the equal (SAT) and unequal
 // (UNSAT) directions, plus a mixed const+variable case.
-auto run_all_equal_collection_test(bool proofs, const string & label,
-    const vector<variant<int, pair<int, int>>> & specs) -> void
+auto run_all_equal_collection_test(bool proofs, const string & label, const vector<variant<int, pair<int, int>>> & specs) -> void
 {
     print(cerr, "all_equal_collection [{}] {}{}", label, specs, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
-    build_expected(expected, [](const vector<int> & vs) {
-        for (std::size_t i = 1; i < vs.size(); ++i)
-            if (vs[i] != vs[0])
-                return false;
-        return true;
-    },
+    build_expected(
+        expected,
+        [](const vector<int> & vs) {
+            for (std::size_t i = 1; i < vs.size(); ++i)
+                if (vs[i] != vs[0])
+                    return false;
+            return true;
+        },
         specs);
     println(cerr, " expecting {} solutions", expected.size());
 
@@ -123,7 +125,8 @@ auto run_holes_test(bool proofs) -> void
         [&](int x, int y, int z) -> bool {
             auto in = [](int v, const vector<int> & s) {
                 for (auto u : s)
-                    if (u == v) return true;
+                    if (u == v)
+                        return true;
                 return false;
             };
             return x == y && y == z && in(x, dx) && in(y, dy) && in(z, dz);
@@ -156,22 +159,22 @@ auto run_holes_test(bool proofs) -> void
 // Duplicates are idempotent (x = x is vacuous); the constraint reduces to
 // AllEqual over the unique vars. Consistency isn't checked on dup runs;
 // see tmp/duplicate_var_audit.md.
-auto run_dup_all_equal_test(bool proofs, const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions) -> void
+auto run_dup_all_equal_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions) -> void
 {
-    print(cerr, "all_equal dup domains={} positions={}{}",
-        unique_domains, positions, proofs ? " with proofs:" : ":");
+    print(cerr, "all_equal dup domains={} positions={}{}", unique_domains, positions, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & vals) -> bool {
+        expected,
+        [&](const vector<int> & vals) -> bool {
             // After dup-collapse, AllEqual still requires all referenced
             // values to be equal: every position's variable's value must
             // match position 0's.
             int v0 = vals.at(positions.at(0));
             for (auto pos : positions)
-                if (vals.at(pos) != v0) return false;
+                if (vals.at(pos) != v0)
+                    return false;
             return true;
         },
         unique_domains);
@@ -200,8 +203,7 @@ auto main(int argc, char * argv[]) -> int
     // helper, which we detect and skip.
     constexpr int n_positions = 4;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "all_equal view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "all_equal view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
@@ -215,9 +217,9 @@ auto main(int argc, char * argv[]) -> int
         {{2, 4}, {2, 4}, {2, 4}},
         {{1, 6}, {2, 5}, {3, 4}, {4, 7}},
         // issue #254: all-fixed (singleton-domain) collections, both directions.
-        {{3, 3}, {3, 3}},          // equal constants (tautology)
-        {{2, 2}, {5, 5}},          // unequal constants (contradiction)
-        {{4, 4}, {4, 4}, {4, 4}},  // three equal constants (tautology)
+        {{3, 3}, {3, 3}},         // equal constants (tautology)
+        {{2, 2}, {5, 5}},         // unequal constants (contradiction)
+        {{4, 4}, {4, 4}, {4, 4}}, // three equal constants (tautology)
     };
 
     random_device rand_dev;
@@ -232,9 +234,12 @@ auto main(int argc, char * argv[]) -> int
         }
         data.push_back(doms);
     };
-    for (int i = 0; i < 5; ++i) random_run(2);
-    for (int i = 0; i < 5; ++i) random_run(3);
-    for (int i = 0; i < 3; ++i) random_run(4);
+    for (int i = 0; i < 5; ++i)
+        random_run(2);
+    for (int i = 0; i < 5; ++i)
+        random_run(3);
+    for (int i = 0; i < 3; ++i)
+        random_run(4);
 
     bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 

@@ -41,13 +41,12 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 template <typename Constraint_>
-auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg,
-    pair<int, int> v1_range, pair<int, int> v2_range,
-    pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
-    const std::function<auto(int, int)->bool> & compare) -> void
+auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> v1_range, pair<int, int> v2_range,
+    pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs, const std::function<auto(int, int)->bool> & compare) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
-    print(cerr, "linear [{}] {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
+    print(cerr, "linear [{}] {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, v1_range, v2_range, v3_range, ineqs,
+        proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto is_satisfying = [&](int a, int b, int c) {
@@ -77,7 +76,8 @@ auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & vi
     auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
 
     if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
-        solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}});
+        solve_for_tests_checking_consistency(
+            p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}});
     else
         solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
 
@@ -85,13 +85,12 @@ auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & vi
 }
 
 template <typename Constraint_>
-auto run_linear_test_gac(bool proofs, const string & mode, const ViewWrapConfig & view_cfg,
-    pair<int, int> v1_range, pair<int, int> v2_range,
-    pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
-    const std::function<auto(int, int)->bool> & compare) -> void
+auto run_linear_test_gac(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> v1_range, pair<int, int> v2_range,
+    pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs, const std::function<auto(int, int)->bool> & compare) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
-    print(cerr, "linear gac [{}] {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, v1_range, v2_range, v3_range, ineqs, proofs ? " with proofs:" : ":");
+    print(cerr, "linear gac [{}] {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, v1_range, v2_range, v3_range, ineqs,
+        proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto is_satisfying = [&](int a, int b, int c) {
@@ -121,7 +120,8 @@ auto run_linear_test_gac(bool proofs, const string & mode, const ViewWrapConfig 
     auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
 
     if (1 == ineqs.size())
-        solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::GAC}, pair{v2, CheckConsistency::GAC}, pair{v3, CheckConsistency::GAC}});
+        solve_for_tests_checking_consistency(p, proof_name, expected, actual,
+            tuple{pair{v1, CheckConsistency::GAC}, pair{v2, CheckConsistency::GAC}, pair{v3, CheckConsistency::GAC}});
     else
         solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
 
@@ -129,15 +129,14 @@ auto run_linear_test_gac(bool proofs, const string & mode, const ViewWrapConfig 
 }
 
 template <typename Constraint_>
-auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, const ViewWrapConfig & view_cfg,
-    pair<int, int> v1_range, pair<int, int> v2_range,
-    pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
+auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> v1_range,
+    pair<int, int> v2_range, pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
     const std::function<auto(int, int)->bool> & compare) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 3);
     for (const auto & v4_range : vector<pair<int, int>>{{0, 0}, {1, 1}, {0, 1}}) {
-        print(cerr, "linear [{}] {} {} {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, full_reif ? "full_reif" : "half_reif",
-            v1_range, v2_range, v3_range, v4_range, ineqs, proofs ? " with proofs:" : ":");
+        print(cerr, "linear [{}] {} {} {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, full_reif ? "full_reif" : "half_reif", v1_range,
+            v2_range, v3_range, v4_range, ineqs, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto is_satisfying = [&](int a, int b, int c, int d) {
@@ -173,8 +172,11 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, cons
 
         auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
 
-        if ((! is_same_v<Constraint_, LinearEqualityIff>) && (! is_same_v<Constraint_, LinearEqualityIf>) && (! is_same_v<Constraint_, LinearNotEqualsIf>) && (! is_same_v<Constraint_, LinearNotEqualsIff>) && 1 == ineqs.size())
-            solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::GAC}});
+        if ((! is_same_v<Constraint_, LinearEqualityIff>) && (! is_same_v<Constraint_, LinearEqualityIf>) &&
+            (! is_same_v<Constraint_, LinearNotEqualsIf>) && (! is_same_v<Constraint_, LinearNotEqualsIff>) && 1 == ineqs.size())
+            solve_for_tests_checking_consistency(p, proof_name, expected, actual,
+                tuple{
+                    pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::GAC}});
         else
             solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
 
@@ -187,15 +189,12 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, cons
 // PB encoding sums coefficients in normal form. Consistency isn't
 // checked on dup runs; see tmp/duplicate_var_audit.md.
 template <typename Constraint_>
-auto run_dup_linear_test(bool proofs, const string & mode,
-    pair<int, int> a_range, pair<int, int> b_range,
-    const vector<int> & coeffs_a_then_b, int rhs,
-    const std::function<auto(int, int)->bool> & compare) -> void
+auto run_dup_linear_test(bool proofs, const string & mode, pair<int, int> a_range, pair<int, int> b_range, const vector<int> & coeffs_a_then_b,
+    int rhs, const std::function<auto(int, int)->bool> & compare) -> void
 {
     // coeffs_a_then_b has 3 entries; positions 0 and 1 use variable a,
     // position 2 uses variable b. Effective sum: (c0+c1)*a + c2*b.
-    print(cerr, "linear dup {} a={} b={} coeffs={} rhs={}{}",
-        mode, a_range, b_range, coeffs_a_then_b, rhs, proofs ? " with proofs:" : ":");
+    print(cerr, "linear dup {} a={} b={} coeffs={} rhs={}{}", mode, a_range, b_range, coeffs_a_then_b, rhs, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     auto is_satisfying = [&](int av, int bv) {
@@ -238,92 +237,47 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 3;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "linear view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "linear view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>, vector<pair<vector<int>, int>>>> data;
 
-    data.emplace_back(
-        pair{0, 2}, pair{-2, 2}, pair{0, 5},
-        vector{
-            pair{vector{1, 2, 3}, 6}});
+    data.emplace_back(pair{0, 2}, pair{-2, 2}, pair{0, 5}, vector{pair{vector{1, 2, 3}, 6}});
+
+    data.emplace_back(pair{3, 8}, pair{-4, 7}, pair{2, 5}, vector{pair{vector{2, 3, 4}, 20}, pair{vector{-1, -3, 0}, -5}, pair{vector{0, 4, 2}, 6}});
+
+    data.emplace_back(pair{3, 8}, pair{-4, 7}, pair{2, 5}, vector{pair{vector{2, 3, 4}, 30}, pair{vector{-1, -3, 0}, -5}, pair{vector{0, 4, 2}, 6}});
 
     data.emplace_back(
-        pair{3, 8}, pair{-4, 7}, pair{2, 5},
-        vector{
-            pair{vector{2, 3, 4}, 20},
-            pair{vector{-1, -3, 0}, -5},
-            pair{vector{0, 4, 2}, 6}});
+        pair{-3, 5}, pair{-3, 5}, pair{-2, 5}, vector{pair{vector{2, 3, 4}, 20}, pair{vector{-1, -3, 0}, -5}, pair{vector{0, 4, 2}, 6}});
 
-    data.emplace_back(
-        pair{3, 8}, pair{-4, 7}, pair{2, 5},
-        vector{
-            pair{vector{2, 3, 4}, 30},
-            pair{vector{-1, -3, 0}, -5},
-            pair{vector{0, 4, 2}, 6}});
+    data.emplace_back(pair{7, 9}, pair{-7, 0}, pair{4, 8}, vector{pair{vector{-3, 3, -5}, -62}, pair{vector{3, 4, 3}, 197}});
 
-    data.emplace_back(
-        pair{-3, 5}, pair{-3, 5}, pair{-2, 5},
-        vector{
-            pair{vector{2, 3, 4}, 20},
-            pair{vector{-1, -3, 0}, -5},
-            pair{vector{0, 4, 2}, 6}});
-
-    data.emplace_back(
-        pair{7, 9}, pair{-7, 0}, pair{4, 8},
-        vector{
-            pair{vector{-3, 3, -5}, -62},
-            pair{vector{3, 4, 3}, 197}});
-
-    data.emplace_back(
-        pair{3, 4}, pair{8, 12}, pair{5, 13},
-        vector{
-            pair{vector{-8, -9, -6}, -154},
-            pair{vector{8, -9, -9}, 71},
-            pair{vector{8, 5, 9}, 175},
-            pair{vector{3, -8, 10}, 9},
+    data.emplace_back(pair{3, 4}, pair{8, 12}, pair{5, 13},
+        vector{pair{vector{-8, -9, -6}, -154}, pair{vector{8, -9, -9}, 71}, pair{vector{8, 5, 9}, 175}, pair{vector{3, -8, 10}, 9},
             pair{vector{6, 4, 5}, 174}});
 
-    data.emplace_back(
-        pair{-7, -6}, pair{-9, -2}, pair{-4, 3},
-        vector{
-            pair{vector{9, -9, -8}, 90},
-            pair{vector{6, 1, -5}, 188},
-            pair{vector{10, 8, -10}, 67},
-            pair{vector{-2, -8, 0}, 138},
+    data.emplace_back(pair{-7, -6}, pair{-9, -2}, pair{-4, 3},
+        vector{pair{vector{9, -9, -8}, 90}, pair{vector{6, 1, -5}, 188}, pair{vector{10, 8, -10}, 67}, pair{vector{-2, -8, 0}, 138},
             pair{vector{10, 4, 7}, -78}});
 
-    data.emplace_back(
-        pair{8, 12}, pair{5, 11}, pair{-2, 4},
-        vector{
-            pair{vector{0, 0, 0}, -159}});
+    data.emplace_back(pair{8, 12}, pair{5, 11}, pair{-2, 4}, vector{pair{vector{0, 0, 0}, -159}});
 
-    data.emplace_back(
-        pair{0, 1}, pair{0, 1}, pair{0, 1},
-        vector{
-            pair{vector{2, 2, 2}, 5}});
+    data.emplace_back(pair{0, 1}, pair{0, 1}, pair{0, 1}, vector{pair{vector{2, 2, 2}, 5}});
 
-    data.emplace_back(
-        pair{0, 1}, pair{0, 1}, pair{0, 1},
-        vector{
-            pair{vector{1, 1, 1}, 2}});
+    data.emplace_back(pair{0, 1}, pair{0, 1}, pair{0, 1}, vector{pair{vector{1, 1, 1}, 2}});
 
-    data.emplace_back(
-        pair{-7, 5}, pair{7, 12}, pair{-3, 12},
-        vector{pair{vector{4, -8, 10}, 94}});
+    data.emplace_back(pair{-7, 5}, pair{7, 12}, pair{-3, 12}, vector{pair{vector{4, -8, 10}, 94}});
 
-    data.emplace_back(
-        pair{8, 14}, pair{0, 8}, pair{4, 19},
-        vector{pair{vector{-7, 6, 7}, 69}});
+    data.emplace_back(pair{8, 14}, pair{0, 8}, pair{4, 19}, vector{pair{vector{-7, 6, 7}, 69}});
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
     uniform_int_distribution nc_dist(1, 5);
     for (int x = 0; x < 5; ++x)
-        generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15),
-            random_bounds(-10, 10, 5, 15), vector(nc_dist(rand), pair{vector(3, uniform_int_distribution(-10, 10)), uniform_int_distribution(-200, 200)}));
+        generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15),
+            vector(nc_dist(rand), pair{vector(3, uniform_int_distribution(-10, 10)), uniform_int_distribution(-200, 200)}));
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
@@ -353,19 +307,23 @@ auto main(int argc, char * argv[]) -> int
                 run_linear_test<LinearLessThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             }
             else if (mode == "le_if") {
-                run_linear_reif_test<LinearLessThanEqualIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                run_linear_reif_test<LinearLessThanEqualIf>(
+                    false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             }
             else if (mode == "le_iff") {
-                run_linear_reif_test<LinearLessThanEqualIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                run_linear_reif_test<LinearLessThanEqualIff>(
+                    true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
             }
             else if (mode == "ge") {
                 run_linear_test<LinearGreaterThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             }
             else if (mode == "ge_if") {
-                run_linear_reif_test<LinearGreaterThanEqualIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                run_linear_reif_test<LinearGreaterThanEqualIf>(
+                    false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             }
             else if (mode == "ge_iff") {
-                run_linear_reif_test<LinearGreaterThanEqualIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                run_linear_reif_test<LinearGreaterThanEqualIff>(
+                    true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
             }
             else
                 throw UnimplementedException{};
@@ -376,22 +334,17 @@ auto main(int argc, char * argv[]) -> int
         if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
             // 2*a + 3*a + 1*b coalesces to 5*a + 1*b.
             if (mode == "eq")
-                run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {-5, 5},
-                    {2, 3, 1}, 10, [](int a, int b) { return a == b; });
+                run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a == b; });
             else if (mode == "ne")
-                run_dup_linear_test<LinearNotEquals>(proofs, mode, {0, 5}, {-5, 5},
-                    {2, 3, 1}, 10, [](int a, int b) { return a != b; });
+                run_dup_linear_test<LinearNotEquals>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a != b; });
             else if (mode == "le")
-                run_dup_linear_test<LinearLessThanEqual>(proofs, mode, {0, 5}, {-5, 5},
-                    {2, 3, 1}, 10, [](int a, int b) { return a <= b; });
+                run_dup_linear_test<LinearLessThanEqual>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a <= b; });
             else if (mode == "ge")
-                run_dup_linear_test<LinearGreaterThanEqual>(proofs, mode, {0, 5}, {-5, 5},
-                    {2, 3, 1}, 10, [](int a, int b) { return a >= b; });
+                run_dup_linear_test<LinearGreaterThanEqual>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a >= b; });
             // 1*a + (-1)*a + 2*b coalesces to 0*a + 2*b = 2*b — exercises
             // the zero-coefficient-after-coalescing path.
             if (mode == "eq")
-                run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {0, 5},
-                    {1, -1, 2}, 4, [](int a, int b) { return a == b; });
+                run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {0, 5}, {1, -1, 2}, 4, [](int a, int b) { return a == b; });
         }
     }
 

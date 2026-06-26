@@ -33,8 +33,10 @@ namespace gcs::innards
         auto operator=(const PropagationFunctionImplBase &) -> PropagationFunctionImplBase & = delete;
         auto operator=(PropagationFunctionImplBase &&) -> PropagationFunctionImplBase & = default;
 
-        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState = 0;
-        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState = 0;
+        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger)
+            -> PropagatorState = 0;
+        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger)
+            -> PropagatorState = 0;
     };
 
     template <typename Func_>
@@ -44,17 +46,18 @@ namespace gcs::innards
         Func_ _f;
 
     public:
-        PropagationFunctionImpl(Func_ && f) :
-            _f(std::move(f))
+        PropagationFunctionImpl(Func_ && f) : _f(std::move(f))
         {
         }
 
-        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState override
+        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger)
+            -> PropagatorState override
         {
             return _f(state, tracker, logger);
         }
 
-        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState override
+        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger)
+            -> PropagatorState override
         {
             return _f(state, tracker, logger);
         }
@@ -67,8 +70,7 @@ namespace gcs::innards
 
     public:
         template <typename Func_>
-        PropagationFunction(Func_ && f) :
-            _impl(new PropagationFunctionImpl<Func_>(std::move(f)))
+        PropagationFunction(Func_ && f) : _impl(new PropagationFunctionImpl<Func_>(std::move(f)))
         {
         }
 
@@ -110,8 +112,7 @@ namespace gcs::innards
         Func_ _f;
 
     public:
-        InitialisationFunctionImpl(Func_ && f) :
-            _f(std::move(f))
+        InitialisationFunctionImpl(Func_ && f) : _f(std::move(f))
         {
         }
 
@@ -133,8 +134,7 @@ namespace gcs::innards
 
     public:
         template <typename Func_>
-        InitialisationFunction(Func_ && f) :
-            _impl(std::make_unique<InitialisationFunctionImpl<Func_>>(std::move(f)))
+        InitialisationFunction(Func_ && f) : _impl(std::make_unique<InitialisationFunctionImpl<Func_>>(std::move(f)))
         {
         }
 
@@ -251,10 +251,8 @@ namespace gcs::innards
          * contradiction at search start — the labelled OPB constraint
          * remains, so the proof reader sees a self-describing reason.
          */
-        auto define_bound(const State &, innards::ProofModel * const, IntegerVariableID var,
-            Bound which, Integer val,
-            const innards::StringLiteral & constraint_name,
-            const innards::StringLiteral & sub_rule) -> void;
+        auto define_bound(const State &, innards::ProofModel * const, IntegerVariableID var, Bound which, Integer val,
+            const innards::StringLiteral & constraint_name, const innards::StringLiteral & sub_rule) -> void;
 
         ///@}
 
@@ -286,8 +284,7 @@ namespace gcs::innards
          * (\c SimpleDefinition before \c Cheap before \c Expensive); within
          * the same priority they run in registration order.
          */
-        auto install_initialiser(InitialisationFunction &&,
-            InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void;
+        auto install_initialiser(InitialisationFunction &&, InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void;
 
         /**
          * Install an initialiser whose only job is to immediately raise a
@@ -303,15 +300,11 @@ namespace gcs::innards
          * the constraint's in-search inferences do.
          */
         template <typename Justification_>
-        auto install_initial_contradiction(const std::string &,
-            Justification_ why,
-            Reason reason = NoReason{},
+        auto install_initial_contradiction(const std::string &, Justification_ why, Reason reason = NoReason{},
             InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void
         {
-            install_initialiser(
-                [why = std::move(why), reason = std::move(reason)](const State &, auto & inference, ProofLogger * const logger) -> void {
-                    inference.contradiction(logger, why, reason);
-                },
+            install_initialiser([why = std::move(why), reason = std::move(reason)](const State &, auto & inference,
+                                    ProofLogger * const logger) -> void { inference.contradiction(logger, why, reason); },
                 priority);
         }
 
@@ -326,8 +319,8 @@ namespace gcs::innards
          * Create an IntegerVariableID that is associated with a constraint,
          * for example for tracking internal state.
          */
-        [[nodiscard]] auto create_auxilliary_integer_variable(State &, Integer, Integer, const std::string & name,
-            const IntegerVariableProofRepresentation enc) -> IntegerVariableID;
+        [[nodiscard]] auto create_auxilliary_integer_variable(
+            State &, Integer, Integer, const std::string & name, const IntegerVariableProofRepresentation enc) -> IntegerVariableID;
 
         ///@}
 
@@ -340,8 +333,8 @@ namespace gcs::innards
          * Propagate every constraint, until either a fixed point or a contradiction is reached. If no guess
          * is supplied, requeue every constraint before we start.
          */
-        [[nodiscard]] auto propagate(const std::optional<Literal> & guess,
-            State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
+        [[nodiscard]] auto propagate(
+            const std::optional<Literal> & guess, State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
 
         /**
          * Call every initialiser, or until a contradiction is reached.

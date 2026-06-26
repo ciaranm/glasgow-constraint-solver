@@ -51,11 +51,10 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
-        explicit BoundsGlobalCardinality(std::vector<IntegerVariableID> vars, std::vector<Integer> values,
-            std::vector<IntegerVariableID> counts, bool closed = false);
+        explicit BoundsGlobalCardinality(
+            std::vector<IntegerVariableID> vars, std::vector<Integer> values, std::vector<IntegerVariableID> counts, bool closed = false);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };

@@ -26,14 +26,15 @@ using std::vector;
 
 namespace
 {
-    auto check_small_cycles(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data, const State & state,
-        auto & inference, ProofLogger * const logger) -> void
+    auto check_small_cycles(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
+        const State & state, auto & inference, ProofLogger * const logger) -> void
     {
         auto n = succ.size();
         auto checked = vector<bool>(n, false);
 
         for (auto [idx, var] : enumerate(succ)) {
-            if (checked[idx]) continue;
+            if (checked[idx])
+                continue;
             checked[idx] = true;
             if (auto val = state.optional_single_value(var)) {
                 auto j0 = (*val).raw_value;
@@ -60,14 +61,8 @@ namespace
         }
     }
 
-    auto propagate_circuit_using_prevent(
-        const vector<IntegerVariableID> & succ,
-        const ConstraintID & owner,
-        const PosVarDataMap & pos_var_data,
-        const ConstraintStateHandle & unassigned_handle,
-        const State & state,
-        auto & inference,
-        ProofLogger * const logger) -> void
+    auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
+        const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference, ProofLogger * const logger) -> void
     {
         propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner);
         check_small_cycles(succ, owner, pos_var_data, state, inference, logger);
@@ -80,8 +75,7 @@ auto CircuitPrevent::clone() const -> unique_ptr<Constraint>
     return make_unique<CircuitPrevent>(_succ, _gac_all_different);
 }
 
-auto CircuitPrevent::install(innards::Propagators & propagators, innards::State & initial_state,
-    innards::ProofModel * const model) && -> void
+auto CircuitPrevent::install(innards::Propagators & propagators, innards::State & initial_state, innards::ProofModel * const model) && -> void
 {
     // Keep track of unassigned vars
     list<IntegerVariableID> unassigned{};
@@ -96,8 +90,8 @@ auto CircuitPrevent::install(innards::Propagators & propagators, innards::State 
     triggers.on_instantiated = {_succ.begin(), _succ.end()};
     propagators.install(
         constraint_id(),
-        [succ = _succ, owner = constraint_id(), pvd = pos_var_data,
-            unassigned_handle = unassigned_handle](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [succ = _succ, owner = constraint_id(), pvd = pos_var_data, unassigned_handle = unassigned_handle](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             propagate_circuit_using_prevent(succ, owner, pvd, unassigned_handle, state, inference, logger);
             return PropagatorState::Enable;
         },

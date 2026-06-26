@@ -111,20 +111,15 @@ namespace gcs
          * \brief General form: durations may be variables or constants
          * (constants pass through as ConstantIntegerVariableID).
          */
-        explicit Disjunctive(std::vector<IntegerVariableID> starts,
-            std::vector<IntegerVariableID> lengths,
-            bool strict = true);
+        explicit Disjunctive(std::vector<IntegerVariableID> starts, std::vector<IntegerVariableID> lengths, bool strict = true);
 
         /**
          * \brief Convenience form for constant durations. Delegates to the
          * general constructor.
          */
-        explicit Disjunctive(std::vector<IntegerVariableID> starts,
-            std::vector<Integer> lengths,
-            bool strict = true);
+        explicit Disjunctive(std::vector<IntegerVariableID> starts, std::vector<Integer> lengths, bool strict = true);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };

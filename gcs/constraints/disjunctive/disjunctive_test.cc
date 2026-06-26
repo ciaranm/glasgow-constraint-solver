@@ -54,12 +54,10 @@ namespace
     // tasks. Two positive-length tasks sharing a start ⇒ UNSAT (they
     // overlap by construction). Consistency isn't checked on dup runs;
     // see tmp/duplicate_var_audit.md.
-    auto run_dup_disjunctive_test(bool proofs, const string & mode, bool strict,
-        const vector<pair<int, int>> & unique_start_ranges,
+    auto run_dup_disjunctive_test(bool proofs, const string & mode, bool strict, const vector<pair<int, int>> & unique_start_ranges,
         const vector<int> & positions, const vector<int> & lengths) -> void
     {
-        print(cerr, "disjunctive{} dup unique_starts={} positions={} lens={}{}",
-            strict ? "_strict" : "", unique_start_ranges, positions, lengths,
+        print(cerr, "disjunctive{} dup unique_starts={} positions={} lens={}{}", strict ? "_strict" : "", unique_start_ranges, positions, lengths,
             proofs ? " with proofs:" : ":");
         cerr << flush;
 
@@ -107,8 +105,8 @@ namespace
         const vector<pair<int, int>> & start_ranges, const vector<int> & lengths) -> void
     {
         auto wraps = wraps_for_positions(view_cfg, static_cast<int>(start_ranges.size()));
-        print(cerr, "disjunctive{} [{}] {} {}{}", strict ? "_strict" : "",
-            view_wrap_config_label(view_cfg), start_ranges, lengths, proofs ? " with proofs:" : ":");
+        print(cerr, "disjunctive{} [{}] {} {}{}", strict ? "_strict" : "", view_wrap_config_label(view_cfg), start_ranges, lengths,
+            proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = start_ranges.size();
@@ -153,8 +151,7 @@ namespace
     // spec {lo, hi}; lo == hi is a constant duration, lo < hi a variable one.
     // Enumerated variables appear in every solution vector as: starts (task
     // order), then the variable durations (task order).
-    auto run_var_disjunctive_test(bool proofs, const string & mode, bool strict,
-        const vector<pair<int, int>> & start_ranges,
+    auto run_var_disjunctive_test(bool proofs, const string & mode, bool strict, const vector<pair<int, int>> & start_ranges,
         const vector<pair<int, int>> & length_specs) -> void
     {
         auto n = start_ranges.size();
@@ -162,8 +159,7 @@ namespace
         for (size_t i = 0; i < n; ++i)
             lvar[i] = length_specs[i].first != length_specs[i].second;
 
-        print(cerr, "disjunctive{} var starts={} lspecs={}{}", strict ? "_strict" : "",
-            start_ranges, length_specs, proofs ? " with proofs:" : ":");
+        print(cerr, "disjunctive{} var starts={} lspecs={}{}", strict ? "_strict" : "", start_ranges, length_specs, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto is_satisfying = [&](const vector<int> & vals) {
@@ -202,8 +198,7 @@ namespace
         }
         for (size_t i = 0; i < n; ++i) {
             if (lvar[i]) {
-                auto lv = p.create_integer_variable(
-                    Integer{length_specs[i].first}, Integer{length_specs[i].second});
+                auto lv = p.create_integer_variable(Integer{length_specs[i].first}, Integer{length_specs[i].second});
                 lengths_v.push_back(lv);
                 all_vars.push_back(lv);
             }
@@ -223,16 +218,16 @@ namespace
     // constant-start branch of the end-proxy materialisation (a constant start
     // contributes no order-literal to the pol — it is folded into end_ge). Only
     // the variable durations are enumerated; the fixed starts feed the checker.
-    auto run_const_start_var_len_test(bool proofs, const string & mode, bool strict,
-        const vector<int> & const_starts, const vector<pair<int, int>> & length_specs) -> void
+    auto run_const_start_var_len_test(
+        bool proofs, const string & mode, bool strict, const vector<int> & const_starts, const vector<pair<int, int>> & length_specs) -> void
     {
         auto n = const_starts.size();
         vector<bool> lvar(n);
         for (size_t i = 0; i < n; ++i)
             lvar[i] = length_specs[i].first != length_specs[i].second;
 
-        print(cerr, "disjunctive{} const-start starts={} lspecs={}{}", strict ? "_strict" : "",
-            const_starts, length_specs, proofs ? " with proofs:" : ":");
+        print(cerr, "disjunctive{} const-start starts={} lspecs={}{}", strict ? "_strict" : "", const_starts, length_specs,
+            proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto is_satisfying = [&](const vector<int> & vals) {
@@ -268,8 +263,7 @@ namespace
             starts.push_back(constant_variable(Integer{const_starts[i]}));
         for (size_t i = 0; i < n; ++i) {
             if (lvar[i]) {
-                auto lv = p.create_integer_variable(
-                    Integer{length_specs[i].first}, Integer{length_specs[i].second});
+                auto lv = p.create_integer_variable(Integer{length_specs[i].first}, Integer{length_specs[i].second});
                 lengths_v.push_back(lv);
                 all_vars.push_back(lv);
             }
@@ -307,8 +301,7 @@ auto main(int argc, char * argv[]) -> int
     // than emit a duplicate bare run. mixed/uniform wrap every position.
     constexpr int n_positions = 4;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "disjunctive view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "disjunctive view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
@@ -347,10 +340,8 @@ auto main(int argc, char * argv[]) -> int
     random_device rand_dev;
     mt19937 rand(rand_dev());
 
-    auto random_instance = [&](int n, int max_start, int max_length)
-        -> pair<vector<pair<int, int>>, vector<int>> {
-        uniform_int_distribution<> lo_dist(0, max_start), span_dist(0, max_start),
-            len_dist(0, max_length);
+    auto random_instance = [&](int n, int max_start, int max_length) -> pair<vector<pair<int, int>>, vector<int>> {
+        uniform_int_distribution<> lo_dist(0, max_start), span_dist(0, max_start), len_dist(0, max_length);
         vector<pair<int, int>> sr;
         vector<int> lens;
         for (int i = 0; i < n; ++i) {
@@ -395,8 +386,7 @@ auto main(int argc, char * argv[]) -> int
     };
 
     // Variable-duration random cases (n=2 or 3, narrow horizons, durations 0-2).
-    auto random_var_instance = [&](int nn)
-        -> pair<vector<pair<int, int>>, vector<pair<int, int>>> {
+    auto random_var_instance = [&](int nn) -> pair<vector<pair<int, int>>, vector<pair<int, int>>> {
         uniform_int_distribution<> lo_dist(0, 3), span_dist(0, 3), llo_dist(0, 2), lspan_dist(0, 2);
         vector<pair<int, int>> sr, ls;
         for (int i = 0; i < nn; ++i) {
@@ -451,8 +441,7 @@ auto main(int argc, char * argv[]) -> int
             // zero lengths ⇒ depends on strict.
             run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}}, {0, 0}, {2, 2});
             // {x, x, y} — first two share, third independent.
-            run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}, {0, 3}}, {0, 0, 1},
-                {1, 1, 2});
+            run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}, {0, 3}}, {0, 0, 1}, {1, 1, 2});
             // Zero-length dup pair — non-strict OK, strict edge case.
             run_dup_disjunctive_test(proofs, mode, strict, {{0, 2}}, {0, 0}, {0, 0});
         }

@@ -50,9 +50,7 @@ using std::print;
 using fmt::print;
 #endif
 
-AllDifferentExcept::AllDifferentExcept(vector<IntegerVariableID> vars, vector<Integer> excluded) :
-    _vars(move(vars)),
-    _excluded(move(excluded))
+AllDifferentExcept::AllDifferentExcept(vector<IntegerVariableID> vars, vector<Integer> excluded) : _vars(move(vars)), _excluded(move(excluded))
 {
 }
 
@@ -102,8 +100,7 @@ auto AllDifferentExcept::prepare(Propagators &, State & initial_state, ProofMode
 
     if (_has_duplicates) {
         for (auto it = _sanitised_vars.begin(); it != _sanitised_vars.end();) {
-            auto run_end = find_if(next(it), _sanitised_vars.end(),
-                [&](const IntegerVariableID & v) { return v != *it; });
+            auto run_end = find_if(next(it), _sanitised_vars.end(), [&](const IntegerVariableID & v) { return v != *it; });
             if (distance(it, run_end) > 1)
                 _duplicated_vars.push_back(*it);
             it = run_end;
@@ -143,33 +140,27 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
     // var-in-excluded", so under the hypothesis var = v with v not in
     // excluded, both directions of the selector are simultaneously forced.
     if (_has_duplicates) {
-        propagators.install_initialiser(
-            [duplicated_vars = move(_duplicated_vars),
-                excluded = _sanitised_excluded,
-                duplicate_selectors = move(_duplicate_selectors),
-                owner = constraint_id()](
-                const State & state, auto & inf, ProofLogger * const logger) -> void {
-                for (const auto & x : duplicated_vars) {
-                    vector<Integer> non_excluded_values;
-                    for (const auto & v : state.each_value_immutable(x))
-                        if (find(excluded.begin(), excluded.end(), v) == excluded.end())
-                            non_excluded_values.push_back(v);
-                    for (const auto & v : non_excluded_values) {
-                        inf.infer(logger, x != v,
-                            JustifyExplicitly{[&logger, x, v, &duplicate_selectors](const ReasonLiterals &) -> void {
-                                                  const auto & selector = duplicate_selectors.at(x);
-                                                  logger->emit(RUPProofRule{},
-                                                      WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i,
-                                                      ProofLevel::Temporary);
-                                                  logger->emit(RUPProofRule{},
-                                                      WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i,
-                                                      ProofLevel::Temporary);
-                                              },
-                                ThenRUP::Yes, hints::AllDifferentExcept{owner}},
-                            NoReason{});
-                    }
+        propagators.install_initialiser([duplicated_vars = move(_duplicated_vars), excluded = _sanitised_excluded,
+                                            duplicate_selectors = move(_duplicate_selectors),
+                                            owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> void {
+            for (const auto & x : duplicated_vars) {
+                vector<Integer> non_excluded_values;
+                for (const auto & v : state.each_value_immutable(x))
+                    if (find(excluded.begin(), excluded.end(), v) == excluded.end())
+                        non_excluded_values.push_back(v);
+                for (const auto & v : non_excluded_values) {
+                    inf.infer(logger, x != v,
+                        JustifyExplicitly{[&logger, x, v, &duplicate_selectors](const ReasonLiterals &) -> void {
+                                              const auto & selector = duplicate_selectors.at(x);
+                                              logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i, ProofLevel::Temporary);
+                                              logger->emit(
+                                                  RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i, ProofLevel::Temporary);
+                                          },
+                            ThenRUP::Yes, hints::AllDifferentExcept{owner}},
+                        NoReason{});
                 }
-            });
+            }
+        });
 
         // Dedupe before the propagator runs: bipartite matching can't model
         // duplicate left-vertices correctly, but the initialiser has already
@@ -186,12 +177,9 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [vars = move(_sanitised_vars),
-            vals = move(_compressed_vals),
-            excluded = move(_sanitised_excluded),
+        [vars = move(_sanitised_vars), vals = move(_compressed_vals), excluded = move(_sanitised_excluded),
             value_am1_constraint_numbers = _value_am1_constraint_numbers,
-            constraint_id = constraint_id()](const State & state, auto & inference,
-            ProofLogger * const logger) -> PropagatorState {
+            constraint_id = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             propagate_gac_all_different(constraint_id, vars, vals, excluded, *value_am1_constraint_numbers.get(), state, inference, logger);
             return PropagatorState::Enable;
         },
@@ -206,8 +194,6 @@ auto AllDifferentExcept::s_expr(const ProofModel * const model) const -> SExpr
         vars.push_back(tracker.s_expr_term_of(var));
     for (const auto & v : _excluded)
         excluded.push_back(SExpr::atom(v.to_string()));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("all_different_except"),
-        SExpr::list(std::move(vars)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_different_except"), SExpr::list(std::move(vars)),
         SExpr::list(std::move(excluded))});
 }

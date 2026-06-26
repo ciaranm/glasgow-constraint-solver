@@ -46,10 +46,7 @@ using fmt::print;
 #endif
 
 Inverse::Inverse(vector<IntegerVariableID> x, vector<IntegerVariableID> y, Integer x_start, Integer y_start) :
-    _x(move(x)),
-    _y(move(y)),
-    _x_start(x_start),
-    _y_start(y_start)
+    _x(move(x)), _y(move(y)), _x_start(x_start), _y_start(y_start)
 
 {
     // Intra-array aliasing is always infeasible: if x[i] and x[j] share a
@@ -65,8 +62,7 @@ Inverse::Inverse(vector<IntegerVariableID> x, vector<IntegerVariableID> y, Integ
                 continue;
             for (size_t j = i + 1; j < arr.size(); ++j)
                 if (arr[i] == arr[j])
-                    throw InvalidProblemDefinitionException{string{"Inverse: "} + which +
-                        " array contains the same variable handle twice"};
+                    throw InvalidProblemDefinitionException{string{"Inverse: "} + which + " array contains the same variable handle twice"};
         }
     };
     throw_if_dup(_x, "first");
@@ -112,9 +108,11 @@ auto Inverse::define_proof_model(ProofModel & model) -> void
     for (const auto & [i, x_i] : enumerate(_x))
         for (const auto & [j, y_j] : enumerate(_y)) {
             // x[i] = j -> y[j] = i
-            model.add_constraint("Inverse", "x_i = j -> y[j] = i", WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
+            model.add_constraint(
+                "Inverse", "x_i = j -> y[j] = i", WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
             // y[j] = i -> x[i] = j
-            model.add_constraint("Inverse", "y_j = i -> x[i] = j", WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
+            model.add_constraint(
+                "Inverse", "y_j = i -> x[i] = j", WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
         }
 
     // Set up the AM1 map only when proof logging is on; the propagator captures it
@@ -130,8 +128,8 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
     triggers.on_change.insert(triggers.on_change.end(), _y.begin(), _y.end());
 
     if (_x_value_am1s) {
-        auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, const State &,
-                              auto &, ProofLogger * const logger, const auto & map) {
+        auto build_am1s = [](const vector<IntegerVariableID> & x, Integer x_start, const State &, auto &, ProofLogger * const logger,
+                              const auto & map) {
             // recover_am1 requires at least two atoms; with one variable
             // the at-most-one is trivially true and the map is never read
             // (gac_all_different's hall-set/scc paths do not fire on a
@@ -143,9 +141,11 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
                 vector<IntegerVariableCondition> xieqvs;
                 for (const auto & var : x)
                     xieqvs.push_back(var != v);
-                map->emplace(v, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
-                    return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
-                }));
+                map->emplace(v,
+                    recover_am1<IntegerVariableCondition>(
+                        *logger, ProofLevel::Top, xieqvs, [&](const IntegerVariableCondition & c1, const IntegerVariableCondition & c2) -> ProofLine {
+                            return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * c1 + 1_i * c2 >= 1_i, ProofLevel::Temporary);
+                        }));
             }
         };
 
@@ -165,26 +165,30 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
     for (const auto & [i, _] : enumerate(_x))
         x_values.push_back(Integer(i) + _x_start);
 
-    propagators.install(constraint_id(), [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s, constraint_id = constraint_id(), owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
-        for (const auto & [i, x_i] : enumerate(x)) {
-            for (auto x_i_value : state.each_value_mutable(x_i))
-                if (! state.in_domain(y.at((x_i_value - y_start).as_index()), Integer(i) + x_start))
-                    inf.infer(logger, x_i != x_i_value,
-                        JustifyUsingRUP{hints::Inverse{owner}},
-                        ExplicitReason{ReasonLiterals{y.at((x_i_value - y_start).as_index()) != Integer(i) + x_start}});
-        }
+    propagators.install(
+        constraint_id(),
+        [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s,
+            constraint_id = constraint_id(),
+            owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
+            for (const auto & [i, x_i] : enumerate(x)) {
+                for (auto x_i_value : state.each_value_mutable(x_i))
+                    if (! state.in_domain(y.at((x_i_value - y_start).as_index()), Integer(i) + x_start))
+                        inf.infer(logger, x_i != x_i_value, JustifyUsingRUP{hints::Inverse{owner}},
+                            ExplicitReason{ReasonLiterals{y.at((x_i_value - y_start).as_index()) != Integer(i) + x_start}});
+            }
 
-        for (const auto & [i, y_i] : enumerate(y)) {
-            for (auto y_i_value : state.each_value_mutable(y_i))
-                if (! state.in_domain(x.at((y_i_value - x_start).as_index()), Integer(i) + y_start))
-                    inf.infer(logger, y_i != y_i_value,
-                        JustifyUsingRUP{hints::Inverse{owner}},
-                        ExplicitReason{ReasonLiterals{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}});
-        }
+            for (const auto & [i, y_i] : enumerate(y)) {
+                for (auto y_i_value : state.each_value_mutable(y_i))
+                    if (! state.in_domain(x.at((y_i_value - x_start).as_index()), Integer(i) + y_start))
+                        inf.infer(logger, y_i != y_i_value, JustifyUsingRUP{hints::Inverse{owner}},
+                            ExplicitReason{ReasonLiterals{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}});
+            }
 
-        propagate_gac_all_different(constraint_id, x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);
+            propagate_gac_all_different(constraint_id, x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);
 
-        return PropagatorState::Enable; }, triggers);
+            return PropagatorState::Enable;
+        },
+        triggers);
 }
 
 auto Inverse::s_expr(const innards::ProofModel * const model) const -> SExpr
@@ -200,7 +204,7 @@ auto Inverse::s_expr(const innards::ProofModel * const model) const -> SExpr
     std::vector<SExpr> ys;
     for (const auto & y : _y)
         ys.push_back(tracker.s_expr_term_of(y));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("inverse"),
-        SExpr::list({SExpr::list(std::move(xs)), SExpr::atom(_x_start.to_string())}),
-        SExpr::list({SExpr::list(std::move(ys)), SExpr::atom(_y_start.to_string())})});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("inverse"), SExpr::list({SExpr::list(std::move(xs)), SExpr::atom(_x_start.to_string())}),
+            SExpr::list({SExpr::list(std::move(ys)), SExpr::atom(_y_start.to_string())})});
 }

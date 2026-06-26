@@ -30,7 +30,8 @@ auto main(int argc, char * argv[]) -> int
             ("help", "Display help information") //
             ("prove", "Create a proof");
 
-        options.add_options()("propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", cxxopts::value<string>()->default_value("prevent"));
+        options.add_options()(
+            "propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", cxxopts::value<string>()->default_value("prevent"));
 
         options_vars = options.parse(argc, argv);
     }
@@ -110,11 +111,10 @@ auto main(int argc, char * argv[]) -> int
     p.minimise(obj);
 
     auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                cout << "distance: " << s(obj) << endl;
-                return true;
-            },
+        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                           cout << "distance: " << s(obj) << endl;
+                           return true;
+                       },
             .branch = branch_with(variable_order::dom(succ), value_order::smallest_in())},
         options_vars.contains("prove") ? make_optional<ProofOptions>("tsp") : nullopt);
 

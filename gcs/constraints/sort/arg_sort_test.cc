@@ -75,9 +75,7 @@ namespace
         cerr << flush;
 
         set<tuple<vector<int>, vector<int>>> expected, actual;
-        build_expected(
-            expected, [&](const vector<int> & x, const vector<int> & p) { return is_arg_sort(x, p, offset); },
-            x_domains, p_domains);
+        build_expected(expected, [&](const vector<int> & x, const vector<int> & p) { return is_arg_sort(x, p, offset); }, x_domains, p_domains);
         println(cerr, " expecting {} solutions", expected.size());
 
         Problem prob;
@@ -93,8 +91,8 @@ namespace
         // Mehlhorn-Thiel propagator, p by the achievable-rank-set propagator plus
         // GAC all_different. (Full GAC on p is NP-hard, but bounds consistency is
         // achieved and certified.)
-        solve_for_tests_checking_consistency(prob, proof_name, expected, actual,
-            tuple{std::make_pair(x, CheckConsistency::BC), std::make_pair(p, CheckConsistency::BC)});
+        solve_for_tests_checking_consistency(
+            prob, proof_name, expected, actual, tuple{std::make_pair(x, CheckConsistency::BC), std::make_pair(p, CheckConsistency::BC)});
         check_results(proof_name, expected, actual);
     }
 }
@@ -124,10 +122,10 @@ auto main(int argc, char * argv[]) -> int
         // Degenerate (issue #254): empty input (vacuously satisfied) and
         // all-fixed inputs (the permutation is uniquely determined), 0- and
         // 1-based.
-        run_arg_sort_test(proofs, 0, {});                          // empty input
-        run_arg_sort_test(proofs, 0, {{5, 5}});                    // single fixed: p[0]==offset
-        run_arg_sort_test(proofs, 0, {{3, 3}, {1, 1}, {2, 2}});    // all fixed distinct, 0-based
-        run_arg_sort_test(proofs, 1, {{3, 3}, {1, 1}, {2, 2}});    // all fixed distinct, 1-based
+        run_arg_sort_test(proofs, 0, {});                       // empty input
+        run_arg_sort_test(proofs, 0, {{5, 5}});                 // single fixed: p[0]==offset
+        run_arg_sort_test(proofs, 0, {{3, 3}, {1, 1}, {2, 2}}); // all fixed distinct, 0-based
+        run_arg_sort_test(proofs, 1, {{3, 3}, {1, 1}, {2, 2}}); // all fixed distinct, 1-based
 
         // Negative values.
         run_arg_sort_test(proofs, 0, {{-2, 0}, {-2, 0}});

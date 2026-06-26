@@ -51,14 +51,18 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_among_test(bool proofs, const ViewWrapConfig & view_cfg,
-    variant<int, pair<int, int>> result_range, const vector<int> & voi, const vector<variant<int, pair<int, int>>> & array_range) -> void
+auto run_among_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int, pair<int, int>> result_range, const vector<int> & voi,
+    const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
     // Position 0 = result, 1..N = array entries. voi is a value set, not
     // variables, so it stays as-is.
     int n_positions = 1 + static_cast<int>(array_range.size());
     auto wraps = wraps_for_positions(view_cfg, n_positions);
-    visit([&](auto result) { print(cerr, "among [{}] {} {} {} {}", view_wrap_config_label(view_cfg), result, voi, array_range, proofs ? " with proofs:" : ":"); }, result_range);
+    visit(
+        [&](auto result) {
+            print(cerr, "among [{}] {} {} {} {}", view_wrap_config_label(view_cfg), result, voi, array_range, proofs ? " with proofs:" : ":");
+        },
+        result_range);
     cerr << flush;
 
     auto is_satisfying = [&](int n, const vector<int> & a) {
@@ -80,7 +84,8 @@ auto run_among_test(bool proofs, const ViewWrapConfig & view_cfg,
     p.post(Among{array, voi_i, result});
 
     auto proof_name = proofs ? make_optional("among_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::GAC}});
+    solve_for_tests_checking_consistency(
+        p, proof_name, expected, actual, tuple{pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::GAC}});
 
     check_results(proof_name, expected, actual);
 }
@@ -89,19 +94,20 @@ auto run_among_test(bool proofs, const ViewWrapConfig & view_cfg,
 // array positions. Each occurrence is counted independently (so a fixed
 // duplicated variable contributes its membership multiple times). See
 // tmp/duplicate_var_audit.md.
-auto run_dup_among_test(bool proofs, const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions, const vector<int> & voi, pair<int, int> result_range) -> void
+auto run_dup_among_test(bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions, const vector<int> & voi,
+    pair<int, int> result_range) -> void
 {
-    print(cerr, "among dup domains={} positions={} voi={} result={}{}",
-        unique_domains, positions, voi, result_range, proofs ? " with proofs:" : ":");
+    print(cerr, "among dup domains={} positions={} voi={} result={}{}", unique_domains, positions, voi, result_range, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<int, vector<int>>> expected, actual;
     build_expected(
-        expected, [&](int r, const vector<int> & vals) -> bool {
+        expected,
+        [&](int r, const vector<int> & vals) -> bool {
             int counted = 0;
             for (auto pos : positions)
-                if (0 != count(voi.begin(), voi.end(), vals.at(pos))) ++counted;
+                if (0 != count(voi.begin(), voi.end(), vals.at(pos)))
+                    ++counted;
             return r == counted;
         },
         result_range, unique_domains);
@@ -136,7 +142,8 @@ auto run_self_ref_among_test(bool proofs, pair<int, int> shared_range, const vec
     // must equal that count.
     set<tuple<int>> expected, actual;
     build_expected(
-        expected, [&](int s) -> bool {
+        expected,
+        [&](int s) -> bool {
             int hits = (0 != count(voi.begin(), voi.end(), s)) ? 2 : 0;
             return s == hits;
         },
@@ -161,33 +168,26 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 5;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "among view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "among view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
-    vector<tuple<
-        variant<int, pair<int, int>>,
-        vector<int>,
-        vector<variant<int, pair<int, int>>>>>
-        data = {
-            {pair{1, 3}, vector{2, 4, 6, 8}, {pair{1, 10}, pair{1, 10}, pair{1, 10}}},
-            {pair{1, 5}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
-            {pair{1, 1}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
-            {pair{3, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}},
-            {pair{0, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}},
-            {pair{1, 5}, vector{2, 3, 2, 3, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
-            // Degenerate cases (issue #254): empty array, empty value set,
-            // single element, all-constant. Result is a genuine constant.
-            {0, vector{2, 3}, {}},                    // empty array: 0 in set (tautology)
-            {1, vector{2, 3}, {}},                    // empty array: can't be 1 (contradiction)
-            {0, vector<int>{}, {5, 5, 5}},            // empty value set: nothing matches (tautology)
-            {1, vector<int>{}, {5, 5, 5}},            // empty value set: can't be 1 (contradiction)
-            {1, vector{5}, {5}},                      // single element matches (tautology)
-            {1, vector{5}, {6}},                      // single element, no match (contradiction)
-            {2, vector{5, 6}, {5, 6, 7}},             // all-constant array: 2 match (tautology)
-            {3, vector{5, 6}, {5, 6, 7}},             // all-constant array: only 2 match (contradiction)
-            {pair{0, 2}, vector{5}, {5, pair{1, 10}}}}; // mixed: one constant match + one variable
+    vector<tuple<variant<int, pair<int, int>>, vector<int>, vector<variant<int, pair<int, int>>>>> data = {
+        {pair{1, 3}, vector{2, 4, 6, 8}, {pair{1, 10}, pair{1, 10}, pair{1, 10}}},
+        {pair{1, 5}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}}, {pair{1, 1}, vector{1, 2, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
+        {pair{3, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}}, {pair{0, 5}, vector{1, 3}, {pair{1, 2}, pair{1, 2}, pair{1, 5}}},
+        {pair{1, 5}, vector{2, 3, 2, 3, 3}, {pair{1, 5}, pair{1, 5}, pair{1, 5}}},
+        // Degenerate cases (issue #254): empty array, empty value set,
+        // single element, all-constant. Result is a genuine constant.
+        {0, vector{2, 3}, {}},                      // empty array: 0 in set (tautology)
+        {1, vector{2, 3}, {}},                      // empty array: can't be 1 (contradiction)
+        {0, vector<int>{}, {5, 5, 5}},              // empty value set: nothing matches (tautology)
+        {1, vector<int>{}, {5, 5, 5}},              // empty value set: can't be 1 (contradiction)
+        {1, vector{5}, {5}},                        // single element matches (tautology)
+        {1, vector{5}, {6}},                        // single element, no match (contradiction)
+        {2, vector{5, 6}, {5, 6, 7}},               // all-constant array: 2 match (tautology)
+        {3, vector{5, 6}, {5, 6, 7}},               // all-constant array: only 2 match (contradiction)
+        {pair{0, 2}, vector{5}, {5, pair{1, 10}}}}; // mixed: one constant match + one variable
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
@@ -196,9 +196,7 @@ auto main(int argc, char * argv[]) -> int
         auto n_values_1 = n_values_dist(rand);
         auto n_values_2 = n_values_dist(rand);
         uniform_int_distribution values_dist(-10, 10);
-        generate_random_data(rand, data,
-            random_bounds(-7, 7, 5, 10),
-            vector{size_t(n_values_1), values_dist},
+        generate_random_data(rand, data, random_bounds(-7, 7, 5, 10), vector{size_t(n_values_1), values_dist},
             vector{size_t(n_values_2), random_bounds_or_constant(-5, 8, 3, 8)});
     }
 

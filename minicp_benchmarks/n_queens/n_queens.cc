@@ -72,15 +72,14 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                cout << "solution:";
-                for (auto & v : queens)
-                    cout << " " << s(v);
-                cout << endl;
+        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                           cout << "solution:";
+                           for (auto & v : queens)
+                               cout << " " << s(v);
+                           cout << endl;
 
-                return options_vars.contains("all");
-            },
+                           return options_vars.contains("all");
+                       },
             .branch = branch_with(variable_order::dom(queens), value_order::smallest_in())},
         options_vars.contains("prove") ? make_optional<ProofOptions>("n_queens") : nullopt);
 

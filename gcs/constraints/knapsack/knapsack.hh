@@ -29,12 +29,10 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
-        explicit Knapsack(std::vector<Integer> weights, std::vector<Integer> profits,
-            std::vector<IntegerVariableID> vars, IntegerVariableID weight, IntegerVariableID profit);
+        explicit Knapsack(std::vector<Integer> weights, std::vector<Integer> profits, std::vector<IntegerVariableID> vars, IntegerVariableID weight,
+            IntegerVariableID profit);
 
-        explicit Knapsack(std::vector<std::vector<Integer>> coefficients,
-            std::vector<IntegerVariableID> vars,
-            std::vector<IntegerVariableID> totals);
+        explicit Knapsack(std::vector<std::vector<Integer>> coefficients, std::vector<IntegerVariableID> vars, std::vector<IntegerVariableID> totals);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

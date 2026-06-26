@@ -42,8 +42,7 @@ namespace
 
     // Enumerate every sequence of length 0..max_len over the given symbols and
     // assert the compiled NFA agrees with the reference matcher on each.
-    auto cross_check(const string & regex, const vector<Integer> & alphabet,
-        const vector<Integer> & enum_symbols, size_t max_len) -> void
+    auto cross_check(const string & regex, const vector<Integer> & alphabet, const vector<Integer> & enum_symbols, size_t max_len) -> void
     {
         auto nfa = regex_to_nfa(regex, alphabet);
         vector<Integer> sequence;

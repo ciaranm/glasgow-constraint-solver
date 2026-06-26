@@ -34,8 +34,7 @@ using std::print;
 using fmt::print;
 #endif
 
-SeqPrecedeChain::SeqPrecedeChain(vector<IntegerVariableID> vars) :
-    _vars(move(vars))
+SeqPrecedeChain::SeqPrecedeChain(vector<IntegerVariableID> vars) : _vars(move(vars))
 {
 }
 
@@ -70,8 +69,7 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
     // v distinct earlier positions to host 1..v-1, so v ≤ n.
     if (max_upper > effective_max) {
         for (const auto & v : _vars)
-            propagators.define_bound(initial_state, optional_model, v, Bound::Upper, effective_max,
-                "SeqPrecedeChain", "value bound");
+            propagators.define_bound(initial_state, optional_model, v, Bound::Upper, effective_max, "SeqPrecedeChain", "value bound");
     }
 
     if (effective_max < 2_i)
@@ -90,7 +88,5 @@ auto SeqPrecedeChain::s_expr(const ProofModel * const model) const -> SExpr
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("seq_precede_chain"),
-        SExpr::list(std::move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("seq_precede_chain"), SExpr::list(std::move(vars))});
 }

@@ -31,8 +31,7 @@ namespace gcs
     public:
         explicit Among(std::vector<IntegerVariableID>, const std::vector<Integer> & values_of_interest, const IntegerVariableID & how_many);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };

@@ -37,8 +37,7 @@ namespace gcs
         explicit In(IntegerVariableID var, std::vector<IntegerVariableID> vals);
         explicit In(IntegerVariableID var, std::vector<Integer> vals);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };

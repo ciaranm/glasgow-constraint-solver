@@ -17,15 +17,9 @@ namespace gcs
 {
     namespace innards
     {
-        auto propagate_gac_all_different(
-            const ConstraintID & constraint_id,
-            const std::vector<IntegerVariableID> & vars,
-            const std::vector<Integer> & vals,
-            const std::vector<Integer> & excluded,
-            std::map<Integer, ProofLine> & value_am1_constraint_numbers,
-            const State & state,
-            auto & inference_tracker,
-            ProofLogger * const logger) -> void;
+        auto propagate_gac_all_different(const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & vars,
+            const std::vector<Integer> & vals, const std::vector<Integer> & excluded, std::map<Integer, ProofLine> & value_am1_constraint_numbers,
+            const State & state, auto & inference_tracker, ProofLogger * const logger) -> void;
     }
 
     /**

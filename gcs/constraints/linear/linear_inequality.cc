@@ -43,9 +43,7 @@ using fmt::print;
 #endif
 
 ReifiedLinearInequality::ReifiedLinearInequality(WeightedSum coeff_vars, Integer value, ReificationCondition cond) :
-    _coeff_vars(move(coeff_vars)),
-    _value(value),
-    _reif_cond(cond)
+    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond)
 {
 }
 
@@ -108,18 +106,21 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
     for (auto & [c, v] : _coeff_vars.terms)
         terms += c * v;
 
-    overloaded{
-        [&](const reif::MustHold &) {
-            _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
-        },
+    overloaded{[&](const reif::MustHold &) {
+                   _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "unconditional less than", terms <= _value, nullopt), nullopt};
+               },
         [&](const reif::MustNotHold &) {
-            _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
+            _proof_lines =
+                pair{model.add_constraint("ReifiedLinearInequality", "unconditional greater than", terms >= _value + 1_i, nullopt), nullopt};
         },
         [&](const reif::If & cond) {
-            _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+            _proof_lines = pair{
+                model.add_constraint("ReifiedLinearInequality", "less than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         },
         [&](const reif::NotIf & cond) {
-            _proof_lines = pair{model.add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+            _proof_lines =
+                pair{model.add_constraint("ReifiedLinearInequality", "greater than option", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
+                    nullopt};
         },
         [&](const reif::Iff & cond) {
             _proof_lines = pair{
@@ -142,77 +143,75 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
     auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
 
     vector<IntegerVariableID> vars;
-    visit([&](const auto & sanitised_cv) {
-        for (const auto & cv : sanitised_cv.terms)
-            vars.push_back(get_var(cv));
-    },
+    visit(
+        [&](const auto & sanitised_cv) {
+            for (const auto & cv : sanitised_cv.terms)
+                vars.push_back(get_var(cv));
+        },
         sanitised_cv);
 
     Triggers triggers;
     for (auto & [_, v] : _coeff_vars.terms)
         triggers.on_bounds.push_back(v);
 
-    visit([&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
-        // The verdict justification is the linear "cond forced" witness over the
-        // sanitised coeff-vector type (and its negation for the must-hold side); a
-        // variant of the two, collapsing to a single witness when the two deduced
-        // types coincide.
-        using CV = std::decay_t<decltype(sanitised_cv)>;
-        using NegCV = std::decay_t<decltype(sanitised_neg_cv)>;
-        using LinearCondJustification = std::conditional_t<std::is_same_v<CV, NegCV>,
-            JustifyExplicitly<hints::LinearInequalityCond<CV>>,
-            std::variant<JustifyExplicitly<hints::LinearInequalityCond<CV>>, JustifyExplicitly<hints::LinearInequalityCond<NegCV>>>>;
+    visit(
+        [&, modifier = modifier, neg_modifier = neg_modifier](const auto & sanitised_cv, const auto & sanitised_neg_cv) -> void {
+            // The verdict justification is the linear "cond forced" witness over the
+            // sanitised coeff-vector type (and its negation for the must-hold side); a
+            // variant of the two, collapsing to a single witness when the two deduced
+            // types coincide.
+            using CV = std::decay_t<decltype(sanitised_cv)>;
+            using NegCV = std::decay_t<decltype(sanitised_neg_cv)>;
+            using LinearCondJustification = std::conditional_t<std::is_same_v<CV, NegCV>, JustifyExplicitly<hints::LinearInequalityCond<CV>>,
+                std::variant<JustifyExplicitly<hints::LinearInequalityCond<CV>>, JustifyExplicitly<hints::LinearInequalityCond<NegCV>>>>;
 
-        auto enforce_constraint_must_hold = [sanitised_cv, value = _value, modifier = modifier, proof_lines](
-                                                const State & state, auto & inference, ProofLogger * const logger,
-                                                const Literal & cond) -> PropagatorState {
-            return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_lines, cond);
-        };
+            auto enforce_constraint_must_hold = [sanitised_cv, value = _value, modifier = modifier, proof_lines](const State & state,
+                                                    auto & inference, ProofLogger * const logger, const Literal & cond) -> PropagatorState {
+                return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_lines, cond);
+            };
 
-        auto enforce_constraint_must_not_hold = [sanitised_neg_cv, value = _value, neg_modifier = neg_modifier, proof_lines_swapped](
-                                                    const State & state, auto & inference, ProofLogger * const logger,
-                                                    const Literal & cond) -> PropagatorState {
-            return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false, proof_lines_swapped, cond);
-        };
+            auto enforce_constraint_must_not_hold = [sanitised_neg_cv, value = _value, neg_modifier = neg_modifier, proof_lines_swapped](
+                                                        const State & state, auto & inference, ProofLogger * const logger,
+                                                        const Literal & cond) -> PropagatorState {
+                return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false, proof_lines_swapped, cond);
+            };
 
-        auto infer_cond_when_undecided = [sanitised_cv, sanitised_neg_cv, value = _value, modifier = modifier,
-                                             proof_lines, proof_lines_swapped, vars = vars, owner = constraint_id()](
-                                             const State & state, auto &, ProofLogger * const,
-                                             const IntegerVariableCondition &) -> ReificationVerdictFor<LinearCondJustification> {
-            Integer min_possible = 0_i, max_possible = 0_i;
-            for (const auto & cv : sanitised_cv.terms) {
-                auto bounds = state.bounds(get_var(cv));
-                if (get_coeff(cv) >= 0_i) {
-                    min_possible += get_coeff(cv) * bounds.first;
-                    max_possible += get_coeff(cv) * bounds.second;
+            auto infer_cond_when_undecided = [sanitised_cv, sanitised_neg_cv, value = _value, modifier = modifier, proof_lines, proof_lines_swapped,
+                                                 vars = vars, owner = constraint_id()](const State & state, auto &, ProofLogger * const,
+                                                 const IntegerVariableCondition &) -> ReificationVerdictFor<LinearCondJustification> {
+                Integer min_possible = 0_i, max_possible = 0_i;
+                for (const auto & cv : sanitised_cv.terms) {
+                    auto bounds = state.bounds(get_var(cv));
+                    if (get_coeff(cv) >= 0_i) {
+                        min_possible += get_coeff(cv) * bounds.first;
+                        max_possible += get_coeff(cv) * bounds.second;
+                    }
+                    else {
+                        min_possible += get_coeff(cv) * bounds.second;
+                        max_possible += get_coeff(cv) * bounds.first;
+                    }
                 }
-                else {
-                    min_possible += get_coeff(cv) * bounds.second;
-                    max_possible += get_coeff(cv) * bounds.first;
+
+                if (min_possible > value + modifier) {
+                    // cannot possibly hold
+                    return reification_verdict::MustNotHold<LinearCondJustification>{
+                        .justification = JustifyExplicitly{hints::LinearInequalityCond<CV>{{owner}, &state, sanitised_cv, proof_lines}, ThenRUP::Yes},
+                        .reason = generic_reason(vars)};
                 }
-            }
+                else if (max_possible <= value + modifier) {
+                    // must definitely hold
+                    return reification_verdict::MustHold<LinearCondJustification>{
+                        .justification = JustifyExplicitly{hints::LinearInequalityCond<NegCV>{{owner}, &state, sanitised_neg_cv, proof_lines_swapped},
+                            ThenRUP::Yes},
+                        .reason = generic_reason(vars)};
+                }
+                else
+                    return reification_verdict::StillUndecided{};
+            };
 
-            if (min_possible > value + modifier) {
-                // cannot possibly hold
-                return reification_verdict::MustNotHold<LinearCondJustification>{
-                    .justification = JustifyExplicitly{hints::LinearInequalityCond<CV>{{owner}, &state, sanitised_cv, proof_lines}, ThenRUP::Yes},
-                    .reason = generic_reason(vars)};
-            }
-            else if (max_possible <= value + modifier) {
-                // must definitely hold
-                return reification_verdict::MustHold<LinearCondJustification>{
-                    .justification = JustifyExplicitly{hints::LinearInequalityCond<NegCV>{{owner}, &state, sanitised_neg_cv, proof_lines_swapped}, ThenRUP::Yes},
-                    .reason = generic_reason(vars)};
-            }
-            else
-                return reification_verdict::StillUndecided{};
-        };
-
-        install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _reif_cond, triggers,
-            std::move(enforce_constraint_must_hold),
-            std::move(enforce_constraint_must_not_hold),
-            std::move(infer_cond_when_undecided));
-    },
+            install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _reif_cond, triggers, std::move(enforce_constraint_must_hold),
+                std::move(enforce_constraint_must_not_hold), std::move(infer_cond_when_undecided));
+        },
         sanitised_cv, sanitised_neg_cv);
 }
 
@@ -221,12 +220,13 @@ auto ReifiedLinearInequality::s_expr(const ProofModel * const model) const -> SE
     auto & tracker = model->names_and_ids_tracker();
 
     // cake_pb_cp's name for the <= form is lin_less_equal (not lin_less_than_equal).
-    auto [rei, cons] = overloaded{
-        [&](const reif::MustHold &) { return make_pair(false, "lin_less_equal"); },
+    auto [rei, cons] = overloaded{[&](const reif::MustHold &) { return make_pair(false, "lin_less_equal"); },
         [&](const reif::If &) { return make_pair(true, "lin_less_equal_if"); },
         [&](const reif::Iff &) { return make_pair(true, "lin_less_equal_iff"); },
-        [&](const auto &) { throw UnexpectedException{"Unexpected reification type in s_expr"}; return make_pair(false, ""); }}
-                           .visit(_reif_cond);
+        [&](const auto &) {
+            throw UnexpectedException{"Unexpected reification type in s_expr"};
+            return make_pair(false, "");
+        }}.visit(_reif_cond);
 
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cons)};
     if (rei)

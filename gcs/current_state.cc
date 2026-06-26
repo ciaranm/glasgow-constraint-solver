@@ -10,19 +10,15 @@ using std::move;
 using std::string;
 using std::vector;
 
-VariableDoesNotHaveUniqueValue::VariableDoesNotHaveUniqueValue(const string & w) :
-    MessageException(w + " does not have a unique value")
+VariableDoesNotHaveUniqueValue::VariableDoesNotHaveUniqueValue(const string & w) : MessageException(w + " does not have a unique value")
 {
 }
 
-CurrentState::CurrentState(State & state) :
-    _full_state(state)
+CurrentState::CurrentState(State & state) : _full_state(state)
 {
 }
 
-CurrentState::CurrentState(State && s) :
-    _state_copy(make_unique<State>(move(s))),
-    _full_state(*_state_copy)
+CurrentState::CurrentState(State && s) : _state_copy(make_unique<State>(move(s))), _full_state(*_state_copy)
 {
 }
 

@@ -10,12 +10,9 @@ using namespace gcs::innards;
 using std::map;
 using std::vector;
 
-auto gcs::innards::justify_all_different_hall_set_or_violator(
-    ProofLogger & logger,
-    const vector<IntegerVariableID> & all_variables,
-    const vector<IntegerVariableID> & hall_variables,
-    const vector<Integer> & hall_values,
-    map<Integer, ProofLine> & value_am1_constraint_numbers) -> void
+auto gcs::innards::justify_all_different_hall_set_or_violator(ProofLogger & logger, const vector<IntegerVariableID> & all_variables,
+    const vector<IntegerVariableID> & hall_variables, const vector<Integer> & hall_values, map<Integer, ProofLine> & value_am1_constraint_numbers)
+    -> void
 {
     // we are going to need the am1s over values, if they don't exist yet
     for (const auto & val : hall_values) {
@@ -30,7 +27,8 @@ auto gcs::innards::justify_all_different_hall_set_or_violator(
                 am1.multiply_by(Integer{layer});
 
             for (unsigned j = 0; j < i; ++j) {
-                auto ne = logger.emit_rup_proof_line(WPBSum{} + 1_i * ! (all_variables[i] == val) + 1_i * ! (all_variables[j] == val) >= 1_i, ProofLevel::Temporary);
+                auto ne = logger.emit_rup_proof_line(
+                    WPBSum{} + 1_i * ! (all_variables[i] == val) + 1_i * ! (all_variables[j] == val) >= 1_i, ProofLevel::Temporary);
                 am1.add(ne);
             }
 

@@ -70,18 +70,14 @@ namespace
     // build_forests / build_tree pipeline does.
     auto deview_for_alias_check(const IntegerVariableID & v) -> IntegerVariableID
     {
-        return overloaded{
-            [](const SimpleIntegerVariableID & s) -> IntegerVariableID { return s; },
+        return overloaded{[](const SimpleIntegerVariableID & s) -> IntegerVariableID { return s; },
             [](const ViewOfIntegerVariableID & view) -> IntegerVariableID { return view.actual_variable; },
             [](const ConstantIntegerVariableID & c) -> IntegerVariableID { return c; }}
             .visit(v);
     }
 }
 
-SmartTable::SmartTable(vector<IntegerVariableID> v, SmartTuples t, bool s) :
-    _vars(move(v)),
-    _tuples(move(t)),
-    _short_reasons(s)
+SmartTable::SmartTable(vector<IntegerVariableID> v, SmartTuples t, bool s) : _vars(move(v)), _tuples(move(t)), _short_reasons(s)
 {
     // Aliased BinaryEntry endpoints break build_forests: both ends
     // hash to the same `deview` key, so adjacent_edges holds the entry
@@ -112,10 +108,7 @@ namespace
     // Annoying workaround access functions to make sure this all works with views
     auto get_for_actual_var(VariableDomainMap & vdom, const IntegerVariableID & v) -> vector<Integer>
     {
-        return overloaded{
-            [&](ConstantIntegerVariableID) -> vector<Integer> {
-                throw UnimplementedException{};
-            },
+        return overloaded{[&](ConstantIntegerVariableID) -> vector<Integer> { throw UnimplementedException{}; },
             [&](ViewOfIntegerVariableID v) -> vector<Integer> {
                 auto vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
                 for (unsigned i = 0; i < vec.size(); i++) {
@@ -132,10 +125,7 @@ namespace
 
     auto set_for_actual_var(VariableDomainMap & vdom, const IntegerVariableID & v, vector<Integer> & vec) -> void
     {
-        overloaded{
-            [&](ConstantIntegerVariableID) -> void {
-                throw UnimplementedException{};
-            },
+        overloaded{[&](ConstantIntegerVariableID) -> void { throw UnimplementedException{}; },
             [&](ViewOfIntegerVariableID v) -> void {
                 auto mod_vec = vector<Integer>(vdom[v.actual_variable].size(), 0_i);
                 for (unsigned i = 0; i < vec.size(); i++) {
@@ -143,154 +133,145 @@ namespace
                 }
                 vdom.at(v.actual_variable) = move(mod_vec);
             },
-            [&](SimpleIntegerVariableID s) -> void {
-                vdom.at(s) = move(vec);
-            }}
+            [&](SimpleIntegerVariableID s) -> void { vdom.at(s) = move(vec); }}
             .visit(v);
     }
 
     auto deview(IntegerVariableID v) -> IntegerVariableID
     {
-        return overloaded{
-            [&](SimpleIntegerVariableID & s) -> IntegerVariableID {
-                return s;
-            },
-            [&](ViewOfIntegerVariableID & v) -> IntegerVariableID {
-                return v.actual_variable;
-            },
-            [&](ConstantIntegerVariableID & c) -> IntegerVariableID {
-                return c;
-            }}
+        return overloaded{[&](SimpleIntegerVariableID & s) -> IntegerVariableID { return s; },
+            [&](ViewOfIntegerVariableID & v) -> IntegerVariableID { return v.actual_variable; },
+            [&](ConstantIntegerVariableID & c) -> IntegerVariableID { return c; }}
             .visit(v);
     }
 
-    auto log_filtering_inference(ProofLogger * const logger, const ProofFlag * tuple_selector, const Literal & lit,
-        const State & state, auto &, const Reason & reason)
+    auto log_filtering_inference(
+        ProofLogger * const logger, const ProofFlag * tuple_selector, const Literal & lit, const State & state, auto &, const Reason & reason)
     {
-        logger->emit_rup_proof_line_under_reason(eager_reason(reason, state),
-            WPBSum{} + 1_i * (! *tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
+        logger->emit_rup_proof_line_under_reason(
+            eager_reason(reason, state), WPBSum{} + 1_i * (! *tuple_selector) + 1_i * lit >= 1_i, ProofLevel::Current);
     }
 
     // tuple_selector may be null when proofs are disabled; the body only uses it inside
     // `if (logger)` branches (which are also the only branches that actually need it),
     // so passing nullptr is safe in that case and avoids forming a reference into an
     // empty pb_selectors vector at the call site.
-    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag * tuple_selector,
-        const State & state, auto & inference, const ReasonLiterals &, ProofLogger * const logger) -> void
+    auto filter_edge(const SmartEntry & edge, VariableDomainMap & supported_by_tree, const ProofFlag * tuple_selector, const State & state,
+        auto & inference, const ReasonLiterals &, ProofLogger * const logger) -> void
     {
         // Currently filter both domains - might be overkill
         // If the tree was in a better form, think this can be optimised to do less redundant filtering.
-        overloaded{
-            [&](const BinaryEntry & binary_entry) {
-                vector<Integer> new_dom_1{};
-                vector<Integer> new_dom_2{};
+        overloaded{[&](const BinaryEntry & binary_entry) {
+                       vector<Integer> new_dom_1{};
+                       vector<Integer> new_dom_2{};
 
-                auto dom_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
-                auto dom_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
-                sort(dom_1);
-                sort(dom_2);
+                       auto dom_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
+                       auto dom_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
+                       sort(dom_1);
+                       sort(dom_2);
 
-                switch (binary_entry.constraint_type) {
-                    using enum SmartEntryConstraint;
-                case LessThan:
-                    copy_if(dom_2, back_inserter(new_dom_2),
-                        [&](Integer val) { return val > dom_1[0]; });
-                    copy_if(dom_1, back_inserter(new_dom_1),
-                        [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
-                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                        if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i),
-                                state, inference, singleton_reason(binary_entry.var_1 >= dom_1[0]));
-                        if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1],
-                                state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
-                    }
-                    break;
-                case LessThanEqual:
-                    copy_if(dom_2, back_inserter(new_dom_2),
-                        [&](Integer val) { return val >= dom_1[0]; });
-                    copy_if(dom_1, back_inserter(new_dom_1),
-                        [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
-                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                        if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference, singleton_reason(binary_entry.var_1 >= dom_1[0]));
-                        if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i), state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
-                    }
-                    break;
-                case Equal:
-                    set_intersection(dom_1, dom_2, back_inserter(new_dom_1));
-                    new_dom_2 = new_dom_1;
+                       switch (binary_entry.constraint_type) {
+                           using enum SmartEntryConstraint;
+                       case LessThan:
+                           copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val > dom_1[0]; });
+                           copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val < dom_2[dom_2.size() - 1]; });
+                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                               if (new_dom_2.size() < dom_2.size())
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0] + 1_i), state, inference,
+                                       singleton_reason(binary_entry.var_1 >= dom_1[0]));
+                               if (new_dom_1.size() < dom_1.size())
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < dom_2[dom_2.size() - 1], state,
+                                       inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
+                           }
+                           break;
+                       case LessThanEqual:
+                           copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val >= dom_1[0]; });
+                           copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val <= dom_2[dom_2.size() - 1]; });
+                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                               if (new_dom_2.size() < dom_2.size())
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) >= (dom_1[0]), state, inference,
+                                       singleton_reason(binary_entry.var_1 >= dom_1[0]));
+                               if (new_dom_1.size() < dom_1.size())
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) < (dom_2[dom_2.size() - 1] + 1_i),
+                                       state, inference, singleton_reason(binary_entry.var_2 < dom_2[dom_2.size() - 1] + 1_i));
+                           }
+                           break;
+                       case Equal:
+                           set_intersection(dom_1, dom_2, back_inserter(new_dom_1));
+                           new_dom_2 = new_dom_1;
 
-                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                        // This one seems particularly annoying. Is it necessary? - not sure
-                        if (new_dom_1.size() < dom_1.size()) {
-                            vector<Integer> discarded_dom1;
-                            set_difference(dom_1, dom_2, back_inserter(discarded_dom1));
-                            for (const auto & val : discarded_dom1) {
-                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, inference, singleton_reason(binary_entry.var_2 != val));
-                            }
-                        }
+                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                               // This one seems particularly annoying. Is it necessary? - not sure
+                               if (new_dom_1.size() < dom_1.size()) {
+                                   vector<Integer> discarded_dom1;
+                                   set_difference(dom_1, dom_2, back_inserter(discarded_dom1));
+                                   for (const auto & val : discarded_dom1) {
+                                       log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != val, state, inference,
+                                           singleton_reason(binary_entry.var_2 != val));
+                                   }
+                               }
 
-                        if (new_dom_2.size() < dom_2.size()) {
-                            vector<Integer> discarded_dom2;
-                            set_difference(dom_2, dom_1, back_inserter(discarded_dom2));
-                            for (const auto & val : discarded_dom2) {
-                                log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, inference, singleton_reason(binary_entry.var_1 != val));
-                            }
-                        }
-                    }
-                    break;
-                case NotEqual:
-                    if (dom_1.size() == 1) {
-                        new_dom_1 = dom_1;
-                        set_difference(dom_2, dom_1, back_inserter(new_dom_2));
-                        if (logger && new_dom_2.size() < dom_2.size() && logger->get_assertion_level() == AssertionLevel::Off) {
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference, singleton_reason(binary_entry.var_1 == dom_1[0]));
-                        }
-                    }
-                    else if (dom_2.size() == 1) {
-                        new_dom_2 = dom_2;
-                        set_difference(dom_1, dom_2, back_inserter(new_dom_1));
-                        if (logger && new_dom_1.size() < dom_1.size() && logger->get_assertion_level() == AssertionLevel::Off) {
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference, singleton_reason(binary_entry.var_2 == dom_2[0]));
-                        }
-                    }
-                    else {
-                        new_dom_1 = move(dom_1);
-                        new_dom_2 = move(dom_2);
-                    }
-                    break;
-                case GreaterThan:
-                    copy_if(dom_1, back_inserter(new_dom_1),
-                        [&](Integer val) { return val > dom_2[0]; });
-                    copy_if(dom_2, back_inserter(new_dom_2),
-                        [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
-                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                        if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference, singleton_reason(binary_entry.var_2 >= dom_2[0]));
-                        if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
-                    }
-                    break;
-                case GreaterThanEqual:
-                    copy_if(dom_1, back_inserter(new_dom_1),
-                        [&](Integer val) { return val >= dom_2[0]; });
-                    copy_if(dom_2, back_inserter(new_dom_2),
-                        [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
-                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                        if (new_dom_1.size() < dom_1.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference, singleton_reason(binary_entry.var_2 >= dom_2[0]));
-                        if (new_dom_2.size() < dom_2.size())
-                            log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i), state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
-                    }
-                    break;
-                default:
-                    throw UnexpectedException{"Unexpected SmartEntry type encountered."};
-                }
-                set_for_actual_var(supported_by_tree, binary_entry.var_1, new_dom_1);
-                set_for_actual_var(supported_by_tree, binary_entry.var_2, new_dom_2);
-            },
+                               if (new_dom_2.size() < dom_2.size()) {
+                                   vector<Integer> discarded_dom2;
+                                   set_difference(dom_2, dom_1, back_inserter(discarded_dom2));
+                                   for (const auto & val : discarded_dom2) {
+                                       log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != val, state, inference,
+                                           singleton_reason(binary_entry.var_1 != val));
+                                   }
+                               }
+                           }
+                           break;
+                       case NotEqual:
+                           if (dom_1.size() == 1) {
+                               new_dom_1 = dom_1;
+                               set_difference(dom_2, dom_1, back_inserter(new_dom_2));
+                               if (logger && new_dom_2.size() < dom_2.size() && logger->get_assertion_level() == AssertionLevel::Off) {
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) != (dom_1[0]), state, inference,
+                                       singleton_reason(binary_entry.var_1 == dom_1[0]));
+                               }
+                           }
+                           else if (dom_2.size() == 1) {
+                               new_dom_2 = dom_2;
+                               set_difference(dom_1, dom_2, back_inserter(new_dom_1));
+                               if (logger && new_dom_1.size() < dom_1.size() && logger->get_assertion_level() == AssertionLevel::Off) {
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) != (dom_2[0]), state, inference,
+                                       singleton_reason(binary_entry.var_2 == dom_2[0]));
+                               }
+                           }
+                           else {
+                               new_dom_1 = move(dom_1);
+                               new_dom_2 = move(dom_2);
+                           }
+                           break;
+                       case GreaterThan:
+                           copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val > dom_2[0]; });
+                           copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val < dom_1[dom_1.size() - 1]; });
+                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                               if (new_dom_1.size() < dom_1.size())
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0] + 1_i), state, inference,
+                                       singleton_reason(binary_entry.var_2 >= dom_2[0]));
+                               if (new_dom_2.size() < dom_2.size())
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < dom_1[dom_1.size() - 1], state,
+                                       inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
+                           }
+                           break;
+                       case GreaterThanEqual:
+                           copy_if(dom_1, back_inserter(new_dom_1), [&](Integer val) { return val >= dom_2[0]; });
+                           copy_if(dom_2, back_inserter(new_dom_2), [&](Integer val) { return val <= dom_1[dom_1.size() - 1]; });
+                           if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
+                               if (new_dom_1.size() < dom_1.size())
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_1) >= (dom_2[0]), state, inference,
+                                       singleton_reason(binary_entry.var_2 >= dom_2[0]));
+                               if (new_dom_2.size() < dom_2.size())
+                                   log_filtering_inference(logger, tuple_selector, deview(binary_entry.var_2) < (dom_1[dom_1.size() - 1] + 1_i),
+                                       state, inference, singleton_reason(binary_entry.var_1 < dom_1[dom_1.size() - 1] + 1_i));
+                           }
+                           break;
+                       default: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                       }
+                       set_for_actual_var(supported_by_tree, binary_entry.var_1, new_dom_1);
+                       set_for_actual_var(supported_by_tree, binary_entry.var_2, new_dom_2);
+                   },
             [&](const UnarySetEntry & unary_set_entry) {
                 vector<Integer> new_dom{};
                 auto dom = get_for_actual_var(supported_by_tree, unary_set_entry.var);
@@ -300,14 +281,9 @@ namespace
 
                 switch (unary_set_entry.constraint_type) {
                     using enum SmartEntryConstraint;
-                case In:
-                    set_intersection(dom, set_values, back_inserter(new_dom));
-                    break;
-                case NotIn:
-                    set_difference(dom, set_values, back_inserter(new_dom));
-                    break;
-                default:
-                    throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                case In: set_intersection(dom, set_values, back_inserter(new_dom)); break;
+                case NotIn: set_difference(dom, set_values, back_inserter(new_dom)); break;
+                default: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
 
                 set_for_actual_var(supported_by_tree, unary_set_entry.var, new_dom);
@@ -320,26 +296,13 @@ namespace
 
                 switch (unary_val_entry.constraint_type) {
                     using enum SmartEntryConstraint;
-                case LessThan:
-                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val < value; });
-                    break;
-                case LessThanEqual:
-                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val <= value; });
-                    break;
-                case Equal:
-                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val == value; });
-                    break;
-                case NotEqual:
-                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val != value; });
-                    break;
-                case GreaterThan:
-                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val > value; });
-                    break;
-                case GreaterThanEqual:
-                    copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val >= value; });
-                    break;
-                default:
-                    throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                case LessThan: copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val < value; }); break;
+                case LessThanEqual: copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val <= value; }); break;
+                case Equal: copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val == value; }); break;
+                case NotEqual: copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val != value; }); break;
+                case GreaterThan: copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val > value; }); break;
+                case GreaterThanEqual: copy_if(dom, back_inserter(new_dom), [&](Integer dom_val) { return dom_val >= value; }); break;
+                default: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                 }
 
                 set_for_actual_var(supported_by_tree, unary_val_entry.var, new_dom);
@@ -347,9 +310,8 @@ namespace
             .visit(edge);
     }
 
-    [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
-        const ProofFlag * tuple_selector, const State & state, auto & inference,
-        const ReasonLiterals & reason, ProofLogger * const logger) -> bool
+    [[nodiscard]] auto filter_and_check_valid(const TreeEdges & tree, VariableDomainMap & supported_by_tree, const ProofFlag * tuple_selector,
+        const State & state, auto & inference, const ReasonLiterals & reason, ProofLogger * const logger) -> bool
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
@@ -357,16 +319,19 @@ namespace
                 filter_edge(edge, supported_by_tree, tuple_selector, state, inference, reason, logger);
 
                 bool domain_became_empty = false;
-                overloaded{
-                    [&](const BinaryEntry & binary_entry) {
-                        if (get_for_actual_var(supported_by_tree, binary_entry.var_1).empty()) domain_became_empty = true;
-                        if (get_for_actual_var(supported_by_tree, binary_entry.var_2).empty()) domain_became_empty = true;
-                    },
+                overloaded{[&](const BinaryEntry & binary_entry) {
+                               if (get_for_actual_var(supported_by_tree, binary_entry.var_1).empty())
+                                   domain_became_empty = true;
+                               if (get_for_actual_var(supported_by_tree, binary_entry.var_2).empty())
+                                   domain_became_empty = true;
+                           },
                     [&](const UnarySetEntry & unary_set_entry) {
-                        if (get_for_actual_var(supported_by_tree, unary_set_entry.var).empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree, unary_set_entry.var).empty())
+                            domain_became_empty = true;
                     },
                     [&](const UnaryValueEntry & unary_val_entry) {
-                        if (get_for_actual_var(supported_by_tree, unary_val_entry.var).empty()) domain_became_empty = true;
+                        if (get_for_actual_var(supported_by_tree, unary_val_entry.var).empty())
+                            domain_became_empty = true;
                     }}
                     .visit(edge);
 
@@ -388,22 +353,20 @@ namespace
         unsupported[var] = new_unsupported;
     }
 
-    auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree,
-        VariableDomainMap & unsupported, const ProofFlag * tuple_selector, const State & state,
-        auto & inference, const ReasonLiterals & reason, ProofLogger * const logger) -> void
+    auto filter_again_and_remove_supported(const TreeEdges & tree, VariableDomainMap & supported_by_tree, VariableDomainMap & unsupported,
+        const ProofFlag * tuple_selector, const State & state, auto & inference, const ReasonLiterals & reason, ProofLogger * const logger) -> void
     {
         for (int l = tree.size() - 1; l >= 0; --l) {
             for (const auto & edge : tree[l]) {
                 filter_edge(edge, supported_by_tree, tuple_selector, state, inference, reason, logger);
 
                 // Collect supported vals for this tree
-                overloaded{
-                    [&](const BinaryEntry & binary_entry) {
-                        auto supported_var_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
-                        auto supported_var_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
-                        remove_supported(unsupported, binary_entry.var_1, supported_var_1);
-                        remove_supported(unsupported, binary_entry.var_2, supported_var_2);
-                    },
+                overloaded{[&](const BinaryEntry & binary_entry) {
+                               auto supported_var_1 = get_for_actual_var(supported_by_tree, binary_entry.var_1);
+                               auto supported_var_2 = get_for_actual_var(supported_by_tree, binary_entry.var_2);
+                               remove_supported(unsupported, binary_entry.var_1, supported_var_1);
+                               remove_supported(unsupported, binary_entry.var_2, supported_var_2);
+                           },
                     [&](const UnarySetEntry & unary_set_entry) {
                         auto supported = get_for_actual_var(supported_by_tree, unary_set_entry.var);
                         remove_supported(unsupported, unary_set_entry.var, supported);
@@ -422,17 +385,12 @@ namespace
         vector<IntegerVariableID> vars_in_tuple;
         vector<IntegerVariableID> unrestricted;
         for (const auto & entry : tuple) {
-            overloaded{
-                [&](const BinaryEntry & binary_entry) {
-                    vars_in_tuple.emplace_back(binary_entry.var_1);
-                    vars_in_tuple.emplace_back(binary_entry.var_2);
-                },
-                [&](const UnarySetEntry & unary_set_entry) {
-                    vars_in_tuple.emplace_back(unary_set_entry.var);
-                },
-                [&](const UnaryValueEntry & unary_val_entry) {
-                    vars_in_tuple.emplace_back(unary_val_entry.var);
-                }}
+            overloaded{[&](const BinaryEntry & binary_entry) {
+                           vars_in_tuple.emplace_back(binary_entry.var_1);
+                           vars_in_tuple.emplace_back(binary_entry.var_2);
+                       },
+                [&](const UnarySetEntry & unary_set_entry) { vars_in_tuple.emplace_back(unary_set_entry.var); },
+                [&](const UnaryValueEntry & unary_val_entry) { vars_in_tuple.emplace_back(unary_val_entry.var); }}
                 .visit(entry);
         }
 
@@ -443,9 +401,9 @@ namespace
         return unrestricted;
     }
 
-    auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars,
-        const SmartTuples & tuples, const vector<Forest> & forests, const State & state, auto & inference, const ReasonLiterals & reason,
-        vector<ProofFlag> pb_selectors, ProofLogger * const logger, bool short_reasons, const ConstraintID & owner) -> void
+    auto propagate_using_smart_str(const vector<IntegerVariableID> & selectors, const vector<IntegerVariableID> & vars, const SmartTuples & tuples,
+        const vector<Forest> & forests, const State & state, auto & inference, const ReasonLiterals & reason, vector<ProofFlag> pb_selectors,
+        ProofLogger * const logger, bool short_reasons, const ConstraintID & owner) -> void
     {
         VariableDomainMap unsupported{};
         // Initialise unsupported values to everything in each variable's current domain.
@@ -482,8 +440,7 @@ namespace
                     break;
                 }
 
-                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selector,
-                    state, inference, reason, logger);
+                filter_again_and_remove_supported(tree, supported_by_tree, unsupported, pb_selector, state, inference, reason, logger);
             }
 
             if (state.optional_single_value(selectors[tuple_idx]) != 0_i) {
@@ -527,12 +484,7 @@ namespace
             if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                 auto justf = [&](const ReasonLiterals & reason) -> void {
                     for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
-                        logger->emit_rup_proof_line_under_reason(
-                            reason,
-                            WPBSum{} +
-                                    1_i * (! pb_selectors[tuple_idx]) >=
-                                1_i,
-                            ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (! pb_selectors[tuple_idx]) >= 1_i, ProofLevel::Temporary);
                     }
                 };
                 inference.contradiction(logger, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
@@ -552,11 +504,7 @@ namespace
                     auto justf = [&](const ReasonLiterals & reason) -> void {
                         for (unsigned int tuple_idx = 0; tuple_idx < tuples.size(); ++tuple_idx) {
                             logger->emit_rup_proof_line_under_reason(
-                                reason,
-                                WPBSum{} +
-                                        1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >=
-                                    1_i,
-                                ProofLevel::Temporary);
+                                reason, WPBSum{} + 1_i * (var != value) + 1_i * (! pb_selectors[tuple_idx]) >= 1_i, ProofLevel::Temporary);
                         }
                     };
                     inference.infer_not_equal(logger, var, value, JustifyExplicitly{justf, ThenRUP::Yes, hints::SmartTable{owner}}, reason_to_use);
@@ -576,8 +524,7 @@ namespace
     }
 
     auto build_tree(const IntegerVariableID & root, int current_level, vector<vector<SmartEntry>> & entry_tree,
-        unordered_map<IntegerVariableID, bool> & node_visited,
-        const unordered_map<IntegerVariableID, vector<SmartEntry>> & adjacent_edges) -> void
+        unordered_map<IntegerVariableID, bool> & node_visited, const unordered_map<IntegerVariableID, vector<SmartEntry>> & adjacent_edges) -> void
     {
         node_visited[deview(root)] = true;
 
@@ -585,26 +532,21 @@ namespace
         // Note: Perhaps we should build the tree in a "smarter" form e.g. make sure var_1 is always the node
         //       closer to the root.
         for (const auto & edge : adjacent_edges.at(deview(root))) {
-            overloaded{
-                [&](BinaryEntry binary_entry) {
-                    if (! node_visited[deview(binary_entry.var_1)]) {
-                        entry_tree[current_level].emplace_back(edge);
-                        entry_tree.emplace_back();
+            overloaded{[&](BinaryEntry binary_entry) {
+                           if (! node_visited[deview(binary_entry.var_1)]) {
+                               entry_tree[current_level].emplace_back(edge);
+                               entry_tree.emplace_back();
 
-                        build_tree(binary_entry.var_1, current_level + 1, entry_tree, node_visited, adjacent_edges);
-                    }
-                    else if (! node_visited[deview(binary_entry.var_2)]) {
-                        entry_tree[current_level].emplace_back(edge);
-                        entry_tree.emplace_back();
-                        build_tree(binary_entry.var_2, current_level + 1, entry_tree, node_visited, adjacent_edges);
-                    }
-                },
-                [&](const UnarySetEntry &) {
-                    entry_tree[current_level].emplace_back(edge);
-                },
-                [&](const UnaryValueEntry &) {
-                    entry_tree[current_level].emplace_back(edge);
-                }}
+                               build_tree(binary_entry.var_1, current_level + 1, entry_tree, node_visited, adjacent_edges);
+                           }
+                           else if (! node_visited[deview(binary_entry.var_2)]) {
+                               entry_tree[current_level].emplace_back(edge);
+                               entry_tree.emplace_back();
+                               build_tree(binary_entry.var_2, current_level + 1, entry_tree, node_visited, adjacent_edges);
+                           }
+                       },
+                [&](const UnarySetEntry &) { entry_tree[current_level].emplace_back(edge); },
+                [&](const UnaryValueEntry &) { entry_tree[current_level].emplace_back(edge); }}
                 .visit(edge);
         }
     }
@@ -618,13 +560,12 @@ namespace
 
             // Get all the vars in the tuple and record adjacencies
             for (const auto & entry : current_tuple) {
-                overloaded{
-                    [&](const BinaryEntry & binary_entry) {
-                        node_visited[deview(binary_entry.var_1)] = false;
-                        node_visited[deview(binary_entry.var_2)] = false;
-                        adjacent_edges[deview(binary_entry.var_1)].emplace_back(binary_entry);
-                        adjacent_edges[deview(binary_entry.var_2)].emplace_back(binary_entry);
-                    },
+                overloaded{[&](const BinaryEntry & binary_entry) {
+                               node_visited[deview(binary_entry.var_1)] = false;
+                               node_visited[deview(binary_entry.var_2)] = false;
+                               adjacent_edges[deview(binary_entry.var_1)].emplace_back(binary_entry);
+                               adjacent_edges[deview(binary_entry.var_2)].emplace_back(binary_entry);
+                           },
                     [&](const UnaryValueEntry & unary_val_entry) {
                         node_visited[deview(unary_val_entry.var)] = false;
                         adjacent_edges[deview(unary_val_entry.var)].emplace_back(unary_val_entry);
@@ -640,7 +581,8 @@ namespace
             for (auto & var_pair : node_visited) {
                 auto & var = var_pair.first;
                 auto & visited = var_pair.second;
-                if (visited) continue;
+                if (visited)
+                    continue;
                 vector<vector<SmartEntry>> entry_tree;
                 entry_tree.emplace_back();
                 // Recursively build the tree starting from this node
@@ -654,62 +596,50 @@ namespace
     }
 
     // For PB model
-    [[nodiscard]] auto make_binary_entry_flag(State &, ProofModel & model, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const SmartEntryConstraint & c) -> ProofFlag
+    [[nodiscard]] auto make_binary_entry_flag(
+        State &, ProofModel & model, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const SmartEntryConstraint & c) -> ProofFlag
     {
         switch (c) {
             using enum SmartEntryConstraint;
         case Equal: {
             // f => var1 == var2
             auto flag = model.create_proof_flag("bin_eq");
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
-                HalfReifyOnConjunctionOf{{flag}});
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i, HalfReifyOnConjunctionOf{{flag}});
 
             // !f => var1 != var2 via fully reified lt/gt and a selector
-            auto flag_gt = model.create_proof_flag_fully_reifying("gt", "SmartTable", "binary entry",
-                WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
-            auto flag_lt = model.create_proof_flag_fully_reifying("lt", "SmartTable", "binary entry",
-                WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
-            model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
-                HalfReifyOnConjunctionOf{{! flag}});
+            auto flag_gt = model.create_proof_flag_fully_reifying("gt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
+            auto flag_lt = model.create_proof_flag_fully_reifying("lt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
+            model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i, HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
         case GreaterThan:
-            return model.create_proof_flag_fully_reifying("bin_gt", "SmartTable", "binary entry",
-                WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
+            return model.create_proof_flag_fully_reifying("bin_gt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
 
         case LessThan:
-            return model.create_proof_flag_fully_reifying("bin_lt", "SmartTable", "binary entry",
-                WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
+            return model.create_proof_flag_fully_reifying("bin_lt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
 
         case LessThanEqual:
-            return model.create_proof_flag_fully_reifying("bin_le", "SmartTable", "binary entry",
-                WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i);
+            return model.create_proof_flag_fully_reifying("bin_le", "SmartTable", "binary entry", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i);
 
         case NotEqual: {
             // !f => var1 == var2
             auto flag = model.create_proof_flag("bin_eq");
-            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i,
-                HalfReifyOnConjunctionOf{{! flag}});
+            model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i, HalfReifyOnConjunctionOf{{! flag}});
 
             // f => var1 != var2, via fully reified lt/gt and a selector
-            auto flag_gt = model.create_proof_flag_fully_reifying("gt", "SmartTable", "binary entry",
-                WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
-            auto flag_lt = model.create_proof_flag_fully_reifying("lt", "SmartTable", "binary entry",
-                WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
-            model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i,
-                HalfReifyOnConjunctionOf{{flag}});
+            auto flag_gt = model.create_proof_flag_fully_reifying("gt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
+            auto flag_lt = model.create_proof_flag_fully_reifying("lt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
+            model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i, HalfReifyOnConjunctionOf{{flag}});
 
             return flag;
         }
 
         case GreaterThanEqual:
-            return model.create_proof_flag_fully_reifying("bin_ge", "SmartTable", "binary entry",
-                WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i);
+            return model.create_proof_flag_fully_reifying("bin_ge", "SmartTable", "binary entry", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i);
 
         case NotIn:
-        case In:
-            throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
+        case In: throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
         }
         throw NonExhaustiveSwitch{};
     }
@@ -720,21 +650,14 @@ namespace
         auto value = unary_entry.value;
         switch (unary_entry.constraint_type) {
             using enum SmartEntryConstraint;
-        case LessThan:
-            return var < value;
-        case LessThanEqual:
-            return var <= value;
-        case Equal:
-            return var == value;
-        case NotEqual:
-            return var != value;
-        case GreaterThan:
-            return var > value;
-        case GreaterThanEqual:
-            return var >= value;
+        case LessThan: return var < value;
+        case LessThanEqual: return var <= value;
+        case Equal: return var == value;
+        case NotEqual: return var != value;
+        case GreaterThan: return var > value;
+        case GreaterThanEqual: return var >= value;
         case In:
-        case NotIn:
-            throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
+        case NotIn: throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
         }
         throw NonExhaustiveSwitch{};
     }
@@ -742,16 +665,8 @@ namespace
 
 auto provable_entry_member(IntegerVariableID v) -> bool
 {
-    return overloaded{
-        [&](ViewOfIntegerVariableID & v) -> bool {
-            return ! v.negate_first && v.then_add >= 0_i;
-        },
-        [&](ConstantIntegerVariableID) -> bool {
-            return false;
-        },
-        [&](SimpleIntegerVariableID) -> bool {
-            return true;
-        }}
+    return overloaded{[&](ViewOfIntegerVariableID & v) -> bool { return ! v.negate_first && v.then_add >= 0_i; },
+        [&](ConstantIntegerVariableID) -> bool { return false; }, [&](SimpleIntegerVariableID) -> bool { return true; }}
         .visit(v);
 }
 
@@ -763,10 +678,7 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
     map<IntegerVariableID, vector<SmartEntry>> unary_entries{};
     vector<SmartEntry> new_tuple{};
     for (const auto & entry : tuple) {
-        overloaded{
-            [&](BinaryEntry binary_entry) {
-                new_tuple.emplace_back(binary_entry);
-            },
+        overloaded{[&](BinaryEntry binary_entry) { new_tuple.emplace_back(binary_entry); },
             [&](UnaryValueEntry value_entry) {
                 auto & entries = unary_entries[value_entry.var];
                 entries.emplace_back(value_entry);
@@ -786,33 +698,17 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
         for (auto v : state.each_value_mutable(var)) {
             bool val_allowed = true;
             for (auto & entry : entries) {
-                overloaded{
-                    [&](BinaryEntry) {
-                        throw UnexpectedException{"Shouldn't have a binary entry here."};
-                    },
+                overloaded{[&](BinaryEntry) { throw UnexpectedException{"Shouldn't have a binary entry here."}; },
                     [&](UnaryValueEntry value_entry) {
                         switch (value_entry.constraint_type) {
-                        case SmartEntryConstraint::LessThan:
-                            val_allowed = val_allowed && v < value_entry.value;
-                            break;
-                        case SmartEntryConstraint::LessThanEqual:
-                            val_allowed = val_allowed && v <= value_entry.value;
-                            break;
-                        case SmartEntryConstraint::Equal:
-                            val_allowed = val_allowed && v == value_entry.value;
-                            break;
-                        case SmartEntryConstraint::NotEqual:
-                            val_allowed = val_allowed && v != value_entry.value;
-                            break;
-                        case SmartEntryConstraint::GreaterThan:
-                            val_allowed = val_allowed && v > value_entry.value;
-                            break;
-                        case SmartEntryConstraint::GreaterThanEqual:
-                            val_allowed = val_allowed && v >= value_entry.value;
-                            break;
+                        case SmartEntryConstraint::LessThan: val_allowed = val_allowed && v < value_entry.value; break;
+                        case SmartEntryConstraint::LessThanEqual: val_allowed = val_allowed && v <= value_entry.value; break;
+                        case SmartEntryConstraint::Equal: val_allowed = val_allowed && v == value_entry.value; break;
+                        case SmartEntryConstraint::NotEqual: val_allowed = val_allowed && v != value_entry.value; break;
+                        case SmartEntryConstraint::GreaterThan: val_allowed = val_allowed && v > value_entry.value; break;
+                        case SmartEntryConstraint::GreaterThanEqual: val_allowed = val_allowed && v >= value_entry.value; break;
                         case SmartEntryConstraint::In:
-                        case SmartEntryConstraint::NotIn:
-                            throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                        case SmartEntryConstraint::NotIn: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                         }
                     },
                     [&](UnarySetEntry set_entry) {
@@ -828,8 +724,7 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
                         case SmartEntryConstraint::Equal:
                         case SmartEntryConstraint::NotEqual:
                         case SmartEntryConstraint::GreaterThan:
-                        case SmartEntryConstraint::GreaterThanEqual:
-                            throw UnexpectedException{"Unexpected SmartEntry type encountered."};
+                        case SmartEntryConstraint::GreaterThanEqual: throw UnexpectedException{"Unexpected SmartEntry type encountered."};
                         }
                     }}
                     .visit(entry);
@@ -877,22 +772,22 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
             WPBSum entry_flags_sum{};
             WPBSum entry_flags_neg_sum{};
             for (const auto & entry : consolidate_unary_entries(initial_state, _tuples[tuple_idx])) {
-                overloaded{
-                    [&](BinaryEntry binary_entry) {
-                        //                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
-                        //                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
-                        //                        }
-                        auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
-                        if (! smart_entry_flags.contains(binary_entry_data))
-                            smart_entry_flags[binary_entry_data] = make_binary_entry_flag(initial_state, *optional_model,
-                                binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+                overloaded{[&](BinaryEntry binary_entry) {
+                               //                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
+                               //                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
+                               //                        }
+                               auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+                               if (! smart_entry_flags.contains(binary_entry_data))
+                                   smart_entry_flags[binary_entry_data] = make_binary_entry_flag(
+                                       initial_state, *optional_model, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
 
-                        entry_flags_sum += 1_i * smart_entry_flags[binary_entry_data];
-                        entry_flags_neg_sum += -1_i * smart_entry_flags[binary_entry_data];
-                    },
+                               entry_flags_sum += 1_i * smart_entry_flags[binary_entry_data];
+                               entry_flags_neg_sum += -1_i * smart_entry_flags[binary_entry_data];
+                           },
                     [&](const UnarySetEntry & unary_set_entry) {
                         auto var = unary_set_entry.var;
-                        auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? optional_model->create_proof_flag("inset") : optional_model->create_proof_flag("notinset");
+                        auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? optional_model->create_proof_flag("inset")
+                                                                                                : optional_model->create_proof_flag("notinset");
 
                         // InSet {<empty>} is the same as False
                         if (unary_set_entry.values.empty() && unary_set_entry.constraint_type == SmartEntryConstraint::In) {
@@ -929,10 +824,8 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
                     .visit(entry);
             }
             auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.terms.size())};
-            optional_model->add_constraint(move(entry_flags_sum) >= tuple_len,
-                HalfReifyOnConjunctionOf{{pb_selectors[tuple_idx]}});
-            optional_model->add_constraint(move(entry_flags_neg_sum) >= -tuple_len + 1_i,
-                HalfReifyOnConjunctionOf{{! pb_selectors[tuple_idx]}});
+            optional_model->add_constraint(move(entry_flags_sum) >= tuple_len, HalfReifyOnConjunctionOf{{pb_selectors[tuple_idx]}});
+            optional_model->add_constraint(move(entry_flags_neg_sum) >= -tuple_len + 1_i, HalfReifyOnConjunctionOf{{! pb_selectors[tuple_idx]}});
         }
     }
 
@@ -944,8 +837,8 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
     propagators.install(
         constraint_id(),
-        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors), short_reasons = _short_reasons, owner = constraint_id()](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors), short_reasons = _short_reasons,
+            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = eager_reason(generic_reason(vars), state);
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger, short_reasons, owner);
             return PropagatorState::Enable;
@@ -974,23 +867,19 @@ auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
     vector<SExpr> entries;
     for (const auto & tuple : _tuples) {
         for (const auto & entry : tuple) {
-            overloaded{
-                [&](const BinaryEntry & binary_entry) {
-                    entries.push_back(SExpr::list({tracker.s_expr_term_of(binary_entry.var_1),
-                        SExpr::atom(to_op(binary_entry.constraint_type)),
-                        tracker.s_expr_term_of(binary_entry.var_2)}));
-                },
+            overloaded{[&](const BinaryEntry & binary_entry) {
+                           entries.push_back(SExpr::list({tracker.s_expr_term_of(binary_entry.var_1),
+                               SExpr::atom(to_op(binary_entry.constraint_type)), tracker.s_expr_term_of(binary_entry.var_2)}));
+                       },
                 [&](const UnaryValueEntry & unary_val_entry) {
-                    entries.push_back(SExpr::list({tracker.s_expr_term_of(unary_val_entry.var),
-                        SExpr::atom(to_op(unary_val_entry.constraint_type)),
+                    entries.push_back(SExpr::list({tracker.s_expr_term_of(unary_val_entry.var), SExpr::atom(to_op(unary_val_entry.constraint_type)),
                         SExpr::atom(unary_val_entry.value.to_string())}));
                 },
                 [&](const UnarySetEntry & unary_set_entry) {
                     vector<SExpr> values;
                     for (const auto & value : unary_set_entry.values)
                         values.push_back(SExpr::atom(value.to_string()));
-                    entries.push_back(SExpr::list({tracker.s_expr_term_of(unary_set_entry.var),
-                        SExpr::atom(to_op(unary_set_entry.constraint_type)),
+                    entries.push_back(SExpr::list({tracker.s_expr_term_of(unary_set_entry.var), SExpr::atom(to_op(unary_set_entry.constraint_type)),
                         SExpr::list(move(values))}));
                 }}
                 .visit(entry);
@@ -1001,8 +890,5 @@ auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("smart_table"),
-        SExpr::list(move(entries)),
-        SExpr::list(move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("smart_table"), SExpr::list(move(entries)), SExpr::list(move(vars))});
 }

@@ -96,7 +96,8 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
-        explicit LexCompareGreaterThanOrMaybeEqual(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, ReificationCondition reif_cond, bool or_equal, bool vars_swapped = false);
+        explicit LexCompareGreaterThanOrMaybeEqual(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2,
+            ReificationCondition reif_cond, bool or_equal, bool vars_swapped = false);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
@@ -123,8 +124,8 @@ namespace gcs
     class LexGreaterThanIf : public LexCompareGreaterThanOrMaybeEqual
     {
     public:
-        inline explicit LexGreaterThanIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
-            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::If{cond}, false, false) {};
+        inline explicit LexGreaterThanIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2,
+            IntegerVariableCondition cond) : LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::If{cond}, false, false) {};
     };
 
     /**
@@ -135,7 +136,8 @@ namespace gcs
     class LexGreaterThanIff : public LexCompareGreaterThanOrMaybeEqual
     {
     public:
-        inline explicit LexGreaterThanIff(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
+        inline explicit LexGreaterThanIff(
+            std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
             LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::Iff{cond}, false, false) {};
     };
 
@@ -159,8 +161,8 @@ namespace gcs
     class LexGreaterEqualIf : public LexCompareGreaterThanOrMaybeEqual
     {
     public:
-        inline explicit LexGreaterEqualIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
-            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::If{cond}, true, false) {};
+        inline explicit LexGreaterEqualIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2,
+            IntegerVariableCondition cond) : LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::If{cond}, true, false) {};
     };
 
     /**
@@ -171,8 +173,8 @@ namespace gcs
     class LexGreaterEqualIff : public LexCompareGreaterThanOrMaybeEqual
     {
     public:
-        inline explicit LexGreaterEqualIff(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
-            LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::Iff{cond}, true, false) {};
+        inline explicit LexGreaterEqualIff(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2,
+            IntegerVariableCondition cond) : LexCompareGreaterThanOrMaybeEqual(std::move(vars_1), std::move(vars_2), reif::Iff{cond}, true, false) {};
     };
 
     /**
@@ -231,8 +233,8 @@ namespace gcs
     class LexLessThanEqualIf : public LexCompareGreaterThanOrMaybeEqual
     {
     public:
-        inline explicit LexLessThanEqualIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
-            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::If{cond}, true, true) {};
+        inline explicit LexLessThanEqualIf(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2,
+            IntegerVariableCondition cond) : LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::If{cond}, true, true) {};
     };
 
     /**
@@ -243,8 +245,8 @@ namespace gcs
     class LexLessThanEqualIff : public LexCompareGreaterThanOrMaybeEqual
     {
     public:
-        inline explicit LexLessThanEqualIff(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2, IntegerVariableCondition cond) :
-            LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::Iff{cond}, true, true) {};
+        inline explicit LexLessThanEqualIff(std::vector<IntegerVariableID> vars_1, std::vector<IntegerVariableID> vars_2,
+            IntegerVariableCondition cond) : LexCompareGreaterThanOrMaybeEqual(std::move(vars_2), std::move(vars_1), reif::Iff{cond}, true, true) {};
     };
 }
 

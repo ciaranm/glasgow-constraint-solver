@@ -66,9 +66,7 @@ namespace
 }
 
 Among::Among(vector<IntegerVariableID> vars, const vector<Integer> & values_of_interest, const IntegerVariableID & how_many) :
-    _vars(move(vars)),
-    _values_of_interest(uniqueify(values_of_interest)),
-    _how_many(how_many)
+    _vars(move(vars)), _values_of_interest(uniqueify(values_of_interest)), _how_many(how_many)
 {
 }
 
@@ -111,25 +109,27 @@ auto Among::install_propagators(Propagators & propagators) -> void
     // values of interest for each variable. compute these once and remember
     // them.
     auto am1_lines = make_shared<map<IntegerVariableID, ProofLine>>();
-    propagators.install_initialiser([vars = _vars, values_of_interest = _values_of_interest, am1_lines = am1_lines](
-                                        const State &, auto &, ProofLogger * const logger) -> void {
-        if (logger && values_of_interest.size() > 1 && logger->get_assertion_level() == AssertionLevel::Off) {
-            for (auto & var : vars) {
-                vector<IntegerVariableCondition> var_eq_vois;
-                for (const auto & voi : values_of_interest)
-                    var_eq_vois.push_back(var != voi);
-                am1_lines->emplace(var, recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Top, var_eq_vois, [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
-                    logger->emit_proof_comment("among am1 recover follows");
-                    return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * a + 1_i * b >= 1_i, ProofLevel::Temporary);
-                }));
+    propagators.install_initialiser(
+        [vars = _vars, values_of_interest = _values_of_interest, am1_lines = am1_lines](const State &, auto &, ProofLogger * const logger) -> void {
+            if (logger && values_of_interest.size() > 1 && logger->get_assertion_level() == AssertionLevel::Off) {
+                for (auto & var : vars) {
+                    vector<IntegerVariableCondition> var_eq_vois;
+                    for (const auto & voi : values_of_interest)
+                        var_eq_vois.push_back(var != voi);
+                    am1_lines->emplace(var,
+                        recover_am1<IntegerVariableCondition>(
+                            *logger, ProofLevel::Top, var_eq_vois, [&](const IntegerVariableCondition & a, const IntegerVariableCondition & b) {
+                                logger->emit_proof_comment("among am1 recover follows");
+                                return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * a + 1_i * b >= 1_i, ProofLevel::Temporary);
+                            }));
+                }
             }
-        }
-    });
+        });
 
     propagators.install(
         constraint_id(),
-        [vars = _vars, values_of_interest = _values_of_interest, how_many = _how_many, sum_line = _sum_line, am1_lines = am1_lines, owner = constraint_id()](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [vars = _vars, values_of_interest = _values_of_interest, how_many = _how_many, sum_line = _sum_line, am1_lines = am1_lines,
+            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // partition variables to be 1) those that must not match, 2) those that must match, and 3) those
             // where they might match but don't have to.
             vector<IntegerVariableID> partitioned_vars = vars;
@@ -137,9 +137,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
                 return none_of(values_of_interest, [&](const auto & val) -> bool { return state.in_domain(var, val); });
             }).begin();
             auto can_be_either_start = partition(subrange{not_impossible_start, partitioned_vars.end()}, [&](const auto & var) -> bool {
-                return none_of(state.each_value_immutable(var), [&](const auto & val) -> bool {
-                    return ! contains(values_of_interest, val);
-                });
+                return none_of(state.each_value_immutable(var), [&](const auto & val) -> bool { return ! contains(values_of_interest, val); });
             }).begin();
 
             auto must_not_match_vars = subrange{partitioned_vars.begin(), not_impossible_start};
@@ -177,8 +175,8 @@ auto Among::install_propagators(Propagators & propagators) -> void
                     b.emit(*logger, ProofLevel::Temporary);
                 }
             };
-            inference.infer(logger, how_many >= must_match_count,
-                JustifyExplicitly{at_least_justify, ThenRUP::Yes, hints::Among{owner}}, vars_reason);
+            inference.infer(
+                logger, how_many >= must_match_count, JustifyExplicitly{at_least_justify, ThenRUP::Yes, hints::Among{owner}}, vars_reason);
             auto less_than_this_many = Integer(vars.size()) - must_not_match_count + 1_i;
             auto at_most_justify = [&](const ReasonLiterals &) -> void {
                 // for any variable that isn't ruled out, show that it can contribute at
@@ -191,8 +189,8 @@ auto Among::install_propagators(Propagators & propagators) -> void
                     b.emit(*logger, ProofLevel::Temporary);
                 }
             };
-            inference.infer(logger, how_many < less_than_this_many,
-                JustifyExplicitly{at_most_justify, ThenRUP::Yes, hints::Among{owner}}, vars_reason);
+            inference.infer(
+                logger, how_many < less_than_this_many, JustifyExplicitly{at_most_justify, ThenRUP::Yes, hints::Among{owner}}, vars_reason);
 
             // potentially now we know that any undecided variables must actually be either
             // matching or not matching.
@@ -241,8 +239,7 @@ auto Among::install_propagators(Propagators & propagators) -> void
                                 b.emit(*logger, ProofLevel::Temporary);
                             }
                         };
-                        inference.infer_all(logger, inferences,
-                            JustifyExplicitly{emit, ThenRUP::Yes, hints::Among{owner}}, vars_and_bounds_reason);
+                        inference.infer_all(logger, inferences, JustifyExplicitly{emit, ThenRUP::Yes, hints::Among{owner}}, vars_and_bounds_reason);
                     }
                 }
 
@@ -277,7 +274,8 @@ auto Among::install_propagators(Propagators & propagators) -> void
                                     auto emit = [&](const ReasonLiterals &) {
                                         // need to point out that if var == val then var != voi for each voi
                                         for (const auto & voi : values_of_interest)
-                                            logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
+                                            logger->emit(
+                                                RUPProofRule{}, WPBSum{} + 1_i * (var != val) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
 
                                         // now every other variable that contributes to the sum is
                                         // capped at one — must_match vars (whose AM1 lines bound their
@@ -294,8 +292,8 @@ auto Among::install_propagators(Propagators & propagators) -> void
                                             b.emit(*logger, ProofLevel::Temporary);
                                         }
                                     };
-                                    inference.infer(logger, var != val,
-                                        JustifyExplicitly{emit, ThenRUP::Yes, hints::Among{owner}}, vars_and_bounds_reason);
+                                    inference.infer(
+                                        logger, var != val, JustifyExplicitly{emit, ThenRUP::Yes, hints::Among{owner}}, vars_and_bounds_reason);
                                 }
                     }
 
@@ -320,8 +318,6 @@ auto Among::s_expr(const ProofModel * const model) const -> SExpr
     std::vector<SExpr> vals;
     for (const auto & val : _values_of_interest)
         vals.push_back(SExpr::atom(val.to_string()));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("among"),
-        SExpr::list(std::move(vars)),
-        SExpr::list(std::move(vals)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("among"), SExpr::list(std::move(vars)), SExpr::list(std::move(vals)),
         tracker.s_expr_term_of(_how_many)});
 }

@@ -36,12 +36,11 @@ namespace gcs::innards
      * \ingroup Innards
      */
     template <typename Hint_>
-    [[nodiscard]] auto hint_annotation(ProofLogger & logger, const Hint_ & hint,
-        const std::optional<AssertionAnnotation> & fallback) -> std::optional<AssertionAnnotation>
+    [[nodiscard]] auto hint_annotation(ProofLogger & logger, const Hint_ & hint, const std::optional<AssertionAnnotation> & fallback)
+        -> std::optional<AssertionAnnotation>
     {
         if constexpr (requires { hint_sexpr(hint, logger.names_and_ids_tracker()); }) {
-            return AssertionAnnotation{.hint_name = hint.hint_name,
-                .hint_fields = hint_sexpr(hint, logger.names_and_ids_tracker())};
+            return AssertionAnnotation{.hint_name = hint.hint_name, .hint_fields = hint_sexpr(hint, logger.names_and_ids_tracker())};
         }
         else if constexpr (requires { std::string_view{hint.hint_name}; }) {
             if (! std::string_view{hint.hint_name}.empty())
@@ -96,17 +95,17 @@ namespace gcs::innards
      * \ingroup Innards
      */
     template <typename Emit_, typename Hint_>
-    auto infer_explicitly(ProofLogger & logger, const Literal & lit, const Emit_ & emit, ThenRUP then_rup,
-        const ReasonLiterals & reason, const Hint_ & hint,
-        const std::optional<AssertionAnnotation> & fallback_annotation = std::nullopt) -> void
+    auto infer_explicitly(ProofLogger & logger, const Literal & lit, const Emit_ & emit, ThenRUP then_rup, const ReasonLiterals & reason,
+        const Hint_ & hint, const std::optional<AssertionAnnotation> & fallback_annotation = std::nullopt) -> void
     {
         if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
             if (cond->op == VariableConditionOperator::NotInRange) {
                 auto needs_per_value_fallback = overloaded{
                     [&](const SimpleIntegerVariableID & v) { return ! logger.names_and_ids_tracker().has_bit_representation(v); },
                     [&](const ViewOfIntegerVariableID &) { return true; },
-                    [&](const ConstantIntegerVariableID &) { return false; }}
-                                                    .visit(cond->var);
+                    [&](const ConstantIntegerVariableID &) {
+                        return false;
+                    }}.visit(cond->var);
                 if (needs_per_value_fallback) {
                     for (Integer val = cond->value; val <= cond->upper_value; ++val)
                         infer_explicitly(logger, cond->var != val, emit, then_rup, reason, hint, fallback_annotation);
@@ -131,9 +130,7 @@ namespace gcs::innards
         }
 
         if (then_rup == ThenRUP::Yes) {
-            overloaded{
-                [&](const TrueLiteral &) {},
-                [&](const FalseLiteral &) {},
+            overloaded{[&](const TrueLiteral &) {}, [&](const FalseLiteral &) {},
                 [&]<typename T_>(const VariableConditionFrom<T_> & cond) { logger.names_and_ids_tracker().need_proof_name(cond); }}
                 .visit(simplify_literal(logger.names_and_ids_tracker(), lit));
         }

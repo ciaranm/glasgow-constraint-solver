@@ -87,12 +87,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                                                     //
-            ("help", "Display help information")                                                                                   //
-            ("prove", "Create a proof")                                                                                            //
-            ("seed", "Seed for random DFA generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1"))             //
-            ("n", "Number of variables in the sequence", cxxopts::value<int>()->default_value("6"))                                //
-            ("stats", "Print stats, including solve time")                                                                         //
+        options.add_options("Program Options")                                                                                             //
+            ("help", "Display help information")                                                                                           //
+            ("prove", "Create a proof")                                                                                                    //
+            ("seed", "Seed for random DFA generator (-1 for random seed)", cxxopts::value<int>()->default_value("-1"))                     //
+            ("n", "Number of variables in the sequence", cxxopts::value<int>()->default_value("6"))                                        //
+            ("stats", "Print stats, including solve time")                                                                                 //
             ("proof-files-basename", "Alternative path and name for the proof", cxxopts::value<string>()->default_value("regular_random")) //
             ("short-reasons", "Use short reasons method");
 
@@ -127,11 +127,7 @@ auto main(int argc, char * argv[]) -> int
     auto p = Problem{};
     post_random_regular(p, n, rng, short_reasons);
 
-    auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState &) -> bool {
-                return false;
-            }},
+    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return false; }},
         prove ? make_optional(ProofOptions{proof_prefix}) : nullopt);
 
     if (print_stats) {

@@ -55,18 +55,26 @@ namespace gcs::innards::hints
     }
 }
 
-auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state,
-    auto & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState
+auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1, const auto & v2, const State & state, auto & inference,
+    const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState
 {
     auto val1 = state.optional_single_value(v1);
     if (val1) {
-        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 == *val1); return r; }()});
+        inference.infer_equal(logger, v2, *val1, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
+            auto r = reason;
+            r.emplace_back(v1 == *val1);
+            return r;
+        }()});
         return PropagatorState::DisableUntilBacktrack;
     }
 
     auto val2 = state.optional_single_value(v2);
     if (val2) {
-        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 == *val2); return r; }()});
+        inference.infer_equal(logger, v1, *val2, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
+            auto r = reason;
+            r.emplace_back(v2 == *val2);
+            return r;
+        }()});
         return PropagatorState::DisableUntilBacktrack;
     }
 
@@ -90,9 +98,8 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 
         auto bridge = [logger](const auto & pruned, const auto & other, Integer lo, Integer hi, const ReasonLiterals & r) {
             // Plain equality pruned = other, so the flag forces other into the same [lo, hi].
-            justify_not_in_range_across_equality(*logger, r,
-                std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi,
-                IntegerVariableID{other}, lo, hi);
+            justify_not_in_range_across_equality(
+                *logger, r, std::get<SimpleIntegerVariableID>(IntegerVariableID{pruned}), lo, hi, IntegerVariableID{other}, lo, hi);
         };
 
         auto prune = [&](const auto & pruned, const auto & other, const IntervalSet<Integer> & pruned_set, const IntervalSet<Integer> & other_set) {
@@ -110,8 +117,11 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
                 }
                 else
                     for (Integer val = lo; val <= hi; ++val)
-                        inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{hints::Equals{owner}},
-                            ExplicitReason{[&] { auto r = reason; r.emplace_back(other != val); return r; }()});
+                        inference.infer_not_equal(logger, pruned, val, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
+                            auto r = reason;
+                            r.emplace_back(other != val);
+                            return r;
+                        }()});
             }
         };
 
@@ -121,10 +131,26 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
     else {
         auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
         if (bounds1 != bounds2) {
-            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 >= bounds1.first); return r; }()});
-            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 >= bounds2.first); return r; }()});
-            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v1 <= bounds1.second); return r; }()});
-            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] { auto r = reason; r.emplace_back(v2 <= bounds2.second); return r; }()});
+            inference.infer_greater_than_or_equal(logger, v2, bounds1.first, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
+                auto r = reason;
+                r.emplace_back(v1 >= bounds1.first);
+                return r;
+            }()});
+            inference.infer_greater_than_or_equal(logger, v1, bounds2.first, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
+                auto r = reason;
+                r.emplace_back(v2 >= bounds2.first);
+                return r;
+            }()});
+            inference.infer_less_than(logger, v2, bounds1.second + 1_i, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
+                auto r = reason;
+                r.emplace_back(v1 <= bounds1.second);
+                return r;
+            }()});
+            inference.infer_less_than(logger, v1, bounds2.second + 1_i, JustifyUsingRUP{hints::Equals{owner}}, ExplicitReason{[&] {
+                auto r = reason;
+                r.emplace_back(v2 <= bounds2.second);
+                return r;
+            }()});
         }
     }
 
@@ -133,8 +159,8 @@ auto gcs::innards::enforce_equality(ProofLogger * const logger, const auto & v1,
 
 namespace
 {
-    auto no_overlap_justification(const State & state, ProofLogger * const,
-        IntegerVariableID v1, IntegerVariableID v2, Literal cond, const ConstraintID & owner) -> pair<hints::EqualsNoOverlap, Reason>
+    auto no_overlap_justification(const State & state, ProofLogger * const, IntegerVariableID v1, IntegerVariableID v2, Literal cond,
+        const ConstraintID & owner) -> pair<hints::EqualsNoOverlap, Reason>
     {
         auto v1_bounds = state.bounds(v1);
         ReasonLiterals reason{{v1 >= v1_bounds.first, v1 <= v1_bounds.second}};
@@ -154,10 +180,7 @@ namespace
 }
 
 ReifiedEquals::ReifiedEquals(const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool neq) :
-    _v1(v1),
-    _v2(v2),
-    _cond(cond),
-    _neq(neq)
+    _v1(v1), _v2(v2), _cond(cond), _neq(neq)
 {
 }
 
@@ -185,12 +208,11 @@ auto ReifiedEquals::prepare(Propagators &, State & initial_state, ProofModel * c
 
 auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
 {
-    overloaded{
-        [&](const reif::MustHold &) {
-            // cake_pb_cp: V1 = V2 split into le (V1 <= V2) and ge (V1 >= V2).
-            model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "ReifiedEquals", "equals option",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
-        },
+    overloaded{[&](const reif::MustHold &) {
+                   // cake_pb_cp: V1 = V2 split into le (V1 <= V2) and ge (V1 >= V2).
+                   model.add_labelled_constraint(
+                       as_string(_constraint_id), "le", "ge", "ReifiedEquals", "equals option", WPBSum{} + (1_i * _v1) + (-1_i * _v2) == 0_i);
+               },
         [&](const reif::MustNotHold &) {
             // cake_pb_cp: V1 != V2 split into gt (V1 > V2) and lt (V1 < V2) on a
             // single per-constraint selector b[id][ne] (cake's `nev`): the flag
@@ -215,16 +237,12 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
             // over lt, gt and the NEGATED condition -- i.e. cond ⇒ (V1 < V2 ∨ V1 > V2).
             auto gtflag = model.create_proof_flag(_constraint_id, "gt");
             auto gt_name = model.names_and_ids_tracker().pb_file_string_for(gtflag);
-            model.add_labelled_constraint(gt_name + "[r]",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
-            model.add_labelled_constraint(gt_name + "[f]",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= 0_i, HalfReifyOnConjunctionOf{{! gtflag}});
+            model.add_labelled_constraint(gt_name + "[r]", WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 1_i, HalfReifyOnConjunctionOf{{gtflag}});
+            model.add_labelled_constraint(gt_name + "[f]", WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= 0_i, HalfReifyOnConjunctionOf{{! gtflag}});
             auto ltflag = model.create_proof_flag(_constraint_id, "lt");
             auto lt_name = model.names_and_ids_tracker().pb_file_string_for(ltflag);
-            model.add_labelled_constraint(lt_name + "[r]",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
-            model.add_labelled_constraint(lt_name + "[f]",
-                WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 0_i, HalfReifyOnConjunctionOf{{! ltflag}});
+            model.add_labelled_constraint(lt_name + "[r]", WPBSum{} + (1_i * _v1) + (-1_i * _v2) <= -1_i, HalfReifyOnConjunctionOf{{ltflag}});
+            model.add_labelled_constraint(lt_name + "[f]", WPBSum{} + (1_i * _v1) + (-1_i * _v2) >= 0_i, HalfReifyOnConjunctionOf{{! ltflag}});
             model.add_labelled_constraint(as_string(_constraint_id), "al1", "ReifiedEquals", "at least one differs",
                 WPBSum{} + 1_i * ltflag + 1_i * gtflag + 1_i * ! reif.cond >= 1_i);
         },
@@ -252,47 +270,38 @@ auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
 
 auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
 {
-    auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, owner = constraint_id()](
-                                            const State & state, auto & inference, ProofLogger * const logger,
-                                            const Literal & cond) -> PropagatorState {
-        return visit([&](auto & v1, auto & v2) {
-            return enforce_equality(logger, v1, v2, state, inference, ReasonLiterals{cond}, owner);
-        },
-            v1, v2);
+    auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, owner = constraint_id()](const State & state, auto & inference,
+                                            ProofLogger * const logger, const Literal & cond) -> PropagatorState {
+        return visit([&](auto & v1, auto & v2) { return enforce_equality(logger, v1, v2, state, inference, ReasonLiterals{cond}, owner); }, v1, v2);
     };
 
     auto v1_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v1});
     auto v2_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v2});
     auto v1v2_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v1, _v2});
-    auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, v1_scope, v2_scope, owner = constraint_id()](
-                                                const State & state, auto & inference, ProofLogger * const logger,
-                                                const Literal & cond) -> PropagatorState {
+    auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, v1_scope, v2_scope, owner = constraint_id()](const State & state, auto & inference,
+                                                ProofLogger * const logger, const Literal & cond) -> PropagatorState {
         auto value1 = state.optional_single_value(v1);
         if (value1) {
-            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{hints::Equals{owner}},
-                ExactSingleValue{ReasonVars{v1_scope.get()}, cond});
+            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{hints::Equals{owner}}, ExactSingleValue{ReasonVars{v1_scope.get()}, cond});
             return PropagatorState::DisableUntilBacktrack;
         }
         auto value2 = state.optional_single_value(v2);
         if (value2) {
-            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{hints::Equals{owner}},
-                ExactSingleValue{ReasonVars{v2_scope.get()}, cond});
+            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{hints::Equals{owner}}, ExactSingleValue{ReasonVars{v2_scope.get()}, cond});
             return PropagatorState::DisableUntilBacktrack;
         }
         return PropagatorState::Enable;
     };
 
-    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, v1v2_scope, owner = constraint_id()](
-                                         const State & state, auto &, ProofLogger * const logger,
+    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, v1v2_scope, owner = constraint_id()](const State & state, auto &,
+                                         ProofLogger * const logger,
                                          const IntegerVariableCondition & cond) -> ReificationVerdictFor<EqualsJustification> {
         // Aliased non-constant operands: equality definitely holds regardless of
         // domain. Returning MustHold here lets the dispatcher pin the cond
         // immediately at root, instead of waiting until search fixes v1 to a
         // value and the singleton check below fires.
         if (v1 == v2 && ! is_constant_variable(v1))
-            return reification_verdict::MustHold<EqualsJustification>{
-                .justification = JustifyUsingRUP{hints::Equals{owner}},
-                .reason = NoReason{}};
+            return reification_verdict::MustHold<EqualsJustification>{.justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = NoReason{}};
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
@@ -300,27 +309,27 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
             if (*value1 == *value2)
                 return reification_verdict::MustHold<EqualsJustification>{.justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = reason};
             else
-                return reification_verdict::MustNotHold<EqualsJustification>{.justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = reason};
+                return reification_verdict::MustNotHold<EqualsJustification>{
+                    .justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = reason};
         }
         else if (value1) {
             if (! state.in_domain(v2, *value1))
                 return reification_verdict::MustNotHold<EqualsJustification>{
-                    .justification = JustifyUsingRUP{hints::Equals{owner}},
-                    .reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 != *value1}}};
+                    .justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = ExplicitReason{ReasonLiterals{v1 == *value1, v2 != *value1}}};
             return reification_verdict::StillUndecided{};
         }
         else if (value2) {
             if (! state.in_domain(v1, *value2))
                 return reification_verdict::MustNotHold<EqualsJustification>{
-                    .justification = JustifyUsingRUP{hints::Equals{owner}},
-                    .reason = ExplicitReason{ReasonLiterals{v2 == *value2, v1 != *value2}}};
+                    .justification = JustifyUsingRUP{hints::Equals{owner}}, .reason = ExplicitReason{ReasonLiterals{v2 == *value2, v1 != *value2}}};
             return reification_verdict::StillUndecided{};
         }
         else {
             // not equals is forced if there's no overlap between domains
             if (! state.domains_intersect(v1, v2)) {
                 auto [no_overlap, reason] = no_overlap_justification(state, logger, v1, v2, cond, owner);
-                return reification_verdict::MustNotHold<EqualsJustification>{.justification = JustifyExplicitly{no_overlap, ThenRUP::Yes}, .reason = reason};
+                return reification_verdict::MustNotHold<EqualsJustification>{
+                    .justification = JustifyExplicitly{no_overlap, ThenRUP::Yes}, .reason = reason};
             }
             return reification_verdict::StillUndecided{};
         }
@@ -328,29 +337,23 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
 
     Triggers triggers;
     triggers.on_change = {_v1, _v2};
-    install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _cond, triggers,
-        std::move(enforce_constraint_must_hold),
-        std::move(enforce_constraint_must_not_hold),
-        std::move(infer_cond_when_undecided));
+    install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _cond, triggers, std::move(enforce_constraint_must_hold),
+        std::move(enforce_constraint_must_not_hold), std::move(infer_cond_when_undecided));
 }
 
-Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) :
-    ReifiedEquals(v1, v2, reif::MustHold{})
+Equals::Equals(const IntegerVariableID v1, const IntegerVariableID v2) : ReifiedEquals(v1, v2, reif::MustHold{})
 {
 }
 
-EqualsIf::EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-    ReifiedEquals(v1, v2, reif::If{cond})
+EqualsIf::EqualsIf(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) : ReifiedEquals(v1, v2, reif::If{cond})
 {
 }
 
-EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) :
-    ReifiedEquals(v1, v2, reif::Iff{cond})
+EqualsIff::EqualsIff(const IntegerVariableID v1, const IntegerVariableID v2, IntegerVariableCondition cond) : ReifiedEquals(v1, v2, reif::Iff{cond})
 {
 }
 
-NotEquals::NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) :
-    ReifiedEquals(v1, v2, reif::MustNotHold{}, true)
+NotEquals::NotEquals(const IntegerVariableID v1, const IntegerVariableID v2) : ReifiedEquals(v1, v2, reif::MustNotHold{}, true)
 {
     // Two constants that happen to be equal is a valid (if trivially
     // infeasible) model; only reject true variable aliasing.
@@ -372,10 +375,8 @@ auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SEx
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    string constraint_type = overloaded{
-        [](const reif::MustHold &) -> string { return "equals"; },
-        [](const reif::MustNotHold &) -> string { return "not_equals"; },
-        [](const reif::If &) -> string { return "equals_if"; },
+    string constraint_type = overloaded{[](const reif::MustHold &) -> string { return "equals"; },
+        [](const reif::MustNotHold &) -> string { return "not_equals"; }, [](const reif::If &) -> string { return "equals_if"; },
         [](const reif::NotIf &) -> string { return "not_equals_if"; },
         [&](const reif::Iff &) -> string {
             return _neq ? "not_equals_iff" : "equals_iff";
@@ -390,7 +391,7 @@ auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SEx
     return SExpr::list(std::move(terms));
 }
 
-template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,
-    SimpleInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState;
-template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2, const State & state,
-    EagerProofLoggingInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState;
+template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2,
+    const State & state, SimpleInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState;
+template auto gcs::innards::enforce_equality(ProofLogger * const logger, const IntegerVariableID & v1, const IntegerVariableID & v2,
+    const State & state, EagerProofLoggingInferenceTracker & inference, const ReasonLiterals & reason, const ConstraintID & owner) -> PropagatorState;

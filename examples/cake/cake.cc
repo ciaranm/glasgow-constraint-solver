@@ -83,16 +83,14 @@ auto main(int argc, char * argv[]) -> int
 
     p.maximise(profit);
     auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                println("banana cakes = {}, chocolate cakes = {}, profit = {}", s(banana), s(chocolate), s(profit));
-                return true;
-            },
-            .branch = branch_with(
-                variable_order::dom_then_deg(vector<IntegerVariableID>{banana, chocolate}),
-                value_order::largest_first())},
+        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                           println("banana cakes = {}, chocolate cakes = {}, profit = {}", s(banana), s(chocolate), s(profit));
+                           return true;
+                       },
+            .branch = branch_with(variable_order::dom_then_deg(vector<IntegerVariableID>{banana, chocolate}), value_order::largest_first())},
         options_vars.contains("prove")
-            ? make_optional(ProofOptions{ProofFileNames{options_vars["proof-files-basename"].as<string>()}}.enable_full_encoding(options_vars.contains("full-proof-encoding")))
+            ? make_optional(ProofOptions{ProofFileNames{options_vars["proof-files-basename"].as<string>()}}.enable_full_encoding(
+                  options_vars.contains("full-proof-encoding")))
             : nullopt);
 
     if (options_vars.contains("stats"))

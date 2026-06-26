@@ -68,28 +68,25 @@ auto main(int, char *[]) -> int
             continue;
 
         // LinearEquality (condition definitely true): empty sum holds iff value + modifier == 0.
-        run_constant_linear_test(proofs, "1*1 == 1 (tautology)", true,
-            [](Problem & p) { p.post(LinearEquality{WeightedSum{} + 1_i * 1_c, 1_i}); });
-        run_constant_linear_test(proofs, "1*1 == 2 (contradiction)", false,
-            [](Problem & p) { p.post(LinearEquality{WeightedSum{} + 1_i * 1_c, 2_i}); });
-        run_constant_linear_test(proofs, "2*3 == 6 (tautology, coeff != 1)", true,
-            [](Problem & p) { p.post(LinearEquality{WeightedSum{} + 2_i * 3_c, 6_i}); });
-        run_constant_linear_test(proofs, "2*3 == 5 (contradiction, coeff != 1)", false,
-            [](Problem & p) { p.post(LinearEquality{WeightedSum{} + 2_i * 3_c, 5_i}); });
+        run_constant_linear_test(proofs, "1*1 == 1 (tautology)", true, [](Problem & p) { p.post(LinearEquality{WeightedSum{} + 1_i * 1_c, 1_i}); });
+        run_constant_linear_test(
+            proofs, "1*1 == 2 (contradiction)", false, [](Problem & p) { p.post(LinearEquality{WeightedSum{} + 1_i * 1_c, 2_i}); });
+        run_constant_linear_test(
+            proofs, "2*3 == 6 (tautology, coeff != 1)", true, [](Problem & p) { p.post(LinearEquality{WeightedSum{} + 2_i * 3_c, 6_i}); });
+        run_constant_linear_test(
+            proofs, "2*3 == 5 (contradiction, coeff != 1)", false, [](Problem & p) { p.post(LinearEquality{WeightedSum{} + 2_i * 3_c, 5_i}); });
 
         // LinearNotEquals (condition definitely false): empty sum is violated iff it would hold.
-        run_constant_linear_test(proofs, "1*1 != 1 (contradiction)", false,
-            [](Problem & p) { p.post(LinearNotEquals{WeightedSum{} + 1_i * 1_c, 1_i}); });
-        run_constant_linear_test(proofs, "1*1 != 2 (tautology)", true,
-            [](Problem & p) { p.post(LinearNotEquals{WeightedSum{} + 1_i * 1_c, 2_i}); });
+        run_constant_linear_test(
+            proofs, "1*1 != 1 (contradiction)", false, [](Problem & p) { p.post(LinearNotEquals{WeightedSum{} + 1_i * 1_c, 1_i}); });
+        run_constant_linear_test(proofs, "1*1 != 2 (tautology)", true, [](Problem & p) { p.post(LinearNotEquals{WeightedSum{} + 1_i * 1_c, 2_i}); });
 
         // Mixed: a real variable term plus a constant term leaves a non-empty sum,
         // so the constant is folded into the modifier but the normal propagation path runs.
-        run_constant_linear_test(proofs, "y(=5) + 3 == 8 (tautology, constant folded)", true,
-            [](Problem & p) {
-                auto y = p.create_integer_variable(5_i, 5_i, "y");
-                p.post(LinearEquality{WeightedSum{} + 1_i * y + 1_i * 3_c, 8_i});
-            });
+        run_constant_linear_test(proofs, "y(=5) + 3 == 8 (tautology, constant folded)", true, [](Problem & p) {
+            auto y = p.create_integer_variable(5_i, 5_i, "y");
+            p.post(LinearEquality{WeightedSum{} + 1_i * y + 1_i * 3_c, 8_i});
+        });
     }
 
     return EXIT_SUCCESS;

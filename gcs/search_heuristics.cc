@@ -43,8 +43,8 @@ using namespace gcs;
 auto gcs::branch_with(BranchVariableSelector var, BranchValueGenerator val) -> BranchCallback
 {
     return [var = move(var), val = move(val)](const CurrentState & s, const innards::Propagators & p) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, const innards::Propagators & p,
-                   BranchVariableSelector select_var, BranchValueGenerator make_val_gen) -> generator<IntegerVariableCondition> {
+        return [](const CurrentState & s, const innards::Propagators & p, BranchVariableSelector select_var,
+                   BranchValueGenerator make_val_gen) -> generator<IntegerVariableCondition> {
             auto branch_var = select_var(s, p);
             if (branch_var)
                 return make_val_gen(s, p, *branch_var);
@@ -78,8 +78,7 @@ namespace
 {
     auto random_variable_selector(vector<IntegerVariableID> vars, shared_ptr<mt19937> rand) -> BranchVariableSelector
     {
-        return [vars = move(vars), rand = move(rand)](const CurrentState & state,
-                   const innards::Propagators &) -> optional<IntegerVariableID> {
+        return [vars = move(vars), rand = move(rand)](const CurrentState & state, const innards::Propagators &) -> optional<IntegerVariableID> {
             vector<IntegerVariableID> feasible;
             for (auto & var : vars)
                 if (state.domain_size(var) >= 2_i)
@@ -121,24 +120,23 @@ auto gcs::variable_order::in_order_of(const Problem & problem, VariableComparato
 
 auto gcs::variable_order::in_order_of(vector<IntegerVariableID> vars, VariableComparator comp) -> BranchVariableSelector
 {
-    return [vars = move(vars), comp = move(comp)](
-               const CurrentState & state, const innards::Propagators & propagators) -> optional<IntegerVariableID> {
-        optional<IntegerVariableID> result;
-        for (auto & v : vars) {
-            auto size = state.domain_size(v);
-            if (size < 2_i)
-                continue;
-            if ((! result) || comp(state, propagators, v, *result))
-                result = v;
-        }
-        return result;
-    };
+    return
+        [vars = move(vars), comp = move(comp)](const CurrentState & state, const innards::Propagators & propagators) -> optional<IntegerVariableID> {
+            optional<IntegerVariableID> result;
+            for (auto & v : vars) {
+                auto size = state.domain_size(v);
+                if (size < 2_i)
+                    continue;
+                if ((! result) || comp(state, propagators, v, *result))
+                    result = v;
+            }
+            return result;
+        };
 }
 
 auto gcs::variable_order::in_order(vector<IntegerVariableID> vars) -> BranchVariableSelector
 {
-    return [vars = move(vars)](
-               const CurrentState & state, const innards::Propagators &) -> optional<IntegerVariableID> {
+    return [vars = move(vars)](const CurrentState & state, const innards::Propagators &) -> optional<IntegerVariableID> {
         for (auto & v : vars) {
             auto size = state.domain_size(v);
             if (size < 2_i)
@@ -156,9 +154,10 @@ auto gcs::variable_order::dom(const Problem & problem) -> BranchVariableSelector
 
 auto gcs::variable_order::dom(vector<IntegerVariableID> vars) -> BranchVariableSelector
 {
-    return variable_order::in_order_of(vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
-        return state.domain_size(a) < state.domain_size(b);
-    });
+    return variable_order::in_order_of(
+        vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
+            return state.domain_size(a) < state.domain_size(b);
+        });
 }
 
 auto gcs::variable_order::dom_then_deg(const Problem & problem) -> BranchVariableSelector
@@ -168,9 +167,10 @@ auto gcs::variable_order::dom_then_deg(const Problem & problem) -> BranchVariabl
 
 auto gcs::variable_order::dom_then_deg(vector<IntegerVariableID> vars) -> BranchVariableSelector
 {
-    return variable_order::in_order_of(vars, [](const CurrentState & state, const innards::Propagators & p, const IntegerVariableID & a, const IntegerVariableID & b) {
-        return tuple{state.domain_size(a), -p.degree_of(a)} < tuple{state.domain_size(b), -p.degree_of(b)};
-    });
+    return variable_order::in_order_of(
+        vars, [](const CurrentState & state, const innards::Propagators & p, const IntegerVariableID & a, const IntegerVariableID & b) {
+            return tuple{state.domain_size(a), -p.degree_of(a)} < tuple{state.domain_size(b), -p.degree_of(b)};
+        });
 }
 
 auto gcs::variable_order::with_smallest_value(const Problem & problem) -> BranchVariableSelector
@@ -180,16 +180,18 @@ auto gcs::variable_order::with_smallest_value(const Problem & problem) -> Branch
 
 auto gcs::variable_order::with_smallest_value(vector<IntegerVariableID> vars) -> BranchVariableSelector
 {
-    return variable_order::in_order_of(vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
-        return state.lower_bound(a) < state.lower_bound(b);
-    });
+    return variable_order::in_order_of(
+        vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
+            return state.lower_bound(a) < state.lower_bound(b);
+        });
 }
 
 namespace
 {
     auto random_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
     {
-        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+        return [rand = move(rand)](
+                   const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
             return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
                 vector<Integer> values;
                 for (auto v : s.each_value(var))
@@ -203,7 +205,8 @@ namespace
 
     auto random_out_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
     {
-        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+        return [rand = move(rand)](
+                   const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
             return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
                 vector<Integer> values;
                 for (auto v : s.each_value(var))
@@ -218,7 +221,8 @@ namespace
 
     auto reject_random_interval_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
     {
-        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+        return [rand = move(rand)](
+                   const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
             return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
                 vector<Integer> values;
                 for (auto v : s.each_value(var))
@@ -339,7 +343,8 @@ namespace
 {
     auto split_random_value_generator(shared_ptr<mt19937> rand) -> BranchValueGenerator
     {
-        return [rand = move(rand)](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
+        return [rand = move(rand)](
+                   const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<IntegerVariableCondition> {
             return [](shared_ptr<mt19937> rand, const CurrentState & s, IntegerVariableID var) -> generator<IntegerVariableCondition> {
                 auto mid = s.domain_size(var) / 2_i;
                 auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();

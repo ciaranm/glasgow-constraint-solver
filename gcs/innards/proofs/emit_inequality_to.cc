@@ -11,9 +11,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 auto gcs::innards::emit_inequality_to(
-    NamesAndIDsTracker & names_and_ids_tracker,
-    const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    ostream & stream) -> void
+    NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ostream & stream) -> void
 {
     // build up the inequality, adjusting as we go for constant terms,
     // and converting from <= to >=.
@@ -24,25 +22,17 @@ auto gcs::innards::emit_inequality_to(
 
         overloaded{
             [&, w = w](const ProofLiteral & lit) {
-                overloaded{
-                    [&](const TrueLiteral &) {
-                        rhs += w;
-                    },
-                    [&](const FalseLiteral &) {},
-                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
-                        stream << -w << " " << names_and_ids_tracker.pb_file_string_for(cond) << " ";
-                    }}
+                overloaded{[&](const TrueLiteral &) { rhs += w; }, [&](const FalseLiteral &) {},
+                    [&]<typename T_>(
+                        const VariableConditionFrom<T_> & cond) { stream << -w << " " << names_and_ids_tracker.pb_file_string_for(cond) << " "; }}
                     .visit(simplify_literal(names_and_ids_tracker, lit));
             },
-            [&, w = w](const ProofFlag & flag) {
-                stream << -w << " " << names_and_ids_tracker.pb_file_string_for(flag) << " ";
-            },
+            [&, w = w](const ProofFlag & flag) { stream << -w << " " << names_and_ids_tracker.pb_file_string_for(flag) << " "; },
             [&, w = w](const IntegerVariableID & var) {
-                overloaded{
-                    [&](const SimpleIntegerVariableID & var) {
-                        for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
-                            stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
-                    },
+                overloaded{[&](const SimpleIntegerVariableID & var) {
+                               for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
+                                   stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
+                           },
                     [&](const ViewOfIntegerVariableID & view) {
                         // Emit V's own bits when the view is registered (the
                         // typical case — views in constraint bodies are
@@ -65,9 +55,7 @@ auto gcs::innards::emit_inequality_to(
                             rhs += w * view.then_add;
                         }
                     },
-                    [&](const ConstantIntegerVariableID & cvar) {
-                        rhs += w * cvar.const_value;
-                    }}
+                    [&](const ConstantIntegerVariableID & cvar) { rhs += w * cvar.const_value; }}
                     .visit(var);
             },
             [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {

@@ -45,11 +45,11 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_abs_test(bool proofs, const ViewWrapConfig & view_cfg,
-    variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range) -> void
+auto run_abs_test(bool proofs, const ViewWrapConfig & view_cfg, variant<int, pair<int, int>> v1_range, variant<int, pair<int, int>> v2_range) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, 2);
-    visit([&](auto v1, auto v2) { print(cerr, "abs [{}] {} {} {}", view_wrap_config_label(view_cfg), v1, v2, proofs ? " with proofs:" : ":"); }, v1_range, v2_range);
+    visit([&](auto v1, auto v2) { print(cerr, "abs [{}] {} {} {}", view_wrap_config_label(view_cfg), v1, v2, proofs ? " with proofs:" : ":"); },
+        v1_range, v2_range);
     cerr << flush;
 
     auto is_satisfying = [](int a, int b) { return b == abs(a); };
@@ -97,8 +97,7 @@ auto run_dup_abs_test(bool proofs, pair<int, int> x_range) -> void
 // (cheap: no full search, no solution enumeration).
 auto run_abs_initialiser_test(const string & label, pair<int, int> v1_range, pair<int, int> v2_range) -> void
 {
-    print(cerr, "abs initialiser [{}] v1=[{},{}] v2=[{},{}] with proofs\n",
-        label, v1_range.first, v1_range.second, v2_range.first, v2_range.second);
+    print(cerr, "abs initialiser [{}] v1=[{},{}] v2=[{},{}] with proofs\n", label, v1_range.first, v1_range.second, v2_range.first, v2_range.second);
     cerr << flush;
 
     Problem p;
@@ -115,8 +114,7 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 2;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "abs view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "abs view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
@@ -125,33 +123,25 @@ auto main(int argc, char * argv[]) -> int
     // only run on the baseline.
     bool run_initialisers = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
-    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {
-        {pair{2, 5}, pair{1, 6}},
-        {pair{1, 6}, pair{2, 5}},
-        {pair{1, 3}, pair{1, 3}},
-        {pair{1, 5}, pair{6, 8}},
-        {pair{1, 1}, pair{2, 4}},
-        {pair{-5, 5}, pair{-5, 5}},
-        {pair{-1, 6}, pair{-2, 5}},
-        {pair{1, 3}, pair{-1, 3}},
-        {pair{-1, 5}, pair{-6, 8}},
-        {pair{-1, 1}, pair{-2, 4}},
+    vector<pair<variant<int, pair<int, int>>, variant<int, pair<int, int>>>> data = {{pair{2, 5}, pair{1, 6}}, {pair{1, 6}, pair{2, 5}},
+        {pair{1, 3}, pair{1, 3}}, {pair{1, 5}, pair{6, 8}}, {pair{1, 1}, pair{2, 4}}, {pair{-5, 5}, pair{-5, 5}}, {pair{-1, 6}, pair{-2, 5}},
+        {pair{1, 3}, pair{-1, 3}}, {pair{-1, 5}, pair{-6, 8}}, {pair{-1, 1}, pair{-2, 4}},
         // All-constant arguments (issue #254): both operands are
         // ConstantIntegerVariableIDs, so the constraint reduces to a
         // true/false check on abs(c1) == c2. Both directions are covered.
-        {2, 2},     // abs(2) == 2: tautology
-        {2, 3},     // abs(2) != 3: contradiction
-        {-4, 4},    // abs(-4) == 4: tautology
-        {-4, 5},    // abs(-4) != 5: contradiction
-        {0, 0},     // abs(0) == 0: tautology
-        {-7, 6},    // abs(-7) != 6: contradiction
+        {2, 2},  // abs(2) == 2: tautology
+        {2, 3},  // abs(2) != 3: contradiction
+        {-4, 4}, // abs(-4) == 4: tautology
+        {-4, 5}, // abs(-4) != 5: contradiction
+        {0, 0},  // abs(0) == 0: tautology
+        {-7, 6}, // abs(-7) != 6: contradiction
         // Singleton-domain variables (genuine variables, domain size 1):
         // exercises the propagation path rather than constant folding.
         {pair{-4, -4}, pair{4, 4}}, // tautology
         {pair{-4, -4}, pair{5, 5}}, // contradiction
         // Mixed: one genuine constant, one real singleton-domain variable.
-        {-6, pair{6, 6}},           // tautology
-        {pair{-6, -6}, 7}};         // contradiction
+        {-6, pair{6, 6}},   // tautology
+        {pair{-6, -6}, 7}}; // contradiction
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
@@ -194,8 +184,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // Bare-handle dup ranges. Skipped under the view-wrap sweep.
-    vector<pair<int, int>> dup_data = {
-        {-3, 3}, {-5, 0}, {0, 5}, {-1, 1}, {2, 5}};
+    vector<pair<int, int>> dup_data = {{-3, 3}, {-5, 0}, {0, 5}, {-1, 1}, {2, 5}};
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())

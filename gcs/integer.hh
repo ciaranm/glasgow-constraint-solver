@@ -38,8 +38,7 @@ namespace gcs
     {
         long long raw_value;
 
-        explicit constexpr Integer(long long v) :
-            raw_value(v)
+        explicit constexpr Integer(long long v) : raw_value(v)
         {
         }
 
@@ -229,7 +228,8 @@ namespace gcs
 
 #if defined(__cpp_lib_format) && defined(__cpp_lib_print)
 template <>
-struct std::formatter<gcs::Integer> : std::formatter<long long> {
+struct std::formatter<gcs::Integer> : std::formatter<long long>
+{
     template <typename FormatContext_>
     auto format(gcs::Integer i, FormatContext_ & ctx) const
     {

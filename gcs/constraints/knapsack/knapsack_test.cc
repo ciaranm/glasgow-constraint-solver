@@ -117,21 +117,17 @@ auto run_knapsack_test(bool proofs, pair<int, int> valrange, const vector<vector
 // to one position with summed coefficients; the PB encoding sums by
 // coefficient in normal form. Consistency isn't checked on dup runs;
 // see tmp/duplicate_var_audit.md.
-auto run_dup_knapsack_test(bool proofs, const string & label,
-    pair<int, int> valrange,
-    const vector<pair<int, int>> & unique_var_domains,
-    const vector<int> & positions,
-    const vector<vector<int>> & coeffs,
-    const vector<pair<int, int>> & totals_bounds) -> void
+auto run_dup_knapsack_test(bool proofs, const string & label, pair<int, int> valrange, const vector<pair<int, int>> & unique_var_domains,
+    const vector<int> & positions, const vector<vector<int>> & coeffs, const vector<pair<int, int>> & totals_bounds) -> void
 {
-    print(cerr, "knapsack dup {} val={} unique_doms={} positions={} coeffs={} totals={}{}",
-        label, valrange, unique_var_domains, positions, coeffs, totals_bounds,
-        proofs ? " with proofs:" : ":");
+    print(cerr, "knapsack dup {} val={} unique_doms={} positions={} coeffs={} totals={}{}", label, valrange, unique_var_domains, positions, coeffs,
+        totals_bounds, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>, vector<int>>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & unique_vals, const vector<int> & profits) -> bool {
+        expected,
+        [&](const vector<int> & unique_vals, const vector<int> & profits) -> bool {
             vector<int> taken;
             for (auto pos : positions)
                 taken.push_back(unique_vals.at(pos));
@@ -168,38 +164,31 @@ auto run_dup_knapsack_test(bool proofs, const string & label,
     auto proof_name = proofs ? make_optional("knapsack_test_dup_" + label) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{unique_vars, bs});
     check_results(proof_name, expected, actual);
-    (void) valrange;
+    (void)valrange;
 }
 
 auto main(int, char *[]) -> int
 {
-    vector<tuple<pair<int, int>, vector<vector<int>>, vector<pair<int, int>>>> data = {
-        {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 1000}}},
-        {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{3, 8}, {3, 1000}}},
-        {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 5}}},
-        {{0, 1}, {{1, 3, 4}, {2, 0, 8}}, {{0, 8}, {3, 1000}}},
-        {{0, 1}, {{2, 0, 8}, {1, 3, 4}}, {{0, 8}, {3, 1000}}},
-        {{0, 1}, {{2, 0, 8}, {2, 0, 8}}, {{0, 8}, {3, 1000}}},
-        {{0, 1}, {{2, 2, 2, 2, 2}, {2, 2, 2, 2, 2}}, {{0, 5}, {5, 1000}}},
-        {{0, 1}, {{3, 3, 2, 3}, {2, 5, 6, 8}}, {{0, 7}, {4, 1000}}},
-        {{0, 1}, {{8, 2, 4, 3}, {6, 5, 5, 6}}, {{0, 4}, {13, 1000}}},
-        {{0, 1}, {{5, 4, 8, 7}, {2, 5, 1, 5}}, {{0, 12}, {5, 1000}}},
-        {{0, 1}, {{8, 7, 4, 8}, {4, 3, 4, 4}}, {{0, 18}, {10, 1000}}},
-        {{0, 1}, {{7, 4, 4, 7}, {1, 2, 1, 0}}, {{18, 19}, {3, 8}}},
-        {{2, 4}, {{4, 1, 2, 3}, {4, 6, 3, 8}, {5, 3, 1, 6}}, {{0, 64}, {0, 48}, {0, 41}}},
+    vector<tuple<pair<int, int>, vector<vector<int>>, vector<pair<int, int>>>> data = {{{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 1000}}},
+        {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{3, 8}, {3, 1000}}}, {{0, 1}, {{2, 3, 4}, {2, 3, 4}}, {{0, 8}, {3, 5}}},
+        {{0, 1}, {{1, 3, 4}, {2, 0, 8}}, {{0, 8}, {3, 1000}}}, {{0, 1}, {{2, 0, 8}, {1, 3, 4}}, {{0, 8}, {3, 1000}}},
+        {{0, 1}, {{2, 0, 8}, {2, 0, 8}}, {{0, 8}, {3, 1000}}}, {{0, 1}, {{2, 2, 2, 2, 2}, {2, 2, 2, 2, 2}}, {{0, 5}, {5, 1000}}},
+        {{0, 1}, {{3, 3, 2, 3}, {2, 5, 6, 8}}, {{0, 7}, {4, 1000}}}, {{0, 1}, {{8, 2, 4, 3}, {6, 5, 5, 6}}, {{0, 4}, {13, 1000}}},
+        {{0, 1}, {{5, 4, 8, 7}, {2, 5, 1, 5}}, {{0, 12}, {5, 1000}}}, {{0, 1}, {{8, 7, 4, 8}, {4, 3, 4, 4}}, {{0, 18}, {10, 1000}}},
+        {{0, 1}, {{7, 4, 4, 7}, {1, 2, 1, 0}}, {{18, 19}, {3, 8}}}, {{2, 4}, {{4, 1, 2, 3}, {4, 6, 3, 8}, {5, 3, 1, 6}}, {{0, 64}, {0, 48}, {0, 41}}},
         {{1, 4}, {{1, 8, 3, 1}}, {{3, 42}}},
         // Degenerate cases (issue #254).
         // Empty item list (zero columns): every weighted sum is 0, so the
         // totals must admit 0.
-        {{0, 0}, {{}}, {{0, 0}}},          // empty items, total admits 0 (tautology)
-        {{0, 0}, {{}}, {{5, 5}}},          // empty items, total can't be 0 (contradiction)
+        {{0, 0}, {{}}, {{0, 0}}}, // empty items, total admits 0 (tautology)
+        {{0, 0}, {{}}, {{5, 5}}}, // empty items, total can't be 0 (contradiction)
         // Single item.
-        {{0, 1}, {{5}}, {{0, 5}}},         // one item, two takings
+        {{0, 1}, {{5}}, {{0, 5}}}, // one item, two takings
         // All-fixed taken variables (valrange is a singleton), both directions.
-        {{0, 0}, {{2, 3}}, {{0, 0}}},      // all taken 0: sum 0 == total (tautology)
-        {{0, 0}, {{2, 3}}, {{5, 5}}},      // all taken 0: sum 0 != total 5 (contradiction)
-        {{1, 1}, {{2, 3}}, {{5, 5}}},      // all taken 1: sum 5 == total (tautology)
-        {{1, 1}, {{2, 3}}, {{4, 4}}}};     // all taken 1: sum 5 != total 4 (contradiction)
+        {{0, 0}, {{2, 3}}, {{0, 0}}},  // all taken 0: sum 0 == total (tautology)
+        {{0, 0}, {{2, 3}}, {{5, 5}}},  // all taken 0: sum 0 != total 5 (contradiction)
+        {{1, 1}, {{2, 3}}, {{5, 5}}},  // all taken 1: sum 5 == total (tautology)
+        {{1, 1}, {{2, 3}}, {{4, 4}}}}; // all taken 1: sum 5 != total 4 (contradiction)
 
     random_device rand_dev;
     mt19937 rand(rand_dev());
@@ -225,12 +214,10 @@ auto main(int, char *[]) -> int
 
         // {x, x} — single var doubled; coefficients sum (1+2)*x = 3x and
         // (2+3)*x = 5x; totals must equal those.
-        run_dup_knapsack_test(proofs, "xx", {0, 3}, {{0, 3}}, {0, 0},
-            {{1, 2}, {2, 3}}, {{0, 9}, {0, 15}});
+        run_dup_knapsack_test(proofs, "xx", {0, 3}, {{0, 3}}, {0, 0}, {{1, 2}, {2, 3}}, {{0, 9}, {0, 15}});
 
         // {x, y, x} — x's coefficient is summed at positions 0 and 2.
-        run_dup_knapsack_test(proofs, "xyx", {0, 2}, {{0, 2}, {0, 2}}, {0, 1, 0},
-            {{1, 2, 1}, {3, 1, 2}}, {{0, 8}, {0, 12}});
+        run_dup_knapsack_test(proofs, "xyx", {0, 2}, {{0, 2}, {0, 2}}, {0, 1, 0}, {{1, 2, 1}, {3, 1, 2}}, {{0, 8}, {0, 12}});
     }
 
     return EXIT_SUCCESS;

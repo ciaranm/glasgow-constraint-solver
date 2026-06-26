@@ -24,7 +24,8 @@ TEST_CASE("Solve unsat")
 
     bool found_solution = false;
     solve(
-        p, [&](const CurrentState &) -> bool {
+        p,
+        [&](const CurrentState &) -> bool {
             found_solution = true;
             return false;
         },
@@ -43,7 +44,8 @@ TEST_CASE("Solve unsat by model optimisation")
 
     bool found_solution = false;
     solve(
-        p, [&](const CurrentState &) -> bool {
+        p,
+        [&](const CurrentState &) -> bool {
             found_solution = true;
             return false;
         },
@@ -62,7 +64,8 @@ TEST_CASE("Solve unsat optimisation presolving")
 
     bool found_solution = false;
     solve(
-        p, [&](const CurrentState &) -> bool {
+        p,
+        [&](const CurrentState &) -> bool {
             found_solution = true;
             return false;
         },

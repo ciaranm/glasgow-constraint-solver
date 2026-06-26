@@ -47,7 +47,8 @@ namespace gcs
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 template <>
-struct std::formatter<gcs::Stats> : std::formatter<std::string> {
+struct std::formatter<gcs::Stats> : std::formatter<std::string>
+{
     auto format(const gcs::Stats & s, std::format_context & ctx) const
     {
         std::ostringstream oss;

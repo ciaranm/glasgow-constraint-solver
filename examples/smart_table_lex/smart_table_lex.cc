@@ -27,12 +27,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("smart_table_lex"))                          //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program Options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("smart_table_lex"))  //
+            ("stats", "Print solve statistics")                              //
             ;
 
         options_vars = options.parse(argc, argv);
@@ -67,25 +67,20 @@ auto main(int argc, char * argv[]) -> int
 
     p.post(LexSmartTable{x, y});
 
-    auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                cout << "x = [ ";
-                for (const auto & var : x) {
-                    cout << s(var) << " ";
-                }
-                cout << "]" << endl;
-                cout << "y = [ ";
-                for (const auto & var : y) {
-                    cout << s(var) << " ";
-                }
-                cout << "]\n"
-                     << endl;
-                return true;
-            }},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+        cout << "x = [ ";
+        for (const auto & var : x) {
+            cout << s(var) << " ";
+        }
+        cout << "]" << endl;
+        cout << "y = [ ";
+        for (const auto & var : y) {
+            cout << s(var) << " ";
+        }
+        cout << "]\n" << endl;
+        return true;
+    }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         cout << stats;

@@ -23,16 +23,7 @@ using std::vector;
 
 auto post_constraints(Problem & p, vector<IntegerVariableID> & nodes)
 {
-    vector<vector<int>> domains =
-        {
-            {1, 4, 5, 6},
-            {0, 2, 3},
-            {0, 1},
-            {1, 2},
-            {0, 1, 3},
-            {0, 6},
-            {0, 3, 5},
-            {6, 5, 0, 1}};
+    vector<vector<int>> domains = {{1, 4, 5, 6}, {0, 2, 3}, {0, 1}, {1, 2}, {0, 1, 3}, {0, 6}, {0, 3, 5}, {6, 5, 0, 1}};
 
     for (int i = 0; cmp_less(i, domains.size()); i++) {
         vector<Integer> int_domain{};
@@ -49,8 +40,8 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 8;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        cout << "circuit_no_backedges view sweep: position " << *view_cfg.single_position
-             << " out of range for n_positions = " << n_positions << "; skipping" << endl;
+        cout << "circuit_no_backedges view sweep: position " << *view_cfg.single_position << " out of range for n_positions = " << n_positions
+             << "; skipping" << endl;
         return EXIT_SUCCESS;
     }
     auto wraps = wraps_for_positions(view_cfg, n_positions);
@@ -71,23 +62,21 @@ auto main(int argc, char * argv[]) -> int
 
     bool proofs = can_run_veripb();
     auto proof_name = proofs ? make_optional("circuit_no_backedges_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    auto stats = solve_with(
-        p,
-        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-            for (const auto & v : nodes) {
-                cout << s(v) << " ";
-            }
-            cout << endl;
-            cout << 0 << " -> " << s(nodes[0]);
-            auto current = s(nodes[0]);
-            while (current != 0_i) {
-                cout << " -> ";
-                cout << s(nodes[current.as_index()]);
-                current = s(nodes[current.as_index()]);
-            }
-            cout << "\n\n";
-            return true;
-        }},
+    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+        for (const auto & v : nodes) {
+            cout << s(v) << " ";
+        }
+        cout << endl;
+        cout << 0 << " -> " << s(nodes[0]);
+        auto current = s(nodes[0]);
+        while (current != 0_i) {
+            cout << " -> ";
+            cout << s(nodes[current.as_index()]);
+            current = s(nodes[current.as_index()]);
+        }
+        cout << "\n\n";
+        return true;
+    }},
         proof_name ? make_optional<ProofOptions>(*proof_name) : nullopt);
 
     cout << stats;

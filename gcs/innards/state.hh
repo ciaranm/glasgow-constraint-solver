@@ -40,9 +40,7 @@ namespace gcs::innards
         std::optional<unsigned long long> how_many_extra_proof_conditions;
 
         explicit Timestamp(unsigned long long w, unsigned long long g, std::optional<unsigned long long> p) :
-            when(w),
-            how_many_guesses(g),
-            how_many_extra_proof_conditions(p)
+            when(w), how_many_guesses(g), how_many_extra_proof_conditions(p)
         {
         }
     };
@@ -83,29 +81,17 @@ namespace gcs::innards
         struct Imp;
         std::unique_ptr<Imp> _imp;
 
-        [[nodiscard]] auto change_state_for_equal(
-            const SimpleIntegerVariableID & var,
-            Integer value) -> Inference;
+        [[nodiscard]] auto change_state_for_equal(const SimpleIntegerVariableID & var, Integer value) -> Inference;
 
-        [[nodiscard]] auto change_state_for_not_equal(
-            const SimpleIntegerVariableID & var,
-            Integer value) -> Inference;
+        [[nodiscard]] auto change_state_for_not_equal(const SimpleIntegerVariableID & var, Integer value) -> Inference;
 
-        [[nodiscard]] auto change_state_for_less_than(
-            const SimpleIntegerVariableID & var,
-            Integer value) -> Inference;
+        [[nodiscard]] auto change_state_for_less_than(const SimpleIntegerVariableID & var, Integer value) -> Inference;
 
-        [[nodiscard]] auto change_state_for_greater_than_or_equal(
-            const SimpleIntegerVariableID & var,
-            Integer value) -> Inference;
+        [[nodiscard]] auto change_state_for_greater_than_or_equal(const SimpleIntegerVariableID & var, Integer value) -> Inference;
 
-        [[nodiscard]] auto change_state_for_not_in_range(
-            const SimpleIntegerVariableID & var,
-            Integer lo, Integer hi) -> Inference;
+        [[nodiscard]] auto change_state_for_not_in_range(const SimpleIntegerVariableID & var, Integer lo, Integer hi) -> Inference;
 
-        [[nodiscard]] auto change_state_for_in_range(
-            const SimpleIntegerVariableID & var,
-            Integer lo, Integer hi) -> Inference;
+        [[nodiscard]] auto change_state_for_in_range(const SimpleIntegerVariableID & var, Integer lo, Integer hi) -> Inference;
 
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) -> IntervalSet<Integer> &;
         [[nodiscard]] inline auto state_of(const SimpleIntegerVariableID &) const -> const IntervalSet<Integer> &;

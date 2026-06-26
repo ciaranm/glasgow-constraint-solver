@@ -52,22 +52,15 @@ using fmt::format;
 using fmt::print;
 #endif
 
-In::In(IntegerVariableID var, vector<IntegerVariableID> vars, vector<Integer> vals) :
-    _var(var),
-    _var_vals(move(vars)),
-    _val_vals(move(vals))
+In::In(IntegerVariableID var, vector<IntegerVariableID> vars, vector<Integer> vals) : _var(var), _var_vals(move(vars)), _val_vals(move(vals))
 {
 }
 
-In::In(IntegerVariableID var, vector<IntegerVariableID> vals) :
-    _var(var),
-    _var_vals(move(vals))
+In::In(IntegerVariableID var, vector<IntegerVariableID> vals) : _var(var), _var_vals(move(vals))
 {
 }
 
-In::In(IntegerVariableID var, vector<Integer> vals) :
-    _var(var),
-    _val_vals(move(vals))
+In::In(IntegerVariableID var, vector<Integer> vals) : _var(var), _val_vals(move(vals))
 {
 }
 
@@ -125,12 +118,9 @@ auto In::define_proof_model(ProofModel & model) -> void
     // Mirrors the encoding used by Count. Full reification of every
     // proof flag is the project rule for new OPB encodings.
     for (const auto & [idx, V] : enumerate(_var_vals)) {
-        auto lt = model.create_proof_flag_fully_reifying(format("inlt{}", idx),
-            "In", "var less than", WPBSum{} + 1_i * _var + -1_i * V <= -1_i);
-        auto gt = model.create_proof_flag_fully_reifying(format("ingt{}", idx),
-            "In", "var greater than", WPBSum{} + 1_i * _var + -1_i * V >= 1_i);
-        auto sel = model.create_proof_flag_fully_reifying(format("in{}", idx),
-            "In", "var equal", WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i);
+        auto lt = model.create_proof_flag_fully_reifying(format("inlt{}", idx), "In", "var less than", WPBSum{} + 1_i * _var + -1_i * V <= -1_i);
+        auto gt = model.create_proof_flag_fully_reifying(format("ingt{}", idx), "In", "var greater than", WPBSum{} + 1_i * _var + -1_i * V >= 1_i);
+        auto sel = model.create_proof_flag_fully_reifying(format("in{}", idx), "In", "var equal", WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i);
         _selectors.push_back(sel);
 
         sum += 1_i * sel;
@@ -143,8 +133,7 @@ auto In::install_propagators(Propagators & propagators) -> void
 {
     if (_has_no_values) {
         propagators.install_initial_contradiction(
-            "No values or variables present for an 'In' constraint",
-            JustifyUsingRUP{hints::In{constraint_id()}});
+            "No values or variables present for an 'In' constraint", JustifyUsingRUP{hints::In{constraint_id()}});
         return;
     }
 
@@ -199,9 +188,8 @@ auto In::install_propagators(Propagators & propagators) -> void
                     inference.infer_not_equal(logger, var, v,
                         JustifyExplicitly{[logger, var, v, &selectors](const ReasonLiterals & reason) {
                                               for (const auto & sel : selectors)
-                                                  logger->emit_rup_proof_line_under_reason(reason,
-                                                      WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i,
-                                                      ProofLevel::Temporary);
+                                                  logger->emit_rup_proof_line_under_reason(
+                                                      reason, WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i, ProofLevel::Temporary);
                                           },
                             ThenRUP::Yes, hints::In{owner}},
                         ExplicitReason{reason});
@@ -211,8 +199,7 @@ auto In::install_propagators(Propagators & propagators) -> void
             // Step 2: identify which V_i's still have any value in dom(var).
             optional<size_t> support_1, support_2;
             for (const auto & [i, V] : enumerate(var_vals)) {
-                bool overlaps = any_of(state.each_value_immutable(V),
-                    [&](Integer w) { return state.in_domain(var, w); });
+                bool overlaps = any_of(state.each_value_immutable(V), [&](Integer w) { return state.in_domain(var, w); });
                 if (overlaps) {
                     if (! support_1)
                         support_1 = i;
@@ -224,8 +211,7 @@ auto In::install_propagators(Propagators & propagators) -> void
             }
 
             // Does any constant in val_vals lie in dom(var)?
-            bool const_supports = any_of(val_vals,
-                [&](Integer c) { return state.in_domain(var, c); });
+            bool const_supports = any_of(val_vals, [&](Integer c) { return state.in_domain(var, c); });
 
             // Step 3: if no constant supports and exactly one V_i supports, that V_i must
             // equal var, so prune V_i to dom(var).
@@ -258,11 +244,9 @@ auto In::install_propagators(Propagators & propagators) -> void
                                                   if (! var_fixed)
                                                       for (const auto & w : state.each_value_immutable(var))
                                                           logger->emit_rup_proof_line_under_reason(reason,
-                                                              WPBSum{} + 1_i * ! selectors[j] + 1_i * (var != w) >= 1_i,
-                                                              ProofLevel::Temporary);
-                                                  logger->emit_rup_proof_line_under_reason(reason,
-                                                      WPBSum{} + 1_i * ! selectors[j] >= 1_i,
-                                                      ProofLevel::Temporary);
+                                                              WPBSum{} + 1_i * ! selectors[j] + 1_i * (var != w) >= 1_i, ProofLevel::Temporary);
+                                                  logger->emit_rup_proof_line_under_reason(
+                                                      reason, WPBSum{} + 1_i * ! selectors[j] >= 1_i, ProofLevel::Temporary);
                                               }
                                           },
                             ThenRUP::Yes, hints::In{owner}},
@@ -292,8 +276,5 @@ auto In::s_expr(const ProofModel * const model) const -> SExpr
     // cake_pb_cp's `in` parser takes the candidate list first, then the
     // variable: (id in (values...) var). Emit that order so the workflow-2
     // re-derivation parses (it rejects the variable-first form outright).
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("in"),
-        SExpr::list(std::move(vals)),
-        tracker.s_expr_term_of(_var)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("in"), SExpr::list(std::move(vals)), tracker.s_expr_term_of(_var)});
 }

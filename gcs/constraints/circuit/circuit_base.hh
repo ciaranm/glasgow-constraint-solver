@@ -52,13 +52,8 @@ namespace gcs::innards::circuit
         ProofFlagDataMap shifted_pos_geq;
     };
 
-    auto output_cycle_to_proof(const std::vector<IntegerVariableID> & succ,
-        const long & start,
-        const long & length,
-        const PosVarDataMap & pos_var_data,
-        const State & state,
-        ProofLogger & logger,
-        const std::optional<Integer> & prevent_idx = std::nullopt,
+    auto output_cycle_to_proof(const std::vector<IntegerVariableID> & succ, const long & start, const long & length,
+        const PosVarDataMap & pos_var_data, const State & state, ProofLogger & logger, const std::optional<Integer> & prevent_idx = std::nullopt,
         const std::optional<Integer> & prevent_value = std::nullopt) -> void;
 
     auto prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,

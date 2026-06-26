@@ -7,11 +7,9 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-auto gcs::innards::test_reification_condition(const State & state, const ReificationCondition & cond)
-    -> EvaluatedReificationCondition
+auto gcs::innards::test_reification_condition(const State & state, const ReificationCondition & cond) -> EvaluatedReificationCondition
 {
-    return overloaded{
-        [&](const reif::MustHold &) -> EvaluatedReificationCondition { return evaluated_reif::MustHold{TrueLiteral{}}; },
+    return overloaded{[&](const reif::MustHold &) -> EvaluatedReificationCondition { return evaluated_reif::MustHold{TrueLiteral{}}; },
         [&](const reif::MustNotHold &) -> EvaluatedReificationCondition { return evaluated_reif::MustNotHold{TrueLiteral{}}; },
         [&](const reif::If & cond) -> EvaluatedReificationCondition {
             switch (state.test_literal(cond.cond)) {

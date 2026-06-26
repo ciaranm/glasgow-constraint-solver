@@ -246,18 +246,12 @@ namespace gcs
     {
         switch (cond.op) {
             using enum VariableConditionOperator;
-        case Equal:
-            return VariableConditionFrom<VariableType_>{cond.var, NotEqual, cond.value};
-        case NotEqual:
-            return VariableConditionFrom<VariableType_>{cond.var, Equal, cond.value};
-        case Less:
-            return VariableConditionFrom<VariableType_>{cond.var, GreaterEqual, cond.value};
-        case GreaterEqual:
-            return VariableConditionFrom<VariableType_>{cond.var, Less, cond.value};
-        case InRange:
-            return VariableConditionFrom<VariableType_>{cond.var, NotInRange, cond.value, cond.upper_value};
-        case NotInRange:
-            return VariableConditionFrom<VariableType_>{cond.var, InRange, cond.value, cond.upper_value};
+        case Equal: return VariableConditionFrom<VariableType_>{cond.var, NotEqual, cond.value};
+        case NotEqual: return VariableConditionFrom<VariableType_>{cond.var, Equal, cond.value};
+        case Less: return VariableConditionFrom<VariableType_>{cond.var, GreaterEqual, cond.value};
+        case GreaterEqual: return VariableConditionFrom<VariableType_>{cond.var, Less, cond.value};
+        case InRange: return VariableConditionFrom<VariableType_>{cond.var, NotInRange, cond.value, cond.upper_value};
+        case NotInRange: return VariableConditionFrom<VariableType_>{cond.var, InRange, cond.value, cond.upper_value};
         }
         throw NonExhaustiveSwitch{};
     }

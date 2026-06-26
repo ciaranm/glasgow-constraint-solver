@@ -83,7 +83,8 @@ auto random_tree_edges(int k, mt19937 & rng, int offset)
     return edges;
 }
 
-auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 & rng, bool display_table, stringstream & table_as_string) -> SmartTuples
+auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 & rng, bool display_table, stringstream & table_as_string)
+    -> SmartTuples
 {
     SmartTuples tuples{};
 
@@ -111,9 +112,11 @@ auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 &
         sort(partition_indices.begin(), partition_indices.end());
 
         for (size_t i = 0; i < partition_indices.size() - 1; i++) {
-            if (display_table) table_as_string << "Tree " << i << "(";
+            if (display_table)
+                table_as_string << "Tree " << i << "(";
             auto num_nodes_in_tree = partition_indices[i + 1] - partition_indices[i];
-            if (display_table) table_as_string << num_nodes_in_tree << " nodes): ";
+            if (display_table)
+                table_as_string << num_nodes_in_tree << " nodes): ";
 
             if (num_nodes_in_tree == 1) {
                 // Create random unary Smart Entry
@@ -136,9 +139,7 @@ auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 &
                         table_as_string << random_set[how_many - 1] << "};  ";
                     }
                     tuple.emplace_back(innards::UnarySetEntry{
-                        shuffled_vars[partition_indices[i]],
-                        vector<Integer>(random_set.begin(), random_set.begin() + how_many),
-                        constraint_type});
+                        shuffled_vars[partition_indices[i]], vector<Integer>(random_set.begin(), random_set.begin() + how_many), constraint_type});
                 }
                 else {
                     int random_val = uniform_int_distribution<>(1, number_of_vars)(rng) - 1;
@@ -147,10 +148,7 @@ auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 &
                         table_as_string << constraint_type_str(constraint_type);
                         table_as_string << " " << random_val << ";  ";
                     }
-                    tuple.emplace_back(innards::UnaryValueEntry{
-                        shuffled_vars[partition_indices[i]],
-                        Integer(random_val),
-                        constraint_type});
+                    tuple.emplace_back(innards::UnaryValueEntry{shuffled_vars[partition_indices[i]], Integer(random_val), constraint_type});
                 }
             }
             else if (num_nodes_in_tree == 2) {
@@ -160,10 +158,8 @@ auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 &
                     table_as_string << constraint_type_str(constraint_type);
                     table_as_string << " vars[" << index_of(shuffled_vars[partition_indices[i] + 1], vars) << "];  ";
                 }
-                tuple.emplace_back(innards::BinaryEntry{
-                    shuffled_vars[partition_indices[i]],
-                    shuffled_vars[partition_indices[i] + 1],
-                    constraint_type});
+                tuple.emplace_back(
+                    innards::BinaryEntry{shuffled_vars[partition_indices[i]], shuffled_vars[partition_indices[i] + 1], constraint_type});
             }
             else {
                 auto tree_edges = random_tree_edges(num_nodes_in_tree, rng, partition_indices[i]);
@@ -175,10 +171,7 @@ auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 &
                         table_as_string << constraint_type_str(constraint_type);
                         table_as_string << " vars[" << index_of(shuffled_vars[edge.second], vars) << "];  ";
                     }
-                    tuple.emplace_back(innards::BinaryEntry{
-                        shuffled_vars[edge.first],
-                        shuffled_vars[edge.second],
-                        constraint_type});
+                    tuple.emplace_back(innards::BinaryEntry{shuffled_vars[edge.first], shuffled_vars[edge.second], constraint_type});
                 }
             }
         }
@@ -205,9 +198,7 @@ auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 &
                 }
 
                 tuple.emplace_back(innards::UnarySetEntry{
-                    shuffled_vars[var_idx],
-                    vector<Integer>(random_set.begin(), random_set.begin() + how_many),
-                    constraint_type});
+                    shuffled_vars[var_idx], vector<Integer>(random_set.begin(), random_set.begin() + how_many), constraint_type});
             }
             else {
                 int random_val = uniform_int_distribution<>(1, number_of_vars)(rng) - 1;
@@ -216,15 +207,13 @@ auto random_tuples(int tuple_length, vector<IntegerVariableID> & vars, mt19937 &
                     table_as_string << constraint_type_str(constraint_type);
                     table_as_string << " " << random_val << ";  ";
                 }
-                tuple.emplace_back(innards::UnaryValueEntry{
-                    shuffled_vars[var_idx],
-                    Integer(random_val),
-                    constraint_type});
+                tuple.emplace_back(innards::UnaryValueEntry{shuffled_vars[var_idx], Integer(random_val), constraint_type});
             }
         }
 
         tuples.emplace_back(tuple);
-        if (display_table) table_as_string << "\n";
+        if (display_table)
+            table_as_string << "\n";
     }
     return tuples;
 }
@@ -246,7 +235,7 @@ auto main(int argc, char * argv[]) -> int
             ("repeat", "Repeat for this many randomly generated tables.",                                    //
                 cxxopts::value<int>()->default_value("1"))                                                   //
             ("short-reasons", "Use redundance to reify reasons in proofs to save space.")                    //
-            ("proof-files-basename", "Path and name of the opb and pbp files",                                       //
+            ("proof-files-basename", "Path and name of the opb and pbp files",                               //
                 cxxopts::value<string>()->default_value("smart_table_random"))                               //
             ("stats", "Print stats, including solve time");                                                  //
 
@@ -289,14 +278,11 @@ auto main(int argc, char * argv[]) -> int
 
         p.post(SmartTable{vars, tuples, short_reasons});
 
-        auto stats = solve_with(p,
-            SolveCallbacks{
-                .solution = [&](const CurrentState &) -> bool {
-                    return false;
-                }},
+        auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return false; }},
             prove ? make_optional(ProofOptions{proof_prefix}) : nullopt);
 
-        if (display_table) cout << table_as_string.str() << endl;
+        if (display_table)
+            cout << table_as_string.str() << endl;
         if (print_stats) {
             cout << "seed: " << seed << endl;
             cout << stats << endl;

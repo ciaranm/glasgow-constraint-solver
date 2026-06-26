@@ -86,8 +86,7 @@ namespace gcs::innards
         /**
          * Log that a solution has been found.
          */
-        auto solution(
-            const std::vector<std::pair<IntegerVariableID, Integer>> & all_variables_with_values,
+        auto solution(const std::vector<std::pair<IntegerVariableID, Integer>> & all_variables_with_values,
             const std::optional<std::pair<IntegerVariableID, Integer>> & objective_to_minimise) -> void;
 
         /**
@@ -133,7 +132,8 @@ namespace gcs::innards
          * direct-only-encoded variables fall back to per-value emission.
          * Also pass an assertion annotation.
          */
-        auto infer(const Literal & lit, const Justification & why, const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & annotation = std::nullopt) -> void;
+        auto infer(const Literal & lit, const Justification & why, const ReasonLiterals & reason,
+            const std::optional<AssertionAnnotation> & annotation = std::nullopt) -> void;
 
         /**
          * \brief Return the current <em>active proof level</em> &mdash; the
@@ -236,12 +236,14 @@ namespace gcs::innards
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> ProofLine;
+        auto emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level,
+            const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> ProofLine;
 
         /**
          * Emit a proof step, with a specified rule.
          */
-        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level, const ReasonLiterals &, const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> ProofLine;
+        auto emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level,
+            const ReasonLiterals &, const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> ProofLine;
 
         /**
          * Emit a RUP proof step for the specified expression, not subject to
@@ -253,7 +255,8 @@ namespace gcs::innards
          * Emit a RUP proof step for the specified expression, subject to a
          * given reason.
          */
-        auto emit_rup_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+        auto emit_rup_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level)
+            -> ProofLine;
 
         /**
          * Like `emit_rup_proof_line_under_reason`, but returns the deview-form
@@ -271,7 +274,8 @@ namespace gcs::innards
          * V-form constraint emitted by the RUP step doesn't match those
          * coefficients and the pol cancellation fails.
          */
-        auto emit_rup_proof_line_under_reason_then_deview(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
+        auto emit_rup_proof_line_under_reason_then_deview(
+            const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level) -> ProofLine;
 
         /**
          * Emit a RED proof step for the specified expression.
@@ -283,25 +287,25 @@ namespace gcs::innards
         /**
          * Emit a RED proof step for flag => specified expresion, creating a half reification.
          */
-        auto emit_red_proof_lines_forward_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-            ProofLiteralOrFlag reif, ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt) -> ProofLine;
+        auto emit_red_proof_lines_forward_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
+            ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt) -> ProofLine;
 
         /**
          * Emit a RED proof step for ~flag => ~specified expresion, creating a reverse half reification.
          */
-        auto emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofLiteralOrFlag, ProofLevel level, const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt) -> ProofLine;
+        auto emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLiteralOrFlag, ProofLevel level,
+            const std::optional<std::map<ProofGoal, Subproof>> & subproof = std::nullopt) -> ProofLine;
 
         /**
          * Emit a pair of RED proofs step for the specified expression, fully reified on the specified flag.
          */
-        auto emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
-            ProofLiteralOrFlag, ProofLevel level) -> std::pair<ProofLine, ProofLine>;
+        auto emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLiteralOrFlag, ProofLevel level)
+            -> std::pair<ProofLine, ProofLine>;
 
         auto create_proof_flag(const std::string &) -> ProofFlag;
 
-        auto create_proof_flag_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-            const std::string & name, ProofLevel level) -> std::tuple<ProofFlag, ProofLine, ProofLine>;
+        auto create_proof_flag_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, const std::string & name, ProofLevel level)
+            -> std::tuple<ProofFlag, ProofLine, ProofLine>;
 
         /**
          * Provide access to information about variables.

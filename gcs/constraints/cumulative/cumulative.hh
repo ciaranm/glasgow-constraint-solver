@@ -82,9 +82,7 @@ namespace gcs
          * \brief General form: lengths, heights, and capacity may be variables
          * or constants (constants pass through as ConstantIntegerVariableID).
          */
-        explicit Cumulative(std::vector<IntegerVariableID> starts,
-            std::vector<IntegerVariableID> lengths,
-            std::vector<IntegerVariableID> heights,
+        explicit Cumulative(std::vector<IntegerVariableID> starts, std::vector<IntegerVariableID> lengths, std::vector<IntegerVariableID> heights,
             IntegerVariableID capacity);
 
         /**
@@ -92,13 +90,9 @@ namespace gcs
          * constant lengths, heights, and capacity). Delegates to the general
          * constructor.
          */
-        explicit Cumulative(std::vector<IntegerVariableID> starts,
-            std::vector<Integer> lengths,
-            std::vector<Integer> heights,
-            Integer capacity);
+        explicit Cumulative(std::vector<IntegerVariableID> starts, std::vector<Integer> lengths, std::vector<Integer> heights, Integer capacity);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };

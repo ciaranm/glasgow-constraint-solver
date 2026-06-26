@@ -22,8 +22,7 @@ namespace gcs
     {
         unsigned long long index;
 
-        constexpr explicit SimpleIntegerVariableID(unsigned long long x) :
-            index(x)
+        constexpr explicit SimpleIntegerVariableID(unsigned long long x) : index(x)
         {
         }
 
@@ -45,10 +44,7 @@ namespace gcs
         bool negate_first;
         Integer then_add;
 
-        constexpr explicit ViewOfIntegerVariableID(SimpleIntegerVariableID a, bool n, Integer o) :
-            actual_variable(a),
-            negate_first(n),
-            then_add(o)
+        constexpr explicit ViewOfIntegerVariableID(SimpleIntegerVariableID a, bool n, Integer o) : actual_variable(a), negate_first(n), then_add(o)
         {
         }
 
@@ -72,8 +68,7 @@ namespace gcs
     {
         Integer const_value;
 
-        constexpr explicit ConstantIntegerVariableID(Integer x) :
-            const_value(x)
+        constexpr explicit ConstantIntegerVariableID(Integer x) : const_value(x)
         {
         }
 
@@ -193,9 +188,7 @@ struct std::hash<gcs::ViewOfIntegerVariableID>
 {
     [[nodiscard]] inline auto operator()(const gcs::ViewOfIntegerVariableID & v) const -> std::size_t
     {
-        return hash<gcs::SimpleIntegerVariableID>{}(v.actual_variable) ^
-            hash<gcs::Integer>{}(v.then_add) ^
-            hash<bool>{}(v.negate_first);
+        return hash<gcs::SimpleIntegerVariableID>{}(v.actual_variable) ^ hash<gcs::Integer>{}(v.then_add) ^ hash<bool>{}(v.negate_first);
     }
 };
 

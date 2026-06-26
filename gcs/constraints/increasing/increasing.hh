@@ -39,8 +39,7 @@ namespace gcs
     public:
         explicit IncreasingChain(std::vector<IntegerVariableID> vars, bool strict, bool descending);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
+        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
     };
@@ -53,8 +52,7 @@ namespace gcs
     class Increasing : public IncreasingChain
     {
     public:
-        inline explicit Increasing(std::vector<IntegerVariableID> vars) :
-            IncreasingChain(std::move(vars), false, false) {};
+        inline explicit Increasing(std::vector<IntegerVariableID> vars) : IncreasingChain(std::move(vars), false, false) {};
     };
 
     /**
@@ -65,8 +63,7 @@ namespace gcs
     class StrictlyIncreasing : public IncreasingChain
     {
     public:
-        inline explicit StrictlyIncreasing(std::vector<IntegerVariableID> vars) :
-            IncreasingChain(std::move(vars), true, false) {};
+        inline explicit StrictlyIncreasing(std::vector<IntegerVariableID> vars) : IncreasingChain(std::move(vars), true, false) {};
     };
 
     /**
@@ -77,8 +74,7 @@ namespace gcs
     class Decreasing : public IncreasingChain
     {
     public:
-        inline explicit Decreasing(std::vector<IntegerVariableID> vars) :
-            IncreasingChain(std::move(vars), false, true) {};
+        inline explicit Decreasing(std::vector<IntegerVariableID> vars) : IncreasingChain(std::move(vars), false, true) {};
     };
 
     /**
@@ -89,8 +85,7 @@ namespace gcs
     class StrictlyDecreasing : public IncreasingChain
     {
     public:
-        inline explicit StrictlyDecreasing(std::vector<IntegerVariableID> vars) :
-            IncreasingChain(std::move(vars), true, true) {};
+        inline explicit StrictlyDecreasing(std::vector<IntegerVariableID> vars) : IncreasingChain(std::move(vars), true, true) {};
     };
 }
 

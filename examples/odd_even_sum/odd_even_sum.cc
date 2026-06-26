@@ -39,12 +39,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("odd_even_sum"))                             //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program Options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("odd_even_sum"))     //
+            ("stats", "Print solve statistics")                              //
             ;
         options_vars = options.parse(argc, argv);
     }
@@ -73,13 +73,12 @@ auto main(int argc, char * argv[]) -> int
     p.post(LinearEquality{WeightedSum{} + -2_i * a + 2_i * b + -2_i * c + 2_i * d + 1_i * e, 1_i, true});
 
     auto stats = solve(
-        p, [&](const CurrentState & s) -> bool {
+        p,
+        [&](const CurrentState & s) -> bool {
             println("{} {} {} {} {}", s(a), s(b), s(c), s(d), s(e));
             return true;
         },
-        options_vars.count("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.count("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

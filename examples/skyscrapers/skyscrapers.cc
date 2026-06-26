@@ -57,12 +57,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("skyscrapers"))                              //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program Options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("skyscrapers"))      //
+            ("stats", "Print solve statistics")                              //
             ;
 
         options.add_options()                                                                    //
@@ -97,12 +97,7 @@ auto main(int argc, char * argv[]) -> int
     int size = 0;
     if (instance == 5) {
         size = 5;
-        predefs = {
-            {0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0},
-            {0, 0, 5, 0, 0},
-            {0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0}};
+        predefs = {{0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 5, 0, 0}, {0, 0, 0, 0, 0}, {0, 0, 0, 0, 0}};
 
         north = {1, 0, 0, 3, 3};
         south = {0, 0, 0, 0, 1};
@@ -111,13 +106,7 @@ auto main(int argc, char * argv[]) -> int
     }
     else if (instance == 6) {
         size = 6;
-        predefs = {
-            {0, 0, 4, 0, 0, 0},
-            {0, 0, 2, 0, 0, 0},
-            {0, 0, 0, 0, 2, 0},
-            {0, 0, 0, 3, 0, 0},
-            {0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 1}};
+        predefs = {{0, 0, 4, 0, 0, 0}, {0, 0, 2, 0, 0, 0}, {0, 0, 0, 0, 2, 0}, {0, 0, 0, 3, 0, 0}, {0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 1}};
 
         north = {1, 2, 2, 2, 3, 4};
         south = {4, 1, 2, 3, 2, 2};
@@ -126,14 +115,8 @@ auto main(int argc, char * argv[]) -> int
     }
     else if (instance == 7) {
         size = 7;
-        predefs = {
-            {0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 3, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0},
-            {4, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0}};
+        predefs = {{0, 0, 0, 0, 0, 0, 0}, {0, 0, 3, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0}, {4, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0}};
 
         north = {0, 0, 5, 1, 3, 4, 0};
         south = {0, 4, 0, 4, 4, 0, 3};
@@ -142,15 +125,8 @@ auto main(int argc, char * argv[]) -> int
     }
     else if (instance == 9) {
         size = 9;
-        predefs = {
-            {0, 0, 0, 0, 0, 2, 0, 0, 0},
-            {7, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 6, 2, 0},
-            {0, 0, 0, 0, 3, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 3, 0, 0, 0, 0, 0, 0},
+        predefs = {{0, 0, 0, 0, 0, 2, 0, 0, 0}, {7, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 6, 2, 0}, {0, 0, 0, 0, 3, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 3, 0, 0, 0, 0, 0, 0},
             {0, 3, 0, 5, 0, 0, 0, 0, 0}};
 
         north = {0, 0, 0, 6, 0, 6, 2, 2, 5};
@@ -176,18 +152,14 @@ auto main(int argc, char * argv[]) -> int
         for (int c = 0; c < size; ++c) {
             grid[r].push_back(p.create_integer_variable(1_i, Integer{size}, "grid" + to_string(r) + "_" + to_string(c)));
             branch_vars.push_back(grid[r][c]);
-            visible_north[r].push_back(north[c] != 0
-                    ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_north[{}][{}]", r, c)))
-                    : nullopt);
-            visible_south[r].push_back(south[c] != 0
-                    ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_south[{}][{}]", r, c)))
-                    : nullopt);
-            visible_east[r].push_back(east[r] != 0
-                    ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_east[{}][{}]", r, c)))
-                    : nullopt);
-            visible_west[r].push_back(west[r] != 0
-                    ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_west[{}][{}]", r, c)))
-                    : nullopt);
+            visible_north[r].push_back(
+                north[c] != 0 ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_north[{}][{}]", r, c))) : nullopt);
+            visible_south[r].push_back(
+                south[c] != 0 ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_south[{}][{}]", r, c))) : nullopt);
+            visible_east[r].push_back(
+                east[r] != 0 ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_east[{}][{}]", r, c))) : nullopt);
+            visible_west[r].push_back(
+                west[r] != 0 ? make_optional(p.create_integer_variable(0_i, 1_i, format("visible_west[{}][{}]", r, c))) : nullopt);
         }
     }
 
@@ -225,19 +197,14 @@ auto main(int argc, char * argv[]) -> int
                     WeightedSum hiding;
                     for (int rr = (forwards ? 0 : size - 1); forwards ? rr < r : rr > r; forwards ? ++rr : --rr) {
                         hiding += 1_i * p.create_integer_variable(0_i, 1_i, format("{}_hiding_flag[{}][{}][{}]", name, r, c, rr));
-                        p.post(GreaterThanIff{
-                            grid[downwards ? r : c][downwards ? c : r],
-                            grid[downwards ? rr : c][downwards ? c : rr],
+                        p.post(GreaterThanIff{grid[downwards ? r : c][downwards ? c : r], grid[downwards ? rr : c][downwards ? c : rr],
                             hiding.terms.back().variable == 0_i});
                     }
-                    auto how_many_hidden = p.create_integer_variable(0_i, Integer(hiding.terms.size()),
-                        format("{}_how_many_hidden[{}][{}]", name, r, c));
+                    auto how_many_hidden =
+                        p.create_integer_variable(0_i, Integer(hiding.terms.size()), format("{}_how_many_hidden[{}][{}]", name, r, c));
                     hiding += -1_i * how_many_hidden;
                     p.post(move(hiding) == 0_i);
-                    p.post(EqualsIff{
-                        how_many_hidden,
-                        constant_variable(0_i),
-                        *visible_vars[downwards ? r : c][downwards ? c : r] == 1_i});
+                    p.post(EqualsIff{how_many_hidden, constant_variable(0_i), *visible_vars[downwards ? r : c][downwards ? c : r] == 1_i});
                 }
             }
             p.post(LinearEquality{move(how_many_visible), Integer(target[c]), true});
@@ -262,33 +229,30 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                print("  ");
-                for (int c = 0; c < size; ++c)
-                    print(" {}", (north[c] != 0 ? to_string(north[c]) : " "));
-                println("");
+        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                           print("  ");
+                           for (int c = 0; c < size; ++c)
+                               print(" {}", (north[c] != 0 ? to_string(north[c]) : " "));
+                           println("");
 
-                for (int r = 0; r < size; ++r) {
-                    print("{} ", (west[r] != 0 ? to_string(west[r]) : " "));
-                    for (int c = 0; c < size; ++c)
-                        print(" {}", s(grid[r][c]));
-                    print("  {}", (east[r] != 0 ? to_string(east[r]) : ""));
-                    println("");
-                }
+                           for (int r = 0; r < size; ++r) {
+                               print("{} ", (west[r] != 0 ? to_string(west[r]) : " "));
+                               for (int c = 0; c < size; ++c)
+                                   print(" {}", s(grid[r][c]));
+                               print("  {}", (east[r] != 0 ? to_string(east[r]) : ""));
+                               println("");
+                           }
 
-                print("   ");
-                for (int c = 0; c < size; ++c)
-                    print(" {}", (south[c] != 0 ? to_string(south[c]) : " "));
-                println("");
+                           print("   ");
+                           for (int c = 0; c < size; ++c)
+                               print(" {}", (south[c] != 0 ? to_string(south[c]) : " "));
+                           println("");
 
-                println("");
-                return true;
-            },
+                           println("");
+                           return true;
+                       },
             .branch = branch_with(variable_order::dom_then_deg(branch_vars), value_order::smallest_first())},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

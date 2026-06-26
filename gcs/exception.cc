@@ -18,8 +18,7 @@ using std::source_location;
 #endif
 using std::string;
 
-MessageException::MessageException(string wat) :
-    _wat(move(wat))
+MessageException::MessageException(string wat) : _wat(move(wat))
 {
 }
 
@@ -28,13 +27,11 @@ auto MessageException::what() const noexcept -> const char *
     return _wat.c_str();
 }
 
-UnexpectedException::UnexpectedException(const string & w) :
-    MessageException("unexpected problem: " + w)
+UnexpectedException::UnexpectedException(const string & w) : MessageException("unexpected problem: " + w)
 {
 }
 
-InvalidProblemDefinitionException::InvalidProblemDefinitionException(const string & w) :
-    MessageException("invalid problem definition: " + w)
+InvalidProblemDefinitionException::InvalidProblemDefinitionException(const string & w) : MessageException("invalid problem definition: " + w)
 {
 }
 
@@ -48,8 +45,7 @@ namespace
     }
 }
 
-UnimplementedException::UnimplementedException(const source_location & where) :
-    UnexpectedException{"unimplemented at " + where_does_it_hurt(where)}
+UnimplementedException::UnimplementedException(const source_location & where) : UnexpectedException{"unimplemented at " + where_does_it_hurt(where)}
 {
 }
 
@@ -58,15 +54,13 @@ UnimplementedException::UnimplementedException(const string & msg, const source_
 {
 }
 
-NonExhaustiveSwitch::NonExhaustiveSwitch(const source_location & where) :
-    UnexpectedException{"non-exhaustive at " + where_does_it_hurt(where)}
+NonExhaustiveSwitch::NonExhaustiveSwitch(const source_location & where) : UnexpectedException{"non-exhaustive at " + where_does_it_hurt(where)}
 {
 }
 
 #else
 
-UnimplementedException::UnimplementedException() :
-    UnexpectedException{"unimplemented, source location not supported by your compiler"}
+UnimplementedException::UnimplementedException() : UnexpectedException{"unimplemented, source location not supported by your compiler"}
 {
 }
 
@@ -75,8 +69,7 @@ UnimplementedException::UnimplementedException(const string & msg) :
 {
 }
 
-NonExhaustiveSwitch::NonExhaustiveSwitch() :
-    UnexpectedException{"unimplemented, source location not supported by your compiler"}
+NonExhaustiveSwitch::NonExhaustiveSwitch() : UnexpectedException{"unimplemented, source location not supported by your compiler"}
 {
 }
 

@@ -33,9 +33,7 @@ using fmt::print;
 using namespace gcs;
 using namespace gcs::innards;
 
-LexSmartTable::LexSmartTable(vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2) :
-    _vars_1(move(vars_1)),
-    _vars_2(move(vars_2))
+LexSmartTable::LexSmartTable(vector<IntegerVariableID> vars_1, vector<IntegerVariableID> vars_2) : _vars_1(move(vars_1)), _vars_2(move(vars_2))
 {
 }
 
@@ -74,6 +72,5 @@ auto LexSmartTable::s_expr(const innards::ProofModel * const model) const -> SEx
         a.push_back(tracker.s_expr_term_of(var));
     for (const auto & var : _vars_2)
         b.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("lex"),
-        SExpr::list(std::move(a)), SExpr::list(std::move(b))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("lex"), SExpr::list(std::move(a)), SExpr::list(std::move(b))});
 }

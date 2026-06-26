@@ -47,13 +47,13 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("sudoku"))                                   //
-            ("stats", "Print solve statistics")                                                      //
-            ("trace", "Trace progress")                                                              //
+        options.add_options("Program Options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("sudoku"))           //
+            ("stats", "Print solve statistics")                              //
+            ("trace", "Trace progress")                                      //
             ;
 
         options.add_options("Extended Options")   //
@@ -93,50 +93,20 @@ auto main(int argc, char * argv[]) -> int
 
     if (options_vars.contains("xv")) {
         // https://www.youtube.com/watch?v=9ATC_uBF8ow
-        predef = {
-            {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 5, 0, 3, 0, 8, 0, 2, 0},
-            {2, 0, 5, 0, 3, 0, 6, 0, 9},
-            {0, 9, 0, 4, 0, 6, 0, 1, 0},
+        predef = {{0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 5, 0, 3, 0, 8, 0, 2, 0}, {2, 0, 5, 0, 3, 0, 6, 0, 9}, {0, 9, 0, 4, 0, 6, 0, 1, 0},
             {0, 0, 0, 0, 0, 0, 0, 0, 0}};
 
-        horizontal_xvs = {
-            {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O}};
+        horizontal_xvs = {{O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O},
+            {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}};
 
-        vertical_xvs = {
-            {O, O, O, O, O, O, O, O},
-            {O, X, O, O, O, O, O, O},
-            {X, O, X, O, O, O, O, O},
-            {O, X, O, O, O, O, O, O},
-            {X, O, X, O, O, O, O, O},
-            {O, X, O, O, O, O, O, O},
-            {X, O, X, O, O, O, O, O},
-            {O, X, O, O, O, O, O, O},
-            {O, O, O, O, O, O, O, O}};
+        vertical_xvs = {{O, O, O, O, O, O, O, O}, {O, X, O, O, O, O, O, O}, {X, O, X, O, O, O, O, O}, {O, X, O, O, O, O, O, O},
+            {X, O, X, O, O, O, O, O}, {O, X, O, O, O, O, O, O}, {X, O, X, O, O, O, O, O}, {O, X, O, O, O, O, O, O}, {O, O, O, O, O, O, O, O}};
     }
     else {
         // https://abcnews.go.com/blogs/headlines/2012/06/can-you-solve-the-hardest-ever-sudoku
-        predef = {
-            {8, 0, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 3, 6, 0, 0, 0, 0, 0},
-            {0, 7, 0, 0, 9, 0, 2, 0, 0},
-            {0, 5, 0, 0, 0, 7, 0, 0, 0},
-            {0, 0, 0, 0, 4, 5, 7, 0, 0},
-            {0, 0, 0, 1, 0, 0, 0, 3, 0},
-            {0, 0, 1, 0, 0, 0, 0, 6, 8},
-            {0, 0, 8, 5, 0, 0, 0, 1, 0},
+        predef = {{8, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 3, 6, 0, 0, 0, 0, 0}, {0, 7, 0, 0, 9, 0, 2, 0, 0}, {0, 5, 0, 0, 0, 7, 0, 0, 0},
+            {0, 0, 0, 0, 4, 5, 7, 0, 0}, {0, 0, 0, 1, 0, 0, 0, 3, 0}, {0, 0, 1, 0, 0, 0, 0, 6, 8}, {0, 0, 8, 5, 0, 0, 0, 1, 0},
             {0, 9, 0, 0, 0, 0, 4, 0, 0}};
     }
 
@@ -173,14 +143,9 @@ auto main(int argc, char * argv[]) -> int
         for (int c = 0; c < n; ++c)
             for (int r = 0; r < n - 1; ++r)
                 switch (vertical_xvs[c][r]) {
-                case N:
-                    break;
-                case V:
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 5_i, true});
-                    break;
-                case X:
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 10_i, true});
-                    break;
+                case N: break;
+                case V: p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 5_i, true}); break;
+                case X: p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r + 1][c], 10_i, true}); break;
                 case O:
                     auto sum = p.create_integer_variable(0_i, Integer{n * 2});
                     p.post(NotEquals{sum, 5_c});
@@ -192,14 +157,9 @@ auto main(int argc, char * argv[]) -> int
         for (int r = 0; r < n; ++r)
             for (int c = 0; c < n - 1; ++c)
                 switch (horizontal_xvs[r][c]) {
-                case N:
-                    break;
-                case V:
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 5_i, true});
-                    break;
-                case X:
-                    p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 10_i, true});
-                    break;
+                case N: break;
+                case V: p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 5_i, true}); break;
+                case X: p.post(LinearEquality{WeightedSum{} + 1_i * grid[r][c] + 1_i * grid[r][c + 1], 10_i, true}); break;
                 case O:
                     auto sum = p.create_integer_variable(0_i, Integer{n * 2});
                     p.post(NotEquals{sum, 5_c});
@@ -210,21 +170,20 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                for (const auto & row : grid) {
-                    bool first = true;
-                    for (const auto & box : row) {
-                        if (! first)
-                            print(" ");
-                        print("{}", s(box));
-                        first = false;
-                    }
-                    println("");
-                }
-                println("");
-                return options_vars.contains("all");
-            },
+        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                           for (const auto & row : grid) {
+                               bool first = true;
+                               for (const auto & box : row) {
+                                   if (! first)
+                                       print(" ");
+                                   print("{}", s(box));
+                                   first = false;
+                               }
+                               println("");
+                           }
+                           println("");
+                           return options_vars.contains("all");
+                       },
             .trace = [&](const CurrentState & s) -> bool {
                 if (! options_vars.contains("trace"))
                     return true;
@@ -246,9 +205,7 @@ auto main(int argc, char * argv[]) -> int
                 println("");
                 return true;
             }},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

@@ -56,13 +56,8 @@ namespace
     }
 }
 
-Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths,
-    vector<IntegerVariableID> heights, IntegerVariableID capacity) :
-    _starts(move(starts)),
-    _lengths(move(lengths)),
-    _heights(move(heights)),
-    _capacity(capacity),
-    _capacity_val(0_i)
+Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths, vector<IntegerVariableID> heights,
+    IntegerVariableID capacity) : _starts(move(starts)), _lengths(move(lengths)), _heights(move(heights)), _capacity(capacity), _capacity_val(0_i)
 {
     if (_starts.size() != _lengths.size() || _starts.size() != _heights.size())
         throw InvalidProblemDefinitionException{"Cumulative: starts, lengths, heights must have the same size"};
@@ -79,10 +74,8 @@ Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableI
             throw InvalidProblemDefinitionException{"Cumulative: heights must be non-negative"};
 }
 
-Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths,
-    vector<Integer> heights, Integer capacity) :
-    Cumulative(move(starts), as_constant_var_ids(lengths), as_constant_var_ids(heights),
-        constant_variable(capacity))
+Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths, vector<Integer> heights, Integer capacity) :
+    Cumulative(move(starts), as_constant_var_ids(lengths), as_constant_var_ids(heights), constant_variable(capacity))
 {
 }
 
@@ -185,8 +178,10 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
     bool first = true;
     for (auto i : _active_tasks) {
         auto t_lo = _per_task_t_lo[i], t_hi = _per_task_t_hi[i];
-        if (first || t_lo < global_lo) global_lo = t_lo;
-        if (first || t_hi > global_hi) global_hi = t_hi;
+        if (first || t_lo < global_lo)
+            global_lo = t_lo;
+        if (first || t_hi > global_hi)
+            global_hi = t_hi;
         first = false;
 
         // When both start and length vary, after_{i,t} ⇔ s_i + l_i ≥ t+1 is a
@@ -198,36 +193,28 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
         bool use_end = ! is_constant_variable(_starts[i]) && ! is_constant_variable(_lengths[i]);
         std::optional<ProofOnlySimpleIntegerVariableID> end;
         if (use_end) {
-            end = model.create_proof_only_integer_variable(
-                0_i, _per_task_t_hi[i] + 1_i, "cumend", IntegerVariableProofRepresentation::Bits);
-            _end_def_lines[i] = model.add_constraint("Cumulative", "end >= s + l",
-                WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
-            model.add_constraint("Cumulative", "end <= s + l",
-                WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
+            end = model.create_proof_only_integer_variable(0_i, _per_task_t_hi[i] + 1_i, "cumend", IntegerVariableProofRepresentation::Bits);
+            _end_def_lines[i] =
+                model.add_constraint("Cumulative", "end >= s + l", WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
+            model.add_constraint("Cumulative", "end <= s + l", WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
         }
 
         for (Integer t = t_lo; t <= t_hi; ++t) {
-            auto before = model.create_proof_flag_fully_reifying(
-                "cumbefore", "Cumulative", "starts at or before time",
-                WPBSum{} + 1_i * _starts[i] <= t);
+            auto before =
+                model.create_proof_flag_fully_reifying("cumbefore", "Cumulative", "starts at or before time", WPBSum{} + 1_i * _starts[i] <= t);
             // after_{i,t} ⇔ task i not yet finished at t ⇔ s_i + l_i ≥ t + 1.
             // Constant length: single-variable s_i ≥ t−l+1. One variable
             // operand: keep s_i + l_i (the constant folds in). Both variable:
             // reify on the proof-only end.
             auto after = is_constant_variable(_lengths[i])
                 ? model.create_proof_flag_fully_reifying(
-                      "cumafter", "Cumulative", "not yet finished at time",
-                      WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i)
-                : (use_end
-                          ? model.create_proof_flag_fully_reifying(
-                                "cumafter", "Cumulative", "not yet finished at time",
-                                WPBSum{} + 1_i * *end >= t + 1_i)
-                          : model.create_proof_flag_fully_reifying(
-                                "cumafter", "Cumulative", "not yet finished at time",
-                                WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] >= t + 1_i));
+                      "cumafter", "Cumulative", "not yet finished at time", WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i)
+                : (use_end ? model.create_proof_flag_fully_reifying(
+                                 "cumafter", "Cumulative", "not yet finished at time", WPBSum{} + 1_i * *end >= t + 1_i)
+                           : model.create_proof_flag_fully_reifying(
+                                 "cumafter", "Cumulative", "not yet finished at time", WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] >= t + 1_i));
             auto active = model.create_proof_flag_fully_reifying(
-                "cumactive", "Cumulative", "task active at time",
-                WPBSum{} + 1_i * before + 1_i * after >= 2_i);
+                "cumactive", "Cumulative", "task active at time", WPBSum{} + 1_i * before + 1_i * after >= 2_i);
             _before_flags[i].push_back(before);
             _after_flags[i].push_back(after);
             _active_flags[i].push_back(active);
@@ -238,18 +225,12 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             //   active   ⇒ contrib = h   (contrib − h ≥ 0 and ≤ 0)
             //   ¬active  ⇒ contrib = 0   (contrib ≤ 0; contrib ≥ 0 by domain)
             if (! is_constant_variable(_heights[i])) {
-                auto contrib = model.create_proof_only_integer_variable(
-                    0_i, _height_ub[i], "cumcontrib",
-                    IntegerVariableProofRepresentation::Bits);
-                model.add_constraint("Cumulative", "contrib >= h when active",
-                    WPBSum{} + 1_i * contrib + -1_i * _heights[i] >= 0_i,
-                    HalfReifyOnConjunctionOf{active});
-                model.add_constraint("Cumulative", "contrib <= h when active",
-                    WPBSum{} + 1_i * contrib + -1_i * _heights[i] <= 0_i,
-                    HalfReifyOnConjunctionOf{active});
-                model.add_constraint("Cumulative", "contrib = 0 when inactive",
-                    WPBSum{} + 1_i * contrib <= 0_i,
-                    HalfReifyOnConjunctionOf{! active});
+                auto contrib = model.create_proof_only_integer_variable(0_i, _height_ub[i], "cumcontrib", IntegerVariableProofRepresentation::Bits);
+                model.add_constraint(
+                    "Cumulative", "contrib >= h when active", WPBSum{} + 1_i * contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_constraint(
+                    "Cumulative", "contrib <= h when active", WPBSum{} + 1_i * contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_constraint("Cumulative", "contrib = 0 when inactive", WPBSum{} + 1_i * contrib <= 0_i, HalfReifyOnConjunctionOf{! active});
                 _contrib_vars[i].push_back(contrib);
             }
         }
@@ -274,11 +255,9 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             // constraint stays a single linear inequality with RHS 0.
             std::optional<ProofLine> line;
             if (is_constant_variable(_capacity))
-                line = model.add_constraint("Cumulative", "load at time",
-                    load <= _capacity_val);
+                line = model.add_constraint("Cumulative", "load at time", load <= _capacity_val);
             else
-                line = model.add_constraint("Cumulative", "load at time",
-                    move(load) + -1_i * _capacity <= 0_i);
+                line = model.add_constraint("Cumulative", "load at time", move(load) + -1_i * _capacity <= 0_i);
             if (line)
                 _capacity_lines.emplace(t, *line);
         }
@@ -307,13 +286,11 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [starts = move(_starts), lengths_var = move(_lengths), heights_var = move(_heights),
-            capacity_var = _capacity, active_tasks = move(_active_tasks),
-            before_flags = move(_before_flags), after_flags = move(_after_flags),
-            active_flags = move(_active_flags), contrib_vars = move(_contrib_vars),
-            end_def_lines = move(_end_def_lines), capacity_lines = move(_capacity_lines),
-            per_task_t_lo = move(_per_task_t_lo), owner = constraint_id()](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [starts = move(_starts), lengths_var = move(_lengths), heights_var = move(_heights), capacity_var = _capacity,
+            active_tasks = move(_active_tasks), before_flags = move(_before_flags), after_flags = move(_after_flags),
+            active_flags = move(_active_flags), contrib_vars = move(_contrib_vars), end_def_lines = move(_end_def_lines),
+            capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo),
+            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // The capacity may be a variable: the load profile is infeasible
             // only when it exceeds the *largest* still-allowed capacity, so the
             // threshold for every overflow/blocked test is ub(capacity). When
@@ -373,21 +350,18 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             // variable height it is "contrib >= lb(h_i)" with coefficient 1
             // (contrib is the proof-only product h_i·active in C_t). The
             // before/after RUPs give VeriPB the units to chase active's AND-gate.
-            auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t)
-                -> std::pair<ProofLine, Integer> {
+            auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t) -> std::pair<ProofLine, Integer> {
                 auto fi = (t - per_task_t_lo[i]).raw_value;
-                logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
                 // A mandatory task has s_i + l_i ≥ lb(s_i) + lb(l_i) > t.
                 materialise_after_sum(i, state.lower_bound(starts[i]));
-                logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                auto active_line = logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+                auto active_line =
+                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
                 if (! h_is_var(i))
                     return {active_line, hlb(i)};
-                auto contrib_line = logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * contrib_vars[i][fi] >= hlb(i), ProofLevel::Temporary);
+                auto contrib_line =
+                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * contrib_vars[i][fi] >= hlb(i), ProofLevel::Temporary);
                 return {contrib_line, 1_i};
             };
 
@@ -397,23 +371,22 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             // variable height it deposits contrib_j + lb(h_j)·ext_lit ≥ lb(h_j)
             // (vacuous when ext_lit holds, "contrib_j ≥ lb(h_j)" otherwise) and
             // returns that line with coefficient 1.
-            auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t,
-                                  IntegerVariableCondition ext_lit, Integer s_lo_after) -> std::pair<ProofLine, Integer> {
+            auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, IntegerVariableCondition ext_lit,
+                                  Integer s_lo_after) -> std::pair<ProofLine, Integer> {
                 auto fj = (t - per_task_t_lo[j_idx]).raw_value;
-                logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * before_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(
+                    reason, WPBSum{} + 1_i * before_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
                 // s_lo_after + lb(l_j) ≥ t+1 gives after_{j,t} = 1 (under ¬ext_lit
                 // for ub-push, under the running bound for lb-push).
                 materialise_after_sum(j_idx, s_lo_after);
-                logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * after_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-                auto active_line = logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * active_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                logger->emit_rup_proof_line_under_reason(
+                    reason, WPBSum{} + 1_i * after_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                auto active_line = logger->emit_rup_proof_line_under_reason(
+                    reason, WPBSum{} + 1_i * active_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
                 if (! h_is_var(j_idx))
                     return {active_line, hlb(j_idx)};
-                auto contrib_line = logger->emit_rup_proof_line_under_reason(reason,
-                    WPBSum{} + 1_i * contrib_vars[j_idx][fj] + hlb(j_idx) * ext_lit >= hlb(j_idx),
-                    ProofLevel::Temporary);
+                auto contrib_line = logger->emit_rup_proof_line_under_reason(
+                    reason, WPBSum{} + 1_i * contrib_vars[j_idx][fj] + hlb(j_idx) * ext_lit >= hlb(j_idx), ProofLevel::Temporary);
                 return {contrib_line, 1_i};
             };
 
@@ -432,8 +405,10 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             for (auto i : active_tasks) {
                 auto [s_lo, s_hi] = state.bounds(starts[i]);
                 auto lo = s_lo, hi = s_hi + lub(i) - 1_i;
-                if (! any || lo < t_lo) t_lo = lo;
-                if (! any || hi > t_hi) t_hi = hi;
+                if (! any || lo < t_lo)
+                    t_lo = lo;
+                if (! any || hi > t_hi)
+                    t_hi = hi;
                 any = true;
             }
             if (! any)
@@ -465,7 +440,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     }
 
                     auto justify = [&, violating_t, contributing](const ReasonLiterals & reason) -> void {
-                        if (! logger) return;
+                        if (! logger)
+                            return;
                         // Pin every contributing task's guaranteed load at
                         // violating_t, then combine those lines with C_t in a
                         // single pol. The result is unsatisfiable under the
@@ -480,8 +456,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         pol.emit(*logger, ProofLevel::Temporary);
                     };
 
-                    inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
-                        generic_reason(reason_vars));
+                    inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
                     return PropagatorState::DisableUntilBacktrack;
                 }
 
@@ -508,11 +483,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             // `emit_intermediate` deposits ext_lit as a unit under reason —
             // needed for every step except the last (the framework's wrapping
             // RUP closes the final inference).
-            auto emit_chain_step = [&](size_t j_idx, Integer t,
-                                       const vector<size_t> & contributing,
-                                       IntegerVariableCondition ext_lit, Integer s_lo_after,
-                                       bool emit_intermediate,
-                                       const ReasonLiterals & reason) -> void {
+            auto emit_chain_step = [&](size_t j_idx, Integer t, const vector<size_t> & contributing, IntegerVariableCondition ext_lit,
+                                       Integer s_lo_after, bool emit_intermediate, const ReasonLiterals & reason) -> void {
                 // (a) Pin each task i ≠ j mandatory at t under the reason, and
                 // (b) pin the pushed task j under the EXTENDED reason. Then
                 // (c) combine all pinned load lines with C_t in one pol. After
@@ -531,8 +503,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 // (d) Deposit the running-bound advance as a fact under
                 // reason for the next chain step's UP.
                 if (emit_intermediate)
-                    logger->emit_rup_proof_line_under_reason(reason,
-                        WPBSum{} + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
             };
 
             for (auto j : active_tasks) {
@@ -562,7 +533,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 auto contributors_at = [&](Integer t) -> vector<size_t> {
                     vector<size_t> result;
                     for (auto i : active_tasks) {
-                        if (i == j) continue;
+                        if (i == j)
+                            continue;
                         auto lst_i = state.upper_bound(starts[i]);
                         auto eet_i = state.lower_bound(starts[i]) + llb(i);
                         if (lst_i < eet_i && t >= lst_i && t < eet_i)
@@ -589,20 +561,20 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                                 found = true;
                                 break;
                             }
-                        if (! found) break;
+                        if (! found)
+                            break;
                     }
 
                     auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
-                        if (! logger) return;
+                        if (! logger)
+                            return;
                         for (size_t step = 0; step < chain.size(); ++step)
-                            emit_chain_step(j, chain[step].t, chain[step].contributing,
-                                starts[j] > chain[step].t, chain[step].s_lo_after,
+                            emit_chain_step(j, chain[step].t, chain[step].contributing, starts[j] > chain[step].t, chain[step].s_lo_after,
                                 step + 1 < chain.size(), reason);
                     };
 
-                    inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
-                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
-                        generic_reason(reason_vars));
+                    inference.infer_greater_than_or_equal(
+                        logger, starts[j], new_lb, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
                 }
 
                 // ub-push: mirror image. Pick SMALLEST blocked t in each
@@ -623,19 +595,19 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                                 found = true;
                                 break;
                             }
-                        if (! found) break;
+                        if (! found)
+                            break;
                     }
 
                     auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
-                        if (! logger) return;
+                        if (! logger)
+                            return;
                         for (size_t step = 0; step < chain.size(); ++step)
-                            emit_chain_step(j, chain[step].t, chain[step].contributing,
-                                starts[j] < chain[step].t - llb(j) + 1_i, chain[step].s_lo_after,
-                                step + 1 < chain.size(), reason);
+                            emit_chain_step(j, chain[step].t, chain[step].contributing, starts[j] < chain[step].t - llb(j) + 1_i,
+                                chain[step].s_lo_after, step + 1 < chain.size(), reason);
                     };
 
-                    inference.infer_less_than(logger, starts[j], new_ub + 1_i,
-                        JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
+                    inference.infer_less_than(logger, starts[j], new_ub + 1_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
                         generic_reason(reason_vars));
                 }
             }
@@ -655,10 +627,6 @@ auto Cumulative::s_expr(const ProofModel * const model) const -> SExpr
         lengths.push_back(tracker.s_expr_term_of(l));
     for (const auto & h : _heights)
         heights.push_back(tracker.s_expr_term_of(h));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("cumulative"),
-        SExpr::list(std::move(starts)),
-        SExpr::list(std::move(lengths)),
-        SExpr::list(std::move(heights)),
-        tracker.s_expr_term_of(_capacity)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("cumulative"), SExpr::list(std::move(starts)),
+        SExpr::list(std::move(lengths)), SExpr::list(std::move(heights)), tracker.s_expr_term_of(_capacity)});
 }

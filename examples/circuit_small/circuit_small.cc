@@ -39,17 +39,16 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("circuit_small"))                            //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("circuit_small"))    //
+            ("stats", "Print solve statistics")                              //
             ;
 
         options.add_options("All options") //
-            ("propagator", "Specify which circuit propagation algorithm to use (prevent/scc)",
-                cxxopts::value<string>()->default_value("scc"));
+            ("propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", cxxopts::value<string>()->default_value("scc"));
 
         options_vars = options.parse(argc, argv);
     }
@@ -89,26 +88,22 @@ auto main(int argc, char * argv[]) -> int
         p.post(Circuit{nodes});
     }
 
-    auto stats = solve_with(
-        p,
-        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
-            for (const auto & v : nodes) {
-                cout << s(v) << " ";
-            }
-            cout << endl;
-            cout << 0 << " -> " << s(nodes[0]);
-            auto current = s(nodes[0]);
-            while (current != 0_i) {
-                cout << " -> ";
-                cout << s(nodes[current.as_index()]);
-                current = s(nodes[current.as_index()]);
-            }
-            cout << "\n\n";
-            return true;
-        }},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+        for (const auto & v : nodes) {
+            cout << s(v) << " ";
+        }
+        cout << endl;
+        cout << 0 << " -> " << s(nodes[0]);
+        auto current = s(nodes[0]);
+        while (current != 0_i) {
+            cout << " -> ";
+            cout << s(nodes[current.as_index()]);
+            current = s(nodes[current.as_index()]);
+        }
+        cout << "\n\n";
+        return true;
+    }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         cout << stats;

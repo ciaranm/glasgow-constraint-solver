@@ -13,7 +13,8 @@ using std::vector;
 using namespace gcs;
 using namespace gcs::innards;
 
-auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const ConstraintID & constraint_id, const vector<gcs::IntegerVariableID> & vars) -> void
+auto gcs::innards::define_clique_not_equals_encoding(
+    ProofModel & model, const ConstraintID & constraint_id, const vector<gcs::IntegerVariableID> & vars) -> void
 {
     auto id_label = as_string(constraint_id);
 
@@ -31,33 +32,27 @@ auto gcs::innards::define_clique_not_equals_encoding(ProofModel & model, const C
             // Explicit vector (not a braced list): with the scalar b[id][role]
             // overload also present, a braced {i, j} is ambiguous against
             // std::string's (count, char) constructor.
-            auto selector = model.create_proof_flag(constraint_id,
-                vector<long long>{static_cast<long long>(i), static_cast<long long>(j)});
-            model.add_labelled_constraint(id_label, to_string(i) + "lt" + to_string(j),
-                "AllDifferent", "not equals because lower", WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
-            model.add_labelled_constraint(id_label, to_string(i) + "gt" + to_string(j),
-                "AllDifferent", "not equals because higher", WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
+            auto selector = model.create_proof_flag(constraint_id, vector<long long>{static_cast<long long>(i), static_cast<long long>(j)});
+            model.add_labelled_constraint(id_label, to_string(i) + "lt" + to_string(j), "AllDifferent", "not equals because lower",
+                WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
+            model.add_labelled_constraint(id_label, to_string(i) + "gt" + to_string(j), "AllDifferent", "not equals because higher",
+                WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
         }
 }
 
 template <typename Hint_>
-auto gcs::innards::install_clique_duplicate_contradiction_initialiser(
-    Propagators & propagators, const Hint_ & hint) -> void
+auto gcs::innards::install_clique_duplicate_contradiction_initialiser(Propagators & propagators, const Hint_ & hint) -> void
 {
     propagators.install_initialiser(
-        [hint](
-            State &, auto & inference, ProofLogger * const logger) -> void {
-            inference.contradiction(logger, JustifyUsingRUP{hint}, NoReason{});
-        },
+        [hint](State &, auto & inference, ProofLogger * const logger) -> void { inference.contradiction(logger, JustifyUsingRUP{hint}, NoReason{}); },
         InitialiserPriority::SimpleDefinition);
 }
 
 template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(Propagators &, const hints::AllDifferent &) -> void;
 template auto gcs::innards::install_clique_duplicate_contradiction_initialiser(Propagators &, const hints::AllDifferentExcept &) -> void;
 
-auto gcs::innards::define_clique_not_equals_except_encoding(ProofModel & model,
-    const vector<gcs::IntegerVariableID> & vars,
-    const vector<gcs::Integer> & excluded) -> map<IntegerVariableID, ProofFlag>
+auto gcs::innards::define_clique_not_equals_except_encoding(
+    ProofModel & model, const vector<gcs::IntegerVariableID> & vars, const vector<gcs::Integer> & excluded) -> map<IntegerVariableID, ProofFlag>
 {
     map<IntegerVariableID, ProofFlag> duplicate_selectors;
 
@@ -72,10 +67,8 @@ auto gcs::innards::define_clique_not_equals_except_encoding(ProofModel & model,
                 higher_conj.emplace_back(vars[i] != s);
                 higher_conj.emplace_back(vars[j] != s);
             }
-            model.add_constraint("AllDifferentExcept", "not equals because lower",
-                WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, lower_conj);
-            model.add_constraint("AllDifferentExcept", "not equals because higher",
-                WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, higher_conj);
+            model.add_constraint("AllDifferentExcept", "not equals because lower", WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, lower_conj);
+            model.add_constraint("AllDifferentExcept", "not equals because higher", WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, higher_conj);
 
             if (vars[i] == vars[j])
                 duplicate_selectors.insert_or_assign(vars[i], selector);

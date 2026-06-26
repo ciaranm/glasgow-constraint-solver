@@ -35,23 +35,19 @@ namespace gcs
         std::shared_ptr<const C_> _data;
 
     public:
-        ArrayParam(C_ owned) :
-            _data(std::make_shared<const C_>(std::move(owned)))
+        ArrayParam(C_ owned) : _data(std::make_shared<const C_>(std::move(owned)))
         {
         }
 
-        ArrayParam(std::initializer_list<typename C_::value_type> owned) :
-            _data(std::make_shared<const C_>(owned))
+        ArrayParam(std::initializer_list<typename C_::value_type> owned) : _data(std::make_shared<const C_>(owned))
         {
         }
 
-        ArrayParam(std::shared_ptr<const C_> shared) :
-            _data(std::move(shared))
+        ArrayParam(std::shared_ptr<const C_> shared) : _data(std::move(shared))
         {
         }
 
-        ArrayParam(const C_ * borrowed) :
-            _data(std::shared_ptr<const C_>{}, borrowed)
+        ArrayParam(const C_ * borrowed) : _data(std::shared_ptr<const C_>{}, borrowed)
         {
         }
 

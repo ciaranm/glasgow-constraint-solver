@@ -48,13 +48,10 @@ public:
      * Main solve method: no solution callbacks provided for simplicity - just enforce default
      * behaviour of looking for all solutions, then allow querying of solution values.
      */
-    auto solve(bool all_solutions = true,
-        std::optional<float> timeout = std::nullopt,
+    auto solve(bool all_solutions = true, std::optional<float> timeout = std::nullopt,
         std::optional<unsigned long long> solution_limit = std::nullopt,
-        const std::optional<std::function<void(std::unordered_map<string, long long int>)>> & callback = std::nullopt,
-        bool prove = false,
-        const std::optional<string> & proof_name = std::nullopt,
-        const std::optional<string> & proof_location = std::nullopt)
+        const std::optional<std::function<void(std::unordered_map<string, long long int>)>> & callback = std::nullopt, bool prove = false,
+        const std::optional<string> & proof_name = std::nullopt, const std::optional<string> & proof_location = std::nullopt)
         -> std::unordered_map<string, unsigned long long int>; // Convert Stats struct to python dict via map
 
     auto get_solution_value(const string &, const long long solution_number) -> std::optional<long long int>;
@@ -86,11 +83,14 @@ public:
 
     // Linear
     auto post_linear_equality(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
-    auto post_linear_equality_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif) -> void;
+    auto post_linear_equality_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif)
+        -> void;
     auto post_linear_less_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
-    auto post_linear_less_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif) -> void;
+    auto post_linear_less_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif)
+        -> void;
     auto post_linear_greater_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
-    auto post_linear_greater_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif) -> void;
+    auto post_linear_greater_equal_iff(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value, const string & reif)
+        -> void;
     auto post_linear_not_equal(const vector<string> & var_ids, const vector<long long int> & coeffs, long long int value) -> void;
 
     // Logical
@@ -107,8 +107,8 @@ public:
     auto post_alldifferent(const vector<string> & var_ids) -> void;
     auto post_circuit(const vector<string> & var_ids) -> void;
     auto post_count(const vector<string> & var_ids, const string & var_id, const string & count_id) -> void;
-    auto post_global_cardinality(const vector<string> & var_ids, const vector<long long int> & values,
-        const vector<string> & count_ids, bool closed) -> void;
+    auto post_global_cardinality(const vector<string> & var_ids, const vector<long long int> & values, const vector<string> & count_ids, bool closed)
+        -> void;
     auto post_min(const vector<string> & var_ids, const string & var_id) -> void;
     auto post_max(const vector<string> & var_ids, const string & var_id) -> void;
     auto post_nvalue(const string & var_id, const vector<string> & var_ids) -> void;
@@ -198,7 +198,8 @@ private:
     WeightedSum make_linear(const vector<string> & var_ids, const vector<long long int> & coeffs)
     {
         if (var_ids.size() != coeffs.size()) {
-            throw pybind11::value_error("Invalid arguments for Glasgow Constraint Solver post_linear_equality: must have same number of coefficients and variables.");
+            throw pybind11::value_error(
+                "Invalid arguments for Glasgow Constraint Solver post_linear_equality: must have same number of coefficients and variables.");
         }
 
         WeightedSum summands{};

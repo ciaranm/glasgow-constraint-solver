@@ -40,9 +40,7 @@ using fmt::print;
 #endif
 
 Count::Count(std::vector<IntegerVariableID> vars, const IntegerVariableID & value_of_interest, const IntegerVariableID & how_many) :
-    _vars(move(vars)),
-    _value_of_interest(value_of_interest),
-    _how_many(how_many)
+    _vars(move(vars)), _value_of_interest(value_of_interest), _how_many(how_many)
 {
 }
 
@@ -72,14 +70,11 @@ auto Count::define_proof_model(ProofModel & model) -> void
     for (const auto & [i, var] : enumerate(_vars)) {
         vector<long long> pos{static_cast<long long>(i)};
 
-        auto ge = model.create_proof_flag_fully_reifying(_constraint_id, pos, "ge",
-            WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 0_i);
+        auto ge = model.create_proof_flag_fully_reifying(_constraint_id, pos, "ge", WPBSum{} + 1_i * var + -1_i * _value_of_interest >= 0_i);
 
-        auto le = model.create_proof_flag_fully_reifying(_constraint_id, pos, "le",
-            WPBSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i);
+        auto le = model.create_proof_flag_fully_reifying(_constraint_id, pos, "le", WPBSum{} + 1_i * var + -1_i * _value_of_interest <= 0_i);
 
-        auto eq = model.create_proof_flag_fully_reifying(_constraint_id, pos, "eq",
-            WPBSum{} + 1_i * ge + 1_i * le >= 2_i);
+        auto eq = model.create_proof_flag_fully_reifying(_constraint_id, pos, "eq", WPBSum{} + 1_i * ge + 1_i * le >= 2_i);
 
         _flags.emplace_back(eq, ge, le);
     }
@@ -90,8 +85,7 @@ auto Count::define_proof_model(ProofModel & model) -> void
         how_many_sum += 1_i * eq;
     how_many_sum += -1_i * _how_many;
 
-    model.add_labelled_constraint(as_string(_constraint_id), "le", "ge",
-        "Count", "sum of flags", how_many_sum == 0_i);
+    model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "Count", "sum of flags", how_many_sum == 0_i);
 }
 
 auto Count::install_propagators(Propagators & propagators) -> void
@@ -107,8 +101,8 @@ auto Count::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [vars = _vars, value_of_interest = _value_of_interest, how_many = _how_many, flags = _flags, all_vars = move(all_vars), owner = constraint_id()](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [vars = _vars, value_of_interest = _value_of_interest, how_many = _how_many, flags = _flags, all_vars = move(all_vars),
+            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // check support for how many by seeing how many array values
             // intersect with a potential value of interest
             int how_many_definitely_do_not = 0;
@@ -126,16 +120,14 @@ auto Count::install_propagators(Propagators & propagators) -> void
                 for (const auto & [idx, var] : enumerate(vars)) {
                     if (! state.domains_intersect(var, value_of_interest)) {
                         for (const auto & val : state.each_value_immutable(value_of_interest))
-                            logger->emit_rup_proof_line_under_reason(reason,
-                                WPBSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                        logger->emit_rup_proof_line_under_reason(reason,
-                            WPBSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                            logger->emit_rup_proof_line_under_reason(
+                                reason, WPBSum{} + 1_i * (value_of_interest != val) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                     }
                 }
             };
-            inference.infer(logger, how_many < how_many_is_less_than,
-                JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}},
-                generic_reason(all_vars));
+            inference.infer(
+                logger, how_many < how_many_is_less_than, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, generic_reason(all_vars));
 
             // must have at least this many occurrences of the value of interest
             int how_many_must = 0;
@@ -169,13 +161,15 @@ auto Count::install_propagators(Propagators & propagators) -> void
                             if (! state.in_domain(var, voi)) {
                                 // need to help the checker see that the equality flag must be zero
                                 logger->emit_rup_proof_line(
-                                    WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) + 1_i * (get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                                    WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) + 1_i * (get<0>(flags[idx])) >= 1_i,
+                                    ProofLevel::Temporary);
+                                logger->emit_rup_proof_line_under_reason(
+                                    reason, WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
                             }
                         }
                     };
-                    inference.infer(logger, value_of_interest != voi, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, generic_reason(all_vars));
+                    inference.infer(
+                        logger, value_of_interest != voi, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, generic_reason(all_vars));
                 }
                 else if (how_many_must > state.upper_bound(how_many)) {
                     // unlike above, we don't need to help, because the equality flag will propagate
@@ -195,8 +189,7 @@ auto Count::install_propagators(Propagators & propagators) -> void
                 auto emit = [&](const ReasonLiterals & reason) -> void {
                     for (const auto & voi : state.each_value_immutable(value_of_interest))
                         logger->emit_rup_proof_line_under_reason(reason,
-                            WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i,
-                            ProofLevel::Temporary);
+                            WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= *lowest_how_many_must) >= 1_i, ProofLevel::Temporary);
                 };
                 auto just = JustifyExplicitly{emit, ThenRUP::Yes, hints::Count{owner}};
                 inference.infer(logger, how_many >= *lowest_how_many_must, just, generic_reason(all_vars));
@@ -215,12 +208,10 @@ auto Count::install_propagators(Propagators & propagators) -> void
                         auto var_set = state.copy_of_values(var);
                         for (auto [lo, hi] : voi_set.each_interval_minus(var_set))
                             for (Integer voi = lo; voi <= hi; ++voi) {
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i,
-                                    ProofLevel::Temporary);
-                                logger->emit_rup_proof_line_under_reason(reason,
-                                    WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) >= 1_i,
-                                    ProofLevel::Temporary);
+                                logger->emit_rup_proof_line_under_reason(
+                                    reason, WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                                logger->emit_rup_proof_line_under_reason(
+                                    reason, WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
                             }
                     }
 
@@ -247,8 +238,6 @@ auto Count::s_expr(const ProofModel * const model) const -> SExpr
     std::vector<SExpr> vars;
     for (const auto & v : _vars)
         vars.push_back(tracker.s_expr_term_of(v));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("count"),
-        SExpr::list(std::move(vars)),
-        tracker.s_expr_term_of(_value_of_interest),
-        tracker.s_expr_term_of(_how_many)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("count"), SExpr::list(std::move(vars)),
+        tracker.s_expr_term_of(_value_of_interest), tracker.s_expr_term_of(_how_many)});
 }

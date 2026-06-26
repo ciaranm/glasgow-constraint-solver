@@ -48,7 +48,7 @@ auto main(int argc, char * argv[]) -> int
             ("d", "Max degree of each term", cxxopts::value<int>()->default_value("3")) //
             ("stats", "Print stats")                                                    //
             ("display-problem", "Display problem and solution (if any)")                //
-            ("proof-files-basename", "Path and name of the opb and pbp files",                  //
+            ("proof-files-basename", "Path and name of the opb and pbp files",          //
                 cxxopts::value<string>()->default_value("random_polynomial"));          //
 
         options_vars = options.parse(argc, argv);
@@ -129,16 +129,18 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto stats = solve(
-        p, [&](const CurrentState & s) -> bool {
-        if (display_problem) {
-            cout << "solution: ";
-            for (auto i = 0; i <  n; ++i) {
-                cout << "x[" << i << "] = " << s(vars.at(i)) << "; ";
+        p,
+        [&](const CurrentState & s) -> bool {
+            if (display_problem) {
+                cout << "solution: ";
+                for (auto i = 0; i < n; ++i) {
+                    cout << "x[" << i << "] = " << s(vars.at(i)) << "; ";
+                }
+                cout << endl;
+                cout << "sum_result = " << s(sum_result) << endl;
             }
-            cout << endl;
-            cout << "sum_result = " << s(sum_result) << endl;
-        }
-        return true; },
+            return true;
+        },
         prove ? std::make_optional(ProofOptions{proof_prefix}) : std::nullopt);
 
     if (print_stats) {

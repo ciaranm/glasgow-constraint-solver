@@ -66,8 +66,7 @@ namespace gcs::innards
         /**
          * \brief Constructs a set containing the single closed interval [lower..upper].
          */
-        IntervalSet(Int_ lower, Int_ upper) :
-            intervals({{lower, upper}})
+        IntervalSet(Int_ lower, Int_ upper) : intervals({{lower, upper}})
         {
         }
 

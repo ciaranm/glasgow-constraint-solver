@@ -48,15 +48,9 @@ namespace
     auto deview(const IntegerVariableID & var) -> tuple<DirectIntegerVariableID, bool, Integer>
     {
         return overloaded{
-            [&](const SimpleIntegerVariableID & var) {
-                return tuple{DirectIntegerVariableID{var}, false, 0_i};
-            },
-            [&](const ConstantIntegerVariableID & var) {
-                return tuple{DirectIntegerVariableID{var}, false, 0_i};
-            },
-            [&](const ViewOfIntegerVariableID & var) {
-                return tuple{DirectIntegerVariableID{var.actual_variable}, var.negate_first, var.then_add};
-            },
+            [&](const SimpleIntegerVariableID & var) { return tuple{DirectIntegerVariableID{var}, false, 0_i}; },
+            [&](const ConstantIntegerVariableID & var) { return tuple{DirectIntegerVariableID{var}, false, 0_i}; },
+            [&](const ViewOfIntegerVariableID & var) { return tuple{DirectIntegerVariableID{var.actual_variable}, var.negate_first, var.then_add}; },
         }
             .visit(var);
     }
@@ -100,16 +94,14 @@ struct State::Imp
     optional<Integer> optional_objective_incumbent{};
 };
 
-State::State() :
-    _imp(make_unique<Imp>())
+State::State() : _imp(make_unique<Imp>())
 {
     _imp->integer_variable_states.emplace_back();
     _imp->constraint_states.emplace_back();
     _imp->on_backtracks.emplace_back();
 }
 
-State::State(State && other) noexcept :
-    _imp(move(other._imp))
+State::State(State && other) noexcept : _imp(move(other._imp))
 {
 }
 
@@ -267,16 +259,8 @@ namespace
 
 auto State::infer(const Literal & lit) -> Inference
 {
-    return overloaded{
-        [&](const IntegerVariableCondition & cond) -> Inference {
-            return infer(cond);
-        },
-        [&](const TrueLiteral &) {
-            return Inference::NoChange;
-        },
-        [&](const FalseLiteral &) {
-            return Inference::Contradiction;
-        }}
+    return overloaded{[&](const IntegerVariableCondition & cond) -> Inference { return infer(cond); },
+        [&](const TrueLiteral &) { return Inference::NoChange; }, [&](const FalseLiteral &) { return Inference::Contradiction; }}
         .visit(lit);
 }
 
@@ -285,18 +269,12 @@ auto State::infer(const VariableConditionFrom<VarType_> & cond) -> Inference
 {
     switch (cond.op) {
         using enum VariableConditionOperator;
-    case Equal:
-        return infer_equal(cond.var, cond.value);
-    case NotEqual:
-        return infer_not_equal(cond.var, cond.value);
-    case Less:
-        return infer_less_than(cond.var, cond.value);
-    case GreaterEqual:
-        return infer_greater_than_or_equal(cond.var, cond.value);
-    case InRange:
-        return infer_in_range(cond.var, cond.value, cond.upper_value);
-    case NotInRange:
-        return infer_not_in_range(cond.var, cond.value, cond.upper_value);
+    case Equal: return infer_equal(cond.var, cond.value);
+    case NotEqual: return infer_not_equal(cond.var, cond.value);
+    case Less: return infer_less_than(cond.var, cond.value);
+    case GreaterEqual: return infer_greater_than_or_equal(cond.var, cond.value);
+    case InRange: return infer_in_range(cond.var, cond.value, cond.upper_value);
+    case NotInRange: return infer_not_in_range(cond.var, cond.value, cond.upper_value);
     }
     throw NonExhaustiveSwitch{};
 }
@@ -306,7 +284,9 @@ auto State::infer_equal(const VarType_ & var, Integer value) -> Inference
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     auto adjusted = (negate_first ? -value + then_add : value - then_add);
-    return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_equal(v, adjusted); }, [&](const ConstantIntegerVariableID & v) { return infer_equal_on_constant(v.const_value, adjusted); });
+    return visit_actual(
+        actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_equal(v, adjusted); },
+        [&](const ConstantIntegerVariableID & v) { return infer_equal_on_constant(v.const_value, adjusted); });
 }
 
 template <IntegerVariableIDLike VarType_>
@@ -314,7 +294,9 @@ auto State::infer_not_equal(const VarType_ & var, Integer value) -> Inference
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     auto adjusted = (negate_first ? -value + then_add : value - then_add);
-    return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_not_equal(v, adjusted); }, [&](const ConstantIntegerVariableID & v) { return infer_not_equal_on_constant(v.const_value, adjusted); });
+    return visit_actual(
+        actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_not_equal(v, adjusted); },
+        [&](const ConstantIntegerVariableID & v) { return infer_not_equal_on_constant(v.const_value, adjusted); });
 }
 
 template <IntegerVariableIDLike VarType_>
@@ -323,11 +305,15 @@ auto State::infer_less_than(const VarType_ & var, Integer value) -> Inference
     auto [actual_var, negate_first, then_add] = deview(var);
     if (negate_first) {
         auto adjusted = -value + then_add + 1_i;
-        return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_greater_than_or_equal(v, adjusted); }, [&](const ConstantIntegerVariableID & v) { return infer_greater_than_or_equal_on_constant(v.const_value, adjusted); });
+        return visit_actual(
+            actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_greater_than_or_equal(v, adjusted); },
+            [&](const ConstantIntegerVariableID & v) { return infer_greater_than_or_equal_on_constant(v.const_value, adjusted); });
     }
     else {
         auto adjusted = value - then_add;
-        return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_less_than(v, adjusted); }, [&](const ConstantIntegerVariableID & v) { return infer_less_than_on_constant(v.const_value, adjusted); });
+        return visit_actual(
+            actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_less_than(v, adjusted); },
+            [&](const ConstantIntegerVariableID & v) { return infer_less_than_on_constant(v.const_value, adjusted); });
     }
 }
 
@@ -337,11 +323,15 @@ auto State::infer_greater_than_or_equal(const VarType_ & var, Integer value) -> 
     auto [actual_var, negate_first, then_add] = deview(var);
     if (negate_first) {
         auto adjusted = -value + then_add + 1_i;
-        return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_less_than(v, adjusted); }, [&](const ConstantIntegerVariableID & v) { return infer_less_than_on_constant(v.const_value, adjusted); });
+        return visit_actual(
+            actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_less_than(v, adjusted); },
+            [&](const ConstantIntegerVariableID & v) { return infer_less_than_on_constant(v.const_value, adjusted); });
     }
     else {
         auto adjusted = value - then_add;
-        return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_greater_than_or_equal(v, adjusted); }, [&](const ConstantIntegerVariableID & v) { return infer_greater_than_or_equal_on_constant(v.const_value, adjusted); });
+        return visit_actual(
+            actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_greater_than_or_equal(v, adjusted); },
+            [&](const ConstantIntegerVariableID & v) { return infer_greater_than_or_equal_on_constant(v.const_value, adjusted); });
     }
 }
 
@@ -357,9 +347,10 @@ auto State::infer_not_in_range(const VarType_ & var, Integer lo, Integer hi) -> 
     auto alo = negate_first ? then_add - hi : lo - then_add;
     auto ahi = negate_first ? then_add - lo : hi - then_add;
     return visit_actual(
-        actual_var,
-        [&](const SimpleIntegerVariableID & v) { return change_state_for_not_in_range(v, alo, ahi); },
-        [&](const ConstantIntegerVariableID & v) { return (alo <= v.const_value && v.const_value <= ahi) ? Inference::Contradiction : Inference::NoChange; });
+        actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_not_in_range(v, alo, ahi); },
+        [&](const ConstantIntegerVariableID & v) {
+            return (alo <= v.const_value && v.const_value <= ahi) ? Inference::Contradiction : Inference::NoChange;
+        });
 }
 
 template <IntegerVariableIDLike VarType_>
@@ -371,9 +362,10 @@ auto State::infer_in_range(const VarType_ & var, Integer lo, Integer hi) -> Infe
     auto alo = negate_first ? then_add - hi : lo - then_add;
     auto ahi = negate_first ? then_add - lo : hi - then_add;
     return visit_actual(
-        actual_var,
-        [&](const SimpleIntegerVariableID & v) { return change_state_for_in_range(v, alo, ahi); },
-        [&](const ConstantIntegerVariableID & v) { return (alo <= v.const_value && v.const_value <= ahi) ? Inference::NoChange : Inference::Contradiction; });
+        actual_var, [&](const SimpleIntegerVariableID & v) { return change_state_for_in_range(v, alo, ahi); },
+        [&](const ConstantIntegerVariableID & v) {
+            return (alo <= v.const_value && v.const_value <= ahi) ? Inference::NoChange : Inference::Contradiction;
+        });
 }
 
 auto State::guess(const Literal & lit) -> void
@@ -399,20 +391,20 @@ auto State::add_extra_proof_condition(const Literal & lit) -> void
 auto State::lower_bound(const IntegerVariableID var) const -> Integer
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto raw = overloaded{
-        [&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).upper() : state_of(v).lower(); },
-        [&](const ConstantIntegerVariableID & v) { return v.const_value; }}
-                   .visit(actual_var);
+    auto raw = overloaded{[&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).upper() : state_of(v).lower(); },
+        [&](const ConstantIntegerVariableID & v) {
+            return v.const_value;
+        }}.visit(actual_var);
     return (negate_first ? -raw : raw) + then_add;
 }
 
 auto State::upper_bound(const IntegerVariableID var) const -> Integer
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto raw = overloaded{
-        [&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).lower() : state_of(v).upper(); },
-        [&](const ConstantIntegerVariableID & v) { return v.const_value; }}
-                   .visit(actual_var);
+    auto raw = overloaded{[&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).lower() : state_of(v).upper(); },
+        [&](const ConstantIntegerVariableID & v) {
+            return v.const_value;
+        }}.visit(actual_var);
     return (negate_first ? -raw : raw) + then_add;
 }
 
@@ -420,7 +412,9 @@ template <IntegerVariableIDLike VarType_>
 auto State::bounds(const VarType_ & var) const -> pair<Integer, Integer>
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto raw = visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) { return pair{state_of(v).lower(), state_of(v).upper()}; }, [&](const ConstantIntegerVariableID & v) { return pair{v.const_value, v.const_value}; });
+    auto raw = visit_actual(
+        actual_var, [&](const SimpleIntegerVariableID & v) { return pair{state_of(v).lower(), state_of(v).upper()}; },
+        [&](const ConstantIntegerVariableID & v) { return pair{v.const_value, v.const_value}; });
     if (negate_first)
         return pair{-raw.second + then_add, -raw.first + then_add};
     else
@@ -432,15 +426,16 @@ auto State::in_domain(const VarType_ & var, const Integer val) const -> bool
 {
     auto [actual_var, negate_first, then_add] = deview(var);
     auto adjusted = (negate_first ? -val + then_add : val - then_add);
-    return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) { return state_of(v).contains(adjusted); }, [&](const ConstantIntegerVariableID & v) { return v.const_value == adjusted; });
+    return visit_actual(
+        actual_var, [&](const SimpleIntegerVariableID & v) { return state_of(v).contains(adjusted); },
+        [&](const ConstantIntegerVariableID & v) { return v.const_value == adjusted; });
 }
 
 auto State::domain_has_holes(const IntegerVariableID var) const -> bool
 {
     auto [actual_var, _1, _2] = deview(var);
     return overloaded{
-        [&](const SimpleIntegerVariableID & v) { return state_of(v).has_holes(); },
-        [](const ConstantIntegerVariableID &) { return false; }}
+        [&](const SimpleIntegerVariableID & v) { return state_of(v).has_holes(); }, [](const ConstantIntegerVariableID &) { return false; }}
         .visit(actual_var);
 }
 
@@ -448,11 +443,15 @@ template <IntegerVariableIDLike VarType_>
 auto State::optional_single_value(const VarType_ & var) const -> optional<Integer>
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto raw = visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) -> optional<Integer> {
+    auto raw = visit_actual(
+        actual_var,
+        [&](const SimpleIntegerVariableID & v) -> optional<Integer> {
             const auto & set = state_of(v);
             if (set.lower() == set.upper())
                 return make_optional(set.lower());
-            return nullopt; }, [&](const ConstantIntegerVariableID & v) -> optional<Integer> { return make_optional(v.const_value); });
+            return nullopt;
+        },
+        [&](const ConstantIntegerVariableID & v) -> optional<Integer> { return make_optional(v.const_value); });
 
     if (raw)
         return apply_view(*raw, negate_first, then_add);
@@ -462,8 +461,7 @@ auto State::optional_single_value(const VarType_ & var) const -> optional<Intege
 auto State::has_single_value(const IntegerVariableID var) const -> bool
 {
     auto [actual_var, _1, _2] = deview(var);
-    return overloaded{
-        [&](const SimpleIntegerVariableID & v) { return state_of(v).lower() == state_of(v).upper(); },
+    return overloaded{[&](const SimpleIntegerVariableID & v) { return state_of(v).lower() == state_of(v).upper(); },
         [](const ConstantIntegerVariableID &) { return true; }}
         .visit(actual_var);
 }
@@ -472,14 +470,18 @@ template <IntegerVariableIDLike VarType_>
 auto State::domain_size(const VarType_ & var) const -> Integer
 {
     auto [actual_var, _1, _2] = deview(var);
-    return visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) { return Integer(state_of(v).size()); }, [](const ConstantIntegerVariableID &) { return Integer{1}; });
+    return visit_actual(
+        actual_var, [&](const SimpleIntegerVariableID & v) { return Integer(state_of(v).size()); },
+        [](const ConstantIntegerVariableID &) { return Integer{1}; });
 }
 
 template <IntegerVariableIDLike VarType_>
 auto State::copy_of_values(const VarType_ & var) const -> IntervalSet<Integer>
 {
     auto [actual_var, negate_first, then_add] = deview(var);
-    auto raw = visit_actual(actual_var, [&](const SimpleIntegerVariableID & v) -> IntervalSet<Integer> { return state_of(v); }, [&](const ConstantIntegerVariableID & v) -> IntervalSet<Integer> { return IntervalSet<Integer>{v.const_value, v.const_value}; });
+    auto raw = visit_actual(
+        actual_var, [&](const SimpleIntegerVariableID & v) -> IntervalSet<Integer> { return state_of(v); },
+        [&](const ConstantIntegerVariableID & v) -> IntervalSet<Integer> { return IntervalSet<Integer>{v.const_value, v.const_value}; });
     if (! negate_first && then_add == 0_i)
         return raw;
     IntervalSet<Integer> result;
@@ -523,9 +525,7 @@ auto State::domain_intersects_with(const VarType_ & var, const IntervalSet<Integ
             // caller actually exercises.
             return copy_of_values(var).contains_any_of(set);
         },
-        [&](const ConstantIntegerVariableID & v) -> bool {
-            return set.contains(v.const_value + then_add);
-        });
+        [&](const ConstantIntegerVariableID & v) -> bool { return set.contains(v.const_value + then_add); });
 }
 
 auto State::domains_intersect(const IntegerVariableID & var1, const IntegerVariableID & var2) const -> bool
@@ -558,26 +558,20 @@ auto State::domains_intersect(const IntegerVariableID & var1, const IntegerVaria
                     // IntervalSet overload. copy_of_values handles the offset.
                     return domain_intersects_with(var1, copy_of_values(var2));
                 },
-                [&](const ConstantIntegerVariableID & v2) -> bool {
-                    return in_domain(var1, v2.const_value + add2);
-                });
+                [&](const ConstantIntegerVariableID & v2) -> bool { return in_domain(var1, v2.const_value + add2); });
         },
-        [&](const ConstantIntegerVariableID & v1) -> bool {
-            return in_domain(var2, v1.const_value + add1);
-        });
+        [&](const ConstantIntegerVariableID & v1) -> bool { return in_domain(var2, v1.const_value + add1); });
 }
 
 namespace
 {
-    auto each_value_generator(IntervalSet<Integer> set,
-        std::function<auto(Integer)->Integer> apply) -> generator<Integer>
+    auto each_value_generator(IntervalSet<Integer> set, std::function<auto(Integer)->Integer> apply) -> generator<Integer>
     {
         for (auto i : set.each())
             co_yield apply(i);
     }
 
-    auto each_value_constant_generator(Integer val,
-        std::function<auto(Integer)->Integer> apply) -> generator<Integer>
+    auto each_value_constant_generator(Integer val, std::function<auto(Integer)->Integer> apply) -> generator<Integer>
     {
         co_yield apply(val);
     }
@@ -588,18 +582,11 @@ auto State::each_value_immutable(const VarType_ & var) const -> generator<Intege
 {
     auto [actual_var, negate_first, then_add] = deview(var);
 
-    auto apply = [negate_first = negate_first, then_add = then_add](Integer v) -> Integer {
-        return apply_view(v, negate_first, then_add);
-    };
+    auto apply = [negate_first = negate_first, then_add = then_add](Integer v) -> Integer { return apply_view(v, negate_first, then_add); };
 
     return visit_actual(
-        actual_var,
-        [&](const SimpleIntegerVariableID & v) {
-            return each_value_generator(state_of(v), apply);
-        },
-        [&](const ConstantIntegerVariableID & v) {
-            return each_value_constant_generator(v.const_value, apply);
-        });
+        actual_var, [&](const SimpleIntegerVariableID & v) { return each_value_generator(state_of(v), apply); },
+        [&](const ConstantIntegerVariableID & v) { return each_value_constant_generator(v.const_value, apply); });
 }
 
 template <IntegerVariableIDLike VarType_>
@@ -607,18 +594,11 @@ auto State::each_value_mutable(const VarType_ & var) const -> generator<Integer>
 {
     auto [actual_var, negate_first, then_add] = deview(var);
 
-    auto apply = [negate_first = negate_first, then_add = then_add](Integer v) -> Integer {
-        return apply_view(v, negate_first, then_add);
-    };
+    auto apply = [negate_first = negate_first, then_add = then_add](Integer v) -> Integer { return apply_view(v, negate_first, then_add); };
 
     return visit_actual(
-        actual_var,
-        [&](const SimpleIntegerVariableID & v) {
-            return each_value_generator(state_of(v), apply);
-        },
-        [&](const ConstantIntegerVariableID & v) {
-            return each_value_constant_generator(v.const_value, apply);
-        });
+        actual_var, [&](const SimpleIntegerVariableID & v) { return each_value_generator(state_of(v), apply); },
+        [&](const ConstantIntegerVariableID & v) { return each_value_constant_generator(v.const_value, apply); });
 }
 
 auto State::operator()(const IntegerVariableID & i) const -> Integer
@@ -634,9 +614,7 @@ auto State::new_epoch(bool subsearch) -> Timestamp
     _imp->constraint_states.push_back(_imp->constraint_states.back());
     _imp->on_backtracks.emplace_back();
 
-    return Timestamp{
-        _imp->integer_variable_states.size() - 1,
-        _imp->guesses.size(),
+    return Timestamp{_imp->integer_variable_states.size() - 1, _imp->guesses.size(),
         subsearch ? make_optional<unsigned long long>(_imp->extra_proof_conditions.size()) : nullopt};
 }
 
@@ -646,8 +624,8 @@ auto State::backtrack(Timestamp t) -> void
     _imp->constraint_states.resize(t.when);
     _imp->guesses.erase(_imp->guesses.begin() + t.how_many_guesses, _imp->guesses.end());
     if (t.how_many_extra_proof_conditions)
-        _imp->extra_proof_conditions.erase(_imp->extra_proof_conditions.begin() + *t.how_many_extra_proof_conditions,
-            _imp->extra_proof_conditions.end());
+        _imp->extra_proof_conditions.erase(
+            _imp->extra_proof_conditions.begin() + *t.how_many_extra_proof_conditions, _imp->extra_proof_conditions.end());
 
     while (_imp->on_backtracks.size() > t.when) {
         for (auto & f : _imp->on_backtracks.back())
@@ -668,12 +646,8 @@ auto State::guesses() const -> generator<Literal>
 
 auto State::test_literal(const Literal & lit) const -> LiteralIs
 {
-    return overloaded{
-        [&](const IntegerVariableCondition & cond) -> LiteralIs {
-            return test_literal(cond);
-        },
-        [](const TrueLiteral &) { return LiteralIs::DefinitelyTrue; },
-        [](const FalseLiteral &) { return LiteralIs::DefinitelyFalse; }}
+    return overloaded{[&](const IntegerVariableCondition & cond) -> LiteralIs { return test_literal(cond); },
+        [](const TrueLiteral &) { return LiteralIs::DefinitelyTrue; }, [](const FalseLiteral &) { return LiteralIs::DefinitelyFalse; }}
         .visit(lit);
 }
 

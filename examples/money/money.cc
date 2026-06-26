@@ -88,7 +88,8 @@ auto main(int argc, char * argv[]) -> int
     // clang-format on
 
     auto stats = solve(
-        p, [&](const CurrentState & state) -> bool {
+        p,
+        [&](const CurrentState & state) -> bool {
             println(" {}{}{}{}", state(s), state(e), state(n), state(d));
             println(" {}{}{}{}", state(m), state(o), state(r), state(e));
             println("{}{}{}{}{}", state(m), state(o), state(n), state(e), state(y));
@@ -96,9 +97,7 @@ auto main(int argc, char * argv[]) -> int
 
             return true;
         },
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

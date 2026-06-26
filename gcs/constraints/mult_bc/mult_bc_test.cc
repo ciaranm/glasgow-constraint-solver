@@ -43,7 +43,8 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_mult_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
+auto run_mult_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range,
+    const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     print(cerr, "mult {} {} {} {}", v1_range, v2_range, v3_range, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -87,18 +88,9 @@ auto expect_mult_alias_throws(const char * tag, int v1_pos, int v2_pos, int v3_p
 
 auto main(int, char *[]) -> int
 {
-    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {
-        {{2, 5}, {1, 6}, {1, 12}},
-        {{1, 6}, {2, 5}, {5, 8}},
-        {{1, 3}, {1, 3}, {0, 10}},
-        {{1, 3}, {1, 3}, {1, 3}},
-        {{1, 5}, {6, 8}, {-10, 10}},
-        {{1, 1}, {2, 4}, {-5, 5}},
-        {{8, 15}, {-14, 11}, {-9, -4}},
-        {{-8, 3}, {-9, 6}, {4, 14}},
-        {{-10, 2}, {-5, 3}, {4, 9}},
-        {{9, 23}, {-5, 9}, {9, 14}},
-        {{-4, 8}, {-8, 7}, {-2, 9}},
+    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {{{2, 5}, {1, 6}, {1, 12}}, {{1, 6}, {2, 5}, {5, 8}},
+        {{1, 3}, {1, 3}, {0, 10}}, {{1, 3}, {1, 3}, {1, 3}}, {{1, 5}, {6, 8}, {-10, 10}}, {{1, 1}, {2, 4}, {-5, 5}}, {{8, 15}, {-14, 11}, {-9, -4}},
+        {{-8, 3}, {-9, 6}, {4, 14}}, {{-10, 2}, {-5, 3}, {4, 9}}, {{9, 23}, {-5, 9}, {9, 14}}, {{-4, 8}, {-8, 7}, {-2, 9}},
         {{-34, -27}, {-10, 2}, {29, 179}},
         // issue #254: all-fixed (singleton-domain) operands, both directions —
         // the product is fully determined, so the constraint reduces to a
@@ -123,7 +115,6 @@ auto main(int, char *[]) -> int
         for (auto & [r1, r2, r3] : data) {
             run_mult_test(proofs, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
         }
-
     }
 
     // Aliased operands throw at construction. Don't tie these to the

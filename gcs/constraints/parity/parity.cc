@@ -48,13 +48,11 @@ namespace
     }
 }
 
-ParityOdd::ParityOdd(const vector<IntegerVariableID> & vars) :
-    ParityOdd(to_lits(vars))
+ParityOdd::ParityOdd(const vector<IntegerVariableID> & vars) : ParityOdd(to_lits(vars))
 {
 }
 
-ParityOdd::ParityOdd(Literals l) :
-    _lits(move(l))
+ParityOdd::ParityOdd(Literals l) : _lits(move(l))
 {
 }
 
@@ -97,47 +95,49 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
     for (const auto & l : _lits)
         add_trigger_for(triggers, l);
 
-    propagators.install(constraint_id(), [lits = _lits, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-        long how_many_1 = 0, how_many_unknown = 0;
-        optional<Literal> an_unknown;
-        ReasonLiterals reason;
-        for (const auto & l : lits) {
-            switch (state.test_literal(l)) {
-                using enum LiteralIs;
-            case DefinitelyTrue:
-                reason.push_back(l);
-                ++how_many_1;
-                break;
+    propagators.install(
+        constraint_id(),
+        [lits = _lits, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            long how_many_1 = 0, how_many_unknown = 0;
+            optional<Literal> an_unknown;
+            ReasonLiterals reason;
+            for (const auto & l : lits) {
+                switch (state.test_literal(l)) {
+                    using enum LiteralIs;
+                case DefinitelyTrue:
+                    reason.push_back(l);
+                    ++how_many_1;
+                    break;
 
-            case DefinitelyFalse:
-                reason.push_back(! l);
-                break;
+                case DefinitelyFalse: reason.push_back(! l); break;
 
-            case Undecided:
-                // two or more undecided literals? can't do anything
-                if (++how_many_unknown > 1)
-                    return PropagatorState::Enable;
-                an_unknown = l;
-                break;
+                case Undecided:
+                    // two or more undecided literals? can't do anything
+                    if (++how_many_unknown > 1)
+                        return PropagatorState::Enable;
+                    an_unknown = l;
+                    break;
+                }
             }
-        }
 
-        if (0 == how_many_unknown) {
-            if (how_many_1 % 2 == 1)
-                return PropagatorState::DisableUntilBacktrack;
-            else
-                inference.contradiction(logger, JustifyUsingRUP{hints::Parity{owner}}, ExplicitReason{reason});
-        }
-        else {
-            if (how_many_1 % 2 == 1) {
-                inference.infer(logger, ! *an_unknown, JustifyUsingRUP{hints::Parity{owner}}, ExplicitReason{reason});
-                return PropagatorState::DisableUntilBacktrack;
+            if (0 == how_many_unknown) {
+                if (how_many_1 % 2 == 1)
+                    return PropagatorState::DisableUntilBacktrack;
+                else
+                    inference.contradiction(logger, JustifyUsingRUP{hints::Parity{owner}}, ExplicitReason{reason});
             }
             else {
-                inference.infer(logger, *an_unknown, JustifyUsingRUP{hints::Parity{owner}}, ExplicitReason{reason});
-                return PropagatorState::DisableUntilBacktrack;
+                if (how_many_1 % 2 == 1) {
+                    inference.infer(logger, ! *an_unknown, JustifyUsingRUP{hints::Parity{owner}}, ExplicitReason{reason});
+                    return PropagatorState::DisableUntilBacktrack;
+                }
+                else {
+                    inference.infer(logger, *an_unknown, JustifyUsingRUP{hints::Parity{owner}}, ExplicitReason{reason});
+                    return PropagatorState::DisableUntilBacktrack;
+                }
             }
-        } }, triggers);
+        },
+        triggers);
 }
 auto ParityOdd::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
@@ -149,7 +149,5 @@ auto ParityOdd::s_expr(const innards::ProofModel * const model) const -> SExpr
     std::vector<SExpr> lits;
     for (const auto & lit : _lits)
         lits.push_back(tracker.s_expr_term_of(lit));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("parity"),
-        SExpr::list(std::move(lits)),
-        SExpr::atom("1")});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("parity"), SExpr::list(std::move(lits)), SExpr::atom("1")});
 }

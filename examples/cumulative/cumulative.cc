@@ -44,12 +44,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program options")                                                       //
-            ("help", "Display help information")                                                     //
-            ("prove", "Create a proof")                                                              //
-            ("proof-files-basename", "Basename for the .opb and .pbp files",                         //
-                cxxopts::value<string>()->default_value("cumulative"))                               //
-            ("stats", "Print solve statistics")                                                      //
+        options.add_options("Program options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("cumulative"))       //
+            ("stats", "Print solve statistics")                              //
             ;
 
         options_vars = options.parse(argc, argv);
@@ -89,16 +89,11 @@ auto main(int argc, char * argv[]) -> int
 
     p.minimise(makespan);
 
-    auto stats = solve_with(p,
-        SolveCallbacks{
-            .solution = [&](const CurrentState & s) -> bool {
-                println("schedule: starts {} makespan {}",
-                    starts | std::ranges::views::transform(cref(s)), s(makespan));
-                return true;
-            }},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+    auto stats = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+        println("schedule: starts {} makespan {}", starts | std::ranges::views::transform(cref(s)), s(makespan));
+        return true;
+    }},
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

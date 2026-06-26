@@ -49,13 +49,17 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
-auto run_min_max_test(bool proofs, const ViewWrapConfig & view_cfg, bool min,
-    variant<int, pair<int, int>> result_range, const vector<variant<int, pair<int, int>>> & array_range) -> void
+auto run_min_max_test(bool proofs, const ViewWrapConfig & view_cfg, bool min, variant<int, pair<int, int>> result_range,
+    const vector<variant<int, pair<int, int>>> & array_range) -> void
 {
     // Position 0 = result; positions 1..N = array elements.
     int n_positions = 1 + static_cast<int>(array_range.size());
     auto wraps = wraps_for_positions(view_cfg, n_positions);
-    visit([&](auto r) { print(cerr, "{} [{}] {} {} {}", min ? "min" : "max", view_wrap_config_label(view_cfg), r, array_range, proofs ? " with proofs:" : ":"); }, result_range);
+    visit(
+        [&](auto r) {
+            print(cerr, "{} [{}] {} {} {}", min ? "min" : "max", view_wrap_config_label(view_cfg), r, array_range, proofs ? " with proofs:" : ":");
+        },
+        result_range);
     cerr << flush;
 
     auto is_satisfying = [&](int r, const vector<int> & a) {
@@ -77,7 +81,8 @@ auto run_min_max_test(bool proofs, const ViewWrapConfig & view_cfg, bool min,
         p.post(ArrayMax{array, result});
 
     auto proof_name = proofs ? make_optional("min_max_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    solve_for_tests_checking_consistency(p, proof_name, expected, actual, tuple{pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::GAC}});
+    solve_for_tests_checking_consistency(
+        p, proof_name, expected, actual, tuple{pair{result, CheckConsistency::GAC}, pair{array, CheckConsistency::GAC}});
 
     check_results(proof_name, expected, actual);
 }
@@ -85,27 +90,25 @@ auto run_min_max_test(bool proofs, const ViewWrapConfig & view_cfg, bool min,
 // Dup-variable test: Min/Max with the same handle in several array
 // positions, or the result var aliasing an array entry. Consistency
 // isn't checked on dup runs; see tmp/duplicate_var_audit.md.
-auto run_dup_min_max_test(bool proofs, bool min, const string & label,
-    const vector<pair<int, int>> & unique_domains,
-    const vector<int> & array_positions,
-    int result_position_in_unique,
-    pair<int, int> result_range) -> void
+auto run_dup_min_max_test(bool proofs, bool min, const string & label, const vector<pair<int, int>> & unique_domains,
+    const vector<int> & array_positions, int result_position_in_unique, pair<int, int> result_range) -> void
 {
-    print(cerr, "{} dup {} unique_doms={} positions={} result_pos={}{}",
-        min ? "min" : "max", label, unique_domains, array_positions, result_position_in_unique,
-        proofs ? " with proofs:" : ":");
+    print(cerr, "{} dup {} unique_doms={} positions={} result_pos={}{}", min ? "min" : "max", label, unique_domains, array_positions,
+        result_position_in_unique, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>, int>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & unique_vals, int r) -> bool {
+        expected,
+        [&](const vector<int> & unique_vals, int r) -> bool {
             vector<int> array_vals;
             for (auto pos : array_positions)
                 array_vals.push_back(unique_vals.at(pos));
-            if (array_vals.empty()) return false;
-            int expected_r = min ? *min_element(array_vals.begin(), array_vals.end())
-                                 : *max_element(array_vals.begin(), array_vals.end());
-            if (r != expected_r) return false;
+            if (array_vals.empty())
+                return false;
+            int expected_r = min ? *min_element(array_vals.begin(), array_vals.end()) : *max_element(array_vals.begin(), array_vals.end());
+            if (r != expected_r)
+                return false;
             if (result_position_in_unique >= 0)
                 return unique_vals.at(result_position_in_unique) == r;
             return true;
@@ -140,38 +143,28 @@ auto main(int argc, char * argv[]) -> int
     // Position 0 = result; positions 1..5 = up to 5 array entries.
     constexpr int n_positions = 6;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "min_max view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "min_max view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
     using ArrayEntry = variant<int, pair<int, int>>;
-    vector<tuple<variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {
-        // Singleton: result must equal the sole element.
-        {pair{1, 5}, {pair{2, 4}}},
-        {3, {pair{0, 5}}},
-        {pair{1, 2}, {pair{1, 2}, pair{1, 2}}},
-        {pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
-        {pair{1, 3}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
-        {pair{-1, 3}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}},
-        {pair{1, 4}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},
-        {pair{-5, 5}, {pair{-8, 0}, pair{4, 4}, pair{10, 10}, pair{2, 11}, pair{4, 10}}},
-        {pair{0, 5}, {pair{4, 12}}},
-        {pair{2, 9}, {pair{-2, 3}, pair{-4, -1}, pair{-3, 5}}},
-        {pair{2, 5}, {pair{2, 4}, pair{3, 7}, pair{1, 4}}},
+    vector<tuple<variant<int, pair<int, int>>, vector<ArrayEntry>>> data = {// Singleton: result must equal the sole element.
+        {pair{1, 5}, {pair{2, 4}}}, {3, {pair{0, 5}}}, {pair{1, 2}, {pair{1, 2}, pair{1, 2}}}, {pair{1, 2}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}},
+        {pair{0, 4}, {pair{1, 2}, pair{1, 2}, pair{1, 2}}}, {pair{1, 3}, {pair{0, 4}, pair{0, 5}, pair{0, 6}}},
+        {pair{-1, 3}, {pair{-1, 2}, pair{1, 3}, pair{4, 5}}}, {pair{1, 4}, {pair{1, 4}, pair{2, 3}, pair{0, 5}, pair{-2, 0}, pair{5, 7}}},
+        {pair{-5, 5}, {pair{-8, 0}, pair{4, 4}, pair{10, 10}, pair{2, 11}, pair{4, 10}}}, {pair{0, 5}, {pair{4, 12}}},
+        {pair{2, 9}, {pair{-2, 3}, pair{-4, -1}, pair{-3, 5}}}, {pair{2, 5}, {pair{2, 4}, pair{3, 7}, pair{1, 4}}},
         {pair{-3, 2}, {pair{-1, 7}, pair{-2, 6}, pair{1, 8}, pair{4, 11}}},
         // Constant array entries: forced winner / fixed pivot.
-        {pair{-5, 10}, {3, pair{0, 7}, 5}},
-        {pair{-5, 10}, {pair{0, 4}, 7, pair{1, 6}, pair{2, 9}}},
+        {pair{-5, 10}, {3, pair{0, 7}, 5}}, {pair{-5, 10}, {pair{0, 4}, 7, pair{1, 6}, pair{2, 9}}},
         // Degenerate cases (issue #254): all-constant arrays + genuine constant
         // result. Each row is run for both Min and Max; build_expected computes
         // the per-direction truth. (Empty array is rejected at construction by
         // ArrayMin/ArrayMax::prepare and so is covered separately, not here.)
-        {4, {4, 4, 4}},        // all equal: min == max == 4, result 4 (tautology both)
-        {4, {3, 5, 4}},        // min 3 / max 5: result 4 wrong for both (contradiction both)
-        {4, {4}},              // single constant element (tautology both)
-        {3, {4}},              // single constant element: result 3 wrong (contradiction both)
+        {4, {4, 4, 4}},                    // all equal: min == max == 4, result 4 (tautology both)
+        {4, {3, 5, 4}},                    // min 3 / max 5: result 4 wrong for both (contradiction both)
+        {4, {4}},                          // single constant element (tautology both)
+        {3, {4}},                          // single constant element: result 3 wrong (contradiction both)
         {pair{0, 9}, {3, 5, pair{0, 9}}}}; // mixed: two constants plus a variable
 
     random_device rand_dev;

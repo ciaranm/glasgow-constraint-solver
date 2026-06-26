@@ -40,9 +40,8 @@ using namespace gcs;
 using namespace gcs::test_innards;
 
 template <typename Logical_>
-auto run_logical_test(const string & which, bool proofs, const ViewWrapConfig & view_cfg,
-    const vector<pair<int, int>> & vars, pair<int, int> full_reif,
-    const function<auto(const vector<int> &, int)->bool> & is_satisfying) -> void
+auto run_logical_test(const string & which, bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & vars,
+    pair<int, int> full_reif, const function<auto(const vector<int> &, int)->bool> & is_satisfying) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, static_cast<int>(vars.size()));
     print(cerr, "logical {} [{}] {} {} {}", which, view_wrap_config_label(view_cfg), vars, full_reif, proofs ? " with proofs:" : ":");
@@ -76,18 +75,16 @@ auto run_logical_test(const string & which, bool proofs, const ViewWrapConfig & 
 // are redundant. See run_alias_reif_logical_test below for the
 // full_reif-aliases-a-lit case.
 template <typename Logical_>
-auto run_dup_logical_test(const string & which, bool proofs,
-    const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions, pair<int, int> full_reif,
-    const function<auto(const vector<int> &, int)->bool> & is_satisfying) -> void
+auto run_dup_logical_test(const string & which, bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions,
+    pair<int, int> full_reif, const function<auto(const vector<int> &, int)->bool> & is_satisfying) -> void
 {
-    print(cerr, "logical dup {} unique_doms={} positions={} reif={}{}",
-        which, unique_domains, positions, full_reif, proofs ? " with proofs:" : ":");
+    print(cerr, "logical dup {} unique_doms={} positions={} reif={}{}", which, unique_domains, positions, full_reif, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<pair<vector<int>, int>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & unique_vals, int r) -> bool {
+        expected,
+        [&](const vector<int> & unique_vals, int r) -> bool {
             vector<int> lits;
             for (auto pos : positions)
                 lits.push_back(unique_vals.at(pos));
@@ -120,18 +117,17 @@ auto run_dup_logical_test(const string & which, bool proofs,
 // folds to a tautology because full_reif is on both sides). For Or the
 // dual: ⋁(other lits) → full_reif.
 template <typename Logical_>
-auto run_alias_reif_logical_test(const string & which, bool proofs,
-    const vector<pair<int, int>> & unique_domains,
-    const vector<int> & positions, int reif_position,
-    const function<auto(const vector<int> &, int)->bool> & is_satisfying) -> void
+auto run_alias_reif_logical_test(const string & which, bool proofs, const vector<pair<int, int>> & unique_domains, const vector<int> & positions,
+    int reif_position, const function<auto(const vector<int> &, int)->bool> & is_satisfying) -> void
 {
-    print(cerr, "logical alias-reif {} unique_doms={} positions={} reif_pos={}{}",
-        which, unique_domains, positions, reif_position, proofs ? " with proofs:" : ":");
+    print(cerr, "logical alias-reif {} unique_doms={} positions={} reif_pos={}{}", which, unique_domains, positions, reif_position,
+        proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<vector<int>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & unique_vals) -> bool {
+        expected,
+        [&](const vector<int> & unique_vals) -> bool {
             vector<int> lits;
             for (auto pos : positions)
                 lits.push_back(unique_vals.at(pos));
@@ -166,31 +162,24 @@ auto main(int argc, char * argv[]) -> int
     // emitting a duplicate bare run.
     constexpr int n_positions = 4;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "logical view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "logical view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
     bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
-    vector<tuple<vector<pair<int, int>>, pair<int, int>>> data = {
-        {{{0, 1}, {0, 1}, {0, 1}}, {0, 1}},
-        {{{0, 1}, {0, 1}, {0, 1}}, {-1, -1}},
-        {{{0, 1}, {1, 1}, {0, 1}}, {0, 1}},
-        {{{0, 1}, {0, 0}, {0, 1}}, {0, 1}},
-        {{{2, 5}, {-2, -1}, {1, 3}, {2, 5}}, {0, 2}},
-        {{{2, 5}, {2, 5}}, {0, 0}},
-        {{{-2, 1}, {2, 5}, {-2, 1}, {2, 5}}, {-1, 1}},
-        {{{}}, {0, 1}},
+    vector<tuple<vector<pair<int, int>>, pair<int, int>>> data = {{{{0, 1}, {0, 1}, {0, 1}}, {0, 1}}, {{{0, 1}, {0, 1}, {0, 1}}, {-1, -1}},
+        {{{0, 1}, {1, 1}, {0, 1}}, {0, 1}}, {{{0, 1}, {0, 0}, {0, 1}}, {0, 1}}, {{{2, 5}, {-2, -1}, {1, 3}, {2, 5}}, {0, 2}},
+        {{{2, 5}, {2, 5}}, {0, 0}}, {{{-2, 1}, {2, 5}, {-2, 1}, {2, 5}}, {-1, 1}}, {{{}}, {0, 1}},
         // Degenerate cases (issue #254). Genuinely empty operand array: And() is
         // true, Or() is false, so the reif is pinned accordingly.
         {{}, {0, 1}},
         // All-constant operands, both reif directions. Each row runs for both
         // And and Or; build_expected computes the per-connective truth.
-        {{{1, 1}, {1, 1}}, {0, 1}}, // all true: And true, Or true
-        {{{1, 1}, {0, 0}}, {0, 1}}, // one false: And false, Or true
-        {{{0, 0}, {0, 0}}, {0, 1}}, // all false: And false, Or false
-        {{{1, 1}, {1, 1}}, {0, 0}}, // all true but reif pinned false (contradiction for Or; And too)
+        {{{1, 1}, {1, 1}}, {0, 1}},  // all true: And true, Or true
+        {{{1, 1}, {0, 0}}, {0, 1}},  // one false: And false, Or true
+        {{{0, 0}, {0, 0}}, {0, 1}},  // all false: And false, Or false
+        {{{1, 1}, {1, 1}}, {0, 0}},  // all true but reif pinned false (contradiction for Or; And too)
         {{{0, 0}, {0, 0}}, {1, 1}}}; // all false but reif pinned true (contradiction)
 
     random_device rand_dev;
@@ -277,25 +266,17 @@ auto main(int argc, char * argv[]) -> int
                 return true;
             };
             // 3-lit: {x, y, fr} with fr at position 2 (the third lit).
-            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}, {0, 1}, {0, 1}},
-                {0, 1, 2}, 2, and_alias_sat);
-            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}, {0, 1}, {0, 1}},
-                {0, 1, 2}, 2, or_alias_sat);
+            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}, {0, 1}, {0, 1}}, {0, 1, 2}, 2, and_alias_sat);
+            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}, {0, 1}, {0, 1}}, {0, 1, 2}, 2, or_alias_sat);
             // Alias at a non-final position: {fr, y, x} with fr at lit 0.
-            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}, {0, 1}, {0, 1}},
-                {0, 1, 2}, 0, and_alias_sat);
-            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}, {0, 1}, {0, 1}},
-                {0, 1, 2}, 0, or_alias_sat);
+            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}, {0, 1}, {0, 1}}, {0, 1, 2}, 0, and_alias_sat);
+            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}, {0, 1}, {0, 1}}, {0, 1, 2}, 0, or_alias_sat);
             // Edge: {fr} alone — constraint is fr ↔ fr, always true.
-            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}},
-                {0}, 0, and_alias_sat);
-            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}},
-                {0}, 0, or_alias_sat);
+            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}}, {0}, 0, and_alias_sat);
+            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}}, {0}, 0, or_alias_sat);
             // Edge: {fr, fr} — two aliased lits both = fr.
-            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}},
-                {0, 0}, 0, and_alias_sat);
-            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}},
-                {0, 0}, 0, or_alias_sat);
+            run_alias_reif_logical_test<And>("and", proofs, {{0, 1}}, {0, 0}, 0, and_alias_sat);
+            run_alias_reif_logical_test<Or>("or", proofs, {{0, 1}}, {0, 0}, 0, or_alias_sat);
         }
     }
 

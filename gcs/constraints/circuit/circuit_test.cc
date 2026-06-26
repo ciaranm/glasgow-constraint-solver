@@ -88,8 +88,7 @@ auto main(int argc, char * argv[]) -> int
     // Instances run at n = 3, 4, 5; positions 0..4 cover the largest fully.
     constexpr int n_positions = 5;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "circuit view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "circuit view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 

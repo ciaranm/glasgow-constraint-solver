@@ -56,7 +56,7 @@ auto main(int argc, char * argv[]) -> int
             ("help", "Display help information")                             //
             ("prove", "Create a proof")                                      //
             ("proof-files-basename", "Basename for the .opb and .pbp files", //
-                cxxopts::value<string>()->default_value("skeleton_puzzle")) //
+                cxxopts::value<string>()->default_value("skeleton_puzzle"))  //
             ("stats", "Print solve statistics")                              //
             ;
 
@@ -75,13 +75,8 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    vector<vector<bool>> k_vector =
-        {{1, 0, 0, 0, 0, 0, 0, 0},
-            {0, 0, 1, 0, 1, 0, 0, 0},
-            {0, 0, 0, 1, 1, 0, 0, 0},
-            {0, 0, 0, 0, 1, 0, 0, 0},
-            {0, 0, 0, 0, 0, 1, 1, 0},
-            {0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0}};
+    vector<vector<bool>> k_vector = {{1, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 1, 0, 1, 0, 0, 0}, {0, 0, 0, 1, 1, 0, 0, 0}, {0, 0, 0, 0, 1, 0, 0, 0},
+        {0, 0, 0, 0, 0, 1, 1, 0}, {0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0}};
 
     Problem p;
     IntegerVariableID k_var = 0_c;
@@ -160,14 +155,11 @@ auto main(int argc, char * argv[]) -> int
         cout << endl;
         for (int i = a + b - 1; i > -1; i--)
             cout << s(c_digits[i]);
-        cout << endl
-             << endl;
+        cout << endl << endl;
         return true;
     };
     auto stats = solve_with(p, SolveCallbacks{.solution = solution_callback},
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

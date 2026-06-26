@@ -93,16 +93,15 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto stats = solve(
-        p, [&](const CurrentState & s) -> bool {
+        p,
+        [&](const CurrentState & s) -> bool {
             println("solution: {}", solution | std::ranges::views::transform(cref(s)));
             println("position: {}", position | std::ranges::views::transform(cref(s)));
             println("");
 
             return true;
         },
-        options_vars.contains("prove")
-            ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>())
-            : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))
         print("{}", stats);

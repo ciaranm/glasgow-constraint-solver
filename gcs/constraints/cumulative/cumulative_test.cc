@@ -50,12 +50,12 @@ using namespace gcs::test_innards;
 
 namespace
 {
-    auto run_cumulative_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & start_ranges,
-        const vector<int> & lengths, const vector<int> & heights, int capacity) -> void
+    auto run_cumulative_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<pair<int, int>> & start_ranges, const vector<int> & lengths,
+        const vector<int> & heights, int capacity) -> void
     {
         auto wraps = wraps_for_positions(view_cfg, static_cast<int>(start_ranges.size()));
-        print(cerr, "cumulative [{}] {} {} {} c={}{}", view_wrap_config_label(view_cfg),
-            start_ranges, lengths, heights, capacity, proofs ? " with proofs:" : ":");
+        print(cerr, "cumulative [{}] {} {} {} c={}{}", view_wrap_config_label(view_cfg), start_ranges, lengths, heights, capacity,
+            proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = start_ranges.size();
@@ -109,13 +109,10 @@ namespace
     // tasks. The two tasks share a start time, so their heights add at
     // every time point inside their (possibly different) durations.
     // Consistency isn't checked on dup runs; see tmp/duplicate_var_audit.md.
-    auto run_dup_cumulative_test(bool proofs,
-        const vector<pair<int, int>> & unique_start_ranges,
-        const vector<int> & positions,
+    auto run_dup_cumulative_test(bool proofs, const vector<pair<int, int>> & unique_start_ranges, const vector<int> & positions,
         const vector<int> & lengths, const vector<int> & heights, int capacity) -> void
     {
-        print(cerr, "cumulative dup unique_starts={} positions={} lens={} hts={} c={}{}",
-            unique_start_ranges, positions, lengths, heights, capacity,
+        print(cerr, "cumulative dup unique_starts={} positions={} lens={} hts={} c={}{}", unique_start_ranges, positions, lengths, heights, capacity,
             proofs ? " with proofs:" : ":");
         cerr << flush;
 
@@ -175,13 +172,11 @@ namespace
     // capacity value is enumerated alongside the starts (appended as the
     // last element of every solution vector), and the satisfiability check
     // reads it from there. Lengths and heights stay constant.
-    auto run_cumulative_var_cap_test(bool proofs, const std::string & tag,
-        const vector<pair<int, int>> & start_ranges,
-        const vector<int> & lengths, const vector<int> & heights, pair<int, int> cap_range) -> void
+    auto run_cumulative_var_cap_test(bool proofs, const std::string & tag, const vector<pair<int, int>> & start_ranges, const vector<int> & lengths,
+        const vector<int> & heights, pair<int, int> cap_range) -> void
     {
-        print(cerr, "cumulative varcap {} starts={} lens={} hts={} cap=[{},{}]{}",
-            tag, start_ranges, lengths, heights, cap_range.first, cap_range.second,
-            proofs ? " with proofs:" : ":");
+        print(cerr, "cumulative varcap {} starts={} lens={} hts={} cap=[{},{}]{}", tag, start_ranges, lengths, heights, cap_range.first,
+            cap_range.second, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = start_ranges.size();
@@ -244,9 +239,7 @@ namespace
     // lo < hi is a genuine decision variable that is enumerated. Enumerated
     // variables appear in every solution vector in this order: starts, then
     // variable heights (task order), then the capacity (if variable).
-    auto run_cumulative_var_test(bool proofs, const std::string & tag,
-        const vector<pair<int, int>> & start_ranges,
-        const vector<int> & lengths,
+    auto run_cumulative_var_test(bool proofs, const std::string & tag, const vector<pair<int, int>> & start_ranges, const vector<int> & lengths,
         const vector<pair<int, int>> & height_specs, pair<int, int> cap_spec) -> void
     {
         auto n = start_ranges.size();
@@ -255,9 +248,8 @@ namespace
             hvar[i] = height_specs[i].first != height_specs[i].second;
         bool cvar = cap_spec.first != cap_spec.second;
 
-        print(cerr, "cumulative var {} starts={} lens={} hspecs={} cap=[{},{}]{}",
-            tag, start_ranges, lengths, height_specs, cap_spec.first, cap_spec.second,
-            proofs ? " with proofs:" : ":");
+        print(cerr, "cumulative var {} starts={} lens={} hspecs={} cap=[{},{}]{}", tag, start_ranges, lengths, height_specs, cap_spec.first,
+            cap_spec.second, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto is_satisfying = [&](const vector<int> & vals) {
@@ -335,10 +327,8 @@ namespace
     // variables appear in every solution vector in this order: starts, then
     // variable lengths (task order), then variable heights (task order), then
     // the capacity (if variable).
-    auto run_cumulative_full_test(bool proofs, const std::string & tag,
-        const vector<pair<int, int>> & start_ranges,
-        const vector<pair<int, int>> & length_specs,
-        const vector<pair<int, int>> & height_specs, pair<int, int> cap_spec) -> void
+    auto run_cumulative_full_test(bool proofs, const std::string & tag, const vector<pair<int, int>> & start_ranges,
+        const vector<pair<int, int>> & length_specs, const vector<pair<int, int>> & height_specs, pair<int, int> cap_spec) -> void
     {
         auto n = start_ranges.size();
         vector<bool> lvar(n), hvar(n);
@@ -348,9 +338,8 @@ namespace
         }
         bool cvar = cap_spec.first != cap_spec.second;
 
-        print(cerr, "cumulative full {} starts={} lspecs={} hspecs={} cap=[{},{}]{}",
-            tag, start_ranges, length_specs, height_specs, cap_spec.first, cap_spec.second,
-            proofs ? " with proofs:" : ":");
+        print(cerr, "cumulative full {} starts={} lspecs={} hspecs={} cap=[{},{}]{}", tag, start_ranges, length_specs, height_specs, cap_spec.first,
+            cap_spec.second, proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto is_satisfying = [&](const vector<int> & vals) {
@@ -430,16 +419,14 @@ namespace
     // install time, when the domains are finally available); installing is
     // driven here by calling solve(). Mirrors the constant-size checks in the
     // constructor and the Disjunctive2D sibling fix.
-    auto expect_negative_size_throws(const char * label, pair<int, int> len, pair<int, int> ht,
-        pair<int, int> cap) -> bool
+    auto expect_negative_size_throws(const char * label, pair<int, int> len, pair<int, int> ht, pair<int, int> cap) -> bool
     {
         Problem p;
         auto s = p.create_integer_variable(0_i, 3_i, "s");
         auto length = p.create_integer_variable(Integer{len.first}, Integer{len.second}, "len");
         auto height = p.create_integer_variable(Integer{ht.first}, Integer{ht.second}, "ht");
         auto capacity = p.create_integer_variable(Integer{cap.first}, Integer{cap.second}, "cap");
-        p.post(Cumulative{vector<IntegerVariableID>{s}, vector<IntegerVariableID>{length},
-            vector<IntegerVariableID>{height}, capacity});
+        p.post(Cumulative{vector<IntegerVariableID>{s}, vector<IntegerVariableID>{length}, vector<IntegerVariableID>{height}, capacity});
         try {
             solve(p, [](const CurrentState &) { return true; });
         }
@@ -470,8 +457,7 @@ auto main(int argc, char * argv[]) -> int
     // than emit a duplicate bare run. mixed/uniform wrap every position.
     constexpr int n_positions = 4;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "cumulative view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "cumulative view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 
@@ -523,10 +509,10 @@ auto main(int argc, char * argv[]) -> int
     random_device rand_dev;
     mt19937 rand(rand_dev());
 
-    auto random_instance = [&](int n, int max_start, int max_length, int max_height, int max_cap)
-        -> tuple<vector<pair<int, int>>, vector<int>, vector<int>, int> {
-        uniform_int_distribution<> lo_dist(0, max_start), span_dist(0, max_start),
-            len_dist(0, max_length), ht_dist(0, max_height), cap_dist(0, max_cap);
+    auto random_instance = [&](int n, int max_start, int max_length, int max_height,
+                               int max_cap) -> tuple<vector<pair<int, int>>, vector<int>, vector<int>, int> {
+        uniform_int_distribution<> lo_dist(0, max_start), span_dist(0, max_start), len_dist(0, max_length), ht_dist(0, max_height),
+            cap_dist(0, max_cap);
         vector<pair<int, int>> sr;
         vector<int> lens, hts;
         for (int i = 0; i < n; ++i) {
@@ -569,64 +555,50 @@ auto main(int argc, char * argv[]) -> int
             // → UNSAT.
             run_dup_cumulative_test(proofs, {{0, 3}}, {0, 0}, {2, 2}, {1, 1}, 1);
             // Three tasks, two of which share a start. Third has its own start.
-            run_dup_cumulative_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1},
-                {2, 2, 1}, {1, 1, 1}, 2);
+            run_dup_cumulative_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1}, {2, 2, 1}, {1, 1, 1}, 2);
 
             // Variable-capacity instances. The capacity is a decision variable
             // enumerated alongside the starts.
             // Small: exercise cap = 0..2 directly.
             run_cumulative_var_cap_test(proofs, "small", {{0, 3}, {0, 3}}, {2, 2}, {1, 1}, {0, 2});
             // Three tasks, cap 1..3.
-            run_cumulative_var_cap_test(proofs, "mid", {{0, 4}, {0, 4}, {0, 4}},
-                {2, 2, 1}, {1, 1, 1}, {1, 3});
+            run_cumulative_var_cap_test(proofs, "mid", {{0, 4}, {0, 4}, {0, 4}}, {2, 2, 1}, {1, 1, 1}, {1, 3});
             // Wide values, tight capacity: heights 20/25 can't coexist under any
             // allowed capacity, so the structure is no-overlap; exercises the
             // capacity bit-encoding at realistic magnitudes (>4 bits).
-            run_cumulative_var_cap_test(proofs, "wide_tight", {{0, 8}, {0, 8}},
-                {3, 4}, {20, 25}, {25, 27});
+            run_cumulative_var_cap_test(proofs, "wide_tight", {{0, 8}, {0, 8}}, {3, 4}, {20, 25}, {25, 27});
             // Wide values, capacity range spans the overlap threshold (heights
             // 30+30=60): cap 55..62 forbids overlap at the low end and allows it
             // at the high end, exercising both the push and the contradiction.
-            run_cumulative_var_cap_test(proofs, "wide_span", {{0, 6}, {0, 6}},
-                {3, 3}, {30, 30}, {55, 62});
+            run_cumulative_var_cap_test(proofs, "wide_span", {{0, 6}, {0, 6}}, {3, 3}, {30, 30}, {55, 62});
 
             // Variable heights (the contrib proof-only product). cap_spec
             // {c, c} keeps the capacity constant.
             // Tiny: heights 0..1, cap 1.
-            run_cumulative_var_test(proofs, "h_tiny", {{0, 3}, {0, 3}}, {2, 2},
-                {{0, 1}, {0, 1}}, {1, 1});
+            run_cumulative_var_test(proofs, "h_tiny", {{0, 3}, {0, 3}}, {2, 2}, {{0, 1}, {0, 1}}, {1, 1});
             // Mixed constant/variable height in one constraint.
-            run_cumulative_var_test(proofs, "h_mixed", {{0, 3}, {0, 3}}, {2, 2},
-                {{2, 2}, {0, 2}}, {2, 2});
+            run_cumulative_var_test(proofs, "h_mixed", {{0, 3}, {0, 3}}, {2, 2}, {{2, 2}, {0, 2}}, {2, 2});
             // Three tasks, heights variable (one can be 0).
-            run_cumulative_var_test(proofs, "h_three", {{0, 2}, {0, 2}, {0, 2}},
-                {2, 1, 1}, {{1, 2}, {1, 1}, {0, 1}}, {2, 2});
+            run_cumulative_var_test(proofs, "h_three", {{0, 2}, {0, 2}, {0, 2}}, {2, 1, 1}, {{1, 2}, {1, 1}, {0, 1}}, {2, 2});
             // Wide values: heights 8..11 exercise the contrib bit-encoding above
             // 3 bits; cap 20 makes overlap depend on the chosen heights.
-            run_cumulative_var_test(proofs, "h_wide", {{0, 4}, {0, 4}}, {2, 2},
-                {{8, 11}, {8, 11}}, {20, 20});
+            run_cumulative_var_test(proofs, "h_wide", {{0, 4}, {0, 4}}, {2, 2}, {{8, 11}, {8, 11}}, {20, 20});
             // Combined: both heights AND capacity variable.
-            run_cumulative_var_test(proofs, "hc_combined", {{0, 3}, {0, 3}}, {2, 2},
-                {{1, 3}, {1, 3}}, {2, 4});
+            run_cumulative_var_test(proofs, "hc_combined", {{0, 3}, {0, 3}}, {2, 2}, {{1, 3}, {1, 3}}, {2, 4});
 
             // Variable durations (the two-variable after flag). Heights and
             // capacity constant unless noted.
             // Tiny: durations 1..2, unit heights, cap 1 (no overlap).
-            run_cumulative_full_test(proofs, "len_tiny", {{0, 3}, {0, 3}},
-                {{1, 2}, {1, 2}}, {{1, 1}, {1, 1}}, {1, 1});
+            run_cumulative_full_test(proofs, "len_tiny", {{0, 3}, {0, 3}}, {{1, 2}, {1, 2}}, {{1, 1}, {1, 1}}, {1, 1});
             // Mixed constant/variable durations.
-            run_cumulative_full_test(proofs, "len_mixed", {{0, 3}, {0, 3}},
-                {{2, 2}, {1, 3}}, {{1, 1}, {1, 1}}, {1, 1});
+            run_cumulative_full_test(proofs, "len_mixed", {{0, 3}, {0, 3}}, {{2, 2}, {1, 3}}, {{1, 1}, {1, 1}}, {1, 1});
             // Wide durations 3..5 over a longer horizon, cap 1.
-            run_cumulative_full_test(proofs, "len_wide", {{0, 6}, {0, 6}},
-                {{3, 5}, {3, 5}}, {{1, 1}, {1, 1}}, {1, 1});
+            run_cumulative_full_test(proofs, "len_wide", {{0, 6}, {0, 6}}, {{3, 5}, {3, 5}}, {{1, 1}, {1, 1}}, {1, 1});
             // MRCPSP shape: durations AND heights both variable (mode-coupled in
             // real models), capacity constant.
-            run_cumulative_full_test(proofs, "mrcpsp", {{0, 4}, {0, 4}},
-                {{1, 3}, {2, 3}}, {{1, 2}, {1, 2}}, {2, 2});
+            run_cumulative_full_test(proofs, "mrcpsp", {{0, 4}, {0, 4}}, {{1, 3}, {2, 3}}, {{1, 2}, {1, 2}}, {2, 2});
             // Full: durations, heights AND capacity all variable.
-            run_cumulative_full_test(proofs, "full", {{0, 3}, {0, 3}},
-                {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}}, {2, 3});
+            run_cumulative_full_test(proofs, "full", {{0, 3}, {0, 3}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}}, {2, 3});
         }
     }
 

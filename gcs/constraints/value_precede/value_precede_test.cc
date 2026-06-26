@@ -73,18 +73,15 @@ namespace
     }
 }
 
-auto run_value_precede_test(bool proofs, const ViewWrapConfig & view_cfg,
-    const vector<int> & chain, const vector<variant<int, pair<int, int>>> & domains) -> void
+auto run_value_precede_test(
+    bool proofs, const ViewWrapConfig & view_cfg, const vector<int> & chain, const vector<variant<int, pair<int, int>>> & domains) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, static_cast<int>(domains.size()));
-    print(cerr, "value_precede [{}] chain={} domains={}{}",
-        view_wrap_config_label(view_cfg), chain, domains, proofs ? " with proofs:" : ":");
+    print(cerr, "value_precede [{}] chain={} domains={}{}", view_wrap_config_label(view_cfg), chain, domains, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
-    build_expected(expected, [chain](const vector<int> & vs) {
-        return satisfies_value_precede(chain, vs);
-    }, domains);
+    build_expected(expected, [chain](const vector<int> & vs) { return satisfies_value_precede(chain, vs); }, domains);
     println(cerr, " expecting {} solutions", expected.size());
 
     Problem p;
@@ -144,15 +141,15 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 
     // Constant entries: a position pinned to a chain value.
     run_value_precede_test(proofs, view_cfg, {1, 2}, {1, pair{1, 3}, pair{1, 3}});
-    run_value_precede_test(proofs, view_cfg, {1, 2}, {pair{1, 3}, 2, pair{1, 3}});  // unsat: forces 2 in pos 1 with no preceding 1
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {pair{1, 3}, 2, pair{1, 3}}); // unsat: forces 2 in pos 1 with no preceding 1
     run_value_precede_test(proofs, view_cfg, {1, 2, 3}, {1, pair{1, 3}, 2, pair{1, 3}});
 
     // Degenerate collections (issue #254): empty / single-element vars, and
     // all-constant vars in both directions.
-    run_value_precede_test(proofs, view_cfg, {1, 2}, {});       // empty vars: vacuously true
-    run_value_precede_test(proofs, view_cfg, {1, 2}, {1});      // single const: 1 with no 2 (tautology)
-    run_value_precede_test(proofs, view_cfg, {1, 2}, {2});      // single const: 2 before any 1 (contradiction)
-    run_value_precede_test(proofs, view_cfg, {1, 2}, {5});      // single const: neither chain value (tautology)
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {});           // empty vars: vacuously true
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {1});          // single const: 1 with no 2 (tautology)
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {2});          // single const: 2 before any 1 (contradiction)
+    run_value_precede_test(proofs, view_cfg, {1, 2}, {5});          // single const: neither chain value (tautology)
     run_value_precede_test(proofs, view_cfg, {1, 2, 3}, {1, 2, 3}); // all-const, in order (tautology)
     run_value_precede_test(proofs, view_cfg, {1, 2, 3}, {3, 2, 1}); // all-const, reversed (contradiction)
 }
@@ -160,16 +157,16 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 // Dup-variable test: ValuePrecede with the same handle in several array
 // positions. Duplicate occurrences are independent positions; the chain
 // just gates which values can appear where. See tmp/duplicate_var_audit.md.
-auto run_dup_value_precede_test(bool proofs, const vector<int> & chain,
-    const vector<pair<int, int>> & unique_domains, const vector<int> & positions) -> void
+auto run_dup_value_precede_test(bool proofs, const vector<int> & chain, const vector<pair<int, int>> & unique_domains, const vector<int> & positions)
+    -> void
 {
-    print(cerr, "value_precede dup chain={} domains={} positions={}{}",
-        chain, unique_domains, positions, proofs ? " with proofs:" : ":");
+    print(cerr, "value_precede dup chain={} domains={} positions={}{}", chain, unique_domains, positions, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     set<tuple<vector<int>>> expected, actual;
     build_expected(
-        expected, [&](const vector<int> & vals) -> bool {
+        expected,
+        [&](const vector<int> & vals) -> bool {
             vector<int> v;
             for (auto pos : positions)
                 v.push_back(vals.at(pos));
@@ -201,8 +198,7 @@ auto main(int argc, char * argv[]) -> int
 
     constexpr int n_positions = 5;
     if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "value_precede view sweep: position {} out of range for n_positions = {}; skipping",
-            *view_cfg.single_position, n_positions);
+        println(cerr, "value_precede view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
 

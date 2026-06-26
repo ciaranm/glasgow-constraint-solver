@@ -46,10 +46,7 @@ namespace gcs::innards
      * \throws UnexpectedException if <code>atoms.size() &lt; 2</code>.
      */
     template <typename Literal_>
-    [[nodiscard]] auto recover_am1(
-        ProofLogger & logger,
-        ProofLevel level,
-        const std::vector<Literal_> & atoms,
+    [[nodiscard]] auto recover_am1(ProofLogger & logger, ProofLevel level, const std::vector<Literal_> & atoms,
         const std::function<auto(const Literal_ &, const Literal_ &)->ProofLine> & pair_ne) -> ProofLine;
 }
 

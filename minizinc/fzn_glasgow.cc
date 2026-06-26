@@ -77,8 +77,7 @@ private:
     std::string _wat;
 
 public:
-    explicit FlatZincInterfaceError(const std::string & w) :
-        _wat(w)
+    explicit FlatZincInterfaceError(const std::string & w) : _wat(w)
     {
     }
 
@@ -174,8 +173,7 @@ namespace
             return result;
         }
         else {
-            throw UnimplementedException{format(
-                "don't know how to parse array of variables at index {}", idx)};
+            throw UnimplementedException{format("don't know how to parse array of variables at index {}", idx)};
         }
     }
 
@@ -348,9 +346,7 @@ auto main(int argc, char * argv[]) -> int
                     seen_a_bool = seen_a_bool || data.integer_variables.at(string{v}).second;
                 }
                 else {
-                    Integer val = v.is_boolean()
-                        ? (static_cast<bool>(v) ? 1_i : 0_i)
-                        : Integer{v.get<long long>()};
+                    Integer val = v.is_boolean() ? (static_cast<bool>(v) ? 1_i : 0_i) : Integer{v.get<long long>()};
                     values.push_back(val);
                     variables.push_back(ConstantIntegerVariableID{val});
                 }
@@ -797,8 +793,8 @@ auto main(int argc, char * argv[]) -> int
                 if (arity == 0)
                     throw FlatZincInterfaceError{format("Empty variable array in {} in {}", id, fznname)};
                 if (flat_table->size() % arity != 0)
-                    throw FlatZincInterfaceError{format("Table size {} not a multiple of arity {} in {} in {}",
-                        flat_table->size(), arity, id, fznname)};
+                    throw FlatZincInterfaceError{
+                        format("Table size {} not a multiple of arity {} in {} in {}", flat_table->size(), arity, id, fznname)};
                 auto num_tuples = flat_table->size() / arity;
                 SimpleTuples tuples;
                 tuples.reserve(num_tuples);
@@ -841,8 +837,7 @@ auto main(int argc, char * argv[]) -> int
         else
             throw FlatZincInterfaceError{format("Unknown solve method {} in {}", string{solve_method}, fznname)};
 
-        BranchCallback brancher = branch_sequence(
-            branch_with(variable_order::dom_then_deg(data.branch_variables), value_order::smallest_first()),
+        BranchCallback brancher = branch_sequence(branch_with(variable_order::dom_then_deg(data.branch_variables), value_order::smallest_first()),
             branch_with(variable_order::dom_then_deg(data.all_variables), value_order::smallest_first()));
 
         if ((! free_search) && fzn["solve"].contains("ann")) {
@@ -943,53 +938,53 @@ auto main(int argc, char * argv[]) -> int
 
         bool completed = false, any_solution = false;
         auto stats = solve_with(problem,
-            SolveCallbacks{
-                .solution = [&](const CurrentState & s) -> bool {
-                    any_solution = true;
-                    for (const string name : fzn["output"]) {
-                        if (data.integer_variables.contains(name)) {
-                            auto vardata = data.integer_variables.at(name);
-                            if (! s.has_single_value(data.integer_variables.at(name).first))
-                                throw UnimplementedException{format("Variable {} does not have a unique value", name)};
-                            if (vardata.second)
-                                println(cout, "{} = {};", name, s(vardata.first) == 1_i ? "true" : "false");
-                            else
-                                println(cout, "{} = {};", name, s(vardata.first));
-                        }
-                        else if (data.variable_arrays.contains(name)) {
-                            vector<string> vals;
-                            for (auto & v : data.variable_arrays.at(name).first) {
-                                if (! s.has_single_value(v))
-                                    throw UnimplementedException{format("Variable inside array {} does not have a unique value", name)};
-                                if (data.variable_arrays.at(name).second)
-                                    vals.push_back(format("{}", s(v) == 1_i ? "true" : "false"));
-                                else
-                                    vals.push_back(format("{}", s(v)));
-                            }
-                            string vals_joined;
-                            for (size_t i_ = 0; i_ < vals.size(); ++i_) {
-                                if (i_ > 0) vals_joined += ", ";
-                                vals_joined += vals[i_];
-                            }
-                            println(cout, "{} = [{}];", name, vals_joined);
-                        }
-                        else
-                            throw FlatZincInterfaceError{format("Unknown output item {} in {}", name, fznname)};
-                    }
-                    println(cout, "----------");
-                    cout << flush;
-                    if (solution_limit) {
-                        if (--*solution_limit == 0)
-                            return false;
-                    }
-                    else if ((! all_solutions) && (! optimisation))
-                        return false;
+            SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                               any_solution = true;
+                               for (const string name : fzn["output"]) {
+                                   if (data.integer_variables.contains(name)) {
+                                       auto vardata = data.integer_variables.at(name);
+                                       if (! s.has_single_value(data.integer_variables.at(name).first))
+                                           throw UnimplementedException{format("Variable {} does not have a unique value", name)};
+                                       if (vardata.second)
+                                           println(cout, "{} = {};", name, s(vardata.first) == 1_i ? "true" : "false");
+                                       else
+                                           println(cout, "{} = {};", name, s(vardata.first));
+                                   }
+                                   else if (data.variable_arrays.contains(name)) {
+                                       vector<string> vals;
+                                       for (auto & v : data.variable_arrays.at(name).first) {
+                                           if (! s.has_single_value(v))
+                                               throw UnimplementedException{format("Variable inside array {} does not have a unique value", name)};
+                                           if (data.variable_arrays.at(name).second)
+                                               vals.push_back(format("{}", s(v) == 1_i ? "true" : "false"));
+                                           else
+                                               vals.push_back(format("{}", s(v)));
+                                       }
+                                       string vals_joined;
+                                       for (size_t i_ = 0; i_ < vals.size(); ++i_) {
+                                           if (i_ > 0)
+                                               vals_joined += ", ";
+                                           vals_joined += vals[i_];
+                                       }
+                                       println(cout, "{} = [{}];", name, vals_joined);
+                                   }
+                                   else
+                                       throw FlatZincInterfaceError{format("Unknown output item {} in {}", name, fznname)};
+                               }
+                               println(cout, "----------");
+                               cout << flush;
+                               if (solution_limit) {
+                                   if (--*solution_limit == 0)
+                                       return false;
+                               }
+                               else if ((! all_solutions) && (! optimisation))
+                                   return false;
 
-                    // For optimisation, keep searching: each subsequent solution
-                    // strictly improves the objective, until the search is complete
-                    // (optimality proven) or aborted (timeout / signal).
-                    return true;
-                },
+                               // For optimisation, keep searching: each subsequent solution
+                               // strictly improves the objective, until the search is complete
+                               // (optimality proven) or aborted (timeout / signal).
+                               return true;
+                           },
                 .branch = brancher,
                 .completed = [&] { completed = true; }},
             proof_options, &abort_flag);

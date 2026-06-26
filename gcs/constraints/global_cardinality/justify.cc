@@ -25,10 +25,9 @@ namespace
     }
 }
 
-auto gcs::innards::emit_gcc_capacity_pol(ProofLogger & logger, const State & state,
-    const vector<IntegerVariableID> & vars, const vector<Integer> & values,
-    const vector<IntegerVariableID> & counts, const GCCCountLines & count_lines,
-    const vector<size_t> & cut_values, const vector<IntegerVariableID> & confined) -> void
+auto gcs::innards::emit_gcc_capacity_pol(ProofLogger & logger, const State & state, const vector<IntegerVariableID> & vars,
+    const vector<Integer> & values, const vector<IntegerVariableID> & counts, const GCCCountLines & count_lines, const vector<size_t> & cut_values,
+    const vector<IntegerVariableID> & confined) -> void
 {
     auto hall = hall_set(values, cut_values);
     auto & tracker = logger.names_and_ids_tracker();
@@ -44,9 +43,8 @@ auto gcs::innards::emit_gcc_capacity_pol(ProofLogger & logger, const State & sta
     pb.emit(logger, ProofLevel::Temporary);
 }
 
-auto gcs::innards::gcc_capacity_reason(const State & state, const vector<Integer> & values,
-    const vector<IntegerVariableID> & counts, const vector<size_t> & cut_values,
-    const vector<IntegerVariableID> & confined) -> ReasonLiterals
+auto gcs::innards::gcc_capacity_reason(const State & state, const vector<Integer> & values, const vector<IntegerVariableID> & counts,
+    const vector<size_t> & cut_values, const vector<IntegerVariableID> & confined) -> ReasonLiterals
 {
     auto hall = hall_set(values, cut_values);
     ReasonLiterals r;
@@ -64,11 +62,9 @@ auto gcs::innards::gcc_capacity_reason(const State & state, const vector<Integer
     return r;
 }
 
-auto gcs::innards::emit_gcc_demand_pol(ProofLogger & logger, const State & state,
-    const vector<IntegerVariableID> & vars, const vector<Integer> & values,
-    const vector<IntegerVariableID> & counts, const GCCCountLines & count_lines,
-    const vector<size_t> & cut_values, const vector<IntegerVariableID> & potential,
-    optional<IntegerVariableID> pruned_var, optional<Integer> pruned_value) -> void
+auto gcs::innards::emit_gcc_demand_pol(ProofLogger & logger, const State & state, const vector<IntegerVariableID> & vars,
+    const vector<Integer> & values, const vector<IntegerVariableID> & counts, const GCCCountLines & count_lines, const vector<size_t> & cut_values,
+    const vector<IntegerVariableID> & potential, optional<IntegerVariableID> pruned_var, optional<Integer> pruned_value) -> void
 {
     auto hall = hall_set(values, cut_values);
     PolBuilder pb;
@@ -85,8 +81,8 @@ auto gcs::innards::emit_gcc_demand_pol(ProofLogger & logger, const State & state
         if (pruned_var == optional<IntegerVariableID>{var} && pruned_value)
             atoms.push_back(var == *pruned_value);
         if (atoms.size() >= 2)
-            pb.add(recover_am1<IntegerVariableCondition>(logger, ProofLevel::Temporary, atoms,
-                [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
+            pb.add(recover_am1<IntegerVariableCondition>(
+                logger, ProofLevel::Temporary, atoms, [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
                     return logger.emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
                 }));
         else if (atoms.size() == 1)
@@ -97,9 +93,8 @@ auto gcs::innards::emit_gcc_demand_pol(ProofLogger & logger, const State & state
     pb.emit(logger, ProofLevel::Temporary);
 }
 
-auto gcs::innards::gcc_demand_reason(const State & state, const vector<IntegerVariableID> & vars,
-    const vector<Integer> & values, const vector<IntegerVariableID> & counts,
-    const vector<size_t> & cut_values, const vector<IntegerVariableID> & potential) -> ReasonLiterals
+auto gcs::innards::gcc_demand_reason(const State & state, const vector<IntegerVariableID> & vars, const vector<Integer> & values,
+    const vector<IntegerVariableID> & counts, const vector<size_t> & cut_values, const vector<IntegerVariableID> & potential) -> ReasonLiterals
 {
     auto hall = hall_set(values, cut_values);
     auto meets_hall = [&](const IntegerVariableID & var) {

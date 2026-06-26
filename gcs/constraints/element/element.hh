@@ -85,7 +85,8 @@ namespace gcs
         {
         }
 
-        explicit Element2D(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2, Array array, bool bounds_only = false) :
+        explicit Element2D(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2, Array array,
+            bool bounds_only = false) :
             NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, std::move(array), bounds_only)
         {
         }
@@ -113,7 +114,8 @@ namespace gcs
         {
         }
 
-        explicit Element2DConstantArray(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2, Array array, bool bounds_only = true) :
+        explicit Element2DConstantArray(IntegerVariableID var, std::pair<IntegerVariableID, Integer> idx1, std::pair<IntegerVariableID, Integer> idx2,
+            Array array, bool bounds_only = true) :
             NDimensionalElement(var, {{idx1.first, idx2.first}}, {{idx1.second, idx2.second}}, std::move(array), bounds_only)
         {
         }

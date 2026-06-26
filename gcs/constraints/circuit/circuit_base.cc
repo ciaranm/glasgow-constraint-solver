@@ -50,9 +50,7 @@ using fmt::print;
 
 using namespace gcs::innards::circuit;
 
-CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
-    _gac_all_different(g),
-    _succ(std::move(v))
+CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) : _gac_all_different(g), _succ(std::move(v))
 {
     // Two slots pinned to the same constant are a valid (if trivially
     // infeasible) model; only reject true variable aliasing.
@@ -65,13 +63,8 @@ CircuitBase::CircuitBase(vector<IntegerVariableID> v, const bool g) :
     }
 }
 
-auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID> & succ,
-    const long & start,
-    const long & length,
-    const PosVarDataMap & pos_var_data,
-    const State & state,
-    ProofLogger & logger,
-    const optional<Integer> & prevent_idx,
+auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID> & succ, const long & start, const long & length,
+    const PosVarDataMap & pos_var_data, const State & state, ProofLogger & logger, const optional<Integer> & prevent_idx,
     const optional<Integer> & prevent_value) -> void
 {
     auto current_val = state.optional_single_value(succ[start]);
@@ -89,7 +82,8 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
         auto next_var = succ[last_val->as_index()];
         current_val = state.optional_single_value(next_var);
 
-        if (current_val == nullopt || cycle_length == length) break;
+        if (current_val == nullopt || cycle_length == length)
+            break;
 
         pol.add(pos_var_data.at(last_val->as_index()).plus_one_lines.at(current_val->as_index()).geq_line);
         cycle_length++;
@@ -106,13 +100,8 @@ auto gcs::innards::circuit::output_cycle_to_proof(const vector<IntegerVariableID
     pol.emit(logger, ProofLevel::Current);
 }
 
-auto gcs::innards::circuit::prevent_small_cycles(
-    const vector<IntegerVariableID> & succ,
-    const ConstraintID & owner,
-    const PosVarDataMap & pos_var_data,
-    const ConstraintStateHandle & unassigned_handle,
-    const State & state,
-    auto & inference,
+auto gcs::innards::circuit::prevent_small_cycles(const vector<IntegerVariableID> & succ, const ConstraintID & owner,
+    const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference,
     ProofLogger * const logger) -> void
 {
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
@@ -169,7 +158,8 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
     // Can't have too-large values
     for (const auto & s : _succ)
-        propagators.define_bound(initial_state, model, s, Bound::Upper, Integer(static_cast<long long>(_succ.size() - 1)), "Circuit", "successor index range");
+        propagators.define_bound(
+            initial_state, model, s, Bound::Upper, Integer(static_cast<long long>(_succ.size() - 1)), "Circuit", "successor index range");
 
     // Define all different, either gac or non-gac
     if (_gac_all_different) {
@@ -191,40 +181,36 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
         // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
         // WLOG start at node 0, so pos[0] = 0
         pos_var_data.emplace(0,
-            PosVarData{"p[0]", model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits), map<long, PosVarLineData>{}});
+            PosVarData{"p[0]", model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits),
+                map<long, PosVarLineData>{}});
         model->add_constraint(WPBSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
         // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
-        auto [leq_line, geq_line] = model->add_constraint(
-            WPBSum{} == Integer{n - 1},
-            HalfReifyOnConjunctionOf{{_succ[0] == 0_i}});
+        auto [leq_line, geq_line] = model->add_constraint(WPBSum{} == Integer{n - 1}, HalfReifyOnConjunctionOf{{_succ[0] == 0_i}});
 
         pos_var_data.at(0).plus_one_lines.emplace(0, PosVarLineData{leq_line, geq_line});
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             pos_var_data.emplace(idx,
                 PosVarData{format("p[{}]", idx),
-                    model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0",
-                        IntegerVariableProofRepresentation::Bits),
+                    model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits),
                     map<long, PosVarLineData>{}});
         }
 
         for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
             // (succ[0] = i) -> pos[i] - pos[0] = 1
             tie(leq_line, geq_line) = model->add_constraint(
-                WPBSum{} + 1_i * pos_var_data.at(idx).var + -1_i * 1_c == 0_i,
-                HalfReifyOnConjunctionOf{{_succ[0] == Integer{idx}}});
+                WPBSum{} + 1_i * pos_var_data.at(idx).var + -1_i * 1_c == 0_i, HalfReifyOnConjunctionOf{{_succ[0] == Integer{idx}}});
             pos_var_data.at(0).plus_one_lines.emplace(idx, PosVarLineData{leq_line, geq_line});
 
             // (succ[i] = 0) -> pos[0] - pos[i] = 1-n
-            tie(leq_line, geq_line) = model->add_constraint(
-                WPBSum{} + 1_i * pos_var_data.at(0).var + -1_i * pos_var_data.at(idx).var == Integer{1 - n},
-                HalfReifyOnConjunctionOf{{_succ[idx] == 0_i}});
+            tie(leq_line, geq_line) =
+                model->add_constraint(WPBSum{} + 1_i * pos_var_data.at(0).var + -1_i * pos_var_data.at(idx).var == Integer{1 - n},
+                    HalfReifyOnConjunctionOf{{_succ[idx] == 0_i}});
             pos_var_data.at(idx).plus_one_lines.emplace(0, PosVarLineData{leq_line, geq_line});
 
             // (succ[i] = j) -> pos[j] = pos[i] + 1
             for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
-                tie(leq_line, geq_line) = model->add_constraint(
-                    WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
+                tie(leq_line, geq_line) = model->add_constraint(WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
                     HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
                 pos_var_data.at(idx).plus_one_lines.emplace(jdx, PosVarLineData{leq_line, geq_line});
             }
@@ -233,11 +219,16 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
     // Infer succ[i] != i at top of search, but no other propagation defined here: use CircuitPrevent or CircuitSCC
     if (_succ.size() > 1) {
-        propagators.install(constraint_id(), [succ = _succ, owner = constraint_id()](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            for (auto [idx, s] : enumerate(succ)) {
-                inference.infer_not_equal(logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(succ));
-            }
-            return PropagatorState::DisableUntilBacktrack; }, Triggers{});
+        propagators.install(
+            constraint_id(),
+            [succ = _succ, owner = constraint_id()](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                for (auto [idx, s] : enumerate(succ)) {
+                    inference.infer_not_equal(
+                        logger, s, Integer(static_cast<long long>(idx)), JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(succ));
+                }
+                return PropagatorState::DisableUntilBacktrack;
+            },
+            Triggers{});
     }
 
     return pos_var_data;
@@ -249,13 +240,13 @@ auto CircuitBase::s_expr(const innards::ProofModel * const model) const -> SExpr
     vector<SExpr> vars;
     for (const auto & var : _succ)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)),
-        SExpr::atom("circuit"),
-        SExpr::list(std::move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("circuit"), SExpr::list(std::move(vars))});
 }
 
-template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
-    const ConstraintStateHandle & unassigned_handle, const State & state, SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
+template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner,
+    const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const State & state,
+    SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
 
-template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
-    const ConstraintStateHandle & unassigned_handle, const State & state, EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
+template auto gcs::innards::circuit::prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner,
+    const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const State & state,
+    EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
