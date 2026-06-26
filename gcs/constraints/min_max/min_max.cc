@@ -163,13 +163,20 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
             else if (! support_2) {
                 // no, there's only a single var left that has any intersection with result. so, that
                 // variable has to lose any values not present in result.
-                ReasonLiterals reason = materialise(generic_reason(vector{result}), state);
-
-                for (auto & var : vars) {
-                    if (var == *support_1)
-                        continue;
-                    for (const auto & val : state.each_value_immutable(result))
-                        reason.emplace_back(var != val);
+                // generic_reason over result stays declarative; the per-var support
+                // literals are the explicit extra, and the whole O(vars x dom(result))
+                // base is assembled only when a reason will be read.
+                bool want_reason = inference.want_reasons();
+                Reason reason;
+                if (want_reason) {
+                    ReasonLiterals extra;
+                    for (auto & var : vars) {
+                        if (var == *support_1)
+                            continue;
+                        for (const auto & val : state.each_value_immutable(result))
+                            extra.emplace_back(var != val);
+                    }
+                    reason = with_extra(generic_reason(vector{result}), std::move(extra));
                 }
 
                 auto support_1_set = state.copy_of_values(*support_1);
@@ -202,12 +209,8 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 for (auto [lo, hi] : support_1_set.each_interval_minus(result_set)) {
                     if (both_simple) {
                         // The support reason is the base reason plus the just-excluded
-                        // interval. ExplicitReason holds an immutable snapshot, so the
-                        // justification (which materialises it once per bridge lemma plus
-                        // once for the conclusion) gets a fresh copy each time rather than
-                        // an accumulating literal.
-                        ReasonLiterals support_reason = reason;
-                        support_reason.emplace_back(not_in_range(result, lo, hi));
+                        // interval; with_extra copies the base, so each interval gets a
+                        // fresh reason rather than an accumulating literal.
                         inference.infer_not_in_range(logger, *support_1, lo, hi,
                             JustifyExplicitly{//
                                 [&, lo = lo, hi = hi](const ReasonLiterals & reason) {
@@ -216,7 +219,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                                         *logger, reason, std::get<SimpleIntegerVariableID>(IntegerVariableID{*support_1}), lo, hi, result, lo, hi);
                                 },
                                 ThenRUP::Yes, hints::MinMax{owner}},
-                            ExplicitReason{std::move(support_reason)});
+                            want_reason ? with_extra(reason, ReasonLiterals{not_in_range(result, lo, hi)}) : Reason{});
                     }
                     else
                         for (Integer val = lo; val <= hi; ++val)
@@ -231,7 +234,7 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                                                     WPBSum{} + (1_i * (*support_1 == val)) + (1_i * selectors.at(idx)) >= 1_i, ProofLevel::Temporary);
                                     },
                                     ThenRUP::Yes, hints::MinMax{owner}},
-                                ExplicitReason{reason});
+                                reason);
                 }
             }
 
