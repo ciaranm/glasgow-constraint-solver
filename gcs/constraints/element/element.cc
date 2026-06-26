@@ -439,13 +439,19 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
 
                 auto infer_bound = [&](Integer relevant_bound, bool ge) {
                     auto lit_to_infer = ge ? (result_var >= relevant_bound) : (result_var <= relevant_bound);
-                    ReasonLiterals reason;
-                    auto idx_reason = materialise(generic_reason(index_vars), state);
-                    reason.insert(reason.end(), idx_reason.begin(), idx_reason.end());
-                    for (const auto & var : considered_vars)
-                        reason.push_back(ge ? (var >= relevant_bound) : (var <= relevant_bound));
-                    reason.push_back(result_var >= current_bounds.first);
-                    reason.push_back(result_var <= current_bounds.second);
+                    // Assemble the reason only when one will be read: this bound
+                    // reason is generic_reason(index_vars) concatenated with the
+                    // captured bound facts, and that concat allocates, so skip it
+                    // entirely during ordinary search.
+                    Reason reason;
+                    if (inference.want_reasons()) {
+                        ReasonLiterals extra;
+                        for (const auto & var : considered_vars)
+                            extra.push_back(ge ? (var >= relevant_bound) : (var <= relevant_bound));
+                        extra.push_back(result_var >= current_bounds.first);
+                        extra.push_back(result_var <= current_bounds.second);
+                        reason = with_extra(generic_reason(index_vars), std::move(extra));
+                    }
                     inference.infer(logger, lit_to_infer,
                         JustifyExplicitly{//
                             [&](const ReasonLiterals & reason) {
@@ -471,7 +477,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                 rule_out(rule_out, 0);
                             },
                             ThenRUP::Yes, hints::Element{owner}},
-                        ExplicitReason{reason});
+                        reason);
                 };
 
                 if (lowest_found && *lowest_found > current_bounds.first)
@@ -521,9 +527,16 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                 collect_supported_values(collect_supported_values, 0);
 
                 for (auto value : still_to_find_support_for.each()) {
-                    ReasonLiterals reason = materialise(generic_reason(index_vars), state);
-                    for (const auto & var : considered_vars)
-                        reason.push_back(var != value);
+                    // index_vars stay a declarative generic_reason, concatenated with
+                    // the per-considered-var literals; assembled only when a reason
+                    // will be read.
+                    Reason reason;
+                    if (inference.want_reasons()) {
+                        ReasonLiterals extra;
+                        for (const auto & var : considered_vars)
+                            extra.push_back(var != value);
+                        reason = with_extra(generic_reason(index_vars), std::move(extra));
+                    }
                     inference.infer_not_equal(logger, result_var, value,
                         JustifyExplicitly{//
                             [&](const ReasonLiterals & reason) {
@@ -550,7 +563,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators(Propagato
                                 rule_out(rule_out, 0);
                             },
                             ThenRUP::Yes, hints::Element{owner}},
-                        ExplicitReason{reason});
+                        reason);
                 }
 
                 return PropagatorState::Enable;
