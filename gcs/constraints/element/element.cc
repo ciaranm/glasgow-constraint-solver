@@ -317,11 +317,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 // computing once.
                 auto looking_for = state.copy_of_values(result_var);
                 auto looking_for_bounds = state.bounds(result_var);
+                // explored_vars only feeds the reason; building it is a per-test_val
+                // (no-SBO) allocation, so skip it when no reason will be read.
+                auto want_reason = inference.want_reasons();
 
                 state.for_each_value_mutable(index_vars.at(fixed_dim), [&](Integer test_val) {
                     vector<size_t> elem;
                     vector<IntegerVariableID> explored_vars;
-                    explored_vars.push_back(result_var);
+                    if (want_reason)
+                        explored_vars.push_back(result_var);
                     auto look_for_support = [&](auto && self, unsigned d) -> bool {
                         // we're iterating over every dimension recursively, except for the one where
                         // we're checking support for the fixed test_val.
@@ -343,7 +347,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                 }
                                 else {
                                     auto array_var = get_array_var<dimensions_>(elem, *array);
-                                    if (array_has_nonconstants)
+                                    if (want_reason && array_has_nonconstants)
                                         explored_vars.push_back(array_var);
 
                                     if (bounds_only) {
@@ -368,7 +372,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                         if (d == fixed_dim)
                             return do_it_with(test_val);
                         else {
-                            explored_vars.push_back(index_vars.at(d));
+                            if (want_reason)
+                                explored_vars.push_back(index_vars.at(d));
                             bool support_found = false;
                             state.for_each_value_immutable(index_vars.at(d), [&](Integer x) {
                                 if (do_it_with(x)) {
@@ -431,7 +436,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                     show_no_support(show_no_support, 0);
                                 },
                                 ThenRUP::Yes, hints::Element{owner}},
-                            generic_reason(explored_vars));
+                            want_reason ? generic_reason(explored_vars) : Reason{});
                     }
                 });
 
