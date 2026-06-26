@@ -3,6 +3,8 @@
 
 #include <util/overloaded.hh>
 
+#include <type_traits>
+
 using namespace gcs;
 using namespace gcs::innards;
 
@@ -14,8 +16,7 @@ namespace
     // Walk every value in each variable's domain (lower bound, upper bound, and
     // any holes), appending the facts to `reason`. This is the materialisation
     // of GenericReasonOver.
-    auto materialise_generic(
-        const State & state, const std::vector<IntegerVariableID> & vars, const optional<Literal> & extra, ReasonLiterals & reason) -> void
+    auto materialise_generic(const State & state, const std::vector<IntegerVariableID> & vars, ReasonLiterals & reason) -> void
     {
         for (const auto & var : vars) {
             auto bounds = state.bounds(var);
@@ -54,14 +55,11 @@ namespace
                 }
             }
         }
-        if (extra)
-            reason.push_back(*extra);
     }
 
     // Walk only the lower and upper bound of each variable. This is the
     // materialisation of BothBoundsReasonOver.
-    auto materialise_bounds(
-        const State & state, const std::vector<IntegerVariableID> & vars, const optional<Literal> & extra, ReasonLiterals & reason) -> void
+    auto materialise_bounds(const State & state, const std::vector<IntegerVariableID> & vars, ReasonLiterals & reason) -> void
     {
         for (const auto & var : vars) {
             auto bounds = state.bounds(var);
@@ -72,19 +70,13 @@ namespace
                 reason.push_back(var <= bounds.second);
             }
         }
-        if (extra)
-            reason.push_back(*extra);
     }
 
-    // Materialisation of ExactSingleValue: `extra` (if any) first, then `var ==
-    // value` for each variable, where value is the variable's single current
-    // value. The leading-extra order matches the legacy explicit reasons this
-    // replaces, keeping proofs byte-identical. Each var must be instantiated.
-    auto materialise_exact_single_value(
-        const State & state, const std::vector<IntegerVariableID> & vars, const optional<Literal> & extra, ReasonLiterals & reason) -> void
+    // Materialisation of ExactSingleValue: `var == value` for each variable,
+    // where value is the variable's single current value. Each var must be
+    // instantiated. Leading/extra literals are composed in via concat().
+    auto materialise_exact_single_value(const State & state, const std::vector<IntegerVariableID> & vars, ReasonLiterals & reason) -> void
     {
-        if (extra)
-            reason.push_back(*extra);
         for (const auto & var : vars)
             reason.push_back(var == state.optional_single_value(var).value());
     }
@@ -98,15 +90,15 @@ namespace
     auto append_materialised(const Reason & reason, const State & state, ReasonLiterals & out) -> void
     {
         reason.visit(overloaded{
-            [&](const NoReason &) {},                                                                            //
-            [&](const ExplicitReason & r) { out.insert(out.end(), r.literals.begin(), r.literals.end()); },      //
-            [&](const GenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, out); },             //
-            [&](const BothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, out); },           //
-            [&](const ExactSingleValue & r) { materialise_exact_single_value(state, *r.vars, r.extra, out); },   //
-            [&](const LazyReasonOver & r) { r.fn(state, out); },                                                 //
-            [&](const NarrowableGenericReasonOver & r) { materialise_generic(state, *r.vars, r.extra, out); },   //
-            [&](const NarrowableBothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, r.extra, out); }, //
-            [&](const NarrowableLazyReasonOver & r) { r.fn(state, out); },                                       //
+            [&](const NoReason &) {},                                                                       //
+            [&](const ExplicitReason & r) { out.insert(out.end(), r.literals.begin(), r.literals.end()); }, //
+            [&](const GenericReasonOver & r) { materialise_generic(state, *r.vars, out); },                 //
+            [&](const BothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, out); },               //
+            [&](const ExactSingleValue & r) { materialise_exact_single_value(state, *r.vars, out); },       //
+            [&](const LazyReasonOver & r) { r.fn(state, out); },                                            //
+            [&](const NarrowableGenericReasonOver & r) { materialise_generic(state, *r.vars, out); },       //
+            [&](const NarrowableBothBoundsReasonOver & r) { materialise_bounds(state, *r.vars, out); },     //
+            [&](const NarrowableLazyReasonOver & r) { r.fn(state, out); },                                  //
             [&](const ConcatReason & r) {
                 for (const auto & part : r.parts)
                     append_materialised(part, state, out);
@@ -124,12 +116,12 @@ auto gcs::innards::materialise(const Reason & reason, const State & state) -> Re
 
 auto gcs::innards::generic_reason(const std::vector<IntegerVariableID> & vars, const optional<Literal> & extra_lit) -> Reason
 {
-    return GenericReasonOver{ReasonVars{vars}, extra_lit};
+    return with_extra(GenericReasonOver{ReasonVars{vars}}, extra_lit);
 }
 
 auto gcs::innards::bounds_reason(const std::vector<IntegerVariableID> & vars, const optional<Literal> & extra_lit) -> Reason
 {
-    return BothBoundsReasonOver{ReasonVars{vars}, extra_lit};
+    return with_extra(BothBoundsReasonOver{ReasonVars{vars}}, extra_lit);
 }
 
 auto gcs::innards::singleton_reason(const ProofLiteralOrFlag & lit) -> Reason
@@ -156,6 +148,22 @@ auto gcs::innards::with_extra(Reason base, const optional<Literal> & extra) -> R
     if (! extra)
         return base;
     return with_extra(std::move(base), ReasonLiterals{*extra});
+}
+
+auto gcs::innards::concat(Reason a, Reason b) -> Reason
+{
+    // NoReason is the identity, so a single real operand stays flat (no
+    // ConcatReason allocation).
+    if (a.visit([](const auto & r) { return std::is_same_v<std::decay_t<decltype(r)>, NoReason>; }))
+        return b;
+    if (b.visit([](const auto & r) { return std::is_same_v<std::decay_t<decltype(r)>, NoReason>; }))
+        return a;
+
+    std::vector<Reason> parts;
+    parts.reserve(2);
+    parts.push_back(std::move(a));
+    parts.push_back(std::move(b));
+    return ConcatReason{std::move(parts)};
 }
 
 auto gcs::innards::eager_reason(const Reason & reason, const State & state) -> ReasonLiterals
