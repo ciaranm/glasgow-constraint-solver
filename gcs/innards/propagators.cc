@@ -270,11 +270,20 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
             try {
                 ++_imp->total_propagations;
                 auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
-                if (tracker.did_anything_since_last_call_by_propagation_queue())
-                    ++_imp->effectful_propagations;
-                switch (propagator_state) {
-                case PropagatorState::Enable: break;
-                case PropagatorState::DisableUntilBacktrack: _imp->to_disable.push_back(propagator_id); break;
+                if (tracker.contradicted()) {
+                    // A propagator that opted into the non-throwing failure path
+                    // (try_to_infer_*) signals contradiction with this flag rather
+                    // than by unwinding; throwing propagators are caught below.
+                    contradiction = true;
+                    ++_imp->contradicting_propagations;
+                }
+                else {
+                    if (tracker.did_anything_since_last_call_by_propagation_queue())
+                        ++_imp->effectful_propagations;
+                    switch (propagator_state) {
+                    case PropagatorState::Enable: break;
+                    case PropagatorState::DisableUntilBacktrack: _imp->to_disable.push_back(propagator_id); break;
+                    }
                 }
             }
             catch (const TrackedPropagationFailed &) {

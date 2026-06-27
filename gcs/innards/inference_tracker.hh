@@ -35,6 +35,12 @@ namespace gcs::innards
         State & _state;
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
         bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
+        // Set when an inference yields a contradiction on the non-throwing
+        // (try_to_infer_*) path. The throwing infer* methods unwind instead, so
+        // this is the signal the propagate loop checks for propagators that opt
+        // into the no-throw failure path. Fresh per propagate() call (the tracker
+        // is rebuilt each call), so it needs no separate reset.
+        bool _contradicted = false;
 
         auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason,
             const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
@@ -106,9 +112,13 @@ namespace gcs::innards
         // Simple, proofs-off tracker never touches them (pay-for-use) and the same
         // body serves both trackers. Dispatch is compile-time overload resolution
         // inside infer_explicitly; no std::function is involved.
+        // do_throw distinguishes the two failure paths: the throwing infer*
+        // methods leave it true (a contradiction unwinds via TrackedPropagationFailed);
+        // the non-throwing try_to_infer_* methods pass false, so a contradiction sets
+        // _contradicted and returns normally, and the propagate loop detects it.
         template <typename Emit_, typename Hint_>
         auto track_explicit(ProofLogger * const logger, const Inference inf, const Literal & lit, const JustifyExplicitly<Emit_, Hint_> & why,
-            const Reason & reason, const std::optional<AssertionAnnotation> & fallback) -> void
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback, bool do_throw = true) -> void
         {
             switch (inf) {
             case Inference::NoChange: break;
@@ -128,7 +138,10 @@ namespace gcs::innards
                         infer_explicitly(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
-                throw TrackedPropagationFailed{};
+                _contradicted = true;
+                if (do_throw)
+                    throw TrackedPropagationFailed{};
+                break;
             }
         }
 
@@ -153,6 +166,14 @@ namespace gcs::innards
         [[nodiscard]] auto want_reasons() const -> bool
         {
             return Actual_::materialises_reasons;
+        }
+
+        // Whether an inference on the non-throwing try_to_infer_* path has hit a
+        // contradiction this propagate() call. The propagate loop checks this after
+        // a propagator returns (for propagators that opt out of throwing on failure).
+        [[nodiscard]] auto contradicted() const -> bool
+        {
+            return _contradicted;
         }
 
         auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason,
@@ -317,6 +338,35 @@ namespace gcs::innards
         {
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track_explicit(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, fallback);
+        }
+
+        // Non-throwing counterparts of the JustifyExplicitly infer_less_than /
+        // infer_greater_than_or_equal: on contradiction they set _contradicted and
+        // return false instead of throwing, so the caller bails up its own control
+        // flow. [[nodiscard]] makes ignoring the verdict a compile error -- the
+        // caller must stop (it cannot safely keep reading state after a failure).
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        [[nodiscard]] auto try_to_infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value,
+            const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt)
+            -> bool
+        {
+            if (_contradicted) [[unlikely]]
+                return false;
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_explicit(logger, _state.infer_less_than(var, value), var < value, why, snapshotted, fallback, false);
+            return ! _contradicted;
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        [[nodiscard]] auto try_to_infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value,
+            const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt)
+            -> bool
+        {
+            if (_contradicted) [[unlikely]]
+                return false;
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_explicit(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, fallback, false);
+            return ! _contradicted;
         }
 
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
