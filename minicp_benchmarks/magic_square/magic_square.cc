@@ -1,6 +1,7 @@
 /* vim : set sw = 4 sts = 4 et foldmethod = syntax : */
 
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
@@ -22,6 +23,7 @@ using std::endl;
 using std::ifstream;
 using std::make_optional;
 using std::nullopt;
+using std::string;
 using std::vector;
 
 auto main(int argc, char * argv[]) -> int
@@ -30,10 +32,11 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof")          //
-            ("all-different", "Use AllDifferent rather than inequalities");
+        options.add_options("Program Options")                                                                       //
+            ("help", "Display help information")                                                                     //
+            ("prove", "Create a proof")                                                                              //
+            ("all-different", "All-different encoding to use: 'gac', 'vc', or 'not-equals' (the not-equals clique)", //
+                cxxopts::value<string>()->default_value("not-equals"));
 
         options.add_options()("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("5"));
 
@@ -52,6 +55,12 @@ auto main(int argc, char * argv[]) -> int
         cout << endl;
         cout << options.help() << endl;
         return EXIT_SUCCESS;
+    }
+
+    const string all_different_mode = options_vars["all-different"].as<string>();
+    if (all_different_mode != "gac" && all_different_mode != "vc" && all_different_mode != "not-equals") {
+        cerr << "Error: --all-different must be 'gac', 'vc', or 'not-equals'." << endl;
+        return EXIT_FAILURE;
     }
 
     cout << "Replicating the MiniCP Magic Square benchmark." << endl;
@@ -77,9 +86,13 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // As far as I can tell, the statistics reported in the paper only make
-    // sense for non-GAC all-different.
-    if (options_vars.contains("all-different")) {
+    // sense for non-GAC all-different (the 'vc' or 'not-equals' encodings,
+    // which do the same pruning as each other).
+    if (all_different_mode == "gac") {
         p.post(AllDifferent{grid_flat});
+    }
+    else if (all_different_mode == "vc") {
+        p.post(VCAllDifferent{grid_flat});
     }
     else {
         for (unsigned x = 0; x < grid_flat.size(); ++x)
