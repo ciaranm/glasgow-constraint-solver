@@ -16,6 +16,14 @@ namespace gcs
 {
     namespace innards
     {
+        // The not-yet-assigned variables tracked as backtrackable constraint state by
+        // the non-GAC all_different propagator (and circuit, which shares it). Order is
+        // not significant: the propagators may permute it (swap-and-pop erase), so it is
+        // a flat contiguous container rather than a list, to keep the per-search-node
+        // backtracking copy of the constraint state cheap (one allocation + memcpy, or
+        // none at all, instead of a heap node per element).
+        using NonGacAllDifferentUnassigned = std::vector<IntegerVariableID>;
+
         // single_value_reasons, when non-null, is a constraint-owned (not backtracked)
         // table of prebuilt "v == its single value" reasons, indexed by the variable's
         // SimpleIntegerVariableID index minus reason_base, so the hot loops hand back a

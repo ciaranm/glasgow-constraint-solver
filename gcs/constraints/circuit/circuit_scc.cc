@@ -10,7 +10,6 @@
 #include <gcs/proof.hh>
 #include <util/enumerate.hh>
 
-#include <list>
 #include <map>
 #include <random>
 #include <set>
@@ -32,7 +31,6 @@ using fmt::format;
 using std::cmp_less;
 using std::cmp_less_equal;
 using std::cmp_not_equal;
-using std::list;
 using std::make_optional;
 using std::map;
 using std::min;
@@ -1070,14 +1068,15 @@ namespace
             return; // contradiction: the SCC check below would read junk state; the loop sees contradicted()
         auto proof_data = SCCProofData{pos_var_data, proof_flag_data_handle, pos_alldiff_data_handle};
         check_sccs(state, inference, logger, reason, owner, succ, scc_options, proof_data);
-        auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
-        // Remove any newly assigned vals from unassigned
-        auto it = unassigned.begin();
-        while (it != unassigned.end()) {
-            if (state.optional_single_value(*it))
-                it = unassigned.erase(it);
+        auto & unassigned = any_cast<NonGacAllDifferentUnassigned &>(state.get_constraint_state(unassigned_handle));
+        // Remove any newly assigned vals from unassigned (swap-and-pop; order is irrelevant).
+        for (std::size_t k = 0; k < unassigned.size();) {
+            if (state.optional_single_value(unassigned[k])) {
+                unassigned[k] = unassigned.back();
+                unassigned.pop_back();
+            }
             else
-                ++it;
+                ++k;
         }
         prevent_small_cycles(succ, owner, pos_var_data, unassigned_handle, state, inference, logger);
     }
@@ -1098,7 +1097,7 @@ auto CircuitSCC::install(Propagators & propagators, State & initial_state, Proof
     auto pos_var_data = CircuitBase::set_up(propagators, initial_state, model);
 
     // Keep track of unassigned vars
-    list<IntegerVariableID> unassigned{};
+    NonGacAllDifferentUnassigned unassigned{};
     for (auto v : _succ) {
         unassigned.emplace_back(v);
     }

@@ -8,7 +8,6 @@
 
 #include <util/enumerate.hh>
 
-#include <list>
 #include <map>
 #include <utility>
 
@@ -17,7 +16,6 @@ using namespace gcs::innards;
 using namespace gcs::innards::circuit;
 
 using std::cmp_less;
-using std::list;
 using std::map;
 using std::size_t;
 using std::stringstream;
@@ -79,7 +77,7 @@ auto CircuitPrevent::clone() const -> unique_ptr<Constraint>
 auto CircuitPrevent::install(innards::Propagators & propagators, innards::State & initial_state, innards::ProofModel * const model) && -> void
 {
     // Keep track of unassigned vars
-    list<IntegerVariableID> unassigned{};
+    NonGacAllDifferentUnassigned unassigned{};
     for (auto v : _succ) {
         unassigned.emplace_back(v);
     }

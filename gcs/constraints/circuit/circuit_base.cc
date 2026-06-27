@@ -10,7 +10,6 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 
-#include <list>
 #include <map>
 #include <sstream>
 #include <string>
@@ -31,7 +30,6 @@ using namespace gcs::innards;
 
 using std::cmp_less;
 using std::cmp_not_equal;
-using std::list;
 using std::map;
 using std::nullopt;
 using std::optional;
@@ -104,7 +102,7 @@ auto gcs::innards::circuit::prevent_small_cycles(const vector<IntegerVariableID>
     const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference,
     ProofLogger * const logger) -> void
 {
-    auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
+    auto & unassigned = any_cast<NonGacAllDifferentUnassigned &>(state.get_constraint_state(unassigned_handle));
     auto n = succ.size();
     auto end = vector<long>(n, -1);
     auto known_ends = vector<long>{};
