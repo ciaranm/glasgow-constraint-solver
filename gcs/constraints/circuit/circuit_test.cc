@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <set>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -58,10 +59,17 @@ auto is_single_circuit(const vector<int> & succ) -> bool
     return cur == 0 && count == n;
 }
 
-auto run_circuit_test(bool proofs, const ViewWrapConfig & view_cfg, int n) -> void
+enum struct CircuitPropagator
+{
+    scc,
+    prevent
+};
+
+auto run_circuit_test(bool proofs, const ViewWrapConfig & view_cfg, int n, CircuitPropagator propagator) -> void
 {
     auto wraps = wraps_for_positions(view_cfg, n);
-    print(cerr, "circuit [{}] n={}{}", view_wrap_config_label(view_cfg), n, proofs ? " with proofs:" : ":");
+    auto prop_label = propagator == CircuitPropagator::prevent ? "prevent" : "scc";
+    print(cerr, "circuit/{} [{}] n={}{}", prop_label, view_wrap_config_label(view_cfg), n, proofs ? " with proofs:" : ":");
     cerr << flush;
 
     vector<pair<int, int>> domains(static_cast<std::size_t>(n), pair{0, n - 1});
@@ -74,9 +82,12 @@ auto run_circuit_test(bool proofs, const ViewWrapConfig & view_cfg, int n) -> vo
     vector<IntegerVariableID> succ;
     for (int i = 0; i < n; ++i)
         succ.push_back(create_integer_variable_or_constant_with_view(p, pair{0, n - 1}, wraps.at(static_cast<std::size_t>(i))));
-    p.post(Circuit{succ});
+    if (propagator == CircuitPropagator::prevent)
+        p.post(CircuitPrevent{succ, false});
+    else
+        p.post(Circuit{succ});
 
-    auto proof_name = proofs ? make_optional("circuit_test_" + view_wrap_config_label(view_cfg)) : nullopt;
+    auto proof_name = proofs ? make_optional("circuit_test_" + std::string{prop_label} + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{succ});
     check_results(proof_name, expected, actual);
 }
@@ -95,15 +106,17 @@ auto main(int argc, char * argv[]) -> int
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        for (int n : {3, 4, 5})
-            run_circuit_test(proofs, view_cfg, n);
-        // Degenerate minimal circuits (issue #254): n=1 is a single self-loop
-        // (the canonical minimal circuit), n=2 the unique 2-cycle. Run only in
-        // the bare configuration; the view sweep targets the larger instances
-        // and its positions can exceed these tiny n.
-        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
-            run_circuit_test(proofs, view_cfg, 1);
-            run_circuit_test(proofs, view_cfg, 2);
+        for (auto propagator : {CircuitPropagator::scc, CircuitPropagator::prevent}) {
+            for (int n : {3, 4, 5})
+                run_circuit_test(proofs, view_cfg, n, propagator);
+            // Degenerate minimal circuits (issue #254): n=1 is a single self-loop
+            // (the canonical minimal circuit), n=2 the unique 2-cycle. Run only in
+            // the bare configuration; the view sweep targets the larger instances
+            // and its positions can exceed these tiny n.
+            if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+                run_circuit_test(proofs, view_cfg, 1, propagator);
+                run_circuit_test(proofs, view_cfg, 2, propagator);
+            }
         }
     }
 
