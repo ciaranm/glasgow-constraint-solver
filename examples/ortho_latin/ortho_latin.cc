@@ -1,4 +1,5 @@
 #include <gcs/constraints/all_different.hh>
+#include <gcs/constraints/all_different/vc_all_different.hh>
 #include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/problem.hh>
@@ -43,16 +44,18 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")                               //
-            ("help", "Display help information")                             //
-            ("prove", "Create a proof")                                      //
-            ("proof-files-basename", "Basename for the .opb and .pbp files", //
-                cxxopts::value<string>()->default_value("ortho_latin"))      //
-            ("stats", "Print solve statistics")                              //
+        options.add_options("Program Options")                                                                       //
+            ("help", "Display help information")                                                                     //
+            ("prove", "Create a proof")                                                                              //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",                                         //
+                cxxopts::value<string>()->default_value("ortho_latin"))                                              //
+            ("stats", "Print solve statistics")                                                                      //
+            ("all-different", "All-different encoding to use: 'gac', 'vc', or 'not-equals' (the not-equals clique)", //
+                cxxopts::value<string>()->default_value("not-equals"))                                               //
             ;
 
-        options.add_options()                                                                    //
-            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("88")) //
+        options.add_options()                                                                   //
+            ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("7")) //
             ("all", "Find all solutions");
 
         options.parse_positional({"size"});
@@ -72,8 +75,27 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
+    const string all_different_mode = options_vars["all-different"].as<string>();
+    if (all_different_mode != "gac" && all_different_mode != "vc" && all_different_mode != "not-equals") {
+        println(cerr, "Error: --all-different must be 'gac', 'vc', or 'not-equals'.");
+        return EXIT_FAILURE;
+    }
+
     Problem p;
     int size = options_vars["size"].as<int>();
+
+    // Post the chosen all-different encoding over the given variables. 'vc' and
+    // 'not-equals' do the same (non-GAC) pruning as each other; 'gac' prunes more.
+    auto post_all_different = [&](const vector<IntegerVariableID> & vars) {
+        if (all_different_mode == "gac")
+            p.post(AllDifferent{vars});
+        else if (all_different_mode == "vc")
+            p.post(VCAllDifferent{vars});
+        else
+            for (unsigned i = 0; i < vars.size(); ++i)
+                for (unsigned j = i + 1; j < vars.size(); ++j)
+                    p.post(NotEquals{vars[i], vars[j]});
+    };
 
     vector<vector<IntegerVariableID>> g1, g2;
     vector<IntegerVariableID> g12;
@@ -99,8 +121,8 @@ auto main(int argc, char * argv[]) -> int
             box1.emplace_back(g1[x][y]);
             box2.emplace_back(g2[x][y]);
         }
-        p.post(AllDifferent{box1});
-        p.post(AllDifferent{box2});
+        post_all_different(box1);
+        post_all_different(box2);
     }
 
     for (int y = 0; y < size; ++y) {
@@ -109,11 +131,11 @@ auto main(int argc, char * argv[]) -> int
             box1.emplace_back(g1[x][y]);
             box2.emplace_back(g2[x][y]);
         }
-        p.post(AllDifferent{box1});
-        p.post(AllDifferent{box2});
+        post_all_different(box1);
+        post_all_different(box2);
     }
 
-    p.post(AllDifferent{g12});
+    post_all_different(g12);
 
     // Normal form: first row of each square and first column of first square is 0 1 2 3 ...
     for (int x = 0; x < size; ++x) {
