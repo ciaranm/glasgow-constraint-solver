@@ -20,7 +20,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <list>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -32,7 +31,6 @@ using namespace gcs::innards;
 using std::decay_t;
 using std::function;
 using std::is_same_v;
-using std::list;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -57,7 +55,7 @@ using fmt::print;
 auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference,
     ProofLogger * const logger, const ConstraintID & owner, const std::vector<Reason> * single_value_reasons, unsigned long long reason_base) -> bool
 {
-    auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
+    auto & unassigned = any_cast<NonGacAllDifferentUnassigned &>(state.get_constraint_state(unassigned_handle));
 
     // The reason every removal cites is "v == val", where v is a variable already
     // fixed to val. When the caller hands us a prebuilt table, look it up by v's own
@@ -75,22 +73,23 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
 
     vector<pair<IntegerVariableID, Integer>> to_propagate;
     {
-        // Collect any newly assigned values
-        for (auto i = unassigned.begin(); i != unassigned.end();) {
-            auto s = *i;
+        // Collect any newly assigned values. Erasing by swap-and-pop (order of
+        // unassigned is irrelevant) keeps this O(1) per removal on a flat container.
+        for (std::size_t k = 0; k < unassigned.size();) {
+            auto s = unassigned[k];
             if (auto val = state.optional_single_value(s)) {
                 to_propagate.emplace_back(s, *val);
-                unassigned.erase(i++);
+                unassigned[k] = unassigned.back();
+                unassigned.pop_back();
             }
             else
-                i++;
+                ++k;
         }
     }
 
     while (! to_propagate.empty()) {
         auto [var, val] = to_propagate.back();
         to_propagate.pop_back();
-        auto i = unassigned.begin();
 
         // The same "var == val" reason justifies every removal this popped variable
         // triggers, so resolve it once here and reuse the reference in the inner loop.
@@ -107,18 +106,21 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
             }
         }
 
-        while (i != unassigned.end()) {
-            auto other = *i;
+        for (std::size_t k = 0; k < unassigned.size();) {
+            auto other = unassigned[k];
+            // var is no longer in unassigned (it was popped into to_propagate), so the
+            // other != var guard from the list version always held; kept for safety.
             if (other != var) {
                 if (! inference.infer_not_equal_or_stop(logger, other, val, JustifyUsingRUP{hints::AllDifferent{owner}}, var_assigned_reason))
                     return false;
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);
-                    unassigned.erase(i++);
+                    unassigned[k] = unassigned.back();
+                    unassigned.pop_back();
+                    continue;
                 }
-                else
-                    ++i;
             }
+            ++k;
         }
     }
 
@@ -161,7 +163,7 @@ auto VCAllDifferent::prepare(Propagators &, State & initial_state, ProofModel * 
 
     // Keep track of unassigned vars
     // Might want a more centralised way of doing this in future.
-    list<IntegerVariableID> unassigned{};
+    NonGacAllDifferentUnassigned unassigned{};
     for (auto & var : _sanitised_vars)
         if (! initial_state.has_single_value(var))
             unassigned.push_back(var);
