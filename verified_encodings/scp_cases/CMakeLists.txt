@@ -299,16 +299,44 @@ add_scp_chain_test(regular_sat          none)
 add_scp_chain_test(regular_unsat        none)
 add_scp_chain_test(regular_ternary_sat  none)
 
-# disjunctive / disjunctive2d are read and written by the solver (see
-# scp_reader_test: enumeration + write->read->write round-trip), and their
-# auxiliary flags are named to match cake -- x[id][i_j][bf] (the "task i finishes
+# none (chain-only): disjunctive / disjunctive2d. The tasks [start, start+length)
+# (resp. rectangles [x,x+w) x [y,y+h)) pairwise do not overlap. The solver's
+# before flags are named to match cake -- x[id][i_j][bf] (the "task i finishes
 # before task j" ordering), x[id][i_j][bx]/[by] (the per-axis 2D orderings),
-# x[id][i][zw]/[zh] (zero-size escapes) -- so the encodings agree structurally.
-# But they are NOT chain-tested yet: cake currently HALF-reifies its before flags
-# (flag -> ordering, not the converse), whereas we full-reify by design rule. Our
-# proofs falsify a before flag from the variable bounds by unit propagation, which
-# needs the converse implication; against cake's half-reified OPB that RUP step is
-# underivable, so the chain fails for any non-trivial instance (a single isolated
-# pair can still slip through). This is an upstream cake fix (full-reify the
-# before / separation flags); once it lands, the chain tests drop in here with no
-# further solver-side change.
+# x[id][i][zw]/[zh] (zero-size escapes). These were previously blocked from the
+# chain because cake only HALF-reified its before flags (flag -> ordering, not the
+# converse), whereas the solver full-reifies by design rule and falsifies a before
+# flag from the variable bounds by unit propagation -- a RUP step that is
+# underivable against a half-reified OPB. cake_pb_cp now FULL-reifies the before
+# flags (cbimply_var, the biconditional), so that converse is present and the chain
+# verifies. Stays none: the ordering linear constraints reference the start/size
+# bit encodings, which still diverge from cake's eager variable encoding (#358).
+# sat enumerates the non-overlapping placements; unsat is a pigeonhole (more unit
+# tasks than slots / two width-2 rectangles that cannot separate in a 2x2 area).
+add_scp_chain_test(disjunctive_sat        none)
+add_scp_chain_test(disjunctive_unsat      none)
+add_scp_chain_test(disjunctive2d_sat      none)
+add_scp_chain_test(disjunctive2d_unsat    none)
+
+# none (chain-only): cumulative. Tasks [start, start+length) each occupy `height`
+# of a shared resource; at every time point the total height of active tasks is at
+# most `cap` (lengths, heights and cap may each be a variable or a constant). cake
+# uses a time-table encoding: over a global time window it reifies, per (task,
+# time), before (start <= t), after (start + length > t) and active = before &
+# after, pins a proof-only contribution bit-sum to the height when active and 0
+# otherwise, and sums the contributions <= cap at each time. The solver's own
+# propagator is time-table consistent and emits a structurally matching proof --
+# the same before / after / active reifications -- so conforming is a naming-only
+# change: define_proof_model names the flags v[id][i_t][cb] / [ca] / [cact] (cake's
+# value-indexed family, via create_proof_flag_values_fully_reifying) instead of the
+# old f[..][cumbefore/cumafter/cumactive]. The solver's per-task time window is a
+# subset of cake's global one, so every flag the proof cites is one cake also
+# defines, and the proof's RUP steps over them resolve against cake's OPB. No
+# propagator change (it holds the flag handles, whose names the rename updates).
+# Stays none: the start / size bit encodings still diverge from cake's eager
+# variable encoding (#358). sat enumerates the placements that keep every slot
+# within capacity (cumulative_var_sat uses variable heights, exercising the
+# contribution path); unsat forces more load into a slot than the capacity allows.
+add_scp_chain_test(cumulative_sat         none)
+add_scp_chain_test(cumulative_var_sat     none)
+add_scp_chain_test(cumulative_unsat       none)

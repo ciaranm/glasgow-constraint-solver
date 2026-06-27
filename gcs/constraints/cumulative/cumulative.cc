@@ -200,21 +200,26 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
         }
 
         for (Integer t = t_lo; t <= t_hi; ++t) {
-            auto before =
-                model.create_proof_flag_fully_reifying("cumbefore", "Cumulative", "starts at or before time", WPBSum{} + 1_i * _starts[i] <= t);
+            // Name the flags to match cake_pb_cp's verified cumulative encoder
+            // (its value-indexed v[id][i_t][cb] / [ca] / [cact], keyed by task i
+            // and integer time t), so the proof's references to them resolve
+            // against cake's re-derived OPB in the verified-encoding chain (the
+            // solver's per-task window is a subset of cake's global one, so every
+            // flag we cite is one cake also defines). cake's structurally-matching
+            // definitions (before ⇔ s≤t, after ⇔ s+l≥t+1, active ⇔ before∧after)
+            // make this a naming conform with no propagator change.
+            std::vector<long long> it{static_cast<long long>(i), t.raw_value};
+            auto before = model.create_proof_flag_values_fully_reifying(_constraint_id, it, "cb", WPBSum{} + 1_i * _starts[i] <= t);
             // after_{i,t} ⇔ task i not yet finished at t ⇔ s_i + l_i ≥ t + 1.
             // Constant length: single-variable s_i ≥ t−l+1. One variable
             // operand: keep s_i + l_i (the constant folds in). Both variable:
             // reify on the proof-only end.
             auto after = is_constant_variable(_lengths[i])
-                ? model.create_proof_flag_fully_reifying(
-                      "cumafter", "Cumulative", "not yet finished at time", WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i)
-                : (use_end ? model.create_proof_flag_fully_reifying(
-                                 "cumafter", "Cumulative", "not yet finished at time", WPBSum{} + 1_i * *end >= t + 1_i)
-                           : model.create_proof_flag_fully_reifying(
-                                 "cumafter", "Cumulative", "not yet finished at time", WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] >= t + 1_i));
-            auto active = model.create_proof_flag_fully_reifying(
-                "cumactive", "Cumulative", "task active at time", WPBSum{} + 1_i * before + 1_i * after >= 2_i);
+                ? model.create_proof_flag_values_fully_reifying(_constraint_id, it, "ca", WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i)
+                : (use_end ? model.create_proof_flag_values_fully_reifying(_constraint_id, it, "ca", WPBSum{} + 1_i * *end >= t + 1_i)
+                           : model.create_proof_flag_values_fully_reifying(
+                                 _constraint_id, it, "ca", WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] >= t + 1_i));
+            auto active = model.create_proof_flag_values_fully_reifying(_constraint_id, it, "cact", WPBSum{} + 1_i * before + 1_i * after >= 2_i);
             _before_flags[i].push_back(before);
             _after_flags[i].push_back(after);
             _active_flags[i].push_back(active);
