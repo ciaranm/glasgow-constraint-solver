@@ -6,13 +6,19 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <gch/small_vector.hpp>
+
 #include <optional>
 #include <utility>
-#include <vector>
 
 namespace gcs::innards
 {
-    auto justify_linear_bounds(ProofLogger & logger, const auto & coeff_vars, const std::vector<std::pair<Integer, Integer>> & bounds,
+    // The per-variable (lower, upper) snapshot a linear propagation works over.
+    // Rebuilt on every firing, so it keeps the common small-arity case in inline
+    // storage to stay off the heap; wider constraints spill to the heap as usual.
+    using LinearBounds = gch::small_vector<std::pair<Integer, Integer>, 8>;
+
+    auto justify_linear_bounds(ProofLogger & logger, const auto & coeff_vars, const LinearBounds & bounds,
         const SimpleIntegerVariableID & which_var_is_changing, bool use_second_constraint_for_equality,
         std::pair<std::optional<ProofLine>, std::optional<ProofLine>> proof_lines) -> void;
 }
