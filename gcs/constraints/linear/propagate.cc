@@ -83,7 +83,7 @@ namespace
 
     // Returns false if the inference contradicted: the caller must stop immediately
     // (it may not read state again until backtrack). Uses the non-throwing
-    // try_to_infer_* path so a failure does not unwind via an exception.
+    // infer_*_or_stop path so a failure does not unwind via an exception.
     [[nodiscard]] auto infer(auto & inference, ProofLogger * const logger, const LinearBounds & bounds, const auto & coeff_vars, int p,
         const SimpleIntegerVariableID & var, Integer remainder, const bool coeff, bool second_constraint_for_equality,
         const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason, const auto & hint)
@@ -94,7 +94,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.try_to_infer_less_than(logger, var, 1_i + remainder, JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                if (! inference.infer_less_than_or_stop(logger, var, 1_i + remainder, JustifyExplicitly{justf, ThenRUP::Yes, hint},
                         linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
                     return false;
             }
@@ -104,7 +104,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.try_to_infer_greater_than_or_equal(logger, var, -remainder, JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                if (! inference.infer_greater_than_or_equal_or_stop(logger, var, -remainder, JustifyExplicitly{justf, ThenRUP::Yes, hint},
                         linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
                     return false;
             }
@@ -123,7 +123,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.try_to_infer_less_than(logger, var, 1_i + remainder / coeff, JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                if (! inference.infer_less_than_or_stop(logger, var, 1_i + remainder / coeff, JustifyExplicitly{justf, ThenRUP::Yes, hint},
                         linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
                     return false;
             }
@@ -134,7 +134,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.try_to_infer_less_than(logger, var, 1_i + div_with_rounding, JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                if (! inference.infer_less_than_or_stop(logger, var, 1_i + div_with_rounding, JustifyExplicitly{justf, ThenRUP::Yes, hint},
                         linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
                     return false;
             }
@@ -144,7 +144,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.try_to_infer_greater_than_or_equal(logger, var, remainder / coeff, JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                if (! inference.infer_greater_than_or_equal_or_stop(logger, var, remainder / coeff, JustifyExplicitly{justf, ThenRUP::Yes, hint},
                         linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
                     return false;
             }
@@ -155,7 +155,7 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.try_to_infer_greater_than_or_equal(logger, var, div_with_rounding, JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                if (! inference.infer_greater_than_or_equal_or_stop(logger, var, div_with_rounding, JustifyExplicitly{justf, ThenRUP::Yes, hint},
                         linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
                     return false;
             }

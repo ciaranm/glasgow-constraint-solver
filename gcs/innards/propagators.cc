@@ -272,7 +272,7 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
                 auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
                 if (tracker.contradicted()) {
                     // A propagator that opted into the non-throwing failure path
-                    // (try_to_infer_*) signals contradiction with this flag rather
+                    // (infer_*_or_stop) signals contradiction with this flag rather
                     // than by unwinding; throwing propagators are caught below.
                     contradiction = true;
                     ++_imp->contradicting_propagations;

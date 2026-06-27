@@ -36,7 +36,7 @@ namespace gcs::innards
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
         bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
         // Set when an inference yields a contradiction on the non-throwing
-        // (try_to_infer_*) path. The throwing infer* methods unwind instead, so
+        // (infer_*_or_stop) path. The throwing infer* methods unwind instead, so
         // this is the signal the propagate loop checks for propagators that opt
         // into the no-throw failure path. Fresh per propagate() call (the tracker
         // is rebuilt each call), so it needs no separate reset.
@@ -44,7 +44,7 @@ namespace gcs::innards
 
         // do_throw is forwarded to track_impl: true (the default) keeps the throwing
         // failure path the legacy infer* methods rely on; false is the non-throwing
-        // try_to_infer_* path, which sets _contradicted and returns instead.
+        // infer_*_or_stop path, which sets _contradicted and returns instead.
         auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason,
             const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt, bool do_throw = true) -> void
         {
@@ -117,7 +117,7 @@ namespace gcs::innards
         // inside infer_explicitly; no std::function is involved.
         // do_throw distinguishes the two failure paths: the throwing infer*
         // methods leave it true (a contradiction unwinds via TrackedPropagationFailed);
-        // the non-throwing try_to_infer_* methods pass false, so a contradiction sets
+        // the non-throwing infer_*_or_stop methods pass false, so a contradiction sets
         // _contradicted and returns normally, and the propagate loop detects it.
         template <typename Emit_, typename Hint_>
         auto track_explicit(ProofLogger * const logger, const Inference inf, const Literal & lit, const JustifyExplicitly<Emit_, Hint_> & why,
@@ -171,7 +171,7 @@ namespace gcs::innards
             return Actual_::materialises_reasons;
         }
 
-        // Whether an inference on the non-throwing try_to_infer_* path has hit a
+        // Whether an inference on the non-throwing infer_*_or_stop path has hit a
         // contradiction this propagate() call. The propagate loop checks this after
         // a propagator returns (for propagators that opt out of throwing on failure).
         [[nodiscard]] auto contradicted() const -> bool
@@ -349,7 +349,7 @@ namespace gcs::innards
         // flow. [[nodiscard]] makes ignoring the verdict a compile error -- the
         // caller must stop (it cannot safely keep reading state after a failure).
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
-        [[nodiscard]] auto try_to_infer_less_than(ProofLogger * const logger, const VarType_ & var, Integer value,
+        [[nodiscard]] auto infer_less_than_or_stop(ProofLogger * const logger, const VarType_ & var, Integer value,
             const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt)
             -> bool
         {
@@ -361,7 +361,7 @@ namespace gcs::innards
         }
 
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
-        [[nodiscard]] auto try_to_infer_greater_than_or_equal(ProofLogger * const logger, const VarType_ & var, Integer value,
+        [[nodiscard]] auto infer_greater_than_or_equal_or_stop(ProofLogger * const logger, const VarType_ & var, Integer value,
             const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt)
             -> bool
         {
@@ -372,20 +372,46 @@ namespace gcs::innards
             return ! _contradicted;
         }
 
-        // Non-throwing counterpart of infer_not_equal on the JustifyUsingRUP path (the
-        // one the reified-equals enforce passes use). On contradiction sets
-        // _contradicted and returns false instead of throwing; [[nodiscard]] forces
+        // Non-throwing counterparts on the JustifyUsingRUP path (used by the
+        // reified-equals and comparison enforce passes). On contradiction they set
+        // _contradicted and return false instead of throwing; [[nodiscard]] forces
         // the caller to bail.
         template <IntegerVariableIDLike VarType_, typename Hint_>
             requires(! std::same_as<Hint_, NoHint>)
-        [[nodiscard]] auto try_to_infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why,
-            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> bool
+        [[nodiscard]] auto infer_not_equal_or_stop(ProofLogger * const logger, const VarType_ & var, Integer value,
+            const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> bool
         {
             if (_contradicted) [[unlikely]]
                 return false;
             auto annotation = rup_hint_annotation(logger, why.hint, fallback);
             auto snapshotted = snapshot_reason(logger, reason, _state);
             track(logger, _state.infer_not_equal(var, value), var != value, JustifyUsingRUP{}, snapshotted, annotation, false);
+            return ! _contradicted;
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        [[nodiscard]] auto infer_less_than_or_stop(ProofLogger * const logger, const VarType_ & var, Integer value,
+            const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> bool
+        {
+            if (_contradicted) [[unlikely]]
+                return false;
+            auto annotation = rup_hint_annotation(logger, why.hint, fallback);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer_less_than(var, value), var < value, JustifyUsingRUP{}, snapshotted, annotation, false);
+            return ! _contradicted;
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        [[nodiscard]] auto infer_greater_than_or_equal_or_stop(ProofLogger * const logger, const VarType_ & var, Integer value,
+            const JustifyUsingRUP<Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> bool
+        {
+            if (_contradicted) [[unlikely]]
+                return false;
+            auto annotation = rup_hint_annotation(logger, why.hint, fallback);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer_greater_than_or_equal(var, value), var >= value, JustifyUsingRUP{}, snapshotted, annotation, false);
             return ! _contradicted;
         }
 
