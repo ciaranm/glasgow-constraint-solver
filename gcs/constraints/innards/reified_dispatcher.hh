@@ -127,6 +127,35 @@ namespace gcs::innards
             add_trigger_for(triggers, undecided.cond);
         }
 
+        // If the reification condition is already decided in the root state -- an
+        // unconditional MustHold / MustNotHold, or a reified literal that is already
+        // fixed at install time (as happens with some FlatZinc-generated
+        // constraints) -- then its verdict can never change during search: domains
+        // only shrink from the root, and we never backtrack above it. So install a
+        // propagator that runs the relevant enforce pass directly, with no per-call
+        // test_reification_condition and no verdict visit. It is byte-identical to
+        // the branching path, which would re-derive the same verdict -- and the same
+        // cond literal -- on every call. Only a genuinely Undecided condition needs
+        // the runtime branch below.
+        if (std::holds_alternative<evaluated_reif::MustHold>(initial_evaluated)) {
+            propagators.install(
+                constraint_id,
+                [enforce_constraint_must_hold = std::move(enforce_constraint_must_hold),
+                    cond = std::get<evaluated_reif::MustHold>(initial_evaluated).cond](const State & state, auto & inference,
+                    ProofLogger * const logger) -> PropagatorState { return enforce_constraint_must_hold(state, inference, logger, cond); },
+                triggers);
+            return;
+        }
+        if (std::holds_alternative<evaluated_reif::MustNotHold>(initial_evaluated)) {
+            propagators.install(
+                constraint_id,
+                [enforce_constraint_must_not_hold = std::move(enforce_constraint_must_not_hold),
+                    cond = std::get<evaluated_reif::MustNotHold>(initial_evaluated).cond](const State & state, auto & inference,
+                    ProofLogger * const logger) -> PropagatorState { return enforce_constraint_must_not_hold(state, inference, logger, cond); },
+                triggers);
+            return;
+        }
+
         propagators.install(
             constraint_id,
             [reif_cond, enforce_constraint_must_hold = std::move(enforce_constraint_must_hold),
