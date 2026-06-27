@@ -4,6 +4,7 @@
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
+#include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
 #include <gcs/constraints/element.hh>
@@ -554,6 +555,20 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                     resolve_variable_list(variables, terms[3], "the disjunctive2d y list"),
                     resolve_variable_list(variables, terms[4], "the disjunctive2d width list"),
                     resolve_variable_list(variables, terms[5], "the disjunctive2d height list"), op.ends_with("_strict")},
+                label);
+        }
+        else if (op == "cumulative") {
+            // (label cumulative (starts...) (lengths...) (heights...) cap): the
+            // tasks [start, start + length) each occupy `height` of a shared
+            // resource, and at every time point the total height of active tasks
+            // is at most `cap`. Lengths, heights and the capacity may each be a
+            // variable or a constant; cake_pb_cp parses exactly this shape.
+            if (terms.size() != 6)
+                throw ScpReadError{"cumulative is (label cumulative (starts...) (lengths...) (heights...) cap)"};
+            post_constraint(problem,
+                Cumulative{resolve_variable_list(variables, terms[2], "the cumulative start list"),
+                    resolve_variable_list(variables, terms[3], "the cumulative length list"),
+                    resolve_variable_list(variables, terms[4], "the cumulative height list"), resolve_variable(variables, terms[5])},
                 label);
         }
         else if (op == "regular") {

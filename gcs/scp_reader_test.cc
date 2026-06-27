@@ -4,6 +4,7 @@
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
+#include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
 #include <gcs/constraints/element.hh>
@@ -455,7 +456,24 @@ TEST_CASE("read_scp: disjunctive2d enumerates correctly")
     }
 }
 
-TEST_CASE("read_scp: regular, disjunctive and disjunctive2d survive write -> read -> write unchanged")
+TEST_CASE("read_scp: cumulative enumerates correctly")
+{
+    // Three unit-length, unit-height tasks sharing a capacity-2 resource over the
+    // two time points 0..1: at most two may run at any one time, so no time point
+    // is occupied by all three.
+    for (const auto & s : enumerate("( ( (S0 0 1) (S1 0 1) (S2 0 1) ) ( (_1 cumulative (S0 S1 S2) (1 1 1) (1 1 1) 2) ) )"))
+        for (long long t = 0; t <= 1; ++t)
+            CHECK((s.at("S0") == t) + (s.at("S1") == t) + (s.at("S2") == t) <= 2);
+
+    // Variable heights and a variable capacity are allowed too: the height and
+    // capacity slots may name variables. Two tasks of common height H share a
+    // capacity-2 resource, so they may overlap only when 2*H <= 2, i.e. H <= 1.
+    for (const auto & s : enumerate("( ( (S0 0 1) (S1 0 1) (H 1 2) (C 2 2) ) ( (_1 cumulative (S0 S1) (1 1) (H H) C) ) )"))
+        if (s.at("H") == 2)
+            CHECK(s.at("S0") != s.at("S1"));
+}
+
+TEST_CASE("read_scp: regular, disjunctive, disjunctive2d and cumulative survive write -> read -> write unchanged")
 {
     Problem original;
     auto x0 = original.create_integer_variable(0_i, 1_i, "X0");
@@ -470,6 +488,7 @@ TEST_CASE("read_scp: regular, disjunctive and disjunctive2d survive write -> rea
     original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}, false}); // non-strict -> disjunctive
     original.post(Disjunctive2D{std::vector<IntegerVariableID>{s0, s1}, std::vector<IntegerVariableID>{y0, y1}, std::vector<Integer>{2_i, 2_i},
         std::vector<Integer>{2_i, 2_i}, false});
+    original.post(Cumulative{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}, std::vector<Integer>{1_i, 1_i}, 2_i});
     auto scp_a = prove_to_scp(original, "scp_reader_regdisj_a");
 
     Problem rebuilt;
