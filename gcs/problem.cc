@@ -90,11 +90,15 @@ auto Problem::check_name(const string & name) -> const string &
     if (! stack.empty())
         throw NamingError{"Unbalanced brackets in variable name '" + name + "'"};
 
-    // The name is valid, but check for duplicates
-    if (! _imp->names.insert(name).second)
+    // The name is valid, but check for duplicates. Return a reference to the
+    // interned copy in _imp->names (whose elements have stable addresses for the
+    // set's lifetime) rather than to the caller's argument, so that a NamedConstraint
+    // can hold a string_view into it that stays valid for the whole solve.
+    auto [it, inserted] = _imp->names.insert(name);
+    if (! inserted)
         throw NamingError{"Duplicate variable name '" + name + "'"};
 
-    return name;
+    return *it;
 }
 
 auto Problem::create_integer_variable(Integer lower, Integer upper, const optional<string> & name) -> SimpleIntegerVariableID
