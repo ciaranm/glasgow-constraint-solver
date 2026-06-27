@@ -298,14 +298,16 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
                                                 ProofLogger * const logger, const Literal & cond) -> PropagatorState {
         auto value1 = state.optional_single_value(v1);
         if (value1) {
-            inference.infer_not_equal(logger, v2, *value1, JustifyUsingRUP{hints::Equals{owner}},
-                inference.want_reasons() ? concat(singleton_reason(cond), ExactSingleValue{ReasonVars{v1_scope.get()}}) : Reason{});
+            if (! inference.infer_not_equal_or_stop(logger, v2, *value1, JustifyUsingRUP{hints::Equals{owner}},
+                    inference.want_reasons() ? concat(singleton_reason(cond), ExactSingleValue{ReasonVars{v1_scope.get()}}) : Reason{}))
+                return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
             return PropagatorState::DisableUntilBacktrack;
         }
         auto value2 = state.optional_single_value(v2);
         if (value2) {
-            inference.infer_not_equal(logger, v1, *value2, JustifyUsingRUP{hints::Equals{owner}},
-                inference.want_reasons() ? concat(singleton_reason(cond), ExactSingleValue{ReasonVars{v2_scope.get()}}) : Reason{});
+            if (! inference.infer_not_equal_or_stop(logger, v1, *value2, JustifyUsingRUP{hints::Equals{owner}},
+                    inference.want_reasons() ? concat(singleton_reason(cond), ExactSingleValue{ReasonVars{v2_scope.get()}}) : Reason{}))
+                return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
             return PropagatorState::DisableUntilBacktrack;
         }
         return PropagatorState::Enable;

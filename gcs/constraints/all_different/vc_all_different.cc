@@ -49,8 +49,13 @@ using fmt::format;
 using fmt::print;
 #endif
 
+// Returns false if an inference contradicted (the caller must stop and not read
+// state again until backtrack); true if propagation completed. Uses the
+// non-throwing infer_not_equal_or_stop path so a contradiction does not unwind via
+// an exception -- this propagator fails roughly once per node in circuit-style
+// models, so the throw was a large per-node cost.
 auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference,
-    ProofLogger * const logger, const ConstraintID & owner) -> void
+    ProofLogger * const logger, const ConstraintID & owner) -> bool
 {
     auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
 
@@ -76,16 +81,18 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         for (auto other : to_propagate) {
             if (other.second == val) {
                 // we're already in a contradicting state
-                inference.infer_not_equal(
-                    logger, var, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{other.first == val}}});
+                if (! inference.infer_not_equal_or_stop(
+                        logger, var, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{other.first == val}}}))
+                    return false;
             }
         }
 
         while (i != unassigned.end()) {
             auto other = *i;
             if (other != var) {
-                inference.infer_not_equal(
-                    logger, other, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{var == val}}});
+                if (! inference.infer_not_equal_or_stop(
+                        logger, other, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{var == val}}}))
+                    return false;
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);
                     unassigned.erase(i++);
@@ -95,6 +102,8 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
             }
         }
     }
+
+    return true;
 }
 
 VCAllDifferent::VCAllDifferent(vector<IntegerVariableID> v) : _vars(move(v))
@@ -161,17 +170,18 @@ auto VCAllDifferent::install_propagators(Propagators & propagators) -> void
         constraint_id(),
         [unassigned_handle = _unassigned_handle, owner = constraint_id()](
             const State & state, auto & tracker, ProofLogger * const logger) -> PropagatorState {
-            propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger, owner);
+            if (! propagate_non_gac_alldifferent(unassigned_handle, state, tracker, logger, owner))
+                return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
             return PropagatorState::Enable;
         },
         triggers);
 }
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
-    SimpleInferenceTracker & inference_tracker, ProofLogger * const logger, const ConstraintID & owner) -> void;
+    SimpleInferenceTracker & inference_tracker, ProofLogger * const logger, const ConstraintID & owner) -> bool;
 
 template auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
-    EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger, const ConstraintID & owner) -> void;
+    EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger, const ConstraintID & owner) -> bool;
 
 auto VCAllDifferent::s_expr(const innards::ProofModel * const model) const -> SExpr
 {

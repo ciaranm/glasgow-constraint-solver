@@ -159,20 +159,24 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
         auto enforce_constraint_must_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal, owner = constraint_id()](const State & state, auto & inference,
                                                 ProofLogger * const logger, const Literal & cond) -> PropagatorState {
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-            inference.infer_less_than(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{hints::Comparison{owner}},
-                ExplicitReason{ReasonLiterals{{cond, v2 <= v2_bounds.second}}});
-            inference.infer_greater_than_or_equal(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i), JustifyUsingRUP{hints::Comparison{owner}},
-                ExplicitReason{ReasonLiterals{{cond, v1 >= v1_bounds.first}}});
+            if (! inference.infer_less_than_or_stop(logger, v1, v2_bounds.second + (or_equal ? 1_i : 0_i), JustifyUsingRUP{hints::Comparison{owner}},
+                    ExplicitReason{ReasonLiterals{{cond, v2 <= v2_bounds.second}}}))
+                return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
+            if (! inference.infer_greater_than_or_equal_or_stop(logger, v2, v1_bounds.first + (or_equal ? 0_i : 1_i),
+                    JustifyUsingRUP{hints::Comparison{owner}}, ExplicitReason{ReasonLiterals{{cond, v1 >= v1_bounds.first}}}))
+                return PropagatorState::Enable;
             return v1_bounds.second < (v2_bounds.first + (or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
         };
 
         auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, or_equal = _or_equal, owner = constraint_id()](const State & state,
                                                     auto & inference, ProofLogger * const logger, const Literal & cond) -> PropagatorState {
             auto v1_bounds = state.bounds(v1), v2_bounds = state.bounds(v2);
-            inference.infer_less_than(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i), JustifyUsingRUP{hints::Comparison{owner}},
-                ExplicitReason{ReasonLiterals{{cond, v1 <= v1_bounds.second}}});
-            inference.infer_greater_than_or_equal(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i), JustifyUsingRUP{hints::Comparison{owner}},
-                ExplicitReason{ReasonLiterals{{cond, v2 >= v2_bounds.first}}});
+            if (! inference.infer_less_than_or_stop(logger, v2, v1_bounds.second + (! or_equal ? 1_i : 0_i),
+                    JustifyUsingRUP{hints::Comparison{owner}}, ExplicitReason{ReasonLiterals{{cond, v1 <= v1_bounds.second}}}))
+                return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
+            if (! inference.infer_greater_than_or_equal_or_stop(logger, v1, v2_bounds.first + (! or_equal ? 0_i : 1_i),
+                    JustifyUsingRUP{hints::Comparison{owner}}, ExplicitReason{ReasonLiterals{{cond, v2 >= v2_bounds.first}}}))
+                return PropagatorState::Enable;
             return v2_bounds.second < (v1_bounds.first + (! or_equal ? 1_i : 0_i)) ? PropagatorState::DisableUntilBacktrack : PropagatorState::Enable;
         };
 

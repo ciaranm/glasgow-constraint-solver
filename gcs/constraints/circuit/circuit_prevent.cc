@@ -64,7 +64,8 @@ namespace
     auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
         const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference, ProofLogger * const logger) -> void
     {
-        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner);
+        if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
+            return; // contradiction: the cycle checks below would read junk state; the loop sees contradicted()
         check_small_cycles(succ, owner, pos_var_data, state, inference, logger);
         prevent_small_cycles(succ, owner, pos_var_data, unassigned_handle, state, inference, logger);
     }

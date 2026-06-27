@@ -1066,7 +1066,8 @@ namespace
         const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void
     {
         auto & pos_var_data = any_cast<PosVarDataMap &>(state.get_persistent_constraint_state(pos_var_data_handle));
-        propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner);
+        if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
+            return; // contradiction: the SCC check below would read junk state; the loop sees contradicted()
         auto proof_data = SCCProofData{pos_var_data, proof_flag_data_handle, pos_alldiff_data_handle};
         check_sccs(state, inference, logger, reason, owner, succ, scc_options, proof_data);
         auto & unassigned = any_cast<list<IntegerVariableID> &>(state.get_constraint_state(unassigned_handle));
