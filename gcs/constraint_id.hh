@@ -2,6 +2,8 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINT_ID_HH
 
 #include <string>
+#include <string_view>
+#include <type_traits>
 #include <variant>
 #include <version>
 
@@ -34,18 +36,30 @@ namespace gcs
 
     struct NamedConstraint final
     {
-        std::string name;
+        // A view into a name string owned elsewhere (the Problem's name pool), so
+        // that ConstraintID stays trivially copyable -- copying it is a memcpy
+        // rather than a std::string copy + the std::variant copy-ctor visit. The
+        // viewed string must outlive every copy of this id; the Problem owns it for
+        // the whole solve. Compared by content, matching the old std::string field.
+        std::string_view name;
         [[nodiscard]] auto operator<=>(const NamedConstraint &) const = default;
         [[nodiscard]] auto as_string() const -> std::string
         {
-            return name;
+            return std::string{name};
         }
     };
 
     // The *identity* of a constraint (`_1`, `_2`, or a caller-given name) -- not
     // its type (`abs`, `all_different`, ...). Kept distinct from "name" because
-    // both readings of that word kept getting confused.
+    // both readings of that word kept getting confused. Trivially copyable (all
+    // three alternatives are), so passing or copying one is just a memcpy.
     using ConstraintID = std::variant<CurrentlyUnnamedConstraint, NumberedConstraint, NamedConstraint>;
+
+    // ConstraintID is copied on the hot path -- every reason/hint a propagator builds
+    // carries one (see e.g. propagate_non_gac_alldifferent). Keep it trivially copyable
+    // so that copy is a memcpy rather than a std::variant copy-ctor visit: in particular
+    // do not give any alternative an owning std::string or other non-trivial member.
+    static_assert(std::is_trivially_copyable_v<ConstraintID>);
 
     [[nodiscard]] auto as_string(const ConstraintID &) -> std::string;
 }
