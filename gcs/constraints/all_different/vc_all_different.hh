@@ -5,6 +5,7 @@
 #include <gcs/innards/inference_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
 #include <optional>
@@ -15,8 +16,14 @@ namespace gcs
 {
     namespace innards
     {
+        // single_value_reasons, when non-null, is a constraint-owned (not backtracked)
+        // table of prebuilt "v == its single value" reasons, indexed by the variable's
+        // SimpleIntegerVariableID index minus reason_base, so the hot loops hand back a
+        // reference instead of constructing a reason. Variables with no entry (views /
+        // constants, or an out-of-range index) fall back to building the reason inline.
         [[nodiscard]] auto propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
-            auto & inference_tracker, ProofLogger * const logger, const ConstraintID & owner) -> bool;
+            auto & inference_tracker, ProofLogger * const logger, const ConstraintID & owner,
+            const std::vector<Reason> * single_value_reasons = nullptr, unsigned long long reason_base = 0) -> bool;
     }
 
     /**
