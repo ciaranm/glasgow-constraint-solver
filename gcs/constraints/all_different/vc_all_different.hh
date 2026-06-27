@@ -15,8 +15,8 @@ namespace gcs
 {
     namespace innards
     {
-        auto propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference_tracker,
-            ProofLogger * const logger, const ConstraintID & owner) -> void;
+        [[nodiscard]] auto propagate_non_gac_alldifferent(const ConstraintStateHandle & unassigned_handle, const State & state,
+            auto & inference_tracker, ProofLogger * const logger, const ConstraintID & owner) -> bool;
     }
 
     /**
