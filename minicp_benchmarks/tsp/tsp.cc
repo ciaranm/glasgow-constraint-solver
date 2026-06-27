@@ -30,8 +30,8 @@ auto main(int argc, char * argv[]) -> int
             ("help", "Display help information") //
             ("prove", "Create a proof");
 
-        options.add_options()("propagator", "Specify which circuit propagation algorithm to use (circuit/prevent/scc)",
-            cxxopts::value<string>()->default_value("circuit"));
+        options.add_options()(
+            "propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", cxxopts::value<string>()->default_value("prevent"));
 
         options_vars = options.parse(argc, argv);
     }
@@ -50,8 +50,8 @@ auto main(int argc, char * argv[]) -> int
 
     if (options_vars.contains("propagator")) {
         const string propagator_value = options_vars["propagator"].as<string>();
-        if (propagator_value != "prevent" && propagator_value != "scc" && propagator_value != "circuit") {
-            cerr << "Error: Invalid value for propagator. Use 'prevent', 'scc' or 'circuit'." << endl;
+        if (propagator_value != "prevent" && propagator_value != "scc") {
+            cerr << "Error: Invalid value for propagator. Use 'prevent' or 'scc'." << endl;
             return EXIT_FAILURE;
         }
     }
@@ -92,13 +92,10 @@ auto main(int argc, char * argv[]) -> int
     if (options_vars["propagator"].as<string>() == "prevent") {
         p.post(CircuitPrevent{succ, false});
     }
-    else if (options_vars["propagator"].as<string>() == "scc") {
+    else {
         SCCOptions options{};
         options.enable_comments = false;
         p.post(CircuitSCC{succ, false, options});
-    }
-    else {
-        p.post(Circuit{succ, false});
     }
 
     for (unsigned i = 0; i < n; ++i)
