@@ -42,10 +42,13 @@ namespace gcs::innards
         // is rebuilt each call), so it needs no separate reset.
         bool _contradicted = false;
 
+        // do_throw is forwarded to track_impl: true (the default) keeps the throwing
+        // failure path the legacy infer* methods rely on; false is the non-throwing
+        // try_to_infer_* path, which sets _contradicted and returns instead.
         auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason,
-            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt, bool do_throw = true) -> void
         {
-            return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason, assertion_hints);
+            return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason, assertion_hints, do_throw);
         }
 
         // Pin a reason's materialisation *timing* so it can be carried across the
@@ -369,6 +372,23 @@ namespace gcs::innards
             return ! _contradicted;
         }
 
+        // Non-throwing counterpart of infer_not_equal on the JustifyUsingRUP path (the
+        // one the reified-equals enforce passes use). On contradiction sets
+        // _contradicted and returns false instead of throwing; [[nodiscard]] forces
+        // the caller to bail.
+        template <IntegerVariableIDLike VarType_, typename Hint_>
+            requires(! std::same_as<Hint_, NoHint>)
+        [[nodiscard]] auto try_to_infer_not_equal(ProofLogger * const logger, const VarType_ & var, Integer value, const JustifyUsingRUP<Hint_> & why,
+            const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> bool
+        {
+            if (_contradicted) [[unlikely]]
+                return false;
+            auto annotation = rup_hint_annotation(logger, why.hint, fallback);
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track(logger, _state.infer_not_equal(var, value), var != value, JustifyUsingRUP{}, snapshotted, annotation, false);
+            return ! _contradicted;
+        }
+
         template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
         auto infer_not_in_range(ProofLogger * const logger, const VarType_ & var, Integer lo, Integer hi, const JustifyExplicitly<Emit_, Hint_> & why,
             const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
@@ -529,7 +549,7 @@ namespace gcs::innards
         static constexpr bool materialises_reasons = false;
 
         auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const Reason &,
-            const std::optional<AssertionAnnotation> &) -> void
+            const std::optional<AssertionAnnotation> &, bool do_throw = true) -> void
         {
             switch (inf) {
             case Inference::NoChange: break;
@@ -558,7 +578,10 @@ namespace gcs::innards
             [[unlikely]] case Inference::Contradiction:
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
-                throw TrackedPropagationFailed{};
+                _contradicted = true;
+                if (do_throw)
+                    throw TrackedPropagationFailed{};
+                break;
             }
         }
     };
@@ -571,7 +594,7 @@ namespace gcs::innards
         static constexpr bool materialises_reasons = true;
 
         auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason,
-            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
+            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt, bool do_throw = true) -> void
         {
             switch (inf) {
             case Inference::NoChange: break;
@@ -612,7 +635,10 @@ namespace gcs::innards
                     logger->infer(lit, just, materialise(reason, _state), assertion_hints);
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _did_anything_since_last_call_inside_propagator = true;
-                throw TrackedPropagationFailed{};
+                _contradicted = true;
+                if (do_throw)
+                    throw TrackedPropagationFailed{};
+                break;
             }
         }
     };
