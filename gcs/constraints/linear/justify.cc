@@ -10,9 +10,8 @@ using namespace gcs::innards;
 
 using std::optional;
 using std::pair;
-using std::vector;
 
-auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const auto & coeff_vars, const vector<pair<Integer, Integer>> & bounds,
+auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const auto & coeff_vars, const LinearBounds & bounds,
     const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality, pair<optional<ProofLine>, optional<ProofLine>> proof_lines)
     -> void
 {
@@ -46,13 +45,13 @@ auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const auto & coef
 }
 
 template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
-    const vector<pair<Integer, Integer>> & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
+    const LinearBounds & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
     pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
 
 template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
-    const vector<pair<Integer, Integer>> & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
+    const LinearBounds & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
     pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
 
 template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<SimpleIntegerVariableID> & coeff_vars,
-    const vector<pair<Integer, Integer>> & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
+    const LinearBounds & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
     pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;

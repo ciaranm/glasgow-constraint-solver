@@ -54,8 +54,8 @@ namespace
         return true;
     }
 
-    auto linear_bounds_reason(bool want_reason, const auto & coeff_vars, const vector<pair<Integer, Integer>> & bounds,
-        const optional<SimpleIntegerVariableID> & var, bool invert, const optional<Literal> & add_to_reason) -> Reason
+    auto linear_bounds_reason(bool want_reason, const auto & coeff_vars, const LinearBounds & bounds, const optional<SimpleIntegerVariableID> & var,
+        bool invert, const optional<Literal> & add_to_reason) -> Reason
     {
         // Building this reason is O(coeff_vars) and it is only ever read when proofs
         // are on (or conflict-directed search wants it), so skip it otherwise -- on a
@@ -81,7 +81,7 @@ namespace
         return ExplicitReason{reason};
     }
 
-    auto infer(auto & inference, ProofLogger * const logger, const vector<pair<Integer, Integer>> & bounds, const auto & coeff_vars, int p,
+    auto infer(auto & inference, ProofLogger * const logger, const LinearBounds & bounds, const auto & coeff_vars, int p,
         const SimpleIntegerVariableID & var, Integer remainder, const bool coeff, bool second_constraint_for_equality,
         const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason, const auto & hint)
         -> void
@@ -106,7 +106,7 @@ namespace
         }
     }
 
-    auto infer(auto & inference, ProofLogger * const logger, const vector<pair<Integer, Integer>> & bounds, const auto & coeff_vars, int p,
+    auto infer(auto & inference, ProofLogger * const logger, const LinearBounds & bounds, const auto & coeff_vars, int p,
         const SimpleIntegerVariableID & var, Integer remainder, const Integer coeff, bool second_constraint_for_equality,
         const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason, const auto & hint)
         -> void
@@ -160,7 +160,7 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
     bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason,
     const Hint_ & hint) -> PropagatorState
 {
-    vector<pair<Integer, Integer>> bounds;
+    LinearBounds bounds;
     bounds.reserve(coeff_vars.terms.size());
 
     // need to check the empty sum case somewhere, because we only get a contradiction
