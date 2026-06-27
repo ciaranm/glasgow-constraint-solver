@@ -12,6 +12,7 @@
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <functional>
@@ -20,6 +21,7 @@
 #include <random>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include <version>
@@ -444,8 +446,7 @@ namespace gcs::test_innards
         GAC
     };
 
-    template <typename ResultsSet_>
-    auto consistency_not_achieved(const std::string & which, const ResultsSet_ & expected, const CurrentState & s,
+    inline auto consistency_not_achieved(const std::string & which, const std::unordered_set<long long> & locally_supported, const CurrentState & s,
         const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, Integer val) -> void
     {
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -454,9 +455,11 @@ namespace gcs::test_innards
         using fmt::println;
 #endif
         using std::cerr;
+        std::vector<long long> supported{locally_supported.begin(), locally_supported.end()};
+        std::ranges::sort(supported);
         println(cerr, "{} not achieved in test", which);
-        println(cerr, "expected: {}", expected);
-        println(cerr, "var {} value {} does not occur anywhere in expected", innards::debug_string(var), val);
+        println(cerr, "var {} value {} has no support at the current node", innards::debug_string(var), val);
+        println(cerr, "values of {} that do have a support here: {}", innards::debug_string(var), supported);
         for (const auto & v : all_vars) {
             std::vector<Integer> values;
             for (Integer i : s.each_value(v))
@@ -466,82 +469,102 @@ namespace gcs::test_innards
         throw UnexpectedException{"consistency not achieved"};
     }
 
-    template <typename ResultsSet_, typename Get_>
-    auto check_support(const ResultsSet_ & expected, const CurrentState & s, const std::vector<IntegerVariableID> & all_vars,
-        const IntegerVariableID & var, CheckConsistency consistency, const Get_ & get_from_expected) -> void
+    /**
+     * Is `val` consistent with `var`'s current state for the purposes of being
+     * part of a support at the given consistency level? GAC requires the value
+     * to be present in the live domain; BC (which the solver implements as
+     * bounds(Z)) only requires it to lie within the current [lower, upper]
+     * interval, so a support may legitimately pass through a hole that branching
+     * punched into a partner's domain. Using the right filter per level keeps a
+     * correctly-bounds(Z) partner from triggering a spurious failure when a BC
+     * variable's bound is being checked.
+     */
+    inline auto component_supports(const CurrentState & s, const IntegerVariableID & var, int val, CheckConsistency level) -> bool
     {
-        switch (consistency) {
-        case CheckConsistency::None: return;
-
-        case CheckConsistency::GAC:
-            for (auto val : s.each_value(var)) {
-                bool found_support = false;
-                for (auto & x : expected)
-                    if (get_from_expected(x) == val.raw_value) {
-                        found_support = true;
-                        break;
-                    }
-                if (! found_support)
-                    consistency_not_achieved("gac", expected, s, all_vars, var, val);
-            }
-            return;
-
-        case CheckConsistency::BC:
-            for (const auto & val : std::vector{s.lower_bound(var), s.upper_bound(var)}) {
-                bool found_support = false;
-                for (auto & x : expected)
-                    if (get_from_expected(x) == val.raw_value) {
-                        found_support = true;
-                        break;
-                    }
-                if (! found_support)
-                    consistency_not_achieved("bc", expected, s, all_vars, var, val);
-            }
-            return;
+        switch (level) {
+            using enum CheckConsistency;
+        case None: return true;
+        case GAC: return s.in_domain(var, Integer{val});
+        case BC: return s.lower_bound(var) <= Integer{val} && Integer{val} <= s.upper_bound(var);
         }
-
         throw NonExhaustiveSwitch{};
     }
 
-    template <typename ResultsSet_, typename Get_>
-    auto check_support(const ResultsSet_ & expected, const CurrentState & s, const std::vector<IntegerVariableID> & all_vars,
-        const std::vector<IntegerVariableID> & vars, CheckConsistency consistency, const Get_ & get_from_expected) -> void
+    inline auto component_supports(
+        const CurrentState & s, const std::vector<IntegerVariableID> & vars, const std::vector<int> & vals, CheckConsistency level) -> bool
+    {
+        for (const auto & [idx, var] : enumerate(vars))
+            if (! component_supports(s, var, vals.at(idx), level))
+                return false;
+        return true;
+    }
+
+    /// How many supported-value-set slots a position contributes: one for a
+    /// scalar variable, one per element for a vector position.
+    inline auto support_slot_count(const IntegerVariableID &) -> std::size_t
+    {
+        return 1;
+    }
+
+    inline auto support_slot_count(const std::vector<IntegerVariableID> & vars) -> std::size_t
+    {
+        return vars.size();
+    }
+
+    /// Record an alive tuple's component value(s) into a position's slots.
+    inline auto record_support(std::vector<std::unordered_set<long long>> & slots, int val) -> void
+    {
+        slots.at(0).insert(val);
+    }
+
+    inline auto record_support(std::vector<std::unordered_set<long long>> & slots, const std::vector<int> & vals) -> void
+    {
+        for (const auto & [idx, val] : enumerate(vals))
+            slots.at(idx).insert(val);
+    }
+
+    /**
+     * Check one position against the per-node supported-value sets the caller
+     * built (one pass over `expected`, filtered to tuples alive at this node).
+     * GAC checks every live domain value; BC checks the two bounds.
+     */
+    inline auto check_support(const std::vector<std::unordered_set<long long>> & slots, const CurrentState & s,
+        const std::vector<IntegerVariableID> & all_vars, const IntegerVariableID & var, CheckConsistency consistency) -> void
     {
         switch (consistency) {
-        case CheckConsistency::None: return;
-
-        case CheckConsistency::BC:
-            for (const auto & [the_idx, the_var] : enumerate(vars)) {
-                const auto & idx = the_idx;
-                const auto & var = the_var;
-                for (const auto & val : std::vector{s.lower_bound(var), s.upper_bound(var)}) {
-                    bool found_support = false;
-                    for (auto & x : expected)
-                        if (get_from_expected(x).at(idx) == val.raw_value) {
-                            found_support = true;
-                            break;
-                        }
-                    if (! found_support)
-                        consistency_not_achieved("bc", expected, s, all_vars, var, val);
-                }
-            }
+            using enum CheckConsistency;
+        case None: return;
+        case GAC:
+            for (auto val : s.each_value(var))
+                if (! slots.at(0).contains(val.raw_value))
+                    consistency_not_achieved("gac", slots.at(0), s, all_vars, var, val);
             return;
+        case BC:
+            for (auto val : {s.lower_bound(var), s.upper_bound(var)})
+                if (! slots.at(0).contains(val.raw_value))
+                    consistency_not_achieved("bc", slots.at(0), s, all_vars, var, val);
+            return;
+        }
+        throw NonExhaustiveSwitch{};
+    }
 
-        case CheckConsistency::GAC:
-            for (const auto & [the_idx, the_var] : enumerate(vars)) {
-                const auto & idx = the_idx;
-                const auto & var = the_var;
-                for (auto val : s.each_value(var)) {
-                    bool found_support = false;
-                    for (auto & x : expected)
-                        if (get_from_expected(x).at(idx) == val.raw_value) {
-                            found_support = true;
-                            break;
-                        }
-                    if (! found_support)
-                        consistency_not_achieved("gac", expected, s, all_vars, var, val);
-                }
-            }
+    inline auto check_support(const std::vector<std::unordered_set<long long>> & slots, const CurrentState & s,
+        const std::vector<IntegerVariableID> & all_vars, const std::vector<IntegerVariableID> & vars, CheckConsistency consistency) -> void
+    {
+        switch (consistency) {
+            using enum CheckConsistency;
+        case None: return;
+        case GAC:
+            for (const auto & [idx, var] : enumerate(vars))
+                for (auto val : s.each_value(var))
+                    if (! slots.at(idx).contains(val.raw_value))
+                        consistency_not_achieved("gac", slots.at(idx), s, all_vars, var, val);
+            return;
+        case BC:
+            for (const auto & [idx, var] : enumerate(vars))
+                for (auto val : {s.lower_bound(var), s.upper_bound(var)})
+                    if (! slots.at(idx).contains(val.raw_value))
+                        consistency_not_achieved("bc", slots.at(idx), s, all_vars, var, val);
             return;
         }
 
@@ -565,6 +588,26 @@ namespace gcs::test_innards
         std::vector<IntegerVariableID> all_vars_as_vector;
         [&]<std::size_t... i_>(std::index_sequence<i_...>) { (add_to_all_vars(all_vars_as_vector, std::get<i_>(all_vars).first), ...); }(
             std::index_sequence_for<AllArgs_...>());
+
+        // Which consistency levels are present? Each level needs its own pass
+        // over `expected` with its own "alive at this node" filter (GAC: every
+        // other component in domain; BC: every other component within bounds),
+        // so we skip the pass for an absent level entirely.
+        const bool any_gac = [&]<std::size_t... i_>(std::index_sequence<i_...>) {
+            return ((std::get<i_>(all_vars).second == CheckConsistency::GAC) || ...);
+        }(std::index_sequence_for<AllArgs_...>());
+        const bool any_bc = [&]<std::size_t... i_>(std::index_sequence<i_...>) {
+            return ((std::get<i_>(all_vars).second == CheckConsistency::BC) || ...);
+        }(std::index_sequence_for<AllArgs_...>());
+
+        // Per top-level position, a set of locally supported values per slot
+        // (one slot for a scalar, one per element of a vector position). The
+        // shape is fixed across the search, so size it once and only clear
+        // (keeping capacity) at each node.
+        std::vector<std::vector<std::unordered_set<long long>>> support(sizeof...(AllArgs_));
+        [&]<std::size_t... i_>(std::index_sequence<i_...>) { ((support[i_].resize(support_slot_count(std::get<i_>(all_vars).first))), ...); }(
+            std::index_sequence_for<AllArgs_...>());
+
         solve_for_tests_with_callbacks(
             p, proof_name,
             [&](const CurrentState & s) -> bool {
@@ -572,10 +615,38 @@ namespace gcs::test_innards
                 return true;
             },
             [&](const CurrentState & s) -> bool {
+                for (auto & slots : support)
+                    for (auto & slot : slots)
+                        slot.clear();
+
+                // A tuple is a valid support at `level` only if *every* position
+                // (including None-tagged ones, e.g. a counted array) is alive at
+                // this node under that level's filter.
+                auto tuple_alive = [&](const auto & x, CheckConsistency level) {
+                    return [&]<std::size_t... i_>(std::index_sequence<i_...>) {
+                        return (component_supports(s, std::get<i_>(all_vars).first, std::get<i_>(x), level) && ...);
+                    }(std::index_sequence_for<AllArgs_...>());
+                };
+
+                // One pass over `expected` per level: for each alive tuple,
+                // record the value(s) of every position tagged with that level.
+                auto record_level = [&](CheckConsistency level) {
+                    for (const auto & x : expected) {
+                        if (! tuple_alive(x, level))
+                            continue;
+                        [&]<std::size_t... i_>(std::index_sequence<i_...>) {
+                            ((std::get<i_>(all_vars).second == level ? record_support(support[i_], std::get<i_>(x)) : (void)0), ...);
+                        }(std::index_sequence_for<AllArgs_...>());
+                    }
+                };
+
+                if (any_gac)
+                    record_level(CheckConsistency::GAC);
+                if (any_bc)
+                    record_level(CheckConsistency::BC);
+
                 [&]<std::size_t... i_>(std::index_sequence<i_...>) {
-                    (check_support(expected, s, all_vars_as_vector, std::get<i_>(all_vars).first, std::get<i_>(all_vars).second,
-                         [&](const auto & x) { return std::get<i_>(x); }),
-                        ...);
+                    (check_support(support[i_], s, all_vars_as_vector, std::get<i_>(all_vars).first, std::get<i_>(all_vars).second), ...);
                 }(std::index_sequence_for<AllArgs_...>());
                 return true;
             });

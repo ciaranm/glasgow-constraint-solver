@@ -143,12 +143,20 @@ namespace
         run_symalldiff_test(proofs, true, {{0}}, 0);
         run_symalldiff_test(proofs, true, {{1}}, 1);
 
-        // Small unrestricted: AllDifferent-GAC + Inverse-channeling reaches
-        // full symmetric-alldiff GAC for these.
+        // Two variables: a single off-diagonal pair admits no transitive
+        // chains, so AllDifferent-GAC + Inverse-channeling reaches full
+        // symmetric-alldiff GAC at every node.
         run_symalldiff_test(proofs, true, {{0, 1}, {0, 1}}, 0);
         run_symalldiff_test(proofs, true, {{1, 2}, {1, 2}}, 1);
-        run_symalldiff_test(proofs, true, {{0, 1, 2}, {0, 1, 2}, {0, 1, 2}}, 0);
-        run_symalldiff_test(proofs, true, {{0, 1, 2, 3}, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 1, 2, 3}}, 0);
+
+        // Three or more unrestricted variables are GAC at the root but not at
+        // every search node: once branching punches a hole, an assignment can
+        // force a channel (x_i = v => x_v = i) that leaves a third variable with
+        // no remaining value -- an infeasibility only the non-bipartite matching
+        // below detects, not pairwise channeling + bipartite AllDifferent (#413).
+        // Consistency-only (full enumeration + proof), not per-node GAC.
+        run_symalldiff_test(proofs, false, {{0, 1, 2}, {0, 1, 2}, {0, 1, 2}}, 0);
+        run_symalldiff_test(proofs, false, {{0, 1, 2, 3}, {0, 1, 2, 3}, {0, 1, 2, 3}, {0, 1, 2, 3}}, 0);
 
         // Out-of-range value gets bound-trimmed by Inverse before propagation.
         run_symalldiff_test(proofs, true, {{0, 1, 5}, {0, 1}}, 0);

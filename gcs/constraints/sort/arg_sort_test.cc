@@ -87,12 +87,23 @@ namespace
         prob.post(ArgSort{x, p, Integer(offset)});
 
         auto proof_name = proofs ? make_optional("arg_sort_test") : nullopt;
-        // Both x and p are kept bounds(Z)-consistent: x by the reused
-        // Mehlhorn-Thiel propagator, p by the achievable-rank-set propagator plus
-        // GAC all_different. (Full GAC on p is NP-hard, but bounds consistency is
-        // achieved and certified.)
-        solve_for_tests_checking_consistency(
-            prob, proof_name, expected, actual, tuple{std::make_pair(x, CheckConsistency::BC), std::make_pair(p, CheckConsistency::BC)});
+        // Neither x nor p is bounds(Z)-consistent for the *stable* ArgSort, so we
+        // only check full enumeration + the proof here (not per-node consistency).
+        // The reused Mehlhorn-Thiel propagator is bounds(Z) on x and the internal
+        // sorted values, but only for the bare Sortedness(x; y) relation, where
+        // the permutation is unconstrained. The stable tie-break that pins a
+        // unique p makes both sides strictly tighter than MT delivers:
+        //  - x gains strict bounds (p[j] > p[j+1] forces x[p[j]] < x[p[j+1]], so a
+        //    value that could only tie at an extremum is dead);
+        //  - p gains joint infeasibilities -- the achievable-rank-set propagator
+        //    derives each element's ranks from the x intervals but not from the
+        //    *other* p domains, so e.g. fixing one p position can kill another rank
+        //    that the per-element reachable set still admits.
+        // Thiel's thesis sec 3.1.4 shows even the non-stable SortednessPerm is not
+        // bounds(Z) on x or p (Lemma 3.1 breaks down), with a counterexample; the
+        // stable variant is tighter again and no bounds(Z) algorithm for it is
+        // known. So check None on both (#413).
+        solve_for_tests(prob, proof_name, actual, tuple{x, p});
         check_results(proof_name, expected, actual);
     }
 }
