@@ -238,6 +238,74 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                 }
             }
 
+            // Full GAC on the array variables. The rules above keep every var
+            // within result's bounds and every result value reachable as the
+            // extremum, but a var can still hold an interior value that can be
+            // neither the extremum itself nor sit under an extremum that some
+            // *other* var provides. For Max, value v of var_i is supported iff
+            // either v is itself a feasible result (v in D(result), and every
+            // other var can be <= v, i.e. v >= the largest other lower bound),
+            // or some other var can provide a larger result value (an r in
+            // D(result), r > v, reachable by another var that can also sit at or
+            // above the largest other lower bound). Min is the mirror image.
+            //
+            // Proof of var_i != v: the result-bound rule above already left
+            // D(result) inside [max lower bound, +inf), so every result value r
+            // strictly past v has r >= L_{-i}; by other_extreme's definition no
+            // *other* var can then equal r, and var_i = v can't either, so the
+            // al1 "result is one of the values" selector constraint is violated.
+            // Ruling out every such r forces result onto the wrong side of v,
+            // contradicting result >= var_i (for Max). A pure selector argument,
+            // no cross-variable bound reasoning needed.
+            {
+                vector<IntegerVariableID> scope = vars;
+                scope.push_back(result);
+                for (const auto & [i, var_i] : enumerate(vars)) {
+                    optional<Integer> others_limit; // max: largest other lower bound; min: smallest other upper bound
+                    for (const auto & [k, var_k] : enumerate(vars)) {
+                        if (k == i)
+                            continue;
+                        auto bk = state.bounds(var_k);
+                        auto lim = min ? bk.second : bk.first;
+                        others_limit = ! others_limit ? lim : (min ? std::min(*others_limit, lim) : std::max(*others_limit, lim));
+                    }
+                    optional<Integer> other_extreme; // extremal result value some other var can provide
+                    for (auto r : state.each_value_immutable(result)) {
+                        if (others_limit && (min ? r > *others_limit : r < *others_limit))
+                            continue;
+                        bool other_has = false;
+                        for (const auto & [k, var_k] : enumerate(vars))
+                            if (k != i && state.in_domain(var_k, r)) {
+                                other_has = true;
+                                break;
+                            }
+                        if (other_has)
+                            other_extreme = ! other_extreme ? r : (min ? std::min(*other_extreme, r) : std::max(*other_extreme, r));
+                    }
+                    for (auto v : state.each_value_mutable(var_i)) {
+                        bool supported_as_extreme = state.in_domain(result, v) && (! others_limit || (min ? v <= *others_limit : v >= *others_limit));
+                        bool supported_under_other = other_extreme && (min ? v > *other_extreme : v < *other_extreme);
+                        if (! supported_as_extreme && ! supported_under_other) {
+                            auto justf = [&, var_i = var_i, v = v](const ReasonLiterals & reason) {
+                                for (auto r : state.each_value_immutable(result)) {
+                                    if (min ? r >= v : r <= v)
+                                        continue;
+                                    // if var_i = v and result = r, no var can equal result, breaking al1
+                                    for (std::size_t k = 0; k < vars.size(); ++k)
+                                        logger->emit_rup_proof_line_under_reason(reason,
+                                            WPBSum{} + 1_i * (var_i != v) + 1_i * (result != r) + 1_i * (! selectors.at(k)) >= 1_i,
+                                            ProofLevel::Temporary);
+                                    logger->emit_rup_proof_line_under_reason(
+                                        reason, WPBSum{} + 1_i * (var_i != v) + 1_i * (result != r) >= 1_i, ProofLevel::Temporary);
+                                }
+                            };
+                            inference.infer_not_equal(
+                                logger, var_i, v, JustifyExplicitly{justf, ThenRUP::Yes, hints::MinMax{owner}}, generic_reason(scope));
+                        }
+                    }
+                }
+            }
+
             return PropagatorState::Enable;
         },
         triggers);

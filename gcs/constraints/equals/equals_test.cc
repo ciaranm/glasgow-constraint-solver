@@ -176,7 +176,14 @@ auto run_no_overlap_equals_test(bool proofs) -> void
     p.post(EqualsIf{c, 0_c, y == 8_i});
 
     auto proof_name = proofs ? make_optional("equals_test") : nullopt;
-    solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y, z, c});
+    // x, y, z are each GAC (a single EqualsIf is GAC, and c=1 does propagate
+    // x != 4 etc. via the contrapositive). But c is only network-GAC: c=1 is
+    // unsupported at z=1 because x==y combined with *all* the c -> x not in {...}
+    // / c -> y not in {...} implications leaves no common value -- a deduction
+    // across all 13 posted constraints that no individual EqualsIf propagator
+    // can make (GAC of a conjunction != conjunction of GAC). So c is None.
+    solve_for_tests_checking_consistency(p, proof_name, expected, actual,
+        tuple{pair{x, CheckConsistency::GAC}, pair{y, CheckConsistency::GAC}, pair{z, CheckConsistency::GAC}, pair{c, CheckConsistency::None}});
 
     check_results(proof_name, expected, actual);
 }

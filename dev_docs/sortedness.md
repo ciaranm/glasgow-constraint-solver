@@ -39,9 +39,11 @@ permutation and stable variants are NP-hard too. So:
   runs back into the hardness wall and is handled by weaker, costlier passes.
 
 Both constraints run the Mehlhorn-Thiel bounds-consistent propagator (below),
-achieving `bounds(Z)` on the source `x` and the sorted values. `ArgSort`
-additionally runs a channel pass and GAC `all_different` on the permutation `p`
-(see its section). No leaf checker is needed: once `x` is fixed the
+achieving `bounds(Z)` on the source `x` and the sorted values *for the bare
+`Sortedness(x; y)` relation*. `ArgSort` additionally runs a channel pass and GAC
+`all_different` on the permutation `p` (see its section) — but note that the
+stable tie-break makes neither `x` nor `p` fully `bounds(Z)` there; see the
+ArgSort "Caveat (issue #413)" below. No leaf checker is needed: once `x` is fixed the
 achievable-rank-set propagator collapses each element's reachable ranks to its
 single stable rank and prunes `p` to the unique permutation, so a bad `p` is a
 domain wipeout before any leaf.
@@ -132,14 +134,31 @@ the returned `SortednessWitness` (the `before` flags, `pos`, and the `rank_ge`/
     `(x[k] <= U) v before[i][k]` clauses; the inverse channel then closes
     `p[j] != offset+k` by RUP via the case split on `[x[k] >= U+1]`.
 
-**Consistency achieved.** `bounds(Z)` on `x`, `y`, **and `p`**, fully certified.
-The achievable-rank-set propagator gives bounds consistency on `p`: if rank `j`
-is reachable for element `k`, then some `x`-assignment places `k` at rank `j`,
-and that assignment is itself a complete solution with `p[j] = offset + k` — so
-the exact reachable set *is* the BC-supported set. This matches the strength of
-Gecode's `sorted` with permutation variables (Thiel's algorithm), but certified.
-Full GAC on `p` remains NP-hard (rank-feasible but integer-infeasible values can
-survive); that residual is the frontier and is deliberately not pursued.
+**Consistency achieved.** `bounds(Z)` on the internal sorted values `y`, fully
+certified. The achievable-rank-set propagator prunes `p` from each element's
+reachable rank set, every pruning certified.
+
+**Caveat (issue #413): `x` and `p` are NOT bounds(Z) for the *stable* ArgSort.**
+The per-node consistency harness found counterexamples on both. The reused
+Mehlhorn–Thiel propagator is bounds(Z) on `x`/`y` only for the *bare*
+`Sortedness(x; y)` relation, where the permutation is unconstrained (ties
+arbitrary). The stable tie-break that pins a unique `p` makes both sides strictly
+tighter than MT delivers:
+
+- `x` gains strict bounds — `p[j] > p[j+1]` forces `x[p[j]] < x[p[j+1]]`, so a
+  value that could only tie at an extremum is dead (e.g. `p0=1, p1=0` ⇒ `x1<x0`,
+  so `lb(x0)` should rise);
+- `p` gains joint infeasibilities — the achievable-rank set is derived from the
+  `x` intervals but not from the *other* `p` domains, so the "reachable rank ⇒
+  some complete solution places `k` there" argument fails once another `p`
+  position is branched and excludes that solution.
+
+This is exactly the wall Thiel flags: thesis §3.1.4 shows even the *non-stable*
+`SortednessPerm` is not bounds(Z) on `x` or `p` (Lemma 3.1 breaks down), with a
+counterexample; the stable variant is tighter again, and no bounds(Z) algorithm
+for it is known. So `arg_sort_test` checks `x` and `p` at None (enumeration +
+proof only). Full GAC on `p` is NP-hard regardless. Whether to pursue a stronger
+(stable) `x`/`p` propagator is a benchmark-driven open question.
 
 The asymmetry with Sort's witness is deliberate: a proof-only permutation (Sort)
 *forces* the stable-rank construction; a real permutation (ArgSort) channels

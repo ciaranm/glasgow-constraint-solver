@@ -73,6 +73,10 @@ namespace
             if (holds_alternative<FalseLiteral>(l))
                 saw_false = true;
         }
+        // Also wake on the reif literal: otherwise fixing full_reif (e.g. by
+        // branching) does not re-run the propagator, so full_reif being forced
+        // true would fail to push the lits true (the GAC gap from #413).
+        add_trigger_for(triggers, full_reif);
 
         if (saw_false) {
             // we saw a false literal, the reif variable must be forced off and

@@ -290,17 +290,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
 
     for (unsigned fixed_dim = 0; fixed_dim != index_vars.size(); ++fixed_dim) {
         Triggers index_triggers;
-        if (array_has_nonconstants) {
-            if (_bounds_only)
-                index_triggers.on_bounds.insert(index_triggers.on_bounds.end(), all_array_vars.begin(), all_array_vars.end());
-            else
-                index_triggers.on_change.insert(index_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
-        }
+        // The index side is always GAC. bounds_only only weakens the result
+        // propagator (range vs union); the index propagator must therefore watch
+        // the full domains (on_change) and test against result's whole domain, so
+        // that an interior hole in result removes the now-unsupported index value.
+        if (array_has_nonconstants)
+            index_triggers.on_change.insert(index_triggers.on_change.end(), all_array_vars.begin(), all_array_vars.end());
 
-        if (_bounds_only)
-            index_triggers.on_bounds.emplace_back(_result_var);
-        else
-            index_triggers.on_change.emplace_back(_result_var);
+        index_triggers.on_change.emplace_back(_result_var);
 
         for (const auto & [idx, var] : enumerate(index_vars))
             if (idx != fixed_dim)
@@ -309,16 +306,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
         propagators.install(
             constraint_id(),
             [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var, fixed_dim = fixed_dim,
-                array_has_nonconstants = array_has_nonconstants, bounds_only = _bounds_only,
+                array_has_nonconstants = array_has_nonconstants,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // for each index variable, update it to only contain values where
                 // there's at least one supporting option. result_var's domain is
                 // not modified by anything inside the loop body (the only infer_*
-                // calls are on index_vars[fixed_dim]), so the looking_for set and
-                // its bounds are constant across iterations and only need
-                // computing once.
+                // calls are on index_vars[fixed_dim]), so the looking_for set is
+                // constant across iterations and only needs computing once.
                 auto looking_for = state.copy_of_values(result_var);
-                auto looking_for_bounds = state.bounds(result_var);
                 // explored_vars only feeds the reason; building it is a per-test_val
                 // (no-SBO) allocation, so skip it when no reason will be read.
                 auto want_reason = inference.want_reasons();
@@ -338,29 +333,16 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                     // Constant array: test the value directly, skipping the
                                     // IntegerVariableID construction and the State round-trip.
                                     auto value = get_array_value<dimensions_>(elem, *array);
-                                    if (bounds_only) {
-                                        if (value >= looking_for_bounds.first && value <= looking_for_bounds.second)
-                                            return true;
-                                    }
-                                    else {
-                                        if (looking_for.contains(value))
-                                            return true;
-                                    }
+                                    if (looking_for.contains(value))
+                                        return true;
                                 }
                                 else {
                                     auto array_var = get_array_var<dimensions_>(elem, *array);
                                     if (want_reason && array_has_nonconstants)
                                         explored_vars.push_back(array_var);
 
-                                    if (bounds_only) {
-                                        if (state.lower_bound(array_var) >= looking_for_bounds.first &&
-                                            state.upper_bound(array_var) <= looking_for_bounds.second)
-                                            return true;
-                                    }
-                                    else {
-                                        if (state.domain_intersects_with(array_var, looking_for))
-                                            return true;
-                                    }
+                                    if (state.domain_intersects_with(array_var, looking_for))
+                                        return true;
                                 }
                             }
                             else {
@@ -404,16 +386,11 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
 
                                             if (elem.size() == dimensions_) {
                                                 auto array_var = get_array_var<dimensions_>(elem, *array);
-                                                if (bounds_only && array_has_nonconstants) {
-                                                    throw UnimplementedException{};
-                                                }
-                                                else {
-                                                    state.for_each_value_immutable(array_var, [&](Integer v) {
-                                                        logger->emit_rup_proof_line_under_reason(reason,
-                                                            sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) + 1_i * (array_var != v) >= 1_i,
-                                                            ProofLevel::Temporary);
-                                                    });
-                                                }
+                                                state.for_each_value_immutable(array_var, [&](Integer v) {
+                                                    logger->emit_rup_proof_line_under_reason(reason,
+                                                        sum_so_far + 1_i * (index_vars.at(fixed_dim) != test_val) + 1_i * (array_var != v) >= 1_i,
+                                                        ProofLevel::Temporary);
+                                                });
                                             }
                                             else
                                                 self(self, d + 1);

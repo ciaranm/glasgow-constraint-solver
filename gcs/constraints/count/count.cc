@@ -177,10 +177,58 @@ auto Count::install_propagators(Propagators & propagators) -> void
                     inference.infer(logger, value_of_interest != voi, JustifyUsingRUP{hints::Count{owner}}, generic_reason(all_vars));
                 }
                 else {
-                    if ((! lowest_how_many_must) || (how_many_must < *lowest_how_many_must))
-                        lowest_how_many_must = how_many_must;
-                    if ((! highest_how_many_might) || (how_many_might > *highest_how_many_might))
-                        highest_how_many_might = how_many_might;
+                    // [how_many_must, how_many_might] is the range of counts
+                    // achievable for this voi, and every count in it is reachable
+                    // (turn the "might but not must" vars to voi one at a time).
+                    // The two checks above only reject voi when that range lies
+                    // wholly below how_many's lower bound or above its upper bound;
+                    // for true GAC, voi is supported iff some count in the range is
+                    // actually in how_many's domain. If the whole range falls into
+                    // an interior hole of how_many, voi has no support.
+                    bool supported = false;
+                    for (auto c = how_many_must; c <= how_many_might; ++c)
+                        if (state.in_domain(how_many, c)) {
+                            supported = true;
+                            break;
+                        }
+
+                    if (! supported) {
+                        auto justf = [&](const ReasonLiterals & reason) -> void {
+                            // Materialise both conditional count bounds for this
+                            // voi, then value_of_interest != voi follows because
+                            // how_many is pinned into [must, might] while its
+                            // domain (in the reason) excludes that whole range.
+                            //
+                            // Upper bound (value_of_interest == voi => how_many <=
+                            // might): zero the eq flag of every var that cannot be
+                            // voi, exactly as the highest_how_many_might proof
+                            // below does.
+                            for (const auto & [idx, var] : enumerate(vars)) {
+                                if (! state.in_domain(var, voi)) {
+                                    logger->emit_rup_proof_line_under_reason(reason,
+                                        WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (! get<0>(flags[idx])) >= 1_i, ProofLevel::Temporary);
+                                    logger->emit_rup_proof_line_under_reason(
+                                        reason, WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (var != voi) >= 1_i, ProofLevel::Temporary);
+                                }
+                            }
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many < how_many_might + 1_i) >= 1_i, ProofLevel::Temporary);
+                            // Lower bound (value_of_interest == voi => how_many >=
+                            // must): the must vars are fixed to voi, so their eq
+                            // flags propagate on their own (cf. the lowest_must
+                            // proof below).
+                            logger->emit_rup_proof_line_under_reason(reason,
+                                WPBSum{} + 1_i * (value_of_interest != voi) + 1_i * (how_many >= how_many_must) >= 1_i, ProofLevel::Temporary);
+                        };
+                        inference.infer(
+                            logger, value_of_interest != voi, JustifyExplicitly{justf, ThenRUP::Yes, hints::Count{owner}}, generic_reason(all_vars));
+                    }
+                    else {
+                        if ((! lowest_how_many_must) || (how_many_must < *lowest_how_many_must))
+                            lowest_how_many_must = how_many_must;
+                        if ((! highest_how_many_might) || (how_many_might > *highest_how_many_might))
+                            highest_how_many_might = how_many_might;
+                    }
                 }
             }
 
