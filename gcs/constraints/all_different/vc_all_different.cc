@@ -78,11 +78,18 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         to_propagate.pop_back();
         auto i = unassigned.begin();
 
+        // Every removal this fixed (var == val) triggers is justified by the same
+        // single literal, so build that reason once per popped variable rather than
+        // once per inference -- and only when something will read it. Off the proof
+        // and conflict-learning paths want_reasons() is false, the reason is
+        // discarded, and constructing it per inference was ~6% of this benchmark.
+        const auto var_assigned_reason = inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{{var == val}}}} : Reason{};
+
         for (auto other : to_propagate) {
             if (other.second == val) {
                 // we're already in a contradicting state
-                if (! inference.infer_not_equal_or_stop(
-                        logger, var, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{other.first == val}}}))
+                if (! inference.infer_not_equal_or_stop(logger, var, val, JustifyUsingRUP{hints::AllDifferent{owner}},
+                        inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{{other.first == val}}}} : Reason{}))
                     return false;
             }
         }
@@ -90,8 +97,7 @@ auto gcs::innards::propagate_non_gac_alldifferent(const ConstraintStateHandle & 
         while (i != unassigned.end()) {
             auto other = *i;
             if (other != var) {
-                if (! inference.infer_not_equal_or_stop(
-                        logger, other, val, JustifyUsingRUP{hints::AllDifferent{owner}}, ExplicitReason{ReasonLiterals{{var == val}}}))
+                if (! inference.infer_not_equal_or_stop(logger, other, val, JustifyUsingRUP{hints::AllDifferent{owner}}, var_assigned_reason))
                     return false;
                 if (auto other_val = state.optional_single_value(other)) {
                     to_propagate.emplace_back(other, *other_val);
