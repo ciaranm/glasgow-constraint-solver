@@ -40,12 +40,24 @@ namespace
             logger->enter_proof_level(depth + 1);
 
         bool objective_failure = false;
+        Literals guesses;
+        if (this_branch_guess)
+            guesses.push_back(*this_branch_guess);
         if (problem.optional_minimise_variable() && objective_value) {
-            if (state.infer(*problem.optional_minimise_variable() < *objective_value) == Inference::Contradiction)
-                objective_failure = true;
+            auto objective_bound = *problem.optional_minimise_variable() < *objective_value;
+            switch (state.infer(objective_bound)) {
+            case Inference::Contradiction: objective_failure = true; break;
+            case Inference::NoChange: break;
+            // The branch-and-bound bound tightened the objective variable, so seed the queue with
+            // its propagators too. Without this only this_branch_guess seeds the queue, and a
+            // propagator that would react to the new objective bound is not re-run here (issue #418).
+            case Inference::BoundsChanged:
+            case Inference::InteriorValuesChanged:
+            case Inference::Instantiated: guesses.push_back(objective_bound); break;
+            }
         }
 
-        if ((! objective_failure) && propagators.propagate(this_branch_guess, state, logger, optional_abort_flag)) {
+        if ((! objective_failure) && propagators.propagate(guesses, state, logger, optional_abort_flag)) {
             if (optional_abort_flag && optional_abort_flag->load())
                 return false;
 

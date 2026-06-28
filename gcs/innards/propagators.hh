@@ -330,11 +330,15 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Propagate every constraint, until either a fixed point or a contradiction is reached. If no guess
-         * is supplied, requeue every constraint before we start.
+         * Propagate every constraint, until either a fixed point or a contradiction is reached. Every
+         * supplied guess seeds the propagation queue with the propagators watching its variable; if no
+         * guesses are supplied, requeue every constraint before we start. Pass more than one guess when
+         * several changes were applied to the state before propagating (for example a branch decision
+         * together with a branch-and-bound objective bound), so that propagators watching any of them are
+         * woken.
          */
-        [[nodiscard]] auto propagate(
-            const std::optional<Literal> & guess, State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const -> bool;
+        [[nodiscard]] auto propagate(const Literals & guesses, State &, ProofLogger * const, std::atomic<bool> * optional_abort_flag = nullptr) const
+            -> bool;
 
         /**
          * Call every initialiser, or until a contradiction is reached.

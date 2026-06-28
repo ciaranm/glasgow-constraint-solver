@@ -34,7 +34,10 @@ namespace
         if (logger && logger->get_assertion_level() == AssertionLevel::Off)
             logger->enter_proof_level(depth + 1);
 
-        if (propagators.propagate(this_branch_guess, state, logger)) {
+        Literals guesses;
+        if (this_branch_guess)
+            guesses.push_back(*this_branch_guess);
+        if (propagators.propagate(guesses, state, logger)) {
             auto brancher = branch_with(variable_order::dom_then_deg(vars), value_order::smallest_first())(state.current(), propagators);
             auto branch_iter = brancher.begin();
             if (branch_iter == brancher.end()) {
