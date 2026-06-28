@@ -37,6 +37,15 @@ using namespace gcs::test_innards;
 
 namespace
 {
+    // CI runs this test in both propagation modes via GCS_LINEAR_INCREMENTAL_THRESHOLD;
+    // tag the proof file name so the two runs don't clobber each other under parallel ctest.
+    auto threshold_proof_suffix() -> string
+    {
+        if (const char * e = std::getenv("GCS_LINEAR_INCREMENTAL_THRESHOLD"))
+            return string{"_t"} + e;
+        return {};
+    }
+
     // Post `cons` over an otherwise-free x in 0..2; if the constant constraint is
     // satisfiable the free x yields {0,1,2}, otherwise no solutions at all.
     template <typename PostConstraint_>
@@ -55,7 +64,7 @@ namespace
         post(p);
 
         set<tuple<int>> actual;
-        auto proof_name = proofs ? make_optional("linear_constant_test") : nullopt;
+        auto proof_name = proofs ? make_optional("linear_constant_test" + threshold_proof_suffix()) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{x});
         check_results(proof_name, expected, actual);
     }

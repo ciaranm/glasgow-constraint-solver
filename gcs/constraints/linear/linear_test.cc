@@ -40,6 +40,19 @@ using fmt::println;
 using namespace gcs;
 using namespace gcs::test_innards;
 
+namespace
+{
+    // CI runs this test in both propagation modes (incremental / stateless) by setting
+    // GCS_LINEAR_INCREMENTAL_THRESHOLD; tag the proof file names with it so the two
+    // runs don't clobber each other's .opb/.pbp under parallel ctest.
+    auto threshold_proof_suffix() -> string
+    {
+        if (const char * e = std::getenv("GCS_LINEAR_INCREMENTAL_THRESHOLD"))
+            return string{"_t"} + e;
+        return {};
+    }
+}
+
 template <typename Constraint_>
 auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> v1_range, pair<int, int> v2_range,
     pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs, const std::function<auto(int, int)->bool> & compare) -> void
@@ -73,7 +86,8 @@ auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & vi
         p.post(Constraint_{c, Integer{value}});
     }
 
-    auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
+    auto proof_name =
+        proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg) + threshold_proof_suffix()) : nullopt;
 
     if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
         solve_for_tests_checking_consistency(
@@ -117,7 +131,8 @@ auto run_linear_test_gac(bool proofs, const string & mode, const ViewWrapConfig 
         p.post(Constraint_{c, Integer{value}, true});
     }
 
-    auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
+    auto proof_name =
+        proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg) + threshold_proof_suffix()) : nullopt;
 
     if (1 == ineqs.size())
         solve_for_tests_checking_consistency(p, proof_name, expected, actual,
@@ -170,7 +185,8 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, cons
             p.post(Constraint_{c, Integer{value}, v4 == 1_i});
         }
 
-        auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
+        auto proof_name =
+            proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg) + threshold_proof_suffix()) : nullopt;
 
         if ((! is_same_v<Constraint_, LinearEqualityIff>) && (! is_same_v<Constraint_, LinearEqualityIf>) &&
             (! is_same_v<Constraint_, LinearNotEqualsIf>) && (! is_same_v<Constraint_, LinearNotEqualsIff>) && 1 == ineqs.size())
@@ -215,7 +231,7 @@ auto run_dup_linear_test(bool proofs, const string & mode, pair<int, int> a_rang
     c += Integer{coeffs_a_then_b.at(2)} * b;
     p.post(Constraint_{c, Integer{rhs}});
 
-    auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_dup") : nullopt;
+    auto proof_name = proofs ? make_optional("linear_equality_test_" + mode + "_dup" + threshold_proof_suffix()) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{a, b});
     check_results(proof_name, expected, actual);
 }

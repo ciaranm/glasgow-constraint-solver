@@ -25,8 +25,10 @@
 #include <fmt/ostream.h>
 #endif
 
+#include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <type_traits>
 #include <variant>
@@ -54,8 +56,10 @@ using std::print;
 using fmt::print;
 #endif
 
-ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac, bool flipped_cond) :
-    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _gac(gac), _flipped_cond(flipped_cond)
+ReifiedLinearEquality::ReifiedLinearEquality(
+    WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac, bool flipped_cond, std::optional<std::size_t> incremental_threshold) :
+    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _gac(gac), _flipped_cond(flipped_cond),
+    _incremental_threshold(incremental_threshold)
 {
 }
 
@@ -157,7 +161,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & initial_s
     if (optional_model)
         define_proof_model(*optional_model);
 
-    install_propagators(propagators);
+    install_propagators(propagators, initial_state);
 }
 
 auto ReifiedLinearEquality::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
@@ -215,7 +219,7 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
         .visit(_reif_cond);
 }
 
-auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> void
+auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State & initial_state) -> void
 {
     auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
 
@@ -285,14 +289,34 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> vo
 
                 visit(
                     [&, modifier = modifier](const auto & lin) {
-                        propagators.install(
-                            constraint_id(),
-                            [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond,
-                                owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) {
-                                return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond,
-                                    hints::LinearEquality{owner});
-                            },
-                            triggers);
+                        // Wide enough? Use the incremental propagator (folds instantiated terms
+                        // out), which needs backtrackable constraint state set up here. Otherwise
+                        // the cheaper stateless path, where folding bookkeeping does not pay off.
+                        if (lin.terms.size() >= _incremental_threshold.value_or(default_linear_incremental_threshold())) {
+                            auto active = make_shared<vector<std::size_t>>(lin.terms.size());
+                            for (std::size_t i = 0; i != lin.terms.size(); ++i)
+                                (*active)[i] = i;
+                            auto handle = initial_state.add_constraint_state(LinearIncrementalState{lin.terms.size(), 0_i});
+                            propagators.install(
+                                constraint_id(),
+                                [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond,
+                                    owner = constraint_id(), active = active,
+                                    handle = handle](const State & state, auto & inference, ProofLogger * const logger) {
+                                    return propagate_linear_incremental(lin, value + modifier, state, inference, logger, true, proof_line,
+                                        reason_from_cond, *active, handle, hints::LinearEquality{owner});
+                                },
+                                triggers);
+                        }
+                        else {
+                            propagators.install(
+                                constraint_id(),
+                                [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond,
+                                    owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) {
+                                    return propagate_linear(lin, value + modifier, state, inference, logger, true, proof_line, reason_from_cond,
+                                        hints::LinearEquality{owner});
+                                },
+                                triggers);
+                        }
                     },
                     sanitised_cv);
             }, //
@@ -462,10 +486,11 @@ auto ReifiedLinearEquality::s_expr(const ProofModel * const model) const -> SExp
 
 auto ReifiedLinearEquality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac, _flipped_cond);
+    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac, _flipped_cond, _incremental_threshold);
 }
 
-LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac) : ReifiedLinearEquality(coeff_vars, value, reif::MustHold{}, gac)
+LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac, std::optional<std::size_t> incremental_threshold) :
+    ReifiedLinearEquality(coeff_vars, value, reif::MustHold{}, gac, false, incremental_threshold)
 {
 }
 
