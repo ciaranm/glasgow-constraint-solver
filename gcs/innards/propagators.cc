@@ -173,8 +173,7 @@ auto Propagators::initialise(State & state, ProofLogger * const logger) const ->
     return true;
 }
 
-auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofLogger * const logger, atomic<bool> * optional_abort_flag) const
-    -> bool
+auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger * const logger, atomic<bool> * optional_abort_flag) const -> bool
 {
     auto requeue = [&](const SimpleIntegerVariableID & v, const Inference inf) {
         if (v.index < _imp->iv_triggers.size()) {
@@ -192,7 +191,7 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         }
     };
 
-    if (! lit) {
+    if (guesses.empty()) {
         // On the first pass, walk propagators in registration order. The queue runs
         // oldest-first, so push them forwards.
         _imp->queue.resize(_imp->propagation_functions.size());
@@ -207,25 +206,30 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
         _imp->idle_end = _imp->propagation_functions.size();
     }
     else {
+        // Seed the queue from every supplied guess. A propagator already enqueued by an
+        // earlier guess is skipped by the bookkeeping inside requeue, so guesses sharing
+        // a variable do not double-enqueue.
         _imp->enqueued_begin = 0;
         _imp->enqueued_end = 0;
-        overloaded{
-            [&](const TrueLiteral &) {},  //
-            [&](const FalseLiteral &) {}, //
-            [&](const IntegerVariableCondition & cond) {
-                overloaded{
-                    [&](const SimpleIntegerVariableID & var) {
-                        // trigger all propagators on this var, even if we might not actually
-                        // have instantiated it. bit ugly but easier than tracking.
-                        requeue(var, Inference::Instantiated);
-                    },                                                                                                  //
-                    [&](const ConstantIntegerVariableID &) {},                                                          //
-                    [&](const ViewOfIntegerVariableID & var) { requeue(var.actual_variable, Inference::Instantiated); } //
-                }
-                    .visit(cond.var);
-            } //
+        for (const auto & lit : guesses) {
+            overloaded{
+                [&](const TrueLiteral &) {},  //
+                [&](const FalseLiteral &) {}, //
+                [&](const IntegerVariableCondition & cond) {
+                    overloaded{
+                        [&](const SimpleIntegerVariableID & var) {
+                            // trigger all propagators on this var, even if we might not actually
+                            // have instantiated it. bit ugly but easier than tracking.
+                            requeue(var, Inference::Instantiated);
+                        },                                                                                                  //
+                        [&](const ConstantIntegerVariableID &) {},                                                          //
+                        [&](const ViewOfIntegerVariableID & var) { requeue(var.actual_variable, Inference::Instantiated); } //
+                    }
+                        .visit(cond.var);
+                } //
+            }
+                .visit(lit);
         }
-            .visit(*lit);
     }
 
     auto orig_idle_end = _imp->idle_end;
