@@ -8,6 +8,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/reification.hh>
 
+#include <cstddef>
 #include <optional>
 #include <utility>
 
@@ -34,16 +35,21 @@ namespace gcs
         ReificationCondition _reif_cond;
         bool _gac;
         bool _flipped_cond;
+        // Per-constraint width at/above which to use the incremental propagator; unset
+        // means use innards::default_linear_incremental_threshold().
+        std::optional<std::size_t> _incremental_threshold;
         std::optional<std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>>> _proof_line;
         innards::EvaluatedReificationCondition _evaluated_cond = innards::evaluated_reif::Deactivated{};
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
-        virtual auto install_propagators(innards::Propagators &) -> void override;
+        // Takes State (unlike the base's Propagators-only hook) because the incremental
+        // equality path registers backtrackable constraint state at install time.
+        auto install_propagators(innards::Propagators &, innards::State &) -> void;
 
     public:
-        explicit ReifiedLinearEquality(
-            WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool gac = false, bool flipped_cond = false);
+        explicit ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool gac = false,
+            bool flipped_cond = false, std::optional<std::size_t> incremental_threshold = std::nullopt);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
 
@@ -54,7 +60,8 @@ namespace gcs
     class LinearEquality : public ReifiedLinearEquality
     {
     public:
-        explicit LinearEquality(WeightedSum coeff_vars, Integer value, bool gac = false);
+        explicit LinearEquality(
+            WeightedSum coeff_vars, Integer value, bool gac = false, std::optional<std::size_t> incremental_threshold = std::nullopt);
     };
 
     class LinearEqualityIf : public ReifiedLinearEquality

@@ -3,7 +3,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-LinearLessThanEqual::LinearLessThanEqual(WeightedSum coeff_vars, Integer value) : ReifiedLinearInequality(move(coeff_vars), value, reif::MustHold{})
+LinearLessThanEqual::LinearLessThanEqual(WeightedSum coeff_vars, Integer value, std::optional<std::size_t> incremental_threshold) :
+    ReifiedLinearInequality(move(coeff_vars), value, reif::MustHold{}, incremental_threshold)
 {
 }
 

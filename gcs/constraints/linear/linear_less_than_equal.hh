@@ -16,7 +16,7 @@ namespace gcs
     class LinearLessThanEqual : public ReifiedLinearInequality
     {
     public:
-        explicit LinearLessThanEqual(WeightedSum coeff_vars, Integer value);
+        explicit LinearLessThanEqual(WeightedSum coeff_vars, Integer value, std::optional<std::size_t> incremental_threshold = std::nullopt);
     };
 
     /**

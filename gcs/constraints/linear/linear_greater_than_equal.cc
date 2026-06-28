@@ -13,8 +13,8 @@ namespace
     }
 }
 
-LinearGreaterThanEqual::LinearGreaterThanEqual(WeightedSum coeff_vars, Integer value) :
-    ReifiedLinearInequality(move(negate(coeff_vars)), -value, reif::MustHold{})
+LinearGreaterThanEqual::LinearGreaterThanEqual(WeightedSum coeff_vars, Integer value, std::optional<std::size_t> incremental_threshold) :
+    ReifiedLinearInequality(move(negate(coeff_vars)), -value, reif::MustHold{}, incremental_threshold)
 {
 }
 

@@ -11,9 +11,12 @@
 
 #include <util/enumerate.hh>
 
+#include <any>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 using std::is_same_v;
 using std::nullopt;
@@ -290,6 +293,148 @@ GCS_INSTANTIATE_PROPAGATE_LINEAR(SumOf<PositiveOrNegative<SimpleIntegerVariableI
 GCS_INSTANTIATE_PROPAGATE_LINEAR(SumOf<SimpleIntegerVariableID>, EagerProofLoggingInferenceTracker, NoHint);
 
 #undef GCS_INSTANTIATE_PROPAGATE_LINEAR
+
+auto gcs::innards::default_linear_incremental_threshold() -> std::size_t
+{
+    static const std::size_t threshold = []() -> std::size_t {
+        if (const char * e = std::getenv("GCS_LINEAR_INCREMENTAL_THRESHOLD"))
+            return std::strtoull(e, nullptr, 10);
+        return 8; // default: use the incremental path for constraints with >= 8 terms
+    }();
+    return threshold;
+}
+
+template <typename Hint_>
+auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer value, const State & state, auto & inference,
+    ProofLogger * const logger, bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line,
+    const optional<Literal> & add_to_reason, std::vector<std::size_t> & active, ConstraintStateHandle state_handle, const Hint_ & hint)
+    -> PropagatorState
+{
+    // The empty (all-coefficients-cancelled) constraint has no terms to fold; defer to
+    // the stateless propagator, which handles the constant-only feasibility check.
+    if (coeff_vars.terms.empty())
+        return propagate_linear(coeff_vars, value, state, inference, logger, equality, proof_line, add_to_reason, hint);
+
+    auto & st = std::any_cast<LinearIncrementalState &>(state.get_constraint_state(state_handle));
+    const auto n = coeff_vars.terms.size();
+    const bool want = inference.want_reasons();
+
+    // Per-tier contributions, specialised exactly as the stateless propagate_linear is,
+    // so the inferences (and hence the search tree) are identical -- min for the <= half,
+    // -(max) for the >= (inverse) half.
+    auto min_contrib = [](const auto & cv, const pair<Integer, Integer> & b) -> Integer {
+        using CV = std::decay_t<decltype(cv)>;
+        if constexpr (is_same_v<CV, SimpleIntegerVariableID>)
+            return b.first;
+        else if constexpr (is_same_v<CV, PositiveOrNegative<SimpleIntegerVariableID>>)
+            return cv.positive ? b.first : -b.second;
+        else {
+            auto c = get_coeff(cv);
+            return (c >= 0_i) ? (c * b.first) : (c * b.second);
+        }
+    };
+    auto inv_contrib = [](const auto & cv, const pair<Integer, Integer> & b) -> Integer {
+        using CV = std::decay_t<decltype(cv)>;
+        if constexpr (is_same_v<CV, SimpleIntegerVariableID>)
+            return -b.second;
+        else if constexpr (is_same_v<CV, PositiveOrNegative<SimpleIntegerVariableID>>)
+            return cv.positive ? -b.second : b.first;
+        else {
+            auto c = get_coeff(cv);
+            return (c >= 0_i) ? -(c * b.second) : -(c * b.first);
+        }
+    };
+
+    // Active terms' bounds are always needed; fixed terms' bounds only when a reason or
+    // justification will actually read them (proofs / conflict learning).
+    LinearBounds bounds;
+    bounds.resize(n, pair{0_i, 0_i});
+    for (std::size_t k = 0; k != st.n_active; ++k)
+        bounds[active[k]] = state.bounds(get_var(coeff_vars.terms[active[k]]));
+    if (want)
+        for (std::size_t k = st.n_active; k != n; ++k)
+            bounds[active[k]] = state.bounds(get_var(coeff_vars.terms[active[k]]));
+
+    // Forward (<=): coeff_p * x_p <= value - (lower_sum - contrib_p).
+    Integer lower_sum = st.fixed_lower;
+    for (std::size_t k = 0; k != st.n_active; ++k)
+        lower_sum += min_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
+
+    for (std::size_t k = 0; k != st.n_active; ++k) {
+        auto p = active[k];
+        const auto & cv = coeff_vars.terms[p];
+        Integer lower_without_me = lower_sum - min_contrib(cv, bounds[p]);
+        Integer remainder = value - lower_without_me;
+        if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason, hint))
+            return PropagatorState::Enable;
+        bounds[p] = state.bounds(get_var(cv));
+        lower_sum = lower_without_me + min_contrib(cv, bounds[p]);
+    }
+
+    if (equality) {
+        // Backward (>=): mirror of the forward pass on the inverse sum.
+        Integer inv_lower_sum = -st.fixed_lower;
+        for (std::size_t k = 0; k != st.n_active; ++k)
+            inv_lower_sum += inv_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
+
+        for (std::size_t k = 0; k != st.n_active; ++k) {
+            auto p = active[k];
+            const auto & cv = coeff_vars.terms[p];
+            Integer inv_lower_without_me = inv_lower_sum - inv_contrib(cv, bounds[p]);
+            Integer inv_remainder = -value - inv_lower_without_me;
+            if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)), true, proof_line,
+                    add_to_reason, hint))
+                return PropagatorState::Enable;
+            bounds[p] = state.bounds(get_var(cv));
+            inv_lower_sum = inv_lower_without_me + inv_contrib(cv, bounds[p]);
+        }
+    }
+
+    // Fold any newly-instantiated active terms out of the active set, but ALWAYS keep at
+    // least one term active: with everything folded, a fully-fixed but violated
+    // assignment would be left unchecked (the loops above wouldn't run). Keeping one
+    // active means the standard loop still verifies the (in)equality at a leaf, and
+    // contradicts via the ordinary per-variable justification. The permutation is
+    // persistent (never restored on backtrack); only n_active and fixed_lower are
+    // backtracked, which is sound because the loops above are order-independent.
+    for (std::size_t k = 0; k != st.n_active && st.n_active > 1;) {
+        auto p = active[k];
+        if (auto v = state.optional_single_value(get_var(coeff_vars.terms[p]))) {
+            st.fixed_lower += get_coeff(coeff_vars.terms[p]) * *v;
+            --st.n_active;
+            std::swap(active[k], active[st.n_active]);
+        }
+        else
+            ++k;
+    }
+
+    return PropagatorState::Enable;
+}
+
+// One instantiation per (coeff vector, tracker, hint): hints::LinearEquality for the
+// equality MustHold path, NoHint for the inequality must-hold path.
+#define GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(CoeffVars, Tracker, Hint)                                                                       \
+    template auto gcs::innards::propagate_linear_incremental(const CoeffVars & coeff_vars, Integer value, const State & state, Tracker &,            \
+        ProofLogger * const logger, bool equality, const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line,                      \
+        const optional<Literal> & add_to_reason, std::vector<std::size_t> & active, ConstraintStateHandle state_handle, const Hint & hint)           \
+        -> PropagatorState
+
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<Weighted<SimpleIntegerVariableID>>, SimpleInferenceTracker, hints::LinearEquality);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<PositiveOrNegative<SimpleIntegerVariableID>>, SimpleInferenceTracker, hints::LinearEquality);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<SimpleIntegerVariableID>, SimpleInferenceTracker, hints::LinearEquality);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<Weighted<SimpleIntegerVariableID>>, EagerProofLoggingInferenceTracker, hints::LinearEquality);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(
+    SumOf<PositiveOrNegative<SimpleIntegerVariableID>>, EagerProofLoggingInferenceTracker, hints::LinearEquality);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<SimpleIntegerVariableID>, EagerProofLoggingInferenceTracker, hints::LinearEquality);
+
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<Weighted<SimpleIntegerVariableID>>, SimpleInferenceTracker, NoHint);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<PositiveOrNegative<SimpleIntegerVariableID>>, SimpleInferenceTracker, NoHint);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<SimpleIntegerVariableID>, SimpleInferenceTracker, NoHint);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<Weighted<SimpleIntegerVariableID>>, EagerProofLoggingInferenceTracker, NoHint);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<PositiveOrNegative<SimpleIntegerVariableID>>, EagerProofLoggingInferenceTracker, NoHint);
+GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL(SumOf<SimpleIntegerVariableID>, EagerProofLoggingInferenceTracker, NoHint);
+
+#undef GCS_INSTANTIATE_PROPAGATE_LINEAR_INCREMENTAL
 
 template <typename Hint_>
 auto gcs::innards::propagate_linear_not_equals(const auto & coeff_vars, Integer value, const State & state, auto & inference,

@@ -21,15 +21,20 @@
 #include <fmt/ostream.h>
 #endif
 
+#include <memory>
+#include <optional>
 #include <sstream>
+#include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::make_pair;
+using std::make_shared;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -42,14 +47,15 @@ using std::print;
 using fmt::print;
 #endif
 
-ReifiedLinearInequality::ReifiedLinearInequality(WeightedSum coeff_vars, Integer value, ReificationCondition cond) :
-    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond)
+ReifiedLinearInequality::ReifiedLinearInequality(
+    WeightedSum coeff_vars, Integer value, ReificationCondition cond, std::optional<std::size_t> incremental_threshold) :
+    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _incremental_threshold(incremental_threshold)
 {
 }
 
 auto ReifiedLinearInequality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedLinearInequality>(WeightedSum{_coeff_vars}, _value, _reif_cond);
+    return make_unique<ReifiedLinearInequality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _incremental_threshold);
 }
 
 namespace
@@ -91,7 +97,7 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & initial
     if (optional_model)
         define_proof_model(*optional_model);
 
-    install_propagators(propagators);
+    install_propagators(propagators, initial_state);
 }
 
 auto ReifiedLinearInequality::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
@@ -140,7 +146,7 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
         .visit(_reif_cond);
 }
 
-auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> void
+auto ReifiedLinearInequality::install_propagators(Propagators & propagators, State & initial_state) -> void
 {
     auto proof_lines = _proof_lines;
     auto proof_lines_swapped = pair{_proof_lines.second, _proof_lines.first};
@@ -175,8 +181,25 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
             using LinearCondJustification = std::conditional_t<std::is_same_v<CV, NegCV>, JustifyExplicitly<hints::LinearInequalityCond<CV>>,
                 std::variant<JustifyExplicitly<hints::LinearInequalityCond<CV>>, JustifyExplicitly<hints::LinearInequalityCond<NegCV>>>>;
 
-            auto enforce_constraint_must_hold = [sanitised_cv, value = _value, modifier = modifier, proof_lines](const State & state,
+            // Only the unconditional (MustHold) inequality always enforces the same
+            // single propagation, so only then is it sound (and worthwhile) to fold
+            // incrementally. Reified If/Iff (where the dispatcher alternates between the
+            // must-hold and must-not-hold propagations) stay on the stateless path.
+            std::optional<std::pair<std::shared_ptr<std::vector<std::size_t>>, ConstraintStateHandle>> inc_must_hold;
+            if (std::holds_alternative<evaluated_reif::MustHold>(_evaluated_cond) &&
+                sanitised_cv.terms.size() >= _incremental_threshold.value_or(default_linear_incremental_threshold())) {
+                auto active = make_shared<std::vector<std::size_t>>(sanitised_cv.terms.size());
+                for (std::size_t i = 0; i != sanitised_cv.terms.size(); ++i)
+                    (*active)[i] = i;
+                auto handle = initial_state.add_constraint_state(LinearIncrementalState{sanitised_cv.terms.size(), 0_i});
+                inc_must_hold = std::pair{active, handle};
+            }
+
+            auto enforce_constraint_must_hold = [sanitised_cv, value = _value, modifier = modifier, proof_lines, inc_must_hold](const State & state,
                                                     auto & inference, ProofLogger * const logger, const Literal & cond) -> PropagatorState {
+                if (inc_must_hold)
+                    return propagate_linear_incremental(sanitised_cv, value + modifier, state, inference, logger, false, proof_lines, cond,
+                        *inc_must_hold->first, inc_must_hold->second);
                 return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_lines, cond);
             };
 

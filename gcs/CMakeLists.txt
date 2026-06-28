@@ -216,7 +216,10 @@ if(GCS_BUILD_TESTS)
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
     endforeach()
     add_test(NAME equals_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
-    add_test(NAME linear_constant_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_constant_test>)
+    foreach(linmode incremental stateless)
+        add_test(NAME linear_constant_constraint_${linmode}
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_constant_test>)
+    endforeach()
     add_test(NAME sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:sort_test>)
     add_test(NAME arg_sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:arg_sort_test>)
 
@@ -305,9 +308,15 @@ if(GCS_BUILD_TESTS)
     add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
     add_test(NAME knapsack_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:knapsack_test>)
     add_test(NAME lex_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:lex_test>)
+    # Run every linear test in both propagation modes: incremental (threshold 0) and
+    # stateless (a huge threshold). The threshold env is appended below (after the cap
+    # block, so it doesn't clobber it) and is folded into the proof file name by the
+    # test, so the two modes never collide under parallel ctest.
     foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
-        add_test(NAME linear_constraint_${mode}
-            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
+        foreach(linmode incremental stateless)
+            add_test(NAME linear_constraint_${mode}_${linmode}
+                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
+        endforeach()
     endforeach()
     add_test(NAME logical_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:logical_test>)
     add_test(NAME min_max_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:min_max_test>)
@@ -458,4 +467,14 @@ if(GCS_BUILD_TESTS)
         set_tests_properties(${gcs_registered_tests} PROPERTIES ENVIRONMENT
             "GCS_TEST_MAX_SOLUTIONS=${GCS_TEST_MAX_SOLUTIONS};GCS_TEST_MAX_RECURSIONS=${GCS_TEST_MAX_RECURSIONS}")
     endif()
+
+    # Pin the linear incremental threshold per test variant: 0 = always incremental,
+    # a huge value = always stateless, so CI exercises both linear propagation paths.
+    # APPEND so the runtime-cap environment set just above is preserved.
+    foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
+        set_property(TEST linear_constraint_${mode}_incremental APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=0")
+        set_property(TEST linear_constraint_${mode}_stateless APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=1000000")
+    endforeach()
+    set_property(TEST linear_constant_constraint_incremental APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=0")
+    set_property(TEST linear_constant_constraint_stateless APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=1000000")
 endif()
