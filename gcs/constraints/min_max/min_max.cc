@@ -128,17 +128,11 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
                     for (auto & var : vars)
                         reason.emplace_back(var != value);
 
-                    inference.infer_not_equal(logger, result, value,
-                        JustifyExplicitly{//
-                            [logger, result, value, &selectors](const ReasonLiterals & reason) {
-                                // show that none of the selectors work, if we're taking the result to be that value and also
-                                // that the value is missing from all of the vars
-                                for (const auto & sel : selectors)
-                                    logger->emit_rup_proof_line_under_reason(
-                                        reason, WPBSum{} + (1_i * ! sel) + (1_i * (result != value)) >= 1_i, ProofLevel::Temporary);
-                            },
-                            ThenRUP::Yes, hints::MinMax{owner}},
-                        ExplicitReason{reason});
+                    // result != value by case analysis over the selectors: under any single
+                    // selector, result equals that var (which here is missing value), and the
+                    // model's at-least-one selector rules out the all-false case. Each branch
+                    // is RUP; `cases` packages them and the combine into one line.
+                    inference.infer_not_equal(logger, result, value, JustifyUsingCases{selectors, hints::MinMax{owner}}, ExplicitReason{reason});
                 }
             }
 
