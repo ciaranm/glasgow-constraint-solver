@@ -149,15 +149,15 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
                         if (find(excluded.begin(), excluded.end(), v) == excluded.end())
                             non_excluded_values.push_back(v);
                     for (const auto & v : non_excluded_values) {
-                        inf.infer(logger, x != v,
-                            JustifyExplicitly{//
-                                [&logger, x, v, &duplicate_selectors](const ReasonLiterals &) -> void {
-                                    const auto & selector = duplicate_selectors.at(x);
-                                    logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * selector >= 1_i, ProofLevel::Temporary);
-                                    logger->emit(RUPProofRule{}, WPBSum{} + 1_i * (x != v) + 1_i * (! selector) >= 1_i, ProofLevel::Temporary);
-                                },
-                                ThenRUP::Yes, hints::AllDifferentExcept{owner}},
-                            NoReason{});
+                        // var != v by a complete 2-way case split on the duplicate-pair
+                        // selector: each polarity forces var into the excluded set by RUP.
+                        // The selector is a proof-model flag, so it only exists when
+                        // proving; look it up rather than asserting its presence (with
+                        // proofs off the flags are unused and the map is empty).
+                        std::vector<ProofFlag> case_flags;
+                        if (auto it = duplicate_selectors.find(x); it != duplicate_selectors.end())
+                            case_flags.push_back(it->second);
+                        inf.infer_not_equal(logger, x, v, JustifyUsingCases{std::move(case_flags), hints::AllDifferentExcept{owner}}, NoReason{});
                     }
                 }
             });
