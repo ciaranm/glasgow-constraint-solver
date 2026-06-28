@@ -255,7 +255,9 @@ auto Propagators::propagate(const optional<Literal> & lit, State & state, ProofL
                 _imp->to_disable.clear();
 
                 // Fold the propagated prefix back into the idle region and wake the
-                // propagators triggered by this round's inferences.
+                // propagators triggered by this round's inferences. each_inference() yields
+                // oldest-first, so propagators are requeued in the order their triggers
+                // occurred -- keeping the queue properly FIFO (the drain is already FIFO).
                 _imp->enqueued_begin = 0;
                 _imp->enqueued_end = 0;
                 for (const auto & [v, inf] : tracker.each_inference())
