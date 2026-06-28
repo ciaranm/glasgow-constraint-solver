@@ -367,14 +367,33 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
 
                 visit(
                     [&, modifier = modifier](const auto & sanitised_cv) {
+                        // Only the must-hold branch below is a bounds-sum linear equality that can
+                        // fold incrementally; the must-not-hold branch is a different (not-equals)
+                        // algorithm and the undecided branch only inspects a single residual var, so
+                        // neither uses the fold state. The must-hold state runs (repeatedly) only
+                        // while the condition is decided true in a subtree, backtracks on its own
+                        // handle, and re-folds any terms instantiated while another branch was active.
+                        std::optional<std::pair<std::shared_ptr<vector<std::size_t>>, ConstraintStateHandle>> inc_must_hold;
+                        if (sanitised_cv.terms.size() >= _incremental_threshold.value_or(default_linear_incremental_threshold())) {
+                            auto active = make_shared<vector<std::size_t>>(sanitised_cv.terms.size());
+                            for (std::size_t i = 0; i != sanitised_cv.terms.size(); ++i)
+                                (*active)[i] = i;
+                            auto handle = initial_state.add_constraint_state(LinearIncrementalState{sanitised_cv.terms.size(), 0_i});
+                            inc_must_hold = std::pair{active, handle};
+                        }
+
                         propagators.install(
                             constraint_id(),
                             [sanitised_cv = sanitised_cv, value = _value + modifier, cond = _reif_cond, proof_line = _proof_line,
-                                all_vars = move(all_vars), owner = constraint_id()](const State & state, auto & inference,
+                                all_vars = move(all_vars), owner = constraint_id(),
+                                inc_must_hold = inc_must_hold](const State & state, auto & inference,
                                 ProofLogger * const logger) -> PropagatorState { // This comment is needed to stop clang-format exploding
                                 return overloaded{
                                     [&](const evaluated_reif::MustHold & reif) {
                                         // we now know the condition definitely holds, so it's a linear equality
+                                        if (inc_must_hold)
+                                            return propagate_linear_incremental(sanitised_cv, value, state, inference, logger, true, proof_line,
+                                                reif.cond, *inc_must_hold->first, inc_must_hold->second, hints::LinearEquality{owner});
                                         return propagate_linear(
                                             sanitised_cv, value, state, inference, logger, true, proof_line, reif.cond, hints::LinearEquality{owner});
                                     }, //
