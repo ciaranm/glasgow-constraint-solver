@@ -112,13 +112,14 @@ namespace
             if (equal_prefix_satisfies)
                 return PropagatorState::DisableUntilBacktrack;
 
-            auto contradiction_proof = [&, n](const ReasonLiterals & r) -> void {
-                if (! logger)
-                    return;
-                for (size_t k = 0; k < n; ++k)
-                    logger->emit_rup_proof_line_under_reason(r, WPBSum{} + 1_i * ! decision_at_flags->at(k) >= 1_i, ProofLevel::Temporary);
-            };
-            inference.contradiction(logger, JustifyExplicitly{contradiction_proof, ThenRUP::Yes, hints::Lex{owner}}, reason);
+            // contradiction by case analysis over the per-position decision selectors:
+            // each individual decision is ruled out here, and the model's at-least-one
+            // (a decision somewhere, or the equal-prefix flag) handles the all-false case.
+            // The selectors are proof-model flags, so only dereference when proving.
+            std::vector<ProofFlag> decision_flags;
+            if (logger)
+                decision_flags = *decision_at_flags;
+            inference.contradiction(logger, JustifyUsingCases{std::move(decision_flags), hints::Lex{owner}}, reason);
         }
 
         auto emit_not_d = [&](const ReasonLiterals & r, size_t k) -> void {
