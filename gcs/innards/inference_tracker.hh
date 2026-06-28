@@ -539,10 +539,15 @@ namespace gcs::innards
                 infer(logger, lit, why, snapshotted, fallback);
         }
 
+        // Yields this round's inferences in the order they were made (oldest first). The
+        // propagation queue replays them to wake the next round's propagators, so this order
+        // is the order in which a variable's changes re-trigger its propagators: oldest-first
+        // keeps that requeue properly FIFO (matching the FIFO drain), rather than the reverse
+        // (newest-first) order, which made the requeue effectively LIFO within a round.
         auto each_inference() const -> std::generator<std::pair<SimpleIntegerVariableID, Inference>>
         {
             return [](const auto & inferences) -> std::generator<std::pair<SimpleIntegerVariableID, Inference>> {
-                for (const auto & [var, inf] : inferences | std::ranges::views::reverse)
+                for (const auto & [var, inf] : inferences)
                     co_yield std::pair{var, inf};
             }(_inferences);
         }
