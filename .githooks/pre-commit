@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#
+# Reject a commit whose staged C++ is not clang-formatted, mirroring the
+# clang-format CI job (.github/workflows/clang-format.yml). The vendored
+# XCSP3-CPP-Parser is excluded, as in CI.
+#
+# Bypass once with:  git commit --no-verify
+#
+set -uo pipefail
+
+# clang-format 21 matches CI (the workflow pins 21.1.8); formatting output
+# differs between major releases, so prefer an explicitly-versioned binary.
+fmt=$(command -v clang-format-21 || command -v clang-format) || {
+    echo "pre-commit: clang-format not found on PATH; skipping format check" >&2
+    exit 0
+}
+
+# Staged, added/copied/modified .cc/.hh files, minus the vendored parser.
+files=$(git diff --cached --name-only --diff-filter=ACM -- '*.cc' '*.hh' | grep -v '^XCSP3-CPP-Parser/')
+[ -z "$files" ] && exit 0
+
+bad=""
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    # Compare the *staged* blob (":$f") against its formatted form, so partial
+    # staging is checked correctly rather than whatever is in the working tree.
+    if ! diff -q <(git show ":$f") <(git show ":$f" | "$fmt" --assume-filename="$f") >/dev/null 2>&1; then
+        bad="${bad}${f}"$'\n'
+    fi
+done <<< "$files"
+
+if [ -n "$bad" ]; then
+    ver=$("$fmt" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    echo "✗ clang-format ${ver:-?}: these staged files are not formatted:" >&2
+    printf '    %s\n' $bad >&2
+    echo >&2
+    printf '  fix:   %s -i %s && git add %s\n' "$fmt" "$(echo $bad)" "$(echo $bad)" >&2
+    echo "  skip:  git commit --no-verify" >&2
+    exit 1
+fi
+exit 0

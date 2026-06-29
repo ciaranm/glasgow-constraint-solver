@@ -71,7 +71,9 @@ releases). Format the whole tree with:
 ```shell
 git ls-files '*.cc' '*.hh' | grep -v '^XCSP3-CPP-Parser/' | xargs clang-format -i
 ```
-The `clang-format` CI workflow enforces this on every push and pull request.
+The `clang-format` CI workflow enforces this on every push and pull request. To
+catch violations before CI, enable the tracked pre-commit hook once per clone
+with `git config core.hooksPath .githooks` (see CONTRIBUTING.md).
 
 ## Compiler and Standard Library Support
 

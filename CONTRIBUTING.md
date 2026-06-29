@@ -46,6 +46,18 @@ The `clang-format` CI workflow runs `clang-format --dry-run --Werror` over the
 same files on every push and pull request, so an unformatted contribution will
 fail the check.
 
+To catch this locally before CI does, a `pre-commit` hook that runs the same
+check over the staged C++ is tracked in `.githooks/`. Enable it once per clone:
+
+```shell
+git config core.hooksPath .githooks
+```
+
+It rejects a commit whose staged files are not formatted, printing the exact
+`clang-format -i` command to fix them; `git commit --no-verify` bypasses it for
+a one-off. The hook uses `clang-format-21` if present, otherwise `clang-format`,
+so install version 21 (CI pins 21.1.8) for results that match CI.
+
 Developer Documentation
 =======================
 
