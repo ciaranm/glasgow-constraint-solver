@@ -259,17 +259,17 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             // Σ heights[i]·active[i,t] ≤ capacity. When the capacity is a
             // variable, move it to the left as a (−1)·capacity term so the
             // constraint stays a single linear inequality with RHS 0.
-            std::optional<ProofLine> line;
-            // cake labels its per-time load constraint @c[id][cap_<t>] but indexes
-            // time differently (its global window vs our per-task one), so we cannot
-            // match the label; cumulative chains at `none` via the line reference, so
-            // the escape hatch preserves that.
-            if (is_constant_variable(_capacity))
-                line = model.add_unlabelled_definitional_constraint(load <= _capacity_val);
-            else
-                line = model.add_unlabelled_definitional_constraint(move(load) + -1_i * _capacity <= 0_i);
-            if (line)
-                _capacity_lines.emplace(t, *line);
+            //
+            // cake_pb_cp labels its per-time load constraint @c[id][cap_<t>], and
+            // its per-task time windowing matches ours, so our load line for time t
+            // is cake's cap line for time t. Emit the same label so the verified
+            // chain references it by name rather than position.
+            auto role = "cap_" + std::to_string(t.raw_value);
+            auto line = is_constant_variable(_capacity)
+                ? model.add_labelled_constraint(as_string(_constraint_id), role, "Cumulative", "load <= capacity", load <= _capacity_val)
+                : model.add_labelled_constraint(
+                      as_string(_constraint_id), role, "Cumulative", "load <= capacity", move(load) + -1_i * _capacity <= 0_i);
+            _capacity_lines.emplace(t, line);
         }
     }
 }

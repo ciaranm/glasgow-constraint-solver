@@ -87,6 +87,14 @@ namespace gcs::innards
 
         auto emit_proof_line_now_or_at_start(const std::function<auto(ProofLogger * const)->void> &) -> void;
 
+        // The @label base for a variable's encoding definitions (bounds, ge/eq
+        // atom reifications): `i[name]` for a real variable (matching cake_pb_cp,
+        // including vector names like `i[scene[0]]` -- veripb's @label parser
+        // accepts the nested brackets), `po[index]` for a proof-only variable
+        // (which cake never sees, so the invented index-keyed base just has to be
+        // unique -- proof-only names are not). Callers append `[role]`.
+        [[nodiscard]] auto definitional_label_base(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::string;
+
         // Emit containment edges between a newly-introduced literal [lo, hi] and its
         // immediate neighbours in the containment order among the existing range and eq
         // literals on `id`: minimal containers above (self -> parent) and, when self is

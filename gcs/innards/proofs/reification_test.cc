@@ -24,7 +24,9 @@ auto main() -> int
             -2_i * model.create_proof_only_integer_variable(1_i, 10_i, "x", IntegerVariableProofRepresentation::Bits) >=
         4_i;
 
-    model.add_constraint(tracker.reify(constr, HalfReifyOnConjunctionOf{reif}));
+    // Reference the constraint by @label rather than by relative line number, so
+    // the test does not depend on the constraint's position in the OPB.
+    model.add_labelled_constraint("test", tracker.reify(constr, HalfReifyOnConjunctionOf{reif}));
 
     model.finalise();
 
@@ -33,7 +35,9 @@ auto main() -> int
     logger.start_proof(model);
 
     // Check that after saturation, a reification by a false literal is trivially true.
-    logger.emit_proof_line("pol -1 s;", ProofLevel::Current);
+    // The pol references the constraint by @label; the `e` references the pol's own
+    // output (the immediately preceding line), which is a robust proof-internal ref.
+    logger.emit_proof_line("pol @test s;", ProofLevel::Current);
     logger.emit_proof_line("e >= -35 : -1;", ProofLevel::Current);
     logger.conclude_none();
     tracker.finalise();

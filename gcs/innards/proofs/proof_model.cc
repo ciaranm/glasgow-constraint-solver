@@ -178,69 +178,6 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     names_and_ids_tracker().derive_deviewed_form_for(second, eq.lhs, /*le_half=*/false);
 }
 
-auto ProofModel::add_unlabelled_definitional_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
-{
-    // Escape hatch: an unlabelled constraint whose line IS referenced later, for
-    // the few proof-internal variable-encoding definitions that cannot be given a
-    // valid @label (proof-only vars, names with `[`, negative offsets, the eq/ge
-    // ladder cake encodes differently). Everything else must use a labelled
-    // variant so it is referenced by name, not line number.
-    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
-    if (half_reif)
-        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
-
-    _imp->opb << "* constraint ? ?\n";
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
-    _imp->opb << ";\n";
-    auto line = advance_constraint_counter();
-    names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
-    return line;
-}
-
-auto ProofModel::add_unlabelled_definitional_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
-{
-    // Escape hatch for an equality definition --- see the inequality overload.
-    names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
-    if (half_reif)
-        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
-
-    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    emit_inequality_to(
-        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
-    _imp->opb << ";\n";
-    auto first = advance_constraint_counter();
-    names_and_ids_tracker().derive_deviewed_form_for(first, eq.lhs, /*le_half=*/true);
-
-    emit_inequality_to(
-        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
-    _imp->opb << ";\n";
-    auto second = advance_constraint_counter();
-    names_and_ids_tracker().derive_deviewed_form_for(second, eq.lhs, /*le_half=*/false);
-
-    return pair{first, second};
-}
-
-auto ProofModel::add_unlabelled_definitional_constraint(const Literals & lits) -> ProofLine
-{
-    // As the no-name add_constraint(Literals) --- a clause, a statically-true
-    // literal making it the trivially-true `sum >= 0` --- but returns the
-    // referenceable line (see the inequality overload).
-    WPBSum sum;
-    bool tautological = false;
-    for (auto & lit : lits) {
-        overloaded{
-            [&](const TrueLiteral &) { tautological = true; },                              //
-            [&](const FalseLiteral &) {},                                                   //
-            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { sum += 1_i * cond; } //
-        }
-            .visit(simplify_literal(names_and_ids_tracker(), lit));
-    }
-    sort(sum.terms);
-    sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
-    return add_unlabelled_definitional_constraint(move(sum) >= (tautological ? 0_i : 1_i), nullopt);
-}
-
 auto ProofModel::add_labelled_constraint(const string & constraint_id, const string & role_le, const string & role_ge,
     const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<ProofLine, ProofLine>
@@ -284,7 +221,32 @@ auto ProofModel::add_labelled_constraint(const string & label, const WPBSumLE & 
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
     _imp->opb << ";\n";
     advance_constraint_counter();
+    // As the (constraint_id, role) overload: a labelled constraint over a view
+    // still needs its deviewed form, so a proof-only view variable's encoding
+    // definitions are referenced (by label) in deview-form. A no-op when the
+    // inequality mentions no views. emit_inequality_to negates the LE half.
+    names_and_ids_tracker().derive_deviewed_form_for(l, ineq.lhs, /*le_half=*/true);
     return l;
+}
+
+auto ProofModel::add_labelled_constraint(const string & label, const Literals & lits) -> ProofLine
+{
+    // The labelled counterpart of add_constraint(Literals): build the clause's
+    // pseudo-Boolean sum (a statically-true literal collapses it to the
+    // trivially-true `sum >= 0`) and emit it under @label.
+    WPBSum sum;
+    bool tautological = false;
+    for (auto & lit : lits) {
+        overloaded{
+            [&](const TrueLiteral &) { tautological = true; },                              //
+            [&](const FalseLiteral &) {},                                                   //
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { sum += 1_i * cond; } //
+        }
+            .visit(simplify_literal(names_and_ids_tracker(), lit));
+    }
+    sort(sum.terms);
+    sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
+    return add_labelled_constraint(label, move(sum) >= (tautological ? 0_i : 1_i), nullopt);
 }
 
 auto ProofModel::add_labelled_constraint(const string & constraint_id, const string & role, const StringLiteral & constraint_name,
@@ -491,12 +453,11 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
     names_and_ids_tracker().track_bits(id, negative_bit_coeff, bits);
     _imp->model_variables += bits.size();
 
-    // @i[name][lb]/[ub] labels match cake_pb_cp, but only for a real variable
-    // with a label-safe name: views / proof-only variables are not in cake's OPB,
-    // and a `[` in the name (e.g. a vector variable box[0]) nests brackets that
-    // veripb's @label parser rejects. The bracket guard is temporary -- nested
-    // brackets are coming in a future cake_pb_cp release.
-    bool labelled = std::holds_alternative<SimpleIntegerVariableID>(id) && name.find('[') == string::npos;
+    // @i[name][lb]/[ub] labels match cake_pb_cp, for a real variable; a vector
+    // name like box[0] is fine (veripb's @label parser accepts the nested
+    // brackets). Proof-only variables are not in cake's OPB, so their bounds stay
+    // unlabelled (nothing references them, and there is no cake label to match).
+    bool labelled = std::holds_alternative<SimpleIntegerVariableID>(id);
 
     // lower bound
     if (labelled)
@@ -616,19 +577,6 @@ auto ProofModel::finalise() -> void
 
         copy(istreambuf_iterator<char>{_imp->opb}, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{full_opb});
         _imp->opb = stringstream{};
-
-        // TEMPORARY desync canary (GCS_OPB_DESYNC_PADDING=N): emit N trivially-true
-        // constraints AFTER the real constraints, *without* advancing the
-        // constraint counter, so in workflow-1 self-verify the proof lines sit N
-        // further from the OPB constraints than the proof's relativisation assumed.
-        // Any reference to an OPB constraint by line number then resolves wrong and
-        // the proof fails; @label refs and proof-internal relative refs survive.
-        // Distinct RHS avoids VeriPB deduplicating the padding away.
-        if (const auto * pad = std::getenv("GCS_OPB_DESYNC_PADDING")) {
-            auto n = std::atoi(pad);
-            for (int k = 1; k <= n; ++k)
-                full_opb << ">= -" << k << " ;\n";
-        }
     }
     catch (const ios_base::failure &) {
         throw ProofError{"Error writing opb file to '" + _imp->opb_file + "'"};
