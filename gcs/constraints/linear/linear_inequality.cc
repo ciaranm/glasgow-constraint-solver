@@ -108,20 +108,33 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
 
     overloaded{
         [&](const reif::MustHold &) {
-            // cake_pb_cp emits the unconditional inequality unlabelled, so keep it
-            // unlabelled and reference it by line via the escape hatch.
-            _proof_lines = pair{model.add_unlabelled_definitional_constraint(terms <= _value), nullopt};
-        },                                                                                                                                     //
-        [&](const reif::MustNotHold &) { _proof_lines = pair{model.add_unlabelled_definitional_constraint(terms >= _value + 1_i), nullopt}; }, //
+            // cake_pb_cp labels the unconditional inequality @c[<id>] (no role).
+            auto ineq = terms <= _value;
+            auto line = model.add_labelled_constraint("c[" + as_string(constraint_id()) + "]", ineq);
+            model.names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
+            _proof_lines = pair{line, nullopt};
+        }, //
+        [&](const reif::MustNotHold &) {
+            auto ineq = terms >= _value + 1_i;
+            auto line = model.add_labelled_constraint("c[" + as_string(constraint_id()) + "]", ineq);
+            model.names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
+            _proof_lines = pair{line, nullopt};
+        }, //
         [&](const reif::If & cond) {
-            _proof_lines = pair{model.add_unlabelled_definitional_constraint(terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+            _proof_lines = pair{model.add_labelled_constraint(as_string(constraint_id()), "lt", "ReifiedLinearInequality", "less than option",
+                                    terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
+                nullopt};
         }, //
         [&](const reif::NotIf & cond) {
-            _proof_lines = pair{model.add_unlabelled_definitional_constraint(terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+            _proof_lines = pair{model.add_labelled_constraint(as_string(constraint_id()), "ltn", "ReifiedLinearInequality", "less than option",
+                                    terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
+                nullopt};
         }, //
         [&](const reif::Iff & cond) {
-            _proof_lines = pair{model.add_unlabelled_definitional_constraint(terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
-                model.add_unlabelled_definitional_constraint(terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
+            _proof_lines = pair{model.add_labelled_constraint(as_string(constraint_id()), "lt", "ReifiedLinearInequality", "less than option",
+                                    terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
+                model.add_labelled_constraint(as_string(constraint_id()), "gt", "ReifiedLinearInequality", "greater than option",
+                    terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
         } //
     }
         .visit(_reif_cond);
