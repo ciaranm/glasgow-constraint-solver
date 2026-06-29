@@ -494,6 +494,17 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
 
     auto bounds = _imp->integer_variable_definition_bounds.find(id);
     ProofLine forwards_line, reverse_line;
+
+    // Model-path eq-atom definitions are labelled @<base>[eq<v>][r]/[f] (see
+    // definitional_label_base): @i[name] for a real variable, @po[index] for a
+    // proof-only one, so they are referenced (e.g. in a view's deview-form) by
+    // name rather than line number. A bracket-nesting real-variable name has no
+    // valid label and falls back to the unlabelled definitional form.
+    auto eq_base = definitional_label_base(id);
+    auto add_eq = [&](const char * role, const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & reif) -> ProofLine {
+        return _imp->model->add_labelled_constraint(eq_base + "[eq" + to_string(v.raw_value) + "][" + role + "]", ineq, reif);
+    };
+
     if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
@@ -509,8 +520,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         else if (! _imp->logger) {
             visit(
                 [&](const auto & id) {
-                    forwards_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
-                    reverse_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
+                    forwards_line = add_eq("r", WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
+                    reverse_line = add_eq("f", WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
                 },
                 id);
             ++_imp->model_variables;
@@ -531,8 +542,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         else if (! _imp->logger) {
             visit(
                 [&](const auto & id) {
-                    forwards_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
-                    reverse_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
+                    forwards_line = add_eq("r", WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
+                    reverse_line = add_eq("f", WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
                 },
                 id);
             ++_imp->model_variables;
@@ -552,10 +563,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         else if (! _imp->logger) {
             visit(
                 [&](const auto & id) {
-                    forwards_line =
-                        _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
-                    reverse_line =
-                        _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
+                    forwards_line = add_eq("r", WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
+                    reverse_line = add_eq("f", WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
                 },
                 id);
             ++_imp->model_variables;
@@ -646,6 +655,13 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     }
 }
 
+auto NamesAndIDsTracker::definitional_label_base(const SimpleOrProofOnlyIntegerVariableID & id) const -> string
+{
+    return visit(overloaded{[&](const SimpleIntegerVariableID &) -> string { return "i[" + name_of(id) + "]"; },
+                     [&](const ProofOnlySimpleIntegerVariableID & pid) -> string { return "po[" + to_string(pid.index) + "]"; }},
+        id);
+}
+
 auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 {
     if (_imp->variable_conditions_to_x.contains(id >= v))
@@ -665,23 +681,17 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         _imp->gevars_that_exist[id].emplace(v, def_lines);
     }
     else {
-        // Label the two halves @i[name][ge<v>][f]/[r] to match cake_pb_cp, but
-        // only where it is safe: a real (non-proof-only) variable, a name without
-        // `[` (vector names nest brackets the @label parser rejects), and v >= 0
-        // (a negative v would put a `-` in the role). The first emitted half (the
-        // id>=v reif, carrying ~ge..) is cake's [r]; the second is [f].
-        const auto & name = name_of(id);
-        bool can_label = std::holds_alternative<SimpleIntegerVariableID>(id) && name.find('[') == string::npos && v >= 0_i;
-        string ge_label = can_label ? "i[" + name + "][ge" + to_string(v.raw_value) + "]" : "";
+        // Label the two halves @<base>[ge<v>][r]/[f]: the base is @i[name] for a
+        // real variable (matching cake_pb_cp) or @po[index] for a proof-only one
+        // (cake never sees it). The first emitted half (the id>=v reif, carrying
+        // ~ge..) is cake's [r]; the second is [f]. v may be negative -- veripb
+        // 3.0.2 allows `-` in @labels.
+        string ge_label = definitional_label_base(id) + "[ge" + to_string(v.raw_value) + "]";
         _imp->gevars_that_exist[id].emplace(v,
             visit(
                 [&](const auto & vid) -> pair<ProofLine, ProofLine> {
-                    if (can_label)
-                        return pair{_imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
-                            _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
-                    else
-                        return pair{_imp->model->add_unlabelled_definitional_constraint(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
-                            _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
+                    return pair{_imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
+                        _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
                 },
                 id));
         ++_imp->model_variables;
