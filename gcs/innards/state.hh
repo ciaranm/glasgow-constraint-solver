@@ -38,11 +38,12 @@ namespace gcs::innards
     struct Timestamp
     {
         unsigned long long when;
+        unsigned long long how_many_on_backtracks;
         unsigned long long how_many_guesses;
         std::optional<unsigned long long> how_many_extra_proof_conditions;
 
-        explicit Timestamp(unsigned long long w, unsigned long long g, std::optional<unsigned long long> p) :
-            when(w), how_many_guesses(g), how_many_extra_proof_conditions(p)
+        explicit Timestamp(unsigned long long w, unsigned long long ob, unsigned long long g, std::optional<unsigned long long> p) :
+            when(w), how_many_on_backtracks(ob), how_many_guesses(g), how_many_extra_proof_conditions(p)
         {
         }
     };
@@ -311,9 +312,16 @@ namespace gcs::innards
          * propagated state. If subsearch is true, also clears anything from
          * add_extra_proof_condition() when backtracking.
          *
+         * If copy_state is false, the (potentially expensive) variable and constraint
+         * state is not snapshotted: guesses and inferences made in this epoch mutate the
+         * parent's state in place, and backtracking does not restore it. This is the "last
+         * value" optimisation, only sound for the final child of a node, where the caller's
+         * own backtrack discards the shared state before anything reads it again. The epoch
+         * is still opened, so on_backtrack() hooks remain correctly scoped.
+         *
          * \sa State::guess()
          */
-        [[nodiscard]] auto new_epoch(bool subsearch = false) -> Timestamp;
+        [[nodiscard]] auto new_epoch(bool copy_state = true, bool subsearch = false) -> Timestamp;
 
         /**
          * Backtrack to the specified Timestamp. Behaviour is currently

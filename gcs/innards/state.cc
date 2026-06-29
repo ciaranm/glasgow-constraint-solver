@@ -628,13 +628,21 @@ auto State::operator()(const IntegerVariableID & i) const -> Integer
     throw VariableDoesNotHaveUniqueValue{"Integer variable " + debug_string(i) + " does not have a unique value"};
 }
 
-auto State::new_epoch(bool subsearch) -> Timestamp
+auto State::new_epoch(bool copy_state, bool subsearch) -> Timestamp
 {
-    _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
-    _imp->constraint_states.push_back(_imp->constraint_states.back());
+    // The variable and constraint state are only snapshotted when copy_state is set;
+    // otherwise this epoch shares (and mutates) the parent's, and backtrack() leaves it
+    // dirty for the caller to discard. The on_backtracks level is always pushed, so
+    // backtrack hooks stay scoped to their own epoch either way.
+    auto when = _imp->integer_variable_states.size();
+    if (copy_state) {
+        _imp->integer_variable_states.push_back(_imp->integer_variable_states.back());
+        _imp->constraint_states.push_back(_imp->constraint_states.back());
+    }
+    auto how_many_on_backtracks = _imp->on_backtracks.size();
     _imp->on_backtracks.emplace_back();
 
-    return Timestamp{_imp->integer_variable_states.size() - 1, _imp->guesses.size(),
+    return Timestamp{when, how_many_on_backtracks, _imp->guesses.size(),
         subsearch ? make_optional<unsigned long long>(_imp->extra_proof_conditions.size()) : nullopt};
 }
 
@@ -647,7 +655,7 @@ auto State::backtrack(Timestamp t) -> void
         _imp->extra_proof_conditions.erase(
             _imp->extra_proof_conditions.begin() + *t.how_many_extra_proof_conditions, _imp->extra_proof_conditions.end());
 
-    while (_imp->on_backtracks.size() > t.when) {
+    while (_imp->on_backtracks.size() > t.how_many_on_backtracks) {
         for (auto & f : _imp->on_backtracks.back())
             f();
         _imp->on_backtracks.pop_back();
