@@ -225,10 +225,10 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
                         optional<ProofOnlySimpleIntegerVariableID> & end_out, optional<ProofLine> & ge_out, optional<ProofLine> & le_out) {
         auto end = model.create_proof_only_integer_variable(0_i, dom_hi, "d2dend", IntegerVariableProofRepresentation::Bits);
         // Proof-only end proxy with no cake equivalent (see Disjunctive): invent a label.
-        ge_out = model.add_labelled_constraint(as_string(_constraint_id), "endge_" + tag, "Disjunctive2D", "end >= pos + size",
-            WPBSum{} + 1_i * end + -1_i * pos + -1_i * size >= 0_i);
-        le_out = model.add_labelled_constraint(as_string(_constraint_id), "endle_" + tag, "Disjunctive2D", "end <= pos + size",
-            WPBSum{} + 1_i * end + -1_i * pos + -1_i * size <= 0_i);
+        ge_out = model.add_labelled_constraint(
+            as_string(_constraint_id), "endge_" + tag, "Disjunctive2D", "end >= pos + size", WPBSum{} + 1_i * end + -1_i * pos + -1_i * size >= 0_i);
+        le_out = model.add_labelled_constraint(
+            as_string(_constraint_id), "endle_" + tag, "Disjunctive2D", "end <= pos + size", WPBSum{} + 1_i * end + -1_i * pos + -1_i * size <= 0_i);
         end_out = end;
     };
     for (auto i : _active_rects) {
