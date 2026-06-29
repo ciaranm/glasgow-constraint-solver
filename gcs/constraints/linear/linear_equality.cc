@@ -190,10 +190,10 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
                 HalfReifyOnConjunctionOf{{! neflag}});
         }, //
         [&](const reif::If & cond) {
-            // The reified (if/iff) linear equalities are not chain-verified; reference
-            // them by line via the escape hatch.
-            _proof_line = model.add_unlabelled_definitional_constraint(
-                "ReifiedLinearEquality", "unconditional sum", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+            // The reified (if/iff) linear equalities are not chain-verified, so an
+            // invented @c[id][le/ge] label is fine.
+            _proof_line = model.add_labelled_constraint(as_string(constraint_id()), "le", "ge", "ReifiedLinearEquality", "unconditional sum",
+                terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
         }, //
         [&](const reif::NotIf & cond) {
             // condition is definitely false, the flag implies either greater or less
@@ -203,8 +203,8 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
         }, //
         [&](const reif::Iff & cond) {
             // condition unknown, the condition implies it is neither greater nor less
-            _proof_line = model.add_unlabelled_definitional_constraint(
-                "ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+            _proof_line = model.add_labelled_constraint(as_string(constraint_id()), "le", "ge", "ReifiedLinearEquality", "equals option",
+                terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
 
             auto gtflag = model.create_proof_flag("lineqgt");
             model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});
