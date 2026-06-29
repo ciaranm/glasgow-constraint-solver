@@ -1168,9 +1168,11 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
 
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
 
-    // Views must be defined properly in the model.
-    auto [link_le, link_ge] = _imp->model->add_unlabelled_definitional_constraint(
-        StringLiteral{"view link"}, StringLiteral{"definitional"}, WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
+    // Views must be defined properly in the model. Cake has no view variables, so
+    // there is no cake label to match: invent one named after the view, referenced
+    // by label rather than line number.
+    auto [link_le, link_ge] = _imp->model->add_labelled_constraint(name, "viewle", "viewge", StringLiteral{"view link"},
+        StringLiteral{"definitional"}, WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
 
     _imp->view_proof_only_vars.emplace(view, v_id);
     _imp->view_proof_only_to_view.emplace(v_id, view);
