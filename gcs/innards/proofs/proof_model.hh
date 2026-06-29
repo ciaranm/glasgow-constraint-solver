@@ -103,6 +103,20 @@ namespace gcs::innards
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
 
         /**
+         * \brief Escape hatch: add an unlabelled constraint whose proof line IS
+         * referenced later. Reserved for the few proof-internal variable-encoding
+         * definitions that cannot be given a valid @label (proof-only vars, names
+         * containing `[`, negative offsets, the eq/ge ladder cake encodes its own
+         * way). Everything else must reference constraints by @label, via the
+         * add_labelled_constraint family --- which is why plain add_constraint
+         * returns void.
+         */
+        auto add_unlabelled_definitional_constraint(const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt)
+            -> ProofLine;
+        auto add_unlabelled_definitional_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
+
+        /**
          * \brief Like add_constraint for an equality, but emits an @label on each
          * half --- \c c[constraint_id][role_le] on the LE half and \c [role_ge]
          * on the GE half --- and returns those labels, so the proof references

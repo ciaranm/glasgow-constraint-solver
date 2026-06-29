@@ -183,6 +183,49 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     return pair{first, second};
 }
 
+auto ProofModel::add_unlabelled_definitional_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
+{
+    // Escape hatch: an unlabelled constraint whose line IS referenced later, for
+    // the few proof-internal variable-encoding definitions that cannot be given a
+    // valid @label (proof-only vars, names with `[`, negative offsets, the eq/ge
+    // ladder cake encodes differently). Everything else must use a labelled
+    // variant so it is referenced by name, not line number.
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+    if (half_reif)
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
+
+    _imp->opb << "* constraint ? ?\n";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
+    _imp->opb << ";\n";
+    auto line = advance_constraint_counter();
+    names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
+    return line;
+}
+
+auto ProofModel::add_unlabelled_definitional_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
+{
+    // Escape hatch for an equality definition --- see the inequality overload.
+    names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
+    if (half_reif)
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
+
+    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
+    emit_inequality_to(
+        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
+    _imp->opb << ";\n";
+    auto first = advance_constraint_counter();
+    names_and_ids_tracker().derive_deviewed_form_for(first, eq.lhs, /*le_half=*/true);
+
+    emit_inequality_to(
+        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
+    _imp->opb << ";\n";
+    auto second = advance_constraint_counter();
+    names_and_ids_tracker().derive_deviewed_form_for(second, eq.lhs, /*le_half=*/false);
+
+    return pair{first, second};
+}
+
 auto ProofModel::add_labelled_constraint(const string & constraint_id, const string & role_le, const string & role_ge,
     const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<ProofLine, ProofLine>
