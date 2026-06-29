@@ -141,7 +141,11 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const vecto
         for (size_t ip = 0; ip < n; ++ip)
             if (ip != i)
                 rank += -1_i * w.before[ip][i];
-        auto [le, ge] = model.add_unlabelled_definitional_constraint("Sort", "pos is stable rank", move(rank) == 0_i);
+        // Sort does not chain (cake encodes it differently), so an invented label
+        // keyed on the position variable is fine; this is a free function with no
+        // constraint id, so the pos variable's index gives the unique key.
+        auto [le, ge] = model.add_labelled_constraint(
+            "sort_pos_" + std::to_string(i), "rankle", "rankge", "Sort", "pos is stable rank", move(rank) == 0_i);
         w.rank_ge.push_back(ge);
         w.rank_le.push_back(le);
     }

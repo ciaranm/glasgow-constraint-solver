@@ -221,19 +221,21 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
     _end_x_le.assign(_xs.size(), nullopt);
     _end_y_ge.assign(_xs.size(), nullopt);
     _end_y_le.assign(_xs.size(), nullopt);
-    auto make_end = [&](IntegerVariableID pos, IntegerVariableID size, Integer dom_hi, optional<ProofOnlySimpleIntegerVariableID> & end_out,
-                        optional<ProofLine> & ge_out, optional<ProofLine> & le_out) {
+    auto make_end = [&](const std::string & tag, IntegerVariableID pos, IntegerVariableID size, Integer dom_hi,
+                        optional<ProofOnlySimpleIntegerVariableID> & end_out, optional<ProofLine> & ge_out, optional<ProofLine> & le_out) {
         auto end = model.create_proof_only_integer_variable(0_i, dom_hi, "d2dend", IntegerVariableProofRepresentation::Bits);
-        // Proof-only end proxy with no cake equivalent (see Disjunctive); escape hatch.
-        ge_out = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * end + -1_i * pos + -1_i * size >= 0_i);
-        le_out = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * end + -1_i * pos + -1_i * size <= 0_i);
+        // Proof-only end proxy with no cake equivalent (see Disjunctive): invent a label.
+        ge_out = model.add_labelled_constraint(as_string(_constraint_id), "endge_" + tag, "Disjunctive2D", "end >= pos + size",
+            WPBSum{} + 1_i * end + -1_i * pos + -1_i * size >= 0_i);
+        le_out = model.add_labelled_constraint(as_string(_constraint_id), "endle_" + tag, "Disjunctive2D", "end <= pos + size",
+            WPBSum{} + 1_i * end + -1_i * pos + -1_i * size <= 0_i);
         end_out = end;
     };
     for (auto i : _active_rects) {
         if (! is_constant_variable(_widths[i]))
-            make_end(_xs[i], _widths[i], _x_hi[i] + 1_i, _end_x[i], _end_x_ge[i], _end_x_le[i]);
+            make_end("x" + std::to_string(i), _xs[i], _widths[i], _x_hi[i] + 1_i, _end_x[i], _end_x_ge[i], _end_x_le[i]);
         if (! is_constant_variable(_heights[i]))
-            make_end(_ys[i], _heights[i], _y_hi[i] + 1_i, _end_y[i], _end_y_ge[i], _end_y_le[i]);
+            make_end("y" + std::to_string(i), _ys[i], _heights[i], _y_hi[i] + 1_i, _end_y[i], _end_y_ge[i], _end_y_le[i]);
     }
 
     // Non-strict mode: a zero-size escape flag per size that can be 0.

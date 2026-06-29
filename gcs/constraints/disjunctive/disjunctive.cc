@@ -193,11 +193,12 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
             continue;
         auto end = model.create_proof_only_integer_variable(0_i, _per_task_t_hi[i] + 1_i, "disjend", IntegerVariableProofRepresentation::Bits);
         // The end proxy is a proof-only variable cake does not have (it folds s + l
-        // directly), so these definitions cannot be cake-labelled; use the escape
-        // hatch. (They are only emitted for variable durations, never on the
-        // constant-length chain cases.)
-        _end_ge[i] = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
-        _end_le[i] = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
+        // directly), so there is no cake label to match: invent one. (Only emitted
+        // for variable durations, never on the constant-length chain cases.)
+        _end_ge[i] = model.add_labelled_constraint(as_string(_constraint_id), "endge_" + std::to_string(i), "Disjunctive", "end >= s + l",
+            WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
+        _end_le[i] = model.add_labelled_constraint(as_string(_constraint_id), "endle_" + std::to_string(i), "Disjunctive", "end <= s + l",
+            WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
         _end[i] = end;
     }
 
