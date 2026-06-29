@@ -616,6 +616,19 @@ auto ProofModel::finalise() -> void
 
         copy(istreambuf_iterator<char>{_imp->opb}, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{full_opb});
         _imp->opb = stringstream{};
+
+        // TEMPORARY desync canary (GCS_OPB_DESYNC_PADDING=N): emit N trivially-true
+        // constraints AFTER the real constraints, *without* advancing the
+        // constraint counter, so in workflow-1 self-verify the proof lines sit N
+        // further from the OPB constraints than the proof's relativisation assumed.
+        // Any reference to an OPB constraint by line number then resolves wrong and
+        // the proof fails; @label refs and proof-internal relative refs survive.
+        // Distinct RHS avoids VeriPB deduplicating the padding away.
+        if (const auto * pad = std::getenv("GCS_OPB_DESYNC_PADDING")) {
+            auto n = std::atoi(pad);
+            for (int k = 1; k <= n; ++k)
+                full_opb << ">= -" << k << " ;\n";
+        }
     }
     catch (const ios_base::failure &) {
         throw ProofError{"Error writing opb file to '" + _imp->opb_file + "'"};
