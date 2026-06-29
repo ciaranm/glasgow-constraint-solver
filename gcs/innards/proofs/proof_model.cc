@@ -255,8 +255,21 @@ auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnC
 auto ProofModel::add_two_way_reified_constraint(
     const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq, const ProofFlag & flag) -> pair<ProofLine, ProofLine>
 {
-    auto forward = add_constraint(constraint_name, rule, ineq, HalfReifyOnConjunctionOf{{flag}});
-    auto reverse = add_constraint(constraint_name, rule, negate_inequality(ineq), HalfReifyOnConjunctionOf{{! flag}});
+    // Emit both halves under labels derived from the flag's own name --- base[r]
+    // is the forward half (flag -> ineq), base[f] the reverse (~flag -> ~ineq) ---
+    // so callers reference the halves by @label, never by line number, and for a
+    // cake-named flag (x[id][..] / v[id][..]) the labels match cake_pb_cp. Mirrors
+    // the manual labelling in create_proof_flag_fully_reifying(ConstraintID, ...).
+    // Use the flag's full PB rendering (e.g. f[3][sort_before] or x[id][i_j][bf]),
+    // not name_of, whose plain-flag form is the bare stem and would collide across
+    // flags sharing it.
+    auto base = names_and_ids_tracker().pb_file_string_for(flag);
+    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
+    auto forward = add_labelled_constraint(base + "[r]", ineq, HalfReifyOnConjunctionOf{{flag}});
+    names_and_ids_tracker().derive_deviewed_form_for(forward, ineq.lhs, /*le_half=*/true);
+    auto reverse_ineq = negate_inequality(ineq);
+    auto reverse = add_labelled_constraint(base + "[f]", reverse_ineq, HalfReifyOnConjunctionOf{{! flag}});
+    names_and_ids_tracker().derive_deviewed_form_for(reverse, reverse_ineq.lhs, /*le_half=*/true);
     return {forward, reverse};
 }
 
