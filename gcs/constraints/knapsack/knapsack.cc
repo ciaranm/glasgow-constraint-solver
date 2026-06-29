@@ -612,7 +612,8 @@ auto Knapsack::define_proof_model(ProofModel & model) -> void
         WPBSum sum_eq;
         for (const auto & [idx, v] : enumerate(_vars))
             sum_eq += cc.at(idx) * v;
-        auto [eq1, eq2] = model.add_constraint(sum_eq == 1_i * _totals.at(cc_idx));
+        auto [eq1, eq2] = model.add_labelled_constraint(as_string(constraint_id()), "le" + std::to_string(cc_idx), "ge" + std::to_string(cc_idx),
+            "Knapsack", "totals", sum_eq == 1_i * _totals.at(cc_idx));
         _eqns_lines.emplace_back(eq1, eq2);
     }
 }

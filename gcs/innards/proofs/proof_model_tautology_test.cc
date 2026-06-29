@@ -24,7 +24,7 @@ auto main() -> int
     // and does not mention it.
     [[maybe_unused]] auto x = model.create_proof_only_integer_variable(0_i, 10_i, "x", IntegerVariableProofRepresentation::Bits);
 
-    auto tautology_line = model.add_constraint(Literals{TrueLiteral{}});
+    auto tautology_line = model.add_unlabelled_definitional_constraint(Literals{TrueLiteral{}});
 
     model.finalise();
 

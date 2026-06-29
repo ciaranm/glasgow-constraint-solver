@@ -509,8 +509,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         else if (! _imp->logger) {
             visit(
                 [&](const auto & id) {
-                    forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
-                    reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
+                    forwards_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, {{id == v}});
+                    reverse_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * (id >= (v + 1_i)) >= 1_i, {{id != v}});
                 },
                 id);
             ++_imp->model_variables;
@@ -531,8 +531,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         else if (! _imp->logger) {
             visit(
                 [&](const auto & id) {
-                    forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
-                    reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
+                    forwards_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * (id >= v) >= 1_i, {{id == v}});
+                    reverse_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! (id >= v) >= 1_i, {{id != v}});
                 },
                 id);
             ++_imp->model_variables;
@@ -552,8 +552,10 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         else if (! _imp->logger) {
             visit(
                 [&](const auto & id) {
-                    forwards_line = _imp->model->add_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
-                    reverse_line = _imp->model->add_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
+                    forwards_line =
+                        _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
+                    reverse_line =
+                        _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
                 },
                 id);
             ++_imp->model_variables;
@@ -678,8 +680,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                         return pair{_imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
                             _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
                     else
-                        return pair{_imp->model->add_constraint(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
-                            _imp->model->add_constraint(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
+                        return pair{_imp->model->add_unlabelled_definitional_constraint(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
+                            _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
                 },
                 id));
         ++_imp->model_variables;
@@ -1167,7 +1169,7 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     Integer s_coeff = view.negate_first ? -1_i : 1_i;
 
     // Views must be defined properly in the model.
-    auto [link_le, link_ge] = _imp->model->add_constraint(
+    auto [link_le, link_ge] = _imp->model->add_unlabelled_definitional_constraint(
         StringLiteral{"view link"}, StringLiteral{"definitional"}, WPBSum{} + 1_i * v_id + (-s_coeff) * view.actual_variable == view.then_add);
 
     _imp->view_proof_only_vars.emplace(view, v_id);

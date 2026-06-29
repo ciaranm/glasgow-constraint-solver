@@ -66,41 +66,50 @@ namespace gcs::innards
         ///@{
 
         /**
-         * Add a pseudo-Boolean constraint to a Proof model.
+         * Add a pseudo-Boolean constraint to a Proof model. Returns void: to
+         * reference the constraint later, add it by @label (add_labelled_constraint)
+         * or, for an unlabellable proof-internal definition, via
+         * add_unlabelled_definitional_constraint --- never by line number.
          */
-        auto add_constraint(const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
+        auto add_constraint(const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> void;
 
         /**
-         * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
-         *
-         * Returns `{LE-half, GE-half}` — i.e. `{ line for lhs <= rhs,
-         * line for lhs >= rhs }`. Callers binding the result with
-         * structured bindings should mirror that order; getting it wrong
-         * has previously led to per-call `pol` steps referencing the
-         * wrong half of the equation.
+         * Add a pair of pseudo-Boolean constraints representing an equality to a
+         * Proof model. Returns void --- see the inequality overload above.
          */
-        auto add_constraint(const WPBSumEq & eq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt)
-            -> std::pair<ProofLine, ProofLine>;
+        auto add_constraint(const WPBSumEq & eq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> void;
 
         /**
          * Add a CNF definition to a Proof model.
          */
-        auto add_constraint(const Literals & lits) -> ProofLine;
+        auto add_constraint(const Literals & lits) -> void;
 
         /**
          * Add a pseudo-Boolean constraint to a Proof model.
          */
         auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> void;
 
         /**
          * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
-         *
-         * Returns `{LE-half, GE-half}` — see the no-name overload above
-         * for the rationale.
          */
         auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> void;
+
+        /**
+         * \brief Escape hatch: add an unlabelled constraint whose proof line IS
+         * referenced later. Reserved for the few proof-internal variable-encoding
+         * definitions that cannot be given a valid @label (proof-only vars, names
+         * containing `[`, negative offsets, the eq/ge ladder cake encodes its own
+         * way). Everything else must reference constraints by @label, via the
+         * add_labelled_constraint family --- which is why plain add_constraint
+         * returns void.
+         */
+        auto add_unlabelled_definitional_constraint(const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt)
+            -> ProofLine;
+        auto add_unlabelled_definitional_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
+        auto add_unlabelled_definitional_constraint(const Literals & lits) -> ProofLine;
 
         /**
          * \brief Like add_constraint for an equality, but emits an @label on each
@@ -138,7 +147,7 @@ namespace gcs::innards
         /**
          * Add a CNF definition to a Proof model.
          */
-        auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> ProofLine;
+        auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> void;
 
         /**
          * \brief Encode `flag ⇔ ineq` in OPB by emitting both halves of the equivalence:

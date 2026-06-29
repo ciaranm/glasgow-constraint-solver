@@ -194,8 +194,8 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
         std::optional<ProofOnlySimpleIntegerVariableID> end;
         if (use_end) {
             end = model.create_proof_only_integer_variable(0_i, _per_task_t_hi[i] + 1_i, "cumend", IntegerVariableProofRepresentation::Bits);
-            _end_def_lines[i] =
-                model.add_constraint("Cumulative", "end >= s + l", WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
+            // Proof-only end proxy with no cake equivalent; escape hatch.
+            _end_def_lines[i] = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
             model.add_constraint("Cumulative", "end <= s + l", WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
         }
 
@@ -259,10 +259,14 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             // variable, move it to the left as a (−1)·capacity term so the
             // constraint stays a single linear inequality with RHS 0.
             std::optional<ProofLine> line;
+            // cake labels its per-time load constraint @c[id][cap_<t>] but indexes
+            // time differently (its global window vs our per-task one), so we cannot
+            // match the label; cumulative chains at `none` via the line reference, so
+            // the escape hatch preserves that.
             if (is_constant_variable(_capacity))
-                line = model.add_constraint("Cumulative", "load at time", load <= _capacity_val);
+                line = model.add_unlabelled_definitional_constraint(load <= _capacity_val);
             else
-                line = model.add_constraint("Cumulative", "load at time", move(load) + -1_i * _capacity <= 0_i);
+                line = model.add_unlabelled_definitional_constraint(move(load) + -1_i * _capacity <= 0_i);
             if (line)
                 _capacity_lines.emplace(t, *line);
         }

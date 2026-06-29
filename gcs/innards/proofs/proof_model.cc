@@ -102,15 +102,13 @@ auto ProofModel::emit_constraint_label(const string & constraint_id, const strin
     return ProofLineLabel{"c[" + constraint_id + "]" + (role.empty() ? "" : "[" + role + "]")};
 }
 
-auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> ProofLine
+auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> void
 {
     WPBSum sum;
 
     // A clause containing a statically-true literal is a tautology. It
     // constrains nothing, but we still emit it as a trivially-true `sum >= 0`
-    // rather than omitting it, so there is always a line to return and the
-    // constraint counter stays in step. This is why no add_constraint overload
-    // returns optional any more (issue #264); a tautology was the only source.
+    // rather than omitting it, so the constraint counter stays in step.
     bool tautological = false;
     for (auto & lit : lits) {
         overloaded{
@@ -127,16 +125,16 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     // remove duplicates
     sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
 
-    return add_constraint(constraint_name, rule, move(sum) >= (tautological ? 0_i : 1_i), nullopt);
+    add_constraint(constraint_name, rule, move(sum) >= (tautological ? 0_i : 1_i), nullopt);
 }
 
-auto ProofModel::add_constraint(const Literals & lits) -> ProofLine
+auto ProofModel::add_constraint(const Literals & lits) -> void
 {
-    return add_constraint("?", "?", lits);
+    add_constraint("?", "?", lits);
 }
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
@@ -148,16 +146,15 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     auto line = advance_constraint_counter();
     // emit_inequality_to negates the LE inequality to land in PB >= form.
     names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
-    return line;
 }
 
-auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
+auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
-    return add_constraint("?", "?", ineq, half_reif);
+    add_constraint("?", "?", ineq, half_reif);
 }
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
     names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
@@ -179,8 +176,69 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     // emit_inequality_to negates it again, so OPB-form coefficients match
     // the input WPBSum.
     names_and_ids_tracker().derive_deviewed_form_for(second, eq.lhs, /*le_half=*/false);
+}
+
+auto ProofModel::add_unlabelled_definitional_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
+{
+    // Escape hatch: an unlabelled constraint whose line IS referenced later, for
+    // the few proof-internal variable-encoding definitions that cannot be given a
+    // valid @label (proof-only vars, names with `[`, negative offsets, the eq/ge
+    // ladder cake encodes differently). Everything else must use a labelled
+    // variant so it is referenced by name, not line number.
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+    if (half_reif)
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
+
+    _imp->opb << "* constraint ? ?\n";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
+    _imp->opb << ";\n";
+    auto line = advance_constraint_counter();
+    names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
+    return line;
+}
+
+auto ProofModel::add_unlabelled_definitional_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
+{
+    // Escape hatch for an equality definition --- see the inequality overload.
+    names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
+    if (half_reif)
+        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
+
+    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
+    emit_inequality_to(
+        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
+    _imp->opb << ";\n";
+    auto first = advance_constraint_counter();
+    names_and_ids_tracker().derive_deviewed_form_for(first, eq.lhs, /*le_half=*/true);
+
+    emit_inequality_to(
+        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
+    _imp->opb << ";\n";
+    auto second = advance_constraint_counter();
+    names_and_ids_tracker().derive_deviewed_form_for(second, eq.lhs, /*le_half=*/false);
 
     return pair{first, second};
+}
+
+auto ProofModel::add_unlabelled_definitional_constraint(const Literals & lits) -> ProofLine
+{
+    // As the no-name add_constraint(Literals) --- a clause, a statically-true
+    // literal making it the trivially-true `sum >= 0` --- but returns the
+    // referenceable line (see the inequality overload).
+    WPBSum sum;
+    bool tautological = false;
+    for (auto & lit : lits) {
+        overloaded{
+            [&](const TrueLiteral &) { tautological = true; },                              //
+            [&](const FalseLiteral &) {},                                                   //
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { sum += 1_i * cond; } //
+        }
+            .visit(simplify_literal(names_and_ids_tracker(), lit));
+    }
+    sort(sum.terms);
+    sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
+    return add_unlabelled_definitional_constraint(move(sum) >= (tautological ? 0_i : 1_i), nullopt);
 }
 
 auto ProofModel::add_labelled_constraint(const string & constraint_id, const string & role_le, const string & role_ge,
@@ -247,16 +305,29 @@ auto ProofModel::add_labelled_constraint(const string & constraint_id, const str
     return label;
 }
 
-auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
+auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
-    return add_constraint("?", "?", eq, half_reif);
+    add_constraint("?", "?", eq, half_reif);
 }
 
 auto ProofModel::add_two_way_reified_constraint(
     const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq, const ProofFlag & flag) -> pair<ProofLine, ProofLine>
 {
-    auto forward = add_constraint(constraint_name, rule, ineq, HalfReifyOnConjunctionOf{{flag}});
-    auto reverse = add_constraint(constraint_name, rule, negate_inequality(ineq), HalfReifyOnConjunctionOf{{! flag}});
+    // Emit both halves under labels derived from the flag's own name --- base[r]
+    // is the forward half (flag -> ineq), base[f] the reverse (~flag -> ~ineq) ---
+    // so callers reference the halves by @label, never by line number, and for a
+    // cake-named flag (x[id][..] / v[id][..]) the labels match cake_pb_cp. Mirrors
+    // the manual labelling in create_proof_flag_fully_reifying(ConstraintID, ...).
+    // Use the flag's full PB rendering (e.g. f[3][sort_before] or x[id][i_j][bf]),
+    // not name_of, whose plain-flag form is the bare stem and would collide across
+    // flags sharing it.
+    auto base = names_and_ids_tracker().pb_file_string_for(flag);
+    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
+    auto forward = add_labelled_constraint(base + "[r]", ineq, HalfReifyOnConjunctionOf{{flag}});
+    names_and_ids_tracker().derive_deviewed_form_for(forward, ineq.lhs, /*le_half=*/true);
+    auto reverse_ineq = negate_inequality(ineq);
+    auto reverse = add_labelled_constraint(base + "[f]", reverse_ineq, HalfReifyOnConjunctionOf{{! flag}});
+    names_and_ids_tracker().derive_deviewed_form_for(reverse, reverse_ineq.lhs, /*le_half=*/true);
     return {forward, reverse};
 }
 

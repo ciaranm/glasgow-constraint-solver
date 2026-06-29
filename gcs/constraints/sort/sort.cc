@@ -141,7 +141,7 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const vecto
         for (size_t ip = 0; ip < n; ++ip)
             if (ip != i)
                 rank += -1_i * w.before[ip][i];
-        auto [le, ge] = model.add_constraint("Sort", "pos is stable rank", move(rank) == 0_i);
+        auto [le, ge] = model.add_unlabelled_definitional_constraint("Sort", "pos is stable rank", move(rank) == 0_i);
         w.rank_ge.push_back(ge);
         w.rank_le.push_back(le);
     }
