@@ -1138,19 +1138,23 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             v3_mag);
 
         auto xyss = optional_model->create_proof_flag("xy[s][s]");
-        sign_lines.emplace_back(optional_model->add_constraint(WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign}));
+        sign_lines.emplace_back(
+            optional_model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign}));
 
         if (mag_var.contains(_v1))
-            sign_lines.emplace_back(optional_model->add_constraint(WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign}));
+            sign_lines.emplace_back(
+                optional_model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign}));
         if (mag_var.contains(_v2))
-            sign_lines.emplace_back(optional_model->add_constraint(WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign}));
+            sign_lines.emplace_back(
+                optional_model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign}));
         if (mag_var.contains(_v1) && mag_var.contains(_v2))
-            sign_lines.emplace_back(optional_model->add_constraint(WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign}));
+            sign_lines.emplace_back(
+                optional_model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign}));
 
-        sign_lines.emplace_back(optional_model->add_constraint(
+        sign_lines.emplace_back(optional_model->add_unlabelled_definitional_constraint(
             WPBSum{} + 1_i * xyss + 1_i * (_v1 != 0_i) + 1_i * (_v2 != 0_i) >= 3_i, HalfReifyOnConjunctionOf{v3_sign}));
 
-        sign_lines.emplace_back(optional_model->add_constraint(
+        sign_lines.emplace_back(optional_model->add_unlabelled_definitional_constraint(
             WPBSum{} + 1_i * ! xyss + 1_i * (_v1 == 0_i) + 1_i * (_v2 == 0_i) >= 1_i, HalfReifyOnConjunctionOf{! v3_sign}));
     }
 

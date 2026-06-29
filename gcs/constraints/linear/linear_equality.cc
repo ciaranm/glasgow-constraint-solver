@@ -203,7 +203,8 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
         }, //
         [&](const reif::Iff & cond) {
             // condition unknown, the condition implies it is neither greater nor less
-            _proof_line = model.add_unlabelled_definitional_constraint("ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
+            _proof_line = model.add_unlabelled_definitional_constraint(
+                "ReifiedLinearEquality", "equals option", terms == _value, HalfReifyOnConjunctionOf{{cond.cond}});
 
             auto gtflag = model.create_proof_flag("lineqgt");
             model.add_constraint("ReifiedLinearEquality", "greater option", terms >= _value + 1_i, HalfReifyOnConjunctionOf{{gtflag}});

@@ -174,7 +174,9 @@ auto GACGlobalCardinality::define_proof_model(ProofModel & model) -> void
         WPBSum sum;
         for (const auto & var : _vars)
             sum += 1_i * (var == value);
-        _count_lines.push_back(model.add_constraint("GCC", "count for value", sum == 1_i * _counts[j]));
+        // cake_pb_cp emits these count equalities unlabelled, so keep them so and
+        // reference by line via the escape hatch.
+        _count_lines.push_back(model.add_unlabelled_definitional_constraint("GCC", "count for value", sum == 1_i * _counts[j]));
     }
 }
 

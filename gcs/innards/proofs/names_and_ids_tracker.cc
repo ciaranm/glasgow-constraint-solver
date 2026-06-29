@@ -552,8 +552,10 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         else if (! _imp->logger) {
             visit(
                 [&](const auto & id) {
-                    forwards_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
-                    reverse_line = _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
+                    forwards_line =
+                        _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * (id >= v) + 1_i * ! (id > v) >= 2_i, {{id == v}});
+                    reverse_line =
+                        _imp->model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! (id >= v) + 1_i * (id > v) >= 1_i, {{id != v}});
                 },
                 id);
             ++_imp->model_variables;

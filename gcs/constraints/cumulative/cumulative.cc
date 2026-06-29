@@ -194,8 +194,8 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
         std::optional<ProofOnlySimpleIntegerVariableID> end;
         if (use_end) {
             end = model.create_proof_only_integer_variable(0_i, _per_task_t_hi[i] + 1_i, "cumend", IntegerVariableProofRepresentation::Bits);
-            _end_def_lines[i] =
-                model.add_constraint("Cumulative", "end >= s + l", WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
+            // Proof-only end proxy with no cake equivalent; escape hatch.
+            _end_def_lines[i] = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
             model.add_constraint("Cumulative", "end <= s + l", WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
         }
 

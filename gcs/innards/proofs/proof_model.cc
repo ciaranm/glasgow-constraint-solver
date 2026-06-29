@@ -102,15 +102,13 @@ auto ProofModel::emit_constraint_label(const string & constraint_id, const strin
     return ProofLineLabel{"c[" + constraint_id + "]" + (role.empty() ? "" : "[" + role + "]")};
 }
 
-auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> ProofLine
+auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> void
 {
     WPBSum sum;
 
     // A clause containing a statically-true literal is a tautology. It
     // constrains nothing, but we still emit it as a trivially-true `sum >= 0`
-    // rather than omitting it, so there is always a line to return and the
-    // constraint counter stays in step. This is why no add_constraint overload
-    // returns optional any more (issue #264); a tautology was the only source.
+    // rather than omitting it, so the constraint counter stays in step.
     bool tautological = false;
     for (auto & lit : lits) {
         overloaded{
@@ -127,16 +125,16 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     // remove duplicates
     sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
 
-    return add_constraint(constraint_name, rule, move(sum) >= (tautological ? 0_i : 1_i), nullopt);
+    add_constraint(constraint_name, rule, move(sum) >= (tautological ? 0_i : 1_i), nullopt);
 }
 
-auto ProofModel::add_constraint(const Literals & lits) -> ProofLine
+auto ProofModel::add_constraint(const Literals & lits) -> void
 {
-    return add_constraint("?", "?", lits);
+    add_constraint("?", "?", lits);
 }
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
@@ -148,16 +146,15 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     auto line = advance_constraint_counter();
     // emit_inequality_to negates the LE inequality to land in PB >= form.
     names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
-    return line;
 }
 
-auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
+auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
-    return add_constraint("?", "?", ineq, half_reif);
+    add_constraint("?", "?", ineq, half_reif);
 }
 
 auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
     names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
@@ -179,8 +176,6 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     // emit_inequality_to negates it again, so OPB-form coefficients match
     // the input WPBSum.
     names_and_ids_tracker().derive_deviewed_form_for(second, eq.lhs, /*le_half=*/false);
-
-    return pair{first, second};
 }
 
 auto ProofModel::add_unlabelled_definitional_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
@@ -310,9 +305,9 @@ auto ProofModel::add_labelled_constraint(const string & constraint_id, const str
     return label;
 }
 
-auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
+auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
-    return add_constraint("?", "?", eq, half_reif);
+    add_constraint("?", "?", eq, half_reif);
 }
 
 auto ProofModel::add_two_way_reified_constraint(
