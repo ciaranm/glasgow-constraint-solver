@@ -212,11 +212,11 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
             // (succ[i] = j) -> pos[j] = pos[i] + 1
             for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
-                tie(leq_line, geq_line) = model->add_labelled_constraint(as_string(_constraint_id),
-                    "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_le",
-                    "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_ge", StringLiteral{"Circuit"}, StringLiteral{"position"},
-                    WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
-                    HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
+                tie(leq_line, geq_line) =
+                    model->add_labelled_constraint(as_string(_constraint_id), "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_le",
+                        "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_ge", StringLiteral{"Circuit"}, StringLiteral{"position"},
+                        WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
+                        HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
                 pos_var_data.at(idx).plus_one_lines.emplace(jdx, PosVarLineData{leq_line, geq_line});
             }
         }

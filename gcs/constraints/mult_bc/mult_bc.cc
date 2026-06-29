@@ -1084,13 +1084,16 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 for (Integer pos = 0_i; pos < num_bits - 1_i; pos++)
                     bit_sum_without_neg += power2(pos) * ProofBitVariable{v, pos + 1_i, true};
 
-                auto pos_ge = optional_model->add_unlabelled_definitional_constraint(
+                // mult_bc does not chain (cake does not encode multiplication), so
+                // these bit-decomposition defs take invented @c[id][role] labels.
+                auto mbid = as_string(constraint_id());
+                auto pos_ge = optional_model->add_labelled_constraint(mbid, "posge_" + name, "MultBC", "magnitude channel",
                     bit_sum_without_neg + (-1_i * v_magnitude) >= 0_i, HalfReifyOnConjunctionOf{! sign_bit});
-                auto pos_le = optional_model->add_unlabelled_definitional_constraint(
+                auto pos_le = optional_model->add_labelled_constraint(mbid, "posle_" + name, "MultBC", "magnitude channel",
                     bit_sum_without_neg + (-1_i * v_magnitude) <= 0_i, HalfReifyOnConjunctionOf{! sign_bit});
-                auto neg_ge = optional_model->add_unlabelled_definitional_constraint(
+                auto neg_ge = optional_model->add_labelled_constraint(mbid, "negge_" + name, "MultBC", "magnitude channel",
                     bit_sum_without_neg + (1_i * v_magnitude) >= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
-                auto neg_le = optional_model->add_unlabelled_definitional_constraint(
+                auto neg_le = optional_model->add_labelled_constraint(mbid, "negle_" + name, "MultBC", "magnitude channel",
                     bit_sum_without_neg + (1_i * v_magnitude) <= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
 
                 channelling_constraints.insert({v, ChannellingData{pos_ge, pos_le, neg_ge, neg_le}});
@@ -1107,6 +1110,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         auto [v2_mag, v2_sign] = make_magnitude_representation(_v2, "y");
         auto [v3_mag, v3_sign] = make_magnitude_representation(_v3, "z");
 
+        auto mbid = as_string(constraint_id());
         auto v1_num_bits = optional_model->names_and_ids_tracker().num_bits(v1_mag);
         auto v2_num_bits = optional_model->names_and_ids_tracker().num_bits(v2_mag);
 
@@ -1116,11 +1120,12 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
             for (Integer j = 0_i; j < v2_num_bits; j++) {
                 auto flag = optional_model->create_proof_flag(format("xy[{}][{}]", i, j));
 
-                auto forwards = optional_model->add_unlabelled_definitional_constraint(
+                auto ijtag = std::to_string(i.raw_value) + "_" + std::to_string(j.raw_value);
+                auto forwards = optional_model->add_labelled_constraint(mbid, "xyfwd_" + ijtag, "MultBC", "bit product",
                     WPBSum{} + 1_i * ProofBitVariable{v1_mag, i, true} + 1_i * ProofBitVariable{v2_mag, j, true} >= 2_i,
                     HalfReifyOnConjunctionOf{flag});
 
-                auto backwards = optional_model->add_unlabelled_definitional_constraint(
+                auto backwards = optional_model->add_labelled_constraint(mbid, "xybwd_" + ijtag, "MultBC", "bit product",
                     WPBSum{} + -1_i * ProofBitVariable{v1_mag, i, true} + -1_i * ProofBitVariable{v2_mag, j, true} >= -1_i,
                     HalfReifyOnConjunctionOf{! flag});
 
@@ -1131,30 +1136,30 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
 
         visit(
             [&](auto v3_mag) {
-                auto s = optional_model->add_unlabelled_definitional_constraint(
-                    StringLiteral{"MultBC"}, StringLiteral{"z = product"}, bit_product_sum + (-1_i * v3_mag) == 0_i);
+                auto s = optional_model->add_labelled_constraint(
+                    mbid, "zprodle", "zprodge", StringLiteral{"MultBC"}, StringLiteral{"z = product"}, bit_product_sum + (-1_i * v3_mag) == 0_i);
                 v3_eq_product_lines = make_pair(s.first, s.second);
             },
             v3_mag);
 
         auto xyss = optional_model->create_proof_flag("xy[s][s]");
-        sign_lines.emplace_back(
-            optional_model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign}));
+        sign_lines.emplace_back(optional_model->add_labelled_constraint(
+            mbid, "sign_nn", "MultBC", "sign", WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign}));
 
         if (mag_var.contains(_v1))
-            sign_lines.emplace_back(
-                optional_model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign}));
+            sign_lines.emplace_back(optional_model->add_labelled_constraint(
+                mbid, "sign_pn", "MultBC", "sign", WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign}));
         if (mag_var.contains(_v2))
-            sign_lines.emplace_back(
-                optional_model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign}));
+            sign_lines.emplace_back(optional_model->add_labelled_constraint(
+                mbid, "sign_np", "MultBC", "sign", WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign}));
         if (mag_var.contains(_v1) && mag_var.contains(_v2))
-            sign_lines.emplace_back(
-                optional_model->add_unlabelled_definitional_constraint(WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign}));
+            sign_lines.emplace_back(optional_model->add_labelled_constraint(
+                mbid, "sign_pp", "MultBC", "sign", WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign}));
 
-        sign_lines.emplace_back(optional_model->add_unlabelled_definitional_constraint(
+        sign_lines.emplace_back(optional_model->add_labelled_constraint(mbid, "sign_v3pos", "MultBC", "sign",
             WPBSum{} + 1_i * xyss + 1_i * (_v1 != 0_i) + 1_i * (_v2 != 0_i) >= 3_i, HalfReifyOnConjunctionOf{v3_sign}));
 
-        sign_lines.emplace_back(optional_model->add_unlabelled_definitional_constraint(
+        sign_lines.emplace_back(optional_model->add_labelled_constraint(mbid, "sign_v3neg", "MultBC", "sign",
             WPBSum{} + 1_i * ! xyss + 1_i * (_v1 == 0_i) + 1_i * (_v2 == 0_i) >= 1_i, HalfReifyOnConjunctionOf{! v3_sign}));
     }
 
