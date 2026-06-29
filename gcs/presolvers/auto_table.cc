@@ -94,7 +94,7 @@ auto AutoTable::run(Problem &, Propagators & propagators, State & initial_state,
 {
     SimpleTuples tuples;
 
-    auto timestamp = initial_state.new_epoch(true);
+    auto timestamp = initial_state.new_epoch(/*copy_state=*/true, /*subsearch=*/true);
     initial_state.guess(TrueLiteral{});
 
     auto selector_var_id = initial_state.what_variable_id_will_be_created_next();

@@ -12,25 +12,35 @@ PRs over time.
 
 ## What to run
 
-Eight benchmarks, picked to cover a mix of search-heavy / propagation-heavy
+Eleven benchmarks, picked to cover a mix of search-heavy / propagation-heavy
 workloads, large/holey domains, and runtime ranges. Build with `cmake --preset
-release`; binaries land in `build/`.
+release`; binaries land in `build/`. The wall times below are approximate and
+were taken on a recent build — they have dropped a long way since this set was
+first assembled, as propagator and state-handling work has landed, so re-measure
+your own baseline rather than trusting these absolute numbers.
 
-| Benchmark               | Command                                       | Approx wall time |
-|-------------------------|-----------------------------------------------|------------------|
-| `magic_series_300`      | `./build/magic_series --size=300`             | ~6 s             |
-| `qap_12`                | `./build/qap --size=12`                       | ~7 s             |
-| `langford_11`           | `./build/langford --size=11 --stats`          | ~12 s            |
-| `n_queens_14_all`       | `./build/n_queens --size=14 --all`            | ~18 s            |
-| `ortho_latin_6_all`     | `./build/ortho_latin --size=6 --all --stats`  | ~20 s            |
-| `magic_square_5`        | `./build/magic_square --size=5`               | ~32 s            |
-| `tsp_default`           | `./build/tsp`                                 | ~50 s            |
-| `n_queens_88`           | `./build/n_queens --size=88`                  | ~5 min           |
+| Benchmark                 | Command                                                | Approx wall time |
+|---------------------------|--------------------------------------------------------|------------------|
+| `skyscrapers_7_autotable` | `./build/skyscrapers --instance=7 --autotable --stats` | ~0.2 s           |
+| `qap_12`                  | `./build/qap --size=12`                                | ~1.5 s           |
+| `skeleton_puzzle`         | `./build/skeleton_puzzle --stats`                      | ~3 s             |
+| `magic_series_300`        | `./build/magic_series --size=300`                      | ~4 s             |
+| `langford_11`             | `./build/langford --size=11 --stats`                   | ~9 s             |
+| `tsp_default`             | `./build/tsp`                                          | ~10 s            |
+| `n_queens_14_all`         | `./build/n_queens --size=14 --all`                     | ~11 s            |
+| `ortho_latin_6_all`       | `./build/ortho_latin --size=6 --all --stats`           | ~16 s            |
+| `magic_square_5`          | `./build/magic_square --size=5`                        | ~18 s            |
+| `skyscrapers_7`           | `./build/skyscrapers --instance=7 --stats`             | ~31 s            |
+| `n_queens_88`             | `./build/n_queens --size=88`                           | ~3.5 min         |
 
-The first four cover under-30 s workloads that are quick to iterate on. The
-last four (`ortho_latin` onwards) push out further, with `n_queens_88` being
-the long pole — keep it in the set even though it dominates total runtime,
-because it is the only one that exercises a large search tree at scale.
+`skeleton_puzzle` and `skyscrapers` were added later, while evaluating the
+"last value" search optimisation, to broaden binary-branching coverage and to
+exercise the autotabulation presolve path.
+
+Everything except `n_queens_88` finishes in well under a minute and is quick to
+iterate on; `n_queens_88` is the long pole — keep it in the set even though it
+dominates total runtime, because it is the only one that exercises a large
+search tree at scale.
 
 `magic_series` and `magic_square` are worth keeping for their
 linear-arithmetic-heavy propagation, which the others don't exercise.
@@ -55,6 +65,14 @@ search explores ~6 M nodes — despite the small board.)
 - **`tsp`** has no `--size` argument; it runs a fixed instance with a
   configurable propagator (`--propagator=prevent` is the default; `scc` is
   the alternative).
+- **`skeleton_puzzle`** is a fixed skeleton-multiplication (cryptarithm)
+  instance with no size argument; pass `--stats` to print statistics. It finds
+  its single solution after ~745 k recursions.
+- **`skyscrapers --instance=7`** solves a 7×7 skyscrapers puzzle (~1.2 M
+  recursions). With `--autotable` the autotabulation presolver solves instance 7
+  almost entirely before search (1 recursion, ~0.2 s), so that variant exercises
+  the presolve path rather than the search engine — treat it as a smoke test for
+  autotabulation, not a search-performance signal.
 - **`magic_series` / `magic_square`** print stats by default; the `--stats`
   flag is for the `examples/` binaries only (not the `minicp_benchmarks/`
   ones).
@@ -123,10 +141,13 @@ bench n_queens_88        "n_queens --size=88"
 bench langford_11        "langford --size=11 --stats"
 bench n_queens_14_all    "n_queens --size=14 --all"
 bench ortho_latin_6_all  "ortho_latin --size=6 --all --stats"
+bench skeleton_puzzle    "skeleton_puzzle --stats"
+bench skyscrapers_7      "skyscrapers --instance=7 --stats"
+bench skyscrapers_7_auto "skyscrapers --instance=7 --autotable --stats"
 ```
 
-Total wall time for the full sweep at 3 trials per build is ~50 minutes,
-dominated by `n_queens_88` (~30 minutes alone).
+Total wall time for the full sweep at 3 trials per build is ~30 minutes,
+dominated by `n_queens_88` (~20 minutes alone).
 
 ## What to capture
 

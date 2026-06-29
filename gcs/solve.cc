@@ -93,12 +93,18 @@ namespace
                 if (optional_abort_flag && optional_abort_flag->load())
                     return false;
 
-                auto recurse = [&](const Literal & guess) -> bool {
+                auto recurse = [&](const Literal & guess, bool is_last) -> bool {
                     if (optional_abort_flag && optional_abort_flag->load())
                         return false;
 
                     auto result = true;
-                    auto timestamp = state.new_epoch();
+                    // "Last value" optimisation: the rightmost branch's guess will be undone by
+                    // our caller's backtrack regardless, so its epoch needs no private copy of the
+                    // (expensive) variable and constraint state -- we guess straight into the
+                    // shared parent state, which nothing reads again before the caller backtracks.
+                    // The epoch is still opened, so propagators' disable-until-backtrack hooks stay
+                    // correctly scoped and total propagations are unchanged.
+                    auto timestamp = state.new_epoch(! is_last);
                     state.guess(guess);
                     bool child_contains_solution = false;
                     if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess, callbacks, logger, child_contains_solution,
@@ -114,9 +120,10 @@ namespace
                     return result;
                 };
 
-                for (; branch_iter != branch_generator.end(); ++branch_iter) {
+                while (branch_iter != branch_generator.end()) {
                     auto guess = *branch_iter;
-                    if (! recurse(guess))
+                    ++branch_iter;
+                    if (! recurse(guess, branch_iter == branch_generator.end()))
                         return false;
                 }
             }
