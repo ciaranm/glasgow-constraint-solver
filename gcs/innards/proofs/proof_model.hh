@@ -115,6 +115,7 @@ namespace gcs::innards
             -> ProofLine;
         auto add_unlabelled_definitional_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
+        auto add_unlabelled_definitional_constraint(const Literals & lits) -> ProofLine;
 
         /**
          * \brief Like add_constraint for an equality, but emits an @label on each

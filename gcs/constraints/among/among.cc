@@ -94,7 +94,7 @@ auto Among::define_proof_model(ProofModel & model) -> void
     for (auto & var : _vars)
         for (auto & val : _values_of_interest)
             sum += 1_i * (var == val);
-    _sum_line = model.add_constraint("Among", "how many", sum == 1_i * _how_many);
+    _sum_line = model.add_labelled_constraint(as_string(constraint_id()), "le", "ge", "Among", "how many", sum == 1_i * _how_many);
 }
 
 auto Among::install_propagators(Propagators & propagators) -> void

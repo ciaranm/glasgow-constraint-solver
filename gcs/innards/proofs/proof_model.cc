@@ -226,6 +226,26 @@ auto ProofModel::add_unlabelled_definitional_constraint(const StringLiteral & co
     return pair{first, second};
 }
 
+auto ProofModel::add_unlabelled_definitional_constraint(const Literals & lits) -> ProofLine
+{
+    // As the no-name add_constraint(Literals) --- a clause, a statically-true
+    // literal making it the trivially-true `sum >= 0` --- but returns the
+    // referenceable line (see the inequality overload).
+    WPBSum sum;
+    bool tautological = false;
+    for (auto & lit : lits) {
+        overloaded{
+            [&](const TrueLiteral &) { tautological = true; },                              //
+            [&](const FalseLiteral &) {},                                                   //
+            [&]<typename T_>(const VariableConditionFrom<T_> & cond) { sum += 1_i * cond; } //
+        }
+            .visit(simplify_literal(names_and_ids_tracker(), lit));
+    }
+    sort(sum.terms);
+    sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
+    return add_unlabelled_definitional_constraint(move(sum) >= (tautological ? 0_i : 1_i), nullopt);
+}
+
 auto ProofModel::add_labelled_constraint(const string & constraint_id, const string & role_le, const string & role_ge,
     const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
     -> pair<ProofLine, ProofLine>
