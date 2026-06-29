@@ -224,8 +224,9 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
     auto make_end = [&](IntegerVariableID pos, IntegerVariableID size, Integer dom_hi, optional<ProofOnlySimpleIntegerVariableID> & end_out,
                         optional<ProofLine> & ge_out, optional<ProofLine> & le_out) {
         auto end = model.create_proof_only_integer_variable(0_i, dom_hi, "d2dend", IntegerVariableProofRepresentation::Bits);
-        ge_out = model.add_constraint("Disjunctive2D", "end >= pos + size", WPBSum{} + 1_i * end + -1_i * pos + -1_i * size >= 0_i);
-        le_out = model.add_constraint("Disjunctive2D", "end <= pos + size", WPBSum{} + 1_i * end + -1_i * pos + -1_i * size <= 0_i);
+        // Proof-only end proxy with no cake equivalent (see Disjunctive); escape hatch.
+        ge_out = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * end + -1_i * pos + -1_i * size >= 0_i);
+        le_out = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * end + -1_i * pos + -1_i * size <= 0_i);
         end_out = end;
     };
     for (auto i : _active_rects) {
@@ -264,7 +265,9 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
                 if (_zero_h[r])
                     clause_sum += 1_i * *_zero_h[r];
             }
-            auto clause = model.add_constraint("Disjunctive2D", "rectangles must be separated on some axis", move(clause_sum) >= 1_i);
+            // cake_pb_cp labels the separation clause @c[id][<i>_<j>sepal1].
+            auto clause = model.add_labelled_constraint(as_string(_constraint_id), std::to_string(i) + "_" + std::to_string(j) + "sepal1",
+                "Disjunctive2D", "rectangles must be separated on some axis", move(clause_sum) >= 1_i);
             _before_x.emplace(make_pair(i, j), bx_ij);
             _before_x.emplace(make_pair(j, i), bx_ji);
             _before_y.emplace(make_pair(i, j), by_ij);

@@ -192,8 +192,12 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
         if (is_constant_variable(_lengths[i]))
             continue;
         auto end = model.create_proof_only_integer_variable(0_i, _per_task_t_hi[i] + 1_i, "disjend", IntegerVariableProofRepresentation::Bits);
-        _end_ge[i] = model.add_constraint("Disjunctive", "end >= s + l", WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
-        _end_le[i] = model.add_constraint("Disjunctive", "end <= s + l", WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
+        // The end proxy is a proof-only variable cake does not have (it folds s + l
+        // directly), so these definitions cannot be cake-labelled; use the escape
+        // hatch. (They are only emitted for variable durations, never on the
+        // constant-length chain cases.)
+        _end_ge[i] = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
+        _end_le[i] = model.add_unlabelled_definitional_constraint(WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
         _end[i] = end;
     }
 
@@ -230,7 +234,9 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
             for (auto r : {i, j})
                 if (_zero[r])
                     clause_sum += 1_i * *_zero[r];
-            auto clause = model.add_constraint("Disjunctive", "one task must finish first", move(clause_sum) >= 1_i);
+            // cake_pb_cp labels the separation clause @c[id][<i>_<j>sepal1].
+            auto clause = model.add_labelled_constraint(as_string(_constraint_id), std::to_string(i) + "_" + std::to_string(j) + "sepal1",
+                "Disjunctive", "one task must finish first", move(clause_sum) >= 1_i);
             _before_flags.emplace(std::make_pair(i, j), data_ij);
             _before_flags.emplace(std::make_pair(j, i), data_ji);
             _clause_lines.emplace(std::make_pair(i, j), clause);

@@ -259,10 +259,14 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             // variable, move it to the left as a (−1)·capacity term so the
             // constraint stays a single linear inequality with RHS 0.
             std::optional<ProofLine> line;
+            // cake labels its per-time load constraint @c[id][cap_<t>] but indexes
+            // time differently (its global window vs our per-task one), so we cannot
+            // match the label; cumulative chains at `none` via the line reference, so
+            // the escape hatch preserves that.
             if (is_constant_variable(_capacity))
-                line = model.add_constraint("Cumulative", "load at time", load <= _capacity_val);
+                line = model.add_unlabelled_definitional_constraint(load <= _capacity_val);
             else
-                line = model.add_constraint("Cumulative", "load at time", move(load) + -1_i * _capacity <= 0_i);
+                line = model.add_unlabelled_definitional_constraint(move(load) + -1_i * _capacity <= 0_i);
             if (line)
                 _capacity_lines.emplace(t, *line);
         }
