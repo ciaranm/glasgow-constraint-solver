@@ -90,12 +90,11 @@ namespace gcs
 
         // For a rectangle with a variable size on an axis, a proof-only
         // end = pos + size on which that axis's "after" bridge flag is reified
-        // (single variable, keeping the after pin RUP-friendly). Both definition
-        // lines are captured: _end_*_ge is end >= pos+size (used to materialise
-        // end's bound), _end_*_le is end <= pos+size (used to cancel end back to
-        // pos+size in the before-flag pol). nullopt when that size is constant.
+        // (single variable, keeping the after pin RUP-friendly). The variable has
+        // no OPB encoding; its definition and the end_*_ge / end_*_le lines are
+        // introduced in-proof by the propagator's initialiser. nullopt when that
+        // size is constant.
         std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end_x, _end_y;
-        std::vector<std::optional<innards::ProofLine>> _end_x_ge, _end_x_le, _end_y_ge, _end_y_le;
 
         // Non-strict mode only: for a rectangle whose width/height can be 0, a
         // reified "size <= 0" flag that escapes the separation clause (a
