@@ -2,6 +2,8 @@
 #include <gcs/constraints/cumulative/hints.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/power.hh>
+#include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -55,6 +57,16 @@ namespace
         for (const auto & v : vals)
             result.push_back(constant_variable(v));
         return result;
+    }
+
+    // The variable-height contribution h_i·active is linearised over cake's
+    // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
+    auto contrib_sum_of(const vector<ProofFlag> & cc) -> WPBSum
+    {
+        WPBSum sum;
+        for (Integer k = 0_i; k.raw_value < static_cast<long long>(cc.size()); ++k)
+            sum += power2(k) * cc[k.raw_value];
+        return sum;
     }
 }
 
@@ -117,7 +129,7 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     // Resolve snapshots used by define_proof_model and the propagator. For a
     // variable length/height, _*_vals[i] is a placeholder 0 (the propagator
     // reads the bound from the state and the proof uses the variable /
-    // _contrib_vars instead); _*_ub[i] is the initial upper bound, used to size
+    // _contrib_flags instead); _*_ub[i] is the initial upper bound, used to size
     // the possible-active window / contrib domain and to filter tasks that can
     // never raise the profile.
     _length_vals.clear();
@@ -173,7 +185,7 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
     _before_flags.assign(_starts.size(), {});
     _after_flags.assign(_starts.size(), {});
     _active_flags.assign(_starts.size(), {});
-    _contrib_vars.assign(_starts.size(), {});
+    _contrib_flags.assign(_starts.size(), {});
     _end.assign(_starts.size(), std::nullopt);
 
     Integer global_lo = 0_i, global_hi = -1_i;
@@ -224,18 +236,25 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             _active_flags[i].push_back(active);
 
             // For a variable height, the task's load contribution at t is the
-            // product height·active, which is nonlinear. Linearise it with a
-            // proof-only integer contrib in [0, ub(h)]:
+            // product height·active, which is nonlinear. Linearise it over cake's
+            // per-bit contribution flags cc_k (weight 2^k), so contrib = Σ 2^k·cc_k
+            // (same encoding cake_pb_cp emits, so the load reasoning chain-verifies):
             //   active   ⇒ contrib = h   (contrib − h ≥ 0 and ≤ 0)
-            //   ¬active  ⇒ contrib = 0   (contrib ≤ 0; contrib ≥ 0 by domain)
+            //   ¬active  ⇒ contrib = 0   (contrib ≤ 0; cc_k ≥ 0 inherently)
+            // The bit count matches the proof-only bits encoding of [0, ub(h)], and
+            // the flags carry no domain bound of their own (cle/cz constrain them,
+            // exactly as cake does).
             if (! is_constant_variable(_heights[i])) {
-                auto contrib = model.create_proof_only_integer_variable(0_i, _height_ub[i], "cumcontrib", IntegerVariableProofRepresentation::Bits);
-                model.add_constraint(
-                    "Cumulative", "contrib >= h when active", WPBSum{} + 1_i * contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_constraint(
-                    "Cumulative", "contrib <= h when active", WPBSum{} + 1_i * contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_constraint("Cumulative", "contrib = 0 when inactive", WPBSum{} + 1_i * contrib <= 0_i, HalfReifyOnConjunctionOf{! active});
-                _contrib_vars[i].push_back(contrib);
+                auto highest_bit_shift = std::get<0>(get_bits_encoding_coeffs(0_i, _height_ub[i]));
+                std::vector<ProofFlag> cc;
+                for (Integer k = 0_i; k <= highest_bit_shift; ++k)
+                    cc.push_back(model.names_and_ids_tracker().create_proof_flag_values(
+                        _constraint_id, std::vector<long long>{static_cast<long long>(i), t.raw_value, k.raw_value}, "cc"));
+                auto contrib = contrib_sum_of(cc);
+                model.add_constraint("Cumulative", "contrib >= h when active", contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_constraint("Cumulative", "contrib <= h when active", contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_constraint("Cumulative", "contrib = 0 when inactive", contrib <= 0_i, HalfReifyOnConjunctionOf{! active});
+                _contrib_flags[i].push_back(move(cc));
             }
         }
     }
@@ -250,7 +269,8 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             if (is_constant_variable(_heights[i]))
                 load += _height_vals[i] * _active_flags[i][idx];
             else
-                load += 1_i * _contrib_vars[i][idx];
+                for (Integer k = 0_i; k.raw_value < static_cast<long long>(_contrib_flags[i][idx].size()); ++k)
+                    load += power2(k) * _contrib_flags[i][idx][k.raw_value];
             any = true;
         }
         if (any) {
@@ -332,7 +352,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         constraint_id(),
         [starts = move(_starts), lengths_var = move(_lengths), heights_var = move(_heights), capacity_var = _capacity,
             active_tasks = move(_active_tasks), before_flags = move(_before_flags), after_flags = move(_after_flags),
-            active_flags = move(_active_flags), contrib_vars = move(_contrib_vars), ends = move(_end), end_lines,
+            active_flags = move(_active_flags), contrib_flags = move(_contrib_flags), ends = move(_end), end_lines,
             capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // The capacity may be a variable: the load profile is infeasible
@@ -344,7 +364,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             // A height may be a variable: a task's *guaranteed* contribution to
             // the load is its smallest still-allowed height, lb(h_i). For a
             // constant height lb(h_i) is just its value. Variable heights' bounds
-            // are part of every reason, and the proof uses contrib_vars.
+            // are part of every reason, and the proof uses the cc flags.
             auto hlb = [&](size_t i) { return state.lower_bound(heights_var[i]); };
             auto h_is_var = [&](size_t i) { return ! is_constant_variable(heights_var[i]); };
 
@@ -405,7 +425,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 if (! h_is_var(i))
                     return {active_line, hlb(i)};
                 auto contrib_line =
-                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * contrib_vars[i][fi] >= hlb(i), ProofLevel::Temporary);
+                    logger->emit_rup_proof_line_under_reason(reason, contrib_sum_of(contrib_flags[i][fi]) >= hlb(i), ProofLevel::Temporary);
                 return {contrib_line, 1_i};
             };
 
@@ -430,7 +450,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                 if (! h_is_var(j_idx))
                     return {active_line, hlb(j_idx)};
                 auto contrib_line = logger->emit_rup_proof_line_under_reason(
-                    reason, WPBSum{} + 1_i * contrib_vars[j_idx][fj] + hlb(j_idx) * ext_lit >= hlb(j_idx), ProofLevel::Temporary);
+                    reason, contrib_sum_of(contrib_flags[j_idx][fj]) + hlb(j_idx) * ext_lit >= hlb(j_idx), ProofLevel::Temporary);
                 return {contrib_line, 1_i};
             };
 

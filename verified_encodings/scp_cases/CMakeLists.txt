@@ -343,18 +343,20 @@ add_scp_chain_test(disjunctive2d_var_sat  none)
 # propagator change (it holds the flag handles, whose names the rename updates).
 # Stays none: the start / size bit encodings still diverge from cake's eager
 # variable encoding (#358). sat enumerates the placements that keep every slot
-# within capacity (cumulative_var_sat uses variable heights, exercising the
-# contribution path); unsat forces more load into a slot than the capacity allows.
+# within capacity; unsat forces more load into a slot than the capacity allows.
+# Variable heights: the load contribution h_i*active is linearised over cake's
+# per-bit contribution flags v[id][i_t_k][cc] (weight 2^k), the same encoding cake
+# emits, so the contribution reasoning is also a naming conform (no bits-integer of
+# our own). cumulative_var_height_sat drives enough load to pin those contributions.
 # cumulative_var_duration_sat exercises variable durations (both start and length
 # vary). cake reifies after on s + l directly; the solver introduces a proof-only
 # end = s + l as a conservative extension (introduce_bits_of, no OPB axiom) purely
 # to give its propagator a single-variable after pin, bridged to cake's two-variable
 # after by a per-(task,time) `end >= t+1 -> after` lemma the initialiser emits. So
-# the chain has no end axiom to resolve. (Variable heights additionally diverge in
-# the contribution encoding -- cake's binary cc flags vs the solver's bits-integer
-# contrib -- so cumulative_var_duration_sat keeps a constant height; that gap is
-# separate, see dev_docs.)
-add_scp_chain_test(cumulative_sat            none)
-add_scp_chain_test(cumulative_var_sat        none)
+# the chain has no end axiom to resolve. Stays none: the start / size bit encodings
+# still diverge from cake's eager variable encoding (#358).
+add_scp_chain_test(cumulative_sat              none)
+add_scp_chain_test(cumulative_var_sat          none)
+add_scp_chain_test(cumulative_var_height_sat   none)
 add_scp_chain_test(cumulative_var_duration_sat none)
-add_scp_chain_test(cumulative_unsat          none)
+add_scp_chain_test(cumulative_unsat            none)
