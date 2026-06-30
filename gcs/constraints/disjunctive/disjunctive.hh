@@ -85,15 +85,13 @@ namespace gcs
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_flags;
         std::map<std::pair<std::size_t, std::size_t>, innards::ProofLine> _clause_lines;
 
-        // For a task whose duration varies, a proof-only end = s + l on which
-        // that task's "after" bridge flag is reified (a single variable keeps
-        // the after pin RUP-friendly). Both definition directions are captured:
-        // _end_ge is end >= s+l (materialises end's bound), _end_le is end <= s+l
-        // (cancels end back to s+l in the before-flag pol). nullopt for a task
-        // whose duration is constant (those reify after on s directly).
+        // For a task whose duration varies, a proof-only end = s + l on which that
+        // task's "after" bridge flag is reified (a single variable keeps the after
+        // pin RUP-friendly). The variable has no OPB encoding; its definition (and
+        // the end_ge / end_le lines materialise_end and the before-flag pol use) is
+        // introduced in-proof, lazily on first use, by the propagator. nullopt for a
+        // task whose duration is constant (those reify after on s directly).
         std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end;
-        std::vector<std::optional<innards::ProofLine>> _end_ge;
-        std::vector<std::optional<innards::ProofLine>> _end_le;
 
         // Non-strict mode: whether each task's duration can be 0 (std::uint8_t
         // rather than the vector<bool> bitset specialisation), and, for those

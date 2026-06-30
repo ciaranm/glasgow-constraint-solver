@@ -315,8 +315,16 @@ add_scp_chain_test(regular_ternary_sat  none)
 # tasks than slots / two width-2 rectangles that cannot separate in a 2x2 area).
 add_scp_chain_test(disjunctive_sat        none)
 add_scp_chain_test(disjunctive_unsat      none)
+# Variable-duration disjunctive: end_i = s_i + l_i is introduced as an in-proof
+# conservative extension (ProofLogger::introduce_bits_of), not an OPB axiom, so
+# the proof carries its own end definition and chains against cake's OPB (which
+# has no end variable). This is what constant-duration cases never exercise.
+add_scp_chain_test(disjunctive_var_sat    none)
 add_scp_chain_test(disjunctive2d_sat      none)
 add_scp_chain_test(disjunctive2d_unsat    none)
+# Variable-size disjunctive2d: same in-proof end = pos + size conservative
+# extension as disjunctive_var, per axis (see introduce_bits_of).
+add_scp_chain_test(disjunctive2d_var_sat  none)
 
 # none (chain-only): cumulative. Tasks [start, start+length) each occupy `height`
 # of a shared resource; at every time point the total height of active tasks is at

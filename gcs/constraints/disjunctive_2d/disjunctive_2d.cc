@@ -214,28 +214,17 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
     };
 
     // For each rectangle with a variable size on an axis, a proof-only
-    // end = pos + size with both definition directions captured.
+    // end = pos + size. Like Disjunctive, cake has no such variable (it folds
+    // pos + size directly), so end has NO OPB encoding: its definition is
+    // introduced in-proof by the initialiser (ProofLogger::introduce_bits_of),
+    // and end_*_ge / end_*_le are captured there, not here.
     _end_x.assign(_xs.size(), nullopt);
     _end_y.assign(_xs.size(), nullopt);
-    _end_x_ge.assign(_xs.size(), nullopt);
-    _end_x_le.assign(_xs.size(), nullopt);
-    _end_y_ge.assign(_xs.size(), nullopt);
-    _end_y_le.assign(_xs.size(), nullopt);
-    auto make_end = [&](const std::string & tag, IntegerVariableID pos, IntegerVariableID size, Integer dom_hi,
-                        optional<ProofOnlySimpleIntegerVariableID> & end_out, optional<ProofLine> & ge_out, optional<ProofLine> & le_out) {
-        auto end = model.create_proof_only_integer_variable(0_i, dom_hi, "d2dend", IntegerVariableProofRepresentation::Bits);
-        // Proof-only end proxy with no cake equivalent (see Disjunctive): invent a label.
-        ge_out = model.add_labelled_constraint(
-            as_string(_constraint_id), "endge_" + tag, "Disjunctive2D", "end >= pos + size", WPBSum{} + 1_i * end + -1_i * pos + -1_i * size >= 0_i);
-        le_out = model.add_labelled_constraint(
-            as_string(_constraint_id), "endle_" + tag, "Disjunctive2D", "end <= pos + size", WPBSum{} + 1_i * end + -1_i * pos + -1_i * size <= 0_i);
-        end_out = end;
-    };
     for (auto i : _active_rects) {
         if (! is_constant_variable(_widths[i]))
-            make_end("x" + std::to_string(i), _xs[i], _widths[i], _x_hi[i] + 1_i, _end_x[i], _end_x_ge[i], _end_x_le[i]);
+            _end_x[i] = model.create_proof_only_integer_variable_in_proof(0_i, _x_hi[i] + 1_i, "d2dend");
         if (! is_constant_variable(_heights[i]))
-            make_end("y" + std::to_string(i), _ys[i], _heights[i], _y_hi[i] + 1_i, _end_y[i], _end_y_ge[i], _end_y_le[i]);
+            _end_y[i] = model.create_proof_only_integer_variable_in_proof(0_i, _y_hi[i] + 1_i, "d2dend");
     }
 
     // Non-strict mode: a zero-size escape flag per size that can be 0.
@@ -310,12 +299,28 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
     auto bridge_x = make_shared<BridgeMap>();
     auto bridge_y = make_shared<BridgeMap>();
 
+    // Lazily-introduced end = pos + size definitions per rectangle per axis,
+    // {end_ge, end_le}, filled in-proof by the initialiser below. Shared so the
+    // cache survives from the initialiser into the propagator.
+    auto end_x_lines = make_shared<vector<optional<pair<ProofLine, ProofLine>>>>(_xs.size());
+    auto end_y_lines = make_shared<vector<optional<pair<ProofLine, ProofLine>>>>(_xs.size());
+
     propagators.install_initialiser(
         [xs = _xs, ys = _ys, width_var = _widths, height_var = _heights, widths = _width_vals, heights = _height_vals, width_ub = _width_ub,
-            height_ub = _height_ub, end_x = _end_x, end_y = _end_y, active_rects = _active_rects, x_lo = _x_lo, x_hi = _x_hi, y_lo = _y_lo,
-            y_hi = _y_hi, bridge_x, bridge_y](State &, auto &, ProofLogger * const logger) -> void {
+            height_ub = _height_ub, end_x = _end_x, end_y = _end_y, end_x_lines, end_y_lines, active_rects = _active_rects, x_lo = _x_lo,
+            x_hi = _x_hi, y_lo = _y_lo, y_hi = _y_hi, bridge_x, bridge_y](State &, auto &, ProofLogger * const logger) -> void {
             if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
                 return;
+            // Introduce each variable-size end = pos + size as a conservative
+            // extension FIRST --- before the after-flag definitions below reify on
+            // end (referencing its bits), so the bits are still fresh for
+            // introduce_bits_of's redundancy witnesses.
+            for (auto i : active_rects) {
+                if (end_x[i].has_value())
+                    (*end_x_lines)[i] = logger->introduce_bits_of(WPBSum{} + 1_i * xs[i] + 1_i * width_var[i], *end_x[i], ProofLevel::Top);
+                if (end_y[i].has_value())
+                    (*end_y_lines)[i] = logger->introduce_bits_of(WPBSum{} + 1_i * ys[i] + 1_i * height_var[i], *end_y[i], ProofLevel::Top);
+            }
             // "after" reifies on pos + size >= t+1; for a constant size that is
             // the single-variable pos >= t-size+1, for a variable size the
             // single-variable end >= t+1 (end = pos + size).
@@ -355,9 +360,23 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
         constraint_id(),
         [xs = move(_xs), ys = move(_ys), width_var = move(_widths), height_var = move(_heights), active_rects = move(_active_rects),
             before_x = move(_before_x), before_y = move(_before_y), clause_lines = move(_clause_lines), end_x = move(_end_x), end_y = move(_end_y),
-            end_x_ge = move(_end_x_ge), end_x_le = move(_end_x_le), end_y_ge = move(_end_y_ge), end_y_le = move(_end_y_le), zero_w = move(_zero_w),
-            zero_h = move(_zero_h), strict = _strict, owner = constraint_id(), bridge_x,
+            end_x_lines, end_y_lines, zero_w = move(_zero_w), zero_h = move(_zero_h), strict = _strict, owner = constraint_id(), bridge_x,
             bridge_y](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // Read the in-proof end = pos + size definitions (filled by the
+            // initialiser) as end_*_ge / end_*_le accessors. function-typed so the
+            // free/forced-axis dispatch below can select one by axis.
+            function<optional<ProofLine>(size_t)> end_x_ge = [&](size_t i) -> optional<ProofLine> {
+                return (*end_x_lines)[i] ? optional<ProofLine>{(*end_x_lines)[i]->first} : nullopt;
+            };
+            function<optional<ProofLine>(size_t)> end_x_le = [&](size_t i) -> optional<ProofLine> {
+                return (*end_x_lines)[i] ? optional<ProofLine>{(*end_x_lines)[i]->second} : nullopt;
+            };
+            function<optional<ProofLine>(size_t)> end_y_ge = [&](size_t i) -> optional<ProofLine> {
+                return (*end_y_lines)[i] ? optional<ProofLine>{(*end_y_lines)[i]->first} : nullopt;
+            };
+            function<optional<ProofLine>(size_t)> end_y_le = [&](size_t i) -> optional<ProofLine> {
+                return (*end_y_lines)[i] ? optional<ProofLine>{(*end_y_lines)[i]->second} : nullopt;
+            };
             // Pairwise 2D time-table. The mandatory box of rectangle i is
             //   [ub(x_i), lb(x_i)+lb(w_i)) x [ub(y_i), lb(y_i)+lb(h_i))
             // -- the cells it must occupy regardless of where it is placed (a
@@ -427,10 +446,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                 logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf.after >= 1_i, ProofLevel::Temporary);
                                 return logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf.active >= 1_i, ProofLevel::Temporary);
                             };
-                            auto Ax_i = pin(*bridge_x, end_x[i], end_x_ge[i], xs[i], width_var[i], p, i);
-                            auto Ay_i = pin(*bridge_y, end_y[i], end_y_ge[i], ys[i], height_var[i], q, i);
-                            auto Ax_j = pin(*bridge_x, end_x[j], end_x_ge[j], xs[j], width_var[j], p, j);
-                            auto Ay_j = pin(*bridge_y, end_y[j], end_y_ge[j], ys[j], height_var[j], q, j);
+                            auto Ax_i = pin(*bridge_x, end_x[i], end_x_ge(i), xs[i], width_var[i], p, i);
+                            auto Ay_i = pin(*bridge_y, end_y[i], end_y_ge(i), ys[i], height_var[i], q, i);
+                            auto Ax_j = pin(*bridge_x, end_x[j], end_x_ge(j), xs[j], width_var[j], p, j);
+                            auto Ay_j = pin(*bridge_y, end_y[j], end_y_ge(j), ys[j], height_var[j], q, j);
 
                             auto & bx_i = bridge_x->at(make_pair(i, p));
                             auto & bx_j = bridge_x->at(make_pair(j, p));
@@ -451,10 +470,10 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                                     pol.add(*aft_end_le);
                                 return pol.saturate().emit(*logger, ProofLevel::Temporary);
                             };
-                            auto Lx1 = Lpol(before_x.at(make_pair(i, j)), bx_i, bx_j, end_x_le[i]);
-                            auto Lx2 = Lpol(before_x.at(make_pair(j, i)), bx_j, bx_i, end_x_le[j]);
-                            auto Ly1 = Lpol(before_y.at(make_pair(i, j)), by_i, by_j, end_y_le[i]);
-                            auto Ly2 = Lpol(before_y.at(make_pair(j, i)), by_j, by_i, end_y_le[j]);
+                            auto Lx1 = Lpol(before_x.at(make_pair(i, j)), bx_i, bx_j, end_x_le(i));
+                            auto Lx2 = Lpol(before_x.at(make_pair(j, i)), bx_j, bx_i, end_x_le(j));
+                            auto Ly1 = Lpol(before_y.at(make_pair(i, j)), by_i, by_j, end_y_le(i));
+                            auto Ly2 = Lpol(before_y.at(make_pair(j, i)), by_j, by_i, end_y_le(j));
 
                             // Combine the four precedence-false lines with the
                             // 4-way separation clause and the four active AND-gate
@@ -587,12 +606,12 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     // Forced-axis elimination: both rects span forced_col, so
                     // neither forced-axis precedence holds; with the 4-way clause
                     // that leaves the free-axis disjunction.
-                    auto Ax_i = pin(forced_bridge, forced_end[i], forced_end_ge[i], forced_pos[i], forced_size[i], forced_col, i);
-                    auto Ax_j = pin(forced_bridge, forced_end[j], forced_end_ge[j], forced_pos[j], forced_size[j], forced_col, j);
+                    auto Ax_i = pin(forced_bridge, forced_end[i], forced_end_ge(i), forced_pos[i], forced_size[i], forced_col, i);
+                    auto Ax_j = pin(forced_bridge, forced_end[j], forced_end_ge(j), forced_pos[j], forced_size[j], forced_col, j);
                     auto & fx_i = forced_bridge.at(make_pair(i, forced_col));
                     auto & fx_j = forced_bridge.at(make_pair(j, forced_col));
-                    auto Lf1 = Lpol(forced_before.at(make_pair(i, j)), fx_i, fx_j, forced_end_le[i]);
-                    auto Lf2 = Lpol(forced_before.at(make_pair(j, i)), fx_j, fx_i, forced_end_le[j]);
+                    auto Lf1 = Lpol(forced_before.at(make_pair(i, j)), fx_i, fx_j, forced_end_le(i));
+                    auto Lf2 = Lpol(forced_before.at(make_pair(j, i)), fx_j, fx_i, forced_end_le(j));
                     PolBuilder rb;
                     rb.add(clause_lines.at(make_pair(min(i, j), max(i, j))))
                         .add(Lf1)
@@ -610,19 +629,19 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
                     for (size_t step = 0; step < chain.size(); ++step) {
                         auto t = chain[step].t;
                         auto ext_lit = dir > 0 ? (free_pos[i] > t) : (free_pos[i] < t - sz + 1_i);
-                        auto A_blk = pin(free_bridge, free_end[j], free_end_ge[j], free_pos[j], free_size[j], t, j);
+                        auto A_blk = pin(free_bridge, free_end[j], free_end_ge(j), free_pos[j], free_size[j], t, j);
                         auto & fy_i = free_bridge.at(make_pair(i, t));
                         auto & fy_j = free_bridge.at(make_pair(j, t));
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * fy_i.before + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
                         // The pushed rect's after under ext_lit needs end >= s_lo
                         // + lb(size) (>= t+1), materialised under the extended
                         // reason (s_lo is the running bound / ¬ext_lit's bound).
-                        materialise_end(free_end[i], free_end_ge[i], free_pos[i], free_size[i], chain[step].s_lo);
+                        materialise_end(free_end[i], free_end_ge(i), free_pos[i], free_size[i], chain[step].s_lo);
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * fy_i.after + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
                         auto A_psh = logger->emit_rup_proof_line_under_reason(
                             reason, WPBSum{} + 1_i * fy_i.active + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-                        auto Ly1 = Lpol(free_before.at(make_pair(i, j)), fy_i, fy_j, free_end_le[i]);
-                        auto Ly2 = Lpol(free_before.at(make_pair(j, i)), fy_j, fy_i, free_end_le[j]);
+                        auto Ly1 = Lpol(free_before.at(make_pair(i, j)), fy_i, fy_j, free_end_le(i));
+                        auto Ly2 = Lpol(free_before.at(make_pair(j, i)), fy_j, fy_i, free_end_le(j));
                         auto not_both = PolBuilder{}
                                             .add(Ly1)
                                             .add(Ly2)

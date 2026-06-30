@@ -41,6 +41,12 @@ namespace gcs::innards
         // it is never a numeric line.
         auto emit_constraint_label(const std::string & constraint_id, const std::string & role) -> ProofLineLabel;
 
+        // Register a bits encoding (allocate/name the bit literals, track bounds)
+        // without emitting anything to the OPB. The shared "register" half of
+        // set_up_bits_variable_encoding and create_proof_only_integer_variable_in_proof;
+        // the registered bits are then readable via the tracker's each_bit.
+        auto register_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
+
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
@@ -197,6 +203,15 @@ namespace gcs::innards
          */
         [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &, const IntegerVariableProofRepresentation enc)
             -> ProofOnlySimpleIntegerVariableID;
+
+        /**
+         * Create a bits-encoded proof-only variable whose encoding is NOT emitted
+         * to the OPB. The bits are registered (named, usable in proof expressions)
+         * but the model asserts nothing about them; the caller introduces the
+         * variable's meaning inside the proof (see ProofLogger::introduce_bits_of).
+         * The bits analogue of NamesAndIDsTracker::create_literals_for_introduced_variable_value.
+         */
+        [[nodiscard]] auto create_proof_only_integer_variable_in_proof(Integer, Integer, const std::string &) -> ProofOnlySimpleIntegerVariableID;
 
         [[nodiscard]] auto create_proof_flag(const std::string & stem) -> ProofFlag;
 

@@ -2,6 +2,7 @@
 #include <gcs/expression.hh>
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/interval_set.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -658,6 +659,37 @@ auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBool
         _imp->proof << ";\n";
 
     return record_proof_line(advance_proof_line_number(), level);
+}
+
+auto ProofLogger::introduce_bits_of(const SumOf<Weighted<PseudoBooleanTerm>> & linear_form, ProofOnlySimpleIntegerVariableID target, ProofLevel level)
+    -> pair<ProofLine, ProofLine>
+{
+    // Wietze Koops's construction: walk target's bits from the top, defining each
+    // bit e_k as the reified `running-remainder >= 2^k` via a single red whose
+    // witness is just e_k -> 1 (upper half) / e_k -> 0 (lower half). Every
+    // redundancy goal closes by RUP, and the final (k = 0) pair is
+    // BinEnc(target) >= form (end_ge) / BinEnc(target) <= form (end_le).
+    auto m = names_and_ids_tracker().num_bits(target).raw_value;
+    pair<ProofLine, ProofLine> bounds;
+    SumOf<Weighted<PseudoBooleanTerm>> bitsum; // Sigma_{j > k} 2^j e_j, grows as k descends
+    for (long long kk = m - 1; kk >= 0; --kk) {
+        Integer k{kk};
+        bitsum += power2(k) * ProofBitVariable{target, k, true}; // now Sigma_{j >= k}
+
+        // expr = (running bit sum) - (linear form)
+        auto expr = bitsum;
+        for (const auto & term : linear_form.terms)
+            expr += Weighted<PseudoBooleanTerm>{-term.coefficient, term.variable};
+
+        ProofBitVariable bit{target, k, true};
+        // upper: Sigma_{j >= k} 2^j e_j + (2^k - 1) >= form  <=>  expr >= 1 - 2^k
+        auto ge = emit_red_proof_line(expr >= 1_i - power2(k), {{bit, TrueLiteral{}}}, level);
+        // lower: Sigma_{j >= k} 2^j e_j <= form  <=>  expr <= 0
+        auto le = emit_red_proof_line(expr <= 0_i, {{bit, FalseLiteral{}}}, level);
+        if (kk == 0)
+            bounds = {ge, le};
+    }
+    return bounds;
 }
 
 auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
