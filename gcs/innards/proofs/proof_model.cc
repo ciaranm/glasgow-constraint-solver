@@ -348,6 +348,20 @@ auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper
     return id;
 }
 
+auto ProofModel::create_proof_only_integer_variable_in_proof(Integer lower, Integer upper, const string & name) -> ProofOnlySimpleIntegerVariableID
+{
+    // A bits-encoded proof-only variable whose encoding is NOT emitted to the OPB:
+    // the bits are registered (named, referenceable) but the model asserts nothing
+    // about them. The caller is responsible for introducing the variable's meaning
+    // inside the proof (e.g. ProofLogger::introduce_bits_of for a linear form), so
+    // that it is a conservative extension rather than a model axiom --- which is
+    // what makes it chain-portable against cake_pb_cp's OPB. This mirrors the
+    // direct-encoding create_literals_for_introduced_variable_value, in bits.
+    ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variable_nr++};
+    register_bits_variable_encoding(id, lower, upper, name);
+    return id;
+}
+
 auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name)
     -> void
 {
@@ -439,8 +453,13 @@ auto ProofModel::set_up_integer_variable(
     }
 }
 
-auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+auto ProofModel::register_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
 {
+    // The "register" half of a bits encoding: allocate and name the bit literals
+    // and record the bounds, but emit nothing to the OPB. set_up_bits_variable_encoding
+    // wraps this with the OPB bound constraints; create_proof_only_integer_variable_in_proof
+    // uses it alone, for a variable whose encoding is introduced inside the proof
+    // (e.g. via ProofLogger::introduce_bits_of) rather than asserted in the model.
     auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
     vector<pair<Integer, XLiteral>> bits;
 
@@ -451,6 +470,15 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
         bits.emplace_back(power2(b), names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, Integer{b}));
 
     names_and_ids_tracker().track_bits(id, negative_bit_coeff, bits);
+    names_and_ids_tracker().track_bounds(id, lower, upper);
+}
+
+auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+{
+    register_bits_variable_encoding(id, lower, upper, name);
+    vector<pair<Integer, XLiteral>> bits;
+    for (auto b : names_and_ids_tracker().each_bit(id))
+        bits.push_back(b);
     _imp->model_variables += bits.size();
 
     // @i[name][lb]/[ub] labels match cake_pb_cp, for a real variable; a vector
@@ -474,8 +502,6 @@ auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableI
         _imp->opb << -coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << -upper << " ;\n";
     advance_constraint_counter();
-
-    names_and_ids_tracker().track_bounds(id, lower, upper);
 
     if (_imp->always_use_full_encoding)
         overloaded{
