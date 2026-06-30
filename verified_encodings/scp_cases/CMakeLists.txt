@@ -436,9 +436,7 @@ add_scp_chain_test(smart_table_unsat      none)
 # unsat is a four-into-three pigeonhole; at_most_one unsat pins two variables to
 # the value; among counts occurrences of a value, unsat demanding more than the
 # candidates can supply. (The sibling precedence globals -- value_precede and
-# seq_precede_chain -- read and round-trip, but their proofs use auxiliary
-# position / structural variables absent from cake's OPB, so they need a
-# structural conform like sort/arg_sort, not just a reader.)
+# seq_precede_chain -- are conformed and chain separately, below.)
 add_scp_chain_test(all_different_except_sat    none)
 add_scp_chain_test(all_different_except_unsat  none)
 add_scp_chain_test(at_most_one_sat             none)
@@ -476,3 +474,25 @@ add_scp_chain_test(symmetric_all_different_unsat  none)
 # a label/structural conform, not just a reader.)
 add_scp_chain_test(element_2d_sat              none)
 add_scp_chain_test(element_2d_unsat            none)
+
+# none (chain-only): value_precede / seq_precede_chain. Both build a proof-only
+# first-occurrence index pos[v] per chain value (the sentinel n meaning "v is
+# absent"); the upper-bound and existence constraints pin pos[v] to the leftmost
+# occurrence, and the precede constraints order first occurrences. The solver now
+# materialises pos[v] from cake's value-keyed flag family -- bits v[id][v_b][pos],
+# reified ge flags v[id][v_k][pge] -- exactly matching cake's encoder, so its RUP
+# steps resolve against cake's OPB (previously pos[v] was a generic proof-only
+# integer variable named p[..]/po[..], foreign to cake). seq_precede_chain
+# delegates to value_precede (clamp + chain 1..m), so it comes along.
+# These use n = 3 variables (= 2^2 - 1) on purpose: pos[v] spans exactly [0, 3],
+# so an absent value (forced pos[v] >= n) is pinned to n by unit propagation.
+# cake (and the solver) omit a pos[v] <= n bound, so for n not of the form
+# 2^w - 1 an absent value leaves pos[v] under-determined and enumeration cannot
+# pin it -- a cake encoding gap flagged upstream; the solver re-adds the bound for
+# its own (workflow-1) proofs but cake's OPB lacks it, so the chain is restricted
+# to the exact-width sizes here. value_precede_unsat pins a leading value with no
+# legal predecessor; seq_precede_chain_unsat starts the sequence at 2 (1 absent).
+add_scp_chain_test(value_precede_sat          none)
+add_scp_chain_test(value_precede_unsat        none)
+add_scp_chain_test(seq_precede_chain_sat      none)
+add_scp_chain_test(seq_precede_chain_unsat    none)
