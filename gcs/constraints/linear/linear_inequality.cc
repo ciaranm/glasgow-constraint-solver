@@ -181,19 +181,36 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
             using LinearCondJustification = std::conditional_t<std::is_same_v<CV, NegCV>, JustifyExplicitly<hints::LinearInequalityCond<CV>>,
                 std::variant<JustifyExplicitly<hints::LinearInequalityCond<CV>>, JustifyExplicitly<hints::LinearInequalityCond<NegCV>>>>;
 
-            // Only the unconditional (MustHold) inequality always enforces the same
-            // single propagation, so only then is it sound (and worthwhile) to fold
-            // incrementally. Reified If/Iff (where the dispatcher alternates between the
-            // must-hold and must-not-hold propagations) stay on the stateless path.
-            std::optional<std::pair<std::shared_ptr<std::vector<std::size_t>>, ConstraintStateHandle>> inc_must_hold;
-            if (std::holds_alternative<evaluated_reif::MustHold>(_evaluated_cond) &&
-                sanitised_cv.terms.size() >= _incremental_threshold.value_or(default_linear_incremental_threshold())) {
-                auto active = make_shared<std::vector<std::size_t>>(sanitised_cv.terms.size());
-                for (std::size_t i = 0; i != sanitised_cv.terms.size(); ++i)
+            // Each enforce direction always re-runs the same single propagation while its
+            // verdict holds (the dispatcher keeps it Enabled within a subtree where the
+            // condition is decided one way), so each can fold its own fixed terms away
+            // incrementally. The two directions need independent fold states: within any
+            // one subtree only one direction runs, and each state backtracks on its own
+            // ConstraintStateHandle, so an under-folded state (vars instantiated while the
+            // other direction was active) is still correct -- it just re-folds them on its
+            // next run. Set up a state only for a direction the dispatcher can actually
+            // reach: must-hold for everything but an unconditional must-not-hold; must-not-
+            // hold only for an unconditional must-not-hold or a full Iff (a half-reified
+            // If/NotIf deactivates rather than enforcing the negation).
+            const auto threshold = _incremental_threshold.value_or(default_linear_incremental_threshold());
+            const bool und = std::holds_alternative<evaluated_reif::Undecided>(_evaluated_cond);
+            const bool may_must_hold = std::holds_alternative<evaluated_reif::MustHold>(_evaluated_cond) || und;
+            const bool may_must_not_hold =
+                std::holds_alternative<evaluated_reif::MustNotHold>(_evaluated_cond) || (und && std::holds_alternative<reif::Iff>(_reif_cond));
+
+            auto setup_inc = [&](const auto & cv) -> std::pair<std::shared_ptr<std::vector<std::size_t>>, ConstraintStateHandle> {
+                auto active = make_shared<std::vector<std::size_t>>(cv.terms.size());
+                for (std::size_t i = 0; i != cv.terms.size(); ++i)
                     (*active)[i] = i;
-                auto handle = initial_state.add_constraint_state(LinearIncrementalState{sanitised_cv.terms.size(), 0_i});
-                inc_must_hold = std::pair{active, handle};
-            }
+                auto handle = initial_state.add_constraint_state(LinearIncrementalState{cv.terms.size(), 0_i});
+                return std::pair{active, handle};
+            };
+
+            std::optional<std::pair<std::shared_ptr<std::vector<std::size_t>>, ConstraintStateHandle>> inc_must_hold, inc_must_not_hold;
+            if (may_must_hold && sanitised_cv.terms.size() >= threshold)
+                inc_must_hold = setup_inc(sanitised_cv);
+            if (may_must_not_hold && sanitised_neg_cv.terms.size() >= threshold)
+                inc_must_not_hold = setup_inc(sanitised_neg_cv);
 
             auto enforce_constraint_must_hold = [sanitised_cv, value = _value, modifier = modifier, proof_lines, inc_must_hold](const State & state,
                                                     auto & inference, ProofLogger * const logger, const Literal & cond) -> PropagatorState {
@@ -203,9 +220,12 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
                 return propagate_linear(sanitised_cv, value + modifier, state, inference, logger, false, proof_lines, cond);
             };
 
-            auto enforce_constraint_must_not_hold = [sanitised_neg_cv, value = _value, neg_modifier = neg_modifier, proof_lines_swapped](
-                                                        const State & state, auto & inference, ProofLogger * const logger,
+            auto enforce_constraint_must_not_hold = [sanitised_neg_cv, value = _value, neg_modifier = neg_modifier, proof_lines_swapped,
+                                                        inc_must_not_hold](const State & state, auto & inference, ProofLogger * const logger,
                                                         const Literal & cond) -> PropagatorState {
+                if (inc_must_not_hold)
+                    return propagate_linear_incremental(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false,
+                        proof_lines_swapped, cond, *inc_must_not_hold->first, inc_must_not_hold->second);
                 return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false, proof_lines_swapped, cond);
             };
 
