@@ -893,8 +893,12 @@ auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
 
     auto & tracker = model->names_and_ids_tracker();
 
-    vector<SExpr> entries;
+    // Each tuple is one row of the table (a conjunction of entries); keep the rows
+    // delimited so the disjunction structure stays recoverable downstream (and
+    // matches the row-delimited form cake_pb_cp's parser expects).
+    vector<SExpr> rows;
     for (const auto & tuple : _tuples) {
+        vector<SExpr> entries;
         for (const auto & entry : tuple) {
             overloaded{
                 [&](const BinaryEntry & binary_entry) {
@@ -915,11 +919,12 @@ auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
             }
                 .visit(entry);
         }
+        rows.push_back(SExpr::list(move(entries)));
     }
 
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("smart_table"), SExpr::list(move(entries)), SExpr::list(move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("smart_table"), SExpr::list(move(rows)), SExpr::list(move(vars))});
 }
