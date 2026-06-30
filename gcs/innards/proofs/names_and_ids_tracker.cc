@@ -141,12 +141,14 @@ struct NamesAndIDsTracker::Imp
     bool first_varmap_entry = true;
     bool finalised = false;
     bool verbose_names;
+    bool use_compact_boolean_encoding = false;
     AssertionLevel assertion_level = AssertionLevel::Off;
 };
 
 NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) : _imp(make_unique<Imp>())
 {
     _imp->verbose_names = proof_options.verbose_names;
+    _imp->use_compact_boolean_encoding = proof_options.use_compact_boolean_encoding;
     _imp->assertion_level = proof_options.assertion_level;
 
     if (proof_options.proof_file_names.variables_map_file) {
@@ -505,7 +507,14 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         return _imp->model->add_labelled_constraint(eq_base + "[eq" + to_string(v.raw_value) + "][" + role + "]", ineq, reif);
     };
 
-    if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
+    // The compact boolean encoding defines an eq atom at a bound using only the
+    // one non-trivial order literal (eq(lower) <=> ~ge(lower+1), since ge(lower)
+    // is always true; eq(upper) <=> ge(upper), since ge(upper+1) is always
+    // false). With it off (the default), every eq atom -- including those at the
+    // bounds -- is the full eq(v) <=> ge(v) & ~ge(v+1), so the trivial ge(lower)
+    // and ge(upper+1) literals are materialised (need_gevar emits and fixes
+    // them), matching cake_pb_cp's eager encoding.
+    if (_imp->use_compact_boolean_encoding && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first == v) {
         // it's a lower bound
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
             visit(
@@ -527,7 +536,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             ++_imp->model_variables;
         }
     }
-    else if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second == v) {
+    else if (_imp->use_compact_boolean_encoding && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second == v) {
         // it's an upper bound
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
             visit(
@@ -701,21 +710,30 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     auto bounds = _imp->integer_variable_definition_bounds.find(id);
 
     auto fix_bound = [&](bool negated) {
-        if (_imp->logger) {
-            if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
+        // Pin a trivial boundary order literal -- ge(lower) (always true) or
+        // ge(ub+1) (always false) -- in the PROOF, never as an OPB axiom. The fact
+        // is a consequence of the variable's bound constraints, not a definition,
+        // so it does not belong in the OPB; cake_pb_cp likewise derives it rather
+        // than pinning it, so an OPB axiom would make our OPB diverge from cake's,
+        // and -- worse -- a pin re-derived per use does not survive VeriPB's
+        // post-solx enumeration restriction. Emitting it once as a persistent
+        // top-of-proof line (RUP-derivable from the bound constraints, or asserted
+        // at AssertionLevel::Links) keeps the OPB byte-clean and the pin available
+        // throughout both enumeration and refutation. emit_proof_line_now_or_at_start
+        // queues it to proof start when the logger is not yet attached (model
+        // building) and emits it immediately otherwise.
+        emit_proof_line_now_or_at_start([id, v, negated](ProofLogger * const logger) {
+            if (logger->get_assertion_level() > AssertionLevel::Links)
                 return;
-
             ProofRule assert_or_rup =
-                _imp->logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
+                logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
             auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
             visit(
-                [&](auto id) {
-                    _imp->logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (id >= v) : (id >= v)) >= 1_i, ProofLevel::Top, annotation);
+                [&](auto vid) {
+                    logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::Top, annotation);
                 },
                 id);
-        }
-        else
-            visit([&](auto id) { _imp->model->add_constraint(WPBSum{} + 1_i * (negated ? ! (id >= v) : (id >= v)) >= 1_i); }, id);
+        });
     };
 
     // lower?

@@ -54,9 +54,10 @@ namespace gcs
         explicit ProofOptions(const ProofFileNames &);
         ProofOptions(const ProofOptions &) = default;
 
-        ProofFileNames proof_file_names;       ///< Filenames for OPB, proof, and mapping files
-        bool verbose_names = true;             ///< Use verbose names in proofs?
-        bool always_use_full_encoding = false; ///< Always write the full variable encoding to the OPB file
+        ProofFileNames proof_file_names;           ///< Filenames for OPB, proof, and mapping files
+        bool verbose_names = true;                 ///< Use verbose names in proofs?
+        bool always_use_full_encoding = false;     ///< Always write the full variable encoding to the OPB file
+        bool use_compact_boolean_encoding = false; ///< Drop the trivial constant boundary literals (ge_lower, ge_ub+1) from eq-atom definitions
         AssertionLevel assertion_level = AssertionLevel::Off;
         bool assertion_level_set_explicitly = false; ///< Was assertion_level set in code (so it overrides the env var)?
 
@@ -71,6 +72,18 @@ namespace gcs
         ProofOptions & enable_full_encoding(bool e = true)
         {
             always_use_full_encoding = e;
+            return *this;
+        }
+        /// Use the compact boolean encoding: define an eq atom at the variable's
+        /// lower (resp. upper) bound as eq <=> ~ge(v+1) (resp. eq <=> ge(v)),
+        /// dropping the trivially-true ge(lower) and trivially-false ge(ub+1)
+        /// literals. With this off (the default) every eq atom, including those
+        /// at the bounds, is defined as eq <=> ge(v) & ~ge(v+1), so those
+        /// constant boundary literals are materialised -- matching cake_pb_cp's
+        /// eager encoding.
+        ProofOptions & set_compact_boolean_encoding(bool c = true)
+        {
+            use_compact_boolean_encoding = c;
             return *this;
         }
         /// Set whether to use verbose names in proofs.
