@@ -443,3 +443,19 @@ add_scp_chain_test(at_most_one_sat             none)
 add_scp_chain_test(at_most_one_unsat           none)
 add_scp_chain_test(among_sat                   none)
 add_scp_chain_test(among_unsat                 none)
+
+# none (chain-only): element_2d -- result = array[i - off_i][j - off_j] over a
+# two-dimensional array. cake reads the array as a list of rows ((row) ...) and
+# the solver writes that shape, so it is one reader away (the 1-D element was
+# already covered). Like 1-D element it reifies the per-entry equality on the
+# index variables' own eq literals, so it stays none for the same lazy-vs-eager
+# variable-encoding reason (#358) but chain-verifies: sat enumerates the four
+# cells of a constant 2x2 array; unsat forces the result outside every cell.
+# (Binary min/max need no new case: Min/Max are written as a two-element
+# array_min/array_max, already covered. knapsack reads and round-trips but does
+# not chain -- cake decomposes it into per-row linear equalities with their own
+# constraint ids (@c[_1N][le]/[ge]), where the solver keeps them under one id
+# with row-indexed roles (@c[_1][le0]) that its proof cites by label, so it needs
+# a label/structural conform, not just a reader.)
+add_scp_chain_test(element_2d_sat              none)
+add_scp_chain_test(element_2d_unsat            none)
