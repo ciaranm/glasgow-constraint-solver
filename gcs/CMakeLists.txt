@@ -386,6 +386,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(proof_model_tautology_test PRIVATE glasgow_constraint_solver)
     add_test(NAME proof_model_tautology_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:proof_model_tautology_test>)
 
+    add_executable(introduce_bits_test innards/proofs/introduce_bits_test.cc)
+    target_link_libraries(introduce_bits_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME introduce_bits_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:introduce_bits_test>)
+
     add_executable(invar_test innards/proofs/invar_test.cc)
     target_link_libraries(invar_test PRIVATE glasgow_constraint_solver)
     add_test(NAME invar_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_test>)

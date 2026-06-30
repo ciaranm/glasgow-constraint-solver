@@ -302,6 +302,22 @@ namespace gcs::innards
         auto emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLiteralOrFlag, ProofLevel level)
             -> std::pair<ProofLine, ProofLine>;
 
+        /**
+         * \brief Introduce a bits-encoded proof-only variable as equal to a
+         * normalized linear form, as a conservative extension --- Wietze Koops's
+         * decomposition of the form into bits in 2m redundancy steps (top-down,
+         * each bit `e_k <-> running-remainder >= 2^k` as a single-literal-witness
+         * red). \c target must have been created with
+         * ProofModel::create_proof_only_integer_variable_in_proof, be non-negative,
+         * and wide enough that `2^m` exceeds the form's maximum value.
+         *
+         * Returns `{BinEnc(target) >= form, BinEnc(target) <= form}` --- the last
+         * two reds --- so the caller can reference the variable's bound-defining
+         * lines (e.g. an end = start + length proxy's end_ge / end_le).
+         */
+        [[nodiscard]] auto introduce_bits_of(const SumOf<Weighted<PseudoBooleanTerm>> & linear_form, ProofOnlySimpleIntegerVariableID target,
+            ProofLevel level) -> std::pair<ProofLine, ProofLine>;
+
         auto create_proof_flag(const std::string &) -> ProofFlag;
 
         auto create_proof_flag_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, const std::string & name, ProofLevel level)
