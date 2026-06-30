@@ -10,6 +10,7 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <utility>
@@ -25,6 +26,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::make_unique;
 using std::move;
 using std::size_t;
@@ -172,7 +174,7 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
     _after_flags.assign(_starts.size(), {});
     _active_flags.assign(_starts.size(), {});
     _contrib_vars.assign(_starts.size(), {});
-    _end_def_lines.assign(_starts.size(), std::nullopt);
+    _end.assign(_starts.size(), std::nullopt);
 
     Integer global_lo = 0_i, global_hi = -1_i;
     bool first = true;
@@ -186,19 +188,14 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
 
         // When both start and length vary, after_{i,t} ⇔ s_i + l_i ≥ t+1 is a
         // two-variable fact whose pinning RUP cannot reach from the operands'
-        // bounds. Introduce a proof-only end = s_i + l_i and reify after on the
-        // single variable end ≥ t+1; keep the captured `end ≥ s+l` line to
-        // materialise end's bound in the proof. If either operand is constant
-        // it folds into the OPB and after is already single-variable.
-        bool use_end = ! is_constant_variable(_starts[i]) && ! is_constant_variable(_lengths[i]);
-        std::optional<ProofOnlySimpleIntegerVariableID> end;
-        if (use_end) {
-            end = model.create_proof_only_integer_variable(0_i, _per_task_t_hi[i] + 1_i, "cumend", IntegerVariableProofRepresentation::Bits);
-            // Proof-only end proxy with no cake equivalent: invent a label.
-            _end_def_lines[i] = model.add_labelled_constraint(as_string(_constraint_id), "endge_" + std::to_string(i), "Cumulative", "end >= s + l",
-                WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
-            model.add_constraint("Cumulative", "end <= s + l", WPBSum{} + 1_i * *end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
-        }
+        // bounds. We still reify after on s_i + l_i directly (matching cake), but
+        // give the propagator a single-variable handle by introducing a proof-only
+        // end = s_i + l_i. Crucially end has NO OPB encoding (cake has no such
+        // variable): it is bit-defined inside the proof by the install_initialiser
+        // (introduce_bits_of), which also emits the `end ≥ t+1 → after` bridge
+        // lemma per (i,t). nullopt unless both operands vary.
+        if (! is_constant_variable(_starts[i]) && ! is_constant_variable(_lengths[i]))
+            _end[i] = model.create_proof_only_integer_variable_in_proof(0_i, _per_task_t_hi[i] + 1_i, "cumend");
 
         for (Integer t = t_lo; t <= t_hi; ++t) {
             // Name the flags to match cake_pb_cp's verified cumulative encoder
@@ -212,14 +209,15 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             std::vector<long long> it{static_cast<long long>(i), t.raw_value};
             auto before = model.create_proof_flag_values_fully_reifying(_constraint_id, it, "cb", WPBSum{} + 1_i * _starts[i] <= t);
             // after_{i,t} ⇔ task i not yet finished at t ⇔ s_i + l_i ≥ t + 1.
-            // Constant length: single-variable s_i ≥ t−l+1. One variable
-            // operand: keep s_i + l_i (the constant folds in). Both variable:
-            // reify on the proof-only end.
+            // Constant length: single-variable s_i ≥ t−l+1. Variable length:
+            // reify on s_i + l_i directly (any constant operand folds in), which
+            // matches cake_pb_cp's after ⇔ s + l ≥ t+1. The proof-only end (when
+            // both vary) is NOT used in this reification; it is only the
+            // single-variable handle the propagator pins through, bridged to this
+            // flag by the lemma the initialiser emits.
             auto after = is_constant_variable(_lengths[i])
                 ? model.create_proof_flag_values_fully_reifying(_constraint_id, it, "ca", WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i)
-                : (use_end ? model.create_proof_flag_values_fully_reifying(_constraint_id, it, "ca", WPBSum{} + 1_i * *end >= t + 1_i)
-                           : model.create_proof_flag_values_fully_reifying(
-                                 _constraint_id, it, "ca", WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] >= t + 1_i));
+                : model.create_proof_flag_values_fully_reifying(_constraint_id, it, "ca", WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] >= t + 1_i);
             auto active = model.create_proof_flag_values_fully_reifying(_constraint_id, it, "cact", WPBSum{} + 1_i * before + 1_i * after >= 2_i);
             _before_flags[i].push_back(before);
             _after_flags[i].push_back(after);
@@ -294,11 +292,47 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         if (! is_constant_variable(_lengths[i]))
             triggers.on_bounds.emplace_back(_lengths[i]);
 
+    // Per variable-duration task, the in-proof end = s + l definition lines
+    // {end_ge, end_le}, filled by the initialiser and read by the propagator's
+    // materialise_after_sum. Shared so the cache survives across propagator calls.
+    auto end_lines = make_shared<vector<std::optional<std::pair<ProofLine, ProofLine>>>>(_starts.size());
+
+    propagators.install_initialiser([starts = _starts, lengths = _lengths, ends = _end, active_tasks = _active_tasks, after_flags = _after_flags,
+                                        end_lines](State &, auto &, ProofLogger * const logger) -> void {
+        if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+            return;
+        auto & tracker = logger->names_and_ids_tracker();
+        // Bit-define each variable-duration end = s + l as a conservative
+        // extension FIRST (introduce_bits_of needs end's bits fresh for its
+        // witnesses), caching end's {end_ge, end_le}. cake has no end variable,
+        // so this lives entirely in the proof --- nothing in the OPB to match.
+        for (auto i : active_tasks)
+            if (ends[i].has_value())
+                (*end_lines)[i] = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * lengths[i], *ends[i], ProofLevel::Top);
+        // Then, per (i, t), emit the bridge lemma `end ≥ t+1 → after`:
+        //   pol( @v[id][i_t][ca][f] : ¬after → s+l ≤ t )  +  ( end ≤ s+l )
+        //   = ( M·after − end + t ≥ 0 ).
+        // The s+l bits cancel exactly, leaving a single-variable-in-end handle
+        // that makes the propagator's after pin RUP-closable even though after
+        // is reified on the two-variable s+l. end_le is the cancelling term.
+        for (auto i : active_tasks) {
+            if (! ends[i].has_value())
+                continue;
+            auto end_le = (*end_lines)[i]->second;
+            for (const auto & after : after_flags[i]) {
+                PolBuilder lemma;
+                lemma.add(ProofLineLabel{tracker.name_of(after) + "[f]"});
+                lemma.add(end_le);
+                lemma.emit(*logger, ProofLevel::Top);
+            }
+        }
+    });
+
     propagators.install(
         constraint_id(),
         [starts = move(_starts), lengths_var = move(_lengths), heights_var = move(_heights), capacity_var = _capacity,
             active_tasks = move(_active_tasks), before_flags = move(_before_flags), after_flags = move(_after_flags),
-            active_flags = move(_active_flags), contrib_vars = move(_contrib_vars), end_def_lines = move(_end_def_lines),
+            active_flags = move(_active_flags), contrib_vars = move(_contrib_vars), ends = move(_end), end_lines,
             capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // The capacity may be a variable: the load profile is infeasible
@@ -325,20 +359,20 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
             auto s_is_var = [&](size_t i) { return ! is_constant_variable(starts[i]); };
 
             // For a task whose start AND length are both variables, after_{i,t}
-            // is reified on the proof-only end = s_i + l_i. To pin after = 1 we
-            // first materialise end ≥ s_lo + lb(l_i) with a pol over the captured
-            // `end ≥ s + l` line plus the two operand order-literal defining
-            // lines; the after = 1 RUP is then single-variable in end (just like
-            // the constant-duration case). s_lo is the start lower bound that,
-            // with lb(l_i), reaches t+1: the chain running bound for lb-push,
-            // t−lb(l_j)+1 (= ¬ext_lit) for ub-push, lb(s_i) for a mandatory task.
-            // Only needed when both operands vary (else after is already
-            // single-variable and the plain RUP closes).
+            // is reified on s_i + l_i. To pin after = 1 we first materialise the
+            // single-variable end ≥ s_lo + lb(l_i) with a pol over end's in-proof
+            // `end ≥ s + l` line plus the two operand order-literal defining lines;
+            // the after = 1 RUP is then single-variable in end, closing against the
+            // `end ≥ t+1 → after` bridge lemma the initialiser emitted (just like
+            // the constant-duration case). s_lo is the start lower bound that, with
+            // lb(l_i), reaches t+1: the chain running bound for lb-push, t−lb(l_j)+1
+            // (= ¬ext_lit) for ub-push, lb(s_i) for a mandatory task. Only needed
+            // when both operands vary (else after is already single-variable).
             auto materialise_after_sum = [&](size_t i, Integer s_lo) -> void {
                 if (! (l_is_var(i) && s_is_var(i)))
                     return;
                 PolBuilder sp;
-                sp.add(*end_def_lines[i]);
+                sp.add((*end_lines)[i]->first);
                 sp.add_for_literal(logger->names_and_ids_tracker(), starts[i] >= s_lo);
                 sp.add_for_literal(logger->names_and_ids_tracker(), lengths_var[i] >= llb(i));
                 sp.emit(*logger, ProofLevel::Temporary);

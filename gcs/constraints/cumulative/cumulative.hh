@@ -67,10 +67,14 @@ namespace gcs
         // whose height is constant (those use h·active directly in C_t).
         std::vector<std::vector<innards::ProofOnlySimpleIntegerVariableID>> _contrib_vars;
         // For a task whose start AND length both vary, a proof-only end = s + l
-        // on which `after` is reified (single variable, so the after pin stays
-        // RUP-friendly); _end_def_lines[i] is the captured `end ≥ s + l` line
-        // used to materialise end's bound. nullopt for all other tasks.
-        std::vector<std::optional<innards::ProofLine>> _end_def_lines;
+        // introduced INSIDE the proof (a conservative extension, with no OPB
+        // encoding): cake reifies `after` on s + l directly, so end has no cake
+        // counterpart to match. The proof initialiser bit-defines end (via
+        // ProofLogger::introduce_bits_of) and emits a per-(i,t) bridge lemma
+        // `end ≥ t+1 → after`, which keeps the single-variable-in-end after pin
+        // RUP-closable even though `after` is reified on the two-variable s + l.
+        // nullopt for all other tasks.
+        std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end;
         std::map<Integer, innards::ProofLine> _capacity_lines; // t -> proof line for the per-t time-table constraint
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
