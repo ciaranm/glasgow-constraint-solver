@@ -76,7 +76,7 @@ auto ArgSort::install(Propagators & propagators, State & initial_state, ProofMod
         for (size_t j = 0; j < _y.size(); ++j)
             optional_model->set_up_integer_variable(
                 _y[j], _lowest_x, _highest_x, "argsort_y_" + std::to_string(j), IntegerVariableProofRepresentation::Bits);
-        _witness = define_sortedness_proof_model(*optional_model, _x, y_ids);
+        _witness = define_sortedness_proof_model(*optional_model, _constraint_id, _x, y_ids);
     }
 
     install_sortedness_propagator(propagators, constraint_id(), _x, y_ids, _witness);

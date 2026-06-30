@@ -506,3 +506,16 @@ add_scp_chain_test(seq_precede_chain_unsat    none)
 # whose weighted sums hit the totals; unsat fixes a total beyond any achievable sum.
 add_scp_chain_test(knapsack_sat    none)
 add_scp_chain_test(knapsack_unsat  none)
+
+# none (chain-only): sort (y = x sorted non-decreasing). cake_pb_cp and the solver
+# now share the encoding exactly: a non-decreasing chain @c[id][<i>], pairwise
+# stable before flags x[id][ip_i][bf], a proof-only stable rank pos[i] built as the
+# bit-sum of cake's flag bits v[id][i_b][pos] (so the OPB carries no eq/ge ladder),
+# the rank equation pos[i] = sum_ip before[ip][i] (@c[id][rge/rle<i>]), and the
+# position channel @c[id][cle/cge<i>_<j>] guarded by the bit-conjunction spelling j.
+# The Mehlhorn-Thiel propagator reasons over pos[i] == j atoms, but those are NOT in
+# the OPB -- they are introduced lazily in the proof when first used during search,
+# so they verify against cake's lean OPB. sat enumerates the sorted images of three
+# 0..2 values; unsat forces y0 >= 2 while y1 <= 1, impossible for a sorted sequence.
+add_scp_chain_test(sort_sat    none)
+add_scp_chain_test(sort_unsat  none)
