@@ -302,17 +302,32 @@ and the pol differently:
 - **Variable durations** rewrite `after_{i,t} ⇔ s_i + l_i ≥ t+1`. The
   pinning `after = 1` then needs the *cross-variable* fact
   `s_i + l_i ≥ B`, which RUP cannot derive from the operands' bounds
-  alone (the VeriPB linear-combination limit). When **both** `s_i` and
-  `l_i` vary, `after` is reified instead on a proof-only
-  `end_i = s_i + l_i` (single variable), and the pin first materialises
-  `end_i ≥ s_lo + lb(l_i)` with a `pol` over the captured `end ≥ s + l`
-  definition line plus the two operand order-literal defining lines
-  (the `plus_minus/plus.cc` pattern). The `after = 1` RUP is then
-  single-variable in `end_i`, exactly like the constant-duration case.
-  `s_lo` is the chain running bound (lb-push), `t − lb(l_j) + 1`
-  (ub-push, i.e. `¬ext_lit`), or `lb(s_i)` (a mandatory task). If either
-  operand is constant it folds into the OPB and `after` is already
-  single-variable — no `end`, no pol.
+  alone (the VeriPB linear-combination limit). `after` stays reified on
+  `s_i + l_i` directly (matching `cake_pb_cp`, which has no `end`
+  variable). To recover a single-variable pin when **both** `s_i` and
+  `l_i` vary, a proof-only `end_i = s_i + l_i` is introduced **inside the
+  proof** as a conservative extension (`ProofLogger::introduce_bits_of`,
+  no OPB encoding — see [`disjunctive-proof-logging.md`]) by the install
+  initialiser, which also emits, per `(i,t)`, the **bridge lemma**
+  `end_i ≥ t+1 → after_{i,t}`:
+
+  ```
+  pol  @v[id][i_t][ca][f]  ( ¬after → s+l ≤ t )  +  end_le ( end ≤ s+l )
+     = M·after − end_i + t ≥ 0
+  ```
+
+  The `s+l` bits cancel exactly, leaving a single-variable-in-`end`
+  handle. The pin then materialises `end_i ≥ s_lo + lb(l_i)` with a `pol`
+  over `end`'s in-proof `end ≥ s + l` line plus the two operand
+  order-literal defining lines, and the `after = 1` RUP closes
+  single-variable in `end_i` against the bridge lemma — exactly like the
+  constant-duration case. `s_lo` is the chain running bound (lb-push),
+  `t − lb(l_j) + 1` (ub-push, i.e. `¬ext_lit`), or `lb(s_i)` (a mandatory
+  task). If either operand is constant it folds into the OPB and `after`
+  is already single-variable — no `end`, no pol. Because `end`'s
+  definition and the bridge lemma both live in the proof, the
+  variable-duration encoding **chain-verifies** against `cake_pb_cp`
+  (`scp_chain_cumulative_var_duration_sat`).
 
 The `pin_contributor` / `pin_pushed` helpers in
 `cumulative/cumulative.cc` package the (a)/(b) emission so the overflow
@@ -327,9 +342,17 @@ combinations.
 - **Energetic reasoning.** Even more set-of-tasks, set-of-intervals.
   No clean OPB witness exists in the current encoding; the proof
   scaffold would need extra auxiliary flags.
+- **Variable-height chain.** Variable *durations* chain-verify, but
+  variable *heights* do not yet: the solver's `contrib_{i,t}` is a
+  bits-encoded proof-only integer, whereas `cake_pb_cp` encodes the
+  contribution as binary `cc` flags, so a `contrib` pin under load
+  pressure references a variable cake's OPB lacks. The fix is the same
+  flavour as the `end` reformulation above (move `contrib`'s definition
+  into the proof and bridge to cake's `cc`), but is separate work; until
+  then `scp_chain_cumulative_var_duration_sat` keeps a constant height.
 
 The current scaffolding (`_before_flags`, `_after_flags`,
-`_active_flags`, `_contrib_vars`, `_end_def_lines`, `_capacity_lines`) is
+`_active_flags`, `_contrib_vars`, `_end`, `_capacity_lines`) is
 enough for time-table-strength reasoning over variable `d`/`r`/`b` and not
 much more.
 
