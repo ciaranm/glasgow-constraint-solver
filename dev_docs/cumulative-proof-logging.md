@@ -290,14 +290,19 @@ and the pol differently:
   RUP now has `capacity ≤ ub(capacity)` in the reason.
 
 - **Variable heights** linearise the nonlinear product `h_i·active_{i,t}`
-  with a proof-only integer `contrib_{i,t} ∈ [0, ub(h_i)]`, half-reified
-  `active ⇒ contrib = h_i` and `¬active ⇒ contrib = 0`. `C_t` sums
-  `contrib` for variable heights (and `h_i·active` for constant ones, so
-  the all-constant proof is byte-identical). The pol pins
+  over `cake_pb_cp`'s per-bit contribution flags `cc_k = v[id][i_t_k][cc]`
+  (weight `2^k`): `contrib_{i,t} = Σ 2^k·cc_k`, half-reified
+  `active ⇒ contrib = h_i` and `¬active ⇒ contrib = 0` (the flags carry no
+  domain bound of their own — `cle`/`cz` constrain them, exactly as cake
+  does). `C_t` sums `contrib` for variable heights (and `h_i·active` for
+  constant ones, so the all-constant proof is byte-identical). The pol pins
   `contrib_{i,t} ≥ lb(h_i)` (coeff 1) instead of an `active = 1` line
   scaled by the constant height; for the pushed task it deposits
   `contrib_j + lb(h_j)·ext_lit ≥ lb(h_j)`. This is **variable × Boolean**,
-  which is linear — *not* the multiplication frontier.
+  which is linear — *not* the multiplication frontier. Because the `cc`
+  flags are exactly cake's contribution encoding (to VeriPB they are
+  ordinary Booleans, just as the solver's were), the variable-height load
+  reasoning **chain-verifies** (`scp_chain_cumulative_var_height_sat`).
 
 - **Variable durations** rewrite `after_{i,t} ⇔ s_i + l_i ≥ t+1`. The
   pinning `after = 1` then needs the *cross-variable* fact
@@ -342,18 +347,11 @@ combinations.
 - **Energetic reasoning.** Even more set-of-tasks, set-of-intervals.
   No clean OPB witness exists in the current encoding; the proof
   scaffold would need extra auxiliary flags.
-- **Variable-height chain.** Variable *durations* chain-verify, but
-  variable *heights* do not yet: the solver's `contrib_{i,t}` is a
-  bits-encoded proof-only integer, whereas `cake_pb_cp` encodes the
-  contribution as binary `cc` flags, so a `contrib` pin under load
-  pressure references a variable cake's OPB lacks. The fix is the same
-  flavour as the `end` reformulation above (move `contrib`'s definition
-  into the proof and bridge to cake's `cc`), but is separate work; until
-  then `scp_chain_cumulative_var_duration_sat` keeps a constant height.
-
 The current scaffolding (`_before_flags`, `_after_flags`,
-`_active_flags`, `_contrib_vars`, `_end`, `_capacity_lines`) is
+`_active_flags`, `_contrib_flags`, `_end`, `_capacity_lines`) is
 enough for time-table-strength reasoning over variable `d`/`r`/`b` and not
-much more.
+much more. Variable durations and variable heights both chain-verify
+against `cake_pb_cp`; the only remaining divergence is the start/size bit
+*variable* encoding (#358), which is orthogonal.
 
 <!-- vim: set tw=72 spell spelllang=en : -->

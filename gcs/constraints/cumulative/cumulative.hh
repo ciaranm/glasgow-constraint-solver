@@ -45,7 +45,7 @@ namespace gcs
         IntegerVariableID _capacity;
         // Snapshots resolved in prepare(). For each of lengths and heights,
         // _*_vals holds the constant value for a constant argument (and 0 for a
-        // variable one, where the variable / _contrib_vars is used instead) and
+        // variable one, where the variable / _contrib_flags is used instead) and
         // _*_ub holds the initial upper bound (used to size the possible-active
         // window / contrib domain and to filter tasks that can never load).
         std::vector<Integer> _length_vals;
@@ -63,9 +63,11 @@ namespace gcs
         std::vector<std::vector<innards::ProofFlag>> _after_flags;
         std::vector<std::vector<innards::ProofFlag>> _active_flags;
         // Per (variable-height task, t) load contribution contrib = h·active,
-        // a proof-only integer in [0, ub(h)]. Empty inner vector for tasks
-        // whose height is constant (those use h·active directly in C_t).
-        std::vector<std::vector<innards::ProofOnlySimpleIntegerVariableID>> _contrib_vars;
+        // linearised over cake's per-bit contribution flags v[id][i_t_k][cc]
+        // (weight 2^k), so contrib = Σ 2^k·cc_k. Indexed [task][t_idx][bit];
+        // empty middle vector for tasks whose height is constant (those use
+        // h·active directly in C_t).
+        std::vector<std::vector<std::vector<innards::ProofFlag>>> _contrib_flags;
         // For a task whose start AND length both vary, a proof-only end = s + l
         // introduced INSIDE the proof (a conservative extension, with no OPB
         // encoding): cake reifies `after` on s + l directly, so end has no cake
