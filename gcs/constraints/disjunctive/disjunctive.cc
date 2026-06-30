@@ -183,24 +183,17 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
     // bridge-derived at-most-one lemmas during justifications.
     // For a task with a variable duration, the "after" bridge flag reifies on a
     // proof-only end = s + l (a single variable keeps the pin RUP-friendly).
-    // Capture both definition directions: _end_ge materialises end's bound and
-    // _end_le cancels end back to s + l in the before-flag pol.
+    // The end proxy end_i = start_i + length_i (only for variable durations) is a
+    // proof-only variable with NO OPB encoding: cake has no such variable (it folds
+    // start + length directly into the before-link), so there is nothing to match.
+    // Its definition is introduced INSIDE the proof, by the install_initialiser
+    // below, via ProofLogger::introduce_bits_of --- a conservative extension rather
+    // than a model axiom, which is what makes the variable-duration proof
+    // chain-portable. end_ge / end_le are captured there, not here.
     _end.assign(_starts.size(), nullopt);
-    _end_ge.assign(_starts.size(), nullopt);
-    _end_le.assign(_starts.size(), nullopt);
-    for (auto i : _active_tasks) {
-        if (is_constant_variable(_lengths[i]))
-            continue;
-        auto end = model.create_proof_only_integer_variable(0_i, _per_task_t_hi[i] + 1_i, "disjend", IntegerVariableProofRepresentation::Bits);
-        // The end proxy is a proof-only variable cake does not have (it folds s + l
-        // directly), so there is no cake label to match: invent one. (Only emitted
-        // for variable durations, never on the constant-length chain cases.)
-        _end_ge[i] = model.add_labelled_constraint(as_string(_constraint_id), "endge_" + std::to_string(i), "Disjunctive", "end >= s + l",
-            WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] >= 0_i);
-        _end_le[i] = model.add_labelled_constraint(as_string(_constraint_id), "endle_" + std::to_string(i), "Disjunctive", "end <= s + l",
-            WPBSum{} + 1_i * end + -1_i * _starts[i] + -1_i * _lengths[i] <= 0_i);
-        _end[i] = end;
-    }
+    for (auto i : _active_tasks)
+        if (! is_constant_variable(_lengths[i]))
+            _end[i] = model.create_proof_only_integer_variable_in_proof(0_i, _per_task_t_hi[i] + 1_i, "disjend");
 
     // Non-strict mode: a "duration <= 0" escape flag per can-be-zero task, added
     // as a disjunct to the separation clause below (a zero-length task does not
@@ -284,27 +277,40 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
     // O(n * horizon) flags per Disjunctive instance.
     auto bridge = make_shared<BridgeMap>();
 
-    propagators.install_initialiser(
-        [starts = _starts, lengths = _length_vals, length_ub = _length_ub, ends = _end, active_tasks = _active_tasks, per_task_t_lo = _per_task_t_lo,
-            per_task_t_hi = _per_task_t_hi, bridge](State &, auto &, ProofLogger * const logger) -> void {
-            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
-                return;
-            for (auto i : active_tasks) {
-                if (length_ub[i] == 0_i)
-                    continue;
-                for (Integer t = per_task_t_lo[i]; t <= per_task_t_hi[i]; ++t) {
-                    auto [B, B_fwd, B_rev] = logger->create_proof_flag_reifying(WPBSum{} + 1_i * starts[i] <= t, "djbef", ProofLevel::Top);
-                    // after_{i,t} <-> s_i + l_i >= t+1. Constant duration: the
-                    // single-variable s_i >= t-l+1. Variable duration: the
-                    // single-variable end_i >= t+1 (end_i = s_i + l_i).
-                    auto [F, F_fwd, F_rev] = ends[i].has_value()
-                        ? logger->create_proof_flag_reifying(WPBSum{} + 1_i * *ends[i] >= t + 1_i, "djaft", ProofLevel::Top)
-                        : logger->create_proof_flag_reifying(WPBSum{} + 1_i * starts[i] >= t - lengths[i] + 1_i, "djaft", ProofLevel::Top);
-                    auto [A, A_fwd, A_rev] = logger->create_proof_flag_reifying(WPBSum{} + 1_i * B + 1_i * F >= 2_i, "djact", ProofLevel::Top);
-                    bridge->emplace(make_pair(i, t), BridgeFlags{B, B_fwd, B_rev, F, F_fwd, F_rev, A, A_fwd, A_rev});
-                }
+    // Lazily-introduced end_i = s_i + l_i definitions: {end_ge, end_le} per task,
+    // filled the first time a variable-duration task's after reasoning fires (see
+    // ensure_end in the propagator). Shared so the cache survives across calls.
+    auto end_lines = make_shared<vector<optional<pair<ProofLine, ProofLine>>>>(_starts.size());
+
+    propagators.install_initialiser([starts = _starts, lengths = _length_vals, length_vars = _lengths, length_ub = _length_ub, ends = _end, end_lines,
+                                        active_tasks = _active_tasks, per_task_t_lo = _per_task_t_lo, per_task_t_hi = _per_task_t_hi,
+                                        bridge](State &, auto &, ProofLogger * const logger) -> void {
+        if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+            return;
+        // Introduce each variable-duration end_i = s_i + l_i as a conservative
+        // extension FIRST --- before the after-flag definitions below reify on
+        // end_i (which references its bits), so that the bits are still fresh
+        // for introduce_bits_of's redundancy witnesses. Captured for the
+        // propagator's materialise_end / before-flag pol.
+        for (auto i : active_tasks)
+            if (ends[i].has_value())
+                (*end_lines)[i] = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * length_vars[i], *ends[i], ProofLevel::Top);
+        for (auto i : active_tasks) {
+            if (length_ub[i] == 0_i)
+                continue;
+            for (Integer t = per_task_t_lo[i]; t <= per_task_t_hi[i]; ++t) {
+                auto [B, B_fwd, B_rev] = logger->create_proof_flag_reifying(WPBSum{} + 1_i * starts[i] <= t, "djbef", ProofLevel::Top);
+                // after_{i,t} <-> s_i + l_i >= t+1. Constant duration: the
+                // single-variable s_i >= t-l+1. Variable duration: the
+                // single-variable end_i >= t+1 (end_i = s_i + l_i).
+                auto [F, F_fwd, F_rev] = ends[i].has_value()
+                    ? logger->create_proof_flag_reifying(WPBSum{} + 1_i * *ends[i] >= t + 1_i, "djaft", ProofLevel::Top)
+                    : logger->create_proof_flag_reifying(WPBSum{} + 1_i * starts[i] >= t - lengths[i] + 1_i, "djaft", ProofLevel::Top);
+                auto [A, A_fwd, A_rev] = logger->create_proof_flag_reifying(WPBSum{} + 1_i * B + 1_i * F >= 2_i, "djact", ProofLevel::Top);
+                bridge->emplace(make_pair(i, t), BridgeFlags{B, B_fwd, B_rev, F, F_fwd, F_rev, A, A_fwd, A_rev});
             }
-        });
+        }
+    });
 
     Triggers triggers;
     for (auto i : _active_tasks) {
@@ -317,10 +323,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths), end_ge = move(_end_ge), end_le = move(_end_le),
-            zero = move(_zero), strict = _strict, active_tasks = move(_active_tasks), before_flags = move(_before_flags),
-            clause_lines = move(_clause_lines), owner = constraint_id(),
-            bridge](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths), ends = move(_end), end_lines, zero = move(_zero),
+            strict = _strict, active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines),
+            owner = constraint_id(), bridge](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
             // duration they are the live lower / upper bounds.
@@ -328,17 +333,26 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             auto min_len = [&](size_t i) -> Integer { return is_var_len(i) ? state.lower_bound(length_vars[i]) : lengths[i]; };
             auto max_len = [&](size_t i) -> Integer { return is_var_len(i) ? state.upper_bound(length_vars[i]) : lengths[i]; };
 
+            // The end_i = s_i + l_i definitions ({end_ge, end_le}) were introduced
+            // in-proof by the initialiser; read them here. Only ever asked for on a
+            // variable-duration task (so the entry is always present).
+            auto ensure_end = [&](size_t i) -> pair<ProofLine, ProofLine> { return *(*end_lines)[i]; };
+            // end <= s + l for the before-flag pol, or nullopt for a constant duration.
+            auto end_le_for = [&](size_t i) -> optional<ProofLine> {
+                return ends[i].has_value() ? optional<ProofLine>{ensure_end(i).second} : nullopt;
+            };
+
             // For a variable-duration task, materialise end_i >= s_lo + lb(l_i)
-            // via a pol over the captured end >= s+l line plus the start and
-            // length order-literals, so the after-flag RUP closes single-variable
-            // in end. A constant start is folded into end_ge's RHS and so
-            // contributes no literal (a constant has no pol-defining literal).
-            // No-op for a constant duration (after is already single-variable).
+            // via a pol over the end >= s+l line plus the start and length
+            // order-literals, so the after-flag RUP closes single-variable in end.
+            // A constant start is folded into end_ge's RHS and so contributes no
+            // literal (a constant has no pol-defining literal). No-op for a constant
+            // duration (after is already single-variable).
             auto materialise_end = [&](size_t i, Integer s_lo) -> void {
                 if (! is_var_len(i))
                     return;
                 PolBuilder pb;
-                pb.add(*end_ge[i]);
+                pb.add(ensure_end(i).first);
                 if (! is_constant_variable(starts[i]))
                     pb.add_for_literal(logger->names_and_ids_tracker(), starts[i] >= s_lo);
                 pb.add_for_literal(logger->names_and_ids_tracker(), length_vars[i] >= state.lower_bound(length_vars[i]));
@@ -489,8 +503,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                         pol.add(*aft_end_le);
                                     return pol.saturate().emit(*logger, ProofLevel::Temporary);
                                 };
-                                auto L1 = Lpol(e_ij.forward_line, bfi, bfj, end_le[ti]);
-                                auto L2 = Lpol(e_ji.forward_line, bfj, bfi, end_le[tj]);
+                                auto L1 = Lpol(e_ij.forward_line, bfi, bfj, end_le_for(ti));
+                                auto L2 = Lpol(e_ji.forward_line, bfj, bfi, end_le_for(tj));
 
                                 // AM1: L1 + L2 + clause + A_i_fwd + A_j_fwd +
                                 // saturate. The B/F terms cancel against the
@@ -601,8 +615,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                                 pol.add(*aft_end_le);
                             return pol.saturate().emit(*logger, ProofLevel::Temporary);
                         };
-                        auto L1 = Lpol(e_ij.forward_line, bfi, bfj, end_le[ti]);
-                        auto L2 = Lpol(e_ji.forward_line, bfj, bfi, end_le[tj]);
+                        auto L1 = Lpol(e_ij.forward_line, bfi, bfj, end_le_for(ti));
+                        auto L2 = Lpol(e_ji.forward_line, bfj, bfi, end_le_for(tj));
 
                         PolBuilder am1;
                         am1.add(L1).add(L2).add(clause_line).add(bfi.active_fwd).add(bfj.active_fwd);
