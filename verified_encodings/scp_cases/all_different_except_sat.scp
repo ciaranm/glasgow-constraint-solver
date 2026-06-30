@@ -1,0 +1,1 @@
+( ( (A 0 2) (B 0 2) ) ( (_1 all_different_except (A B) (2)) ) )

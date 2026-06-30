@@ -417,3 +417,29 @@ add_scp_chain_test(negative_table_unsat   none)
 # a variable out of its domain.
 add_scp_chain_test(smart_table_sat        none)
 add_scp_chain_test(smart_table_unsat      none)
+
+# none (chain-only): three more cake-ready globals whose writers already emit
+# cake_pb_cp's shape, so they are one reader function away from the chain.
+#   all_different_except (vars) (excluded) -- pairwise distinct, except that any
+#     number of variables may share an excluded value (the empty excluded list is
+#     plain all_different).
+#   at_most_one (vars) val -- at most one variable equals val.
+#   among (vars) (values) how_many -- exactly how_many variables take a
+#     value-of-interest.
+# All stay none: their per-value / per-pair encodings reference the variables'
+# eq/ge literals, which diverge from cake's eager variable encoding (#358). The
+# refutation (unsat) cases verify via RUP; the enumeration (sat) cases verify
+# because the clauses use the eq literals cake also provides. all_different_except
+# sat exempts a value from distinctness (off-diagonal plus the exempt diagonal),
+# unsat is a four-into-three pigeonhole; at_most_one unsat pins two variables to
+# the value; among counts occurrences of a value, unsat demanding more than the
+# candidates can supply. (The sibling precedence globals -- value_precede,
+# seq_precede_chain -- and symmetric_all_different read and round-trip, but their
+# proofs use auxiliary position / structural variables absent from cake's OPB, so
+# they need a structural conform like sort/arg_sort, not just a reader.)
+add_scp_chain_test(all_different_except_sat    none)
+add_scp_chain_test(all_different_except_unsat  none)
+add_scp_chain_test(at_most_one_sat             none)
+add_scp_chain_test(at_most_one_unsat           none)
+add_scp_chain_test(among_sat                   none)
+add_scp_chain_test(among_unsat                 none)
