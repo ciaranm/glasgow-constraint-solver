@@ -9,18 +9,10 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
-#include <version>
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-#include <format>
-#include <print>
-#else
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#endif
-
+#include <bit>
 #include <map>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -35,14 +27,6 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-using std::format;
-using std::print;
-#else
-using fmt::format;
-using fmt::print;
-#endif
 
 ValuePrecede::ValuePrecede(vector<Integer> chain, vector<IntegerVariableID> vars) : _chain(move(chain)), _vars(move(vars))
 {
@@ -76,56 +60,83 @@ auto ValuePrecede::prepare(Propagators &, State &, ProofModel * const) -> bool
 auto ValuePrecede::define_proof_model(ProofModel & model) -> void
 {
     auto n = _vars.size();
+    if (n == 0)
+        return;
+    auto id = as_string(_constraint_id);
 
-    // OPB encoding: introduce one ProofOnlyIntegerVariableID pos[v] per
-    // distinct chain value v, with domain [0, n] and the value n acting as
-    // the sentinel "v does not appear in vars". The encoding pins pos[v] to
-    // the leftmost occurrence of v in vars (or n if absent) via:
-    //   - upper bound: (vars[i] = v) → pos[v] ≤ i
-    //   - existence:   (pos[v] ≤ i) → ∃ k ≤ i, vars[k] = v
-    //
-    // The precede constraint per consecutive pair (s, t) is then:
-    //   - if s != t: (pos[t] ≤ n-1) → pos[t] - pos[s] ≥ 1, i.e., when t
-    //     appears, s's leftmost is strictly earlier.
-    //   - if s == t: pos[s] ≥ n, i.e., s never appears (since the first s
-    //     would have no preceding s). Special-cased to avoid emitting a
-    //     degenerate 0 ≥ 1 constraint.
-    map<Integer, ProofOnlySimpleIntegerVariableID> pos_vars;
+    // OPB encoding, matching cake_pb_cp's value_precede / seq_precede encoder
+    // (cp_to_ilp_lexicographicalScript.sml): one proof-only first-occurrence
+    // index pos[v] per distinct chain value v, with the sentinel value n meaning
+    // "v does not appear in vars". pos[v] is a proof-only integer variable whose
+    // bits are named as cake's value-keyed flags, so the names line up:
+    //   - bit b of pos[v] is the free flag v[id][v_b][pos];
+    //   - [pos[v] >= k] is the reified flag v[id][v_k][pge] (k = 1..n).
+    // pos[v] is pinned to the leftmost occurrence of v (or n if absent) via the
+    // upper-bound and existence constraints; the precede constraints order first
+    // occurrences along the chain. The bit-sum is implicitly bounded below by 0
+    // (the bits are Boolean); a pos[v] <= n bound is added below only when the
+    // bit-width over-represents [0, n] (see there).
+    auto width = static_cast<size_t>(std::bit_width(n));
+
+    map<Integer, ProofOnlySimpleIntegerVariableID> pos; // value -> pos[v]
+    map<Integer, vector<ProofFlag>> pge;                // value -> [ [pos>=1], [pos>=2], ..., [pos>=n] ]
+
     for (const auto & v : _chain) {
-        if (! pos_vars.contains(v)) {
-            auto pv = model.create_proof_only_integer_variable(
-                0_i, Integer{static_cast<long long>(n)}, format("value_precede_pos_{}", v), IntegerVariableProofRepresentation::Bits);
-            pos_vars.emplace(v, pv);
-        }
-    }
+        if (pos.contains(v))
+            continue;
 
-    for (const auto & [v, pv] : pos_vars) {
+        // pos[v] in [0, n] (sentinel n = "v absent"): a proof-only integer variable
+        // whose bits are named as cake's value flags v[id][v_b][pos] -- a free bit-sum
+        // with no OPB bound lines, its ge atoms introduced lazily in the proof on use.
+        auto pos_v = model.create_proof_only_integer_variable(0_i, Integer{static_cast<long long>(n)}, "value_precede_pos_" + v.to_string(),
+            IntegerVariableProofRepresentation::Bits, CakeBitNaming{_constraint_id, {v.raw_value}, "pos", std::nullopt});
+        pos.emplace(v, pos_v);
+
+        // pos[v] <= n (the bit-sum width 2^w-1 may exceed the sentinel n). Without
+        // this, an absent value v -- forced to pos[v] >= n by the existence pins --
+        // leaves the high bits free, so the proof-only pos[v] is not pinned by unit
+        // propagation at a solution (it must be: see proof_only_aux_must_be_determined).
+        // cake_pb_cp omits this bound, so its encoding is itself under-determined for
+        // an absent value when n is not 2^w - 1 -- flagged upstream; the chain only
+        // verifies for instances where the bit-width is exact (n = 2^w - 1), where
+        // this bound is redundant and so omitted (keeping those byte-identical to cake).
+        if ((1ULL << width) - 1 != n)
+            model.add_constraint("ValuePrecede", "position bound", WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(n)});
+
+        // [pos[v] >= k] <=> pos[v] >= k, for k = 1..n.
+        vector<ProofFlag> ges;
+        for (size_t k = 1; k <= n; ++k)
+            ges.push_back(model.create_proof_flag_values_fully_reifying(_constraint_id, vector<long long>{v.raw_value, static_cast<long long>(k)},
+                "pge", WPBSum{} + 1_i * pos_v >= Integer{static_cast<long long>(k)}));
+        pge.emplace(v, move(ges));
+
+        // Upper bound: (vars[i] = v) -> pos[v] <= i.
+        for (size_t i = 0; i < n; ++i)
+            model.add_labelled_constraint(id, std::to_string(i) + "ub", "ValuePrecede", "upper bound",
+                WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(i)}, HalfReifyOnConjunctionOf{{_vars[i] == v}});
+
+        // Existence: [pos[v] >= i+1] OR (exists k <= i. vars[k] = v).
         for (size_t i = 0; i < n; ++i) {
-            // Upper bound: (vars[i] = v) → pos[v] ≤ i.
-            model.add_constraint(
-                "ValuePrecede", "upper bound", WPBSum{} + 1_i * pv <= Integer{static_cast<long long>(i)}, HalfReifyOnConjunctionOf{{_vars[i] == v}});
-
-            // Existence: (pos[v] ≤ i) → ∃ k ≤ i, vars[k] = v.
-            // PB form: (pos[v] > i) + Σ_{k ≤ i} (vars[k] = v) ≥ 1.
             WPBSum existence;
-            existence += 1_i * (pv >= Integer{static_cast<long long>(i) + 1});
+            existence += 1_i * pge.at(v)[i]; // [pos[v] >= i+1]
             for (size_t k = 0; k <= i; ++k)
                 existence += 1_i * (_vars[k] == v);
-            model.add_constraint("ValuePrecede", "existence", move(existence) >= 1_i);
+            model.add_labelled_constraint(id, std::to_string(i) + "ex", "ValuePrecede", "existence", move(existence) >= 1_i);
         }
     }
 
     for (size_t j = 1; j < _chain.size(); ++j) {
         Integer s = _chain[j - 1];
         Integer t = _chain[j];
+        auto pi = std::to_string(j - 1);
         if (s == t) {
-            // pos[s] ≥ n: s must be absent from vars.
-            model.add_constraint("ValuePrecede", "no s", WPBSum{} + 1_i * pos_vars.at(s) >= Integer{static_cast<long long>(n)});
+            // pos[s] >= n: s must be absent from vars.
+            model.add_labelled_constraint(id, pi + "nos", "ValuePrecede", "no s", WPBSum{} + 1_i * pos.at(s) >= Integer{static_cast<long long>(n)});
         }
         else {
-            // (pos[t] ≤ n-1) → pos[t] - pos[s] ≥ 1.
-            model.add_constraint("ValuePrecede", "precede", WPBSum{} + 1_i * pos_vars.at(t) + (-1_i) * pos_vars.at(s) >= 1_i,
-                HalfReifyOnConjunctionOf{{pos_vars.at(t) < Integer{static_cast<long long>(n)}}});
+            // ~[pos[t] >= n] -> pos[t] - pos[s] >= 1.
+            model.add_labelled_constraint(id, pi + "pr", "ValuePrecede", "precede", WPBSum{} + 1_i * pos.at(t) + -1_i * pos.at(s) >= 1_i,
+                HalfReifyOnConjunctionOf{{! pge.at(t)[n - 1]}});
         }
     }
 }
