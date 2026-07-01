@@ -229,15 +229,19 @@ namespace gcs::innards
         auto get_current_proof_line() -> ProofLineNumber;
 
         /**
-         * Emit the specified text as a proof line.
+         * Emit the specified text as a proof line. An optional label is written as a
+         * leading `@<label>` (legal before any rule -- pol, rup, red, ia, ...), binding
+         * the label to the constraint the line produces, as an OPB `@label` does.
          */
-        auto emit_proof_line(const std::string &, ProofLevel level) -> ProofLine;
+        auto emit_proof_line(const std::string &, ProofLevel level, const std::optional<ProofLineLabel> & label = std::nullopt) -> ProofLine;
 
         /**
-         * Emit a proof step, with a specified rule.
+         * Emit a proof step, with a specified rule. An optional label is written as a
+         * leading `@<label>` binding it to the constraint the rule adds.
          */
         auto emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level,
-            const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt) -> ProofLine;
+            const std::optional<AssertionAnnotation> & assertion_hint = std::nullopt, const std::optional<ProofLineLabel> & label = std::nullopt)
+            -> ProofLine;
 
         /**
          * Emit a proof step, with a specified rule.

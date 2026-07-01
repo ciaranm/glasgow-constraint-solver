@@ -443,9 +443,15 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
     }
 }
 
-auto ProofModel::set_up_integer_variable(
-    SimpleIntegerVariableID id, Integer lower, Integer upper, const string & name, const optional<IntegerVariableProofRepresentation> & rep) -> void
+auto ProofModel::set_up_integer_variable(SimpleIntegerVariableID id, Integer lower, Integer upper, const string & name,
+    const optional<IntegerVariableProofRepresentation> & rep, const optional<CakeBitNaming> & bit_naming) -> void
 {
+    if (bit_naming) {
+        // A State variable that cake encodes as a proof-only bit-sum (cake-named
+        // bits, no OPB bounds); the bits path handles both.
+        set_up_bits_variable_encoding(id, lower, upper, name, bit_naming);
+        return;
+    }
     if (! rep) {
         if (lower == 0_i && upper == 1_i)
             set_up_direct_only_variable_encoding(id, lower, upper, name);
@@ -469,9 +475,21 @@ auto ProofModel::register_bits_variable_encoding(
     // uses it alone, for a variable whose encoding is introduced inside the proof
     // (e.g. via ProofLogger::introduce_bits_of) rather than asserted in the model.
     auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
+    // See CakeBitNaming: cake's arg_sort always signs its sorted-value variables, so
+    // force a sign bit (at -2^(number of value bits)) even for a non-negative range.
+    if (bit_naming && bit_naming->add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does && 0_i == negative_bit_coeff)
+        negative_bit_coeff = -power2(highest_bit_shift + 1_i);
     vector<pair<Integer, XLiteral>> bits;
     auto & tracker = names_and_ids_tracker();
     tracker.track_variable_name(id, name);
+
+    // cake's arg_sort sorted-value variables (the ones carrying this flag) are free
+    // signed bit-sums with no OPB bound line; their [lo, hi] bounds are entailed only
+    // through the conditional value/position channels, so they are not RUP-derivable
+    // boundary literals. Tell need_gevar not to pin them -- ArgSort derives them once,
+    // explicitly, at proof start instead.
+    if (bit_naming && bit_naming->add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does)
+        tracker.note_bounds_not_trivially_derivable(id);
 
     // With a CakeBitNaming, a bit is named v[id][values...][annotation] (as
     // create_proof_flag_values would); the value bits carry the bit number as the
@@ -506,9 +524,15 @@ auto ProofModel::register_bits_variable_encoding(
     tracker.track_bounds(id, lower, upper);
 }
 
-auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+auto ProofModel::set_up_bits_variable_encoding(
+    SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name, const optional<CakeBitNaming> & bit_naming) -> void
 {
-    register_bits_variable_encoding(id, lower, upper, name);
+    register_bits_variable_encoding(id, lower, upper, name, bit_naming);
+    // A cake-named variable is a free bit-sum: cake emits no bound lines for it, so
+    // stop here (as create_proof_only_integer_variable does), leaving the atoms to be
+    // introduced lazily in the proof when first used.
+    if (bit_naming)
+        return;
     vector<pair<Integer, XLiteral>> bits;
     for (auto b : names_and_ids_tracker().each_bit(id))
         bits.push_back(b);

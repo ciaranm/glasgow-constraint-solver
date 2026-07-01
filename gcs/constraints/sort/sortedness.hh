@@ -40,7 +40,7 @@ namespace gcs::innards
      * permutation. The caller must have set up `x` and `y` in the model already.
      */
     [[nodiscard]] auto define_sortedness_proof_model(ProofModel & model, const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & x,
-        const std::vector<IntegerVariableID> & y) -> SortednessWitness;
+        const std::vector<IntegerVariableID> & y, bool arg_sort_labels = false) -> SortednessWitness;
 
     /**
      * \brief Install the Mehlhorn-Thiel bounds-consistency propagator for

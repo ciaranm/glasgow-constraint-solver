@@ -31,6 +31,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace gcs;
@@ -73,10 +74,19 @@ auto ArgSort::install(Propagators & propagators, State & initial_state, ProofMod
     // witness lets ArgSort channel its permutation p to the stable rank pos.
     vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
     if (optional_model) {
+        // cake encodes each sorted-value y[j] as a proof-only, always-signed free
+        // bit-sum (v[id][j_b][y] value bits + a forced v[id][j][ysgn] sign bit even
+        // when the range is non-negative), with no OPB bound lines. Name y's bits to
+        // match, so the in-proof introduction of y's atoms lines up with cake's.
         for (size_t j = 0; j < _y.size(); ++j)
-            optional_model->set_up_integer_variable(
-                _y[j], _lowest_x, _highest_x, "argsort_y_" + std::to_string(j), IntegerVariableProofRepresentation::Bits);
-        _witness = define_sortedness_proof_model(*optional_model, _constraint_id, _x, y_ids);
+            optional_model->set_up_integer_variable(_y[j], _lowest_x, _highest_x, "argsort_y_" + std::to_string(j),
+                IntegerVariableProofRepresentation::Bits,
+                CakeBitNaming{.id = _constraint_id,
+                    .indices = {static_cast<long long>(j)},
+                    .value_annotation = "y",
+                    .sign_annotation = "ysgn",
+                    .add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does = true});
+        _witness = define_sortedness_proof_model(*optional_model, _constraint_id, _x, y_ids, /*arg_sort_labels=*/true);
     }
 
     install_sortedness_propagator(propagators, constraint_id(), _x, y_ids, _witness);
@@ -94,6 +104,17 @@ auto ArgSort::prepare(Propagators & propagators, State & initial_state, ProofMod
 
     if (_x.empty())
         return false;
+
+    // cake_pb_cp reifies each permutation variable's ge atoms per value under its own
+    // @c[peq..] labels, so the @i[P][ge] labels this solver gives them are absent from
+    // cake's OPB. Mark them so need_gevar recovers those labels in-proof (an `ia`
+    // re-declaration under our @i label), letting the order-chain pols resolve against
+    // both our own OPB and cake's. Must be set before any ge atom is introduced
+    // (define_bound below, and the channel guards later).
+    if (optional_model)
+        for (const auto & v : _p)
+            if (auto s = std::get_if<SimpleIntegerVariableID>(&v))
+                optional_model->names_and_ids_tracker().note_recover_atom_labels_in_proof(*s);
 
     // The permutation values live in [offset, offset + n - 1]; pin those bounds
     // so the index arithmetic (and the OPB index range) is sound.
@@ -129,43 +150,56 @@ auto ArgSort::prepare(Propagators & propagators, State & initial_state, ProofMod
 
 auto ArgSort::define_proof_model(ProofModel & model) -> void
 {
+    // These constraints conform to cake_pb_cp's cencode_argsort
+    // (cp_to_ilp_sortingScript.sml); the inner sortedness blocks (before flags,
+    // rank equation, non-decreasing chain @c[id][yle<i>], position channel
+    // @c[id][acle/acge<i>_<j>]) are emitted by define_sortedness_proof_model with
+    // arg_sort_labels. Labels use the constraint id as cake does.
     auto n = _x.size();
+    auto id = as_string(_constraint_id);
 
-    // p is a permutation of {offset, ..., offset + n - 1}: at most one position
-    // can take each value (with the range bounds above, this forces a bijection).
-    for (Integer v = _offset; v < _offset + Integer(n); ++v) {
+    auto guard = [&](size_t j, size_t k) { return HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(static_cast<long long>(k))}}; };
+
+    // permutation: each value offset+k is taken by at most one position (with the
+    // range bounds, this forces a bijection). @c[id][perm<k>am1].
+    for (size_t k = 0; k < n; ++k) {
         WPBSum at_most_one;
         for (const auto & p_j : _p)
-            at_most_one += 1_i * (p_j == v);
-        model.add_constraint("ArgSort", "permutation", move(at_most_one) <= 1_i);
+            at_most_one += 1_i * (p_j == _offset + Integer(static_cast<long long>(k)));
+        model.add_labelled_constraint(id, "perm" + std::to_string(k) + "am1", "ArgSort", "permutation", move(at_most_one) <= 1_i);
     }
 
-    // y[j] is the value at sorted position j, i.e. y[j] = x[p[j] - offset].
-    // Channel it in via the permutation literals. (y is the inner Sort's real
-    // sorted-value variable, already constrained to be sort(x).)
+    // value channel: (p[j] = offset+k) -> y[j] = x[k], split into @c[id][vcle<j>_<k>]
+    // (y[j] <= x[k]) and @c[id][vcge<j>_<k>] (y[j] >= x[k]). (y is the inner Sort's
+    // real sorted-value variable, already constrained to be sort(x).)
     for (size_t j = 0; j < n; ++j)
-        for (size_t k = 0; k < n; ++k)
-            model.add_constraint(
-                "ArgSort", "value channel", WPBSum{} + 1_i * _y[j] + -1_i * _x[k] == 0_i, HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(k)}});
+        for (size_t k = 0; k < n; ++k) {
+            auto cell = std::to_string(j) + "_" + std::to_string(k);
+            model.add_labelled_constraint(
+                id, "vcle" + cell, "vcge" + cell, "ArgSort", "value channel", WPBSum{} + 1_i * _y[j] + -1_i * _x[k] == 0_i, guard(j, k));
+        }
 
-    // Inverse channel to the stable rank: position j holds element k exactly
-    // when element k's stable rank pos[k] is j. This is definitionally true
-    // (p[j] = offset + k <-> pos[k] = j) and lets the rank-interval propagator
-    // turn pos[k]'s provable bounds (from the inner Sort's "before" counting)
-    // into prunings of p.
+    // rank channel (inverse): position j holds element k exactly when element k's
+    // stable rank pos[k] is j. Split into @c[id][rcge<j>_<k>] (pos[k] >= j) and
+    // @c[id][rcle<j>_<k>] (pos[k] <= j); lets the rank-interval propagator turn
+    // pos[k]'s provable bounds into prunings of p.
     for (size_t j = 0; j < n; ++j)
-        for (size_t k = 0; k < n; ++k)
-            model.add_constraint("ArgSort", "rank channel", WPBSum{} + 1_i * _witness.pos[k] == Integer(static_cast<long long>(j)),
-                HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(k)}});
+        for (size_t k = 0; k < n; ++k) {
+            auto cell = std::to_string(j) + "_" + std::to_string(k);
+            model.add_labelled_constraint(id, "rcle" + cell, "rcge" + cell, "ArgSort", "rank channel",
+                WPBSum{} + 1_i * _witness.pos[k] == Integer(static_cast<long long>(j)), guard(j, k));
+        }
 
-    // Stable tie-break. The inner Sort already constrains y[j] <= y[j+1], so an
-    // eq flag fully reifying y[j] >= y[j+1] captures exactly the ties:
-    //   eq_j <-> y[j] >= y[j+1]   (given y non-decreasing, this means equality)
-    //   eq_j -> p[j] + 1 <= p[j+1]   (ties broken by original index)
+    // stable tie-break. The inner Sort already constrains y[j] <= y[j+1], so a flag
+    // fully reifying y[j] >= y[j+1] captures exactly the ties. cake names it
+    // v[id][j][yge] and the tie-break line @c[id][tb<j>]:
+    //   yge<j> <-> y[j] >= y[j+1]   (given y non-decreasing, this means equality)
+    //   yge<j> -> p[j] + 1 <= p[j+1]   (ties broken by original index)
     for (size_t j = 0; j + 1 < n; ++j) {
-        auto eq = model.create_proof_flag_fully_reifying("argsort_eq", "ArgSort", "tie value", WPBSum{} + 1_i * _y[j] + -1_i * _y[j + 1] >= 0_i);
-
-        model.add_constraint("ArgSort", "stable tie-break", WPBSum{} + 1_i * _p[j] + -1_i * _p[j + 1] <= -1_i, HalfReifyOnConjunctionOf{{eq}});
+        auto yge = model.create_proof_flag_values_fully_reifying(
+            _constraint_id, {static_cast<long long>(j)}, "yge", WPBSum{} + 1_i * _y[j] + -1_i * _y[j + 1] >= 0_i);
+        model.add_labelled_constraint(id, "tb" + std::to_string(j), "ArgSort", "stable tie-break", WPBSum{} + 1_i * _p[j] + -1_i * _p[j + 1] <= -1_i,
+            HalfReifyOnConjunctionOf{{yge}});
     }
 }
 
@@ -173,6 +207,53 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
 {
     auto n = _x.size();
     vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
+
+    // cake leaves each sorted value y[j] as an unbounded free bit-sum (see
+    // set_up_integer_variable in install()): y[j] in [lowest_x, highest_x] is
+    // entailed -- every y[j] equals some x[p[j] - offset], all within that range --
+    // but it is not reverse-unit-propagatable, because pinning it needs a case split
+    // on p[j]'s value that unit propagation cannot make. So make that case split once,
+    // here, deriving both domain boundaries as persistent top-of-proof facts (which is
+    // why need_gevar skips its usual boundary pins for these variables). Runs at
+    // SimpleDefinition priority so it lands before the Mehlhorn-Thiel propagator's own
+    // (Expensive) initialiser and before search, giving both propagators y's bounds
+    // just as a normal variable's bound lines would.
+    //
+    // For each y[j] and direction: for every value offset+k, the value channel gives
+    // (p[j] = offset+k) -> y[j] <compares> x[k], with x[k] within [lo, hi], so
+    // ~[p[j] = offset+k] v (y[j] within bound) is RUP; p[j] takes some value in range,
+    // so at least one [p[j] = offset+k] holds; resolving them yields the bound. Only
+    // the two final bounds persist -- the per-value case lemmas are forgotten.
+    propagators.install_initialiser(
+        [p = _p, y = y_ids, offset = _offset, lo = _lowest_x, hi = _highest_x, n](const State &, auto &, ProofLogger * const logger) -> void {
+            // Only in full-justification (Off) mode: in assertion modes the propagator's
+            // y-bound inferences are asserted rather than justified, so they need no
+            // pre-derived bounds (and fix_bound is likewise skipped for these vars).
+            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+                return;
+            auto scratch = logger->temporary_proof_level();
+            for (size_t j = 0; j < n; ++j) {
+                // p[j] takes at least one value offset+k (from its range + eq ladder).
+                WPBSum takes_a_value;
+                for (size_t k = 0; k < n; ++k)
+                    takes_a_value += 1_i * (p[j] == offset + Integer(static_cast<long long>(k)));
+                logger->emit_rup_proof_line(move(takes_a_value) >= 1_i, ProofLevel::Temporary);
+
+                // For each k: (p[j]=offset+k) -> y[j] <= x[k] <= hi, and >= x[k] >= lo.
+                for (size_t k = 0; k < n; ++k) {
+                    auto not_pk = 1_i * (p[j] != offset + Integer(static_cast<long long>(k)));
+                    logger->emit_rup_proof_line(WPBSum{} + not_pk + 1_i * (y[j] < hi + 1_i) >= 1_i, ProofLevel::Temporary);
+                    logger->emit_rup_proof_line(WPBSum{} + not_pk + 1_i * (y[j] >= lo) >= 1_i, ProofLevel::Temporary);
+                }
+
+                // The two bounds persist (depth 0); the per-value case lemmas above are
+                // only scaffolding, so forget them once the bounds are derived.
+                logger->emit_rup_proof_line(WPBSum{} + 1_i * (y[j] < hi + 1_i) >= 1_i, ProofLevel::Top);
+                logger->emit_rup_proof_line(WPBSum{} + 1_i * (y[j] >= lo) >= 1_i, ProofLevel::Top);
+                logger->forget_proof_level(scratch);
+            }
+        },
+        InitialiserPriority::SimpleDefinition);
 
     // Channel-consistency propagator linking the permutation p to the source x
     // and the inner Sort's sorted values y, via y[j] = x[p[j] - offset]:
