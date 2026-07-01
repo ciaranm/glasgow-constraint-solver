@@ -382,3 +382,38 @@ add_scp_chain_test(strictly_increasing_sat     strict)
 add_scp_chain_test(strictly_increasing_unsat   strict)
 add_scp_chain_test(decreasing_sat              strict)
 add_scp_chain_test(strictly_decreasing_unsat   none)
+
+# none (chain-only): table (the variables take one of the listed allowed tuples)
+# and negative_table (they take none of the listed forbidden tuples). A tuple
+# entry is an integer or `*` (a wildcard matching any value); the solver and
+# cake_pb_cp agree on this s-expr shape exactly. Stays none: the per-tuple
+# encodings reference each variable's eq/ge literals, whose definitions diverge
+# from cake's eager variable encoding -- the solver derives them lazily from the
+# bits and leaves the tuple clauses unlabelled, where cake emits the full ladder
+# up front and labels them (#358). The refutation (unsat) cases verify regardless
+# (RUP finds the contradiction without cake's reverse-reified literal labels); the
+# enumeration (sat) cases verify here because the tuple clauses use the eq
+# literals cake also provides. table_sat allows three of the nine pairs;
+# table_unsat's only allowed tuple lies outside the domains. negative_table_sat
+# forbids the diagonal, leaving the off-diagonal pairs; negative_table_unsat uses
+# `(* k)` wildcard rows to forbid every value of one variable, emptying its domain.
+add_scp_chain_test(table_sat              none)
+add_scp_chain_test(table_unsat            none)
+add_scp_chain_test(negative_table_sat     none)
+add_scp_chain_test(negative_table_unsat   none)
+
+# none (chain-only): smart_table, a disjunction over rows, each row a conjunction
+# of entries -- (v1 op v2) (binary), (v op c) (unary value) or (v in|notin (c...))
+# (unary set), with op one of < <= = != > >=. The solver and cake_pb_cp agree on
+# this row-delimited s-expr shape. Stays none: the per-row selector flags are not
+# named like cake's, and the entry encodings reference the variables' eq/ge
+# literals, which diverge from cake's eager variable encoding (#358). The
+# refutation (unsat) verifies regardless (RUP). The enumeration (sat) is the
+# narrow case: only order-comparison entries verify, because their proof cites
+# just the forward ge literals cake defines; equality / set entries additionally
+# need cake's reverse-reified eq/ge literal labels, which the solver does not
+# emit, so a richer sat table is #358-blocked. sat is therefore a single A <= B
+# row (enumerating the ordered pairs); unsat is two rows whose only entries force
+# a variable out of its domain.
+add_scp_chain_test(smart_table_sat        none)
+add_scp_chain_test(smart_table_unsat      none)

@@ -23,6 +23,9 @@
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/regular/regular.hh>
+#include <gcs/constraints/smart_table/smart_table.hh>
+#include <gcs/constraints/table/negative_table.hh>
+#include <gcs/constraints/table/table.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/problem.hh>
@@ -345,6 +348,125 @@ namespace
             finals.push_back(static_cast<long>(as_integer(f).raw_value));
         post_constraint(problem, Regular{move(vars), num_states, move(transitions), move(finals)}, label);
     }
+
+    // Read a (negative_)table tuple list. An entry is an integer or `*` (a
+    // wildcard matching any value), exactly cake_pb_cp's shape. A wildcard-free
+    // table is built as SimpleTuples (the plain form its writer emits, so it
+    // round-trips); any wildcard switches the whole table to WildcardTuples.
+    auto read_extensional_tuples(const SExpr & tuple_list, bool & any_wildcard, SimpleTuples & simple_tuples, WildcardTuples & wildcard_tuples)
+        -> void
+    {
+        for (const auto & tuple_term : children_of(tuple_list, "the table tuple list")) {
+            vector<IntegerOrWildcard> wildcard_row;
+            vector<Integer> simple_row;
+            for (const auto & entry : children_of(tuple_term, "a table tuple")) {
+                if (entry.as_atom() == "*") {
+                    any_wildcard = true;
+                    wildcard_row.emplace_back(Wildcard{});
+                }
+                else {
+                    auto value = as_integer(entry);
+                    wildcard_row.emplace_back(value);
+                    simple_row.push_back(value);
+                }
+            }
+            wildcard_tuples.push_back(move(wildcard_row));
+            simple_tuples.push_back(move(simple_row));
+        }
+    }
+
+    auto read_table(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label table ((e...) (e...) ...) (vars...)): the variables must take one
+        // of the listed tuples.
+        if (terms.size() != 4)
+            throw ScpReadError{"table is (label table (tuples...) (vars...))"};
+        bool any_wildcard = false;
+        SimpleTuples simple_tuples;
+        WildcardTuples wildcard_tuples;
+        read_extensional_tuples(terms[2], any_wildcard, simple_tuples, wildcard_tuples);
+        auto vars = resolve_variable_list(variables, terms[3], "the table variable list");
+        if (any_wildcard)
+            post_constraint(problem, Table{move(vars), move(wildcard_tuples)}, label);
+        else
+            post_constraint(problem, Table{move(vars), move(simple_tuples)}, label);
+    }
+
+    auto read_negative_table(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
+        -> void
+    {
+        // (label negative_table ((e...) (e...) ...) (vars...)): the variables must
+        // not take any of the listed tuples.
+        if (terms.size() != 4)
+            throw ScpReadError{"negative_table is (label negative_table (tuples...) (vars...))"};
+        bool any_wildcard = false;
+        SimpleTuples simple_tuples;
+        WildcardTuples wildcard_tuples;
+        read_extensional_tuples(terms[2], any_wildcard, simple_tuples, wildcard_tuples);
+        auto vars = resolve_variable_list(variables, terms[3], "the negative_table variable list");
+        if (any_wildcard)
+            post_constraint(problem, NegativeTable{move(vars), move(wildcard_tuples)}, label);
+        else
+            post_constraint(problem, NegativeTable{move(vars), move(simple_tuples)}, label);
+    }
+
+    // Map a smart-table comparison op to the matching SmartTable entry. Templated
+    // over the operand so it serves both binary (var op var) and unary-value
+    // (var op const) entries: SmartTable's helpers are overloaded on the operand.
+    template <typename Operand_>
+    auto smart_table_comparison(const IntegerVariableID & var, const string & op, const Operand_ & operand) -> SmartEntry
+    {
+        if (op == "<")
+            return SmartTable::less_than(var, operand);
+        if (op == "<=")
+            return SmartTable::less_than_equal(var, operand);
+        if (op == "=")
+            return SmartTable::equals(var, operand);
+        if (op == "!=")
+            return SmartTable::not_equals(var, operand);
+        if (op == ">")
+            return SmartTable::greater_than(var, operand);
+        if (op == ">=")
+            return SmartTable::greater_than_equal(var, operand);
+        throw ScpReadError{"unknown smart_table comparison '" + op + "'"};
+    }
+
+    auto read_smart_table(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
+        -> void
+    {
+        // (label smart_table ((entry...) (entry...) ...) (vars...)): a disjunction
+        // over rows, each row a conjunction of entries. An entry is (v1 op v2)
+        // (binary), (v op c) (unary value), or (v in|notin (c...)) (unary set),
+        // with op one of < <= = != > >=. cake_pb_cp parses exactly this. A
+        // comparison's operand is a binary entry when it names a declared variable
+        // and a unary-value entry when it is an integer constant.
+        if (terms.size() != 4)
+            throw ScpReadError{"smart_table is (label smart_table (rows...) (vars...))"};
+        SmartTuples tuples;
+        for (const auto & row_term : children_of(terms[2], "the smart_table rows")) {
+            vector<SmartEntry> row;
+            for (const auto & entry_term : children_of(row_term, "a smart_table row")) {
+                const auto & entry = children_of(entry_term, "a smart_table entry");
+                if (entry.size() != 3)
+                    throw ScpReadError{"a smart_table entry is (var op operand)"};
+                auto var = resolve_variable(variables, entry[0]);
+                const auto & op = entry[1].as_atom();
+                if (op == "in" || op == "notin") {
+                    vector<Integer> values;
+                    for (const auto & v : children_of(entry[2], "a smart_table value set"))
+                        values.push_back(as_integer(v));
+                    row.push_back(op == "in" ? SmartTable::in_set(var, move(values)) : SmartTable::not_in_set(var, move(values)));
+                }
+                else if (auto it = variables.find(entry[2].as_atom()); it != variables.end())
+                    row.push_back(smart_table_comparison(var, op, it->second));
+                else
+                    row.push_back(smart_table_comparison(var, op, as_integer(entry[2])));
+            }
+            tuples.push_back(move(row));
+        }
+        auto vars = resolve_variable_list(variables, terms[3], "the smart_table variable list");
+        post_constraint(problem, SmartTable{move(vars), move(tuples)}, label);
+    }
 }
 
 auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVariableID>
@@ -573,6 +695,15 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
         }
         else if (op == "regular") {
             read_regular(problem, variables, terms, label);
+        }
+        else if (op == "table") {
+            read_table(problem, variables, terms, label);
+        }
+        else if (op == "negative_table") {
+            read_negative_table(problem, variables, terms, label);
+        }
+        else if (op == "smart_table") {
+            read_smart_table(problem, variables, terms, label);
         }
         else if (op.starts_with("lex_")) {
             read_lex(problem, variables, op, terms, label);

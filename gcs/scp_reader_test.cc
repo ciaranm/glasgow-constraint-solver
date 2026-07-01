@@ -16,6 +16,9 @@
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/regular/regular.hh>
+#include <gcs/constraints/smart_table/smart_table.hh>
+#include <gcs/constraints/table/negative_table.hh>
+#include <gcs/constraints/table/table.hh>
 #include <gcs/current_state.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
@@ -494,6 +497,66 @@ TEST_CASE("read_scp: regular, disjunctive, disjunctive2d and cumulative survive 
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_regdisj_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: table enumerates correctly")
+{
+    // Allow exactly three of the nine pairs.
+    auto solutions = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 table ((0 1) (1 2) (2 0)) (A B)) ) )");
+    CHECK(solutions == set<map<string, long long>>{{{"A", 0}, {"B", 1}}, {{"A", 1}, {"B", 2}}, {{"A", 2}, {"B", 0}}});
+
+    // A wildcard allows a whole slice: (0 *) admits every tuple with A = 0.
+    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 table ((0 *)) (A B)) ) )"))
+        CHECK(s.at("A") == 0);
+}
+
+TEST_CASE("read_scp: negative_table enumerates correctly")
+{
+    // Forbid the three diagonal tuples, leaving exactly the off-diagonal pairs.
+    auto solutions = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 negative_table ((0 0) (1 1) (2 2)) (A B)) ) )");
+    CHECK(solutions.size() == 6);
+    for (const auto & s : solutions)
+        CHECK(s.at("A") != s.at("B"));
+
+    // A wildcard forbids a whole slice: (0 *) rules out every tuple with A = 0.
+    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 negative_table ((0 *)) (A B)) ) )"))
+        CHECK(s.at("A") != 0);
+}
+
+TEST_CASE("read_scp: smart_table enumerates correctly")
+{
+    // A two-row table exercising every entry kind: row 1 = (A = 1) and B in {2,3}
+    // (a unary-value and a unary-set entry), row 2 = (A = B) (a binary entry). The
+    // disjunction admits A = B, plus A = 1 paired with B in {2,3}.
+    auto solutions = enumerate("( ( (A 0 3) (B 0 3) ) ( (_1 smart_table ( ((A = 1) (B in (2 3))) ((A = B)) ) (A B)) ) )");
+    CHECK(solutions.size() == 6);
+    for (const auto & s : solutions)
+        CHECK(((s.at("A") == 1 && (s.at("B") == 2 || s.at("B") == 3)) || s.at("A") == s.at("B")));
+}
+
+TEST_CASE("read_scp: the table family survives write -> read -> write unchanged")
+{
+    Problem original;
+    auto a = original.create_integer_variable(0_i, 3_i, "A");
+    auto b = original.create_integer_variable(0_i, 3_i, "B");
+    // A wildcard tuple keeps the WildcardTuples path; the all-integer tuple checks
+    // that a wildcard-free row still round-trips inside it. Positive and negative
+    // tables share the writer, so the positive table covers the SimpleTuples path.
+    original.post(Table{std::vector<IntegerVariableID>{a, b}, SimpleTuples{{0_i, 1_i}, {2_i, 3_i}}});
+    original.post(NegativeTable{std::vector<IntegerVariableID>{a, b}, WildcardTuples{{0_i, Wildcard{}}, {1_i, 2_i}}});
+    // Every smart-entry kind: binary, unary value, unary set (in) and unary set (notin).
+    SmartTuples tuples;
+    tuples.push_back(std::vector<SmartEntry>{SmartTable::less_than(a, b), SmartTable::in_set(a, std::vector<Integer>{1_i, 2_i})});
+    tuples.push_back(std::vector<SmartEntry>{SmartTable::equals(a, 1_i), SmartTable::not_in_set(b, std::vector<Integer>{0_i})});
+    original.post(SmartTable{std::vector<IntegerVariableID>{a, b}, tuples});
+    auto scp_a = prove_to_scp(original, "scp_reader_table_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_table_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());
