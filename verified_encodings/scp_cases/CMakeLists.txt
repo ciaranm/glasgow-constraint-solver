@@ -496,3 +496,13 @@ add_scp_chain_test(value_precede_sat          none)
 add_scp_chain_test(value_precede_unsat        none)
 add_scp_chain_test(seq_precede_chain_sat      none)
 add_scp_chain_test(seq_precede_chain_unsat    none)
+
+# none (chain-only): knapsack. Per coefficient row the encoding is a single linear
+# equality sum_i coeffs[row][i]*vars[i] = totals[row] -- arithmetically identical to
+# cake's. cake labels each row's equality under its own constraint id `name ^ row`
+# (@c[_1<row>][le]/[ge]); the solver now matches that (was a row-indexed role
+# @c[_1][le<row>] on one id), so the DP propagator's pol steps -- which cite these
+# rows by label -- resolve against cake's OPB. sat enumerates the {0,1} item picks
+# whose weighted sums hit the totals; unsat fixes a total beyond any achievable sum.
+add_scp_chain_test(knapsack_sat    none)
+add_scp_chain_test(knapsack_unsat  none)
