@@ -189,15 +189,10 @@ auto In::install_propagators(Propagators & propagators) -> void
                         reason = ExplicitReason{std::move(lits)};
                     }
 
-                    inference.infer_not_equal(logger, var, v,
-                        JustifyExplicitly{//
-                            [logger, var, v, &selectors](const ReasonLiterals & reason) {
-                                for (const auto & sel : selectors)
-                                    logger->emit_rup_proof_line_under_reason(
-                                        reason, WPBSum{} + 1_i * ! sel + 1_i * (var != v) >= 1_i, ProofLevel::Temporary);
-                            },
-                            ThenRUP::Yes, hints::In{owner}},
-                        reason);
+                    // var != v by case analysis over the source selectors: each selector
+                    // makes var take one source value (none of which is v here), and the
+                    // model's at-least-one selector rules out the all-false case.
+                    inference.infer_not_equal(logger, var, v, JustifyUsingCases{selectors, hints::In{owner}}, reason);
                 }
             }
 
