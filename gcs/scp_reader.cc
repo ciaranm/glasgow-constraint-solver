@@ -15,6 +15,7 @@
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/increasing.hh>
 #include <gcs/constraints/inverse.hh>
+#include <gcs/constraints/knapsack/knapsack.hh>
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
@@ -549,6 +550,49 @@ namespace
             throw ScpReadError{"seq_precede_chain is (label seq_precede_chain (vars...))"};
         post_constraint(problem, SeqPrecedeChain{resolve_variable_list(variables, terms[2], "the seq_precede_chain variable list")}, label);
     }
+
+    auto read_knapsack(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label knapsack ((coeffs-of-row...) ...) (vars...) (totals...)): a system
+        // of linear equalities, one per coefficient row -- row r asserts
+        // sum_i coeffs[r][i] * vars[i] == totals[r]. (The classic weight/profit
+        // knapsack is the two-row case.)
+        if (terms.size() != 5)
+            throw ScpReadError{"knapsack is (label knapsack ((coeffs...) ...) (vars...) (totals...))"};
+        vector<vector<Integer>> coeffs;
+        for (const auto & row : children_of(terms[2], "the knapsack coefficient rows"))
+            coeffs.push_back(resolve_integer_list(row, "a knapsack coefficient row"));
+        auto vars = resolve_variable_list(variables, terms[3], "the knapsack variable list");
+        auto totals = resolve_variable_list(variables, terms[4], "the knapsack totals list");
+        post_constraint(problem, Knapsack{move(coeffs), move(vars), move(totals)}, label);
+    }
+
+    // An index argument is a (variable offset) pair: the chosen entry is at
+    // val(variable) - offset (Element subtracts the offset).
+    auto resolve_index_pair(const map<string, IntegerVariableID> & variables, const SExpr & e) -> std::pair<IntegerVariableID, Integer>
+    {
+        const auto & pair = children_of(e, "an element index");
+        if (pair.size() != 2)
+            throw ScpReadError{"an element index must be (index offset)"};
+        return {resolve_variable(variables, pair[0]), as_integer(pair[1])};
+    }
+
+    auto read_element_2d(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
+        -> void
+    {
+        // (label element_2d ((row...) ...) (i off_i) (j off_j) result): the array is
+        // a list of rows, and result = array[val(i) - off_i][val(j) - off_j]. As in
+        // the 1-D case, a constant entry is read as a constant variable.
+        if (terms.size() != 6)
+            throw ScpReadError{"element_2d takes (label element_2d ((row...) ...) (i off) (j off) result)"};
+        vector<vector<IntegerVariableID>> array;
+        for (const auto & row : children_of(terms[2], "the element_2d array"))
+            array.push_back(resolve_variable_list(variables, row, "an element_2d array row"));
+        post_constraint(problem,
+            Element2D{
+                resolve_variable(variables, terms[5]), resolve_index_pair(variables, terms[3]), resolve_index_pair(variables, terms[4]), move(array)},
+            label);
+    }
 }
 
 auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVariableID>
@@ -804,6 +848,12 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
         }
         else if (op == "seq_precede_chain") {
             read_seq_precede_chain(problem, variables, terms, label);
+        }
+        else if (op == "knapsack") {
+            read_knapsack(problem, variables, terms, label);
+        }
+        else if (op == "element_2d") {
+            read_element_2d(problem, variables, terms, label);
         }
         else if (op.starts_with("lex_")) {
             read_lex(problem, variables, op, terms, label);

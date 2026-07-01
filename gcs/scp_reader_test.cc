@@ -14,6 +14,7 @@
 #include <gcs/constraints/global_cardinality.hh>
 #include <gcs/constraints/in.hh>
 #include <gcs/constraints/increasing.hh>
+#include <gcs/constraints/knapsack/knapsack.hh>
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/min_max.hh>
@@ -650,6 +651,52 @@ TEST_CASE("read_scp: the remaining globals survive write -> read -> write unchan
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_globals_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: element_2d enumerates correctly")
+{
+    // result = array[i][j] over a constant 2x2 array; each (i, j) determines R.
+    auto solutions = enumerate("( ( (I 0 1) (J 0 1) (R 0 9) ) ( (_1 element_2d ((1 2) (3 4)) (I 0) (J 0) R) ) )");
+    CHECK(solutions.size() == 4);
+    for (const auto & s : solutions) {
+        long long expected[2][2] = {{1, 2}, {3, 4}};
+        CHECK(s.at("R") == expected[s.at("I")][s.at("J")]);
+    }
+}
+
+TEST_CASE("read_scp: knapsack enumerates correctly")
+{
+    // Two coefficient rows (weight and profit): W = 2*X0 + 3*X1, P = 3*X0 + 4*X1.
+    auto solutions = enumerate("( ( (X0 0 1) (X1 0 1) (W 0 5) (P 0 7) ) ( (_1 knapsack ((2 3) (3 4)) (X0 X1) (W P)) ) )");
+    CHECK(solutions.size() == 4); // one per (X0, X1) subset, totals determined
+    for (const auto & s : solutions) {
+        CHECK(s.at("W") == 2 * s.at("X0") + 3 * s.at("X1"));
+        CHECK(s.at("P") == 3 * s.at("X0") + 4 * s.at("X1"));
+    }
+}
+
+TEST_CASE("read_scp: element_2d and knapsack survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto a00 = original.create_integer_variable(0_i, 3_i, "A00");
+    auto a01 = original.create_integer_variable(0_i, 3_i, "A01");
+    auto a10 = original.create_integer_variable(0_i, 3_i, "A10");
+    auto a11 = original.create_integer_variable(0_i, 3_i, "A11");
+    auto i = original.create_integer_variable(0_i, 1_i, "I");
+    auto j = original.create_integer_variable(0_i, 1_i, "J");
+    auto r = original.create_integer_variable(0_i, 3_i, "R");
+    auto w = original.create_integer_variable(0_i, 9_i, "W");
+    original.post(Element2D{r, std::pair{i, 0_i}, std::pair{j, 0_i}, std::vector<std::vector<IntegerVariableID>>{{a00, a01}, {a10, a11}}});
+    original.post(Knapsack{
+        std::vector<std::vector<Integer>>{{2_i, 3_i, 4_i}}, std::vector<IntegerVariableID>{a00, a01, a10}, std::vector<IntegerVariableID>{w}});
+    auto scp_a = prove_to_scp(original, "scp_reader_element2d_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_element2d_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());
