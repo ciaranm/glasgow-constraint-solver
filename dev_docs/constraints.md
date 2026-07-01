@@ -429,6 +429,10 @@ Two flavours, both for proof-only use (the propagator never sees them):
       0_i, Integer{n}, "pos", IntegerVariableProofRepresentation::Bits);
   ```
   Use `Bits` for arithmetic-heavy use, `DirectOnly` for one-flag-per-value.
+  For verified-encoding (`cake_pb_cp` chain) work, an optional `CakeBitNaming`
+  argument names the bits in cake's value-flag scheme (`v[id][…][annot]`) as a
+  free bit-sum with no OPB bound lines, so the proof-only integer lines up with
+  cake's own encoding — see `value_precede`, `sort`, and `arg_sort`.
 
 Use these to define encodings that are cleaner in OPB than the
 constraint's raw semantics — `Lex` uses `prefix_equal[i]` flags;
