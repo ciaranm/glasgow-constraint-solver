@@ -271,17 +271,19 @@ add_scp_chain_test(lex_less_equal_iff_sat     none)
 # keywords (bounds/gac globalcardinality[closed]) over (vars)(values)(counts);
 # the encoding is the per-value count constraint Sum_i (x_i = values[j]) =
 # counts[j] (the closed forms add an at-least-one over the cover values per
-# variable). cake defines the eq/ge literals eagerly, so it chain-verifies but
-# does not byte-match (#358). The open (sat + unsat) and GAC (sat + unsat) cases
-# verify, as does closed enumeration (closed_sat confines 0..2 vars to {0,1}).
-# closed_unsat is omitted: its refutation derives the contradiction through the
-# eq-literal ladder, which is exactly where the lazy-vs-eager encoding (#358)
-# diverges, so that proof shape does not yet line up against cake's OPB.
-add_scp_chain_test(global_cardinality_sat         none)
-add_scp_chain_test(global_cardinality_unsat       none)
-add_scp_chain_test(global_cardinality_closed_sat  none)
-add_scp_chain_test(global_cardinality_gac_sat     none)
-add_scp_chain_test(global_cardinality_gac_unsat   none)
+# variable). cake defines the eq/ge literals eagerly, and so now does the solver
+# (the eager boundary encoding is the default), so the whole family chain-verifies
+# -- the open (sat + unsat), GAC (sat + unsat) and closed (sat + unsat) cases.
+# closed_unsat's refutation derives the contradiction through the boundary
+# eq-literal ladder; it is enabled by the eager default (eq(v) <=> ge(v) & ~ge(v+1)
+# at the bounds too, with ge(lower)/ge(ub+1) pinned as persistent top-of-proof
+# lines), which previously was the lazy-vs-eager divergence that blocked it.
+add_scp_chain_test(global_cardinality_sat          none)
+add_scp_chain_test(global_cardinality_unsat        none)
+add_scp_chain_test(global_cardinality_closed_sat   none)
+add_scp_chain_test(global_cardinality_closed_unsat none)
+add_scp_chain_test(global_cardinality_gac_sat      none)
+add_scp_chain_test(global_cardinality_gac_unsat    none)
 
 # none (chain-only): regular (the sequence of variables is a word accepted by a
 # finite automaton). The writer emits cake's shape -- (vars...) nstates
@@ -433,16 +435,31 @@ add_scp_chain_test(smart_table_unsat      none)
 # sat exempts a value from distinctness (off-diagonal plus the exempt diagonal),
 # unsat is a four-into-three pigeonhole; at_most_one unsat pins two variables to
 # the value; among counts occurrences of a value, unsat demanding more than the
-# candidates can supply. (The sibling precedence globals -- value_precede,
-# seq_precede_chain -- and symmetric_all_different read and round-trip, but their
-# proofs use auxiliary position / structural variables absent from cake's OPB, so
-# they need a structural conform like sort/arg_sort, not just a reader.)
+# candidates can supply. (The sibling precedence globals -- value_precede and
+# seq_precede_chain -- read and round-trip, but their proofs use auxiliary
+# position / structural variables absent from cake's OPB, so they need a
+# structural conform like sort/arg_sort, not just a reader.)
 add_scp_chain_test(all_different_except_sat    none)
 add_scp_chain_test(all_different_except_unsat  none)
 add_scp_chain_test(at_most_one_sat             none)
 add_scp_chain_test(at_most_one_unsat           none)
 add_scp_chain_test(among_sat                   none)
 add_scp_chain_test(among_unsat                 none)
+
+# none (chain-only): symmetric_all_different (the assignment is an involution: if
+# var i takes value start + j then var j takes value start + i). cake's encoder is
+# eager at the value boundaries (eq(0) <=> ge(0) & ~ge(1), defining the always-true
+# ge(0) and always-false ge(ub+1)), and the per-value pairwise-distinctness RUP its
+# enumeration proof cites only collapses once those boundary literals are pinned.
+# With the eager boundary encoding as the default and ge(lower)/ge(ub+1) pinned as
+# persistent top-of-proof lines (so the pin survives VeriPB's post-solx enumeration
+# restriction), both the sat enumeration and the unsat refutation chain-verify.
+# Stays none: the rest of the bit/eq encoding still diverges from cake's labels.
+# sat enumerates the involutions of three elements; unsat is a four-into-three
+# pigeonhole (the involution cannot make four variables pairwise distinct over a
+# three-value domain).
+add_scp_chain_test(symmetric_all_different_sat    none)
+add_scp_chain_test(symmetric_all_different_unsat  none)
 
 # none (chain-only): element_2d -- result = array[i - off_i][j - off_j] over a
 # two-dimensional array. cake reads the array as a list of rows ((row) ...) and
