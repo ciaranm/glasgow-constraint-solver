@@ -23,6 +23,7 @@
 #endif
 
 #include <algorithm>
+#include <bit>
 #include <functional>
 #include <numeric>
 #include <queue>
@@ -84,84 +85,91 @@ auto Sort::prepare(Propagators &, State &, ProofModel * const) -> bool
     return ! _x.empty();
 }
 
-auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y)
-    -> SortednessWitness
+auto gcs::innards::define_sortedness_proof_model(
+    ProofModel & model, const ConstraintID & cid, const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y) -> SortednessWitness
 {
     auto n = x.size();
+    auto id = as_string(cid);
     SortednessWitness w;
 
-    // Compact, domain-width-independent encoding. The witness is a proof-only
-    // permutation pos[i] giving the position x[i] is sent to in y, with the
-    // channel y[pos[i]] = x[i]. Crucially pos is defined as the *stable rank*
-    // of x[i] -- a function of x alone -- so a full assignment to x (and hence
-    // y, via the channel) determines every pos[i] by unit propagation, which
-    // is what lets VeriPB verify solutions. It also makes a violated leaf plain
-    // RUP: the channel pins y to sorted(x), so any other y is refuted directly.
+    // OPB encoding matching cake_pb_cp's cencode_sort (cp_to_ilp_sortingScript.sml).
+    // y is sorted(x): a non-decreasing chain over y, a proof-only stable rank pos[i]
+    // per x[i] -- the number of elements before x[i] in the (value, then original
+    // index) order -- and a channel placing x[i] at y[pos[i]]. Crucially pos is a
+    // function of x alone, so a full assignment to x pins every pos[i] by unit
+    // propagation (and a violated leaf is plain RUP). pos[i] is built as the bit-sum
+    // of cake's flag bits v[id][i_b][pos], so the OPB only ever mentions those flags
+    // -- no eq/ge ladder. The propagator's pos[i] == j atoms are introduced lazily
+    // in the proof when it reasons over them during search; here the channel is
+    // instead guarded by the bit-conjunction spelling j, exactly as cake.
+    auto width = (n <= 1) ? size_t{0} : static_cast<size_t>(std::bit_width(n - 1));
 
-    // y is sorted into non-decreasing order (the defining property; also
-    // implied by the channel once pos is pinned).
-    for (size_t i = 0; i + 1 < y.size(); ++i)
-        model.add_constraint("Sort", "y non-decreasing", WPBSum{} + 1_i * y[i] + -1_i * y[i + 1] <= 0_i);
+    // (a) y non-decreasing: y[i] <= y[i+1], labelled @c[id][<i>].
+    for (size_t i = 0; i + 1 < n; ++i)
+        model.add_labelled_constraint(id, std::to_string(i), "Sort", "non-decreasing", WPBSum{} + 1_i * y[i + 1] + -1_i * y[i] >= 0_i);
 
-    // before[ip][i] : x[ip] comes before x[i] under the total order (value,
-    // then original index). For a fixed pair the index tie-break is constant,
-    // so each flag is a plain comparison of two x values:
-    //   ip < i : ties go to ip, so "before" iff x[ip] <= x[i];
-    //   ip > i : ties go to i,  so "before" iff x[ip] <  x[i].
+    // (b) before[ip][i] : x[ip] precedes x[i] in the (value, then original index)
+    // order. The index tie-break is constant per pair, so each flag is a plain
+    // comparison: ip < i ties to ip (before iff x[ip] <= x[i]); ip >= i ties to i
+    // (before iff x[ip] < x[i]) -- the diagonal ip == i is then always false. Named
+    // x[id][ip_i][bf] (halves @x[id][ip_i][bf][r]/[f]); cake also emits the diagonal
+    // and counts it in the rank sum, so we do too.
     w.before.assign(n, std::vector<ProofFlag>(n));
     w.before_fwd.assign(n, std::vector<ProofLine>(n));
     w.before_rev.assign(n, std::vector<ProofLine>(n));
     for (size_t i = 0; i < n; ++i)
         for (size_t ip = 0; ip < n; ++ip) {
-            if (ip == i)
-                continue;
             auto bound = (ip < i) ? 0_i : -1_i;
-            auto flag = model.create_proof_flag("sort_before");
-            // Capture both halves: forward `before -> x[ip] - x[i] <= bound`,
-            // reverse `!before -> x[ip] - x[i] >= bound + 1`. The proof's
-            // totality and transitivity pols sum these (the x terms cancel).
+            auto flag = model.create_proof_flag(cid, std::vector<long long>{static_cast<long long>(ip), static_cast<long long>(i)}, "bf");
             auto [fwd, rev] = model.add_two_way_reified_constraint("Sort", "stable before", WPBSum{} + 1_i * x[ip] + -1_i * x[i] <= bound, flag);
             w.before[ip][i] = flag;
             w.before_fwd[ip][i] = fwd;
             w.before_rev[ip][i] = rev;
         }
 
-    // pos[i] is the stable rank of x[i]: the number of elements before it.
+    // (c) pos[i] is the stable rank, a proof-only integer in [0, n-1] whose bits are
+    // named as cake's flags v[id][i_b][pos]. Naming them that way means the rank
+    // equation and channel render over those flags (no fresh pos variable in the
+    // OPB), and pos[i]'s eq/ge atoms are introduced in-proof on first use rather
+    // than here.
     for (size_t i = 0; i < n; ++i)
-        w.pos.push_back(model.create_proof_only_integer_variable(
-            0_i, Integer(n) - 1_i, "sort_pos_" + std::to_string(i), IntegerVariableProofRepresentation::Bits));
+        w.pos.push_back(model.create_proof_only_integer_variable(0_i, Integer(n) - 1_i, "sort_pos_" + std::to_string(i),
+            IntegerVariableProofRepresentation::Bits, CakeBitNaming{cid, std::vector<long long>{static_cast<long long>(i)}, "pos", std::nullopt}));
 
-    // pos[i] = sum of "before" flags. Keep both halves: rank_ge[i] is
-    // pos[i] - sum >= 0 (pos[i] >= rank), rank_le[i] is sum - pos[i] >= 0
-    // (pos[i] <= rank). The bound proofs pol against ge; the permutation proof
-    // needs both directions.
+    // (d) pos[i] = sum over ip of before[ip][i] (including the always-false
+    // diagonal, as cake does). @c[id][rge<i>] is pos >= rank, @c[id][rle<i>] is
+    // pos <= rank; the bound proofs pol against ge, the permutation proof needs both.
     for (size_t i = 0; i < n; ++i) {
         WPBSum rank;
         rank += 1_i * w.pos[i];
         for (size_t ip = 0; ip < n; ++ip)
-            if (ip != i)
-                rank += -1_i * w.before[ip][i];
-        // Sort does not chain (cake encodes it differently), so an invented label
-        // keyed on the position variable is fine; this is a free function with no
-        // constraint id, so the pos variable's index gives the unique key.
+            rank += -1_i * w.before[ip][i];
         auto [le, ge] =
-            model.add_labelled_constraint("sort_pos_" + std::to_string(i), "rankle", "rankge", "Sort", "pos is stable rank", move(rank) == 0_i);
+            model.add_labelled_constraint(id, "rle" + std::to_string(i), "rge" + std::to_string(i), "Sort", "pos is stable rank", move(rank) == 0_i);
         w.rank_ge.push_back(ge);
         w.rank_le.push_back(le);
     }
 
-    // Channel: x[i] is placed at position pos[i] of y.
+    // (e) position channel: when pos[i]'s bits spell j, x[i] sits at y[j]. Guarded
+    // by the bit-conjunction spelling j (NOT pos[i] == j, so no eq atom enters the
+    // OPB), split into @c[id][cle<i>_<j>] (y[j] <= x[i]) and @c[id][cge<i>_<j>]
+    // (y[j] >= x[i]), matching cake.
     for (size_t i = 0; i < n; ++i)
-        for (size_t j = 0; j < n; ++j)
-            model.add_constraint(
-                "Sort", "position channel", WPBSum{} + 1_i * y[j] + -1_i * x[i] == 0_i, HalfReifyOnConjunctionOf{{w.pos[i] == Integer(j)}});
+        for (size_t j = 0; j < n; ++j) {
+            HalfReifyOnConjunctionOf guard;
+            for (size_t b = 0; b < width; ++b)
+                guard.push_back(ProofBitVariable{w.pos[i], Integer{static_cast<long long>(b)}, ((j >> b) & 1) != 0});
+            auto cell = std::to_string(i) + "_" + std::to_string(j);
+            model.add_labelled_constraint(id, "cle" + cell, "Sort", "position channel", WPBSum{} + 1_i * y[j] + -1_i * x[i] <= 0_i, guard);
+            model.add_labelled_constraint(id, "cge" + cell, "Sort", "position channel", WPBSum{} + 1_i * y[j] + -1_i * x[i] >= 0_i, guard);
+        }
 
     return w;
 }
 
 auto Sort::define_proof_model(ProofModel & model) -> void
 {
-    _witness = define_sortedness_proof_model(model, _x, _y);
+    _witness = define_sortedness_proof_model(model, _constraint_id, _x, _y);
 }
 
 namespace

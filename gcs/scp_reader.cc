@@ -28,6 +28,7 @@
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
+#include <gcs/constraints/sort.hh>
 #include <gcs/constraints/table/negative_table.hh>
 #include <gcs/constraints/table/table.hh>
 #include <gcs/constraints/value_precede/value_precede.hh>
@@ -517,6 +518,27 @@ namespace
         post_constraint(problem, AtMostOne{move(vars), resolve_variable(variables, terms[3])}, label);
     }
 
+    auto read_sort(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label sort (xs...) (ys...)): ys is xs sorted into non-decreasing order.
+        if (terms.size() != 4)
+            throw ScpReadError{"sort is (label sort (xs...) (ys...))"};
+        auto xs = resolve_variable_list(variables, terms[2], "the sort input list");
+        auto ys = resolve_variable_list(variables, terms[3], "the sort output list");
+        post_constraint(problem, Sort{move(xs), move(ys)}, label);
+    }
+
+    auto read_arg_sort(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label arg_sort (xs...) (ps...) offset): ps is the (stable) argsort
+        // permutation of xs, with positions starting from offset.
+        if (terms.size() != 5)
+            throw ScpReadError{"arg_sort is (label arg_sort (xs...) (ps...) offset)"};
+        auto xs = resolve_variable_list(variables, terms[2], "the arg_sort input list");
+        auto ps = resolve_variable_list(variables, terms[3], "the arg_sort permutation list");
+        post_constraint(problem, ArgSort{move(xs), move(ps), as_integer(terms[4])}, label);
+    }
+
     auto read_among(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
     {
         // (label among (vars...) (values...) how_many): exactly how_many of the
@@ -686,6 +708,12 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 IncreasingChain{resolve_variable_list(variables, terms[2], "the increasing variable list"), op.starts_with("strictly_"),
                     op.ends_with("decreasing")},
                 label);
+        }
+        else if (op == "sort") {
+            read_sort(problem, variables, terms, label);
+        }
+        else if (op == "arg_sort") {
+            read_arg_sort(problem, variables, terms, label);
         }
         else if (op == "in") {
             if (terms.size() != 4)
