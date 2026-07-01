@@ -27,6 +27,24 @@ namespace gcs::innards
         char const * value;
     };
 
+    /**
+     * \brief How to name a proof-only integer variable's bit literals to match
+     * cake_pb_cp's value-flag scheme, instead of the default `p[index_name][b]`:
+     * value bit b becomes `v[id][indices..._b][value_annotation]` and a
+     * two's-complement variable's sign bit becomes `v[id][indices...][sign_annotation]`
+     * (required when the range is negative). The bits are still the variable's bits;
+     * only their names change. Passing one to create_proof_only_integer_variable also
+     * makes the variable a free bit-sum (no OPB bound lines), matching how cake encodes
+     * these auxiliaries. Mirrors NamesAndIDsTracker::create_proof_flag_values.
+     */
+    struct CakeBitNaming
+    {
+        ConstraintID id;
+        std::vector<long long> indices;
+        std::string value_annotation;
+        std::optional<std::string> sign_annotation;
+    };
+
     class ProofModel
     {
     private:
@@ -44,8 +62,10 @@ namespace gcs::innards
         // Register a bits encoding (allocate/name the bit literals, track bounds)
         // without emitting anything to the OPB. The shared "register" half of
         // set_up_bits_variable_encoding and create_proof_only_integer_variable_in_proof;
-        // the registered bits are then readable via the tracker's each_bit.
-        auto register_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
+        // the registered bits are then readable via the tracker's each_bit. With a
+        // CakeBitNaming the bit literals are named in cake's value-flag scheme.
+        auto register_bits_variable_encoding(
+            SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &, const std::optional<CakeBitNaming> & = std::nullopt) -> void;
 
         auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
@@ -200,9 +220,16 @@ namespace gcs::innards
 
         /**
          * Create a variable ID that is used only in proof definitions, not state.
+         *
+         * With a CakeBitNaming, the variable's bits are named in cake_pb_cp's
+         * value-flag scheme (see CakeBitNaming) and nothing is emitted to the OPB
+         * (the variable is a free bit-sum, matching how cake encodes such an
+         * auxiliary); its eq/ge atoms are then introduced lazily in the proof when
+         * first used. Without one, the encoding (with OPB bound constraints) is
+         * written as usual under the default `p[index_name][b]` names.
          */
-        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &, const IntegerVariableProofRepresentation enc)
-            -> ProofOnlySimpleIntegerVariableID;
+        [[nodiscard]] auto create_proof_only_integer_variable(Integer, Integer, const std::string &, const IntegerVariableProofRepresentation enc,
+            const std::optional<CakeBitNaming> & = std::nullopt) -> ProofOnlySimpleIntegerVariableID;
 
         /**
          * Create a bits-encoded proof-only variable whose encoding is NOT emitted

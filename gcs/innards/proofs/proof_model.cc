@@ -336,10 +336,17 @@ auto ProofModel::names_and_ids_tracker() const -> const NamesAndIDsTracker &
     return _imp->tracker;
 }
 
-auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const string & name, const IntegerVariableProofRepresentation rep)
-    -> ProofOnlySimpleIntegerVariableID
+auto ProofModel::create_proof_only_integer_variable(Integer lower, Integer upper, const string & name, const IntegerVariableProofRepresentation rep,
+    const optional<CakeBitNaming> & bit_naming) -> ProofOnlySimpleIntegerVariableID
 {
     ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variable_nr++};
+    if (bit_naming) {
+        // cake names its position/rank/value auxiliaries as free bit-sums with no
+        // bound constraints in the OPB; register the (cake-named) bits only, so the
+        // variable's eq/ge atoms are introduced lazily in the proof when first used.
+        register_bits_variable_encoding(id, lower, upper, name, bit_naming);
+        return id;
+    }
     switch (rep) {
     case IntegerVariableProofRepresentation::DirectOnly: set_up_direct_only_variable_encoding(id, lower, upper, name); break;
     case IntegerVariableProofRepresentation::Bits: set_up_bits_variable_encoding(id, lower, upper, name); break;
@@ -453,7 +460,8 @@ auto ProofModel::set_up_integer_variable(
     }
 }
 
-auto ProofModel::register_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void
+auto ProofModel::register_bits_variable_encoding(
+    SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name, const optional<CakeBitNaming> & bit_naming) -> void
 {
     // The "register" half of a bits encoding: allocate and name the bit literals
     // and record the bounds, but emit nothing to the OPB. set_up_bits_variable_encoding
@@ -462,15 +470,40 @@ auto ProofModel::register_bits_variable_encoding(SimpleOrProofOnlyIntegerVariabl
     // (e.g. via ProofLogger::introduce_bits_of) rather than asserted in the model.
     auto [highest_bit_shift, highest_bit_coeff, negative_bit_coeff] = get_bits_encoding_coeffs(lower, upper);
     vector<pair<Integer, XLiteral>> bits;
+    auto & tracker = names_and_ids_tracker();
+    tracker.track_variable_name(id, name);
 
-    names_and_ids_tracker().track_variable_name(id, name);
-    if (0_i != negative_bit_coeff)
-        bits.emplace_back(negative_bit_coeff, names_and_ids_tracker().allocate_xliteral_meaning_negative_bit_of(id, negative_bit_coeff));
-    for (Integer b = 0_i; b <= highest_bit_shift; ++b)
-        bits.emplace_back(power2(b), names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, Integer{b}));
+    // With a CakeBitNaming, a bit is named v[id][values...][annotation] (as
+    // create_proof_flag_values would); the value bits carry the bit number as the
+    // final index and the sign bit does not. Without one, name_override is nullopt
+    // and the tracker uses the default p[index_name][b] names.
+    auto cake_bit_name = [&](const vector<long long> & values, const string & annotation) -> optional<string> {
+        if (! bit_naming)
+            return nullopt;
+        string s = "v[" + as_string(bit_naming->id) + "][";
+        for (size_t k = 0; k < values.size(); ++k)
+            s += (k != 0 ? "_" : "") + std::to_string(values[k]);
+        return s + "][" + annotation + "]";
+    };
 
-    names_and_ids_tracker().track_bits(id, negative_bit_coeff, bits);
-    names_and_ids_tracker().track_bounds(id, lower, upper);
+    if (0_i != negative_bit_coeff) {
+        if (bit_naming && ! bit_naming->sign_annotation)
+            throw ProofError{"a signed cake-named proof-only variable needs a sign annotation to name its sign bit"};
+        auto sign_name = bit_naming ? cake_bit_name(bit_naming->indices, *bit_naming->sign_annotation) : nullopt;
+        bits.emplace_back(negative_bit_coeff, tracker.allocate_xliteral_meaning_negative_bit_of(id, negative_bit_coeff, sign_name));
+    }
+    for (Integer b = 0_i; b <= highest_bit_shift; ++b) {
+        optional<string> value_name;
+        if (bit_naming) {
+            auto values = bit_naming->indices;
+            values.push_back(b.raw_value);
+            value_name = cake_bit_name(values, bit_naming->value_annotation);
+        }
+        bits.emplace_back(power2(b), tracker.allocate_xliteral_meaning_bit_of(id, Integer{b}, value_name));
+    }
+
+    tracker.track_bits(id, negative_bit_coeff, bits);
+    tracker.track_bounds(id, lower, upper);
 }
 
 auto ProofModel::set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name) -> void

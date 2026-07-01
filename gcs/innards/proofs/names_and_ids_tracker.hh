@@ -487,12 +487,14 @@ namespace gcs::innards
         /**
          * Allocate an XLiteral with the given semantic meaning.
          */
-        [[nodiscard]] auto allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID flag, Integer power) -> XLiteral;
+        [[nodiscard]] auto allocate_xliteral_meaning_negative_bit_of(
+            SimpleOrProofOnlyIntegerVariableID flag, Integer power, const std::optional<std::string> & name_override = std::nullopt) -> XLiteral;
 
         /**
          * Allocate an XLiteral with the given semantic meaning.
          */
-        [[nodiscard]] auto allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyIntegerVariableID flag, Integer power) -> XLiteral;
+        [[nodiscard]] auto allocate_xliteral_meaning_bit_of(
+            SimpleOrProofOnlyIntegerVariableID flag, Integer power, const std::optional<std::string> & name_override = std::nullopt) -> XLiteral;
 
         /**
          * Track a human-readable name for a variable.
