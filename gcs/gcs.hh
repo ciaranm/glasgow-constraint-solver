@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_GCS_HH
 
 #include <gcs/array_param.hh>
+#include <gcs/consistency.hh>
 #include <gcs/constraint.hh>
 #include <gcs/current_state.hh>
 #include <gcs/exception.hh>

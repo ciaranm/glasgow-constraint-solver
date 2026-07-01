@@ -56,9 +56,9 @@ using std::print;
 using fmt::print;
 #endif
 
-ReifiedLinearEquality::ReifiedLinearEquality(
-    WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac, bool flipped_cond, std::optional<std::size_t> incremental_threshold) :
-    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _gac(gac), _flipped_cond(flipped_cond),
+ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, LinearEqualityConsistency level,
+    bool flipped_cond, std::optional<std::size_t> incremental_threshold) :
+    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _level(level), _flipped_cond(flipped_cond),
     _incremental_threshold(incremental_threshold)
 {
 }
@@ -243,7 +243,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
     }
         .visit(_reif_cond);
 
-    if (_gac) {
+    if (std::holds_alternative<consistency::GAC>(_level)) {
         visit(
             [&, modifier = modifier](auto & sanitised_cv) {
                 // we're watching everything
@@ -509,11 +509,12 @@ auto ReifiedLinearEquality::s_expr(const ProofModel * const model) const -> SExp
 
 auto ReifiedLinearEquality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac, _flipped_cond, _incremental_threshold);
+    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _level, _flipped_cond, _incremental_threshold);
 }
 
-LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac, std::optional<std::size_t> incremental_threshold) :
-    ReifiedLinearEquality(coeff_vars, value, reif::MustHold{}, gac, false, incremental_threshold)
+LinearEquality::LinearEquality(
+    WeightedSum coeff_vars, Integer value, LinearEqualityConsistency level, std::optional<std::size_t> incremental_threshold) :
+    ReifiedLinearEquality(coeff_vars, value, reif::MustHold{}, level, false, incremental_threshold)
 {
 }
 
@@ -531,27 +532,27 @@ namespace
     }
 }
 
-LinearEqualityIf::LinearEqualityIf(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::If>(cond), gac)
+LinearEqualityIf::LinearEqualityIf(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::If>(cond), level)
 {
 }
 
-LinearEqualityIff::LinearEqualityIff(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(cond), gac)
+LinearEqualityIff::LinearEqualityIff(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(cond), level)
 {
 }
 
-LinearNotEquals::LinearNotEquals(WeightedSum coeff_vars, Integer value, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, reif::MustNotHold{}, gac)
+LinearNotEquals::LinearNotEquals(WeightedSum coeff_vars, Integer value, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, reif::MustNotHold{}, level)
 {
 }
 
-LinearNotEqualsIf::LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::NotIf>(cond), gac)
+LinearNotEqualsIf::LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::NotIf>(cond), level)
 {
 }
 
-LinearNotEqualsIff::LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), gac, true)
+LinearNotEqualsIff::LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), level, true)
 {
 }

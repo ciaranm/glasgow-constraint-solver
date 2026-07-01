@@ -311,7 +311,7 @@ namespace
 
         // Equality family: lin_equals* and lin_not_equals*.
         auto [cond, flipped_cond] = equality_reification(op.starts_with("lin_not_equals"), iff, half, variables, terms[2]);
-        post_constraint(problem, ReifiedLinearEquality{std::move(coeff_vars), value, cond, false, flipped_cond}, label);
+        post_constraint(problem, ReifiedLinearEquality{std::move(coeff_vars), value, cond, consistency::BC{}, flipped_cond}, label);
     }
 
     // The equals family: (label <equals|not_equals>[_if|_iff] [(cond)] v1 v2),

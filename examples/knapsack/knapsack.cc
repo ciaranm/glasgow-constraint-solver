@@ -77,7 +77,7 @@ auto main(int argc, char * argv[]) -> int
     vector<Integer> profits = {2_i, 4_i, 2_i, 5_i, 4_i, 3_i};
 
     auto oddity = p.create_integer_variable(0_i, 20_i, "oddity");
-    p.post(LinearEquality{WeightedSum{} + 1_i * profit + -2_i * oddity, 1_i, true});
+    p.post(LinearEquality{WeightedSum{} + 1_i * profit + -2_i * oddity, 1_i, consistency::GAC{}});
 
     p.post(WeightedSum{} + 1_i * items[5] == 0_i);
 
