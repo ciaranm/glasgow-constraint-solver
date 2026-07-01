@@ -1641,24 +1641,19 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(ProofFlag flag) -> XLiteral
     return allocate_flag_xliteral(flag, format("f[{}][{}]", flag.index, name_of(flag)));
 }
 
-auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProofOnlyIntegerVariableID id, Integer power) -> XLiteral
+auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(
+    SimpleOrProofOnlyIntegerVariableID id, Integer power, const optional<string> & name_override) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][sign]", name_of(id));
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
-            }, //
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][sign]", id.index, name_of(id));
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
-            } //
-        }
-            .visit(id);
+        string name = name_override
+            ? *name_override
+            : visit(overloaded{[&](const SimpleIntegerVariableID & id) { return format("i[{}][sign]", name_of(id)); },
+                        [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][sign]", id.index, name_of(id)); }},
+                  id);
+        _imp->xlits_to_verbose_names.emplace(result, name);
+        _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
     }
 
     if (_imp->variables_map_file) {
@@ -1689,24 +1684,22 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(SimpleOrProof
     return result;
 }
 
-auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(SimpleOrProofOnlyIntegerVariableID id, Integer power) -> XLiteral
+auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(
+    SimpleOrProofOnlyIntegerVariableID id, Integer power, const optional<string> & name_override) -> XLiteral
 {
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) -> void {
-                string name = format("i[{}][b{}]", name_of(id), power);
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
-            }, //
-            [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
-                string name = format("p[{}_{}][b{}]", id.index, name_of(id), power);
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
-            } //
-        }
-            .visit(id);
+        // name_override lets a proof-only variable's bits be named in a caller-chosen
+        // scheme (cake_pb_cp's value flags) rather than the default p[index_name][b];
+        // the literal is still the variable's bit, only named.
+        string name = name_override
+            ? *name_override
+            : visit(overloaded{[&](const SimpleIntegerVariableID & id) { return format("i[{}][b{}]", name_of(id), power); },
+                        [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][b{}]", id.index, name_of(id), power); }},
+                  id);
+        _imp->xlits_to_verbose_names.emplace(result, name);
+        _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
     }
 
     if (_imp->variables_map_file) {
