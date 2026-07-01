@@ -1,6 +1,8 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/all_equal.hh>
+#include <gcs/constraints/among/among.hh>
+#include <gcs/constraints/at_most_one/at_most_one.hh>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
@@ -23,9 +25,11 @@
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/regular/regular.hh>
+#include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
 #include <gcs/constraints/table/negative_table.hh>
 #include <gcs/constraints/table/table.hh>
+#include <gcs/constraints/value_precede/value_precede.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/problem.hh>
@@ -92,6 +96,15 @@ namespace
         vector<IntegerVariableID> result;
         for (const auto & e : children_of(list, what))
             result.push_back(resolve_variable(variables, e));
+        return result;
+    }
+
+    // Resolve a list term to a vector of integer constants.
+    auto resolve_integer_list(const SExpr & list, const char * what) -> vector<Integer>
+    {
+        vector<Integer> result;
+        for (const auto & e : children_of(list, what))
+            result.push_back(as_integer(e));
         return result;
     }
 
@@ -467,6 +480,75 @@ namespace
         auto vars = resolve_variable_list(variables, terms[3], "the smart_table variable list");
         post_constraint(problem, SmartTable{move(vars), move(tuples)}, label);
     }
+
+    auto read_all_different_except(
+        Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label all_different_except (vars...) (excluded...)): the variables take
+        // pairwise distinct values, except that any number may take an excluded value.
+        if (terms.size() != 4)
+            throw ScpReadError{"all_different_except is (label all_different_except (vars...) (excluded...))"};
+        auto vars = resolve_variable_list(variables, terms[2], "the all_different_except variable list");
+        auto excluded = resolve_integer_list(terms[3], "the all_different_except excluded list");
+        post_constraint(problem, AllDifferentExcept{move(vars), move(excluded)}, label);
+    }
+
+    auto read_symmetric_all_different(
+        Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label symmetric_all_different (vars...) start): an all_different whose
+        // assignment is an involution -- if var i takes value start + j then var j
+        // takes value start + i.
+        if (terms.size() != 4)
+            throw ScpReadError{"symmetric_all_different is (label symmetric_all_different (vars...) start)"};
+        auto vars = resolve_variable_list(variables, terms[2], "the symmetric_all_different variable list");
+        post_constraint(problem, SymmetricAllDifferent{move(vars), as_integer(terms[3])}, label);
+    }
+
+    auto read_at_most_one(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
+        -> void
+    {
+        // (label at_most_one (vars...) val): at most one of the variables takes the
+        // value val (itself a variable or a constant).
+        if (terms.size() != 4)
+            throw ScpReadError{"at_most_one is (label at_most_one (vars...) val)"};
+        auto vars = resolve_variable_list(variables, terms[2], "the at_most_one variable list");
+        post_constraint(problem, AtMostOne{move(vars), resolve_variable(variables, terms[3])}, label);
+    }
+
+    auto read_among(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label among (vars...) (values...) how_many): exactly how_many of the
+        // variables take a value from the values-of-interest set.
+        if (terms.size() != 5)
+            throw ScpReadError{"among is (label among (vars...) (values...) how_many)"};
+        auto vars = resolve_variable_list(variables, terms[2], "the among variable list");
+        auto values = resolve_integer_list(terms[3], "the among values-of-interest list");
+        post_constraint(problem, Among{move(vars), values, resolve_variable(variables, terms[4])}, label);
+    }
+
+    auto read_value_precede(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
+        -> void
+    {
+        // (label value_precede (chain...) (vars...)): in the sequence of variables,
+        // the first occurrence of chain[k] precedes the first occurrence of
+        // chain[k+1], for each consecutive pair in the value chain.
+        if (terms.size() != 4)
+            throw ScpReadError{"value_precede is (label value_precede (chain...) (vars...))"};
+        auto chain = resolve_integer_list(terms[2], "the value_precede chain");
+        auto vars = resolve_variable_list(variables, terms[3], "the value_precede variable list");
+        post_constraint(problem, ValuePrecede{move(chain), move(vars)}, label);
+    }
+
+    auto read_seq_precede_chain(
+        Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label) -> void
+    {
+        // (label seq_precede_chain (vars...)): the sequence-precedence chain, value
+        // v + 1 may only appear after value v has already appeared.
+        if (terms.size() != 3)
+            throw ScpReadError{"seq_precede_chain is (label seq_precede_chain (vars...))"};
+        post_constraint(problem, SeqPrecedeChain{resolve_variable_list(variables, terms[2], "the seq_precede_chain variable list")}, label);
+    }
 }
 
 auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVariableID>
@@ -704,6 +786,24 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
         }
         else if (op == "smart_table") {
             read_smart_table(problem, variables, terms, label);
+        }
+        else if (op == "all_different_except") {
+            read_all_different_except(problem, variables, terms, label);
+        }
+        else if (op == "symmetric_all_different") {
+            read_symmetric_all_different(problem, variables, terms, label);
+        }
+        else if (op == "at_most_one") {
+            read_at_most_one(problem, variables, terms, label);
+        }
+        else if (op == "among") {
+            read_among(problem, variables, terms, label);
+        }
+        else if (op == "value_precede") {
+            read_value_precede(problem, variables, terms, label);
+        }
+        else if (op == "seq_precede_chain") {
+            read_seq_precede_chain(problem, variables, terms, label);
         }
         else if (op.starts_with("lex_")) {
             read_lex(problem, variables, op, terms, label);

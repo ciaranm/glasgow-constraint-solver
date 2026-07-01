@@ -1,6 +1,8 @@
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/all_equal.hh>
+#include <gcs/constraints/among/among.hh>
+#include <gcs/constraints/at_most_one/at_most_one.hh>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
@@ -16,9 +18,11 @@
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/regular/regular.hh>
+#include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
 #include <gcs/constraints/table/negative_table.hh>
 #include <gcs/constraints/table/table.hh>
+#include <gcs/constraints/value_precede/value_precede.hh>
 #include <gcs/current_state.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/s_expr.hh>
@@ -557,6 +561,95 @@ TEST_CASE("read_scp: the table family survives write -> read -> write unchanged"
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_table_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: all_different_except enumerates correctly")
+{
+    // Distinct unless the value is excluded (here 2), so the only forbidden pairs
+    // are the non-excluded diagonals (0,0) and (1,1).
+    auto solutions = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 all_different_except (A B) (2)) ) )");
+    CHECK(solutions.size() == 7);
+    for (const auto & s : solutions)
+        CHECK((s.at("A") != s.at("B") || s.at("A") == 2));
+}
+
+TEST_CASE("read_scp: symmetric_all_different enumerates correctly")
+{
+    // An all_different whose assignment is an involution: reading each value as an
+    // index (start 0), X[X[i]] == i.
+    auto solutions = enumerate("( ( (X0 0 2) (X1 0 2) (X2 0 2) ) ( (_1 symmetric_all_different (X0 X1 X2) 0) ) )");
+    CHECK(solutions.size() == 4); // identity + the three transpositions
+    for (const auto & s : solutions) {
+        std::vector<long long> x{s.at("X0"), s.at("X1"), s.at("X2")};
+        for (size_t i = 0; i < x.size(); ++i)
+            CHECK(x[x[i]] == static_cast<long long>(i));
+    }
+}
+
+TEST_CASE("read_scp: at_most_one enumerates correctly")
+{
+    // At most one of the variables equals the value 1.
+    auto solutions = enumerate("( ( (A 0 2) (B 0 2) (C 0 2) ) ( (_1 at_most_one (A B C) 1) ) )");
+    for (const auto & s : solutions)
+        CHECK((s.at("A") == 1) + (s.at("B") == 1) + (s.at("C") == 1) <= 1);
+}
+
+TEST_CASE("read_scp: among enumerates correctly")
+{
+    // how_many counts the variables taking a value of interest (here just 1).
+    auto solutions = enumerate("( ( (A 0 2) (B 0 2) (N 0 2) ) ( (_1 among (A B) (1) N) ) )");
+    CHECK(solutions.size() == 9); // one per (A, B) pair, N is then determined
+    for (const auto & s : solutions)
+        CHECK(s.at("N") == (s.at("A") == 1) + (s.at("B") == 1));
+}
+
+TEST_CASE("read_scp: the precedence family enumerates correctly")
+{
+    // "Every occurrence of t has a strictly earlier occurrence of s."
+    auto precedes = [](const std::vector<long long> & seq, long long s, long long t) {
+        for (size_t i = 0; i < seq.size(); ++i)
+            if (seq[i] == t) {
+                bool earlier_s = false;
+                for (size_t j = 0; j < i; ++j)
+                    if (seq[j] == s)
+                        earlier_s = true;
+                if (! earlier_s)
+                    return false;
+            }
+        return true;
+    };
+
+    // value_precede (0 1): 1 may not appear before 0 has.
+    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) ) ( (_1 value_precede (0 1) (A B C)) ) )"))
+        CHECK(precedes({s.at("A"), s.at("B"), s.at("C")}, 0, 1));
+
+    // seq_precede_chain over 0..2 is value_precede on the implicit chain [1, 2],
+    // so 2 may not appear before 1 has (0 and 1 are otherwise free).
+    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) ) ( (_1 seq_precede_chain (A B C)) ) )"))
+        CHECK(precedes({s.at("A"), s.at("B"), s.at("C")}, 1, 2));
+}
+
+TEST_CASE("read_scp: the remaining globals survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto a = original.create_integer_variable(0_i, 3_i, "A");
+    auto b = original.create_integer_variable(0_i, 3_i, "B");
+    auto c = original.create_integer_variable(0_i, 3_i, "C");
+    auto n = original.create_integer_variable(0_i, 3_i, "N");
+    original.post(AllDifferentExcept{std::vector<IntegerVariableID>{a, b, c}, std::vector<Integer>{0_i}});
+    original.post(SymmetricAllDifferent{std::vector<IntegerVariableID>{a, b, c, n}});
+    original.post(AtMostOne{std::vector<IntegerVariableID>{a, b, c}, 1_c});
+    original.post(Among{std::vector<IntegerVariableID>{a, b, c}, std::vector<Integer>{1_i, 2_i}, n});
+    original.post(ValuePrecede{std::vector<Integer>{0_i, 1_i}, std::vector<IntegerVariableID>{a, b, c}});
+    original.post(SeqPrecedeChain{std::vector<IntegerVariableID>{a, b, c}});
+    auto scp_a = prove_to_scp(original, "scp_reader_globals_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_globals_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());
