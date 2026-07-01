@@ -360,3 +360,25 @@ add_scp_chain_test(cumulative_var_sat          none)
 add_scp_chain_test(cumulative_var_height_sat   none)
 add_scp_chain_test(cumulative_var_duration_sat none)
 add_scp_chain_test(cumulative_unsat            none)
+
+# increasing / decreasing / strictly_*: the sequence of variables is (strictly)
+# monotone. cake encodes the family as the chain of consecutive comparisons
+# vars[i] (</<=/>/>=) vars[i+1], labelled @c[id][i]; the solver's IncreasingChain
+# emits exactly those comparison constraints, so the ascending forms byte-match
+# (strict) -- they ride the #274/#275 comparison conform, no #358 ladder, and the
+# propagator prunes by RUP (it never cites the chain steps by line/label), so the
+# proof verifies against cake's OPB directly. SAT enumerates the monotone
+# sequences; UNSAT is a pigeonhole (more strictly-increasing positions than the
+# domain holds). The descending forms reverse the variable list internally, so a
+# multi-step descending chain emits its pairwise comparisons in the reverse order
+# to cake (and the solver leaves them unlabelled), which defeats opbdiff's ordered
+# fallback -- hence strictly_decreasing_unsat is chain-only (none). It still
+# chain-verifies (order-independent, since the proof is pure RUP). A single-step
+# descending case (decreasing_sat, two variables) has only one comparison, so the
+# order is trivially the same and it byte-matches (strict).
+add_scp_chain_test(increasing_sat              strict)
+add_scp_chain_test(increasing_unsat            strict)
+add_scp_chain_test(strictly_increasing_sat     strict)
+add_scp_chain_test(strictly_increasing_unsat   strict)
+add_scp_chain_test(decreasing_sat              strict)
+add_scp_chain_test(strictly_decreasing_unsat   none)
