@@ -349,10 +349,12 @@ auto ProofLogger::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & 
     return names_and_ids_tracker().reify(ineq, half_reif);
 }
 
-auto ProofLogger::emit_proof_line(const string & s, ProofLevel level) -> ProofLine
+auto ProofLogger::emit_proof_line(const string & s, ProofLevel level, const optional<ProofLineLabel> & label) -> ProofLine
 {
     log_stacktrace();
     write_indent();
+    if (label)
+        _imp->proof << *label << ' ';
     _imp->proof << s << '\n';
     auto result = record_proof_line(advance_proof_line_number(), level);
     return result;
@@ -364,7 +366,7 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
 }
 
 auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
-    const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
+    const std::optional<AssertionAnnotation> & assertion_hint, const std::optional<ProofLineLabel> & label) -> ProofLine
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     log_stacktrace();
@@ -413,7 +415,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     }
         .visit(rule);
 
-    auto line = emit_proof_line(rule_line.str(), level);
+    auto line = emit_proof_line(rule_line.str(), level, label);
     // Note: no automatic deview-derivation here. Runtime RUP/red emissions
     // happen many times per propagator inference and per-call deview
     // derivation explodes proof size on tests with many view-using

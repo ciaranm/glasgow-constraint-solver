@@ -32,7 +32,7 @@ namespace gcs::innards
      * cake_pb_cp's value-flag scheme, instead of the default `p[index_name][b]`:
      * value bit b becomes `v[id][indices..._b][value_annotation]` and a
      * two's-complement variable's sign bit becomes `v[id][indices...][sign_annotation]`
-     * (required when the range is negative). The bits are still the variable's bits;
+     * (required when the range is negative, or when the sign bit is forced below). The bits are still the variable's bits;
      * only their names change. Passing one to create_proof_only_integer_variable also
      * makes the variable a free bit-sum (no OPB bound lines), matching how cake encodes
      * these auxiliaries. Mirrors NamesAndIDsTracker::create_proof_flag_values.
@@ -43,6 +43,14 @@ namespace gcs::innards
         std::vector<long long> indices;
         std::string value_annotation;
         std::optional<std::string> sign_annotation;
+
+        // cake's arg_sort encodes its sorted-value variables in two's complement
+        // *unconditionally*, emitting a sign bit even when the value can never be
+        // negative -- so to match it here we have to add a redundant sign bit for a
+        // non-negative variable too. This exists only to reproduce that; the right
+        // fix is for cake's arg_sort encoder to drop the sign bit when the range is
+        // non-negative, after which this flag (and its embarrassing name) can go.
+        bool add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does = false;
     };
 
     class ProofModel
@@ -67,7 +75,8 @@ namespace gcs::innards
         auto register_bits_variable_encoding(
             SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &, const std::optional<CakeBitNaming> & = std::nullopt) -> void;
 
-        auto set_up_bits_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
+        auto set_up_bits_variable_encoding(
+            SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &, const std::optional<CakeBitNaming> & = std::nullopt) -> void;
 
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
@@ -268,9 +277,17 @@ namespace gcs::innards
         /**
          * Set up proof logging for an integer variable with the specified bounds,
          * that is being tracked inside State.
+         *
+         * With a CakeBitNaming the bits are named in cake's value-flag scheme and no
+         * OPB bound lines are emitted (a free bit-sum), as for
+         * create_proof_only_integer_variable --- for a State variable that is internal
+         * to a constraint and that cake encodes as a proof-only auxiliary (e.g.
+         * ArgSort's sorted-value variables). The atoms are then introduced lazily in
+         * the proof. Without one, the usual `i[name][b]` bits and @i[name][lb]/[ub]
+         * bounds are written.
          */
-        auto set_up_integer_variable(
-            SimpleIntegerVariableID, Integer, Integer, const std::string &, const std::optional<IntegerVariableProofRepresentation> &) -> void;
+        auto set_up_integer_variable(SimpleIntegerVariableID, Integer, Integer, const std::string &,
+            const std::optional<IntegerVariableProofRepresentation> &, const std::optional<CakeBitNaming> & = std::nullopt) -> void;
 
         /**
          * State that we are solving an optimisation problem, minimising the specified variable.

@@ -519,3 +519,5 @@ add_scp_chain_test(knapsack_unsat  none)
 # 0..2 values; unsat forces y0 >= 2 while y1 <= 1, impossible for a sorted sequence.
 add_scp_chain_test(sort_sat    none)
 add_scp_chain_test(sort_unsat  none)
+add_scp_chain_test(arg_sort_sat    none)
+add_scp_chain_test(arg_sort_unsat  none)

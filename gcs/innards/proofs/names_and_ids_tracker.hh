@@ -409,6 +409,30 @@ namespace gcs::innards
         auto track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer, Integer) -> void;
 
         /**
+         * Note that this variable's [lo, hi] bounds are not a trivial consequence of
+         * the OPB (cake emits no bound line for it, and its bounds are only entailed
+         * through conditional channels), so need_gevar must not pin its boundary order
+         * literals as top-of-proof RUP lines. The owning constraint is responsible for
+         * establishing the bounds explicitly. Used for ArgSort's cake-named free-bit-sum
+         * sorted-value variables.
+         */
+        auto note_bounds_not_trivially_derivable(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
+
+        /**
+         * Note that this variable's order-encoding (ge) atom definitions carry @i[..][ge]
+         * labels that a cake_pb_cp OPB does not create (it reifies each atom per value
+         * under its own @c[peq..] labels). need_gevar then recovers those labels
+         * in-proof: when it creates such a gevar it queues an `ia` (implies-add) line
+         * re-declaring each half's reification under our @i label at proof start, checked
+         * implied against whatever reifies the atom in the OPB (our own @i line in
+         * workflow 1, cake's @c[peq..] in workflow 2). The order-chain `pol`s then resolve
+         * against the recovered labels either way. Used for ArgSort's permutation
+         * variables, whose eq atoms are OPB constraint terms/guards (matching cake) and so
+         * are forced model-time under @i labels.
+         */
+        auto note_recover_atom_labels_in_proof(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
+
+        /**
          * Create a proof flag with a new identifier, named `f[index][stem]`.
          */
         [[nodiscard]] auto create_proof_flag(const std::string & stem) -> ProofFlag;

@@ -85,12 +85,20 @@ auto Sort::prepare(Propagators &, State &, ProofModel * const) -> bool
     return ! _x.empty();
 }
 
-auto gcs::innards::define_sortedness_proof_model(
-    ProofModel & model, const ConstraintID & cid, const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y) -> SortednessWitness
+auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const ConstraintID & cid, const vector<IntegerVariableID> & x,
+    const vector<IntegerVariableID> & y, bool arg_sort_labels) -> SortednessWitness
 {
     auto n = x.size();
     auto id = as_string(cid);
     SortednessWitness w;
+
+    // ArgSort reuses this inner sortedness encoding under cake's arg_sort label
+    // scheme: the non-decreasing chain is @c[id][yle<i>] (not @c[id][<i>]) and the
+    // position channel is @c[id][acle/acge<i>_<j>] (not @c[id][cle/cge<i>_<j>]). The
+    // before flags and rank equation are shared with standalone sort either way.
+    const std::string chain_prefix = arg_sort_labels ? "yle" : "";
+    const std::string channel_le = arg_sort_labels ? "acle" : "cle";
+    const std::string channel_ge = arg_sort_labels ? "acge" : "cge";
 
     // OPB encoding matching cake_pb_cp's cencode_sort (cp_to_ilp_sortingScript.sml).
     // y is sorted(x): a non-decreasing chain over y, a proof-only stable rank pos[i]
@@ -104,9 +112,9 @@ auto gcs::innards::define_sortedness_proof_model(
     // instead guarded by the bit-conjunction spelling j, exactly as cake.
     auto width = (n <= 1) ? size_t{0} : static_cast<size_t>(std::bit_width(n - 1));
 
-    // (a) y non-decreasing: y[i] <= y[i+1], labelled @c[id][<i>].
+    // (a) y non-decreasing: y[i] <= y[i+1], labelled @c[id][<i>] (or @c[id][yle<i>]).
     for (size_t i = 0; i + 1 < n; ++i)
-        model.add_labelled_constraint(id, std::to_string(i), "Sort", "non-decreasing", WPBSum{} + 1_i * y[i + 1] + -1_i * y[i] >= 0_i);
+        model.add_labelled_constraint(id, chain_prefix + std::to_string(i), "Sort", "non-decreasing", WPBSum{} + 1_i * y[i + 1] + -1_i * y[i] >= 0_i);
 
     // (b) before[ip][i] : x[ip] precedes x[i] in the (value, then original index)
     // order. The index tie-break is constant per pair, so each flag is a plain
@@ -160,8 +168,8 @@ auto gcs::innards::define_sortedness_proof_model(
             for (size_t b = 0; b < width; ++b)
                 guard.push_back(ProofBitVariable{w.pos[i], Integer{static_cast<long long>(b)}, ((j >> b) & 1) != 0});
             auto cell = std::to_string(i) + "_" + std::to_string(j);
-            model.add_labelled_constraint(id, "cle" + cell, "Sort", "position channel", WPBSum{} + 1_i * y[j] + -1_i * x[i] <= 0_i, guard);
-            model.add_labelled_constraint(id, "cge" + cell, "Sort", "position channel", WPBSum{} + 1_i * y[j] + -1_i * x[i] >= 0_i, guard);
+            model.add_labelled_constraint(id, channel_le + cell, "Sort", "position channel", WPBSum{} + 1_i * y[j] + -1_i * x[i] <= 0_i, guard);
+            model.add_labelled_constraint(id, channel_ge + cell, "Sort", "position channel", WPBSum{} + 1_i * y[j] + -1_i * x[i] >= 0_i, guard);
         }
 
     return w;

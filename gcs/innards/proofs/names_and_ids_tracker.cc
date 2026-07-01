@@ -82,6 +82,21 @@ struct NamesAndIDsTracker::Imp
     map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, XLiteral> variable_conditions_to_x;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, XLiteral>>>> integer_variable_bits_to_size_and_proof_vars;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
+    // Variables (e.g. ArgSort's cake-named free-bit-sum sorted values) whose [lo, hi]
+    // domain is NOT a trivial consequence of the OPB -- cake emits no bound line for
+    // them and the bounds are only entailed through conditional channels -- so
+    // need_gevar's fix_bound must not pin their boundary order literals; those bounds
+    // are instead established once, explicitly, by the owning constraint's proof.
+    std::set<SimpleOrProofOnlyIntegerVariableID> bounds_not_trivially_derivable;
+    // Variables whose order-encoding (ge) atom definitions carry @i[..][ge] labels that
+    // a cake_pb_cp OPB does not create (it reifies each atom per value under its own
+    // @c[peq..] labels). need_gevar recovers those labels in-proof for these variables:
+    // it re-declares each half's reification via an `ia` line under our @i label at
+    // proof start, so the order-chain pols resolve against them in both the solver's own
+    // OPB (workflow 1) and cake's re-derived OPB (workflow 2). Used for ArgSort's
+    // permutation variables, whose eq atoms are OPB constraint terms/guards (matching
+    // cake) and so are forced model-time under @i labels.
+    std::set<SimpleOrProofOnlyIntegerVariableID> vars_recover_labels;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
     // Range ("in") literals [lo, hi], keyed by (lo, hi): the forward and reverse
@@ -704,6 +719,26 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 },
                 id));
         ++_imp->model_variables;
+
+        // For a variable whose @i[..][ge] labels a cake_pb_cp OPB will not create (see
+        // vars_recover_labels), recover the labels in-proof: re-declare each half's
+        // reification via `ia` (implies-add) under our @i label at proof start, checked
+        // implied against whatever reifies the atom in the OPB -- our own @i line in
+        // workflow-1, cake's per-value @c[peq..] in workflow-2. The order-chain pols
+        // then resolve against the recovered labels in either. Queued here, before this
+        // call emits its chain links below, so the recovery lands ahead of them in the
+        // proof; the reification is reconstructed via reify() so nothing is remembered.
+        if (_imp->vars_recover_labels.contains(id))
+            emit_proof_line_now_or_at_start([this, id, v, ge_label](ProofLogger * const logger) {
+                visit(
+                    [&](const auto & vid) {
+                        logger->emit(ImpliesProofRule{}, reify(WPBSum{} + (1_i * vid) >= v, {{vid >= v}}), ProofLevel::Top, std::nullopt,
+                            ProofLineLabel{ge_label + "[r]"});
+                        logger->emit(ImpliesProofRule{}, reify(WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}}), ProofLevel::Top, std::nullopt,
+                            ProofLineLabel{ge_label + "[f]"});
+                    },
+                    id);
+            });
     }
 
     // is it a bound?
@@ -736,13 +771,19 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         });
     };
 
+    // A variable whose bounds are not a trivial OPB consequence (see
+    // bounds_not_trivially_derivable) gets no boundary pin -- pinning it would emit a
+    // top-of-proof RUP line that is not actually reverse-unit-propagatable; its owner
+    // derives the bounds explicitly instead.
+    bool trivial_boundary = ! _imp->bounds_not_trivially_derivable.contains(id);
+
     // lower?
-    if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first >= v) {
+    if (trivial_boundary && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.first >= v) {
         fix_bound(false);
     }
 
     // upper?
-    if (bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second < v) {
+    if (trivial_boundary && bounds != _imp->integer_variable_definition_bounds.end() && bounds->second.second < v) {
         fix_bound(true);
     }
 
@@ -1347,6 +1388,16 @@ auto NamesAndIDsTracker::derive_deviewed_form_for(const ProofLine & v_form_line,
 auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer lower, Integer upper) -> void
 {
     _imp->integer_variable_definition_bounds.emplace(id, pair{lower, upper});
+}
+
+auto NamesAndIDsTracker::note_bounds_not_trivially_derivable(const SimpleOrProofOnlyIntegerVariableID & id) -> void
+{
+    _imp->bounds_not_trivially_derivable.insert(id);
+}
+
+auto NamesAndIDsTracker::note_recover_atom_labels_in_proof(const SimpleOrProofOnlyIntegerVariableID & id) -> void
+{
+    _imp->vars_recover_labels.insert(id);
 }
 
 auto NamesAndIDsTracker::create_proof_flag(const string & name) -> ProofFlag
