@@ -181,9 +181,13 @@ namespace
                 q_eff = q_plain;
             }
 
-            auto [qblo, qbhi] = initial_state.bounds(q);
-            auto w_lo = min({qblo * ylo, qblo * yhi, qbhi * ylo, qbhi * yhi});
-            auto w_hi = max({qblo * ylo, qblo * yhi, qbhi * ylo, qbhi * yhi});
+            // w = x - r bounds w from x's and r's ranges, which stay
+            // representable however big the dividend is; the q * y corner
+            // products can overflow at install time (and are usually looser,
+            // the sum of two ranges rather than their product).
+            auto [rblo, rbhi] = initial_state.bounds(r);
+            auto w_lo = xlo - rbhi;
+            auto w_hi = xhi - rblo;
             auto w = initial_state.allocate_integer_variable_with_state(w_lo, w_hi);
             if (optional_model)
                 optional_model->set_up_integer_variable(
