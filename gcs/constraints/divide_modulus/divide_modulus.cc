@@ -340,7 +340,7 @@ namespace
                 return is_in_relation(xv, yv, qv, rv);
             };
 
-            install_tabulation<Hint_>(propagators, owner, enum_vars.vars(), move(determined), accept, expose_quotient ? "divtab" : "modtab",
+            install_tabulation<Hint_>(propagators, owner, enum_vars.vars(), move(determined), nullopt, accept, expose_quotient ? "divtab" : "modtab",
                 expose_quotient ? "building GAC table for division" : "building GAC table for modulus");
         }
     }

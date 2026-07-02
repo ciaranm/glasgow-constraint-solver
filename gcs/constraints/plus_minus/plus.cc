@@ -181,7 +181,7 @@ auto Plus::install(Propagators & propagators, State & initial_state, ProofModel 
         };
 
         install_tabulation<hints::Plus>(
-            propagators, constraint_id(), enum_vars.vars(), move(determined), accept, "plustab", "building GAC table for plus");
+            propagators, constraint_id(), enum_vars.vars(), move(determined), nullopt, accept, "plustab", "building GAC table for plus");
     }
 }
 

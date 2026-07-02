@@ -195,7 +195,7 @@ auto Minus::install(Propagators & propagators, State & initial_state, ProofModel
         };
 
         install_tabulation<hints::Minus>(
-            propagators, constraint_id(), enum_vars.vars(), move(determined), accept, "minustab", "building GAC table for minus");
+            propagators, constraint_id(), enum_vars.vars(), move(determined), nullopt, accept, "minustab", "building GAC table for minus");
     }
 }
 

@@ -12,6 +12,7 @@
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
+#include <gcs/reification.hh>
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
@@ -71,6 +72,47 @@ namespace gcs::innards
     };
 
     /**
+     * \brief How the underlying relation applies beneath one value of a
+     * TabulationReification variable.
+     *
+     * \ingroup Innards
+     * \sa gcs::innards::TabulationReification
+     */
+    enum class TabulationBranch
+    {
+        Free,   ///< the constraint imposes nothing: every completion is accepted
+        Holds,  ///< the underlying relation is enforced
+        Negated ///< the underlying relation is negated: enumerate, but nothing is determined
+    };
+
+    /**
+     * \brief A reification variable for build_table_in_proof(): it is branched
+     * on first, and each of its values classifies the whole subtree below it.
+     *
+     * A Free value means every completion is accepted, so the entire subtree
+     * collapses to a single tuple that is wildcard everywhere else; branch()
+     * asserting Free when some completion would be rejected produces a table
+     * that admits non-solutions, which proof logging catches when such a
+     * solution is checked against the structural encoding. A Holds value
+     * enforces the underlying relation, and is where DeterminedVariable claims
+     * apply -- their contract then reads "given this reification value and
+     * every other variable assigned". A Negated value enumerates with
+     * accept() doing the work, and the determined claims do not apply.
+     *
+     * The variable must be one of the enumerated variables, and cannot itself
+     * be claimed as determined. Use reify_tabulation() to build one of these
+     * from a ReificationCondition rather than hand-rolling the branches.
+     *
+     * \ingroup Innards
+     * \sa gcs::innards::reify_tabulation()
+     */
+    struct TabulationReification
+    {
+        IntegerVariableID var;
+        std::function<auto(Integer)->TabulationBranch> branch;
+    };
+
+    /**
      * \brief Enumerate every assignment to vars that accept() approves, building
      * a table that can be handed to propagate_extensional() to achieve GAC.
      *
@@ -99,6 +141,16 @@ namespace gcs::innards
      * tree, the variables below are unassigned, so being determined by all
      * the others says nothing.
      *
+     * A reification, if given, is branched on first, and its branch()
+     * classification prunes the tree from the top: a Free value's subtree is
+     * one tuple that is wildcard on every other variable, whose selector
+     * introduction alone makes the enclosing backtrack line RUP; a Holds
+     * value's subtree enumerates with the determined-variable skip; a Negated
+     * value's subtree enumerates in full. In every case accept() remains the
+     * authority on complete assignments, so it must agree with branch() about
+     * the reification semantics; reify_tabulation() constructs consistent
+     * pairs.
+     *
      * Returns nullopt if no assignment is accepted; the caller should then
      * infer FalseLiteral, which is RUP against the structural encoding for the
      * same reason as above. The proof derivation is skipped entirely in
@@ -113,8 +165,8 @@ namespace gcs::innards
      * \sa gcs::innards::propagate_extensional()
      */
     auto build_table_in_proof(const std::vector<IntegerVariableID> & vars, const std::vector<DeterminedVariable> & determined_vars,
-        const std::function<auto(const std::vector<Integer> &)->bool> & accept, const std::string & selector_name, const std::string & comment,
-        State & state, ProofLogger * const logger) -> std::optional<ExtensionalData>;
+        const std::optional<TabulationReification> & reification, const std::function<auto(const std::vector<Integer> &)->bool> & accept,
+        const std::string & selector_name, const std::string & comment, State & state, ProofLogger * const logger) -> std::optional<ExtensionalData>;
 
     /**
      * \brief Collects the distinct variables a tabulation enumerates over,
@@ -149,6 +201,40 @@ namespace gcs::innards
     };
 
     /**
+     * \brief The pieces install_tabulation() needs for a reified constraint:
+     * the wrapped acceptance test, the surviving determined claims, and the
+     * reification branching.
+     *
+     * \ingroup Innards
+     * \sa gcs::innards::reify_tabulation()
+     */
+    struct ReifiedTabulation
+    {
+        std::function<auto(const std::vector<Integer> &)->bool> accept;
+        std::vector<DeterminedVariable> determined;
+        std::optional<TabulationReification> reification;
+    };
+
+    /**
+     * \brief Wrap a base relation's tabulation in a reification condition.
+     *
+     * The base_accept and base_determined describe the unreified relation,
+     * indexed by enum_vars positions. For the If / NotIf / Iff conditions, the
+     * condition variable is registered in enum_vars (so call this before
+     * reading enum_vars.vars()), its values that release the constraint become
+     * Free branches, and the acceptance test becomes the reified semantics
+     * evaluated on the complete assignment. The base determined claims survive
+     * exactly when some branch enforces the base relation -- so not under
+     * MustNotHold or NotIf, whose only branches are Free and Negated -- and
+     * never on the condition variable itself.
+     *
+     * \ingroup Innards
+     * \sa gcs::innards::install_tabulation()
+     */
+    [[nodiscard]] auto reify_tabulation(const ReificationCondition & reif, TabulationVariables & enum_vars,
+        std::function<auto(const std::vector<Integer> &)->bool> base_accept, std::vector<DeterminedVariable> base_determined) -> ReifiedTabulation;
+
+    /**
      * \brief Should a constraint tabulate, given its consistency level and the
      * variables it would enumerate over?
      *
@@ -176,6 +262,9 @@ namespace gcs::innards
      * The determined_vars are the enumerated variables that are functionally
      * determined by the others, in the strong unit-propagation sense that
      * DeterminedVariable documents; pass an empty vector if there are none.
+     * The reification, if any, classifies the enumeration branch-by-branch as
+     * TabulationReification documents; reify_tabulation() builds all three of
+     * these from a base relation and a ReificationCondition.
      *
      * The Hint_ type parameter is the owning constraint's assertion hint,
      * constructed from `owner` alone.
@@ -185,18 +274,18 @@ namespace gcs::innards
      */
     template <typename Hint_>
     auto install_tabulation(Propagators & propagators, const ConstraintID & owner, std::vector<IntegerVariableID> enum_vars,
-        std::vector<DeterminedVariable> determined_vars, std::function<auto(const std::vector<Integer> &)->bool> accept, std::string selector_name,
-        std::string comment) -> void
+        std::vector<DeterminedVariable> determined_vars, std::optional<TabulationReification> reification,
+        std::function<auto(const std::vector<Integer> &)->bool> accept, std::string selector_name, std::string comment) -> void
     {
         Triggers triggers;
         triggers.on_change = enum_vars;
 
         auto data = std::make_shared<std::optional<ExtensionalData>>(std::nullopt);
         propagators.install_initialiser(
-            [data = data, enum_vars = std::move(enum_vars), determined_vars = std::move(determined_vars), accept = std::move(accept),
-                selector_name = std::move(selector_name), comment = std::move(comment),
+            [data = data, enum_vars = std::move(enum_vars), determined_vars = std::move(determined_vars), reification = std::move(reification),
+                accept = std::move(accept), selector_name = std::move(selector_name), comment = std::move(comment),
                 owner = owner](State & state, auto & inference, ProofLogger * const logger) {
-                *data = build_table_in_proof(enum_vars, determined_vars, accept, selector_name, comment, state, logger);
+                *data = build_table_in_proof(enum_vars, determined_vars, reification, accept, selector_name, comment, state, logger);
                 if (! data->has_value())
                     inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
             },

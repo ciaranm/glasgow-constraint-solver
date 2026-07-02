@@ -97,8 +97,9 @@ namespace
                     if (claim_determined)
                         determined.push_back({v3, [](const vector<Integer> & vals) -> optional<Integer> { return vals[0] * vals[1]; }});
                     *data = build_table_in_proof(
-                        vector<IntegerVariableID>{v1, v2, v3}, determined, [](const vector<Integer> & vals) { return vals[0] * vals[1] == vals[2]; },
-                        "multtab", "building GAC table for multiplication", state, logger);
+                        vector<IntegerVariableID>{v1, v2, v3}, determined, nullopt,
+                        [](const vector<Integer> & vals) { return vals[0] * vals[1] == vals[2]; }, "multtab", "building GAC table for multiplication",
+                        state, logger);
                     if (! data->has_value())
                         inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{}});
                 },

@@ -157,49 +157,46 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
     if (std::holds_alternative<consistency::Tabulated>(_level)) {
         visit(
             [&, modifier = modifier](auto & sanitised_cv) {
-                vector<IntegerVariableID> vars;
+                TabulationVariables enum_vars;
                 for (auto & cv : sanitised_cv.terms)
-                    vars.push_back(get_var(cv));
+                    enum_vars.position_of(get_var(cv));
 
                 // the enumeration, in-proof selector introduction, and
-                // extensional wiring live in install_tabulation; all that is
-                // ours is the acceptance test.
-                auto accept = [coeff_vars = sanitised_cv, value = _value + modifier, cond = _reif_cond](const vector<Integer> & current) -> bool {
+                // extensional wiring live in install_tabulation, and the
+                // reification handling in reify_tabulation; all that is ours
+                // is the base acceptance test over the term positions, and
+                // solving the equality for each term as the determined values.
+                auto base_accept = [coeff_vars = sanitised_cv, value = _value + modifier](const vector<Integer> & current) -> bool {
                     Integer actual_value{0_i};
                     for (const auto & [idx, cv] : enumerate(coeff_vars.terms))
                         actual_value += get_coeff(cv) * current[idx];
-
-                    return overloaded{
-                        [&](const reif::MustHold &) { return actual_value == value; },      //
-                        [&](const reif::MustNotHold &) { return actual_value != value; },   //
-                        [&](const reif::If) -> bool { throw UnimplementedException{}; },    //
-                        [&](const reif::NotIf) -> bool { throw UnimplementedException{}; }, //
-                        [&](const reif::Iff) -> bool { throw UnimplementedException{}; }    //
-                    }
-                        .visit(cond);
+                    return actual_value == value;
                 };
 
-                // under MustHold, every variable is a function of the others
-                // (the sanitised terms have distinct variables and nonzero
-                // coefficients), pinned by unit propagation on the equality;
-                // under MustNotHold nothing is determined.
+                // every term variable is a function of the others when the
+                // equality is enforced (the sanitised terms have distinct
+                // variables and nonzero coefficients), pinned by unit
+                // propagation on the possibly half-reified equality;
+                // reify_tabulation drops the claims when no branch enforces
+                // it.
                 vector<DeterminedVariable> determined;
-                if (std::holds_alternative<reif::MustHold>(_reif_cond))
-                    for (const auto & [idx, cv] : enumerate(sanitised_cv.terms))
-                        determined.push_back({get_var(cv),
-                            [coeff_vars = sanitised_cv, value = _value + modifier, idx = idx](const vector<Integer> & current) -> optional<Integer> {
-                                Integer other{0_i};
-                                for (const auto & [jdx, cw] : enumerate(coeff_vars.terms))
-                                    if (jdx != idx)
-                                        other += get_coeff(cw) * current[jdx];
-                                auto coeff = get_coeff(coeff_vars.terms[idx]);
-                                if ((value - other) % coeff != 0_i)
-                                    return nullopt;
-                                return (value - other) / coeff;
-                            }});
+                for (const auto & [idx, cv] : enumerate(sanitised_cv.terms))
+                    determined.push_back({get_var(cv),
+                        [coeff_vars = sanitised_cv, value = _value + modifier, idx = idx](const vector<Integer> & current) -> optional<Integer> {
+                            Integer other{0_i};
+                            for (const auto & [jdx, cw] : enumerate(coeff_vars.terms))
+                                if (jdx != idx)
+                                    other += get_coeff(cw) * current[jdx];
+                            auto coeff = get_coeff(coeff_vars.terms[idx]);
+                            if ((value - other) % coeff != 0_i)
+                                return nullopt;
+                            return (value - other) / coeff;
+                        }});
 
-                install_tabulation<hints::LinearEquality>(
-                    propagators, constraint_id(), move(vars), move(determined), accept, "lineq", "building GAC table for linear equality");
+                auto reified = reify_tabulation(_reif_cond, enum_vars, base_accept, move(determined));
+
+                install_tabulation<hints::LinearEquality>(propagators, constraint_id(), enum_vars.vars(), move(reified.determined),
+                    move(reified.reification), move(reified.accept), "lineq", "building GAC table for linear equality");
             },
             sanitised_cv);
     }

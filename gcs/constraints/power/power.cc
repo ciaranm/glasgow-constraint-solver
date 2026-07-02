@@ -294,7 +294,7 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         };
 
         install_tabulation<hints::Power>(
-            propagators, constraint_id(), enum_vars.vars(), move(determined), accept, "powtab", "building GAC table for power");
+            propagators, constraint_id(), enum_vars.vars(), move(determined), nullopt, accept, "powtab", "building GAC table for power");
     }
 }
 

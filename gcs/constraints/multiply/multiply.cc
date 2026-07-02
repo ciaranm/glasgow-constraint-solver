@@ -277,7 +277,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
         };
 
         install_tabulation<hints::Multiply>(
-            propagators, constraint_id(), enum_vars.vars(), move(determined), accept, "multtab", "building GAC table for multiplication");
+            propagators, constraint_id(), enum_vars.vars(), move(determined), nullopt, accept, "multtab", "building GAC table for multiplication");
     }
 }
 
