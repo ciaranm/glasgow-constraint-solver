@@ -171,6 +171,15 @@ namespace gcs::innards
         auto divide_by(Integer n) -> PolBuilder &;
 
         /**
+         * Apply `<flag> w` to the stack top: VeriPB's weaken rule, which
+         * relaxes the running constraint by dropping the term on `flag`. The
+         * flag is resolved to its file-format string via the tracker. (Only a
+         * `ProofFlag` operand is provided, as that is the sole in-tree weaken
+         * site; add further overloads here if another literal kind needs it.)
+         */
+        auto weaken(const ProofFlag & flag, const NamesAndIDsTracker & tracker) -> PolBuilder &;
+
+        /**
          * Has anything been pushed?
          *
          * Callers that conditionally emit (e.g. only when the loop body

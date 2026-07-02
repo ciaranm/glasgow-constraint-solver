@@ -112,6 +112,12 @@ auto PolBuilder::divide_by(Integer n) -> PolBuilder &
     return *this;
 }
 
+auto PolBuilder::weaken(const ProofFlag & flag, const NamesAndIDsTracker & tracker) -> PolBuilder &
+{
+    _tokens.emplace_back(" " + tracker.pb_file_string_for(flag) + " w");
+    return *this;
+}
+
 auto PolBuilder::empty() const -> bool
 {
     return _empty;
