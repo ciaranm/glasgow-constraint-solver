@@ -62,20 +62,26 @@ namespace
     // arithmetic constraints use to offer tabulated GAC without a table in the
     // OPB (issue #444); this test exists to establish that
     // build_table_in_proof's leaf backtrack RUP lines verify against MultiplyBC's
-    // non-linear bit-product encoding, not just against a linear sum.
+    // non-linear bit-product encoding, not just against a linear sum. When
+    // claim_determined is set, the product is claimed as functionally
+    // determined by the operands, additionally establishing that the skipped
+    // level's parent backtrack lines verify by unit propagation pinning the
+    // product through the bit-product encoding.
     class TabulateProductForTest : public Constraint
     {
     private:
         SimpleIntegerVariableID _v1, _v2, _v3;
+        bool _claim_determined;
 
     public:
-        TabulateProductForTest(SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3) : _v1(v1), _v2(v2), _v3(v3)
+        TabulateProductForTest(SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3, bool claim_determined) :
+            _v1(v1), _v2(v2), _v3(v3), _claim_determined(claim_determined)
         {
         }
 
         [[nodiscard]] auto clone() const -> unique_ptr<Constraint> override
         {
-            return make_unique<TabulateProductForTest>(_v1, _v2, _v3);
+            return make_unique<TabulateProductForTest>(_v1, _v2, _v3, _claim_determined);
         }
 
         auto install(Propagators & propagators, State &, ProofModel * const) && -> void override
@@ -85,10 +91,14 @@ namespace
 
             auto data = make_shared<optional<ExtensionalData>>(nullopt);
             propagators.install_initialiser(
-                [data = data, v1 = _v1, v2 = _v2, v3 = _v3](State & state, auto & inference, ProofLogger * const logger) {
+                [data = data, v1 = _v1, v2 = _v2, v3 = _v3, claim_determined = _claim_determined](
+                    State & state, auto & inference, ProofLogger * const logger) {
+                    vector<DeterminedVariable> determined;
+                    if (claim_determined)
+                        determined.push_back({v3, [](const vector<Integer> & vals) -> optional<Integer> { return vals[0] * vals[1]; }});
                     *data = build_table_in_proof(
-                        vector<IntegerVariableID>{v1, v2, v3}, [](const vector<Integer> & vals) { return vals[0] * vals[1] == vals[2]; }, "multtab",
-                        "building GAC table for multiplication", state, logger);
+                        vector<IntegerVariableID>{v1, v2, v3}, determined, [](const vector<Integer> & vals) { return vals[0] * vals[1] == vals[2]; },
+                        "multtab", "building GAC table for multiplication", state, logger);
                     if (! data->has_value())
                         inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{}, ExplicitReason{ReasonLiterals{}});
                 },
@@ -113,9 +123,10 @@ namespace
     };
 }
 
-auto run_tabulated_product_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range) -> void
+auto run_tabulated_product_test(bool proofs, bool claim_determined, pair<int, int> v1_range, pair<int, int> v2_range, pair<int, int> v3_range) -> void
 {
-    print(cerr, "tabulated product {} {} {} {}", v1_range, v2_range, v3_range, proofs ? " with proofs:" : ":");
+    print(cerr, "tabulated product {} {} {}{}{}", v1_range, v2_range, v3_range, claim_determined ? " claiming determined" : "",
+        proofs ? " with proofs:" : ":");
     cerr << flush;
     set<tuple<int, int, int>> expected, actual;
 
@@ -127,7 +138,7 @@ auto run_tabulated_product_test(bool proofs, pair<int, int> v1_range, pair<int, 
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
     p.post(MultiplyBC{v1, v2, v3});
-    p.post(TabulateProductForTest{v1, v2, v3});
+    p.post(TabulateProductForTest{v1, v2, v3, claim_determined});
 
     auto proof_name = proofs ? make_optional("tabulation_test") : nullopt;
 
@@ -158,8 +169,9 @@ auto main(int, char *[]) -> int
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        for (auto & [r1, r2, r3] : data)
-            run_tabulated_product_test(proofs, r1, r2, r3);
+        for (bool claim_determined : {false, true})
+            for (auto & [r1, r2, r3] : data)
+                run_tabulated_product_test(proofs, claim_determined, r1, r2, r3);
     }
 
     return EXIT_SUCCESS;

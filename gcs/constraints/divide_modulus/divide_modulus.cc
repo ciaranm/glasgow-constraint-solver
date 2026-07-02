@@ -299,7 +299,48 @@ namespace
                 auto rv = expose_quotient ? auxv : outv;
                 return is_in_relation(xv, yv, qv, rv);
             };
-            install_tabulation<Hint_>(propagators, owner, enum_vars.vars(), accept, expose_quotient ? "divtab" : "modtab",
+
+            // x and r are each a function of the others, pinned by unit
+            // propagation forwards through the stages: q and y assigned pin
+            // w = q * y through the multiplication's bit products, and the
+            // linear x = w + r stage then pins whichever of x and r is left.
+            // q is a function of the others too, but recovering it means
+            // going backwards through the multiplication, which unit
+            // propagation cannot do; and y is not a function at all, since
+            // q = 0 leaves it anywhere bigger than the remainder. Aliasing
+            // spoils the argument, so only distinct slots are claimed (the
+            // auxiliary is always fresh).
+            vector<DeterminedVariable> determined;
+            if (expose_quotient)
+                determined.push_back({aux, [ax, ay, aout, px, py, pout](const vector<Integer> & vals) -> optional<Integer> {
+                                          auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
+                                          auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
+                                          auto qv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
+                                          return xv - qv * yv;
+                                      }});
+            else if (pout && pout != px && pout != py)
+                determined.push_back({*aout.var, [ax, ay, aout, px, py, paux](const vector<Integer> & vals) -> optional<Integer> {
+                                          auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
+                                          auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
+                                          auto want = xv - vals[paux] * yv;
+                                          if ((want - aout.offset) % aout.coeff != 0_i)
+                                              return nullopt;
+                                          return (want - aout.offset) / aout.coeff;
+                                      }});
+            if (px && px != py && px != pout)
+                determined.push_back({*ax.var, [ax, ay, aout, py, pout, paux, expose_quotient](const vector<Integer> & vals) -> optional<Integer> {
+                                          auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
+                                          auto outv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
+                                          auto auxv = vals[paux];
+                                          auto qv = expose_quotient ? outv : auxv;
+                                          auto rv = expose_quotient ? auxv : outv;
+                                          auto want = qv * yv + rv;
+                                          if ((want - ax.offset) % ax.coeff != 0_i)
+                                              return nullopt;
+                                          return (want - ax.offset) / ax.coeff;
+                                      }});
+
+            install_tabulation<Hint_>(propagators, owner, enum_vars.vars(), move(determined), accept, expose_quotient ? "divtab" : "modtab",
                 expose_quotient ? "building GAC table for division" : "building GAC table for modulus");
         }
     }

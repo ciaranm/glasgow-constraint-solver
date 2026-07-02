@@ -179,8 +179,27 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
                         .visit(cond);
                 };
 
+                // under MustHold, every variable is a function of the others
+                // (the sanitised terms have distinct variables and nonzero
+                // coefficients), pinned by unit propagation on the equality;
+                // under MustNotHold nothing is determined.
+                vector<DeterminedVariable> determined;
+                if (std::holds_alternative<reif::MustHold>(_reif_cond))
+                    for (const auto & [idx, cv] : enumerate(sanitised_cv.terms))
+                        determined.push_back({get_var(cv),
+                            [coeff_vars = sanitised_cv, value = _value + modifier, idx = idx](const vector<Integer> & current) -> optional<Integer> {
+                                Integer other{0_i};
+                                for (const auto & [jdx, cw] : enumerate(coeff_vars.terms))
+                                    if (jdx != idx)
+                                        other += get_coeff(cw) * current[jdx];
+                                auto coeff = get_coeff(coeff_vars.terms[idx]);
+                                if ((value - other) % coeff != 0_i)
+                                    return nullopt;
+                                return (value - other) / coeff;
+                            }});
+
                 install_tabulation<hints::LinearEquality>(
-                    propagators, constraint_id(), move(vars), accept, "lineq", "building GAC table for linear equality");
+                    propagators, constraint_id(), move(vars), move(determined), accept, "lineq", "building GAC table for linear equality");
             },
             sanitised_cv);
     }

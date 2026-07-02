@@ -279,7 +279,22 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
             auto want = checked_integer_power(xv, k);
             return want && *want == zv;
         };
-        install_tabulation<hints::Power>(propagators, constraint_id(), enum_vars.vars(), accept, "powtab", "building GAC table for power");
+
+        // the result is a function of the base, pinned by unit propagation
+        // through the multiplication chain; the base is not a function of the
+        // result (even exponents have two roots).
+        vector<DeterminedVariable> determined;
+        if (pz && *pz != px)
+            determined.push_back({*a3.var, [a1, a3, k, px](const vector<Integer> & vals) -> optional<Integer> {
+                                      auto xv = a1.coeff * vals[px] + a1.offset;
+                                      auto want = checked_integer_power(xv, k);
+                                      if ((! want) || (*want - a3.offset) % a3.coeff != 0_i)
+                                          return nullopt;
+                                      return (*want - a3.offset) / a3.coeff;
+                                  }});
+
+        install_tabulation<hints::Power>(
+            propagators, constraint_id(), enum_vars.vars(), move(determined), accept, "powtab", "building GAC table for power");
     }
 }
 

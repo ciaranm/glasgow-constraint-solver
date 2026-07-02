@@ -14,6 +14,8 @@
 
 #include <sstream>
 
+#include <util/enumerate.hh>
+
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -28,6 +30,7 @@ using namespace gcs::innards;
 
 using std::holds_alternative;
 using std::make_shared;
+using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
@@ -167,7 +170,32 @@ auto Minus::install(Propagators & propagators, State & initial_state, ProofModel
                 return false;
             return sum == cv.raw_value;
         };
-        install_tabulation<hints::Minus>(propagators, constraint_id(), enum_vars.vars(), accept, "minustab", "building GAC table for minus");
+
+        // the relation is linear, so any variable whose net coefficient in
+        // a - b - result is nonzero is a function of the others, and the
+        // encoding pins it by unit propagation. Aliased slots make the net
+        // coefficient differ from the slot's own: in x - y = x, say, y is
+        // determined but x is not.
+        vector<DeterminedVariable> determined;
+        for (const auto & [pos, v] : enumerate(enum_vars.vars())) {
+            auto net = (pa && *pa == pos ? aa.coeff : 0_i) - (pb && *pb == pos ? ab.coeff : 0_i) - (pc && *pc == pos ? ac.coeff : 0_i);
+            if (net != 0_i)
+                determined.push_back({v, [aa, ab, ac, pa, pb, pc, pos = pos, net](const vector<Integer> & vals) -> optional<Integer> {
+                                          auto other = aa.offset - ab.offset - ac.offset;
+                                          if (pa && *pa != pos)
+                                              other += aa.coeff * vals[*pa];
+                                          if (pb && *pb != pos)
+                                              other -= ab.coeff * vals[*pb];
+                                          if (pc && *pc != pos)
+                                              other -= ac.coeff * vals[*pc];
+                                          if ((-other) % net != 0_i)
+                                              return nullopt;
+                                          return -other / net;
+                                      }});
+        }
+
+        install_tabulation<hints::Minus>(
+            propagators, constraint_id(), enum_vars.vars(), move(determined), accept, "minustab", "building GAC table for minus");
     }
 }
 
