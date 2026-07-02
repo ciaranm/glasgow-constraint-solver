@@ -193,7 +193,8 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
 auto gcs::innards::reify_tabulation(const ReificationCondition & reif, TabulationVariables & enum_vars,
     function<auto(const vector<Integer> &)->bool> base_accept, vector<DeterminedVariable> base_determined) -> ReifiedTabulation
 {
-    return overloaded{[&](const reif::MustHold &) -> ReifiedTabulation { return {move(base_accept), move(base_determined), nullopt}; },
+    return overloaded{                                                                                                    //
+        [&](const reif::MustHold &) -> ReifiedTabulation { return {move(base_accept), move(base_determined), nullopt}; }, //
         [&](const reif::MustNotHold &) -> ReifiedTabulation {
             return {[base_accept = move(base_accept)](const vector<Integer> & vals) { return ! base_accept(vals); }, {}, nullopt};
         },
@@ -239,7 +240,9 @@ auto gcs::innards::default_tabulation_threshold() -> long long
 auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::Tabulated> & level,
     const vector<IntegerVariableID> & enum_vars, const vector<DeterminedVariable> & determined_vars, const State & initial_state) -> bool
 {
-    return overloaded{[&](const consistency::Tabulated &) { return true; }, [&](const consistency::BC &) { return false; },
+    return overloaded{                                        //
+        [&](const consistency::Tabulated &) { return true; }, //
+        [&](const consistency::BC &) { return false; },       //
         [&](const consistency::Auto &) {
             // build_table_in_proof skips the largest-domained determined
             // variable's level (picked the same way here, first of equal

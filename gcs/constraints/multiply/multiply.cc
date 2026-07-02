@@ -77,8 +77,9 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
     if ((! a1.var) || (! a2.var)) {
         auto [sum, value] = linear_for_constant_operand(a1, a2, _v1, _v2, _result);
 
-        auto linear_level = overloaded{[&](const consistency::BC &) -> LinearEqualityConsistency { return consistency::BC{}; },
-            [&](const consistency::Tabulated &) -> LinearEqualityConsistency { return consistency::Tabulated{}; },
+        auto linear_level = overloaded{                                                                            //
+            [&](const consistency::BC &) -> LinearEqualityConsistency { return consistency::BC{}; },               //
+            [&](const consistency::Tabulated &) -> LinearEqualityConsistency { return consistency::Tabulated{}; }, //
             [&](const consistency::Auto &) -> LinearEqualityConsistency {
                 // budget for what the delegated equality will enumerate: the
                 // sanitised terms, with the largest-domained one's level left

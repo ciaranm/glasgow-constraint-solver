@@ -58,7 +58,9 @@ namespace
 
     auto level_name(const DivideConsistency & level) -> string
     {
-        return overloaded{[](const consistency::Auto &) -> string { return "auto"; }, [](const consistency::BC &) -> string { return "bc"; },
+        return overloaded{                                              //
+            [](const consistency::Auto &) -> string { return "auto"; }, //
+            [](const consistency::BC &) -> string { return "bc"; },     //
             [](const consistency::Tabulated &) -> string { return "tabulated"; }}
             .visit(level);
     }

@@ -681,7 +681,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
 
 auto NamesAndIDsTracker::definitional_label_base(const SimpleOrProofOnlyIntegerVariableID & id) const -> string
 {
-    return visit(overloaded{[&](const SimpleIntegerVariableID &) -> string { return "i[" + name_of(id) + "]"; },
+    return visit(overloaded{                                                                              //
+                     [&](const SimpleIntegerVariableID &) -> string { return "i[" + name_of(id) + "]"; }, //
                      [&](const ProofOnlySimpleIntegerVariableID & pid) -> string { return "po[" + to_string(pid.index) + "]"; }},
         id);
 }
@@ -1700,7 +1701,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(
     if (_imp->verbose_names) {
         string name = name_override
             ? *name_override
-            : visit(overloaded{[&](const SimpleIntegerVariableID & id) { return format("i[{}][sign]", name_of(id)); },
+            : visit(overloaded{                                                                                 //
+                        [&](const SimpleIntegerVariableID & id) { return format("i[{}][sign]", name_of(id)); }, //
                         [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][sign]", id.index, name_of(id)); }},
                   id);
         _imp->xlits_to_verbose_names.emplace(result, name);
@@ -1746,7 +1748,8 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(
         // the literal is still the variable's bit, only named.
         string name = name_override
             ? *name_override
-            : visit(overloaded{[&](const SimpleIntegerVariableID & id) { return format("i[{}][b{}]", name_of(id), power); },
+            : visit(overloaded{                                                                                       //
+                        [&](const SimpleIntegerVariableID & id) { return format("i[{}][b{}]", name_of(id), power); }, //
                         [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][b{}]", id.index, name_of(id), power); }},
                   id);
         _imp->xlits_to_verbose_names.emplace(result, name);

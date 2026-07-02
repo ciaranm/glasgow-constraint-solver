@@ -26,9 +26,10 @@ namespace gcs::innards
 
     [[nodiscard]] inline auto affine_of(const IntegerVariableID & v) -> AffineForm
     {
-        return overloaded{[&](const SimpleIntegerVariableID & s) { return AffineForm{s, 1_i, 0_i}; },
-            [&](const ViewOfIntegerVariableID & w) { return AffineForm{w.actual_variable, w.negate_first ? -1_i : 1_i, w.then_add}; },
-            [&](const ConstantIntegerVariableID & c) { return AffineForm{std::nullopt, 0_i, c.const_value}; }}
+        return overloaded{                                                                                                             //
+            [&](const SimpleIntegerVariableID & s) { return AffineForm{s, 1_i, 0_i}; },                                                //
+            [&](const ViewOfIntegerVariableID & w) { return AffineForm{w.actual_variable, w.negate_first ? -1_i : 1_i, w.then_add}; }, //
+            [&](const ConstantIntegerVariableID & c) { return AffineForm{std::nullopt, 0_i, c.const_value}; }}                         //
             .visit(v);
     }
 
