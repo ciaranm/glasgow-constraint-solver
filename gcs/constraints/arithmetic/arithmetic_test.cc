@@ -66,12 +66,6 @@ namespace
     };
 
     template <>
-    struct NameOf<Times>
-    {
-        static const constexpr auto name = "times";
-    };
-
-    template <>
     struct NameOf<Div>
     {
         static const constexpr auto name = "div";
@@ -276,12 +270,13 @@ auto main(int, char *[]) -> int
         {{1, 5}, {6, 8}, {-10, 10}},                                                                 //
         {{1, 1}, {2, 4}, {-5, 5}},                                                                   //
         // issue #254: all-fixed (singleton-domain) operands. Each row runs for
-        // Plus/Minus/Times/Div/Mod; build_expected gives the per-operation
-        // truth, so each tautology direction is hit by exactly one operation
-        // and the others act as the contradiction direction.
+        // Plus/Minus/Div/Mod; build_expected gives the per-operation truth, so
+        // each tautology direction is hit by exactly one operation and the
+        // others act as the contradiction direction. (The multiplication row
+        // lives on as a contradiction row; Multiply has its own test.)
         {{2, 2}, {3, 3}, {5, 5}},    // Plus: 2+3==5
         {{5, 5}, {2, 2}, {3, 3}},    // Minus: 5-2==3
-        {{2, 2}, {3, 3}, {6, 6}},    // Times: 2*3==6
+        {{2, 2}, {3, 3}, {6, 6}},    // 2*3==6, contradiction for the others
         {{6, 6}, {3, 3}, {2, 2}},    // Div: 6/3==2
         {{7, 7}, {3, 3}, {1, 1}},    // Mod: 7%3==1
         {{5, 5}, {0, 0}, {3, 3}},    // Div/Mod by fixed zero: no solution
@@ -312,7 +307,6 @@ auto main(int, char *[]) -> int
         for (auto & [r1, r2, r3] : data) {
             run_arithmetic_test<PlusGAC>(proofs, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
             run_arithmetic_test<MinusGAC>(proofs, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
-            run_arithmetic_test<Times>(proofs, r1, r2, r3, [](int a, int b, int c) { return a * b == c; });
             run_arithmetic_test<Div>(proofs, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; });
             run_arithmetic_test<Mod>(proofs, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; });
         }
@@ -359,7 +353,6 @@ auto main(int, char *[]) -> int
         };
         auto plus_sat = [](int a, int b, int c) { return a + b == c; };
         auto minus_sat = [](int a, int b, int c) { return a - b == c; };
-        auto times_sat = [](int a, int b, int c) { return a * b == c; };
         auto div_sat = [](int a, int b, int c) { return 0 != b && a / b == c; };
         auto mod_sat = [](int a, int b, int c) { return 0 != b && a % b == c; };
         for (auto & [ar, br] : dup_data) {
@@ -371,10 +364,6 @@ auto main(int, char *[]) -> int
             run_dup_arithmetic_test<MinusGAC>(proofs, AliasV1V3{}, "v1v3", ar, br, minus_sat);
             run_dup_arithmetic_test<MinusGAC>(proofs, AliasV2V3{}, "v2v3", ar, br, minus_sat);
             run_dup_arithmetic_test<MinusGAC>(proofs, AliasAll{}, "all", ar, br, minus_sat);
-            run_dup_arithmetic_test<Times>(proofs, AliasV1V2{}, "v1v2", ar, br, times_sat);
-            run_dup_arithmetic_test<Times>(proofs, AliasV1V3{}, "v1v3", ar, br, times_sat);
-            run_dup_arithmetic_test<Times>(proofs, AliasV2V3{}, "v2v3", ar, br, times_sat);
-            run_dup_arithmetic_test<Times>(proofs, AliasAll{}, "all", ar, br, times_sat);
             run_dup_arithmetic_test<Div>(proofs, AliasV1V2{}, "v1v2", ar, br, div_sat);
             run_dup_arithmetic_test<Div>(proofs, AliasV1V3{}, "v1v3", ar, br, div_sat);
             run_dup_arithmetic_test<Div>(proofs, AliasV2V3{}, "v2v3", ar, br, div_sat);

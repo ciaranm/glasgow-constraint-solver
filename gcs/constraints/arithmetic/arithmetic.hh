@@ -32,7 +32,7 @@ namespace gcs
          * \ingroup Innards
          * \sa gcs::Plus
          * \sa gcs::Minus
-         * \sa gcs::Times
+         * \sa gcs::Multiply
          * \sa gcs::Div
          * \sa gcs::Mod
          * \sa gcs::Power
@@ -81,17 +81,8 @@ namespace gcs
      */
     using MinusGAC = innards::GACArithmetic<innards::ArithmeticOperator::Minus>;
 
-    /**
-     * \brief Constrain that `v1 * v2 = result` via a materialised tuple table.
-     *
-     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|).  Under normal
-     * circumstances you should use gcs::Multiply instead, which picks a sensible
-     * implementation itself.
-     *
-     * \ingroup Constraints
-     * \sa gcs::Multiply
-     */
-    using Times = innards::GACArithmetic<innards::ArithmeticOperator::Times>;
+    // There is no longer a Times typedef: use gcs::Multiply, which picks a
+    // sensible implementation itself and tabulates for GAC when appropriate.
 
     /**
      * \brief Constrain that `v1 / v2 = result`.

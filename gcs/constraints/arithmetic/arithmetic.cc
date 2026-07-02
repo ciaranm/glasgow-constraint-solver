@@ -102,7 +102,6 @@ namespace gcs::innards
 {
     template class GACArithmetic<ArithmeticOperator::Plus>;
     template class GACArithmetic<ArithmeticOperator::Minus>;
-    template class GACArithmetic<ArithmeticOperator::Times>;
     template class GACArithmetic<ArithmeticOperator::Div>;
     template class GACArithmetic<ArithmeticOperator::Mod>;
     template class GACArithmetic<ArithmeticOperator::Power>;

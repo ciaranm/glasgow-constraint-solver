@@ -276,9 +276,9 @@ auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2, c
     }
     else if (op == "mul") {
 #ifdef WRITE_API_CALLS
-        api_calls << " p.post(Times(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+        api_calls << " p.post(Multiply(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
 #endif
-        p.post(Times(var1, var2, result));
+        p.post(Multiply(var1, var2, result));
     }
     else if (op == "div") {
 #ifdef WRITE_API_CALLS

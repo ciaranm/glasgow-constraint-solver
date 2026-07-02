@@ -1103,23 +1103,17 @@ namespace
             return {control, 0_i, 1_i};
         }
 
-        // Multiply two ExprResults via Times (or WeightedSum if either side
-        // is a constant). Used by binary and n-ary OMUL, OSQR, and OPOW.
-        // The constant-folding in this helper is a workaround for #153 —
-        // ideally the user-facing Times constraint would do it itself and
-        // also choose between the GAC and BC implementations based on
-        // domain widths.
+        // Multiply two ExprResults. Used by binary and n-ary OMUL, OSQR, and
+        // OPOW. Multiply does its own constant folding and picks between the
+        // bounds consistent and tabulated-GAC implementations itself (#153
+        // and #444), so all that is left here is computing the result
+        // variable's bounds.
         auto post_product(ExprResult a, ExprResult b, const string & name) -> ExprResult
         {
             auto lower = min({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
             auto upper = max({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
             auto r = _problem.create_integer_variable(lower, upper, name);
-            if (a.lower == a.upper)
-                _problem.post(WeightedSum{} + a.lower * b.var == 1_i * r);
-            else if (b.lower == b.upper)
-                _problem.post(WeightedSum{} + b.lower * a.var == 1_i * r);
-            else
-                _problem.post(Times{a.var, b.var, r});
+            _problem.post(Multiply{a.var, b.var, r});
             return {r, lower, upper};
         }
 

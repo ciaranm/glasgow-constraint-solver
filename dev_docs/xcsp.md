@@ -294,12 +294,12 @@ their own conventions. Two real cases:
   but XCSP3-core allows isolated vertices via self-loops. The
   binding currently posts `Circuit` directly, so it imposes a
   stricter constraint than the spec. Tracked as #167.
-- **`Times`/`Div`/`Mod`/`Power`**: the gcs propagators materialise the
+- **`Div`/`Mod`/`Power`**: the gcs propagators materialise the
   cross-product of operand domains and blow up memory on wide
-  domains. The binding does some constant-folding upstream (in
-  `post_product`), but the right fix is a friendlier user-facing
-  C++ API in gcs that does the folding and dispatches to `MultBC`
-  for the all-variables case. Tracked as #153.
+  domains. Multiplication no longer has this problem: the binding
+  posts `Multiply`, which does its own constant folding and picks
+  a sensible implementation (#153); the same treatment for the
+  rest is tracked as #444.
 
 When you bind a new constraint, always check the XCSP3-core spec's
 semantics against gcs's propagator's behaviour, especially for

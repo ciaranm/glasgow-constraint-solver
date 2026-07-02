@@ -516,7 +516,7 @@ auto main(int argc, char * argv[]) -> int
                 const auto & var1 = arg_as_var(data, args, 0);
                 const auto & var2 = arg_as_var(data, args, 1);
                 const auto & var3 = arg_as_var(data, args, 2);
-                problem.post(Times{var1, var2, var3});
+                problem.post(Multiply{var1, var2, var3});
             }
             else if (id == "set_in") {
                 const auto & var = arg_as_var(data, args, 0);
