@@ -1,0 +1,6 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DIVIDE_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DIVIDE_HH
+
+#include <gcs/constraints/divide_modulus/divide_modulus.hh>
+
+#endif

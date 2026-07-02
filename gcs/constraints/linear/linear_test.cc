@@ -128,7 +128,7 @@ auto run_linear_test_gac(bool proofs, const string & mode, const ViewWrapConfig 
         for (const auto & [idx, coeff] : enumerate(linear))
             if (coeff != 0)
                 c += Integer{coeff} * vs[idx];
-        p.post(Constraint_{c, Integer{value}, true});
+        p.post(Constraint_{c, Integer{value}, consistency::Tabulated{}});
     }
 
     auto proof_name =
@@ -193,6 +193,66 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, cons
             solve_for_tests_checking_consistency(p, proof_name, expected, actual,
                 tuple{
                     pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::GAC}});
+        else
+            solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
+
+        check_results(proof_name, expected, actual);
+    }
+}
+
+// The tabulated flavour of the reified test: the same reified semantics, but
+// posted with consistency::Tabulated, which enumerates the table in-proof with
+// the condition variable's released values covered by wildcard tuples. That
+// achieves GAC on the terms and the condition variable alike, so check it.
+template <typename Constraint_>
+auto run_linear_reif_test_gac(bool full_reif, bool proofs, const string & mode, const ViewWrapConfig & view_cfg, pair<int, int> v1_range,
+    pair<int, int> v2_range, pair<int, int> v3_range, const vector<pair<vector<int>, int>> & ineqs,
+    const std::function<auto(int, int)->bool> & compare) -> void
+{
+    auto wraps = wraps_for_positions(view_cfg, 3);
+    for (const auto & v4_range : vector<pair<int, int>>{{0, 0}, {1, 1}, {0, 1}}) {
+        print(cerr, "linear gac [{}] {} {} {} {} {} {} {} {}", view_wrap_config_label(view_cfg), mode, full_reif ? "full_reif" : "half_reif",
+            v1_range, v2_range, v3_range, v4_range, ineqs, proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        auto is_satisfying = [&](int a, int b, int c, int d) {
+            set<bool> mismatches;
+            for (auto & [linear, value] : ineqs) {
+                mismatches.emplace(! compare(linear[0] * a + linear[1] * b + linear[2] * c, value));
+            }
+            if (mismatches.contains(false) && mismatches.contains(true))
+                return ((! full_reif) && 0 == d);
+            else if (mismatches.contains(true))
+                return 0 == d;
+            else
+                return (! full_reif) || 1 == d;
+        };
+
+        set<tuple<int, int, int, int>> expected, actual;
+        build_expected(expected, is_satisfying, v1_range, v2_range, v3_range, v4_range);
+        println(cerr, " expecting {} solutions", expected.size());
+
+        Problem p;
+        auto v1 = create_integer_variable_or_constant_with_view(p, v1_range, wraps.at(0));
+        auto v2 = create_integer_variable_or_constant_with_view(p, v2_range, wraps.at(1));
+        auto v3 = create_integer_variable_or_constant_with_view(p, v3_range, wraps.at(2));
+        auto v4 = p.create_integer_variable(Integer(v4_range.first), Integer(v4_range.second), "c");
+        auto vs = vector<IntegerVariableID>{v1, v2, v3};
+        for (auto & [linear, value] : ineqs) {
+            WeightedSum c;
+            for (const auto & [idx, coeff] : enumerate(linear))
+                if (coeff != 0)
+                    c += Integer{coeff} * vs[idx];
+            p.post(Constraint_{c, Integer{value}, v4 == 1_i, consistency::Tabulated{}});
+        }
+
+        auto proof_name =
+            proofs ? make_optional("linear_equality_test_" + mode + "_gac_" + view_wrap_config_label(view_cfg) + threshold_proof_suffix()) : nullopt;
+
+        if (1 == ineqs.size())
+            solve_for_tests_checking_consistency(p, proof_name, expected, actual,
+                tuple{pair{v1, CheckConsistency::GAC}, pair{v2, CheckConsistency::GAC}, pair{v3, CheckConsistency::GAC},
+                    pair{v4, CheckConsistency::GAC}});
         else
             solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
 
@@ -305,9 +365,13 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (mode == "eq_if") {
                 run_linear_reif_test<LinearEqualityIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_reif_test_gac<LinearEqualityIf>(
+                    false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             }
             else if (mode == "eq_iff") {
                 run_linear_reif_test<LinearEqualityIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                run_linear_reif_test_gac<LinearEqualityIff>(
+                    true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
             }
             else if (mode == "ne") {
                 run_linear_test<LinearNotEquals>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
@@ -315,9 +379,13 @@ auto main(int argc, char * argv[]) -> int
             }
             else if (mode == "ne_if") {
                 run_linear_reif_test<LinearNotEqualsIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_reif_test_gac<LinearNotEqualsIf>(
+                    false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             }
             else if (mode == "ne_iff") {
                 run_linear_reif_test<LinearNotEqualsIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                run_linear_reif_test_gac<LinearNotEqualsIff>(
+                    true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
             }
             else if (mode == "le") {
                 run_linear_test<LinearLessThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });

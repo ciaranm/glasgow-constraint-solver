@@ -101,7 +101,8 @@ auto main(int argc, char * argv[]) -> int
             p.post(NotEquals{diffs.back(), -1_c});
         }
 
-        p.post(LinearEquality{WeightedSum{} + 1_i * xs[x1] + -1_i * xs[x2] + -1_i * diffs.back(), 0_i, options_vars.contains("gac")});
+        p.post(LinearEquality{WeightedSum{} + 1_i * xs[x1] + -1_i * xs[x2] + -1_i * diffs.back(), 0_i,
+            options_vars.contains("gac") ? LinearEqualityConsistency{consistency::Tabulated{}} : LinearEqualityConsistency{consistency::BC{}}});
     }
 
     optional<ProofOptions> proof_options;

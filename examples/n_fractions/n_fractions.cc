@@ -2,7 +2,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
-#include <gcs/constraints/mult_bc.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -104,7 +104,7 @@ auto main(int argc, char * argv[]) -> int
     for (unsigned int i = 0; i < denominators.size(); i++) {
         p.post(WeightedSum{} + 10_i * denominators_first_digit[i] + 1_i * denominators_second_digit[i] + -1_i * denominators[i] == 0_i);
         denominators_partial_products.emplace_back(p.create_integer_variable(1_i, max_product_val));
-        p.post(MultBC{prev_product_var, denominators[i], denominators_partial_products[i]});
+        p.post(Multiply{prev_product_var, denominators[i], denominators_partial_products[i]});
         prev_product_var = denominators_partial_products[i];
         max_product_val = max_product_val * 100_i;
     }
@@ -116,8 +116,8 @@ auto main(int argc, char * argv[]) -> int
     for (unsigned int i = 0; i < denominators.size(); i++) {
         numerator_multiplier.emplace_back(p.create_integer_variable(1_i, max_product_val / 100_i));
         summands.emplace_back(p.create_integer_variable(1_i, max_product_val / 10_i));
-        p.post(MultBC{numerator_multiplier[i], denominators[i], denominators_product});
-        p.post(MultBC{numerator_multiplier[i], numerators[i], summands[i]});
+        p.post(Multiply{numerator_multiplier[i], denominators[i], denominators_product});
+        p.post(Multiply{numerator_multiplier[i], numerators[i], summands[i]});
         frac_sum += 1_i * summands[i];
         // Break symmetries
         if (i > 0)

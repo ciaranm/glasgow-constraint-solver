@@ -251,7 +251,7 @@ auto Python::get_proof_filename() -> string
 auto Python::post_abs(const string & var_id_1, const string & var_id_2) -> void
 {
 #ifdef WRITE_API_CALLS
-    api_calls << " p.post(Abs(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+    api_calls << " p.post(Abs(v" << var_id_1 << ", v" << var_id_2 << "));" << endl;
 #endif
     p.post(Abs(get_var(var_id_1), get_var(var_id_2)));
 }
@@ -264,7 +264,7 @@ auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2, c
     auto result = get_var(result_id);
     if (op == "sum") {
 #ifdef WRITE_API_CALLS
-        api_calls << " p.post(Plus(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+        api_calls << " p.post(Plus(v" << var_id_1 << ", v" << var_id_2 << ", v" << result_id << "));" << endl;
 #endif
         try {
 
@@ -276,25 +276,25 @@ auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2, c
     }
     else if (op == "mul") {
 #ifdef WRITE_API_CALLS
-        api_calls << " p.post(Times(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+        api_calls << " p.post(Multiply(v" << var_id_1 << ", v" << var_id_2 << ", v" << result_id << "));" << endl;
 #endif
-        p.post(Times(var1, var2, result));
+        p.post(Multiply(var1, var2, result));
     }
     else if (op == "div") {
 #ifdef WRITE_API_CALLS
-        api_calls << " p.post(Div(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+        api_calls << " p.post(Divide(v" << var_id_1 << ", v" << var_id_2 << ", v" << result_id << "));" << endl;
 #endif
-        p.post(Div(var1, var2, result));
+        p.post(Divide(var1, var2, result));
     }
     else if (op == "mod") {
 #ifdef WRITE_API_CALLS
-        api_calls << " p.post(Mod(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+        api_calls << " p.post(Modulus(v" << var_id_1 << ", v" << var_id_2 << ", v" << result_id << "));" << endl;
 #endif
-        p.post(Mod(var1, var2, result));
+        p.post(Modulus(var1, var2, result));
     }
     else if (op == "pow") {
 #ifdef WRITE_API_CALLS
-        api_calls << " p.post(Pow(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+        api_calls << " p.post(Power(v" << var_id_1 << ", v" << var_id_2 << ", v" << result_id << "));" << endl;
 #endif
         p.post(Power(var1, var2, result));
     }

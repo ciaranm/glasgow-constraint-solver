@@ -1,5 +1,5 @@
 #include <cxxopts.hpp>
-#include <gcs/constraints/mult_bc.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 #include <iostream>
@@ -115,7 +115,7 @@ auto main(int argc, char * argv[]) -> int
         for (auto j = 0; j < d; ++j) {
             prod_bounds *= n;
             auto new_prod = p.create_integer_variable(Integer{-prod_bounds}, Integer{prod_bounds});
-            p.post(MultBC{current_prod, indexed.at(j).first, new_prod});
+            p.post(Multiply{current_prod, indexed.at(j).first, new_prod});
             current_prod = new_prod;
             display_str << " * x[" << indexed.at(j).second << "]";
         }

@@ -1,4 +1,5 @@
 #include <gcs/gcs.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/innards/state.hh>
 #include <util/enumerate.hh>
 
@@ -1103,23 +1104,18 @@ namespace
             return {control, 0_i, 1_i};
         }
 
-        // Multiply two ExprResults via Times (or WeightedSum if either side
-        // is a constant). Used by binary and n-ary OMUL, OSQR, and OPOW.
-        // The constant-folding in this helper is a workaround for #153 —
-        // ideally the user-facing Times constraint would do it itself and
-        // also choose between the GAC and BC implementations based on
-        // domain widths.
+        // Multiply two ExprResults. Used by binary and n-ary OMUL and OSQR
+        // (OPOW posts Power directly). Multiply does its own constant
+        // folding and picks between the
+        // bounds consistent and tabulated-GAC implementations itself (#153
+        // and #444), so all that is left here is computing the result
+        // variable's bounds.
         auto post_product(ExprResult a, ExprResult b, const string & name) -> ExprResult
         {
             auto lower = min({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
             auto upper = max({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
             auto r = _problem.create_integer_variable(lower, upper, name);
-            if (a.lower == a.upper)
-                _problem.post(WeightedSum{} + a.lower * b.var == 1_i * r);
-            else if (b.lower == b.upper)
-                _problem.post(WeightedSum{} + b.lower * a.var == 1_i * r);
-            else
-                _problem.post(Times{a.var, b.var, r});
+            _problem.post(Multiply{a.var, b.var, r});
             return {r, lower, upper};
         }
 
@@ -1234,21 +1230,52 @@ namespace
             }
 
             case OPOW: {
-                // Only support a constant non-negative exponent: decompose
-                // to a chain of products. x^0 = 1, x^1 = x, x^k = x * x^(k-1).
+                // A constant exponent posts Power, which dispatches on the
+                // value itself (linear, a product chain, or a case analysis
+                // for negative exponents -- the XCSP3 spec is silent there, so
+                // we follow MiniZinc's 1 div x^|k| rule, matching Power's
+                // semantics everywhere else). A non-constant exponent stays
+                // unsupported at this level.
                 auto base = walk_intension(node->parameters.at(0));
                 auto exp = node->parameters.at(1);
                 if (exp->type != ODECIMAL)
                     report_unsupported("intension", "pow with non-constant exponent");
-                auto k = static_cast<NodeConstant *>(exp)->val;
-                if (k < 0)
-                    report_unsupported("intension", "pow with negative exponent");
-                if (k == 0)
+                auto k = Integer{static_cast<NodeConstant *>(exp)->val};
+                if (k == 0_i)
                     return {constant_variable(1_i), 1_i, 1_i};
-                auto chain = base;
-                for (int i = 1; i < k; ++i)
-                    chain = post_product(chain, base, "powresult");
-                return chain;
+                if (k == 1_i)
+                    return base;
+
+                // The result variable's bounds: for a negative exponent only
+                // -1, 0, 1 are reachable; otherwise the extremes are at the
+                // domain corners, plus the closest-to-zero points for even
+                // exponents. An overflowing bound is unsupported rather than
+                // an install-time error.
+                Integer lower(0_i), upper(0_i);
+                if (k < 0_i) {
+                    lower = -1_i;
+                    upper = 1_i;
+                }
+                else {
+                    vector<Integer> candidates{base.lower, base.upper};
+                    for (auto v : {-1_i, 0_i, 1_i})
+                        if (v >= base.lower && v <= base.upper)
+                            candidates.push_back(v);
+                    optional<Integer> lo, hi;
+                    for (auto & c : candidates) {
+                        auto val = innards::checked_integer_power(c, k);
+                        if (! val)
+                            report_unsupported("intension", "pow bounds overflow");
+                        lo = lo ? min(*lo, *val) : *val;
+                        hi = hi ? max(*hi, *val) : *val;
+                    }
+                    lower = *lo;
+                    upper = *hi;
+                }
+
+                auto r = _problem.create_integer_variable(lower, upper, "powresult");
+                _problem.post(Power{base.var, constant_variable(k), r});
+                return {r, lower, upper};
             }
 
             case OMOD: {
@@ -1256,7 +1283,7 @@ namespace
                 auto b = walk_intension(node->parameters.at(1));
                 auto bound = max(abs(b.lower), abs(b.upper));
                 auto r = _problem.create_integer_variable(-bound, bound, "modresult");
-                _problem.post(Mod{a.var, b.var, r});
+                _problem.post(Modulus{a.var, b.var, r});
                 return {r, -bound, bound};
             }
 
@@ -1265,7 +1292,7 @@ namespace
                 auto b = walk_intension(node->parameters.at(1));
                 auto bound = max(abs(a.lower), abs(a.upper));
                 auto r = _problem.create_integer_variable(-bound, bound, "divresult");
-                _problem.post(Div{a.var, b.var, r});
+                _problem.post(Divide{a.var, b.var, r});
                 return {r, -bound, bound};
             }
 

@@ -9,6 +9,7 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
+#include <gcs/constraints/divide.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/global_cardinality.hh>
@@ -22,9 +23,12 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/minus.hh>
+#include <gcs/constraints/modulus.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
+#include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
@@ -311,7 +315,7 @@ namespace
 
         // Equality family: lin_equals* and lin_not_equals*.
         auto [cond, flipped_cond] = equality_reification(op.starts_with("lin_not_equals"), iff, half, variables, terms[2]);
-        post_constraint(problem, ReifiedLinearEquality{std::move(coeff_vars), value, cond, false, flipped_cond}, label);
+        post_constraint(problem, ReifiedLinearEquality{std::move(coeff_vars), value, cond, consistency::BC{}, flipped_cond}, label);
     }
 
     // The equals family: (label <equals|not_equals>[_if|_iff] [(cond)] v1 v2),
@@ -804,6 +808,41 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 throw ScpReadError{"minus takes (label minus a b result)"};
             post_constraint(problem,
                 Minus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])}, label);
+        }
+        else if (op == "divide" || op == "modulus") {
+            // (label divide (x y quotient)) / (label modulus (x y remainder)):
+            // truncated division, with the divide-by-zero case relational.
+            if (terms.size() != 3)
+                throw ScpReadError{"divide/modulus takes (label " + op + " (x y result))"};
+            auto vars = resolve_variable_list(variables, terms[2], "the divide/modulus variable list");
+            if (vars.size() != 3)
+                throw ScpReadError{op + " takes exactly three variables"};
+            if (op == "divide")
+                post_constraint(problem, Divide{vars[0], vars[1], vars[2]}, label);
+            else
+                post_constraint(problem, Modulus{vars[0], vars[1], vars[2]}, label);
+        }
+        else if (op == "power") {
+            // (label power (base exponent result)): base ^ exponent = result,
+            // with MiniZinc semantics (0^0 = 1, negative exponent truncates).
+            if (terms.size() != 3)
+                throw ScpReadError{"power takes (label power (base exponent result))"};
+            auto vars = resolve_variable_list(variables, terms[2], "the power variable list");
+            if (vars.size() != 3)
+                throw ScpReadError{"power takes exactly three variables"};
+            post_constraint(problem, Power{vars[0], vars[1], vars[2]}, label);
+        }
+        else if (op == "multiply") {
+            // (label multiply (v1 v2 result)): v1 * v2 = result. Written by both
+            // Multiply and a directly-posted innards::MultiplyBC; reposting as
+            // Multiply resolves to the same encoding for the plain three-distinct-
+            // variables shape that MultiplyBC accepts.
+            if (terms.size() != 3)
+                throw ScpReadError{"multiply takes (label multiply (v1 v2 result))"};
+            auto vars = resolve_variable_list(variables, terms[2], "the multiply variable list");
+            if (vars.size() != 3)
+                throw ScpReadError{"multiply takes exactly three variables"};
+            post_constraint(problem, Multiply{vars[0], vars[1], vars[2]}, label);
         }
         else if (op == "disjunctive" || op == "disjunctive_strict") {
             // (label disjunctive (starts...) (lengths...)): the tasks

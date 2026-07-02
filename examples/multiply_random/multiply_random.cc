@@ -1,5 +1,5 @@
 #include <cxxopts.hpp>
-#include <gcs/constraints/mult_bc.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 #include <iostream>
@@ -83,7 +83,7 @@ auto main(int argc, char * argv[]) -> int
     auto z_upper = z_lower + Integer{add_dist(rng)};
     auto z = p.create_integer_variable(z_lower, z_upper, "z");
 
-    p.post(MultBC{x, y, z});
+    p.post(Multiply{x, y, z});
 
     if (display_problem) {
         println(cout, "x in {}..{}", x_lower, x_upper);

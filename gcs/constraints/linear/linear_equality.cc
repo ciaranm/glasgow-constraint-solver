@@ -1,5 +1,6 @@
 #include <gcs/constraints/extensional_utils.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
@@ -56,101 +57,11 @@ using std::print;
 using fmt::print;
 #endif
 
-ReifiedLinearEquality::ReifiedLinearEquality(
-    WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool gac, bool flipped_cond, std::optional<std::size_t> incremental_threshold) :
-    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _gac(gac), _flipped_cond(flipped_cond),
+ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, LinearEqualityConsistency level,
+    bool flipped_cond, std::optional<std::size_t> incremental_threshold) :
+    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _level(level), _flipped_cond(flipped_cond),
     _incremental_threshold(incremental_threshold)
 {
-}
-
-namespace
-{
-
-    template <typename CV_>
-    auto build_table(const CV_ & coeff_vars, Integer value, ReificationCondition cond, State & state, ProofLogger * const logger)
-        -> optional<ExtensionalData>
-    {
-        vector<vector<IntegerOrWildcard>> permitted;
-        vector<Integer> current;
-
-        vector<IntegerVariableID> vars;
-        for (auto & cv : coeff_vars.terms) {
-            auto var = get_var(cv);
-            vars.push_back(var);
-        }
-
-        auto future_var_id = state.what_variable_id_will_be_created_next();
-
-        WPBSum trail;
-        function<void(ProofLogger * const)> search = [&](ProofLogger * const logger) {
-            if (current.size() == coeff_vars.terms.size()) {
-                Integer actual_value{0_i};
-                for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
-                    actual_value += get_coeff(cv) * current[idx];
-                }
-
-                bool match = overloaded{
-                    [&](const reif::MustHold &) { return actual_value == value; },      //
-                    [&](const reif::MustNotHold &) { return actual_value != value; },   //
-                    [&](const reif::If) -> bool { throw UnimplementedException{}; },    //
-                    [&](const reif::NotIf) -> bool { throw UnimplementedException{}; }, //
-                    [&](const reif::Iff) -> bool { throw UnimplementedException{}; }    //
-                }
-                                 .visit(cond);
-
-                if (match) {
-                    permitted.emplace_back(current.begin(), current.end());
-                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                        Integer sel_value(permitted.size() - 1);
-                        logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(future_var_id, sel_value, "lineq");
-                        trail += 1_i * (future_var_id == sel_value);
-
-                        WPBSum forward_implication, reverse_implication;
-                        forward_implication += Integer(coeff_vars.terms.size()) * (future_var_id != sel_value);
-                        reverse_implication += 1_i * (future_var_id == sel_value);
-
-                        for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
-                            forward_implication += 1_i * (get_var(cv) == current[idx]);
-                            reverse_implication += 1_i * (get_var(cv) != current[idx]);
-                        }
-
-                        logger->emit_red_proof_line(forward_implication >= Integer(coeff_vars.terms.size()),
-                            {{future_var_id == sel_value, FalseLiteral{}}}, ProofLevel::Current);
-                        logger->emit_red_proof_line(reverse_implication >= 1_i, {{future_var_id == sel_value, TrueLiteral{}}}, ProofLevel::Current);
-                    }
-                }
-            }
-            else {
-                const auto & var = get_var(coeff_vars.terms[current.size()]);
-                for (auto val : state.each_value_mutable(var)) {
-                    current.push_back(val);
-                    search(logger);
-                    current.pop_back();
-                }
-            }
-
-            if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                WPBSum backtrack = trail;
-                for (const auto & [idx, val] : enumerate(current))
-                    backtrack += 1_i * (get_var(coeff_vars.terms[idx]) != val);
-
-                logger->emit_rup_proof_line(backtrack >= 1_i, ProofLevel::Current);
-            }
-        };
-
-        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
-            logger->emit_proof_comment("building GAC table for linear equality");
-        search(logger);
-
-        if (permitted.empty())
-            return nullopt;
-
-        auto sel = state.allocate_integer_variable_with_state(0_i, Integer(permitted.size() - 1));
-        if (sel != future_var_id)
-            throw UnexpectedException{"something went horribly wrong with variable IDs"};
-
-        return ExtensionalData{sel, move(vars), move(permitted)};
-    }
 }
 
 auto ReifiedLinearEquality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -243,33 +154,49 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
     }
         .visit(_reif_cond);
 
-    if (_gac) {
+    if (std::holds_alternative<consistency::Tabulated>(_level)) {
         visit(
             [&, modifier = modifier](auto & sanitised_cv) {
-                // we're watching everything
-                Triggers triggers;
+                TabulationVariables enum_vars;
                 for (auto & cv : sanitised_cv.terms)
-                    triggers.on_change.push_back(get_var(cv));
+                    enum_vars.position_of(get_var(cv));
 
-                auto data = make_shared<optional<ExtensionalData>>(nullopt);
-                propagators.install_initialiser(
-                    [data = data, coeff_vars = sanitised_cv, value = _value + modifier, cond = _reif_cond, owner = constraint_id()](
-                        State & state, auto & inference, ProofLogger * const logger) {
-                        *data = build_table(coeff_vars, value, cond, state, logger);
-                        if (! data->has_value())
-                            inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{hints::LinearEquality{owner}}, ExplicitReason{ReasonLiterals{}});
-                    },
-                    InitialiserPriority::Expensive);
+                // the enumeration, in-proof selector introduction, and
+                // extensional wiring live in install_tabulation, and the
+                // reification handling in reify_tabulation; all that is ours
+                // is the base acceptance test over the term positions, and
+                // solving the equality for each term as the determined values.
+                auto base_accept = [coeff_vars = sanitised_cv, value = _value + modifier](const vector<Integer> & current) -> bool {
+                    Integer actual_value{0_i};
+                    for (const auto & [idx, cv] : enumerate(coeff_vars.terms))
+                        actual_value += get_coeff(cv) * current[idx];
+                    return actual_value == value;
+                };
 
-                propagators.install(
-                    constraint_id(),
-                    [data = data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                        if (data->has_value())
-                            return propagate_extensional(data.get()->value(), state, inference, logger, hints::LinearEquality{owner});
-                        else
-                            return PropagatorState::DisableUntilBacktrack;
-                    },
-                    triggers);
+                // every term variable is a function of the others when the
+                // equality is enforced (the sanitised terms have distinct
+                // variables and nonzero coefficients), pinned by unit
+                // propagation on the possibly half-reified equality;
+                // reify_tabulation drops the claims when no branch enforces
+                // it.
+                vector<DeterminedVariable> determined;
+                for (const auto & [idx, cv] : enumerate(sanitised_cv.terms))
+                    determined.push_back({get_var(cv),
+                        [coeff_vars = sanitised_cv, value = _value + modifier, idx = idx](const vector<Integer> & current) -> optional<Integer> {
+                            Integer other{0_i};
+                            for (const auto & [jdx, cw] : enumerate(coeff_vars.terms))
+                                if (jdx != idx)
+                                    other += get_coeff(cw) * current[jdx];
+                            auto coeff = get_coeff(coeff_vars.terms[idx]);
+                            if ((value - other) % coeff != 0_i)
+                                return nullopt;
+                            return (value - other) / coeff;
+                        }});
+
+                auto reified = reify_tabulation(_reif_cond, enum_vars, base_accept, move(determined));
+
+                install_tabulation<hints::LinearEquality>(propagators, constraint_id(), enum_vars.vars(), move(reified.determined),
+                    move(reified.reification), move(reified.accept), "lineq", "building GAC table for linear equality");
             },
             sanitised_cv);
     }
@@ -509,11 +436,12 @@ auto ReifiedLinearEquality::s_expr(const ProofModel * const model) const -> SExp
 
 auto ReifiedLinearEquality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _gac, _flipped_cond, _incremental_threshold);
+    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _level, _flipped_cond, _incremental_threshold);
 }
 
-LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value, bool gac, std::optional<std::size_t> incremental_threshold) :
-    ReifiedLinearEquality(coeff_vars, value, reif::MustHold{}, gac, false, incremental_threshold)
+LinearEquality::LinearEquality(
+    WeightedSum coeff_vars, Integer value, LinearEqualityConsistency level, std::optional<std::size_t> incremental_threshold) :
+    ReifiedLinearEquality(coeff_vars, value, reif::MustHold{}, level, false, incremental_threshold)
 {
 }
 
@@ -531,27 +459,27 @@ namespace
     }
 }
 
-LinearEqualityIf::LinearEqualityIf(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::If>(cond), gac)
+LinearEqualityIf::LinearEqualityIf(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::If>(cond), level)
 {
 }
 
-LinearEqualityIff::LinearEqualityIff(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(cond), gac)
+LinearEqualityIff::LinearEqualityIff(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(cond), level)
 {
 }
 
-LinearNotEquals::LinearNotEquals(WeightedSum coeff_vars, Integer value, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, reif::MustNotHold{}, gac)
+LinearNotEquals::LinearNotEquals(WeightedSum coeff_vars, Integer value, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, reif::MustNotHold{}, level)
 {
 }
 
-LinearNotEqualsIf::LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::NotIf>(cond), gac)
+LinearNotEqualsIf::LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::NotIf>(cond), level)
 {
 }
 
-LinearNotEqualsIff::LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, Literal cond, bool gac) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), gac, true)
+LinearNotEqualsIff::LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), level, true)
 {
 }

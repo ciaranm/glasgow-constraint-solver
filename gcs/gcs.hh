@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_GCS_HH
 
 #include <gcs/array_param.hh>
+#include <gcs/consistency.hh>
 #include <gcs/constraint.hh>
 #include <gcs/current_state.hh>
 #include <gcs/exception.hh>
@@ -21,13 +22,13 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/all_equal.hh>
 #include <gcs/constraints/among.hh>
-#include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/circuit.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
+#include <gcs/constraints/divide.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/global_cardinality.hh>
@@ -40,10 +41,12 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/minus.hh>
-#include <gcs/constraints/mult_bc.hh>
+#include <gcs/constraints/modulus.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
+#include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular.hh>
 #include <gcs/constraints/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table.hh>

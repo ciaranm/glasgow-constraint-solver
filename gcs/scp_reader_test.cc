@@ -9,6 +9,7 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
+#include <gcs/constraints/divide.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/global_cardinality.hh>
@@ -18,6 +19,10 @@
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/min_max.hh>
+#include <gcs/constraints/modulus.hh>
+#include <gcs/constraints/multiply.hh>
+#include <gcs/constraints/multiply/multiply_bc.hh>
+#include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
@@ -308,6 +313,137 @@ TEST_CASE("read_scp: linear constraints survive write -> read -> write unchanged
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_lin_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: multiply enumerates correctly")
+{
+    auto solutions = enumerate(R"(
+        (
+            ( (X 1 3) (Y 1 3) (Z 1 9) )
+            ( (_1 multiply (X Y Z)) )
+        ))");
+
+    CHECK(solutions.size() == 9);
+    for (const auto & s : solutions)
+        CHECK(s.at("X") * s.at("Y") == s.at("Z"));
+}
+
+TEST_CASE("read_scp: multiply constraints survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto y = original.create_integer_variable(1_i, 3_i, "Y");
+    auto z = original.create_integer_variable(-6_i, 6_i, "Z");
+    original.post(Multiply{x, y, z}); // plain: multiply
+    original.post(Multiply{x, x, z}); // aliased: still multiply
+    // (a view operand also writes a multiply term, but view terms are lists and
+    // the reader's resolve_variable only handles atoms, as for every other
+    // constraint -- so no view case here)
+    original.post(Multiply{constant_variable(2_i), y, z}); // constant operand: resolves to lin_equals
+    original.post(innards::MultiplyBC{x, y, z});           // directly-posted innards form writes the same term
+    auto scp_a = prove_to_scp(original, "scp_reader_multiply_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_multiply_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: divide and modulus enumerate correctly")
+{
+    auto div_solutions = enumerate(R"(
+        (
+            ( (X -3 3) (Y -2 2) (Q -3 3) )
+            ( (_1 divide (X Y Q)) )
+        ))");
+
+    CHECK(! div_solutions.empty());
+    for (const auto & s : div_solutions) {
+        CHECK(s.at("Y") != 0);
+        if (s.at("Y") != 0)
+            CHECK(s.at("X") / s.at("Y") == s.at("Q"));
+    }
+
+    auto mod_solutions = enumerate(R"(
+        (
+            ( (X -3 3) (Y -2 2) (R -3 3) )
+            ( (_1 modulus (X Y R)) )
+        ))");
+
+    CHECK(! mod_solutions.empty());
+    for (const auto & s : mod_solutions) {
+        CHECK(s.at("Y") != 0);
+        if (s.at("Y") != 0)
+            CHECK(s.at("X") % s.at("Y") == s.at("R"));
+    }
+}
+
+TEST_CASE("read_scp: divide and modulus survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-3_i, 3_i, "X");
+    auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+    auto z = original.create_integer_variable(-3_i, 3_i, "Z");
+    original.post(Divide{x, y, z});
+    original.post(Modulus{x, y, z});
+    original.post(Divide{x, constant_variable(2_i), z}); // constant divisor: still divide
+    auto scp_a = prove_to_scp(original, "scp_reader_divmod_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_divmod_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: power enumerates correctly")
+{
+    auto solutions = enumerate(R"(
+        (
+            ( (X -2 2) (K -1 3) (Z -2 8) )
+            ( (_1 power (X K Z)) )
+        ))");
+
+    CHECK(! solutions.empty());
+    for (const auto & s : solutions) {
+        auto a = s.at("X"), b = s.at("K"), c = s.at("Z");
+        if (b == 0)
+            CHECK(c == 1);
+        else if (a == 1)
+            CHECK(c == 1);
+        else if (a == -1)
+            CHECK(c == ((b % 2 == 0) ? 1 : -1));
+        else if (b < 0)
+            CHECK((a != 0 && c == 0));
+        else {
+            long long r = 1;
+            for (long long i = 0; i < b; ++i)
+                r *= a;
+            CHECK(c == r);
+        }
+    }
+}
+
+TEST_CASE("read_scp: power survives write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto k = original.create_integer_variable(0_i, 3_i, "K");
+    auto z = original.create_integer_variable(-8_i, 8_i, "Z");
+    original.post(Power{x, k, z});                       // variable exponent: PowerTable
+    original.post(Power{x, constant_variable(2_i), z});  // constant exponent: chain
+    original.post(Power{x, constant_variable(-2_i), z}); // negative: case analysis
+    auto scp_a = prove_to_scp(original, "scp_reader_power_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_power_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

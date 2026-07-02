@@ -81,6 +81,31 @@ variant's header and may add a `using AllDifferent = GACAllDifferent;`
 style alias to name the default implementation. `gcs/gcs.hh` then only
 needs the umbrella, not each variant.
 
+Newer constraints select behaviour with the `gcs/consistency.hh` tag
+types instead of separate public variant classes (issue #299): the
+constructor takes a `std::variant` over exactly the levels it supports,
+defaulted sensibly, as in `Multiply{x, y, z, consistency::Tabulated{}}`. `consistency::GAC`
+names a genuine algorithm that achieves the level; a constraint that can
+only get there by enumerating a table takes `consistency::Tabulated`, so
+the very different cost model is visible in the signature. The
+arithmetic family (`Multiply`, `Divide`, `Modulus`, `Power`, `Plus`,
+`Minus`) also accepts `consistency::Auto`, which tabulates the relation
+for GAC when the domains involved are small (see
+`gcs/constraints/innards/tabulation.hh`); the tag never changes the OPB
+encoding, since the table is derived in-proof.
+
+A compound constraint should emit one flat `@c[id][role]` OPB block and
+install one propagator, reusing the exposed machinery (`mult_bc::
+define_encoding` / `mult_bc::propagate`, the `linear_stages` helpers,
+`propagate_linear`, `install_tabulation`) rather than installing child
+constraint objects — see the arithmetic family for the pattern, and
+issue #448 for why. Two contracts to know: `propagate_linear` signals
+failure through the tracker's non-throwing path, so check
+`inference.contradicted()` after each linear stage; and a constraint
+that does install a child directly (`SeqPrecedeChain`'s `ValuePrecede`)
+must give it an identity, or id-keyed proof flags collide across
+instances (issue #449).
+
 ## The header
 
 ```cpp
@@ -702,7 +727,7 @@ correctness work wants the full enumeration check.
       when alias has no meaningful semantics, the propagator path is
       unsafe, or the proof encoding can't tolerate it. The Bucket A
       family — `NotEquals`, `LessThan`, `GreaterThan`, `Circuit*`,
-      `Inverse`, `MultBC`, `SmartTable` `BinaryEntry` — uses this.
+      `Inverse`, `innards::MultiplyBC` (via `Multiply`), `SmartTable` `BinaryEntry` — uses this.
       By convention the check is gated on
       `! is_constant_variable(...)` so two slots pinned to the same
       constant remain a well-formed (if often trivially infeasible)

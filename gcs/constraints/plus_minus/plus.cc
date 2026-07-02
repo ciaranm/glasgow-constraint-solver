@@ -1,3 +1,6 @@
+#include <gcs/constraints/innards/arithmetic_utils.hh>
+#include <gcs/constraints/innards/tabulation.hh>
+#include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/plus_minus/hints.hh>
 #include <gcs/constraints/plus_minus/plus.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -9,32 +12,19 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
-#include <sstream>
-
-#include <version>
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-#include <print>
-#else
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#endif
+#include <util/enumerate.hh>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::holds_alternative;
+using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
-using std::string;
-using std::stringstream;
+using std::size_t;
 using std::unique_ptr;
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-using std::print;
-#else
-using fmt::print;
-#endif
+using std::vector;
 
 namespace gcs::innards::hints
 {
@@ -109,13 +99,13 @@ namespace
     }
 }
 
-Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) : _a(a), _b(b), _result(result)
+Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result, PlusConsistency level) : _a(a), _b(b), _result(result), _level(level)
 {
 }
 
 auto Plus::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Plus>(_a, _b, _result);
+    return make_unique<Plus>(_a, _b, _result, _level);
 }
 
 auto Plus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -127,6 +117,52 @@ auto Plus::install(Propagators & propagators, State & initial_state, ProofModel 
         define_proof_model(*optional_model);
 
     install_propagators(propagators);
+
+    // Tabulation for GAC: enumerate the distinct underlying variables, mapping
+    // values back through the affine forms.
+    auto aa = affine_of(_a), ab = affine_of(_b), ac = affine_of(_result);
+    TabulationVariables enum_vars;
+    optional<size_t> pa = aa.var ? optional{enum_vars.position_of(*aa.var)} : nullopt;
+    optional<size_t> pb = ab.var ? optional{enum_vars.position_of(*ab.var)} : nullopt;
+    optional<size_t> pc = ac.var ? optional{enum_vars.position_of(*ac.var)} : nullopt;
+
+    // the relation is linear, so any variable whose net coefficient in
+    // a + b - result is nonzero is a function of the others, and the
+    // encoding pins it by unit propagation. Aliased slots make the net
+    // coefficient differ from the slot's own: in x + y = x, say, y is
+    // determined but x is not.
+    vector<DeterminedVariable> determined;
+    for (const auto & [pos, v] : enumerate(enum_vars.vars())) {
+        auto net = (pa && *pa == pos ? aa.coeff : 0_i) + (pb && *pb == pos ? ab.coeff : 0_i) - (pc && *pc == pos ? ac.coeff : 0_i);
+        if (net != 0_i)
+            determined.push_back({v, [aa, ab, ac, pa, pb, pc, pos = pos, net](const vector<Integer> & vals) -> optional<Integer> {
+                                      auto other = aa.offset + ab.offset - ac.offset;
+                                      if (pa && *pa != pos)
+                                          other += aa.coeff * vals[*pa];
+                                      if (pb && *pb != pos)
+                                          other += ab.coeff * vals[*pb];
+                                      if (pc && *pc != pos)
+                                          other -= ac.coeff * vals[*pc];
+                                      if ((-other) % net != 0_i)
+                                          return nullopt;
+                                      return -other / net;
+                                  }});
+    }
+
+    if (want_tabulation(_level, enum_vars.vars(), determined, initial_state)) {
+        auto accept = [aa, ab, ac, pa, pb, pc](const vector<Integer> & vals) -> bool {
+            auto av = pa ? aa.coeff * vals[*pa] + aa.offset : aa.offset;
+            auto bv = pb ? ab.coeff * vals[*pb] + ab.offset : ab.offset;
+            auto cv = pc ? ac.coeff * vals[*pc] + ac.offset : ac.offset;
+            long long sum;
+            if (__builtin_add_overflow(av.raw_value, bv.raw_value, &sum))
+                return false;
+            return sum == cv.raw_value;
+        };
+
+        install_tabulation<hints::Plus>(
+            propagators, constraint_id(), enum_vars.vars(), move(determined), nullopt, accept, "plustab", "building GAC table for plus");
+    }
 }
 
 auto Plus::define_proof_model(ProofModel & model) -> void

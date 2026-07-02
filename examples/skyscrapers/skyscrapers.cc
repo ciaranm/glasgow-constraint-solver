@@ -1,5 +1,4 @@
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/linear.hh>
@@ -235,7 +234,7 @@ auto main(int argc, char * argv[]) -> int
                     p.post(EqualsIff{how_many_hidden, constant_variable(0_i), *visible_vars[downwards ? r : c][downwards ? c : r] == 1_i});
                 }
             }
-            p.post(LinearEquality{move(how_many_visible), Integer(target[c]), true});
+            p.post(LinearEquality{move(how_many_visible), Integer(target[c]), consistency::Tabulated{}});
         }
     };
 
