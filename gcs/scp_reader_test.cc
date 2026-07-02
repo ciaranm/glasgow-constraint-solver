@@ -9,6 +9,7 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
+#include <gcs/constraints/divide.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/global_cardinality.hh>
@@ -18,6 +19,7 @@
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/min_max.hh>
+#include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/multiply/multiply_bc.hh>
 #include <gcs/constraints/regular/regular.hh>
@@ -346,6 +348,54 @@ TEST_CASE("read_scp: multiply constraints survive write -> read -> write unchang
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_multiply_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: divide and modulus enumerate correctly")
+{
+    auto div_solutions = enumerate(R"(
+        (
+            ( (X -3 3) (Y -2 2) (Q -3 3) )
+            ( (_1 divide (X Y Q)) )
+        ))");
+
+    CHECK(! div_solutions.empty());
+    for (const auto & s : div_solutions) {
+        CHECK(s.at("Y") != 0);
+        if (s.at("Y") != 0)
+            CHECK(s.at("X") / s.at("Y") == s.at("Q"));
+    }
+
+    auto mod_solutions = enumerate(R"(
+        (
+            ( (X -3 3) (Y -2 2) (R -3 3) )
+            ( (_1 modulus (X Y R)) )
+        ))");
+
+    CHECK(! mod_solutions.empty());
+    for (const auto & s : mod_solutions) {
+        CHECK(s.at("Y") != 0);
+        if (s.at("Y") != 0)
+            CHECK(s.at("X") % s.at("Y") == s.at("R"));
+    }
+}
+
+TEST_CASE("read_scp: divide and modulus survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-3_i, 3_i, "X");
+    auto y = original.create_integer_variable(-2_i, 2_i, "Y");
+    auto z = original.create_integer_variable(-3_i, 3_i, "Z");
+    original.post(Divide{x, y, z});
+    original.post(Modulus{x, y, z});
+    original.post(Divide{x, constant_variable(2_i), z}); // constant divisor: still divide
+    auto scp_a = prove_to_scp(original, "scp_reader_divmod_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_divmod_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

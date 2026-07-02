@@ -1,4 +1,5 @@
 #include <cmath>
+#include <gcs/constraints/divide_modulus/hints.hh>
 #include <gcs/constraints/extensional_utils.hh>
 #include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/multiply/hints.hh>
@@ -130,5 +131,7 @@ GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(NoHint)
 GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Table)
 GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::LinearEquality)
 GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Multiply)
+GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Divide)
+GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Modulus)
 
 #undef GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL

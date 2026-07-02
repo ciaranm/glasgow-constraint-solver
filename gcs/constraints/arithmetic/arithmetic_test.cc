@@ -66,18 +66,6 @@ namespace
     };
 
     template <>
-    struct NameOf<Div>
-    {
-        static const constexpr auto name = "div";
-    };
-
-    template <>
-    struct NameOf<Mod>
-    {
-        static const constexpr auto name = "mod";
-    };
-
-    template <>
     struct NameOf<Power>
     {
         static const constexpr auto name = "power";
@@ -270,16 +258,16 @@ auto main(int, char *[]) -> int
         {{1, 5}, {6, 8}, {-10, 10}},                                                                 //
         {{1, 1}, {2, 4}, {-5, 5}},                                                                   //
         // issue #254: all-fixed (singleton-domain) operands. Each row runs for
-        // Plus/Minus/Div/Mod; build_expected gives the per-operation truth, so
+        // Plus/Minus; build_expected gives the per-operation truth, so
         // each tautology direction is hit by exactly one operation and the
         // others act as the contradiction direction. (The multiplication row
         // lives on as a contradiction row; Multiply has its own test.)
         {{2, 2}, {3, 3}, {5, 5}},    // Plus: 2+3==5
         {{5, 5}, {2, 2}, {3, 3}},    // Minus: 5-2==3
         {{2, 2}, {3, 3}, {6, 6}},    // 2*3==6, contradiction for the others
-        {{6, 6}, {3, 3}, {2, 2}},    // Div: 6/3==2
-        {{7, 7}, {3, 3}, {1, 1}},    // Mod: 7%3==1
-        {{5, 5}, {0, 0}, {3, 3}},    // Div/Mod by fixed zero: no solution
+        {{6, 6}, {3, 3}, {2, 2}},    // 6/3==2, contradiction for the others
+        {{7, 7}, {3, 3}, {1, 1}},    // 7%3==1, contradiction for the others
+        {{5, 5}, {0, 0}, {3, 3}},    // zero middle operand
         {{5, 5}, {2, 2}, {99, 99}}}; // all operations contradicted
 
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> power_data = {
@@ -307,8 +295,6 @@ auto main(int, char *[]) -> int
         for (auto & [r1, r2, r3] : data) {
             run_arithmetic_test<PlusGAC>(proofs, r1, r2, r3, [](int a, int b, int c) { return a + b == c; });
             run_arithmetic_test<MinusGAC>(proofs, r1, r2, r3, [](int a, int b, int c) { return a - b == c; });
-            run_arithmetic_test<Div>(proofs, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a / b == c; });
-            run_arithmetic_test<Mod>(proofs, r1, r2, r3, [](int a, int b, int c) { return 0 != b && a % b == c; });
         }
         for (auto & [r1, r2, r3] : power_data) {
             run_arithmetic_test<Power>(proofs, r1, r2, r3, power_is_satisfying);
@@ -346,15 +332,13 @@ auto main(int, char *[]) -> int
 
         // Dup-variable cases for the GAC-via-Table specialisations. Domains
         // are kept small because the underlying tuple table is materialised.
-        // Div/Mod need divisors to avoid zero; the lambdas already guard.
+        // (The division-family dup cases live in divide_modulus_test now.)
         vector<pair<pair<int, int>, pair<int, int>>> dup_data = {
             {{-3, 3}, {-9, 9}}, //
             {{1, 4}, {-5, 5}}   //
         };
         auto plus_sat = [](int a, int b, int c) { return a + b == c; };
         auto minus_sat = [](int a, int b, int c) { return a - b == c; };
-        auto div_sat = [](int a, int b, int c) { return 0 != b && a / b == c; };
-        auto mod_sat = [](int a, int b, int c) { return 0 != b && a % b == c; };
         for (auto & [ar, br] : dup_data) {
             run_dup_arithmetic_test<PlusGAC>(proofs, AliasV1V2{}, "v1v2", ar, br, plus_sat);
             run_dup_arithmetic_test<PlusGAC>(proofs, AliasV1V3{}, "v1v3", ar, br, plus_sat);
@@ -364,14 +348,6 @@ auto main(int, char *[]) -> int
             run_dup_arithmetic_test<MinusGAC>(proofs, AliasV1V3{}, "v1v3", ar, br, minus_sat);
             run_dup_arithmetic_test<MinusGAC>(proofs, AliasV2V3{}, "v2v3", ar, br, minus_sat);
             run_dup_arithmetic_test<MinusGAC>(proofs, AliasAll{}, "all", ar, br, minus_sat);
-            run_dup_arithmetic_test<Div>(proofs, AliasV1V2{}, "v1v2", ar, br, div_sat);
-            run_dup_arithmetic_test<Div>(proofs, AliasV1V3{}, "v1v3", ar, br, div_sat);
-            run_dup_arithmetic_test<Div>(proofs, AliasV2V3{}, "v2v3", ar, br, div_sat);
-            run_dup_arithmetic_test<Div>(proofs, AliasAll{}, "all", ar, br, div_sat);
-            run_dup_arithmetic_test<Mod>(proofs, AliasV1V2{}, "v1v2", ar, br, mod_sat);
-            run_dup_arithmetic_test<Mod>(proofs, AliasV1V3{}, "v1v3", ar, br, mod_sat);
-            run_dup_arithmetic_test<Mod>(proofs, AliasV2V3{}, "v2v3", ar, br, mod_sat);
-            run_dup_arithmetic_test<Mod>(proofs, AliasAll{}, "all", ar, br, mod_sat);
         }
 
         // Power dup: kept very small since result range can blow up quickly.

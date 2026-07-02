@@ -29,6 +29,7 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
+#include <gcs/constraints/divide.hh>
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/constraints/global_cardinality.hh>
@@ -41,6 +42,7 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/minus.hh>
+#include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/parity.hh>

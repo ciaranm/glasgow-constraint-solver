@@ -1250,7 +1250,7 @@ namespace
                 auto b = walk_intension(node->parameters.at(1));
                 auto bound = max(abs(b.lower), abs(b.upper));
                 auto r = _problem.create_integer_variable(-bound, bound, "modresult");
-                _problem.post(Mod{a.var, b.var, r});
+                _problem.post(Modulus{a.var, b.var, r});
                 return {r, -bound, bound};
             }
 
@@ -1259,7 +1259,7 @@ namespace
                 auto b = walk_intension(node->parameters.at(1));
                 auto bound = max(abs(a.lower), abs(a.upper));
                 auto r = _problem.create_integer_variable(-bound, bound, "divresult");
-                _problem.post(Div{a.var, b.var, r});
+                _problem.post(Divide{a.var, b.var, r});
                 return {r, -bound, bound};
             }
 

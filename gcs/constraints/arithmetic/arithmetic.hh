@@ -33,8 +33,8 @@ namespace gcs
          * \sa gcs::Plus
          * \sa gcs::Minus
          * \sa gcs::Multiply
-         * \sa gcs::Div
-         * \sa gcs::Mod
+         * \sa gcs::Divide
+         * \sa gcs::Modulus
          * \sa gcs::Power
          */
         template <ArithmeticOperator op_>
@@ -84,25 +84,9 @@ namespace gcs
     // There is no longer a Times typedef: use gcs::Multiply, which picks a
     // sensible implementation itself and tabulates for GAC when appropriate.
 
-    /**
-     * \brief Constrain that `v1 / v2 = result`.
-     *
-     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|): the full tuple
-     * table is materialised, so wide variable domains will exhaust memory.
-     *
-     * \ingroup Constraints
-     */
-    using Div = innards::GACArithmetic<innards::ArithmeticOperator::Div>;
-
-    /**
-     * \brief Constrain that `v1 % v2 = result`.
-     *
-     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|): the full tuple
-     * table is materialised, so wide variable domains will exhaust memory.
-     *
-     * \ingroup Constraints
-     */
-    using Mod = innards::GACArithmetic<innards::ArithmeticOperator::Mod>;
+    // There are no longer Div or Mod typedefs: use gcs::Divide and
+    // gcs::Modulus, which propagate through a decomposition rather than a
+    // materialised table, and tabulate in-proof for GAC when appropriate.
 
     /**
      * \brief Constrain that `power(v1, v2) = result`.

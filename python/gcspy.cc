@@ -282,15 +282,15 @@ auto Python::post_arithmetic(const string & var_id_1, const string & var_id_2, c
     }
     else if (op == "div") {
 #ifdef WRITE_API_CALLS
-        api_calls << " p.post(Div(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+        api_calls << " p.post(Divide(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
 #endif
-        p.post(Div(var1, var2, result));
+        p.post(Divide(var1, var2, result));
     }
     else if (op == "mod") {
 #ifdef WRITE_API_CALLS
-        api_calls << " p.post(Mod(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
+        api_calls << " p.post(Modulus(v" << var_id_1 << " , v" << var_id_2 << ");" << endl;
 #endif
-        p.post(Mod(var1, var2, result));
+        p.post(Modulus(var1, var2, result));
     }
     else if (op == "pow") {
 #ifdef WRITE_API_CALLS

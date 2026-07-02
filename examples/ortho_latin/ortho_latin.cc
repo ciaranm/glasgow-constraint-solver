@@ -1,7 +1,8 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/all_different/vc_all_different.hh>
-#include <gcs/constraints/arithmetic.hh>
+#include <gcs/constraints/divide.hh>
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/modulus.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -111,8 +112,8 @@ auto main(int argc, char * argv[]) -> int
 
     for (int x = 0; x < size; ++x)
         for (int y = 0; y < size; ++y) {
-            p.post(Div{g12[x * size + y], constant_variable(Integer{size}), g1[x][y]});
-            p.post(Mod{g12[x * size + y], constant_variable(Integer{size}), g2[x][y]});
+            p.post(Divide{g12[x * size + y], constant_variable(Integer{size}), g1[x][y]});
+            p.post(Modulus{g12[x * size + y], constant_variable(Integer{size}), g2[x][y]});
         }
 
     for (int x = 0; x < size; ++x) {
