@@ -147,13 +147,22 @@ auto gcs::innards::default_tabulation_threshold() -> long long
 }
 
 auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::Tabulated> & level,
-    const vector<IntegerVariableID> & enum_vars, const State & initial_state) -> bool
+    const vector<IntegerVariableID> & enum_vars, const vector<DeterminedVariable> & determined_vars, const State & initial_state) -> bool
 {
     return overloaded{[&](const consistency::Tabulated &) { return true; }, [&](const consistency::BC &) { return false; },
         [&](const consistency::Auto &) {
+            // build_table_in_proof skips the largest-domained determined
+            // variable's level (picked the same way here, first of equal
+            // maxima), so neither the enumeration nor the proof derivation
+            // pays for it: leave it out of the budget.
+            optional<IntegerVariableID> skip;
+            for (const auto & d : determined_vars)
+                if ((! skip) || initial_state.domain_size(d.var) > initial_state.domain_size(*skip))
+                    skip = d.var;
+
             long long size = 1;
             for (const auto & v : enum_vars)
-                if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
+                if (v != skip && __builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
                     return false;
             return size <= default_tabulation_threshold();
         }}

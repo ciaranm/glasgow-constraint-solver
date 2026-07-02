@@ -80,13 +80,32 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
         auto linear_level = overloaded{[&](const consistency::BC &) -> LinearEqualityConsistency { return consistency::BC{}; },
             [&](const consistency::Tabulated &) -> LinearEqualityConsistency { return consistency::Tabulated{}; },
             [&](const consistency::Auto &) -> LinearEqualityConsistency {
-                long long size = 1;
-                for (const auto & [_, v] : sum.terms)
-                    if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
+                // budget for what the delegated equality will enumerate: the
+                // sanitised terms, with the largest-domained one's level left
+                // out because MustHold claims every term as determined
+                auto tidied = tidy_up_linear(sum).first;
+                return visit(
+                    [&](const auto & cv) -> LinearEqualityConsistency {
+                        Integer largest = 0_i;
+                        for (const auto & term : cv.terms)
+                            largest = max(largest, initial_state.domain_size(get_var(term)));
+
+                        long long size = 1;
+                        bool skipped = false;
+                        for (const auto & term : cv.terms) {
+                            auto d = initial_state.domain_size(get_var(term));
+                            if ((! skipped) && d == largest) {
+                                skipped = true;
+                                continue;
+                            }
+                            if (__builtin_mul_overflow(size, d.raw_value, &size))
+                                return consistency::BC{};
+                        }
+                        if (size <= default_tabulation_threshold())
+                            return consistency::Tabulated{};
                         return consistency::BC{};
-                if (size <= default_tabulation_threshold())
-                    return consistency::Tabulated{};
-                return consistency::BC{};
+                    },
+                    tidied);
             }}.visit(_level);
 
         LinearEquality resolved{move(sum), value, linear_level};
@@ -233,7 +252,22 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
     auto p2 = enum_vars.position_of(u2);
     optional<size_t> p3 = a3.var ? optional{enum_vars.position_of(*a3.var)} : nullopt;
 
-    if (want_tabulation(_level, enum_vars.vars(), initial_state)) {
+    // the result is a function of the operands, and the encoding pins it
+    // by unit propagation once they are assigned; an operand would need a
+    // nonzero cofactor, so is not claimed. Aliasing spoils this: x * y = x
+    // says nothing about x when y = 1.
+    vector<DeterminedVariable> determined;
+    if (p3 && *p3 != p1 && *p3 != p2)
+        determined.push_back({*a3.var, [a1, a2, a3, p1, p2](const vector<Integer> & vals) -> optional<Integer> {
+                                  auto v1val = a1.coeff * vals[p1] + a1.offset;
+                                  auto v2val = a2.coeff * vals[p2] + a2.offset;
+                                  auto product = product_if_representable(v1val, v2val);
+                                  if ((! product) || (*product - a3.offset) % a3.coeff != 0_i)
+                                      return nullopt;
+                                  return (*product - a3.offset) / a3.coeff;
+                              }});
+
+    if (want_tabulation(_level, enum_vars.vars(), determined, initial_state)) {
         auto accept = [a1, a2, a3, p1, p2, p3](const vector<Integer> & vals) -> bool {
             auto v1val = a1.coeff * vals[p1] + a1.offset;
             auto v2val = a2.coeff * vals[p2] + a2.offset;
@@ -241,21 +275,6 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
             auto product = product_if_representable(v1val, v2val);
             return product && *product == v3val;
         };
-
-        // the result is a function of the operands, and the encoding pins it
-        // by unit propagation once they are assigned; an operand would need a
-        // nonzero cofactor, so is not claimed. Aliasing spoils this: x * y = x
-        // says nothing about x when y = 1.
-        vector<DeterminedVariable> determined;
-        if (p3 && *p3 != p1 && *p3 != p2)
-            determined.push_back({*a3.var, [a1, a2, a3, p1, p2](const vector<Integer> & vals) -> optional<Integer> {
-                                      auto v1val = a1.coeff * vals[p1] + a1.offset;
-                                      auto v2val = a2.coeff * vals[p2] + a2.offset;
-                                      auto product = product_if_representable(v1val, v2val);
-                                      if ((! product) || (*product - a3.offset) % a3.coeff != 0_i)
-                                          return nullopt;
-                                      return (*product - a3.offset) / a3.coeff;
-                                  }});
 
         install_tabulation<hints::Multiply>(
             propagators, constraint_id(), enum_vars.vars(), move(determined), accept, "multtab", "building GAC table for multiplication");

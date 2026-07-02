@@ -328,8 +328,10 @@ autotuner) without recompiling. Each is read once, on first use.
 
 * ``GCS_TABULATION_THRESHOLD``: under ``consistency::Auto``, a constraint tabulates itself for
   generalised arc consistency when the product of its variables' domain sizes is no bigger than
-  this (default: 100). Bigger values give stronger propagation on more constraints, at the cost
-  of set-up work and proof size that grow with the domain sizes.
+  this (default: 100). A variable that is functionally determined by the others (say, the result
+  of an arithmetic constraint) is left out of the product, since its level of the enumeration is
+  skipped. Bigger values give stronger propagation on more constraints, at the cost of set-up
+  work and proof size that grow with the domain sizes.
 
 Navigating the Source Code
 ==========================

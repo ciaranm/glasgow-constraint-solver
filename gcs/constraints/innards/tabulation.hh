@@ -27,9 +27,10 @@ namespace gcs::innards
 {
     /**
      * \brief Under consistency::Auto, constraints tabulate when the enumeration
-     * tree (the product of the enumerated variables' domain sizes) is no bigger
-     * than this. The proof derivation emits a line per tree node, so this
-     * bounds both the work and the proof size.
+     * tree (the product of the enumerated variables' domain sizes, leaving out
+     * a functionally determined variable's skipped level) is no bigger than
+     * this. The proof derivation emits a line per tree node, so this bounds
+     * both the work and the proof size.
      *
      * The built-in default is a guess, to be benchmarked properly as a
      * follow-up to issue #444; to make that easy (say, from an autotuner), the
@@ -153,13 +154,18 @@ namespace gcs::innards
      *
      * Always under consistency::Tabulated, never under consistency::BC, and under
      * consistency::Auto exactly when the enumeration tree (the product of the
-     * domain sizes) is within default_tabulation_threshold.
+     * domain sizes) is within default_tabulation_threshold. The determined_vars
+     * are the claims that will be passed to install_tabulation(): the
+     * largest-domained one's level is skipped, so it does not count against
+     * the budget -- a constraint whose every level but that one is small
+     * tabulates however large the skipped domain is.
      *
      * \ingroup Innards
      * \sa gcs::innards::install_tabulation()
      */
     [[nodiscard]] auto want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::Tabulated> & level,
-        const std::vector<IntegerVariableID> & enum_vars, const State & initial_state) -> bool;
+        const std::vector<IntegerVariableID> & enum_vars, const std::vector<DeterminedVariable> & determined_vars, const State & initial_state)
+        -> bool;
 
     /**
      * \brief The standard wiring for tabulated GAC: an expensive initialiser

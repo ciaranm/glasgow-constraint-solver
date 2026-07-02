@@ -272,26 +272,26 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
     auto px = enum_vars.position_of(*a1.var);
     optional<size_t> pz = a3.var ? optional{enum_vars.position_of(*a3.var)} : nullopt;
 
-    if (want_tabulation(_level, enum_vars.vars(), initial_state)) {
+    // the result is a function of the base, pinned by unit propagation
+    // through the multiplication chain; the base is not a function of the
+    // result (even exponents have two roots).
+    vector<DeterminedVariable> determined;
+    if (pz && *pz != px)
+        determined.push_back({*a3.var, [a1, a3, k, px](const vector<Integer> & vals) -> optional<Integer> {
+                                  auto xv = a1.coeff * vals[px] + a1.offset;
+                                  auto want = checked_integer_power(xv, k);
+                                  if ((! want) || (*want - a3.offset) % a3.coeff != 0_i)
+                                      return nullopt;
+                                  return (*want - a3.offset) / a3.coeff;
+                              }});
+
+    if (want_tabulation(_level, enum_vars.vars(), determined, initial_state)) {
         auto accept = [a1, a3, k, px, pz](const vector<Integer> & vals) -> bool {
             auto xv = a1.coeff * vals[px] + a1.offset;
             auto zv = pz ? a3.coeff * vals[*pz] + a3.offset : a3.offset;
             auto want = checked_integer_power(xv, k);
             return want && *want == zv;
         };
-
-        // the result is a function of the base, pinned by unit propagation
-        // through the multiplication chain; the base is not a function of the
-        // result (even exponents have two roots).
-        vector<DeterminedVariable> determined;
-        if (pz && *pz != px)
-            determined.push_back({*a3.var, [a1, a3, k, px](const vector<Integer> & vals) -> optional<Integer> {
-                                      auto xv = a1.coeff * vals[px] + a1.offset;
-                                      auto want = checked_integer_power(xv, k);
-                                      if ((! want) || (*want - a3.offset) % a3.coeff != 0_i)
-                                          return nullopt;
-                                      return (*want - a3.offset) / a3.coeff;
-                                  }});
 
         install_tabulation<hints::Power>(
             propagators, constraint_id(), enum_vars.vars(), move(determined), accept, "powtab", "building GAC table for power");
