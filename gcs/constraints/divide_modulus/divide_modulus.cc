@@ -68,8 +68,8 @@ namespace
     // against a single child constraint's encoding.
     template <typename Hint_>
     auto install_divide_modulus(const ConstraintID & owner, bool expose_quotient, const IntegerVariableID & x, const IntegerVariableID & y,
-        const IntegerVariableID & out, bool tabulate_always, bool tabulate_never, Propagators & propagators, State & initial_state,
-        ProofModel * const optional_model) -> void
+        const IntegerVariableID & out, const std::variant<consistency::Auto, consistency::BC, consistency::GAC> & level, Propagators & propagators,
+        State & initial_state, ProofModel * const optional_model) -> void
     {
         auto ax = affine_of(x), ay = affine_of(y), aout = affine_of(out);
 
@@ -244,66 +244,24 @@ namespace
         // the auxiliary slot, so a complete assignment fixes x, y, q and r and
         // every rejected leaf refutes against a single child's encoding by
         // unit propagation alone.
-        vector<SimpleIntegerVariableID> enum_vars;
-        auto position_of = [&](const SimpleIntegerVariableID & v) -> optional<size_t> {
-            for (size_t i = 0; i < enum_vars.size(); ++i)
-                if (enum_vars[i] == v)
-                    return i;
-            enum_vars.push_back(v);
-            return enum_vars.size() - 1;
-        };
-        auto px = ax.var ? position_of(*ax.var) : nullopt;
-        auto py = ay.var ? position_of(*ay.var) : nullopt;
-        auto pout = aout.var ? position_of(*aout.var) : nullopt;
-        auto paux = position_of(aux);
+        TabulationVariables enum_vars;
+        auto px = ax.var ? optional{enum_vars.position_of(*ax.var)} : nullopt;
+        auto py = ay.var ? optional{enum_vars.position_of(*ay.var)} : nullopt;
+        auto pout = aout.var ? optional{enum_vars.position_of(*aout.var)} : nullopt;
+        auto paux = enum_vars.position_of(aux);
 
-        bool tabulate = tabulate_always;
-        if ((! tabulate) && (! tabulate_never)) {
-            long long size = 1;
-            bool too_big = false;
-            for (const auto & v : enum_vars)
-                if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size)) {
-                    too_big = true;
-                    break;
-                }
-            tabulate = (! too_big) && size <= default_tabulation_threshold;
-        }
-
-        if (tabulate) {
+        if (want_tabulation(level, enum_vars.vars(), initial_state)) {
             auto accept = [ax, ay, aout, px, py, pout, paux, expose_quotient](const vector<Integer> & vals) -> bool {
                 auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
                 auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
                 auto outv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
-                auto auxv = vals[*paux];
+                auto auxv = vals[paux];
                 auto qv = expose_quotient ? outv : auxv;
                 auto rv = expose_quotient ? auxv : outv;
                 return is_in_relation(xv, yv, qv, rv);
             };
-
-            Triggers triggers;
-            for (const auto & v : enum_vars)
-                triggers.on_change.push_back(v);
-
-            auto data = make_shared<optional<ExtensionalData>>(nullopt);
-            propagators.install_initialiser(
-                [data = data, enumerate_over = vector<IntegerVariableID>(enum_vars.begin(), enum_vars.end()), accept = accept, owner = owner,
-                    expose_quotient = expose_quotient](State & state, auto & inference, ProofLogger * const logger) {
-                    *data = build_table_in_proof(enumerate_over, accept, expose_quotient ? "divtab" : "modtab",
-                        expose_quotient ? "building GAC table for division" : "building GAC table for modulus", state, logger);
-                    if (! data->has_value())
-                        inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
-                },
-                InitialiserPriority::Expensive);
-
-            propagators.install(
-                owner,
-                [data = data, owner = owner](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    if (data->has_value())
-                        return propagate_extensional(data->value(), state, inference, logger, Hint_{owner});
-                    else
-                        return PropagatorState::DisableUntilBacktrack;
-                },
-                triggers);
+            install_tabulation<Hint_>(propagators, owner, enum_vars.vars(), accept, expose_quotient ? "divtab" : "modtab",
+                expose_quotient ? "building GAC table for division" : "building GAC table for modulus");
         }
     }
 }
@@ -320,8 +278,7 @@ auto Divide::clone() const -> unique_ptr<Constraint>
 
 auto Divide::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    install_divide_modulus<hints::Divide>(constraint_id(), true, _x, _y, _quotient, std::holds_alternative<consistency::GAC>(_level),
-        std::holds_alternative<consistency::BC>(_level), propagators, initial_state, optional_model);
+    install_divide_modulus<hints::Divide>(constraint_id(), true, _x, _y, _quotient, _level, propagators, initial_state, optional_model);
 }
 
 auto Divide::s_expr(const ProofModel * const model) const -> SExpr
@@ -343,8 +300,7 @@ auto Modulus::clone() const -> unique_ptr<Constraint>
 
 auto Modulus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    install_divide_modulus<hints::Modulus>(constraint_id(), false, _x, _y, _remainder, std::holds_alternative<consistency::GAC>(_level),
-        std::holds_alternative<consistency::BC>(_level), propagators, initial_state, optional_model);
+    install_divide_modulus<hints::Modulus>(constraint_id(), false, _x, _y, _remainder, _level, propagators, initial_state, optional_model);
 }
 
 auto Modulus::s_expr(const ProofModel * const model) const -> SExpr

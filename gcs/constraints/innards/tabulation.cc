@@ -6,6 +6,7 @@
 #include <gcs/innards/state.hh>
 
 #include <util/enumerate.hh>
+#include <util/overloaded.hh>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -80,4 +81,18 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
         throw UnexpectedException{"something went horribly wrong with variable IDs"};
 
     return ExtensionalData{sel, vector<IntegerVariableID>{vars}, move(permitted)};
+}
+
+auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::GAC> & level,
+    const vector<IntegerVariableID> & enum_vars, const State & initial_state) -> bool
+{
+    return overloaded{[&](const consistency::GAC &) { return true; }, [&](const consistency::BC &) { return false; },
+        [&](const consistency::Auto &) {
+            long long size = 1;
+            for (const auto & v : enum_vars)
+                if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
+                    return false;
+            return size <= default_tabulation_threshold;
+        }}
+        .visit(level);
 }

@@ -167,8 +167,8 @@ auto run_dup_plus_minus_test(bool proofs, AliasPattern_, const string & tag, pai
 // The consistency tag: forced GAC tabulates and is checked per node; forced
 // BC never tabulates; Auto tabulates exactly when the domains are small.
 template <typename Constraint_>
-auto run_tagged_test(bool proofs, const PlusConsistency & level, bool check_gac, pair<int, int> v1_range, pair<int, int> v2_range,
-    pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
+auto run_tagged_test(bool proofs, const string & proof_suffix, const PlusConsistency & level, bool check_gac, pair<int, int> v1_range,
+    pair<int, int> v2_range, pair<int, int> v3_range, const function<auto(int, int, int)->bool> & is_satisfying) -> void
 {
     print(cerr, "{} tagged {} {} {} {} {}", NameOf<Constraint_>::name, check_gac ? "gac-checked" : "plain", v1_range, v2_range, v3_range,
         proofs ? " with proofs:" : ":");
@@ -183,7 +183,7 @@ auto run_tagged_test(bool proofs, const PlusConsistency & level, bool check_gac,
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
     p.post(Constraint_{v1, v2, v3, level});
 
-    auto proof_name = proofs ? make_optional("plus_minus_test_tagged") : nullopt;
+    auto proof_name = proofs ? make_optional("plus_minus_test_tagged_" + proof_suffix) : nullopt;
     if (check_gac)
         solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
     else
@@ -277,12 +277,13 @@ auto main(int argc, char * argv[]) -> int
         // The consistency tags (issue #444): Auto tabulates small domains
         // (checked per node), forced GAC tabulates bigger ones too, forced BC
         // is checked for soundness only.
-        run_tagged_test<Plus>(proofs, consistency::Auto{}, true, {1, 3}, {1, 3}, {2, 6}, plus_sat);
-        run_tagged_test<Minus>(proofs, consistency::Auto{}, true, {1, 4}, {1, 3}, {-2, 3}, minus_sat);
-        run_tagged_test<Plus>(proofs, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, plus_sat);
-        run_tagged_test<Minus>(proofs, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, minus_sat);
-        run_tagged_test<Plus>(proofs, consistency::BC{}, false, {1, 3}, {1, 3}, {2, 6}, plus_sat);
-        run_tagged_test<Minus>(proofs, consistency::BC{}, false, {1, 3}, {1, 3}, {-2, 2}, minus_sat);
+        auto suffix = view_wrap_config_label(view_cfg);
+        run_tagged_test<Plus>(proofs, suffix, consistency::Auto{}, true, {1, 3}, {1, 3}, {2, 6}, plus_sat);
+        run_tagged_test<Minus>(proofs, suffix, consistency::Auto{}, true, {1, 4}, {1, 3}, {-2, 3}, minus_sat);
+        run_tagged_test<Plus>(proofs, suffix, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, plus_sat);
+        run_tagged_test<Minus>(proofs, suffix, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, minus_sat);
+        run_tagged_test<Plus>(proofs, suffix, consistency::BC{}, false, {1, 3}, {1, 3}, {2, 6}, plus_sat);
+        run_tagged_test<Minus>(proofs, suffix, consistency::BC{}, false, {1, 3}, {1, 3}, {-2, 2}, minus_sat);
     }
 
     return EXIT_SUCCESS;

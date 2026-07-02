@@ -1,15 +1,26 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_INNARDS_TABULATION_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_INNARDS_TABULATION_HH
 
+#include <gcs/consistency.hh>
+#include <gcs/constraint_id.hh>
 #include <gcs/constraints/extensional_utils.hh>
+#include <gcs/constraints/innards/triggers.hh>
+#include <gcs/innards/inference_tracker-fwd.hh>
+#include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
+#include <gcs/innards/propagators.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <cstddef>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace gcs::innards
@@ -54,6 +65,92 @@ namespace gcs::innards
      */
     auto build_table_in_proof(const std::vector<IntegerVariableID> & vars, const std::function<auto(const std::vector<Integer> &)->bool> & accept,
         const std::string & selector_name, const std::string & comment, State & state, ProofLogger * const logger) -> std::optional<ExtensionalData>;
+
+    /**
+     * \brief Collects the distinct variables a tabulation enumerates over,
+     * assigning each a position that the acceptance callback indexes with.
+     *
+     * The arithmetic constraints deview their arguments and may share an
+     * underlying variable between slots (aliased operands), so each slot asks
+     * for its variable's position and duplicates collapse.
+     *
+     * \ingroup Innards
+     * \sa gcs::innards::install_tabulation()
+     */
+    class TabulationVariables
+    {
+    private:
+        std::vector<IntegerVariableID> _vars;
+
+    public:
+        [[nodiscard]] auto position_of(const IntegerVariableID & v) -> std::size_t
+        {
+            for (std::size_t i = 0; i < _vars.size(); ++i)
+                if (_vars[i] == v)
+                    return i;
+            _vars.push_back(v);
+            return _vars.size() - 1;
+        }
+
+        [[nodiscard]] auto vars() const -> const std::vector<IntegerVariableID> &
+        {
+            return _vars;
+        }
+    };
+
+    /**
+     * \brief Should a constraint tabulate, given its consistency level and the
+     * variables it would enumerate over?
+     *
+     * Always under consistency::GAC, never under consistency::BC, and under
+     * consistency::Auto exactly when the enumeration tree (the product of the
+     * domain sizes) is within default_tabulation_threshold.
+     *
+     * \ingroup Innards
+     * \sa gcs::innards::install_tabulation()
+     */
+    [[nodiscard]] auto want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::GAC> & level,
+        const std::vector<IntegerVariableID> & enum_vars, const State & initial_state) -> bool;
+
+    /**
+     * \brief The standard wiring for tabulated GAC: an expensive initialiser
+     * that derives the table in-proof via build_table_in_proof() (inferring
+     * FalseLiteral when no assignment is accepted), and an extensional
+     * propagator over the result.
+     *
+     * The Hint_ type parameter is the owning constraint's assertion hint,
+     * constructed from `owner` alone.
+     *
+     * \ingroup Innards
+     * \sa gcs::innards::build_table_in_proof()
+     */
+    template <typename Hint_>
+    auto install_tabulation(Propagators & propagators, const ConstraintID & owner, std::vector<IntegerVariableID> enum_vars,
+        std::function<auto(const std::vector<Integer> &)->bool> accept, std::string selector_name, std::string comment) -> void
+    {
+        Triggers triggers;
+        triggers.on_change = enum_vars;
+
+        auto data = std::make_shared<std::optional<ExtensionalData>>(std::nullopt);
+        propagators.install_initialiser(
+            [data = data, enum_vars = std::move(enum_vars), accept = std::move(accept), selector_name = std::move(selector_name),
+                comment = std::move(comment), owner = owner](State & state, auto & inference, ProofLogger * const logger) {
+                *data = build_table_in_proof(enum_vars, accept, selector_name, comment, state, logger);
+                if (! data->has_value())
+                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
+            },
+            InitialiserPriority::Expensive);
+
+        propagators.install(
+            owner,
+            [data = data, owner = owner](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                if (data->has_value())
+                    return propagate_extensional(data->value(), state, inference, logger, Hint_{owner});
+                else
+                    return PropagatorState::DisableUntilBacktrack;
+            },
+            triggers);
+    }
 }
 
 #endif

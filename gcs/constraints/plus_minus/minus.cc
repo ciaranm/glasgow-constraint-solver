@@ -152,28 +152,12 @@ auto Minus::install(Propagators & propagators, State & initial_state, ProofModel
     // Tabulation for GAC: enumerate the distinct underlying variables, mapping
     // values back through the affine forms.
     auto aa = affine_of(_a), ab = affine_of(_b), ac = affine_of(_result);
-    vector<SimpleIntegerVariableID> enum_vars;
-    auto position_of = [&](const SimpleIntegerVariableID & v) -> size_t {
-        for (size_t i = 0; i < enum_vars.size(); ++i)
-            if (enum_vars[i] == v)
-                return i;
-        enum_vars.push_back(v);
-        return enum_vars.size() - 1;
-    };
-    optional<size_t> pa = aa.var ? optional{position_of(*aa.var)} : nullopt;
-    optional<size_t> pb = ab.var ? optional{position_of(*ab.var)} : nullopt;
-    optional<size_t> pc = ac.var ? optional{position_of(*ac.var)} : nullopt;
+    TabulationVariables enum_vars;
+    optional<size_t> pa = aa.var ? optional{enum_vars.position_of(*aa.var)} : nullopt;
+    optional<size_t> pb = ab.var ? optional{enum_vars.position_of(*ab.var)} : nullopt;
+    optional<size_t> pc = ac.var ? optional{enum_vars.position_of(*ac.var)} : nullopt;
 
-    bool tabulate = overloaded{[&](const consistency::GAC &) { return true; }, [&](const consistency::BC &) { return false; },
-        [&](const consistency::Auto &) {
-            long long size = 1;
-            for (const auto & v : enum_vars)
-                if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
-                    return false;
-            return size <= default_tabulation_threshold;
-        }}.visit(_level);
-
-    if (tabulate) {
+    if (want_tabulation(_level, enum_vars.vars(), initial_state)) {
         auto accept = [aa, ab, ac, pa, pb, pc](const vector<Integer> & vals) -> bool {
             auto av = pa ? aa.coeff * vals[*pa] + aa.offset : aa.offset;
             auto bv = pb ? ab.coeff * vals[*pb] + ab.offset : ab.offset;
@@ -183,30 +167,7 @@ auto Minus::install(Propagators & propagators, State & initial_state, ProofModel
                 return false;
             return sum == cv.raw_value;
         };
-
-        Triggers triggers;
-        for (const auto & v : enum_vars)
-            triggers.on_change.push_back(v);
-
-        auto data = make_shared<optional<ExtensionalData>>(nullopt);
-        propagators.install_initialiser(
-            [data = data, enumerate_over = vector<IntegerVariableID>(enum_vars.begin(), enum_vars.end()), accept = accept, owner = constraint_id()](
-                State & state, auto & inference, ProofLogger * const logger) {
-                *data = build_table_in_proof(enumerate_over, accept, "minustab", "building GAC table for minus", state, logger);
-                if (! data->has_value())
-                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{hints::Minus{owner}}, ExplicitReason{ReasonLiterals{}});
-            },
-            InitialiserPriority::Expensive);
-
-        propagators.install(
-            constraint_id(),
-            [data = data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                if (data->has_value())
-                    return propagate_extensional(data->value(), state, inference, logger, hints::Minus{owner});
-                else
-                    return PropagatorState::DisableUntilBacktrack;
-            },
-            triggers);
+        install_tabulation<hints::Minus>(propagators, constraint_id(), enum_vars.vars(), accept, "minustab", "building GAC table for minus");
     }
 }
 

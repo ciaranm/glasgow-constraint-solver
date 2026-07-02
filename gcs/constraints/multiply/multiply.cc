@@ -156,28 +156,12 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
     // Tabulation for GAC: enumerate over the distinct underlying variables,
     // mapping values back through the affine forms. The auxiliary variables
     // are not enumerated; their values follow by unit propagation.
-    vector<SimpleIntegerVariableID> enum_vars;
-    auto position_of = [&](const SimpleIntegerVariableID & v) -> size_t {
-        for (size_t i = 0; i < enum_vars.size(); ++i)
-            if (enum_vars[i] == v)
-                return i;
-        enum_vars.push_back(v);
-        return enum_vars.size() - 1;
-    };
-    auto p1 = position_of(u1);
-    auto p2 = position_of(u2);
-    optional<size_t> p3 = a3.var ? optional{position_of(*a3.var)} : nullopt;
+    TabulationVariables enum_vars;
+    auto p1 = enum_vars.position_of(u1);
+    auto p2 = enum_vars.position_of(u2);
+    optional<size_t> p3 = a3.var ? optional{enum_vars.position_of(*a3.var)} : nullopt;
 
-    bool tabulate = overloaded{[&](const consistency::GAC &) { return true; }, [&](const consistency::BC &) { return false; },
-        [&](const consistency::Auto &) {
-            long long size = 1;
-            for (const auto & v : enum_vars)
-                if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
-                    return false;
-            return size <= default_tabulation_threshold;
-        }}.visit(_level);
-
-    if (tabulate) {
+    if (want_tabulation(_level, enum_vars.vars(), initial_state)) {
         auto accept = [a1, a2, a3, p1, p2, p3](const vector<Integer> & vals) -> bool {
             auto v1val = a1.coeff * vals[p1] + a1.offset;
             auto v2val = a2.coeff * vals[p2] + a2.offset;
@@ -185,30 +169,8 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
             auto product = product_if_representable(v1val, v2val);
             return product && *product == v3val;
         };
-
-        Triggers triggers;
-        for (const auto & v : enum_vars)
-            triggers.on_change.push_back(v);
-
-        auto data = make_shared<optional<ExtensionalData>>(nullopt);
-        propagators.install_initialiser(
-            [data = data, enumerate_over = vector<IntegerVariableID>(enum_vars.begin(), enum_vars.end()), accept = accept, owner = constraint_id()](
-                State & state, auto & inference, ProofLogger * const logger) {
-                *data = build_table_in_proof(enumerate_over, accept, "multtab", "building GAC table for multiplication", state, logger);
-                if (! data->has_value())
-                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{hints::Multiply{owner}}, ExplicitReason{ReasonLiterals{}});
-            },
-            InitialiserPriority::Expensive);
-
-        propagators.install(
-            constraint_id(),
-            [data = data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                if (data->has_value())
-                    return propagate_extensional(data->value(), state, inference, logger, hints::Multiply{owner});
-                else
-                    return PropagatorState::DisableUntilBacktrack;
-            },
-            triggers);
+        install_tabulation<hints::Multiply>(
+            propagators, constraint_id(), enum_vars.vars(), accept, "multtab", "building GAC table for multiplication");
     }
 }
 

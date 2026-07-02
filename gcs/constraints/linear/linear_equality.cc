@@ -64,37 +64,6 @@ ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer val
 {
 }
 
-namespace
-{
-    template <typename CV_>
-    auto build_table(const CV_ & coeff_vars, Integer value, ReificationCondition cond, State & state, ProofLogger * const logger)
-        -> optional<ExtensionalData>
-    {
-        vector<IntegerVariableID> vars;
-        for (auto & cv : coeff_vars.terms)
-            vars.push_back(get_var(cv));
-
-        // the enumeration, in-proof selector introduction, and backtrack lines
-        // live in build_table_in_proof; all that is ours is the acceptance test.
-        auto accept = [&](const vector<Integer> & current) -> bool {
-            Integer actual_value{0_i};
-            for (const auto & [idx, cv] : enumerate(coeff_vars.terms))
-                actual_value += get_coeff(cv) * current[idx];
-
-            return overloaded{
-                [&](const reif::MustHold &) { return actual_value == value; },      //
-                [&](const reif::MustNotHold &) { return actual_value != value; },   //
-                [&](const reif::If) -> bool { throw UnimplementedException{}; },    //
-                [&](const reif::NotIf) -> bool { throw UnimplementedException{}; }, //
-                [&](const reif::Iff) -> bool { throw UnimplementedException{}; }    //
-            }
-                .visit(cond);
-        };
-
-        return build_table_in_proof(vars, accept, "lineq", "building GAC table for linear equality", state, logger);
-    }
-}
-
 auto ReifiedLinearEquality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     if (! prepare(propagators, initial_state, optional_model))
@@ -188,30 +157,30 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
     if (std::holds_alternative<consistency::GAC>(_level)) {
         visit(
             [&, modifier = modifier](auto & sanitised_cv) {
-                // we're watching everything
-                Triggers triggers;
+                vector<IntegerVariableID> vars;
                 for (auto & cv : sanitised_cv.terms)
-                    triggers.on_change.push_back(get_var(cv));
+                    vars.push_back(get_var(cv));
 
-                auto data = make_shared<optional<ExtensionalData>>(nullopt);
-                propagators.install_initialiser(
-                    [data = data, coeff_vars = sanitised_cv, value = _value + modifier, cond = _reif_cond, owner = constraint_id()](
-                        State & state, auto & inference, ProofLogger * const logger) {
-                        *data = build_table(coeff_vars, value, cond, state, logger);
-                        if (! data->has_value())
-                            inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{hints::LinearEquality{owner}}, ExplicitReason{ReasonLiterals{}});
-                    },
-                    InitialiserPriority::Expensive);
+                // the enumeration, in-proof selector introduction, and
+                // extensional wiring live in install_tabulation; all that is
+                // ours is the acceptance test.
+                auto accept = [coeff_vars = sanitised_cv, value = _value + modifier, cond = _reif_cond](const vector<Integer> & current) -> bool {
+                    Integer actual_value{0_i};
+                    for (const auto & [idx, cv] : enumerate(coeff_vars.terms))
+                        actual_value += get_coeff(cv) * current[idx];
 
-                propagators.install(
-                    constraint_id(),
-                    [data = data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                        if (data->has_value())
-                            return propagate_extensional(data.get()->value(), state, inference, logger, hints::LinearEquality{owner});
-                        else
-                            return PropagatorState::DisableUntilBacktrack;
-                    },
-                    triggers);
+                    return overloaded{
+                        [&](const reif::MustHold &) { return actual_value == value; },      //
+                        [&](const reif::MustNotHold &) { return actual_value != value; },   //
+                        [&](const reif::If) -> bool { throw UnimplementedException{}; },    //
+                        [&](const reif::NotIf) -> bool { throw UnimplementedException{}; }, //
+                        [&](const reif::Iff) -> bool { throw UnimplementedException{}; }    //
+                    }
+                        .visit(cond);
+                };
+
+                install_tabulation<hints::LinearEquality>(
+                    propagators, constraint_id(), move(vars), accept, "lineq", "building GAC table for linear equality");
             },
             sanitised_cv);
     }

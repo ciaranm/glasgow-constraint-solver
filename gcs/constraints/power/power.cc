@@ -199,57 +199,18 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
     // Tabulation for GAC over the base and result (the exponent is constant
     // here). The auxiliary chain variables are not enumerated; they pin by
     // unit propagation through the Multiply children.
-    vector<SimpleIntegerVariableID> enum_vars;
-    auto position_of = [&](const SimpleIntegerVariableID & v) -> size_t {
-        for (size_t i = 0; i < enum_vars.size(); ++i)
-            if (enum_vars[i] == v)
-                return i;
-        enum_vars.push_back(v);
-        return enum_vars.size() - 1;
-    };
-    auto px = position_of(*a1.var);
-    optional<size_t> pz = a3.var ? optional{position_of(*a3.var)} : nullopt;
+    TabulationVariables enum_vars;
+    auto px = enum_vars.position_of(*a1.var);
+    optional<size_t> pz = a3.var ? optional{enum_vars.position_of(*a3.var)} : nullopt;
 
-    bool tabulate = overloaded{[&](const consistency::GAC &) { return true; }, [&](const consistency::BC &) { return false; },
-        [&](const consistency::Auto &) {
-            long long size = 1;
-            for (const auto & v : enum_vars)
-                if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
-                    return false;
-            return size <= default_tabulation_threshold;
-        }}.visit(_level);
-
-    if (tabulate) {
+    if (want_tabulation(_level, enum_vars.vars(), initial_state)) {
         auto accept = [a1, a3, k, px, pz](const vector<Integer> & vals) -> bool {
             auto xv = a1.coeff * vals[px] + a1.offset;
             auto zv = pz ? a3.coeff * vals[*pz] + a3.offset : a3.offset;
             auto want = checked_integer_power(xv, k);
             return want && *want == zv;
         };
-
-        Triggers triggers;
-        for (const auto & v : enum_vars)
-            triggers.on_change.push_back(v);
-
-        auto data = make_shared<optional<ExtensionalData>>(nullopt);
-        propagators.install_initialiser(
-            [data = data, enumerate_over = vector<IntegerVariableID>(enum_vars.begin(), enum_vars.end()), accept = accept, owner = constraint_id()](
-                State & state, auto & inference, ProofLogger * const logger) {
-                *data = build_table_in_proof(enumerate_over, accept, "powtab", "building GAC table for power", state, logger);
-                if (! data->has_value())
-                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{hints::Power{owner}}, ExplicitReason{ReasonLiterals{}});
-            },
-            InitialiserPriority::Expensive);
-
-        propagators.install(
-            constraint_id(),
-            [data = data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                if (data->has_value())
-                    return propagate_extensional(data->value(), state, inference, logger, hints::Power{owner});
-                else
-                    return PropagatorState::DisableUntilBacktrack;
-            },
-            triggers);
+        install_tabulation<hints::Power>(propagators, constraint_id(), enum_vars.vars(), accept, "powtab", "building GAC table for power");
     }
 }
 
