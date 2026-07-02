@@ -1,4 +1,5 @@
 #include <gcs/gcs.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/innards/state.hh>
 #include <util/enumerate.hh>
 
@@ -1228,21 +1229,52 @@ namespace
             }
 
             case OPOW: {
-                // Only support a constant non-negative exponent: decompose
-                // to a chain of products. x^0 = 1, x^1 = x, x^k = x * x^(k-1).
+                // A constant exponent posts Power, which dispatches on the
+                // value itself (linear, a product chain, or a case analysis
+                // for negative exponents -- the XCSP3 spec is silent there, so
+                // we follow MiniZinc's 1 div x^|k| rule, matching Power's
+                // semantics everywhere else). A non-constant exponent stays
+                // unsupported at this level.
                 auto base = walk_intension(node->parameters.at(0));
                 auto exp = node->parameters.at(1);
                 if (exp->type != ODECIMAL)
                     report_unsupported("intension", "pow with non-constant exponent");
-                auto k = static_cast<NodeConstant *>(exp)->val;
-                if (k < 0)
-                    report_unsupported("intension", "pow with negative exponent");
-                if (k == 0)
+                auto k = Integer{static_cast<NodeConstant *>(exp)->val};
+                if (k == 0_i)
                     return {constant_variable(1_i), 1_i, 1_i};
-                auto chain = base;
-                for (int i = 1; i < k; ++i)
-                    chain = post_product(chain, base, "powresult");
-                return chain;
+                if (k == 1_i)
+                    return base;
+
+                // The result variable's bounds: for a negative exponent only
+                // -1, 0, 1 are reachable; otherwise the extremes are at the
+                // domain corners, plus the closest-to-zero points for even
+                // exponents. An overflowing bound is unsupported rather than
+                // an install-time error.
+                Integer lower(0_i), upper(0_i);
+                if (k < 0_i) {
+                    lower = -1_i;
+                    upper = 1_i;
+                }
+                else {
+                    vector<Integer> candidates{base.lower, base.upper};
+                    for (auto v : {-1_i, 0_i, 1_i})
+                        if (v >= base.lower && v <= base.upper)
+                            candidates.push_back(v);
+                    optional<Integer> lo, hi;
+                    for (auto & c : candidates) {
+                        auto val = innards::checked_integer_power(c, k);
+                        if (! val)
+                            report_unsupported("intension", "pow bounds overflow");
+                        lo = lo ? min(*lo, *val) : *val;
+                        hi = hi ? max(*hi, *val) : *val;
+                    }
+                    lower = *lo;
+                    upper = *hi;
+                }
+
+                auto r = _problem.create_integer_variable(lower, upper, "powresult");
+                _problem.post(Power{base.var, constant_variable(k), r});
+                return {r, lower, upper};
             }
 
             case OMOD: {
