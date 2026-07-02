@@ -6,8 +6,10 @@
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/inference_tracker-fwd.hh>
+#include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/variable_condition.hh>
 
 #include <optional>
@@ -79,8 +81,39 @@ namespace gcs::innards
         const ConstraintID & owner) -> bool
     {
         for (const auto & stage : stages) {
-            if (stage.gate && ! stage_gate_holds(state, *stage.gate))
+            if (stage.gate && ! stage_gate_holds(state, *stage.gate)) {
+                // Contrapositive: if the gated inequality is already violated
+                // in bounds, the gate cannot hold. (Gated stages are always
+                // inequalities.)
+                if (! stage.equality) {
+                    Integer smallest_sum = 0_i;
+                    ReasonLiterals reason;
+                    visit(
+                        [&](const auto & cv) {
+                            for (const auto & term : cv.terms) {
+                                auto var = get_var(term);
+                                auto coeff = get_coeff(term);
+                                auto [lo, hi] = state.bounds(var);
+                                if (coeff >= 0_i) {
+                                    smallest_sum += coeff * lo;
+                                    reason.emplace_back(var >= lo);
+                                }
+                                else {
+                                    smallest_sum += coeff * hi;
+                                    reason.emplace_back(var <= hi);
+                                }
+                            }
+                        },
+                        stage.terms);
+                    if (smallest_sum > stage.value) {
+                        inference.infer(
+                            logger, ! Literal{*stage.gate}, JustifyUsingRUP{hints::LinearEquality{owner}}, ExplicitReason{std::move(reason)});
+                        if (inference.contradicted())
+                            return false;
+                    }
+                }
                 continue;
+            }
             visit(
                 [&](const auto & cv) {
                     propagate_linear(cv, stage.value, state, inference, logger, stage.equality, stage.lines,
