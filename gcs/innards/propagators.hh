@@ -311,13 +311,6 @@ namespace gcs::innards
         ///@}
 
         /**
-         * \name Support variables.
-         */
-        ///@{
-
-        ///@}
-
-        /**
          * \name Propagation
          */
         ///@{

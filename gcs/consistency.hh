@@ -93,6 +93,9 @@ namespace gcs
          * enforced, but no stronger reasoning is carried out.
          *
          * This is the weakest level, and usually the cheapest per search node.
+         * No constraint accepts it yet: it is here for when the AllDifferent
+         * family (whose fastest propagator is exactly this) migrates onto
+         * consistency tags in issue #299.
          *
          * \ingroup Consistency
          */

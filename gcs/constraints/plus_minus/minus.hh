@@ -13,17 +13,17 @@
 namespace gcs
 {
     /**
-     * \brief Constrain that a - b = result.
-     *
-     * \ingroup Constraints
-     */
-    /**
      * \brief The consistency levels supported by Minus, as for Plus.
      *
      * \ingroup Consistency
      */
     using MinusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::Tabulated>;
 
+    /**
+     * \brief Constrain that a - b = result.
+     *
+     * \ingroup Constraints
+     */
     class Minus : public Constraint
     {
     private:

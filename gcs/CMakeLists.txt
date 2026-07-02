@@ -346,7 +346,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME negative_table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:negative_table_test>)
     add_test(NAME symmetric_all_different_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:symmetric_all_different_test>)
     add_test(NAME table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:table_test>)
-    add_test(NAME tabulation COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tabulation_test>)
+    add_test(NAME tabulation_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tabulation_test>)
     add_test(NAME value_precede_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:value_precede_test>)
 
     # The circuit scenario tests self-verify (they call veripb internally on a

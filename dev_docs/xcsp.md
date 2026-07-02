@@ -133,10 +133,10 @@ Two helpers reduce duplication:
   context. Walks both children, creates a 0/1 control, posts the
   given `*Iff` reified constraint, returns the control.
 - **`post_product(ExprResult, ExprResult, name)`** — used by `OMUL`
-  (n-ary, left-fold), `OSQR`, and `OPOW` (constant exponent →
-  product chain). Posts `Multiply`, which does its own constant
-  folding and implementation selection (#153, #444); all that is
-  left here is computing the result variable's bounds.
+  (n-ary, left-fold) and `OSQR`. Posts `Multiply`, which does its own
+  constant folding and implementation selection (#153, #444); all
+  that is left here is computing the result variable's bounds. `OPOW`
+  (constant exponent only) posts `Power` directly instead.
 
 ## The `apply_count_condition` shape
 
@@ -293,8 +293,8 @@ their own conventions. Two real cases:
   but XCSP3-core allows isolated vertices via self-loops. The
   binding currently posts `Circuit` directly, so it imposes a
   stricter constraint than the spec. Tracked as #167.
-- **arithmetic**: the binding posts `Multiply`, `Divide` and
-  `Modulus`, which do their own constant folding and implementation
+- **arithmetic**: the binding posts `Multiply`, `Divide`, `Modulus`
+  and `Power`, which do their own constant folding and implementation
   selection (#153, #444), so wide domains no longer exhaust memory
   on a materialised table. The one table left is a `Power` with a
   variable exponent (`innards::PowerTable`), which the binding never

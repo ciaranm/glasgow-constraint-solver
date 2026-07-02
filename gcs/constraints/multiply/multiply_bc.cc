@@ -916,7 +916,7 @@ namespace
 
     // Filter variable x where x * y = z based on bounds of y and z
     auto filter_quotient(SimpleIntegerVariableID x_var, SimpleIntegerVariableID y_var, SimpleIntegerVariableID z_var, Integer z_min, Integer z_max,
-        Integer y_min, Integer y_max, vector<IntegerVariableID> & all_vars, const State & state, auto & inference,
+        Integer y_min, Integer y_max, const State & state, auto & inference,
         const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var, const pair<ProofLine, ProofLine> z_eq_product_lines,
         ProofLogger * const logger, vector<vector<BitProductData>> & bit_products, const bool x_is_first, const vector<ProofLine> & sign_lines,
@@ -962,13 +962,13 @@ namespace
         }
         else if (y_min == 0_i && y_max != 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y is either 0 or strictly positive and z has either all positive or all negative values
-            filter_quotient(x_var, y_var, z_var, z_min, z_max, 1_i, y_max, all_vars, state, inference, channelling_constraints, mag_var,
-                z_eq_product_lines, logger, bit_products, x_is_first, sign_lines, owner);
+            filter_quotient(x_var, y_var, z_var, z_min, z_max, 1_i, y_max, state, inference, channelling_constraints, mag_var, z_eq_product_lines,
+                logger, bit_products, x_is_first, sign_lines, owner);
         }
         else if (y_min != 0_i && y_max == 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y is either 0 or strictly negative z has either all positive or all negative values
-            filter_quotient(x_var, y_var, z_var, z_min, z_max, y_min, -1_i, all_vars, state, inference, channelling_constraints, mag_var,
-                z_eq_product_lines, logger, bit_products, x_is_first, sign_lines, owner);
+            filter_quotient(x_var, y_var, z_var, z_min, z_max, y_min, -1_i, state, inference, channelling_constraints, mag_var, z_eq_product_lines,
+                logger, bit_products, x_is_first, sign_lines, owner);
         }
         else if ((y_min > 0_i || y_max < 0_i) && y_min <= y_max) {
             auto smallest_possible_quotient = min({div_ceil(z_min, y_min), div_ceil(z_min, y_max), div_ceil(z_max, y_min), div_ceil(z_max, y_max)});
@@ -1149,8 +1149,6 @@ auto gcs::innards::mult_bc::propagate(SimpleIntegerVariableID v1, SimpleIntegerV
     auto & inference, ProofLogger * const logger, const EncodingData & encoding, ConstraintStateHandle bit_products_handle,
     const ConstraintID & owner) -> void
 {
-    vector<IntegerVariableID> all_vars = {v1, v2, v3};
-
     auto var_bounds = map<IntegerVariableID, pair<Integer, Integer>>{{v1, state.bounds(v1)}, {v2, state.bounds(v2)}, {v3, state.bounds(v3)}};
     auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
     auto [smallest_product, largest_product] = get_product_bounds(bounds1.first, bounds1.second, bounds2.first, bounds2.second);
@@ -1167,12 +1165,12 @@ auto gcs::innards::mult_bc::propagate(SimpleIntegerVariableID v1, SimpleIntegerV
         ReasonLiterals{v1 >= var_bounds.at(v1).first, v1 <= var_bounds.at(v1).second, v2 >= var_bounds.at(v2).first, v2 <= var_bounds.at(v2).second});
 
     auto bounds3 = state.bounds(v3);
-    filter_quotient(v1, v2, v3, bounds3.first, bounds3.second, bounds2.first, bounds2.second, all_vars, state, inference,
-        encoding.channelling_constraints, encoding.mag_var, encoding.v3_eq_product_lines, logger, bit_products, true, encoding.sign_lines, owner);
+    filter_quotient(v1, v2, v3, bounds3.first, bounds3.second, bounds2.first, bounds2.second, state, inference, encoding.channelling_constraints,
+        encoding.mag_var, encoding.v3_eq_product_lines, logger, bit_products, true, encoding.sign_lines, owner);
 
     bounds1 = state.bounds(v1);
-    filter_quotient(v2, v1, v3, bounds3.first, bounds3.second, bounds1.first, bounds1.second, all_vars, state, inference,
-        encoding.channelling_constraints, encoding.mag_var, encoding.v3_eq_product_lines, logger, bit_products, false, encoding.sign_lines, owner);
+    filter_quotient(v2, v1, v3, bounds3.first, bounds3.second, bounds1.first, bounds1.second, state, inference, encoding.channelling_constraints,
+        encoding.mag_var, encoding.v3_eq_product_lines, logger, bit_products, false, encoding.sign_lines, owner);
 }
 
 template auto gcs::innards::mult_bc::propagate(SimpleIntegerVariableID, SimpleIntegerVariableID, SimpleIntegerVariableID, const State &,

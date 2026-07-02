@@ -80,9 +80,12 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
             [&](const consistency::BC &) -> LinearEqualityConsistency { return consistency::BC{}; },               //
             [&](const consistency::Tabulated &) -> LinearEqualityConsistency { return consistency::Tabulated{}; }, //
             [&](const consistency::Auto &) -> LinearEqualityConsistency {
-                // budget for what the delegated equality will enumerate: the
-                // sanitised terms, with the largest-domained one's level left
-                // out because MustHold claims every term as determined
+                // budget for what the delegated equality will enumerate:
+                // the sanitised terms, with the largest-domained one's level
+                // left out because MustHold claims every term as determined.
+                // This mirrors want_tabulation's Auto rule, which cannot be
+                // called directly because LinearEqualityConsistency has no
+                // Auto to delegate; keep the two in step.
                 auto tidied = tidy_up_linear(sum).first;
                 return visit(
                     [&](const auto & cv) -> LinearEqualityConsistency {
@@ -136,7 +139,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
     bool result_plain = a3.var && a3.coeff == 1_i && a3.offset == 0_i;
 
     optional<SimpleIntegerVariableID> t;
-    if (operands_plain && result_plain && *a3.var != u1 && *a3.var != m2 && u1 != m2)
+    if (operands_plain && result_plain && *a3.var != u1 && *a3.var != m2)
         t = *a3.var;
 
     bool need_linear = ! t.has_value();

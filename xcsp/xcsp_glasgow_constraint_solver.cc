@@ -1104,8 +1104,9 @@ namespace
             return {control, 0_i, 1_i};
         }
 
-        // Multiply two ExprResults. Used by binary and n-ary OMUL, OSQR, and
-        // OPOW. Multiply does its own constant folding and picks between the
+        // Multiply two ExprResults. Used by binary and n-ary OMUL and OSQR
+        // (OPOW posts Power directly). Multiply does its own constant
+        // folding and picks between the
         // bounds consistent and tabulated-GAC implementations itself (#153
         // and #444), so all that is left here is computing the result
         // variable's bounds.

@@ -28,6 +28,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::clamp;
 using std::make_unique;
 using std::max;
 using std::min;
@@ -47,17 +48,12 @@ namespace
     // base in {-1, 0, 1}.
     constexpr long long largest_meaningful_exponent = 62;
 
-    auto clamp_to(Integer v, Integer m) -> Integer
-    {
-        return min(max(v, -m), m);
-    }
-
     // A corner of a product-bound computation, saturating at +-m rather than
     // overflowing: the auxiliary chain variables are clamped anyway.
     auto saturating_product(Integer a, Integer b, Integer m) -> Integer
     {
         if (auto p = product_if_representable(a, b))
-            return clamp_to(*p, m);
+            return clamp(*p, -m, m);
         return ((a > 0_i) == (b > 0_i)) ? m : -m;
     }
 }
@@ -218,8 +214,6 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
 
             add_link("c" + to_string(i) + "_", prev, other, t);
 
-            if (is_last && t != (result_plain ? *a3.var : t))
-                ; // unreachable; kept for clarity
             if (is_last && ! (result_plain && t == *a3.var))
                 add_equality(WeightedSum{} + 1_i * t + -1_i * _result, 0_i, "resultsum");
 
