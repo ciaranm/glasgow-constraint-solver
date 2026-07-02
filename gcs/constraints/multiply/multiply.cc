@@ -82,7 +82,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
                 for (const auto & [_, v] : sum.terms)
                     if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
                         return consistency::BC{};
-                if (size <= default_tabulation_threshold)
+                if (size <= default_tabulation_threshold())
                     return consistency::Tabulated{};
                 return consistency::BC{};
             }}.visit(_level);

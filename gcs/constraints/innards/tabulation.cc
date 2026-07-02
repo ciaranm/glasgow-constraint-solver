@@ -5,6 +5,8 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 
+#include <cstdlib>
+
 #include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
@@ -83,6 +85,16 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
     return ExtensionalData{sel, vector<IntegerVariableID>{vars}, move(permitted)};
 }
 
+auto gcs::innards::default_tabulation_threshold() -> long long
+{
+    static const long long threshold = []() -> long long {
+        if (const char * e = std::getenv("GCS_TABULATION_THRESHOLD"))
+            return std::strtoll(e, nullptr, 10);
+        return 100; // default: a guess, see the header
+    }();
+    return threshold;
+}
+
 auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::Tabulated> & level,
     const vector<IntegerVariableID> & enum_vars, const State & initial_state) -> bool
 {
@@ -92,7 +104,7 @@ auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consist
             for (const auto & v : enum_vars)
                 if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
                     return false;
-            return size <= default_tabulation_threshold;
+            return size <= default_tabulation_threshold();
         }}
         .visit(level);
 }
