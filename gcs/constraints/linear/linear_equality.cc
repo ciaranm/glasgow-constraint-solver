@@ -57,11 +57,21 @@ using std::print;
 using fmt::print;
 #endif
 
-ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, LinearEqualityConsistency level,
-    bool flipped_cond, std::optional<std::size_t> incremental_threshold) :
-    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _level(level), _flipped_cond(flipped_cond),
-    _incremental_threshold(incremental_threshold)
+ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition cond, bool flipped_cond) :
+    _coeff_vars(move(coeff_vars)), _value(value), _reif_cond(cond), _flipped_cond(flipped_cond)
 {
+}
+
+auto ReifiedLinearEquality::with_consistency(LinearEqualityConsistency level) -> ReifiedLinearEquality &
+{
+    _level = level;
+    return *this;
+}
+
+auto ReifiedLinearEquality::with_incremental_threshold(std::optional<std::size_t> threshold) -> ReifiedLinearEquality &
+{
+    _incremental_threshold = threshold;
+    return *this;
 }
 
 auto ReifiedLinearEquality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -436,12 +446,12 @@ auto ReifiedLinearEquality::s_expr(const ProofModel * const model) const -> SExp
 
 auto ReifiedLinearEquality::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _level, _flipped_cond, _incremental_threshold);
+    auto cloned = make_unique<ReifiedLinearEquality>(WeightedSum{_coeff_vars}, _value, _reif_cond, _flipped_cond);
+    cloned->with_consistency(_level).with_incremental_threshold(_incremental_threshold);
+    return cloned;
 }
 
-LinearEquality::LinearEquality(
-    WeightedSum coeff_vars, Integer value, LinearEqualityConsistency level, std::optional<std::size_t> incremental_threshold) :
-    ReifiedLinearEquality(coeff_vars, value, reif::MustHold{}, level, false, incremental_threshold)
+LinearEquality::LinearEquality(WeightedSum coeff_vars, Integer value) : ReifiedLinearEquality(move(coeff_vars), value, reif::MustHold{})
 {
 }
 
@@ -459,27 +469,26 @@ namespace
     }
 }
 
-LinearEqualityIf::LinearEqualityIf(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::If>(cond), level)
+LinearEqualityIf::LinearEqualityIf(WeightedSum coeff_vars, Integer value, Literal cond) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::If>(cond))
 {
 }
 
-LinearEqualityIff::LinearEqualityIff(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(cond), level)
+LinearEqualityIff::LinearEqualityIff(WeightedSum coeff_vars, Integer value, Literal cond) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(cond))
 {
 }
 
-LinearNotEquals::LinearNotEquals(WeightedSum coeff_vars, Integer value, LinearEqualityConsistency level) :
-    ReifiedLinearEquality(move(coeff_vars), value, reif::MustNotHold{}, level)
+LinearNotEquals::LinearNotEquals(WeightedSum coeff_vars, Integer value) : ReifiedLinearEquality(move(coeff_vars), value, reif::MustNotHold{})
 {
 }
 
-LinearNotEqualsIf::LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::NotIf>(cond), level)
+LinearNotEqualsIf::LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, Literal cond) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::NotIf>(cond))
 {
 }
 
-LinearNotEqualsIff::LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, Literal cond, LinearEqualityConsistency level) :
-    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), level, true)
+LinearNotEqualsIff::LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, Literal cond) :
+    ReifiedLinearEquality(move(coeff_vars), value, literal_to_reif<reif::Iff>(! cond), true)
 {
 }

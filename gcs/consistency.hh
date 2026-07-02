@@ -7,19 +7,19 @@ namespace gcs
      * \defgroup Consistency Selecting a consistency level or propagation algorithm
      *
      * Some constraints can achieve more than one level of consistency, usually
-     * with stronger levels costing more per search node. Such a constraint's
-     * constructor takes a `std::variant` over tag types naming exactly the
-     * levels it supports, defaulted to a sensible choice, for example
+     * with stronger levels costing more per search node. Such a constraint
+     * exposes a `with_consistency()` fluent setter taking a `std::variant` over
+     * tag types naming exactly the levels it supports, defaulted to a sensible
+     * choice, for example
      *
      * \code{.cc}
-     * problem.post(LinearEquality{sum, 5_i, consistency::Tabulated{}});
+     * problem.post(LinearEquality{sum, 5_i}.with_consistency(consistency::Tabulated{}));
      * \endcode
      *
      * Requesting a level a constraint does not support is a compile-time
-     * error: the constructor signature is the documentation. These tags
-     * select propagation strength only; they never change the constraint's
-     * meaning, and they never change how the constraint is encoded for proof
-     * logging.
+     * error: the setter's signature is the documentation. These tags select
+     * propagation strength only; they never change the constraint's meaning,
+     * and they never change how the constraint is encoded for proof logging.
      */
 
     namespace consistency

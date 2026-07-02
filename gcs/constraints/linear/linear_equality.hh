@@ -43,11 +43,11 @@ namespace gcs
         WeightedSum _coeff_vars;
         Integer _value;
         ReificationCondition _reif_cond;
-        LinearEqualityConsistency _level;
         bool _flipped_cond;
+        LinearEqualityConsistency _level = consistency::BC{};
         // Per-constraint width at/above which to use the incremental propagator; unset
         // means use innards::default_linear_incremental_threshold().
-        std::optional<std::size_t> _incremental_threshold;
+        std::optional<std::size_t> _incremental_threshold = std::nullopt;
         std::optional<std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>>> _proof_line;
         innards::EvaluatedReificationCondition _evaluated_cond = innards::evaluated_reif::Deactivated{};
 
@@ -58,9 +58,23 @@ namespace gcs
         auto install_propagators(innards::Propagators &, innards::State &) -> void;
 
     public:
-        explicit ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond,
-            LinearEqualityConsistency level = consistency::BC{}, bool flipped_cond = false,
-            std::optional<std::size_t> incremental_threshold = std::nullopt);
+        // flipped_cond is internal reification plumbing, set by the derived NotEqualsIff
+        // form; it is not user configuration. Propagation strength and the incremental
+        // threshold are chosen after construction via with_consistency() and
+        // with_incremental_threshold().
+        explicit ReifiedLinearEquality(WeightedSum coeff_vars, Integer value, ReificationCondition reif_cond, bool flipped_cond = false);
+
+        /**
+         * \brief Select the consistency level: bounds consistency (the default) or
+         * consistency::Tabulated. Requesting any other level is a compile-time error.
+         */
+        auto with_consistency(LinearEqualityConsistency level) -> ReifiedLinearEquality &;
+
+        /**
+         * \brief Set the per-constraint scope width at or above which the incremental
+         * (fixed-term-folding) propagator is used; unset means the solver default.
+         */
+        auto with_incremental_threshold(std::optional<std::size_t> threshold) -> ReifiedLinearEquality &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
 
@@ -71,39 +85,37 @@ namespace gcs
     class LinearEquality : public ReifiedLinearEquality
     {
     public:
-        explicit LinearEquality(WeightedSum coeff_vars, Integer value, LinearEqualityConsistency level = consistency::BC{},
-            std::optional<std::size_t> incremental_threshold = std::nullopt);
+        explicit LinearEquality(WeightedSum coeff_vars, Integer value);
     };
 
     class LinearEqualityIf : public ReifiedLinearEquality
     {
     public:
-        explicit LinearEqualityIf(WeightedSum coeff_vars, Integer value, innards::Literal cond, LinearEqualityConsistency level = consistency::BC{});
+        explicit LinearEqualityIf(WeightedSum coeff_vars, Integer value, innards::Literal cond);
     };
 
     class LinearEqualityIff : public ReifiedLinearEquality
     {
     public:
-        explicit LinearEqualityIff(WeightedSum coeff_vars, Integer value, innards::Literal cond, LinearEqualityConsistency level = consistency::BC{});
+        explicit LinearEqualityIff(WeightedSum coeff_vars, Integer value, innards::Literal cond);
     };
 
     class LinearNotEquals : public ReifiedLinearEquality
     {
     public:
-        explicit LinearNotEquals(WeightedSum coeff_vars, Integer value, LinearEqualityConsistency level = consistency::BC{});
+        explicit LinearNotEquals(WeightedSum coeff_vars, Integer value);
     };
 
     class LinearNotEqualsIf : public ReifiedLinearEquality
     {
     public:
-        explicit LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, innards::Literal cond, LinearEqualityConsistency level = consistency::BC{});
+        explicit LinearNotEqualsIf(WeightedSum coeff_vars, Integer value, innards::Literal cond);
     };
 
     class LinearNotEqualsIff : public ReifiedLinearEquality
     {
     public:
-        explicit LinearNotEqualsIff(
-            WeightedSum coeff_vars, Integer value, innards::Literal cond, LinearEqualityConsistency level = consistency::BC{});
+        explicit LinearNotEqualsIff(WeightedSum coeff_vars, Integer value, innards::Literal cond);
     };
 }
 
