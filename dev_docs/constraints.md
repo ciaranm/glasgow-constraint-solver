@@ -81,6 +81,19 @@ variant's header and may add a `using AllDifferent = GACAllDifferent;`
 style alias to name the default implementation. `gcs/gcs.hh` then only
 needs the umbrella, not each variant.
 
+Newer constraints select behaviour with the `gcs/consistency.hh` tag
+types instead of separate public variant classes (issue #299): the
+constructor takes a `std::variant` over exactly the levels it supports,
+defaulted sensibly, as in `Multiply{x, y, z, consistency::GAC{}}`. The
+arithmetic family (`Multiply`, `Divide`, `Modulus`, `Power`, `Plus`,
+`Minus`) also accepts `consistency::Auto`, which tabulates the relation
+for GAC when the domains involved are small (see
+`gcs/constraints/innards/tabulation.hh`); the tag never changes the OPB
+encoding, since the table is derived in-proof. A constraint that
+decomposes into child constraints installed directly should give each
+child a distinct identity via `innards::child_constraint_id`, or their
+OPB labels collide.
+
 ## The header
 
 ```cpp

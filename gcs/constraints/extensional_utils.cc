@@ -3,6 +3,7 @@
 #include <gcs/constraints/extensional_utils.hh>
 #include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/multiply/hints.hh>
+#include <gcs/constraints/plus_minus/hints.hh>
 #include <gcs/constraints/power/hints.hh>
 #include <gcs/constraints/table/hints.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -135,5 +136,7 @@ GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Multiply)
 GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Divide)
 GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Modulus)
 GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Power)
+GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Plus)
+GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL(hints::Minus)
 
 #undef GCS_INSTANTIATE_PROPAGATE_EXTENSIONAL

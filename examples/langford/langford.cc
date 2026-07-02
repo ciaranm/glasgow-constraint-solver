@@ -1,6 +1,6 @@
 #include <gcs/constraints/all_different.hh>
-#include <gcs/constraints/arithmetic.hh>
 #include <gcs/constraints/element.hh>
+#include <gcs/constraints/plus.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -89,7 +89,7 @@ auto main(int argc, char * argv[]) -> int
         p.post(Element{i_var, position[i + k], &solution});
 
         // position[i + k] = position[i] + i + 2
-        p.post(PlusGAC{position[i + k], constant_variable(Integer{i + 2}), position[i]});
+        p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]});
     }
 
     auto stats = solve(

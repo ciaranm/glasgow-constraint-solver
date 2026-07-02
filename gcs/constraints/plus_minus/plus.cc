@@ -1,3 +1,6 @@
+#include <gcs/constraints/innards/arithmetic_utils.hh>
+#include <gcs/constraints/innards/tabulation.hh>
+#include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/plus_minus/hints.hh>
 #include <gcs/constraints/plus_minus/plus.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -24,11 +27,15 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::holds_alternative;
+using std::make_shared;
+using std::nullopt;
 using std::optional;
 using std::pair;
+using std::size_t;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
+using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -109,13 +116,13 @@ namespace
     }
 }
 
-Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) : _a(a), _b(b), _result(result)
+Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result, PlusConsistency level) : _a(a), _b(b), _result(result), _level(level)
 {
 }
 
 auto Plus::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Plus>(_a, _b, _result);
+    return make_unique<Plus>(_a, _b, _result, _level);
 }
 
 auto Plus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -127,6 +134,66 @@ auto Plus::install(Propagators & propagators, State & initial_state, ProofModel 
         define_proof_model(*optional_model);
 
     install_propagators(propagators);
+
+    // Tabulation for GAC: enumerate the distinct underlying variables, mapping
+    // values back through the affine forms.
+    auto aa = affine_of(_a), ab = affine_of(_b), ac = affine_of(_result);
+    vector<SimpleIntegerVariableID> enum_vars;
+    auto position_of = [&](const SimpleIntegerVariableID & v) -> size_t {
+        for (size_t i = 0; i < enum_vars.size(); ++i)
+            if (enum_vars[i] == v)
+                return i;
+        enum_vars.push_back(v);
+        return enum_vars.size() - 1;
+    };
+    optional<size_t> pa = aa.var ? optional{position_of(*aa.var)} : nullopt;
+    optional<size_t> pb = ab.var ? optional{position_of(*ab.var)} : nullopt;
+    optional<size_t> pc = ac.var ? optional{position_of(*ac.var)} : nullopt;
+
+    bool tabulate = overloaded{[&](const consistency::GAC &) { return true; }, [&](const consistency::BC &) { return false; },
+        [&](const consistency::Auto &) {
+            long long size = 1;
+            for (const auto & v : enum_vars)
+                if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
+                    return false;
+            return size <= default_tabulation_threshold;
+        }}.visit(_level);
+
+    if (tabulate) {
+        auto accept = [aa, ab, ac, pa, pb, pc](const vector<Integer> & vals) -> bool {
+            auto av = pa ? aa.coeff * vals[*pa] + aa.offset : aa.offset;
+            auto bv = pb ? ab.coeff * vals[*pb] + ab.offset : ab.offset;
+            auto cv = pc ? ac.coeff * vals[*pc] + ac.offset : ac.offset;
+            long long sum;
+            if (__builtin_add_overflow(av.raw_value, bv.raw_value, &sum))
+                return false;
+            return sum == cv.raw_value;
+        };
+
+        Triggers triggers;
+        for (const auto & v : enum_vars)
+            triggers.on_change.push_back(v);
+
+        auto data = make_shared<optional<ExtensionalData>>(nullopt);
+        propagators.install_initialiser(
+            [data = data, enumerate_over = vector<IntegerVariableID>(enum_vars.begin(), enum_vars.end()), accept = accept, owner = constraint_id()](
+                State & state, auto & inference, ProofLogger * const logger) {
+                *data = build_table_in_proof(enumerate_over, accept, "plustab", "building GAC table for plus", state, logger);
+                if (! data->has_value())
+                    inference.infer(logger, FalseLiteral{}, JustifyUsingRUP{hints::Plus{owner}}, ExplicitReason{ReasonLiterals{}});
+            },
+            InitialiserPriority::Expensive);
+
+        propagators.install(
+            constraint_id(),
+            [data = data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                if (data->has_value())
+                    return propagate_extensional(data->value(), state, inference, logger, hints::Plus{owner});
+                else
+                    return PropagatorState::DisableUntilBacktrack;
+            },
+            triggers);
+    }
 }
 
 auto Plus::define_proof_model(ProofModel & model) -> void

@@ -134,10 +134,9 @@ Two helpers reduce duplication:
   given `*Iff` reified constraint, returns the control.
 - **`post_product(ExprResult, ExprResult, name)`** — used by `OMUL`
   (n-ary, left-fold), `OSQR`, and `OPOW` (constant exponent →
-  product chain). Picks `WeightedSum` when one side is a constant,
-  `Times` otherwise. The constant-detection logic in this helper is
-  a workaround that should eventually move into the user-facing
-  `Times` constructor — see #153.
+  product chain). Posts `Multiply`, which does its own constant
+  folding and implementation selection (#153, #444); all that is
+  left here is computing the result variable's bounds.
 
 ## The `apply_count_condition` shape
 
@@ -294,12 +293,12 @@ their own conventions. Two real cases:
   but XCSP3-core allows isolated vertices via self-loops. The
   binding currently posts `Circuit` directly, so it imposes a
   stricter constraint than the spec. Tracked as #167.
-- **`Div`/`Mod`/`Power`**: the gcs propagators materialise the
-  cross-product of operand domains and blow up memory on wide
-  domains. Multiplication no longer has this problem: the binding
-  posts `Multiply`, which does its own constant folding and picks
-  a sensible implementation (#153); the same treatment for the
-  rest is tracked as #444.
+- **arithmetic**: the binding posts `Multiply`, `Divide` and
+  `Modulus`, which do their own constant folding and implementation
+  selection (#153, #444), so wide domains no longer exhaust memory
+  on a materialised table. The one table left is a `Power` with a
+  variable exponent (`innards::PowerTable`), which the binding never
+  produces (`OPOW` requires a constant exponent).
 
 When you bind a new constraint, always check the XCSP3-core spec's
 semantics against gcs's propagator's behaviour, especially for

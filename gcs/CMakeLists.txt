@@ -21,7 +21,6 @@ add_library(glasgow_constraint_solver
         constraints/all_different/vc_all_different.cc
         constraints/all_equal/all_equal.cc
         constraints/among/among.cc
-        constraints/arithmetic/arithmetic.cc
         constraints/at_most_one/at_most_one.cc
         constraints/circuit/circuit_base.cc
         constraints/circuit/circuit_prevent.cc
@@ -148,7 +147,6 @@ if(GCS_BUILD_TESTS)
     add_executable(all_different_except_test constraints/all_different/all_different_except_test.cc)
     add_executable(all_equal_test constraints/all_equal/all_equal_test.cc)
     add_executable(among_test constraints/among/among_test.cc)
-    add_executable(arithmetic_test constraints/arithmetic/arithmetic_test.cc)
     add_executable(at_most_one_test constraints/at_most_one/at_most_one_test.cc)
     add_executable(comparison_test constraints/comparison/comparison_test.cc)
     add_executable(count_test constraints/count/count_test.cc)
@@ -190,7 +188,7 @@ if(GCS_BUILD_TESTS)
     add_executable(value_precede_test constraints/value_precede/value_precede_test.cc)
 
     foreach(test_target
-            abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
+            abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test comparison_test
             count_test cumulative_test disjunctive_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
             logical_test min_max_test multiply_bc_test multiply_test n_value_test parity_test
             plus_minus_test power_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
@@ -203,7 +201,6 @@ if(GCS_BUILD_TESTS)
     add_test(NAME all_different_except_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_different_except_test>)
     add_test(NAME all_equal_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_equal_test>)
     add_test(NAME among_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:among_test>)
-    add_test(NAME arithmetic_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:arithmetic_test>)
     add_test(NAME at_most_one_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:at_most_one_test>)
     foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
         add_test(NAME comparison_constraint_${mode}

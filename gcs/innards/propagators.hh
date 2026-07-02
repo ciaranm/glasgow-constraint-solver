@@ -315,13 +315,6 @@ namespace gcs::innards
          */
         ///@{
 
-        /**
-         * Create an IntegerVariableID that is associated with a constraint,
-         * for example for tracking internal state.
-         */
-        [[nodiscard]] auto create_auxilliary_integer_variable(
-            State &, Integer, Integer, const std::string & name, const IntegerVariableProofRepresentation enc) -> IntegerVariableID;
-
         ///@}
 
         /**
