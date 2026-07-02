@@ -79,7 +79,13 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
     for (Integer i = 1_i; i <= effective_max; ++i)
         chain.push_back(i);
 
-    ValuePrecede{move(chain), move(_vars)}.install(propagators, initial_state, optional_model);
+    // The child must carry this constraint's identity: ValuePrecede keys both
+    // its labelled OPB lines and its position flags on its id, so two unnamed
+    // children from two chains in one problem would share flags and produce a
+    // semantically wrong model (issue #449).
+    ValuePrecede child{move(chain), move(_vars)};
+    child.set_constraint_id(constraint_id());
+    move(child).install(propagators, initial_state, optional_model);
 }
 
 auto SeqPrecedeChain::s_expr(const ProofModel * const model) const -> SExpr

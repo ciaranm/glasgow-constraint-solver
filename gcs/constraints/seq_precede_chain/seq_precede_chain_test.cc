@@ -91,6 +91,42 @@ auto run_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<variant
     check_results(proof_name, expected, actual);
 }
 
+// Two chains in one problem (issue #449): each chain's ValuePrecede child
+// must carry a distinct identity, or their id-keyed position flags dedupe
+// onto each other and the OPB is semantically wrong (VeriPB rejects it).
+auto run_two_chains_test(bool proofs) -> void
+{
+    print(cerr, "seq_precede_chain two chains{}", proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    vector<variant<int, pair<int, int>>> domains{pair{0, 2}, pair{0, 2}, pair{0, 2}};
+    set<tuple<vector<int>>> expected_one, actual;
+    build_expected(expected_one, [](const vector<int> & vs) { return satisfies_seq_precede_chain(vs); }, domains);
+
+    // the two chains are independent, so solutions are all pairs
+    set<tuple<vector<int>>> expected;
+    for (const auto & [a] : expected_one)
+        for (const auto & [b] : expected_one) {
+            auto combined = a;
+            combined.insert(combined.end(), b.begin(), b.end());
+            expected.emplace(combined);
+        }
+    println(cerr, " expecting {} solutions", expected.size());
+
+    Problem p;
+    auto xs = p.create_integer_variable_vector(3, 0_i, 2_i, "x");
+    auto ys = p.create_integer_variable_vector(3, 0_i, 2_i, "y");
+    p.post(SeqPrecedeChain{vector<IntegerVariableID>{xs.begin(), xs.end()}});
+    p.post(SeqPrecedeChain{vector<IntegerVariableID>{ys.begin(), ys.end()}});
+
+    vector<IntegerVariableID> all_vars{xs.begin(), xs.end()};
+    all_vars.insert(all_vars.end(), ys.begin(), ys.end());
+
+    auto proof_name = proofs ? make_optional("seq_precede_chain_test_two_chains") : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{all_vars});
+    check_results(proof_name, expected, actual);
+}
+
 auto run_scale_test(bool proofs) -> void
 {
     print(cerr, "seq_precede_chain scale (length 5, domain 1..1000){}", proofs ? " with proofs:" : ":");
@@ -221,8 +257,10 @@ auto main(int argc, char * argv[]) -> int
         if (proofs && ! can_run_veripb())
             continue;
         run_all_tests(proofs, view_cfg);
-        if (run_scale)
+        if (run_scale) {
             run_scale_test(proofs);
+            run_two_chains_test(proofs);
+        }
 
         // Random sweep: length 2..5 with domains 1..5. SeqPrecedeChain on
         // length n with values 1..n yields B(n) (Bell number) solutions
