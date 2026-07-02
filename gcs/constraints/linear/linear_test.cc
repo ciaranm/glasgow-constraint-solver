@@ -128,7 +128,7 @@ auto run_linear_test_gac(bool proofs, const string & mode, const ViewWrapConfig 
         for (const auto & [idx, coeff] : enumerate(linear))
             if (coeff != 0)
                 c += Integer{coeff} * vs[idx];
-        p.post(Constraint_{c, Integer{value}, consistency::Tabulated{}});
+        p.post(Constraint_{c, Integer{value}}.with_consistency(consistency::Tabulated{}));
     }
 
     auto proof_name =
@@ -243,7 +243,7 @@ auto run_linear_reif_test_gac(bool full_reif, bool proofs, const string & mode, 
             for (const auto & [idx, coeff] : enumerate(linear))
                 if (coeff != 0)
                     c += Integer{coeff} * vs[idx];
-            p.post(Constraint_{c, Integer{value}, v4 == 1_i, consistency::Tabulated{}});
+            p.post(Constraint_{c, Integer{value}, v4 == 1_i}.with_consistency(consistency::Tabulated{}));
         }
 
         auto proof_name =

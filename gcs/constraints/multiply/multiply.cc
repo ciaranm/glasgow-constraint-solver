@@ -111,7 +111,8 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
                     tidied);
             }}.visit(_level);
 
-        LinearEquality resolved{move(sum), value, linear_level};
+        LinearEquality resolved{move(sum), value};
+        resolved.with_consistency(linear_level);
         resolved.set_constraint_id(constraint_id());
         move(resolved).install(propagators, initial_state, optional_model);
         return;
