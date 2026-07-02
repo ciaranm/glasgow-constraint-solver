@@ -1,6 +1,7 @@
 #include <gcs/constraints/divide_modulus/divide_modulus.hh>
 #include <gcs/constraints/divide_modulus/hints.hh>
 #include <gcs/constraints/innards/arithmetic_utils.hh>
+#include <gcs/constraints/innards/linear_stages.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/linear/hints.hh>
@@ -62,31 +63,6 @@ namespace
             return false;
         return x.raw_value / y.raw_value == q.raw_value && x.raw_value % y.raw_value == r.raw_value;
     }
-
-    // Is the gating condition on a fused linear stage currently established?
-    // Only the two operators the stages use appear.
-    auto gate_holds(const State & state, const IntegerVariableCondition & cond) -> bool
-    {
-        switch (cond.op) {
-            using enum VariableConditionOperator;
-        case GreaterEqual: return state.lower_bound(cond.var) >= cond.value;
-        case Less: return state.upper_bound(cond.var) < cond.value;
-        default: throw UnexpectedException{"unexpected gate operator"};
-        }
-    }
-
-    // One linear stage of the fused propagator: tidied terms, the target
-    // value (modifier folded in), whether it is an equality, its OPB lines,
-    // and an optional gating condition, which is also the extra reason
-    // literal (the OPB line is half-reified on it).
-    struct LinearStage
-    {
-        TidiedUpLinear terms;
-        Integer value;
-        bool equality;
-        std::pair<std::optional<ProofLine>, std::optional<ProofLine>> lines;
-        std::optional<IntegerVariableCondition> gate;
-    };
 
     // The shared decomposition: x = q * y + r, |r| < |y|, sign(r) = sign(x)
     // (or r = 0), all emitted as one flat @c[id][role] OPB block and run by
@@ -161,34 +137,13 @@ namespace
         auto aq = affine_of(q);
 
         auto label = as_string(owner);
-        auto as_wpb = [](const WeightedSum & ws) {
-            WPBSum terms;
-            for (const auto & [c, v] : ws.terms)
-                terms += c * v;
-            return terms;
-        };
 
         vector<LinearStage> stages;
-        auto add_equality_stage = [&](const WeightedSum & sum, Integer value, const string & role) {
-            std::pair<std::optional<ProofLine>, std::optional<ProofLine>> lines;
-            if (optional_model) {
-                auto ll = optional_model->add_labelled_constraint(label, role + "le", role + "ge", "DivideModulus", "sum", as_wpb(sum) == value);
-                lines = pair{optional{ll.first}, optional{ll.second}};
-            }
-            auto [tidied, modifier] = tidy_up_linear(sum);
-            stages.emplace_back(LinearStage{tidied, value + modifier, true, lines, nullopt});
+        auto add_equality = [&](const WeightedSum & sum, Integer value, const string & role) {
+            add_equality_stage(stages, optional_model, label, sum, value, role);
         };
-        auto add_le_stage = [&](const WeightedSum & sum, Integer value, const string & role, const optional<IntegerVariableCondition> & gate) {
-            std::pair<std::optional<ProofLine>, std::optional<ProofLine>> lines;
-            if (optional_model) {
-                if (gate)
-                    lines.first = optional_model->add_labelled_constraint(
-                        label, role, "DivideModulus", "range", as_wpb(sum) <= value, HalfReifyOnConjunctionOf{Literal{*gate}});
-                else
-                    lines.first = optional_model->add_labelled_constraint(label, role, "DivideModulus", "range", as_wpb(sum) <= value);
-            }
-            auto [tidied, modifier] = tidy_up_linear(sum);
-            stages.emplace_back(LinearStage{tidied, value + modifier, false, lines, gate});
+        auto add_le = [&](const WeightedSum & sum, Integer value, const string & role, const optional<IntegerVariableCondition> & gate) {
+            add_le_stage(stages, optional_model, label, sum, value, role, gate);
         };
 
         // x = q * y + r. With a constant divisor or a constant quotient the
@@ -204,9 +159,9 @@ namespace
             // one of d * q + r - x = 0 (constant divisor) or c * y + r - x = 0
             // (Divide with a constant quotient)
             if (! ay.var)
-                add_equality_stage(WeightedSum{} + ay.offset * q + 1_i * r + -1_i * x, 0_i, "sum");
+                add_equality(WeightedSum{} + ay.offset * q + 1_i * r + -1_i * x, 0_i, "sum");
             else
-                add_equality_stage(WeightedSum{} + aq.offset * y + 1_i * r + -1_i * x, 0_i, "sum");
+                add_equality(WeightedSum{} + aq.offset * y + 1_i * r + -1_i * x, 0_i, "sum");
         }
         else {
             auto y_eff = *ay.var;
@@ -215,7 +170,7 @@ namespace
                 if (optional_model)
                     optional_model->set_up_integer_variable(y_plain, min(ylo, yhi), max(ylo, yhi),
                         (expose_quotient ? "aux_divide_divisor" : "aux_modulus_divisor") + to_string(y_plain.index), nullopt);
-                add_equality_stage(WeightedSum{} + 1_i * y_plain + -1_i * y, 0_i, "divisor");
+                add_equality(WeightedSum{} + 1_i * y_plain + -1_i * y, 0_i, "divisor");
                 y_eff = y_plain;
             }
 
@@ -225,7 +180,7 @@ namespace
                 auto q_plain = initial_state.allocate_integer_variable_with_state(qelo, qehi);
                 if (optional_model)
                     optional_model->set_up_integer_variable(q_plain, qelo, qehi, "aux_divide_quotient" + to_string(q_plain.index), nullopt);
-                add_equality_stage(WeightedSum{} + 1_i * q_plain + -1_i * q, 0_i, "quotient");
+                add_equality(WeightedSum{} + 1_i * q_plain + -1_i * q, 0_i, "quotient");
                 q_eff = q_plain;
             }
 
@@ -244,7 +199,7 @@ namespace
             mult_y = y_eff;
             mult_w = w;
 
-            add_equality_stage(WeightedSum{} + 1_i * w + 1_i * r + -1_i * x, 0_i, "sum");
+            add_equality(WeightedSum{} + 1_i * w + 1_i * r + -1_i * x, 0_i, "sum");
         }
 
         // |r| < |y|, plus y != 0, which is where the relational division-by-
@@ -254,8 +209,8 @@ namespace
         // variable divisor, split on the divisor's sign.
         if (! ay.var) {
             if (! expose_quotient) {
-                add_le_stage(WeightedSum{} + 1_i * r, rmax, "remhi", nullopt);
-                add_le_stage(WeightedSum{} + -1_i * r, rmax, "remlo", nullopt);
+                add_le(WeightedSum{} + 1_i * r, rmax, "remhi", nullopt);
+                add_le(WeightedSum{} + -1_i * r, rmax, "remlo", nullopt);
             }
         }
         else {
@@ -264,11 +219,11 @@ namespace
                     label, "nonzero", "DivideModulus", "divisor is not zero", WPBSum{} + 1_i * (y >= 1_i) + 1_i * (y < 0_i) >= 1_i);
 
             // y >= 1 -> r <= y - 1 and r >= -y + 1
-            add_le_stage(WeightedSum{} + 1_i * r + -1_i * y, -1_i, "rangeposhi", y >= 1_i);
-            add_le_stage(WeightedSum{} + -1_i * r + -1_i * y, -1_i, "rangeposlo", y >= 1_i);
+            add_le(WeightedSum{} + 1_i * r + -1_i * y, -1_i, "rangeposhi", y >= 1_i);
+            add_le(WeightedSum{} + -1_i * r + -1_i * y, -1_i, "rangeposlo", y >= 1_i);
             // y <= -1 -> r <= -y - 1 and r >= y + 1
-            add_le_stage(WeightedSum{} + 1_i * r + 1_i * y, -1_i, "rangeneghi", y < 0_i);
-            add_le_stage(WeightedSum{} + -1_i * r + 1_i * y, -1_i, "rangeneglo", y < 0_i);
+            add_le(WeightedSum{} + 1_i * r + 1_i * y, -1_i, "rangeneghi", y < 0_i);
+            add_le(WeightedSum{} + -1_i * r + 1_i * y, -1_i, "rangeneglo", y < 0_i);
         }
 
         // The remainder takes the sign of the dividend, which is what pins
@@ -276,14 +231,14 @@ namespace
         // truncated and the floored (quotient, remainder) pair when the signs
         // differ.
         if (ax.var) {
-            add_le_stage(WeightedSum{} + -1_i * r, 0_i, "signpos", x >= 0_i);
-            add_le_stage(WeightedSum{} + 1_i * r, 0_i, "signneg", x < 1_i);
+            add_le(WeightedSum{} + -1_i * r, 0_i, "signpos", x >= 0_i);
+            add_le(WeightedSum{} + 1_i * r, 0_i, "signneg", x < 1_i);
         }
         else {
             if (ax.offset >= 0_i)
-                add_le_stage(WeightedSum{} + -1_i * r, 0_i, "signpos", nullopt);
+                add_le(WeightedSum{} + -1_i * r, 0_i, "signpos", nullopt);
             if (ax.offset <= 0_i)
-                add_le_stage(WeightedSum{} + 1_i * r, 0_i, "signneg", nullopt);
+                add_le(WeightedSum{} + 1_i * r, 0_i, "signneg", nullopt);
         }
 
         Triggers triggers;
@@ -313,18 +268,8 @@ namespace
                     if (prune_zero && state.in_domain(y, 0_i))
                         inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
 
-                    for (const auto & stage : stages) {
-                        if (stage.gate && ! gate_holds(state, *stage.gate))
-                            continue;
-                        visit(
-                            [&](const auto & cv) {
-                                propagate_linear(cv, stage.value, state, inference, logger, stage.equality, stage.lines,
-                                    stage.gate ? optional<Literal>{*stage.gate} : nullopt, hints::LinearEquality{owner});
-                            },
-                            stage.terms);
-                        if (inference.contradicted())
-                            return PropagatorState::Enable;
-                    }
+                    if (! propagate_stages(stages, state, inference, logger, owner))
+                        return PropagatorState::Enable;
 
                     if (needs_mult)
                         mult_bc::propagate(mult_q, mult_y, mult_w, state, inference, logger, encoding, *bit_products_handle, owner);
