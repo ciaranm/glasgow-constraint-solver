@@ -30,6 +30,7 @@ using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
+using std::uniform_int_distribution;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -193,6 +194,24 @@ auto main(int, char *[]) -> int
 {
     vector<MultiplyConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}};
 
+    // Random instances for the forced-BC variant: domains big enough that Auto
+    // would not tabulate, so this is the decomposition's bounds propagation.
+    // Soundness and completeness are checked against a full enumeration;
+    // per-node bounds consistency is deliberately not claimed (the composition
+    // is weaker than bounds consistency on the product, and MultiplyBC's own
+    // test notes the same).
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> random_bc_data;
+    for (int x = 0; x < 4; ++x) {
+        generate_random_data(rand, random_bc_data, random_bounds(-10, 10, 3, 12), random_bounds(-10, 10, 3, 12), random_bounds(-80, 80, 10, 60));
+        generate_random_data(rand, random_bc_data, random_bounds(0, 20, 2, 8), random_bounds(-6, 6, 2, 8), random_bounds(-60, 60, 20, 80));
+    }
+    auto random_view_spec = [&]() -> tuple<int, int, int, int, int, int> {
+        uniform_int_distribution<int> sign(0, 1), offset(-3, 3);
+        return {sign(rand) ? 1 : -1, offset(rand), sign(rand) ? 1 : -1, offset(rand), sign(rand) ? 1 : -1, offset(rand)};
+    };
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
@@ -227,6 +246,14 @@ auto main(int, char *[]) -> int
         run_multiply_test(proofs, consistency::Auto{}, false, {2, 20}, {-8, 8}, {-160, 160}, {1, 0, 1, 1, 1, 0});
         run_alias_test(proofs, consistency::Auto{}, false, "xxy", {-12, 12}, {0, 144});
         run_constant_test(proofs, consistency::Auto{}, "cv", 7, {-30, 30}, {-210, 210});
+
+        // Random instances, forced BC, with and without view wraps.
+        for (const auto & [r1, r2, r3] : random_bc_data)
+            run_multiply_test(proofs, consistency::BC{}, false, r1, r2, r3);
+        for (std::size_t x = 0; x < 4; ++x) {
+            const auto & [r1, r2, r3] = random_bc_data.at(x);
+            run_multiply_test(proofs, consistency::BC{}, false, r1, r2, r3, random_view_spec());
+        }
     }
 
     // A forced-GAC tabulation on a domain above the Auto threshold still works,

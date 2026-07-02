@@ -199,6 +199,19 @@ auto main(int, char *[]) -> int
 {
     vector<DivideConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}};
 
+    // Random instances for the forced-BC variant: soundness and completeness
+    // against a full enumeration, no per-node claim (the decomposition is
+    // weaker than bounds consistency on the division itself). The first
+    // generator's divisor range spans zero, exercising the relational
+    // divisor != 0 handling; the second keeps it strictly positive.
+    random_device rand_dev;
+    mt19937 rand(rand_dev());
+    vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> random_bc_data;
+    for (int x = 0; x < 4; ++x) {
+        generate_random_data(rand, random_bc_data, random_bounds(-12, 12, 3, 10), random_bounds(-5, 5, 2, 8), random_bounds(-12, 12, 3, 10));
+        generate_random_data(rand, random_bc_data, random_bounds(0, 30, 5, 20), random_bounds(1, 8, 1, 5), random_bounds(-5, 30, 5, 15));
+    }
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
@@ -237,6 +250,10 @@ auto main(int, char *[]) -> int
                 run_divmod_constant_test(proofs, is_div, level, "x", 7, {-3, 3}, {-7, 7});
                 run_divmod_constant_test(proofs, is_div, level, "out", 2, {-8, 8}, {-3, 3});
             }
+
+            // Random instances, forced BC.
+            for (const auto & [r1, r2, r3] : random_bc_data)
+                run_divmod_test(proofs, is_div, consistency::BC{}, false, r1, r2, r3);
 
             // Wider domains: Auto falls back on the bounds consistent
             // decomposition; soundness and completeness still checked.
