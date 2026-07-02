@@ -1,10 +1,8 @@
-#include <gcs/constraints/comparison.hh>
-#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/innards/arithmetic_utils.hh>
+#include <gcs/constraints/innards/linear_stages.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
-#include <gcs/constraints/linear/linear_equality.hh>
-#include <gcs/constraints/multiply/multiply.hh>
+#include <gcs/constraints/multiply/multiply_bc.hh>
 #include <gcs/constraints/power/hints.hh>
 #include <gcs/constraints/power/power.hh>
 #include <gcs/constraints/power/power_table.hh>
@@ -38,6 +36,7 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::size_t;
+using std::string;
 using std::to_string;
 using std::unique_ptr;
 using std::vector;
@@ -88,15 +87,45 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
     }
 
     auto k = a2.offset;
+    auto label = as_string(constraint_id());
 
-    // Both base and exponent constant: the result is a single value, or
-    // nothing representable at all.
+    vector<LinearStage> stages;
+    auto add_equality = [&](const WeightedSum & sum, Integer value, const string & role) {
+        add_equality_stage(stages, optional_model, label, sum, value, role);
+    };
+    auto add_le = [&](const WeightedSum & sum, Integer value, const string & role, const optional<IntegerVariableCondition> & gate) {
+        add_le_stage(stages, optional_model, label, sum, value, role, gate);
+    };
+    auto add_gated_equality = [&](const IntegerVariableCondition & gate, Integer value, const string & role) {
+        // an equality under a gate, as its two half-reified halves
+        add_le(WeightedSum{} + 1_i * _result, value, role + "hi", gate);
+        add_le(WeightedSum{} + -1_i * _result, -value, role + "lo", gate);
+    };
+
+    // One multiplication link of the chain, with its own encoding block
+    // (role-prefixed) and persistent bit-product state.
+    struct MultLink
+    {
+        SimpleIntegerVariableID a, b, product;
+        mult_bc::EncodingData encoding;
+        ConstraintStateHandle bit_products_handle;
+    };
+    vector<MultLink> links;
+    auto add_link = [&](const string & prefix, SimpleIntegerVariableID a, SimpleIntegerVariableID b, SimpleIntegerVariableID product) {
+        mult_bc::EncodingData encoding;
+        if (optional_model)
+            encoding = mult_bc::define_encoding(*optional_model, initial_state, label, prefix, a, b, product);
+        auto handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
+        links.emplace_back(MultLink{a, b, product, move(encoding), handle});
+    };
+
+    bool prune_zero_base = false;
+
     if (! a1.var) {
-        if (auto val = checked_integer_power(a1.offset, k)) {
-            LinearEquality lin{WeightedSum{} + 1_i * _result, *val};
-            lin.set_constraint_id(constraint_id());
-            move(lin).install(propagators, initial_state, optional_model);
-        }
+        // Both base and exponent constant: the result is a single value, or
+        // nothing representable at all.
+        if (auto val = checked_integer_power(a1.offset, k))
+            add_equality(WeightedSum{} + 1_i * _result, *val, "value");
         else {
             // No representable result value exists (an overflowing power, or
             // zero to a negative power), so the constraint itself is the
@@ -104,22 +133,15 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
             if (optional_model)
                 optional_model->add_constraint("Power", "no representable result", WPBSum{} >= 1_i);
             propagators.install_initial_contradiction("no representable power result", JustifyUsingRUP{hints::Power{constraint_id()}});
+            return;
         }
-        return;
     }
-
-    if (k == 0_i) {
+    else if (k == 0_i) {
         // Anything (including zero) to the zeroth power is one.
-        LinearEquality lin{WeightedSum{} + 1_i * _result, 1_i};
-        lin.set_constraint_id(constraint_id());
-        move(lin).install(propagators, initial_state, optional_model);
-        return;
+        add_equality(WeightedSum{} + 1_i * _result, 1_i, "value");
     }
-
-    if (k == 1_i) {
-        LinearEquality lin{WeightedSum{} + 1_i * _base + -1_i * _result, 0_i};
-        lin.set_constraint_id(constraint_id());
-        move(lin).install(propagators, initial_state, optional_model);
+    else if (k == 1_i) {
+        add_equality(WeightedSum{} + 1_i * _base + -1_i * _result, 0_i, "sum");
     }
     else if (k < 0_i || k.raw_value > largest_meaningful_exponent) {
         // A negative exponent means 1 div base^|k|, truncated: 1 for base 1,
@@ -127,78 +149,125 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         // 0 for everything else. An enormous positive exponent is the same
         // case analysis except that base 0 gives 0 and bigger bases have no
         // representable power.
+        auto parity = ((k.raw_value % 2) == 0) ? 1_i : -1_i;
         if (k < 0_i) {
-            NotEquals ne{_base, 0_c};
-            ne.set_constraint_id(child_constraint_id(constraint_id(), "nonzero"));
-            move(ne).install(propagators, initial_state, optional_model);
+            if (optional_model)
+                optional_model->add_labelled_constraint(
+                    label, "nonzero", "Power", "base is not zero", WPBSum{} + 1_i * (_base >= 1_i) + 1_i * (_base < 0_i) >= 1_i);
+            prune_zero_base = true;
 
-            LinearEqualityIf big_pos{WeightedSum{} + 1_i * _result, 0_i, _base >= 2_i};
-            big_pos.set_constraint_id(child_constraint_id(constraint_id(), "bigpos"));
-            move(big_pos).install(propagators, initial_state, optional_model);
-            LinearEqualityIf big_neg{WeightedSum{} + 1_i * _result, 0_i, _base < -1_i};
-            big_neg.set_constraint_id(child_constraint_id(constraint_id(), "bigneg"));
-            move(big_neg).install(propagators, initial_state, optional_model);
+            add_gated_equality(_base >= 2_i, 0_i, "bigpos");
+            add_gated_equality(_base < -1_i, 0_i, "bigneg");
         }
         else {
             // base in {-1, 0, 1}, since 2^63 and up do not fit
-            LessThanEqual le{_base, 1_c};
-            le.set_constraint_id(child_constraint_id(constraint_id(), "basehi"));
-            move(le).install(propagators, initial_state, optional_model);
-            GreaterThanEqual ge{_base, -1_c};
-            ge.set_constraint_id(child_constraint_id(constraint_id(), "baselo"));
-            move(ge).install(propagators, initial_state, optional_model);
-
-            LinearEqualityIf zero{WeightedSum{} + 1_i * _result, 0_i, _base == 0_i};
-            zero.set_constraint_id(child_constraint_id(constraint_id(), "zero"));
-            move(zero).install(propagators, initial_state, optional_model);
+            add_le(WeightedSum{} + 1_i * _base, 1_i, "basehi", nullopt);
+            add_le(WeightedSum{} + -1_i * _base, 1_i, "baselo", nullopt);
+            add_gated_equality(_base == 0_i, 0_i, "zero");
         }
 
-        LinearEqualityIf one{WeightedSum{} + 1_i * _result, 1_i, _base == 1_i};
-        one.set_constraint_id(child_constraint_id(constraint_id(), "one"));
-        move(one).install(propagators, initial_state, optional_model);
-
-        auto parity = ((k.raw_value % 2) == 0) ? 1_i : -1_i;
-        LinearEqualityIf minus_one{WeightedSum{} + 1_i * _result, parity, _base == -1_i};
-        minus_one.set_constraint_id(child_constraint_id(constraint_id(), "minusone"));
-        move(minus_one).install(propagators, initial_state, optional_model);
+        add_gated_equality(_base == 1_i, 1_i, "one");
+        add_gated_equality(_base == -1_i, parity, "minusone");
     }
     else {
-        // 2 <= k <= 62: a chain of multiplications through auxiliary
-        // variables. In any solution the intermediate power's magnitude is
-        // bounded by max(1, |result|) -- for |base| <= 1 trivially, and for
-        // |base| >= 2 because it divides the result -- so the auxiliaries'
-        // ranges are clamped by the result's. That keeps a hopeless chain
-        // (say 10^20 with a small result) failing by propagation rather than
-        // overflowing at install time.
+        // 2 <= k <= 62: a chain of multiplications. In any solution the
+        // intermediate power's magnitude is bounded by max(1, |result|) --
+        // for |base| <= 1 trivially, and for |base| >= 2 because it divides
+        // the result -- so the auxiliaries' ranges are clamped by the
+        // result's. That keeps a hopeless chain (say 10^20 with a small
+        // result) failing by propagation rather than overflowing at install
+        // time. The base multiplies itself on the first link, so it gets a
+        // plain copy; a view base gets channelled to a plain variable first.
         auto [zlo, zhi] = initial_state.bounds(_result);
         auto m = max({1_i, zlo < 0_i ? -zlo : zlo, zhi < 0_i ? -zhi : zhi});
 
-        auto prev = _base;
-        for (long long i = 2; i < k.raw_value; ++i) {
-            auto [plo, phi] = initial_state.bounds(prev);
-            auto [xlo, xhi] = initial_state.bounds(_base);
-            auto lo = min(
-                {saturating_product(plo, xlo, m), saturating_product(plo, xhi, m), saturating_product(phi, xlo, m), saturating_product(phi, xhi, m)});
-            auto hi = max(
-                {saturating_product(plo, xlo, m), saturating_product(plo, xhi, m), saturating_product(phi, xlo, m), saturating_product(phi, xhi, m)});
-            auto t = initial_state.allocate_integer_variable_with_state(lo, hi);
+        auto base_eff = *a1.var;
+        if (a1.coeff != 1_i || a1.offset != 0_i) {
+            auto [blo, bhi] = initial_state.bounds(_base);
+            auto base_plain = initial_state.allocate_integer_variable_with_state(blo, bhi);
             if (optional_model)
-                optional_model->set_up_integer_variable(t, lo, hi, "aux_power" + to_string(t.index), nullopt);
-
-            Multiply mult{prev, _base, t, consistency::BC{}};
-            mult.set_constraint_id(child_constraint_id(constraint_id(), "chain" + to_string(i)));
-            move(mult).install(propagators, initial_state, optional_model);
-            prev = t;
+                optional_model->set_up_integer_variable(base_plain, blo, bhi, "aux_power_base" + to_string(base_plain.index), nullopt);
+            add_equality(WeightedSum{} + 1_i * base_plain + -1_i * _base, 0_i, "base");
+            base_eff = base_plain;
         }
 
-        Multiply last{prev, _base, _result, consistency::BC{}};
-        last.set_constraint_id(child_constraint_id(constraint_id(), "chainlast"));
-        move(last).install(propagators, initial_state, optional_model);
+        auto [blo, bhi] = initial_state.bounds(base_eff);
+        auto base_copy = initial_state.allocate_integer_variable_with_state(blo, bhi);
+        if (optional_model)
+            optional_model->set_up_integer_variable(base_copy, blo, bhi, "aux_power_copy" + to_string(base_copy.index), nullopt);
+        add_equality(WeightedSum{} + 1_i * base_eff + -1_i * base_copy, 0_i, "copy");
+
+        bool result_plain = a3.var && a3.coeff == 1_i && a3.offset == 0_i;
+        auto prev = base_eff;
+        auto other = base_copy;
+        for (long long i = 2; i <= k.raw_value; ++i) {
+            SimpleIntegerVariableID t = prev;
+            bool is_last = i == k.raw_value;
+            if (is_last && result_plain && *a3.var != prev && *a3.var != other)
+                t = *a3.var;
+            else {
+                auto [plo, phi] = initial_state.bounds(prev);
+                auto [xlo, xhi] = initial_state.bounds(other);
+                auto lo = min({saturating_product(plo, xlo, m), saturating_product(plo, xhi, m), saturating_product(phi, xlo, m),
+                    saturating_product(phi, xhi, m)});
+                auto hi = max({saturating_product(plo, xlo, m), saturating_product(plo, xhi, m), saturating_product(phi, xlo, m),
+                    saturating_product(phi, xhi, m)});
+                t = initial_state.allocate_integer_variable_with_state(lo, hi);
+                if (optional_model)
+                    optional_model->set_up_integer_variable(t, lo, hi, "aux_power" + to_string(t.index), nullopt);
+            }
+
+            add_link("c" + to_string(i) + "_", prev, other, t);
+
+            if (is_last && t != (result_plain ? *a3.var : t))
+                ; // unreachable; kept for clarity
+            if (is_last && ! (result_plain && t == *a3.var))
+                add_equality(WeightedSum{} + 1_i * t + -1_i * _result, 0_i, "resultsum");
+
+            prev = t;
+            other = base_eff;
+        }
+    }
+
+    if ((! stages.empty()) || (! links.empty()) || prune_zero_base) {
+        Triggers triggers;
+        vector<IntegerVariableID> watched;
+        auto watch = [&](const IntegerVariableID & v) {
+            if (! holds_alternative<ConstantIntegerVariableID>(v) && std::find(watched.begin(), watched.end(), v) == watched.end())
+                watched.push_back(v);
+        };
+        watch(_base);
+        watch(_result);
+        for (const auto & link : links) {
+            watch(link.a);
+            watch(link.b);
+            watch(link.product);
+        }
+        triggers.on_bounds = watched;
+
+        propagators.install(
+            constraint_id(),
+            [stages = stages, links = links, prune_zero_base = prune_zero_base, base = _base, owner = constraint_id()](
+                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                do {
+                    if (prune_zero_base && state.in_domain(base, 0_i))
+                        inference.infer(logger, base != 0_i, JustifyUsingRUP{hints::Power{owner}}, ExplicitReason{ReasonLiterals{}});
+
+                    if (! propagate_stages(stages, state, inference, logger, owner))
+                        return PropagatorState::Enable;
+
+                    for (const auto & link : links)
+                        mult_bc::propagate(link.a, link.b, link.product, state, inference, logger, link.encoding, link.bit_products_handle, owner);
+                } while (inference.did_anything_since_last_call_inside_propagator());
+
+                return PropagatorState::Enable;
+            },
+            triggers);
     }
 
     // Tabulation for GAC over the base and result (the exponent is constant
     // here). The auxiliary chain variables are not enumerated; they pin by
-    // unit propagation through the Multiply children.
+    // unit propagation through the multiplication links.
     TabulationVariables enum_vars;
     auto px = enum_vars.position_of(*a1.var);
     optional<size_t> pz = a3.var ? optional{enum_vars.position_of(*a3.var)} : nullopt;
