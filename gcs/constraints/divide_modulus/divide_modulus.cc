@@ -1,14 +1,15 @@
-#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/divide_modulus/divide_modulus.hh>
 #include <gcs/constraints/divide_modulus/hints.hh>
-#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/innards/arithmetic_utils.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
+#include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
 #include <gcs/constraints/linear/linear_greater_than_equal.hh>
 #include <gcs/constraints/linear/linear_less_than_equal.hh>
-#include <gcs/constraints/multiply/multiply.hh>
+#include <gcs/constraints/linear/propagate.hh>
+#include <gcs/constraints/linear/utils.hh>
+#include <gcs/constraints/multiply/multiply_bc.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -16,6 +17,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/variable_condition.hh>
 
 #include <util/overloaded.hh>
 
@@ -39,6 +41,7 @@ using std::move;
 using std::nullopt;
 using std::numeric_limits;
 using std::optional;
+using std::pair;
 using std::size_t;
 using std::string;
 using std::to_string;
@@ -60,12 +63,42 @@ namespace
         return x.raw_value / y.raw_value == q.raw_value && x.raw_value % y.raw_value == r.raw_value;
     }
 
+    // Is the gating condition on a fused linear stage currently established?
+    // Only the two operators the stages use appear.
+    auto gate_holds(const State & state, const IntegerVariableCondition & cond) -> bool
+    {
+        switch (cond.op) {
+            using enum VariableConditionOperator;
+        case GreaterEqual: return state.lower_bound(cond.var) >= cond.value;
+        case Less: return state.upper_bound(cond.var) < cond.value;
+        default: throw UnexpectedException{"unexpected gate operator"};
+        }
+    }
+
+    // One linear stage of the fused propagator: tidied terms, the target
+    // value (modifier folded in), whether it is an equality, its OPB lines,
+    // and an optional gating condition, which is also the extra reason
+    // literal (the OPB line is half-reified on it).
+    struct LinearStage
+    {
+        TidiedUpLinear terms;
+        Integer value;
+        bool equality;
+        std::pair<std::optional<ProofLine>, std::optional<ProofLine>> lines;
+        std::optional<IntegerVariableCondition> gate;
+    };
+
     // The shared decomposition: x = q * y + r, |r| < |y|, sign(r) = sign(x)
-    // (or r = 0). Divide exposes q and creates r as an auxiliary; Modulus the
-    // other way around. Aux variables and any tabulation enumerate over the
-    // distinct underlying variables plus the auxiliary, so every rejected
-    // leaf in the in-proof table derivation refutes by unit propagation
-    // against a single child constraint's encoding.
+    // (or r = 0), all emitted as one flat @c[id][role] OPB block and run by
+    // one propagator (issue #448). Divide exposes q and creates r as an
+    // auxiliary; Modulus the other way around. A constant divisor (or, for
+    // Divide, a constant quotient) makes the product a linear term, so there
+    // is no multiplication at all; otherwise the product goes through the
+    // exposed mult_bc machinery on plain variables, with any views channelled
+    // through plain copies first -- once the user's variables are fixed, the
+    // multiplication must pin the unbranched auxiliary (or fail) by
+    // propagation alone, and mult_bc's quotient filtering does exactly that
+    // for plain arguments.
     template <typename Hint_>
     auto install_divide_modulus(const ConstraintID & owner, bool expose_quotient, const IntegerVariableID & x, const IntegerVariableID & y,
         const IntegerVariableID & out, const std::variant<consistency::Auto, consistency::BC, consistency::Tabulated> & level,
@@ -90,9 +123,7 @@ namespace
             return;
         }
 
-        // Biggest possible |y| bounds the remainder: |r| <= max|y| - 1. (If y
-        // spans only zero without being a constant, this clamps to r = 0 and
-        // the |r| < |y| constraint below contradicts at the root.)
+        // Biggest possible |y| bounds the remainder: |r| <= max|y| - 1.
         auto may = max(ylo < 0_i ? -ylo : ylo, yhi < 0_i ? -yhi : yhi);
         auto rmax = max(0_i, may - 1_i);
 
@@ -127,123 +158,186 @@ namespace
                 optional_model->set_up_integer_variable(aux, q_lo, q_hi, "aux_modulus_quotient" + to_string(aux.index), nullopt);
             q = aux;
         }
+        auto aq = affine_of(q);
 
-        // x = q * y + r. With a constant divisor d this is entirely linear:
-        // x = d * q + r. Otherwise, define w = x - r (pinned by propagation
-        // whenever x and r are known), and multiply directly into it:
-        // q * y = w. Note that this shape matters for soundness, not just
-        // strength: for Modulus the quotient is auxiliary and unbranched, so
-        // once the user's variables are fixed, the multiplication must
-        // determine it (or fail) by propagation alone. MultiplyBC's quotient
-        // filtering does exactly that when its arguments are plain variables,
-        // which is also why a view divisor is channelled through a plain copy
-        // first rather than letting Multiply fold the view into a linear
-        // equality (a fold leaves the product and quotient coupled only
-        // through a two-unknowns linear, which bounds propagation cannot
-        // finish).
-        if (! ay.var) {
-            auto d = ay.offset;
-            LinearEquality lin{WeightedSum{} + d * q + 1_i * r + -1_i * x, 0_i};
-            lin.set_constraint_id(child_constraint_id(owner, "sum"));
-            move(lin).install(propagators, initial_state, optional_model);
+        auto label = as_string(owner);
+        auto as_wpb = [](const WeightedSum & ws) {
+            WPBSum terms;
+            for (const auto & [c, v] : ws.terms)
+                terms += c * v;
+            return terms;
+        };
+
+        vector<LinearStage> stages;
+        auto add_equality_stage = [&](const WeightedSum & sum, Integer value, const string & role) {
+            std::pair<std::optional<ProofLine>, std::optional<ProofLine>> lines;
+            if (optional_model) {
+                auto ll = optional_model->add_labelled_constraint(label, role + "le", role + "ge", "DivideModulus", "sum", as_wpb(sum) == value);
+                lines = pair{optional{ll.first}, optional{ll.second}};
+            }
+            auto [tidied, modifier] = tidy_up_linear(sum);
+            stages.emplace_back(LinearStage{tidied, value + modifier, true, lines, nullopt});
+        };
+        auto add_le_stage = [&](const WeightedSum & sum, Integer value, const string & role, const optional<IntegerVariableCondition> & gate) {
+            std::pair<std::optional<ProofLine>, std::optional<ProofLine>> lines;
+            if (optional_model) {
+                if (gate)
+                    lines.first = optional_model->add_labelled_constraint(
+                        label, role, "DivideModulus", "range", as_wpb(sum) <= value, HalfReifyOnConjunctionOf{Literal{*gate}});
+                else
+                    lines.first = optional_model->add_labelled_constraint(label, role, "DivideModulus", "range", as_wpb(sum) <= value);
+            }
+            auto [tidied, modifier] = tidy_up_linear(sum);
+            stages.emplace_back(LinearStage{tidied, value + modifier, false, lines, gate});
+        };
+
+        // x = q * y + r. With a constant divisor or a constant quotient the
+        // product is a linear term; otherwise, define w = x - r (pinned by
+        // propagation whenever x and r are known) and multiply directly into
+        // it: q * y = w, on plain variables.
+        bool needs_mult = ay.var && aq.var;
+        mult_bc::EncodingData encoding;
+        optional<ConstraintStateHandle> bit_products_handle;
+        SimpleIntegerVariableID mult_q = aux, mult_y = aux, mult_w = aux; // overwritten when needs_mult
+
+        if (! needs_mult) {
+            // one of d * q + r - x = 0 (constant divisor) or c * y + r - x = 0
+            // (Divide with a constant quotient)
+            if (! ay.var)
+                add_equality_stage(WeightedSum{} + ay.offset * q + 1_i * r + -1_i * x, 0_i, "sum");
+            else
+                add_equality_stage(WeightedSum{} + aq.offset * y + 1_i * r + -1_i * x, 0_i, "sum");
         }
         else {
-            auto y_eff = y;
+            auto y_eff = *ay.var;
             if (ay.coeff != 1_i || ay.offset != 0_i) {
                 auto y_plain = initial_state.allocate_integer_variable_with_state(min(ylo, yhi), max(ylo, yhi));
                 if (optional_model)
                     optional_model->set_up_integer_variable(y_plain, min(ylo, yhi), max(ylo, yhi),
                         (expose_quotient ? "aux_divide_divisor" : "aux_modulus_divisor") + to_string(y_plain.index), nullopt);
-                LinearEquality channel{WeightedSum{} + 1_i * y_plain + -1_i * y, 0_i};
-                channel.set_constraint_id(child_constraint_id(owner, "divisor"));
-                move(channel).install(propagators, initial_state, optional_model);
+                add_equality_stage(WeightedSum{} + 1_i * y_plain + -1_i * y, 0_i, "divisor");
                 y_eff = y_plain;
             }
 
-            auto [qlo, qhi] = initial_state.bounds(q);
-            auto w_lo = min({qlo * ylo, qlo * yhi, qhi * ylo, qhi * yhi});
-            auto w_hi = max({qlo * ylo, qlo * yhi, qhi * ylo, qhi * yhi});
+            auto q_eff = *aq.var;
+            if (aq.coeff != 1_i || aq.offset != 0_i) {
+                auto [qelo, qehi] = initial_state.bounds(q);
+                auto q_plain = initial_state.allocate_integer_variable_with_state(qelo, qehi);
+                if (optional_model)
+                    optional_model->set_up_integer_variable(q_plain, qelo, qehi, "aux_divide_quotient" + to_string(q_plain.index), nullopt);
+                add_equality_stage(WeightedSum{} + 1_i * q_plain + -1_i * q, 0_i, "quotient");
+                q_eff = q_plain;
+            }
+
+            auto [qblo, qbhi] = initial_state.bounds(q);
+            auto w_lo = min({qblo * ylo, qblo * yhi, qbhi * ylo, qbhi * yhi});
+            auto w_hi = max({qblo * ylo, qblo * yhi, qbhi * ylo, qbhi * yhi});
             auto w = initial_state.allocate_integer_variable_with_state(w_lo, w_hi);
             if (optional_model)
                 optional_model->set_up_integer_variable(
                     w, w_lo, w_hi, (expose_quotient ? "aux_divide_product" : "aux_modulus_product") + to_string(w.index), nullopt);
 
-            Multiply mult{q, y_eff, w, consistency::BC{}};
-            mult.set_constraint_id(child_constraint_id(owner, "product"));
-            move(mult).install(propagators, initial_state, optional_model);
+            if (optional_model)
+                encoding = mult_bc::define_encoding(*optional_model, initial_state, label, "", q_eff, y_eff, w);
+            bit_products_handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
+            mult_q = q_eff;
+            mult_y = y_eff;
+            mult_w = w;
 
-            LinearEquality lin{WeightedSum{} + 1_i * w + 1_i * r + -1_i * x, 0_i};
-            lin.set_constraint_id(child_constraint_id(owner, "sum"));
-            move(lin).install(propagators, initial_state, optional_model);
+            add_equality_stage(WeightedSum{} + 1_i * w + 1_i * r + -1_i * x, 0_i, "sum");
         }
 
         // |r| < |y|, plus y != 0, which is where the relational division-by-
         // zero semantics comes from. With a constant divisor the remainder
         // slot's range suffices: it is baked into the auxiliary's bounds for
         // Divide, and posted on the user's remainder for Modulus. With a
-        // variable divisor, split on the divisor's sign with half-reified
-        // linear inequalities.
+        // variable divisor, split on the divisor's sign.
         if (! ay.var) {
             if (! expose_quotient) {
-                LessThanEqual le{r, constant_variable(rmax)};
-                le.set_constraint_id(child_constraint_id(owner, "remrangehi"));
-                move(le).install(propagators, initial_state, optional_model);
-                GreaterThanEqual ge{r, constant_variable(-rmax)};
-                ge.set_constraint_id(child_constraint_id(owner, "remrangelo"));
-                move(ge).install(propagators, initial_state, optional_model);
+                add_le_stage(WeightedSum{} + 1_i * r, rmax, "remhi", nullopt);
+                add_le_stage(WeightedSum{} + -1_i * r, rmax, "remlo", nullopt);
             }
         }
         else {
-            NotEquals ne{y, 0_c};
-            ne.set_constraint_id(child_constraint_id(owner, "nonzero"));
-            move(ne).install(propagators, initial_state, optional_model);
+            if (optional_model)
+                optional_model->add_labelled_constraint(
+                    label, "nonzero", "DivideModulus", "divisor is not zero", WPBSum{} + 1_i * (y >= 1_i) + 1_i * (y < 0_i) >= 1_i);
 
             // y >= 1 -> r <= y - 1 and r >= -y + 1
-            LinearLessThanEqualIf pos_le{WeightedSum{} + 1_i * r + -1_i * y, -1_i, y >= 1_i};
-            pos_le.set_constraint_id(child_constraint_id(owner, "rangeposhi"));
-            move(pos_le).install(propagators, initial_state, optional_model);
-            LinearGreaterThanEqualIf pos_ge{WeightedSum{} + 1_i * r + 1_i * y, 1_i, y >= 1_i};
-            pos_ge.set_constraint_id(child_constraint_id(owner, "rangeposlo"));
-            move(pos_ge).install(propagators, initial_state, optional_model);
-
+            add_le_stage(WeightedSum{} + 1_i * r + -1_i * y, -1_i, "rangeposhi", y >= 1_i);
+            add_le_stage(WeightedSum{} + -1_i * r + -1_i * y, -1_i, "rangeposlo", y >= 1_i);
             // y <= -1 -> r <= -y - 1 and r >= y + 1
-            LinearLessThanEqualIf neg_le{WeightedSum{} + 1_i * r + 1_i * y, -1_i, y < 0_i};
-            neg_le.set_constraint_id(child_constraint_id(owner, "rangeneghi"));
-            move(neg_le).install(propagators, initial_state, optional_model);
-            LinearGreaterThanEqualIf neg_ge{WeightedSum{} + 1_i * r + -1_i * y, 1_i, y < 0_i};
-            neg_ge.set_constraint_id(child_constraint_id(owner, "rangeneglo"));
-            move(neg_ge).install(propagators, initial_state, optional_model);
+            add_le_stage(WeightedSum{} + 1_i * r + 1_i * y, -1_i, "rangeneghi", y < 0_i);
+            add_le_stage(WeightedSum{} + -1_i * r + 1_i * y, -1_i, "rangeneglo", y < 0_i);
         }
 
-        // The remainder takes the sign of the dividend: x >= 0 -> r >= 0 and
-        // x <= 0 -> r <= 0. This is what pins truncation: without it, the
-        // identity and |r| < |y| admit both the truncated and the floored
-        // (quotient, remainder) pair when the signs differ.
+        // The remainder takes the sign of the dividend, which is what pins
+        // truncation: without it, the identity and |r| < |y| admit both the
+        // truncated and the floored (quotient, remainder) pair when the signs
+        // differ.
         if (ax.var) {
-            GreaterThanEqualIf ge{r, 0_c, x >= 0_i};
-            ge.set_constraint_id(child_constraint_id(owner, "signpos"));
-            move(ge).install(propagators, initial_state, optional_model);
-            LessThanEqualIf le{r, 0_c, x < 1_i};
-            le.set_constraint_id(child_constraint_id(owner, "signneg"));
-            move(le).install(propagators, initial_state, optional_model);
+            add_le_stage(WeightedSum{} + -1_i * r, 0_i, "signpos", x >= 0_i);
+            add_le_stage(WeightedSum{} + 1_i * r, 0_i, "signneg", x < 1_i);
         }
         else {
-            if (ax.offset >= 0_i) {
-                GreaterThanEqual ge{r, 0_c};
-                ge.set_constraint_id(child_constraint_id(owner, "signpos"));
-                move(ge).install(propagators, initial_state, optional_model);
-            }
-            if (ax.offset <= 0_i) {
-                LessThanEqual le{r, 0_c};
-                le.set_constraint_id(child_constraint_id(owner, "signneg"));
-                move(le).install(propagators, initial_state, optional_model);
-            }
+            if (ax.offset >= 0_i)
+                add_le_stage(WeightedSum{} + -1_i * r, 0_i, "signpos", nullopt);
+            if (ax.offset <= 0_i)
+                add_le_stage(WeightedSum{} + 1_i * r, 0_i, "signneg", nullopt);
         }
+
+        Triggers triggers;
+        vector<IntegerVariableID> watched;
+        auto watch = [&](const IntegerVariableID & v) {
+            if (! holds_alternative<ConstantIntegerVariableID>(v) && std::find(watched.begin(), watched.end(), v) == watched.end())
+                watched.push_back(v);
+        };
+        watch(x);
+        watch(y);
+        watch(out);
+        watch(aux);
+        if (needs_mult) {
+            watch(mult_q);
+            watch(mult_y);
+            watch(mult_w);
+        }
+        triggers.on_bounds = watched;
+
+        bool prune_zero = ay.var != nullopt;
+        propagators.install(
+            owner,
+            [stages = stages, needs_mult = needs_mult, encoding = encoding, bit_products_handle = bit_products_handle, mult_q = mult_q,
+                mult_y = mult_y, mult_w = mult_w, prune_zero = prune_zero, y = y,
+                owner = owner](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                do {
+                    if (prune_zero && state.in_domain(y, 0_i))
+                        inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
+
+                    for (const auto & stage : stages) {
+                        if (stage.gate && ! gate_holds(state, *stage.gate))
+                            continue;
+                        visit(
+                            [&](const auto & cv) {
+                                propagate_linear(cv, stage.value, state, inference, logger, stage.equality, stage.lines,
+                                    stage.gate ? optional<Literal>{*stage.gate} : nullopt, hints::LinearEquality{owner});
+                            },
+                            stage.terms);
+                        if (inference.contradicted())
+                            return PropagatorState::Enable;
+                    }
+
+                    if (needs_mult)
+                        mult_bc::propagate(mult_q, mult_y, mult_w, state, inference, logger, encoding, *bit_products_handle, owner);
+                } while (inference.did_anything_since_last_call_inside_propagator());
+
+                return PropagatorState::Enable;
+            },
+            triggers);
 
         // Tabulation for GAC: enumerate the distinct underlying variables and
         // the auxiliary slot, so a complete assignment fixes x, y, q and r and
-        // every rejected leaf refutes against a single child's encoding by
-        // unit propagation alone.
+        // every rejected leaf refutes against this block by unit propagation
+        // alone.
         TabulationVariables enum_vars;
         auto px = ax.var ? optional{enum_vars.position_of(*ax.var)} : nullopt;
         auto py = ay.var ? optional{enum_vars.position_of(*ay.var)} : nullopt;
