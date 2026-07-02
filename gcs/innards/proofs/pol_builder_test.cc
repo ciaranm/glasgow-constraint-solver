@@ -98,6 +98,20 @@ TEST_CASE("PolBuilder: reusable across clear")
     CHECK(b.str() == "pol 9 ;");
 }
 
+TEST_CASE("PolBuilder: non-positive line numbers pass through as already-relative references")
+{
+    // circuit_scc.cc weakens a flag out of the constraint two lines back,
+    // referenced relatively as -2 (`pol -2 <flag> w`). relative_proof_line()
+    // treats non-positive numbers as already-relative and leaves them
+    // unchanged, so PolBuilder::add must carry them through verbatim rather
+    // than re-offsetting them. (The `weaken` half needs a tracker to resolve
+    // the flag and is covered end-to-end by the circuit proof's VeriPB check,
+    // as with the other tracker-dependent add overloads.)
+    PolBuilder b;
+    b.add(ProofLineNumber{-2});
+    CHECK(b.str() == "pol -2 ;");
+}
+
 TEST_CASE("PolBuilder: str is non-mutating")
 {
     PolBuilder b;

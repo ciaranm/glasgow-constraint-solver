@@ -382,7 +382,11 @@ namespace
                 // Redundance subproof:
                 auto subproofs = make_optional(map<ProofGoal, Subproof>{});
                 auto subproof = [&](ProofLogger & logger) {
-                    logger.emit_proof_line("pol -2 " + logger.names_and_ids_tracker().pb_file_string_for(greater_than_flag) + " w;", ProofLevel::Top);
+                    // Weaken greater_than_flag out of the reverse-reified definition two
+                    // lines back (relative reference -2, passed through unchanged).
+                    PolBuilder weaken_flag;
+                    weaken_flag.add(ProofLineNumber{-2}).weaken(greater_than_flag, logger.names_and_ids_tracker());
+                    weaken_flag.emit(logger, ProofLevel::Top);
                     for (long k = 0; cmp_less(k, ctx.succ.size()); k++) {
                         PolBuilder p_line;
                         // Prove p[i] = k is not possible
