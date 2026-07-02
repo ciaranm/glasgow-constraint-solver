@@ -346,6 +346,29 @@ GAC mode that's a totally separate code path. The current plan is to
 eventually allow propagators to change their triggers dynamically,
 which would unblock linear_equality's adoption.
 
+### Tabulated GAC for a reified constraint
+
+If the constraint offers `consistency::Tabulated`, the reification does
+not need its own tabulation logic: describe the *unreified* relation (an
+acceptance test over `TabulationVariables` positions, plus any
+`DeterminedVariable` claims), then let
+
+```cpp
+auto reified = reify_tabulation(reif_cond, enum_vars, base_accept, move(determined));
+install_tabulation<hints::Foo>(propagators, constraint_id(), enum_vars.vars(),
+    move(reified.determined), move(reified.reification), move(reified.accept), ...);
+```
+
+do the rest. `reify_tabulation` registers the condition variable as an
+enumerated variable, wraps the acceptance test in the reified
+semantics, and classifies each condition value: values that release the
+constraint collapse to a single tuple that is wildcard on every other
+variable, enforcing values enumerate with the determined-variable skip,
+and negating values enumerate in full. The determined claims survive
+only where some branch enforces the base relation. See
+`gcs/constraints/innards/tabulation.hh` for the proof story and
+`linear_equality.cc`'s Tabulated branch for the worked example.
+
 ## Adding a new reified constraint: checklist
 
 1. Public class hierarchy in your header — typically a base class storing
