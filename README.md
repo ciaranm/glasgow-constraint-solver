@@ -304,6 +304,33 @@ This will produce a ``cake.opb`` file containing a low-level description of the 
 ``cake.pbp`` file containing the associated proof. To verify the proof, use ``veripb cake.opb
 cake.pbp``.
 
+Environment Variables
+---------------------
+
+A few runtime knobs are read from the environment, so they can be changed (or swept by an
+autotuner) without recompiling. Each is read once, on first use.
+
+* ``GCS_ASSERTION_LEVEL``: sets the default assertion level for proof logging, used when the
+  ``ProofOptions`` passed to ``solve_with()`` does not set one explicitly (an option set in code
+  takes precedence). Accepts ``Off``, ``Definitions``, ``Links``, ``Inferences``, or
+  ``Backtracking`` (case-insensitive), or the numeric values ``0`` to ``4``; an unrecognised
+  value is ignored with a warning.
+
+* ``GCS_VERBOSE_LOGGING``: if set to anything, every proof log line is preceded by comment lines
+  giving a C++ stacktrace of the solver code that emitted it, which is very useful for figuring
+  out where an unexpected line in a ``.pbp`` file came from. Only available when the compiler
+  provides ``<stacktrace>``.
+
+* ``GCS_LINEAR_INCREMENTAL_THRESHOLD``: the number of terms at or above which a linear equality
+  uses the incremental propagator, which folds instantiated terms out of the sum at the cost of
+  some backtrackable bookkeeping (default: 8). The test suite runs in both modes by setting
+  this.
+
+* ``GCS_TABULATION_THRESHOLD``: under ``consistency::Auto``, a constraint tabulates itself for
+  generalised arc consistency when the product of its variables' domain sizes is no bigger than
+  this (default: 100). Bigger values give stronger propagation on more constraints, at the cost
+  of set-up work and proof size that grow with the domain sizes.
+
 Navigating the Source Code
 ==========================
 
