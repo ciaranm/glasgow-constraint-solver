@@ -22,6 +22,7 @@ using std::optional;
 using std::size_t;
 using std::string;
 using std::vector;
+using std::ranges::find;
 using std::ranges::stable_sort;
 
 namespace
@@ -49,13 +50,10 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
     // can cut their whole subtree down to one wildcard tuple.
     optional<size_t> reification_pos;
     if (reification) {
-        for (size_t idx = 0; idx < vars.size(); ++idx)
-            if (vars[idx] == reification->var) {
-                reification_pos = idx;
-                break;
-            }
-        if (! reification_pos)
+        auto where = find(vars, reification->var);
+        if (where == vars.end())
             throw UnexpectedException{"tabulation reification variable is not among the variables being enumerated"};
+        reification_pos = static_cast<size_t>(where - vars.begin());
     }
 
     // the proof derivation emits a line per enumeration tree node, so branch
@@ -66,17 +64,13 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
     optional<size_t> determined_last;
     const DeterminedVariable * determined_choice = nullptr;
     for (const auto & d : determined_vars) {
-        optional<size_t> pos;
-        for (size_t idx = 0; idx < vars.size(); ++idx)
-            if (vars[idx] == d.var) {
-                pos = idx;
-                break;
-            }
-        if (! pos)
+        auto where = find(vars, d.var);
+        if (where == vars.end())
             throw UnexpectedException{"tabulation determined variable is not among the variables being enumerated"};
+        auto pos = static_cast<size_t>(where - vars.begin());
         if (pos == reification_pos)
             throw UnexpectedException{"tabulation reification variable cannot be claimed as determined"};
-        if ((! determined_last) || state.domain_size(vars[*pos]) > state.domain_size(vars[*determined_last])) {
+        if ((! determined_last) || state.domain_size(vars[pos]) > state.domain_size(vars[*determined_last])) {
             determined_last = pos;
             determined_choice = &d;
         }
@@ -126,13 +120,12 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
         }
     };
 
-    auto current_branch = TabulationBranch::Holds;
-    function<void(ProofLogger * const)> search = [&](ProofLogger * const logger) {
+    function<void(ProofLogger * const, TabulationBranch)> search = [&](ProofLogger * const logger, TabulationBranch branch) {
         if (depth == vars.size()) {
             if (accept(assignment))
                 record(logger, vars.size());
         }
-        else if (determined_last && depth == vars.size() - 1 && TabulationBranch::Holds == current_branch) {
+        else if (determined_last && depth == vars.size() - 1 && TabulationBranch::Holds == branch) {
             // the one remaining variable is functionally determined by the
             // assigned prefix: no iteration over its domain, and no per-value
             // backtrack lines. The candidate is still checked against the
@@ -148,9 +141,10 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
         else {
             for (auto val : state.each_value_mutable(vars[order[depth]])) {
                 assignment[order[depth]] = val;
+                auto child_branch = branch;
                 if (reification && 0 == depth) {
-                    auto branch = reification->branch(val);
-                    if (TabulationBranch::Free == branch) {
+                    child_branch = reification->branch(val);
+                    if (TabulationBranch::Free == child_branch) {
                         // every completion of this reification value is
                         // accepted: one tuple, wildcard everywhere else,
                         // covers the whole subtree, and its reverse
@@ -159,10 +153,9 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
                         record(logger, depth + 1);
                         continue;
                     }
-                    current_branch = branch;
                 }
                 ++depth;
-                search(logger);
+                search(logger, child_branch);
                 --depth;
             }
         }
@@ -178,7 +171,7 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
 
     if (logger && logger->get_assertion_level() == AssertionLevel::Off)
         logger->emit_proof_comment(comment);
-    search(logger);
+    search(logger, TabulationBranch::Holds);
 
     if (permitted.empty())
         return nullopt;

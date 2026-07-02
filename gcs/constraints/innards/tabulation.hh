@@ -244,7 +244,10 @@ namespace gcs::innards
      * are the claims that will be passed to install_tabulation(): the
      * largest-domained one's level is skipped, so it does not count against
      * the budget -- a constraint whose every level but that one is small
-     * tabulates however large the skipped domain is.
+     * tabulates however large the skipped domain is. This assumes the
+     * constraint is unreified: under a reification, a Negated branch
+     * enumerates the skipped level in full, so an Auto-plus-reified caller
+     * (none exists today) would need the budget taught about the branches.
      *
      * \ingroup Innards
      * \sa gcs::innards::install_tabulation()
