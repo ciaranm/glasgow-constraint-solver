@@ -88,15 +88,9 @@ namespace gcs
     // gcs::Modulus, which propagate through a decomposition rather than a
     // materialised table, and tabulate in-proof for GAC when appropriate.
 
-    /**
-     * \brief Constrain that `power(v1, v2) = result`.
-     *
-     * \warning Memory usage is O(|domain(v1)| * |domain(v2)|): the full tuple
-     * table is materialised, so wide variable domains will exhaust memory.
-     *
-     * \ingroup Constraints
-     */
-    using Power = innards::GACArithmetic<innards::ArithmeticOperator::Power>;
+    // There is no longer a Power typedef here: use gcs::Power, which
+    // dispatches on the exponent and only materialises a table (via
+    // innards::PowerTable) when the exponent is a variable.
 }
 
 #endif

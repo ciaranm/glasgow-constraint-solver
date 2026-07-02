@@ -22,6 +22,7 @@
 #include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/multiply/multiply_bc.hh>
+#include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
@@ -396,6 +397,53 @@ TEST_CASE("read_scp: divide and modulus survive write -> read -> write unchanged
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_divmod_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: power enumerates correctly")
+{
+    auto solutions = enumerate(R"(
+        (
+            ( (X -2 2) (K -1 3) (Z -2 8) )
+            ( (_1 power (X K Z)) )
+        ))");
+
+    CHECK(! solutions.empty());
+    for (const auto & s : solutions) {
+        auto a = s.at("X"), b = s.at("K"), c = s.at("Z");
+        if (b == 0)
+            CHECK(c == 1);
+        else if (a == 1)
+            CHECK(c == 1);
+        else if (a == -1)
+            CHECK(c == ((b % 2 == 0) ? 1 : -1));
+        else if (b < 0)
+            CHECK((a != 0 && c == 0));
+        else {
+            long long r = 1;
+            for (long long i = 0; i < b; ++i)
+                r *= a;
+            CHECK(c == r);
+        }
+    }
+}
+
+TEST_CASE("read_scp: power survives write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto k = original.create_integer_variable(0_i, 3_i, "K");
+    auto z = original.create_integer_variable(-8_i, 8_i, "Z");
+    original.post(Power{x, k, z});                       // variable exponent: PowerTable
+    original.post(Power{x, constant_variable(2_i), z});  // constant exponent: chain
+    original.post(Power{x, constant_variable(-2_i), z}); // negative: case analysis
+    auto scp_a = prove_to_scp(original, "scp_reader_power_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_power_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

@@ -26,8 +26,14 @@ auto gcs::innards::checked_integer_power(Integer base, Integer exp) -> optional<
         return 1_i;
     if (base == -1_i)
         return ((exp.raw_value & 1) == 0) ? 1_i : -1_i;
-    if (exp < 0_i)
-        return nullopt;
+    if (exp < 0_i) {
+        // 1 div base^|exp|, truncated (the MiniZinc 2.7.1 rule): zero for any
+        // |base| >= 2, and undefined for base zero. |base| == 1 was handled
+        // above.
+        if (base == 0_i)
+            return nullopt;
+        return 0_i;
+    }
     if (base == 0_i)
         return 0_i;
 

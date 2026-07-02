@@ -12,10 +12,10 @@ namespace gcs::innards
     /**
      * \brief Integer base raised to integer exponent, with overflow checking.
      *
-     * Returns std::nullopt if the result would overflow Integer's range, or if
-     * no integer value exists for the operands (i.e. negative exponent with
-     * |base| != 1, or 0 raised to a negative power). 0^0 is taken to be 1 by
-     * convention.
+     * Returns std::nullopt if the result would overflow Integer's range, or
+     * for 0 raised to a negative power. 0^0 is taken to be 1 by convention,
+     * and a negative exponent gives 1 div base^|exp| truncated (so zero for
+     * any |base| >= 2), following MiniZinc's definition of int_pow.
      */
     [[nodiscard]] auto checked_integer_power(Integer base, Integer exp) -> std::optional<Integer>;
 }

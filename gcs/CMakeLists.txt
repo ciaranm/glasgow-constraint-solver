@@ -65,6 +65,8 @@ add_library(glasgow_constraint_solver
         constraints/n_value/n_value.cc
         constraints/parity/parity.cc
         constraints/plus_minus/plus.cc
+        constraints/power/power.cc
+        constraints/power/power_table.cc
         constraints/regular/regular.cc
         constraints/regular/regex.cc
         constraints/seq_precede_chain/seq_precede_chain.cc
@@ -172,6 +174,7 @@ if(GCS_BUILD_TESTS)
     add_executable(n_value_test constraints/n_value/n_value_test.cc)
     add_executable(parity_test constraints/parity/parity_test.cc)
     add_executable(plus_minus_test constraints/plus_minus/plus_minus_test.cc)
+    add_executable(power_test constraints/power/power_test.cc)
     add_executable(regular_test constraints/regular/regular_test.cc)
     add_executable(seq_precede_chain_test constraints/seq_precede_chain/seq_precede_chain_test.cc)
     add_executable(smart_table_test constraints/smart_table/smart_table_test.cc)
@@ -190,7 +193,7 @@ if(GCS_BUILD_TESTS)
             abs_test all_different_test all_different_except_test all_equal_test among_test arithmetic_test at_most_one_test comparison_test
             count_test cumulative_test disjunctive_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
             logical_test min_max_test multiply_bc_test multiply_test n_value_test parity_test
-            plus_minus_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
+            plus_minus_test power_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
@@ -328,6 +331,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME logical_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:logical_test>)
     add_test(NAME min_max_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:min_max_test>)
     add_test(NAME divide_modulus_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:divide_modulus_test>)
+    add_test(NAME power_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:power_test>)
     add_test(NAME multiply_bc_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:multiply_bc_test>)
     add_test(NAME multiply_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:multiply_test>)
     add_test(NAME n_value_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:n_value_test>)

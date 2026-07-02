@@ -28,6 +28,7 @@
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
+#include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
@@ -820,6 +821,16 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 post_constraint(problem, Divide{vars[0], vars[1], vars[2]}, label);
             else
                 post_constraint(problem, Modulus{vars[0], vars[1], vars[2]}, label);
+        }
+        else if (op == "power") {
+            // (label power (base exponent result)): base ^ exponent = result,
+            // with MiniZinc semantics (0^0 = 1, negative exponent truncates).
+            if (terms.size() != 3)
+                throw ScpReadError{"power takes (label power (base exponent result))"};
+            auto vars = resolve_variable_list(variables, terms[2], "the power variable list");
+            if (vars.size() != 3)
+                throw ScpReadError{"power takes exactly three variables"};
+            post_constraint(problem, Power{vars[0], vars[1], vars[2]}, label);
         }
         else if (op == "multiply") {
             // (label multiply (v1 v2 result)): v1 * v2 = result. Written by both
