@@ -42,6 +42,7 @@ add_library(glasgow_constraint_solver
         constraints/innards/justify_not_in_range.cc
         constraints/innards/recover_am1.cc
         constraints/innards/reified_state.cc
+        constraints/innards/tabulation.cc
         constraints/innards/triggers.cc
         constraints/inverse/inverse.cc
         constraints/knapsack/knapsack.cc
@@ -177,6 +178,7 @@ if(GCS_BUILD_TESTS)
     add_executable(negative_table_test constraints/table/negative_table_test.cc)
     add_executable(symmetric_all_different_test constraints/all_different/symmetric_all_different_test.cc)
     add_executable(table_test constraints/table/table_test.cc)
+    add_executable(tabulation_test constraints/innards/tabulation_test.cc)
     add_executable(value_precede_test constraints/value_precede/value_precede_test.cc)
 
     foreach(test_target
@@ -184,7 +186,7 @@ if(GCS_BUILD_TESTS)
             count_test cumulative_test disjunctive_test disjunctive_2d_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
             logical_test min_max_test mult_bc_test n_value_test parity_test
             plus_minus_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
-            negative_table_test table_test value_precede_test)
+            negative_table_test table_test tabulation_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
 
@@ -336,6 +338,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME negative_table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:negative_table_test>)
     add_test(NAME symmetric_all_different_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:symmetric_all_different_test>)
     add_test(NAME table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:table_test>)
+    add_test(NAME tabulation COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tabulation_test>)
     add_test(NAME value_precede_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:value_precede_test>)
 
     # The circuit scenario tests self-verify (they call veripb internally on a
