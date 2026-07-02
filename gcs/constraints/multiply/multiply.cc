@@ -1,4 +1,5 @@
 #include <gcs/constraints/equals.hh>
+#include <gcs/constraints/innards/arithmetic_utils.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
@@ -41,40 +42,6 @@ using std::vector;
 
 namespace
 {
-    // Under consistency::Auto, tabulate when the enumeration tree (the product
-    // of the enumerated variables' domain sizes) is no bigger than this. The
-    // proof derivation emits a line per tree node, so this bounds both the
-    // work and the proof size. The value is a guess, to be benchmarked
-    // properly as a follow-up to issue #444.
-    constexpr long long multiply_tabulation_threshold = 100;
-
-    // v = coeff * var + offset, or just the constant offset if var is absent:
-    // the affine view structure, made explicit for dispatching.
-    struct AffineForm
-    {
-        optional<SimpleIntegerVariableID> var;
-        Integer coeff{0_i};
-        Integer offset{0_i};
-    };
-
-    auto affine_of(const IntegerVariableID & v) -> AffineForm
-    {
-        return overloaded{[&](const SimpleIntegerVariableID & s) { return AffineForm{s, 1_i, 0_i}; },
-            [&](const ViewOfIntegerVariableID & w) { return AffineForm{w.actual_variable, w.negate_first ? -1_i : 1_i, w.then_add}; },
-            [&](const ConstantIntegerVariableID & c) { return AffineForm{nullopt, 0_i, c.const_value}; }}
-            .visit(v);
-    }
-
-    // a * b without the overflow throw: an overflowing product cannot equal
-    // any representable result value, so it is simply not in the relation.
-    auto product_if_representable(Integer a, Integer b) -> optional<Integer>
-    {
-        long long result;
-        if (__builtin_mul_overflow(a.raw_value, b.raw_value, &result))
-            return nullopt;
-        return Integer{result};
-    }
-
     // The resolved form when at least one operand is constant: a linear
     // equality. Used by both install() and s_expr(), which must agree exactly.
     auto linear_for_constant_operand(const AffineForm & a1, const AffineForm & a2, const IntegerVariableID & v1, const IntegerVariableID & v2,
@@ -115,7 +82,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
                 for (const auto & [_, v] : sum.terms)
                     if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
                         return consistency::BC{};
-                if (size <= multiply_tabulation_threshold)
+                if (size <= default_tabulation_threshold)
                     return consistency::GAC{};
                 return consistency::BC{};
             }}.visit(_level);
@@ -164,6 +131,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
 
     if (copy_to_make) {
         Equals eq{copy_to_make->first, copy_to_make->second};
+        eq.set_constraint_id(child_constraint_id(constraint_id(), "copy"));
         move(eq).install(propagators, initial_state, optional_model);
     }
 
@@ -181,6 +149,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
             sum += (a2.coeff * a1.offset) * u2;
         sum += -1_i * _result;
         LinearEquality lin{move(sum), -(a1.offset * a2.offset)};
+        lin.set_constraint_id(child_constraint_id(constraint_id(), "fold"));
         move(lin).install(propagators, initial_state, optional_model);
     }
 
@@ -205,7 +174,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
             for (const auto & v : enum_vars)
                 if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
                     return false;
-            return size <= multiply_tabulation_threshold;
+            return size <= default_tabulation_threshold;
         }}.visit(_level);
 
     if (tabulate) {

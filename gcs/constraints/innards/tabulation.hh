@@ -15,6 +15,17 @@
 namespace gcs::innards
 {
     /**
+     * \brief Under consistency::Auto, constraints tabulate when the enumeration
+     * tree (the product of the enumerated variables' domain sizes) is no bigger
+     * than this. The proof derivation emits a line per tree node, so this
+     * bounds both the work and the proof size. The value is a guess, to be
+     * benchmarked properly as a follow-up to issue #444.
+     *
+     * \ingroup Innards
+     */
+    constexpr long long default_tabulation_threshold = 100;
+
+    /**
      * \brief Enumerate every assignment to vars that accept() approves, building
      * a table that can be handed to propagate_extensional() to achieve GAC.
      *
