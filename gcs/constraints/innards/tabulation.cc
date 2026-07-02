@@ -83,10 +83,10 @@ auto gcs::innards::build_table_in_proof(const vector<IntegerVariableID> & vars, 
     return ExtensionalData{sel, vector<IntegerVariableID>{vars}, move(permitted)};
 }
 
-auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::GAC> & level,
+auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::Tabulated> & level,
     const vector<IntegerVariableID> & enum_vars, const State & initial_state) -> bool
 {
-    return overloaded{[&](const consistency::GAC &) { return true; }, [&](const consistency::BC &) { return false; },
+    return overloaded{[&](const consistency::Tabulated &) { return true; }, [&](const consistency::BC &) { return false; },
         [&](const consistency::Auto &) {
             long long size = 1;
             for (const auto & v : enum_vars)

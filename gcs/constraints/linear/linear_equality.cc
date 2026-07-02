@@ -154,7 +154,7 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
     }
         .visit(_reif_cond);
 
-    if (std::holds_alternative<consistency::GAC>(_level)) {
+    if (std::holds_alternative<consistency::Tabulated>(_level)) {
         visit(
             [&, modifier = modifier](auto & sanitised_cv) {
                 vector<IntegerVariableID> vars;

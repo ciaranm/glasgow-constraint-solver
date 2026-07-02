@@ -280,8 +280,8 @@ auto main(int argc, char * argv[]) -> int
         auto suffix = view_wrap_config_label(view_cfg);
         run_tagged_test<Plus>(proofs, suffix, consistency::Auto{}, true, {1, 3}, {1, 3}, {2, 6}, plus_sat);
         run_tagged_test<Minus>(proofs, suffix, consistency::Auto{}, true, {1, 4}, {1, 3}, {-2, 3}, minus_sat);
-        run_tagged_test<Plus>(proofs, suffix, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, plus_sat);
-        run_tagged_test<Minus>(proofs, suffix, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-8, 8}, minus_sat);
+        run_tagged_test<Plus>(proofs, suffix, consistency::Tabulated{}, true, {-4, 4}, {-4, 4}, {-8, 8}, plus_sat);
+        run_tagged_test<Minus>(proofs, suffix, consistency::Tabulated{}, true, {-4, 4}, {-4, 4}, {-8, 8}, minus_sat);
         run_tagged_test<Plus>(proofs, suffix, consistency::BC{}, false, {1, 3}, {1, 3}, {2, 6}, plus_sat);
         run_tagged_test<Minus>(proofs, suffix, consistency::BC{}, false, {1, 3}, {1, 3}, {-2, 2}, minus_sat);
     }

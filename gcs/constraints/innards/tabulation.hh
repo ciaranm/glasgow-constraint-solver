@@ -102,14 +102,14 @@ namespace gcs::innards
      * \brief Should a constraint tabulate, given its consistency level and the
      * variables it would enumerate over?
      *
-     * Always under consistency::GAC, never under consistency::BC, and under
+     * Always under consistency::Tabulated, never under consistency::BC, and under
      * consistency::Auto exactly when the enumeration tree (the product of the
      * domain sizes) is within default_tabulation_threshold.
      *
      * \ingroup Innards
      * \sa gcs::innards::install_tabulation()
      */
-    [[nodiscard]] auto want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::GAC> & level,
+    [[nodiscard]] auto want_tabulation(const std::variant<consistency::Auto, consistency::BC, consistency::Tabulated> & level,
         const std::vector<IntegerVariableID> & enum_vars, const State & initial_state) -> bool;
 
     /**

@@ -84,7 +84,10 @@ needs the umbrella, not each variant.
 Newer constraints select behaviour with the `gcs/consistency.hh` tag
 types instead of separate public variant classes (issue #299): the
 constructor takes a `std::variant` over exactly the levels it supports,
-defaulted sensibly, as in `Multiply{x, y, z, consistency::GAC{}}`. The
+defaulted sensibly, as in `Multiply{x, y, z, consistency::Tabulated{}}`. `consistency::GAC`
+names a genuine algorithm that achieves the level; a constraint that can
+only get there by enumerating a table takes `consistency::Tabulated`, so
+the very different cost model is visible in the signature. The
 arithmetic family (`Multiply`, `Divide`, `Modulus`, `Power`, `Plus`,
 `Minus`) also accepts `consistency::Auto`, which tabulates the relation
 for GAC when the domains involved are small (see

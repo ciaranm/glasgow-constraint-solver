@@ -128,7 +128,7 @@ auto run_linear_test_gac(bool proofs, const string & mode, const ViewWrapConfig 
         for (const auto & [idx, coeff] : enumerate(linear))
             if (coeff != 0)
                 c += Integer{coeff} * vs[idx];
-        p.post(Constraint_{c, Integer{value}, consistency::GAC{}});
+        p.post(Constraint_{c, Integer{value}, consistency::Tabulated{}});
     }
 
     auto proof_name =

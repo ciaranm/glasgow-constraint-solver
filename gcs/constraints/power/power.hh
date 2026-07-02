@@ -16,7 +16,7 @@ namespace gcs
      *
      * \ingroup Consistency
      */
-    using PowerConsistency = std::variant<consistency::Auto, consistency::BC, consistency::GAC>;
+    using PowerConsistency = std::variant<consistency::Auto, consistency::BC, consistency::Tabulated>;
 
     /**
      * \brief Constrain that base ^ exponent = result.
@@ -32,7 +32,7 @@ namespace gcs
      * auxiliary variables (with the auxiliaries' ranges clamped by the
      * result's, so a hopeless chain fails rather than overflowing), a negative
      * or enormous exponent becomes a small case analysis on the base. Under
-     * consistency::Auto with small domains, or consistency::GAC, the whole
+     * consistency::Auto with small domains, or consistency::Tabulated, the whole
      * relation is additionally tabulated in-proof. A variable exponent falls
      * back on innards::PowerTable, the one remaining table-in-the-OPB
      * encoding.

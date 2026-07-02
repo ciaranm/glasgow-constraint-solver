@@ -22,7 +22,7 @@ namespace gcs
      *
      * \ingroup Consistency
      */
-    using MinusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::GAC>;
+    using MinusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::Tabulated>;
 
     class Minus : public Constraint
     {

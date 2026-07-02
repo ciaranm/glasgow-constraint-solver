@@ -48,7 +48,7 @@ namespace
     auto level_name(const MultiplyConsistency & level) -> string
     {
         return overloaded{[](const consistency::Auto &) -> string { return "auto"; }, [](const consistency::BC &) -> string { return "bc"; },
-            [](const consistency::GAC &) -> string { return "gac"; }}
+            [](const consistency::Tabulated &) -> string { return "tabulated"; }}
             .visit(level);
     }
 }
@@ -191,7 +191,7 @@ auto run_constant_test(
 
 auto main(int, char *[]) -> int
 {
-    vector<MultiplyConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::GAC{}};
+    vector<MultiplyConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}};
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
@@ -232,7 +232,7 @@ auto main(int, char *[]) -> int
     // A forced-GAC tabulation on a domain above the Auto threshold still works,
     // it is just more expensive.
     if (can_run_veripb())
-        run_multiply_test(true, consistency::GAC{}, true, {-4, 4}, {-4, 4}, {-16, 16});
+        run_multiply_test(true, consistency::Tabulated{}, true, {-4, 4}, {-4, 4}, {-16, 16});
 
     return EXIT_SUCCESS;
 }

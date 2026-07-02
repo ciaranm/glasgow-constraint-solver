@@ -76,14 +76,14 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
         auto [sum, value] = linear_for_constant_operand(a1, a2, _v1, _v2, _result);
 
         auto linear_level = overloaded{[&](const consistency::BC &) -> LinearEqualityConsistency { return consistency::BC{}; },
-            [&](const consistency::GAC &) -> LinearEqualityConsistency { return consistency::GAC{}; },
+            [&](const consistency::Tabulated &) -> LinearEqualityConsistency { return consistency::Tabulated{}; },
             [&](const consistency::Auto &) -> LinearEqualityConsistency {
                 long long size = 1;
                 for (const auto & [_, v] : sum.terms)
                     if (__builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
                         return consistency::BC{};
                 if (size <= default_tabulation_threshold)
-                    return consistency::GAC{};
+                    return consistency::Tabulated{};
                 return consistency::BC{};
             }}.visit(_level);
 

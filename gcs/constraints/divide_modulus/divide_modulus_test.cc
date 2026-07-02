@@ -59,7 +59,7 @@ namespace
     auto level_name(const DivideConsistency & level) -> string
     {
         return overloaded{[](const consistency::Auto &) -> string { return "auto"; }, [](const consistency::BC &) -> string { return "bc"; },
-            [](const consistency::GAC &) -> string { return "gac"; }}
+            [](const consistency::Tabulated &) -> string { return "tabulated"; }}
             .visit(level);
     }
 
@@ -197,7 +197,7 @@ auto run_divmod_constant_test(bool proofs, bool is_div, const DivideConsistency 
 
 auto main(int, char *[]) -> int
 {
-    vector<DivideConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::GAC{}};
+    vector<DivideConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}};
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
@@ -205,7 +205,7 @@ auto main(int, char *[]) -> int
 
         for (bool is_div : {true, false}) {
             for (const auto & level : levels) {
-                bool force_gac = holds_alternative<consistency::GAC>(level);
+                bool force_gac = holds_alternative<consistency::Tabulated>(level);
                 bool is_bc = holds_alternative<consistency::BC>(level);
 
                 // Small enough that Auto tabulates (the enumeration tree

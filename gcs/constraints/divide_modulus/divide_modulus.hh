@@ -16,14 +16,14 @@ namespace gcs
      *
      * \ingroup Consistency
      */
-    using DivideConsistency = std::variant<consistency::Auto, consistency::BC, consistency::GAC>;
+    using DivideConsistency = std::variant<consistency::Auto, consistency::BC, consistency::Tabulated>;
 
     /**
      * \brief The consistency levels supported by Modulus, as for Divide.
      *
      * \ingroup Consistency
      */
-    using ModulusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::GAC>;
+    using ModulusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::Tabulated>;
 
     /**
      * \brief Constrain that x / y = quotient, using truncated integer division
@@ -40,7 +40,7 @@ namespace gcs
      * does not determine the quotient uniquely for negative operands), with
      * the multiplication going through Multiply's dispatch, so a constant
      * divisor becomes an entirely linear decomposition. Under
-     * consistency::Auto with small domains, or consistency::GAC, the whole
+     * consistency::Auto with small domains, or consistency::Tabulated, the whole
      * relation is additionally tabulated, with the table derived in-proof so
      * the OPB encoding is unchanged by the choice. Bounds consistency here is
      * with respect to the decomposition, which can be weaker than bounds

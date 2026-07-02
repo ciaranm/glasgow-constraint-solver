@@ -68,8 +68,8 @@ namespace
     // against a single child constraint's encoding.
     template <typename Hint_>
     auto install_divide_modulus(const ConstraintID & owner, bool expose_quotient, const IntegerVariableID & x, const IntegerVariableID & y,
-        const IntegerVariableID & out, const std::variant<consistency::Auto, consistency::BC, consistency::GAC> & level, Propagators & propagators,
-        State & initial_state, ProofModel * const optional_model) -> void
+        const IntegerVariableID & out, const std::variant<consistency::Auto, consistency::BC, consistency::Tabulated> & level,
+        Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> void
     {
         auto ax = affine_of(x), ay = affine_of(y), aout = affine_of(out);
 

@@ -20,13 +20,13 @@ namespace gcs
      *
      * \ingroup Consistency
      */
-    using PlusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::GAC>;
+    using PlusConsistency = std::variant<consistency::Auto, consistency::BC, consistency::Tabulated>;
 
     /**
      * \brief Constrain that a + b = result.
      *
      * The dedicated propagator is bounds consistent; requesting
-     * consistency::GAC, or leaving the default consistency::Auto with small
+     * consistency::Tabulated, or leaving the default consistency::Auto with small
      * domains, additionally tabulates the relation, with the table derived
      * in-proof so the OPB encoding is unchanged by the choice.
      *

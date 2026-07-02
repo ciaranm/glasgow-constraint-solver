@@ -12,7 +12,7 @@ namespace gcs
      * levels it supports, defaulted to a sensible choice, for example
      *
      * \code{.cc}
-     * problem.post(LinearEquality{sum, 5_i, consistency::GAC{}});
+     * problem.post(LinearEquality{sum, 5_i, consistency::Tabulated{}});
      * \endcode
      *
      * Requesting a level a constraint does not support is a compile-time
@@ -29,11 +29,11 @@ namespace gcs
          * shape of the constraint and the size of the variables' domains.
          *
          * This is a policy rather than a consistency level: constraints that
-         * accept it document what it does, and typically it means achieving
-         * generalised arc consistency by tabulation when the domains involved
-         * are small, and falling back on something cheaper when they are not.
-         * The choice never changes the constraint's meaning, and never changes
-         * how the constraint is encoded for proof logging.
+         * accept it document what it does, and typically it means tabulating
+         * (as if consistency::Tabulated had been requested) when the domains
+         * involved are small, and falling back on something cheaper when they
+         * are not. The choice never changes the constraint's meaning, and
+         * never changes how the constraint is encoded for proof logging.
          *
          * \ingroup Consistency
          */
@@ -46,12 +46,33 @@ namespace gcs
          * remaining value in every variable's domain appears in at least one
          * satisfying assignment of the constraint.
          *
-         * This is the strongest level, and can be very expensive for large
-         * domains.
+         * This tag names a genuine propagation algorithm that achieves the
+         * level, which may well be expensive per search node, but whose cost
+         * is under the algorithm's control. A constraint that can only reach
+         * generalised arc consistency by enumerating every satisfying
+         * assignment takes consistency::Tabulated instead, so that the very
+         * different cost model is visible in the signature.
          *
          * \ingroup Consistency
          */
         struct GAC final
+        {
+        };
+
+        /**
+         * \brief Request generalised arc consistency achieved by tabulation:
+         * every satisfying assignment of the constraint is enumerated up
+         * front, and the resulting table is propagated extensionally.
+         *
+         * This is deliberately a different tag from consistency::GAC, which
+         * names a genuine algorithm: a tabulated constraint's set-up work and
+         * proof size grow with the product of its variables' domain sizes, so
+         * requesting it over wide domains gets very expensive in a way the
+         * API should not hide.
+         *
+         * \ingroup Consistency
+         */
+        struct Tabulated final
         {
         };
 

@@ -16,7 +16,7 @@ namespace gcs
      *
      * \ingroup Consistency
      */
-    using MultiplyConsistency = std::variant<consistency::Auto, consistency::BC, consistency::GAC>;
+    using MultiplyConsistency = std::variant<consistency::Auto, consistency::BC, consistency::Tabulated>;
 
     /**
      * \brief Constrain that v1 * v2 = result.
@@ -29,7 +29,7 @@ namespace gcs
      *     (innards::MultiplyBC), with views folded through an auxiliary
      *     product variable and a linear equality, and aliased operands (say
      *     x * x = y, or x * y = x) handled using auxiliary variables;
-     *   - requesting consistency::GAC, or leaving the default
+     *   - requesting consistency::Tabulated, or leaving the default
      *     consistency::Auto when the domains involved are small, additionally
      *     tabulates the product relation. The table is derived in-proof, so
      *     this choice never changes the OPB encoding.

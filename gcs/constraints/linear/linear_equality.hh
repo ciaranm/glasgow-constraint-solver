@@ -22,14 +22,14 @@ namespace gcs
      *
      * \ingroup Consistency
      */
-    using LinearEqualityConsistency = std::variant<consistency::BC, consistency::GAC>;
+    using LinearEqualityConsistency = std::variant<consistency::BC, consistency::Tabulated>;
 
     /**
      * \brief Constrain that the sum of the variables multiplied by their associated
      * coefficients is equal to the specified value, potentially subject to a reification
      * condition.
      *
-     * If consistency::GAC is requested, achieves generalised arc consistency.
+     * If consistency::Tabulated is requested, achieves generalised arc consistency.
      * This is very expensive for large variables.
      *
      * \ingroup Constraints

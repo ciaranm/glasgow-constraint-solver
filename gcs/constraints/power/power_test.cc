@@ -74,7 +74,7 @@ namespace
     auto level_name(const PowerConsistency & level) -> string
     {
         return overloaded{[](const consistency::Auto &) -> string { return "auto"; }, [](const consistency::BC &) -> string { return "bc"; },
-            [](const consistency::GAC &) -> string { return "gac"; }}
+            [](const consistency::Tabulated &) -> string { return "tabulated"; }}
             .visit(level);
     }
 }
@@ -228,7 +228,7 @@ auto run_power_alias_test(bool proofs, pair<int, int> x_range) -> void
 
 auto main(int, char *[]) -> int
 {
-    vector<PowerConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::GAC{}};
+    vector<PowerConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}};
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
