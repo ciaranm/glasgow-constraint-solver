@@ -34,7 +34,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::make_shared;
 using std::make_unique;
 using std::max;
 using std::min;
@@ -42,8 +41,6 @@ using std::move;
 using std::nullopt;
 using std::numeric_limits;
 using std::optional;
-using std::pair;
-using std::size_t;
 using std::string;
 using std::to_string;
 using std::unique_ptr;

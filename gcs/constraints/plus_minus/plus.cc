@@ -12,39 +12,19 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
-#include <sstream>
-
 #include <util/enumerate.hh>
-
-#include <version>
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-#include <print>
-#else
-#include <fmt/core.h>
-#include <fmt/ostream.h>
-#endif
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::holds_alternative;
-using std::make_shared;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
 using std::size_t;
-using std::string;
-using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-using std::print;
-#else
-using fmt::print;
-#endif
 
 namespace gcs::innards::hints
 {

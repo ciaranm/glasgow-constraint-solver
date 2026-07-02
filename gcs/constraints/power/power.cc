@@ -28,7 +28,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::make_shared;
 using std::make_unique;
 using std::max;
 using std::min;

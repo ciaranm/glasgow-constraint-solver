@@ -10,20 +10,16 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/presolvers/auto_table.hh>
-#include <iostream>
-#include <sstream>
 
 #include <version>
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 #include <format>
-#include <print>
 #else
-#include <fmt/ostream.h>
+#include <fmt/core.h>
 #endif
 
 #include <algorithm>
-#include <sstream>
 #include <utility>
 
 using namespace gcs;
@@ -39,7 +35,6 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::string;
-using std::stringstream;
 using std::unique_ptr;
 using std::vector;
 using std::ranges::set_union;
@@ -47,10 +42,8 @@ using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::format;
-using std::print;
 #else
 using fmt::format;
-using fmt::print;
 #endif
 
 namespace
