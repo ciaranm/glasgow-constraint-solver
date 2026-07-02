@@ -2,24 +2,52 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 
+#include <util/overloaded.hh>
+
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::get;
 using std::holds_alternative;
+using std::variant;
+using std::visit;
 
 namespace
 {
-    // PB resolution: sum the operand proof lines and saturate, eliminating
-    // any literals whose coefficients cancel.
-    auto emit_resolution(ProofLogger & logger, ProofLine a, ProofLine b) -> void
+    // The pol-side item defining a literal: a proof line when the atom has a
+    // reified definition, or the literal itself when the atom is primitive
+    // (say, the bound coincides with the variable's declared domain boundary,
+    // or a 0/1 variable's own bit). The helpers below resolve with either;
+    // grabbing the ProofLine alternative unconditionally was issue #446.
+    using PolItem = variant<ProofLine, XLiteral>;
+
+    auto add_item(PolBuilder & builder, const PolItem & item, const NamesAndIDsTracker & tracker) -> void
     {
-        PolBuilder{}.add(a).add(b).saturate().emit(logger, ProofLevel::Temporary);
+        visit(overloaded{
+                  [&](const ProofLine & l) { builder.add(l); },        //
+                  [&](const XLiteral & x) { builder.add(x, tracker); } //
+              },
+            item);
     }
 
-    auto emit_resolution(ProofLogger & logger, ProofLine a, ProofLine b, ProofLine c) -> void
+    // PB resolution: sum the operand proof lines (or literal axioms) and
+    // saturate, eliminating any literals whose coefficients cancel.
+    auto emit_resolution(ProofLogger & logger, const PolItem & a, const PolItem & b) -> void
     {
-        PolBuilder{}.add(a).add(b).add(c).saturate().emit(logger, ProofLevel::Temporary);
+        auto & tracker = logger.names_and_ids_tracker();
+        PolBuilder builder;
+        add_item(builder, a, tracker);
+        add_item(builder, b, tracker);
+        builder.saturate().emit(logger, ProofLevel::Temporary);
+    }
+
+    auto emit_resolution(ProofLogger & logger, const PolItem & a, const PolItem & b, const PolItem & c) -> void
+    {
+        auto & tracker = logger.names_and_ids_tracker();
+        PolBuilder builder;
+        add_item(builder, a, tracker);
+        add_item(builder, b, tracker);
+        add_item(builder, c, tracker);
+        builder.saturate().emit(logger, ProofLevel::Temporary);
     }
 }
 
@@ -43,8 +71,8 @@ auto gcs::innards::justify_abs_v2_ge_zero(ProofLogger & logger, IntegerVariableI
         return;
 
     auto & ids = logger.names_and_ids_tracker();
-    auto v1_ge0 = get<ProofLine>(ids.need_pol_item_defining_literal(v1 >= 0_i));
-    auto v2_lt0 = get<ProofLine>(ids.need_pol_item_defining_literal(v2 < 0_i));
+    auto v1_ge0 = ids.need_pol_item_defining_literal(v1 >= 0_i);
+    auto v2_lt0 = ids.need_pol_item_defining_literal(v2 < 0_i);
     emit_resolution(logger, v1_ge0, abs_nonneg_ge, v2_lt0);
 }
 
@@ -55,7 +83,7 @@ auto gcs::innards::justify_abs_v2_lb(ProofLogger & logger, IntegerVariableID v1,
         return;
 
     auto & ids = logger.names_and_ids_tracker();
-    auto v2_lt_lb = get<ProofLine>(ids.need_pol_item_defining_literal(v2 < v2_lb));
+    auto v2_lt_lb = ids.need_pol_item_defining_literal(v2 < v2_lb);
 
     // Materialise the relevant v1 bound under the reason, then resolve
     // with the matching half-reified piece. abs_ge under v1 >= 0 gives
@@ -76,11 +104,11 @@ auto gcs::innards::justify_abs_v1_le_v2_ub(
         return;
 
     auto & ids = logger.names_and_ids_tracker();
-    auto v1_ge_bound_plus_1 = get<ProofLine>(ids.need_pol_item_defining_literal(v1 > v2_ub));
+    auto v1_ge_bound_plus_1 = ids.need_pol_item_defining_literal(v1 > v2_ub);
     auto v2_upper = logger.emit_rup_proof_line_under_reason_then_deview(reason, WPBSum{} + 1_i * v2 <= v2_ub, ProofLevel::Temporary);
     emit_resolution(logger, abs_nonneg_ge, v2_upper, v1_ge_bound_plus_1);
 
-    auto v1_lt0 = get<ProofLine>(ids.need_pol_item_defining_literal(v1 < 0_i));
+    auto v1_lt0 = ids.need_pol_item_defining_literal(v1 < 0_i);
     emit_resolution(logger, v1_ge_bound_plus_1, v1_lt0);
 }
 
@@ -91,11 +119,11 @@ auto gcs::innards::justify_abs_v1_ge_neg_v2_ub(
         return;
 
     auto & ids = logger.names_and_ids_tracker();
-    auto v1_lt_neg_bound = get<ProofLine>(ids.need_pol_item_defining_literal(v1 < -v2_ub));
+    auto v1_lt_neg_bound = ids.need_pol_item_defining_literal(v1 < -v2_ub);
     auto v2_upper = logger.emit_rup_proof_line_under_reason_then_deview(reason, WPBSum{} + 1_i * v2 <= v2_ub, ProofLevel::Temporary);
     emit_resolution(logger, abs_neg_ge, v2_upper, v1_lt_neg_bound);
 
-    auto v1_ge0 = get<ProofLine>(ids.need_pol_item_defining_literal(v1 >= 0_i));
+    auto v1_ge0 = ids.need_pol_item_defining_literal(v1 >= 0_i);
     emit_resolution(logger, v1_ge0, v1_lt_neg_bound);
 }
 
@@ -106,7 +134,7 @@ auto gcs::innards::justify_abs_v2_le_big_m(ProofLogger & logger, IntegerVariable
         return;
 
     auto & ids = logger.names_and_ids_tracker();
-    auto v2_ge_M_plus_1 = get<ProofLine>(ids.need_pol_item_defining_literal(v2 > big_m));
+    auto v2_ge_M_plus_1 = ids.need_pol_item_defining_literal(v2 > big_m);
 
     // The v1 bounds are emitted in VIEW form (no deview): abs_nonneg_le /
     // abs_neg_le carry v1 in its view encoding (the OPB holds the view form
