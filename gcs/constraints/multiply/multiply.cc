@@ -57,14 +57,21 @@ namespace
     }
 }
 
-Multiply::Multiply(IntegerVariableID v1, IntegerVariableID v2, IntegerVariableID result, MultiplyConsistency level) :
-    _v1(v1), _v2(v2), _result(result), _level(level)
+Multiply::Multiply(IntegerVariableID v1, IntegerVariableID v2, IntegerVariableID result) : _v1(v1), _v2(v2), _result(result)
 {
+}
+
+auto Multiply::with_consistency(MultiplyConsistency level) -> Multiply &
+{
+    _level = level;
+    return *this;
 }
 
 auto Multiply::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Multiply>(_v1, _v2, _result, _level);
+    auto cloned = make_unique<Multiply>(_v1, _v2, _result);
+    cloned->with_consistency(_level);
+    return cloned;
 }
 
 auto Multiply::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

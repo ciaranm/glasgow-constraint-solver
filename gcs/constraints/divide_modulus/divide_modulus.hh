@@ -54,10 +54,14 @@ namespace gcs
     {
     private:
         IntegerVariableID _x, _y, _quotient;
-        DivideConsistency _level;
+        DivideConsistency _level = consistency::Auto{};
 
     public:
-        explicit Divide(IntegerVariableID x, IntegerVariableID y, IntegerVariableID quotient, DivideConsistency level = consistency::Auto{});
+        explicit Divide(IntegerVariableID x, IntegerVariableID y, IntegerVariableID quotient);
+
+        /// Select the consistency level; consistency::Auto (the default) tabulates when the
+        /// domains are small. Requesting an unsupported level is a compile-time error.
+        auto with_consistency(DivideConsistency level) -> Divide &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
@@ -81,10 +85,14 @@ namespace gcs
     {
     private:
         IntegerVariableID _x, _y, _remainder;
-        ModulusConsistency _level;
+        ModulusConsistency _level = consistency::Auto{};
 
     public:
-        explicit Modulus(IntegerVariableID x, IntegerVariableID y, IntegerVariableID remainder, ModulusConsistency level = consistency::Auto{});
+        explicit Modulus(IntegerVariableID x, IntegerVariableID y, IntegerVariableID remainder);
+
+        /// Select the consistency level; consistency::Auto (the default) tabulates when the
+        /// domains are small. Requesting an unsupported level is a compile-time error.
+        auto with_consistency(ModulusConsistency level) -> Modulus &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

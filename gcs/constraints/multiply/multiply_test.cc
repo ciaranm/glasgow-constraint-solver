@@ -84,7 +84,7 @@ auto run_multiply_test(bool proofs, const MultiplyConsistency & level, bool chec
             result = -result;
         return result + Integer{o};
     };
-    p.post(Multiply{wrap(v1, m1, o1), wrap(v2, m2, o2), wrap(v3, m3, o3), level});
+    p.post(Multiply{wrap(v1, m1, o1), wrap(v2, m2, o2), wrap(v3, m3, o3)}.with_consistency(level));
 
     auto proof_name = proofs ? make_optional("multiply_test") : nullopt;
 
@@ -113,15 +113,15 @@ auto run_alias_test(
     set<tuple<int, int>> expected, actual;
     if (shape == "xxy") {
         build_expected(expected, [](int a, int b) { return a * a == b; }, x_range, y_range);
-        p.post(Multiply{x, x, y, level});
+        p.post(Multiply{x, x, y}.with_consistency(level));
     }
     else if (shape == "xyx") {
         build_expected(expected, [](int a, int b) { return a * b == a; }, x_range, y_range);
-        p.post(Multiply{x, y, x, level});
+        p.post(Multiply{x, y, x}.with_consistency(level));
     }
     else if (shape == "yxx") {
         build_expected(expected, [](int a, int b) { return b * a == a; }, x_range, y_range);
-        p.post(Multiply{y, x, x, level});
+        p.post(Multiply{y, x, x}.with_consistency(level));
     }
     else
         throw UnexpectedException{"unknown alias shape"};
@@ -146,7 +146,7 @@ auto run_all_same_test(bool proofs, const MultiplyConsistency & level, pair<int,
 
     Problem p;
     auto x = p.create_integer_variable(Integer(x_range.first), Integer(x_range.second), "x");
-    p.post(Multiply{x, x, x, level});
+    p.post(Multiply{x, x, x}.with_consistency(level));
 
     set<tuple<int>> expected, actual;
     build_expected(expected, [](int a) { return a * a == a; }, x_range);
@@ -172,15 +172,15 @@ auto run_constant_test(
     set<tuple<int, int>> expected, actual;
     if (shape == "cv") {
         build_expected(expected, [&](int a, int b) { return constant * a == b; }, v_range, r_range);
-        p.post(Multiply{constant_variable(Integer{constant}), v, r, level});
+        p.post(Multiply{constant_variable(Integer{constant}), v, r}.with_consistency(level));
     }
     else if (shape == "vc") {
         build_expected(expected, [&](int a, int b) { return a * constant == b; }, v_range, r_range);
-        p.post(Multiply{v, constant_variable(Integer{constant}), r, level});
+        p.post(Multiply{v, constant_variable(Integer{constant}), r}.with_consistency(level));
     }
     else if (shape == "result") {
         build_expected(expected, [&](int a, int b) { return a * b == constant; }, v_range, r_range);
-        p.post(Multiply{v, r, constant_variable(Integer{constant}), level});
+        p.post(Multiply{v, r, constant_variable(Integer{constant})}.with_consistency(level));
     }
     else
         throw UnexpectedException{"unknown constant shape"};

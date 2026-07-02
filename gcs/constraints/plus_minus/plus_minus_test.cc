@@ -181,7 +181,7 @@ auto run_tagged_test(bool proofs, const string & proof_suffix, const PlusConsist
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second));
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second));
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second));
-    p.post(Constraint_{v1, v2, v3, level});
+    p.post(Constraint_{v1, v2, v3}.with_consistency(level));
 
     auto proof_name = proofs ? make_optional("plus_minus_test_tagged_" + proof_suffix) : nullopt;
     if (check_gac)

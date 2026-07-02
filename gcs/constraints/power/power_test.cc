@@ -127,7 +127,7 @@ auto run_power_const_exp_test(bool proofs, const PowerConsistency & level, bool 
             result = -result;
         return result + Integer{o};
     };
-    p.post(Power{wrap(v1, m1, o1), constant_variable(Integer{exp}), wrap(v3, m3, o3), level});
+    p.post(Power{wrap(v1, m1, o1), constant_variable(Integer{exp}), wrap(v3, m3, o3)}.with_consistency(level));
 
     auto proof_name = proofs ? make_optional("power_test") : nullopt;
     if (check_gac)

@@ -347,14 +347,21 @@ namespace
     }
 }
 
-Divide::Divide(IntegerVariableID x, IntegerVariableID y, IntegerVariableID quotient, DivideConsistency level) :
-    _x(x), _y(y), _quotient(quotient), _level(level)
+Divide::Divide(IntegerVariableID x, IntegerVariableID y, IntegerVariableID quotient) : _x(x), _y(y), _quotient(quotient)
 {
+}
+
+auto Divide::with_consistency(DivideConsistency level) -> Divide &
+{
+    _level = level;
+    return *this;
 }
 
 auto Divide::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Divide>(_x, _y, _quotient, _level);
+    auto cloned = make_unique<Divide>(_x, _y, _quotient);
+    cloned->with_consistency(_level);
+    return cloned;
 }
 
 auto Divide::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -369,14 +376,21 @@ auto Divide::s_expr(const ProofModel * const model) const -> SExpr
         SExpr::list({tracker.s_expr_term_of(_x), tracker.s_expr_term_of(_y), tracker.s_expr_term_of(_quotient)})});
 }
 
-Modulus::Modulus(IntegerVariableID x, IntegerVariableID y, IntegerVariableID remainder, ModulusConsistency level) :
-    _x(x), _y(y), _remainder(remainder), _level(level)
+Modulus::Modulus(IntegerVariableID x, IntegerVariableID y, IntegerVariableID remainder) : _x(x), _y(y), _remainder(remainder)
 {
+}
+
+auto Modulus::with_consistency(ModulusConsistency level) -> Modulus &
+{
+    _level = level;
+    return *this;
 }
 
 auto Modulus::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Modulus>(_x, _y, _remainder, _level);
+    auto cloned = make_unique<Modulus>(_x, _y, _remainder);
+    cloned->with_consistency(_level);
+    return cloned;
 }
 
 auto Modulus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

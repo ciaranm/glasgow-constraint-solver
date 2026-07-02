@@ -45,10 +45,14 @@ namespace gcs
     {
     private:
         IntegerVariableID _base, _exponent, _result;
-        PowerConsistency _level;
+        PowerConsistency _level = consistency::Auto{};
 
     public:
-        explicit Power(IntegerVariableID base, IntegerVariableID exponent, IntegerVariableID result, PowerConsistency level = consistency::Auto{});
+        explicit Power(IntegerVariableID base, IntegerVariableID exponent, IntegerVariableID result);
+
+        /// Select the consistency level; consistency::Auto (the default) tabulates when the
+        /// domains are small. Requesting an unsupported level is a compile-time error.
+        auto with_consistency(PowerConsistency level) -> Power &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
