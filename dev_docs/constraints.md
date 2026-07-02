@@ -92,10 +92,19 @@ arithmetic family (`Multiply`, `Divide`, `Modulus`, `Power`, `Plus`,
 `Minus`) also accepts `consistency::Auto`, which tabulates the relation
 for GAC when the domains involved are small (see
 `gcs/constraints/innards/tabulation.hh`); the tag never changes the OPB
-encoding, since the table is derived in-proof. A constraint that
-decomposes into child constraints installed directly should give each
-child a distinct identity via `innards::child_constraint_id`, or their
-OPB labels collide.
+encoding, since the table is derived in-proof.
+
+A compound constraint should emit one flat `@c[id][role]` OPB block and
+install one propagator, reusing the exposed machinery (`mult_bc::
+define_encoding` / `mult_bc::propagate`, the `linear_stages` helpers,
+`propagate_linear`, `install_tabulation`) rather than installing child
+constraint objects — see the arithmetic family for the pattern, and
+issue #448 for why. Two contracts to know: `propagate_linear` signals
+failure through the tracker's non-throwing path, so check
+`inference.contradicted()` after each linear stage; and a constraint
+that does install a child directly (`SeqPrecedeChain`'s `ValuePrecede`)
+must give it an identity, or id-keyed proof flags collide across
+instances (issue #449).
 
 ## The header
 
