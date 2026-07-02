@@ -1,5 +1,5 @@
 #include <gcs/constraints/equals.hh>
-#include <gcs/constraints/mult_bc.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -117,7 +117,7 @@ auto main(int argc, char * argv[]) -> int
                 p.post(NotEquals(partial_product_digits[i][j], k_var));
         }
         constrain_digit_sum(p, partial_product_digits[i], partial_product[i]);
-        p.post(MultBC{a_var, b_digits[i], partial_product[i]});
+        p.post(Multiply{a_var, b_digits[i], partial_product[i]});
     }
 
     vector<SimpleIntegerVariableID> c_digits{};

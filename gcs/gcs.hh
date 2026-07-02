@@ -41,7 +41,7 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/minus.hh>
-#include <gcs/constraints/mult_bc.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>

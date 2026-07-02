@@ -22,6 +22,7 @@
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/minus.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/n_value.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
@@ -804,6 +805,18 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 throw ScpReadError{"minus takes (label minus a b result)"};
             post_constraint(problem,
                 Minus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])}, label);
+        }
+        else if (op == "multiply") {
+            // (label multiply (v1 v2 result)): v1 * v2 = result. Written by both
+            // Multiply and a directly-posted innards::MultiplyBC; reposting as
+            // Multiply resolves to the same encoding for the plain three-distinct-
+            // variables shape that MultiplyBC accepts.
+            if (terms.size() != 3)
+                throw ScpReadError{"multiply takes (label multiply (v1 v2 result))"};
+            auto vars = resolve_variable_list(variables, terms[2], "the multiply variable list");
+            if (vars.size() != 3)
+                throw ScpReadError{"multiply takes exactly three variables"};
+            post_constraint(problem, Multiply{vars[0], vars[1], vars[2]}, label);
         }
         else if (op == "disjunctive" || op == "disjunctive_strict") {
             // (label disjunctive (starts...) (lengths...)): the tasks

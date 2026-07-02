@@ -1,5 +1,5 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
-#include <gcs/constraints/mult_bc.hh>
+#include <gcs/constraints/multiply/multiply_bc.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
 
@@ -57,7 +57,7 @@ auto run_mult_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second), "v1");
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
-    p.post(MultBC{v1, v2, v3});
+    p.post(innards::MultiplyBC{v1, v2, v3});
 
     auto proof_name = proofs ? make_optional("mult_bc_test") : nullopt;
 
@@ -67,7 +67,7 @@ auto run_mult_test(bool proofs, pair<int, int> v1_range, pair<int, int> v2_range
     check_results(proof_name, expected, actual);
 }
 
-// MultBC's bit-product proof encoding doesn't tolerate aliased
+// innards::MultiplyBC's bit-product proof encoding doesn't tolerate aliased
 // operands. Construction throws InvalidProblemDefinitionException
 // rather than failing later under VeriPB.
 auto expect_mult_alias_throws(const char * tag, int v1_pos, int v2_pos, int v3_pos) -> bool
@@ -77,12 +77,12 @@ auto expect_mult_alias_throws(const char * tag, int v1_pos, int v2_pos, int v3_p
     auto b = p.create_integer_variable(-3_i, 3_i, "b");
     auto pick = [&](int pos) { return pos == 0 ? a : b; };
     try {
-        p.post(MultBC{pick(v1_pos), pick(v2_pos), pick(v3_pos)});
+        p.post(innards::MultiplyBC{pick(v1_pos), pick(v2_pos), pick(v3_pos)});
     }
     catch (const InvalidProblemDefinitionException &) {
         return true;
     }
-    println(cerr, "MultBC dup {} expected InvalidProblemDefinitionException", tag);
+    println(cerr, "innards::MultiplyBC dup {} expected InvalidProblemDefinitionException", tag);
     return false;
 }
 
@@ -136,8 +136,8 @@ auto main(int, char *[]) -> int
         Problem p;
         auto x = p.create_integer_variable(-3_i, 3_i, "x");
         try {
-            p.post(MultBC{x, x, x});
-            println(cerr, "MultBC(x, x, x) expected InvalidProblemDefinitionException");
+            p.post(innards::MultiplyBC{x, x, x});
+            println(cerr, "innards::MultiplyBC(x, x, x) expected InvalidProblemDefinitionException");
             ok = false;
         }
         catch (const InvalidProblemDefinitionException &) {

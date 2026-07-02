@@ -1,5 +1,5 @@
-#include <gcs/constraints/mult_bc/hints.hh>
-#include <gcs/constraints/mult_bc/mult_bc.hh>
+#include <gcs/constraints/multiply/hints.hh>
+#include <gcs/constraints/multiply/multiply_bc.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/power.hh>
@@ -147,7 +147,7 @@ namespace
                         case VariableConditionOperator::Less: break;
                         case VariableConditionOperator::InRange:
                         case VariableConditionOperator::NotInRange:
-                            // MultBC's reasons and reifications are bounds and equalities only
+                            // MultiplyBC's reasons and reifications are bounds and equalities only
                             throw UnimplementedException{};
                         }
                         rup_hints.emplace_back(*get_def_line_for_lit(logger, *cond));
@@ -951,7 +951,7 @@ namespace
         }
         else if (y_min == 0_i && y_max == 0_i) {
             // y == 0 and 0 not in bounds of z => no possible values for x
-            inference.contradiction(logger, JustifyUsingRUP{hints::MultBC{owner}}, ExplicitReason{ReasonLiterals{y_var == 0_i, z_var != 0_i}});
+            inference.contradiction(logger, JustifyUsingRUP{hints::Multiply{owner}}, ExplicitReason{ReasonLiterals{y_var == 0_i, z_var != 0_i}});
         }
         else if (y_min < 0_i && y_max > 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y contains -1, 0, 1 and z has either all positive or all negative values
@@ -966,7 +966,7 @@ namespace
                 logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (x_var <= largest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
-            inference.infer(logger, x_var <= largest_possible_quotient, JustifyExplicitly{lower_justf, ThenRUP::No, hints::MultBC{owner}},
+            inference.infer(logger, x_var <= largest_possible_quotient, JustifyExplicitly{lower_justf, ThenRUP::No, hints::Multiply{owner}},
                 ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first,
                     y_var <= var_bounds.at(y_var).second});
 
@@ -977,7 +977,7 @@ namespace
                 logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
-            inference.infer(logger, x_var >= smallest_possible_quotient, JustifyExplicitly{upper_justf, ThenRUP::No, hints::MultBC{owner}},
+            inference.infer(logger, x_var >= smallest_possible_quotient, JustifyExplicitly{upper_justf, ThenRUP::No, hints::Multiply{owner}},
                 ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first,
                     y_var <= var_bounds.at(y_var).second});
         }
@@ -1016,15 +1016,15 @@ namespace
             };
 
             if (smallest_possible_quotient > largest_possible_quotient) {
-                inference.infer(logger, FalseLiteral{}, JustifyExplicitly{both_justf, ThenRUP::No, hints::MultBC{owner}},
+                inference.infer(logger, FalseLiteral{}, JustifyExplicitly{both_justf, ThenRUP::No, hints::Multiply{owner}},
                     ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first,
                         y_var <= var_bounds.at(y_var).second});
             }
             else {
-                inference.infer(logger, x_var <= largest_possible_quotient, JustifyExplicitly{upper_justf, ThenRUP::No, hints::MultBC{owner}},
+                inference.infer(logger, x_var <= largest_possible_quotient, JustifyExplicitly{upper_justf, ThenRUP::No, hints::Multiply{owner}},
                     ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first,
                         y_var <= var_bounds.at(y_var).second});
-                inference.infer(logger, x_var >= smallest_possible_quotient, JustifyExplicitly{lower_justf, ThenRUP::No, hints::MultBC{owner}},
+                inference.infer(logger, x_var >= smallest_possible_quotient, JustifyExplicitly{lower_justf, ThenRUP::No, hints::Multiply{owner}},
                     ReasonLiterals{z_var >= var_bounds.at(z_var).first, z_var <= var_bounds.at(z_var).second, y_var >= var_bounds.at(y_var).first,
                         y_var <= var_bounds.at(y_var).second});
             }
@@ -1035,7 +1035,8 @@ namespace
     }
 }
 
-MultBC::MultBC(const SimpleIntegerVariableID v1, const SimpleIntegerVariableID v2, const SimpleIntegerVariableID v3) : _v1(v1), _v2(v2), _v3(v3)
+MultiplyBC::MultiplyBC(const SimpleIntegerVariableID v1, const SimpleIntegerVariableID v2, const SimpleIntegerVariableID v3) :
+    _v1(v1), _v2(v2), _v3(v3)
 {
     // Aliased slots are well-defined semantically (squaring, fixed
     // points) but the bit-product proof encoding doesn't tolerate
@@ -1045,15 +1046,15 @@ MultBC::MultBC(const SimpleIntegerVariableID v1, const SimpleIntegerVariableID v
     // surface as an InvalidProblemDefinitionException so users get
     // an actionable error instead of a proof-verification failure.
     if (v1 == v2 || v1 == v3 || v2 == v3)
-        throw InvalidProblemDefinitionException{"MultBC: operands must be three distinct variable handles"};
+        throw InvalidProblemDefinitionException{"MultiplyBC: operands must be three distinct variable handles"};
 }
 
-auto MultBC::clone() const -> unique_ptr<Constraint>
+auto MultiplyBC::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<MultBC>(_v1, _v2, _v3);
+    return make_unique<MultiplyBC>(_v1, _v2, _v3);
 }
 
-auto MultBC::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto MultiplyBC::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     Triggers triggers;
     triggers.on_bounds.emplace_back(_v1);
@@ -1087,13 +1088,13 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 // mult_bc does not chain (cake does not encode multiplication), so
                 // these bit-decomposition defs take invented @c[id][role] labels.
                 auto mbid = as_string(constraint_id());
-                auto pos_ge = optional_model->add_labelled_constraint(mbid, "posge_" + name, "MultBC", "magnitude channel",
+                auto pos_ge = optional_model->add_labelled_constraint(mbid, "posge_" + name, "MultiplyBC", "magnitude channel",
                     bit_sum_without_neg + (-1_i * v_magnitude) >= 0_i, HalfReifyOnConjunctionOf{! sign_bit});
-                auto pos_le = optional_model->add_labelled_constraint(mbid, "posle_" + name, "MultBC", "magnitude channel",
+                auto pos_le = optional_model->add_labelled_constraint(mbid, "posle_" + name, "MultiplyBC", "magnitude channel",
                     bit_sum_without_neg + (-1_i * v_magnitude) <= 0_i, HalfReifyOnConjunctionOf{! sign_bit});
-                auto neg_ge = optional_model->add_labelled_constraint(mbid, "negge_" + name, "MultBC", "magnitude channel",
+                auto neg_ge = optional_model->add_labelled_constraint(mbid, "negge_" + name, "MultiplyBC", "magnitude channel",
                     bit_sum_without_neg + (1_i * v_magnitude) >= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
-                auto neg_le = optional_model->add_labelled_constraint(mbid, "negle_" + name, "MultBC", "magnitude channel",
+                auto neg_le = optional_model->add_labelled_constraint(mbid, "negle_" + name, "MultiplyBC", "magnitude channel",
                     bit_sum_without_neg + (1_i * v_magnitude) <= power2(num_bits - 1_i), HalfReifyOnConjunctionOf{sign_bit});
 
                 channelling_constraints.insert({v, ChannellingData{pos_ge, pos_le, neg_ge, neg_le}});
@@ -1121,11 +1122,11 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 auto flag = optional_model->create_proof_flag(format("xy[{}][{}]", i, j));
 
                 auto ijtag = std::to_string(i.raw_value) + "_" + std::to_string(j.raw_value);
-                auto forwards = optional_model->add_labelled_constraint(mbid, "xyfwd_" + ijtag, "MultBC", "bit product",
+                auto forwards = optional_model->add_labelled_constraint(mbid, "xyfwd_" + ijtag, "MultiplyBC", "bit product",
                     WPBSum{} + 1_i * ProofBitVariable{v1_mag, i, true} + 1_i * ProofBitVariable{v2_mag, j, true} >= 2_i,
                     HalfReifyOnConjunctionOf{flag});
 
-                auto backwards = optional_model->add_labelled_constraint(mbid, "xybwd_" + ijtag, "MultBC", "bit product",
+                auto backwards = optional_model->add_labelled_constraint(mbid, "xybwd_" + ijtag, "MultiplyBC", "bit product",
                     WPBSum{} + -1_i * ProofBitVariable{v1_mag, i, true} + -1_i * ProofBitVariable{v2_mag, j, true} >= -1_i,
                     HalfReifyOnConjunctionOf{! flag});
 
@@ -1137,29 +1138,29 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         visit(
             [&](auto v3_mag) {
                 auto s = optional_model->add_labelled_constraint(
-                    mbid, "zprodle", "zprodge", StringLiteral{"MultBC"}, StringLiteral{"z = product"}, bit_product_sum + (-1_i * v3_mag) == 0_i);
+                    mbid, "zprodle", "zprodge", StringLiteral{"MultiplyBC"}, StringLiteral{"z = product"}, bit_product_sum + (-1_i * v3_mag) == 0_i);
                 v3_eq_product_lines = make_pair(s.first, s.second);
             },
             v3_mag);
 
         auto xyss = optional_model->create_proof_flag("xy[s][s]");
         sign_lines.emplace_back(optional_model->add_labelled_constraint(
-            mbid, "sign_nn", "MultBC", "sign", WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign}));
+            mbid, "sign_nn", "MultiplyBC", "sign", WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, ! v2_sign}));
 
         if (mag_var.contains(_v1))
             sign_lines.emplace_back(optional_model->add_labelled_constraint(
-                mbid, "sign_pn", "MultBC", "sign", WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign}));
+                mbid, "sign_pn", "MultiplyBC", "sign", WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, ! v2_sign}));
         if (mag_var.contains(_v2))
             sign_lines.emplace_back(optional_model->add_labelled_constraint(
-                mbid, "sign_np", "MultBC", "sign", WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign}));
+                mbid, "sign_np", "MultiplyBC", "sign", WPBSum{} + 1_i * xyss >= 1_i, HalfReifyOnConjunctionOf{! v1_sign, v2_sign}));
         if (mag_var.contains(_v1) && mag_var.contains(_v2))
             sign_lines.emplace_back(optional_model->add_labelled_constraint(
-                mbid, "sign_pp", "MultBC", "sign", WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign}));
+                mbid, "sign_pp", "MultiplyBC", "sign", WPBSum{} + 1_i * ! xyss >= 1_i, HalfReifyOnConjunctionOf{v1_sign, v2_sign}));
 
-        sign_lines.emplace_back(optional_model->add_labelled_constraint(mbid, "sign_v3pos", "MultBC", "sign",
+        sign_lines.emplace_back(optional_model->add_labelled_constraint(mbid, "sign_v3pos", "MultiplyBC", "sign",
             WPBSum{} + 1_i * xyss + 1_i * (_v1 != 0_i) + 1_i * (_v2 != 0_i) >= 3_i, HalfReifyOnConjunctionOf{v3_sign}));
 
-        sign_lines.emplace_back(optional_model->add_labelled_constraint(mbid, "sign_v3neg", "MultBC", "sign",
+        sign_lines.emplace_back(optional_model->add_labelled_constraint(mbid, "sign_v3neg", "MultiplyBC", "sign",
             WPBSum{} + 1_i * ! xyss + 1_i * (_v1 == 0_i) + 1_i * (_v2 == 0_i) >= 1_i, HalfReifyOnConjunctionOf{! v3_sign}));
     }
 
@@ -1187,7 +1188,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
                 };
 
                 inference.infer_all(logger, {v3 <= largest_product, v3 >= smallest_product},
-                    JustifyExplicitly{justf, ThenRUP::No, hints::MultBC{owner}},
+                    JustifyExplicitly{justf, ThenRUP::No, hints::Multiply{owner}},
                     ReasonLiterals{v1 >= var_bounds.at(v1).first, v1 <= var_bounds.at(v1).second, v2 >= var_bounds.at(v2).first,
                         v2 <= var_bounds.at(v2).second});
 
@@ -1205,7 +1206,7 @@ auto MultBC::install(Propagators & propagators, State & initial_state, ProofMode
         triggers);
 }
 
-auto MultBC::s_expr(const innards::ProofModel * const model) const -> SExpr
+auto MultiplyBC::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
     return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("multiply"),

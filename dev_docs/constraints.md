@@ -702,7 +702,7 @@ correctness work wants the full enumeration check.
       when alias has no meaningful semantics, the propagator path is
       unsafe, or the proof encoding can't tolerate it. The Bucket A
       family — `NotEquals`, `LessThan`, `GreaterThan`, `Circuit*`,
-      `Inverse`, `MultBC`, `SmartTable` `BinaryEntry` — uses this.
+      `Inverse`, `innards::MultiplyBC` (via `Multiply`), `SmartTable` `BinaryEntry` — uses this.
       By convention the check is gated on
       `! is_constant_variable(...)` so two slots pinned to the same
       constant remain a well-formed (if often trivially infeasible)

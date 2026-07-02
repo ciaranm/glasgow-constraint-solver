@@ -85,12 +85,11 @@ namespace gcs
      * \brief Constrain that `v1 * v2 = result` via a materialised tuple table.
      *
      * \warning Memory usage is O(|domain(v1)| * |domain(v2)|).  Under normal
-     * circumstances you should use gcs::LinearEquality if one of the operands
-     * is a constant, or gcs::MultBC otherwise.
+     * circumstances you should use gcs::Multiply instead, which picks a sensible
+     * implementation itself.
      *
      * \ingroup Constraints
-     * \sa gcs::LinearEquality
-     * \sa gcs::MultBC
+     * \sa gcs::Multiply
      */
     using Times = innards::GACArithmetic<innards::ArithmeticOperator::Times>;
 

@@ -18,6 +18,8 @@
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/min_max.hh>
+#include <gcs/constraints/multiply.hh>
+#include <gcs/constraints/multiply/multiply_bc.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
 #include <gcs/constraints/smart_table/smart_table.hh>
@@ -308,6 +310,42 @@ TEST_CASE("read_scp: linear constraints survive write -> read -> write unchanged
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_lin_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: multiply enumerates correctly")
+{
+    auto solutions = enumerate(R"(
+        (
+            ( (X 1 3) (Y 1 3) (Z 1 9) )
+            ( (_1 multiply (X Y Z)) )
+        ))");
+
+    CHECK(solutions.size() == 9);
+    for (const auto & s : solutions)
+        CHECK(s.at("X") * s.at("Y") == s.at("Z"));
+}
+
+TEST_CASE("read_scp: multiply constraints survive write -> read -> write unchanged")
+{
+    Problem original;
+    auto x = original.create_integer_variable(-2_i, 2_i, "X");
+    auto y = original.create_integer_variable(1_i, 3_i, "Y");
+    auto z = original.create_integer_variable(-6_i, 6_i, "Z");
+    original.post(Multiply{x, y, z}); // plain: multiply
+    original.post(Multiply{x, x, z}); // aliased: still multiply
+    // (a view operand also writes a multiply term, but view terms are lists and
+    // the reader's resolve_variable only handles atoms, as for every other
+    // constraint -- so no view case here)
+    original.post(Multiply{constant_variable(2_i), y, z}); // constant operand: resolves to lin_equals
+    original.post(innards::MultiplyBC{x, y, z});           // directly-posted innards form writes the same term
+    auto scp_a = prove_to_scp(original, "scp_reader_multiply_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_multiply_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

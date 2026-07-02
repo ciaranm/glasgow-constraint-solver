@@ -1,6 +1,6 @@
 #include <gcs/constraints/disjunctive_2d.hh>
 #include <gcs/constraints/linear.hh>
-#include <gcs/constraints/mult_bc.hh>
+#include <gcs/constraints/multiply.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
@@ -163,7 +163,7 @@ auto main(int argc, char * argv[]) -> int
         auto area = p.create_integer_variable(Integer{a}, Integer{a}, "area" + sfx);
 
         // Area = clue, as a (deliberately weak) bounds-consistent product.
-        p.post(MultBC{w, h, area});
+        p.post(Multiply{w, h, area});
         // The rectangle covers the clue cell: x + w >= c + 1, y + h >= r + 1.
         p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * x + 1_i * w, Integer{c + 1}});
         p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * y + 1_i * h, Integer{r + 1}});

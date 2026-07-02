@@ -1,6 +1,0 @@
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_MULT_BC_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_MULT_BC_HH
-
-#include <gcs/constraints/mult_bc/mult_bc.hh>
-
-#endif

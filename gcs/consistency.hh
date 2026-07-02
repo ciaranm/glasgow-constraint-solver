@@ -25,6 +25,23 @@ namespace gcs
     namespace consistency
     {
         /**
+         * \brief Let the solver choose how strongly to propagate, based on the
+         * shape of the constraint and the size of the variables' domains.
+         *
+         * This is a policy rather than a consistency level: constraints that
+         * accept it document what it does, and typically it means achieving
+         * generalised arc consistency by tabulation when the domains involved
+         * are small, and falling back on something cheaper when they are not.
+         * The choice never changes the constraint's meaning, and never changes
+         * how the constraint is encoded for proof logging.
+         *
+         * \ingroup Consistency
+         */
+        struct Auto final
+        {
+        };
+
+        /**
          * \brief Request generalised arc consistency: after propagation, every
          * remaining value in every variable's domain appears in at least one
          * satisfying assignment of the constraint.
