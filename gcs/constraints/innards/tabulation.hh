@@ -5,7 +5,7 @@
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/extensional_utils.hh>
 #include <gcs/constraints/innards/triggers.hh>
-#include <gcs/innards/inference_tracker-fwd.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/justification.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/propagators.hh>
