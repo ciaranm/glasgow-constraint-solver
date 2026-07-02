@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_INNARDS_LINEAR_STAGES_HH
 
 #include <gcs/constraints/linear/hints.hh>
+#include <gcs/constraints/linear/justify.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/expression.hh>
@@ -84,16 +85,20 @@ namespace gcs::innards
             if (stage.gate && ! stage_gate_holds(state, *stage.gate)) {
                 // Contrapositive: if the gated inequality is already violated
                 // in bounds, the gate cannot hold. (Gated stages are always
-                // inequalities.)
+                // inequalities.) The justification must materialise the sum of
+                // the half-reified stage line and the term bounds explicitly:
+                // reverse unit propagation cannot combine them on its own.
                 if (! stage.equality) {
-                    Integer smallest_sum = 0_i;
-                    ReasonLiterals reason;
                     visit(
                         [&](const auto & cv) {
+                            Integer smallest_sum = 0_i;
+                            ReasonLiterals reason;
+                            LinearBounds bounds;
                             for (const auto & term : cv.terms) {
                                 auto var = get_var(term);
                                 auto coeff = get_coeff(term);
                                 auto [lo, hi] = state.bounds(var);
+                                bounds.emplace_back(lo, hi);
                                 if (coeff >= 0_i) {
                                     smallest_sum += coeff * lo;
                                     reason.emplace_back(var >= lo);
@@ -103,14 +108,17 @@ namespace gcs::innards
                                     reason.emplace_back(var <= hi);
                                 }
                             }
+                            if (smallest_sum > stage.value) {
+                                auto justf = [&](const ReasonLiterals &) {
+                                    justify_linear_contrapositive(*logger, cv, bounds, stage.lines.first.value());
+                                };
+                                inference.infer(logger, ! Literal{*stage.gate}, JustifyExplicitly{justf, ThenRUP::Yes, hints::LinearEquality{owner}},
+                                    ExplicitReason{std::move(reason)});
+                            }
                         },
                         stage.terms);
-                    if (smallest_sum > stage.value) {
-                        inference.infer(
-                            logger, ! Literal{*stage.gate}, JustifyUsingRUP{hints::LinearEquality{owner}}, ExplicitReason{std::move(reason)});
-                        if (inference.contradicted())
-                            return false;
-                    }
+                    if (inference.contradicted())
+                        return false;
                 }
                 continue;
             }

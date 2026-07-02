@@ -44,6 +44,26 @@ auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const auto & coef
     pol.emit(logger, ProofLevel::Temporary);
 }
 
+auto gcs::innards::justify_linear_contrapositive(ProofLogger & logger, const auto & coeff_vars, const LinearBounds & bounds, ProofLine proof_line)
+    -> void
+{
+    // As justify_linear_bounds, but no variable is changing: every term is
+    // cancelled against its bound, leaving the half-reified stage line's
+    // negated gate alone on the left of an infeasible constraint, from which
+    // the gate negation follows by unit propagation.
+    PolBuilder pol;
+    pol.enable_deview_mode(logger.names_and_ids_tracker());
+    pol.add(proof_line);
+
+    for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
+        bool upper = get_coeff(cv) < 0_i;
+        auto lit = upper ? get_var(cv) <= bounds[idx].second : get_var(cv) >= bounds[idx].first;
+        pol.add_for_literal(logger.names_and_ids_tracker(), lit, abs(get_coeff(cv)));
+    }
+
+    pol.emit(logger, ProofLevel::Temporary);
+}
+
 template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars,
     const LinearBounds & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
     pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
@@ -55,3 +75,12 @@ template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const Su
 template auto gcs::innards::justify_linear_bounds(ProofLogger & logger, const SumOf<SimpleIntegerVariableID> & coeff_vars,
     const LinearBounds & bounds, const SimpleIntegerVariableID & change_var, bool second_constraint_for_equality,
     pair<optional<ProofLine>, optional<ProofLine>> proof_line) -> void;
+
+template auto gcs::innards::justify_linear_contrapositive(
+    ProofLogger & logger, const SumOf<Weighted<SimpleIntegerVariableID>> & coeff_vars, const LinearBounds & bounds, ProofLine proof_line) -> void;
+
+template auto gcs::innards::justify_linear_contrapositive(ProofLogger & logger, const SumOf<PositiveOrNegative<SimpleIntegerVariableID>> & coeff_vars,
+    const LinearBounds & bounds, ProofLine proof_line) -> void;
+
+template auto gcs::innards::justify_linear_contrapositive(
+    ProofLogger & logger, const SumOf<SimpleIntegerVariableID> & coeff_vars, const LinearBounds & bounds, ProofLine proof_line) -> void;
