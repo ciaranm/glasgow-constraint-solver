@@ -1,5 +1,6 @@
 #include <gcs/constraints/extensional_utils.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
@@ -65,91 +66,32 @@ ReifiedLinearEquality::ReifiedLinearEquality(WeightedSum coeff_vars, Integer val
 
 namespace
 {
-
     template <typename CV_>
     auto build_table(const CV_ & coeff_vars, Integer value, ReificationCondition cond, State & state, ProofLogger * const logger)
         -> optional<ExtensionalData>
     {
-        vector<vector<IntegerOrWildcard>> permitted;
-        vector<Integer> current;
-
         vector<IntegerVariableID> vars;
-        for (auto & cv : coeff_vars.terms) {
-            auto var = get_var(cv);
-            vars.push_back(var);
-        }
+        for (auto & cv : coeff_vars.terms)
+            vars.push_back(get_var(cv));
 
-        auto future_var_id = state.what_variable_id_will_be_created_next();
+        // the enumeration, in-proof selector introduction, and backtrack lines
+        // live in build_table_in_proof; all that is ours is the acceptance test.
+        auto accept = [&](const vector<Integer> & current) -> bool {
+            Integer actual_value{0_i};
+            for (const auto & [idx, cv] : enumerate(coeff_vars.terms))
+                actual_value += get_coeff(cv) * current[idx];
 
-        WPBSum trail;
-        function<void(ProofLogger * const)> search = [&](ProofLogger * const logger) {
-            if (current.size() == coeff_vars.terms.size()) {
-                Integer actual_value{0_i};
-                for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
-                    actual_value += get_coeff(cv) * current[idx];
-                }
-
-                bool match = overloaded{
-                    [&](const reif::MustHold &) { return actual_value == value; },      //
-                    [&](const reif::MustNotHold &) { return actual_value != value; },   //
-                    [&](const reif::If) -> bool { throw UnimplementedException{}; },    //
-                    [&](const reif::NotIf) -> bool { throw UnimplementedException{}; }, //
-                    [&](const reif::Iff) -> bool { throw UnimplementedException{}; }    //
-                }
-                                 .visit(cond);
-
-                if (match) {
-                    permitted.emplace_back(current.begin(), current.end());
-                    if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                        Integer sel_value(permitted.size() - 1);
-                        logger->names_and_ids_tracker().create_literals_for_introduced_variable_value(future_var_id, sel_value, "lineq");
-                        trail += 1_i * (future_var_id == sel_value);
-
-                        WPBSum forward_implication, reverse_implication;
-                        forward_implication += Integer(coeff_vars.terms.size()) * (future_var_id != sel_value);
-                        reverse_implication += 1_i * (future_var_id == sel_value);
-
-                        for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
-                            forward_implication += 1_i * (get_var(cv) == current[idx]);
-                            reverse_implication += 1_i * (get_var(cv) != current[idx]);
-                        }
-
-                        logger->emit_red_proof_line(forward_implication >= Integer(coeff_vars.terms.size()),
-                            {{future_var_id == sel_value, FalseLiteral{}}}, ProofLevel::Current);
-                        logger->emit_red_proof_line(reverse_implication >= 1_i, {{future_var_id == sel_value, TrueLiteral{}}}, ProofLevel::Current);
-                    }
-                }
+            return overloaded{
+                [&](const reif::MustHold &) { return actual_value == value; },      //
+                [&](const reif::MustNotHold &) { return actual_value != value; },   //
+                [&](const reif::If) -> bool { throw UnimplementedException{}; },    //
+                [&](const reif::NotIf) -> bool { throw UnimplementedException{}; }, //
+                [&](const reif::Iff) -> bool { throw UnimplementedException{}; }    //
             }
-            else {
-                const auto & var = get_var(coeff_vars.terms[current.size()]);
-                for (auto val : state.each_value_mutable(var)) {
-                    current.push_back(val);
-                    search(logger);
-                    current.pop_back();
-                }
-            }
-
-            if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
-                WPBSum backtrack = trail;
-                for (const auto & [idx, val] : enumerate(current))
-                    backtrack += 1_i * (get_var(coeff_vars.terms[idx]) != val);
-
-                logger->emit_rup_proof_line(backtrack >= 1_i, ProofLevel::Current);
-            }
+                .visit(cond);
         };
 
-        if (logger && logger->get_assertion_level() == AssertionLevel::Off)
-            logger->emit_proof_comment("building GAC table for linear equality");
-        search(logger);
-
-        if (permitted.empty())
-            return nullopt;
-
-        auto sel = state.allocate_integer_variable_with_state(0_i, Integer(permitted.size() - 1));
-        if (sel != future_var_id)
-            throw UnexpectedException{"something went horribly wrong with variable IDs"};
-
-        return ExtensionalData{sel, move(vars), move(permitted)};
+        return build_table_in_proof(vars, accept, "lineq", "building GAC table for linear equality", state, logger);
     }
 }
 
