@@ -133,6 +133,16 @@ auto main(int argc, char * argv[]) -> int
         {pair{1, 3}, pair{-1, 3}},                                                                             //
         {pair{-1, 5}, pair{-6, 8}},                                                                            //
         {pair{-1, 1}, pair{-2, 4}},                                                                            //
+        // Tight 0/1-style domains (issue #446): the consequence bounds land
+        // exactly on declared domain boundaries, where the defining item for
+        // the justification's atoms is a bare literal rather than a proof
+        // line. These used to crash with bad_variant_access.
+        {pair{0, 1}, pair{0, 1}},  //
+        {pair{-1, 0}, pair{0, 1}}, //
+        {pair{0, 2}, pair{0, 1}},  //
+        {pair{0, 1}, pair{-1, 2}}, //
+        {pair{-1, 1}, pair{0, 1}}, //
+        {pair{-2, 0}, pair{0, 2}}, //
         // All-constant arguments (issue #254): both operands are
         // ConstantIntegerVariableIDs, so the constraint reduces to a
         // true/false check on abs(c1) == c2. Both directions are covered.
