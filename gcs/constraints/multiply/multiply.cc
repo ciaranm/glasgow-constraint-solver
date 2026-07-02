@@ -1,8 +1,10 @@
-#include <gcs/constraints/equals.hh>
 #include <gcs/constraints/innards/arithmetic_utils.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
+#include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/linear/linear_equality.hh>
+#include <gcs/constraints/linear/propagate.hh>
+#include <gcs/constraints/linear/utils.hh>
 #include <gcs/constraints/multiply/hints.hh>
 #include <gcs/constraints/multiply/multiply.hh>
 #include <gcs/constraints/multiply/multiply_bc.hh>
@@ -129,29 +131,99 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
             optional_model->set_up_integer_variable(*t, lo, hi, "aux_multiply_product" + to_string(t->index), nullopt);
     }
 
-    if (copy_to_make) {
-        Equals eq{copy_to_make->first, copy_to_make->second};
-        eq.set_constraint_id(child_constraint_id(constraint_id(), "copy"));
-        move(eq).install(propagators, initial_state, optional_model);
-    }
-
-    MultiplyBC mult{u1, m2, *t};
-    mult.set_constraint_id(constraint_id());
-    move(mult).install(propagators, initial_state, optional_model);
-
+    // One flat encoding block under our own identity, and one propagator over
+    // everything (issue #448): the aliased-operand copy channel and the affine
+    // fold are linear lines in our block, and the propagator runs the exposed
+    // sub-propagations to a local fixpoint.
+    WeightedSum copy_sum, fold_sum;
+    Integer fold_value = 0_i;
+    if (copy_to_make)
+        copy_sum = WeightedSum{} + 1_i * copy_to_make->first + -1_i * copy_to_make->second;
     if (need_linear) {
         // v1 * v2 = (c1 u1 + b1)(c2 u2 + b2) = c1 c2 t + c1 b2 u1 + c2 b1 u2 + b1 b2
-        WeightedSum sum;
-        sum += (a1.coeff * a2.coeff) * *t;
+        fold_sum += (a1.coeff * a2.coeff) * *t;
         if (a1.coeff * a2.offset != 0_i)
-            sum += (a1.coeff * a2.offset) * u1;
+            fold_sum += (a1.coeff * a2.offset) * u1;
         if (a2.coeff * a1.offset != 0_i)
-            sum += (a2.coeff * a1.offset) * u2;
-        sum += -1_i * _result;
-        LinearEquality lin{move(sum), -(a1.offset * a2.offset)};
-        lin.set_constraint_id(child_constraint_id(constraint_id(), "fold"));
-        move(lin).install(propagators, initial_state, optional_model);
+            fold_sum += (a2.coeff * a1.offset) * u2;
+        fold_sum += -1_i * _result;
+        fold_value = -(a1.offset * a2.offset);
     }
+
+    mult_bc::EncodingData encoding;
+    optional<pair<optional<ProofLine>, optional<ProofLine>>> copy_lines, fold_lines;
+    if (optional_model) {
+        encoding = mult_bc::define_encoding(*optional_model, initial_state, as_string(constraint_id()), "", u1, m2, *t);
+
+        auto as_wpb = [](const WeightedSum & ws) {
+            WPBSum terms;
+            for (const auto & [c, v] : ws.terms)
+                terms += c * v;
+            return terms;
+        };
+        if (copy_to_make) {
+            auto lines = optional_model->add_labelled_constraint(
+                as_string(constraint_id()), "copyle", "copyge", "Multiply", "aliased operand copy", as_wpb(copy_sum) == 0_i);
+            copy_lines = pair{optional{lines.first}, optional{lines.second}};
+        }
+        if (need_linear) {
+            auto lines = optional_model->add_labelled_constraint(
+                as_string(constraint_id()), "foldle", "foldge", "Multiply", "affine fold", as_wpb(fold_sum) == fold_value);
+            fold_lines = pair{optional{lines.first}, optional{lines.second}};
+        }
+    }
+
+    auto bit_products_handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
+
+    auto [copy_tidied, copy_modifier] = tidy_up_linear(copy_sum);
+    auto [fold_tidied, fold_modifier] = tidy_up_linear(fold_sum);
+
+    Triggers triggers;
+    vector<SimpleIntegerVariableID> watched{u1, m2, *t};
+    if (a3.var && *a3.var != *t)
+        watched.push_back(*a3.var);
+    for (const auto & v : watched)
+        if (std::find(triggers.on_bounds.begin(), triggers.on_bounds.end(), IntegerVariableID{v}) == triggers.on_bounds.end())
+            triggers.on_bounds.emplace_back(v);
+
+    propagators.install(
+        constraint_id(),
+        [u1 = u1, m2 = m2, t = *t, has_copy = copy_to_make.has_value(), has_fold = need_linear, copy_tidied = copy_tidied,
+            copy_modifier = copy_modifier, fold_tidied = fold_tidied, fold_modifier = fold_modifier, fold_value = fold_value, copy_lines = copy_lines,
+            fold_lines = fold_lines, encoding = encoding, bit_products_handle = bit_products_handle,
+            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            do {
+                // propagate_linear signals failure through the tracker's
+                // non-throwing path, so check contradicted() after each call
+                // before running the next stage on an emptied domain.
+                if (has_copy) {
+                    visit(
+                        [&](const auto & cv) {
+                            propagate_linear(
+                                cv, 0_i + copy_modifier, state, inference, logger, true, copy_lines, nullopt, hints::LinearEquality{owner});
+                        },
+                        copy_tidied);
+                    if (inference.contradicted())
+                        return PropagatorState::Enable;
+                }
+
+                mult_bc::propagate(u1, m2, t, state, inference, logger, encoding, bit_products_handle, owner);
+
+                if (has_fold) {
+                    visit(
+                        [&](const auto & cv) {
+                            propagate_linear(
+                                cv, fold_value + fold_modifier, state, inference, logger, true, fold_lines, nullopt, hints::LinearEquality{owner});
+                        },
+                        fold_tidied);
+                    if (inference.contradicted())
+                        return PropagatorState::Enable;
+                }
+            } while (inference.did_anything_since_last_call_inside_propagator());
+
+            return PropagatorState::Enable;
+        },
+        triggers);
 
     // Tabulation for GAC: enumerate over the distinct underlying variables,
     // mapping values back through the affine forms. The auxiliary variables

@@ -1016,7 +1016,8 @@ namespace
             }
         }
         else {
-            throw UnexpectedException{"Bad interval passed to filter_quotient."};
+            throw UnexpectedException{"Bad interval passed to filter_quotient: z=[" + z_min.to_string() + "," + z_max.to_string() + "] y=[" +
+                y_min.to_string() + "," + y_max.to_string() + "] x_is_first=" + std::to_string(x_is_first)};
         }
     }
 }
