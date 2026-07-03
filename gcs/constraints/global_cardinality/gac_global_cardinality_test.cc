@@ -84,7 +84,7 @@ auto run_gacgcc_test(bool proofs, const vector<Range> & vars_range, const vector
     for (auto & v : values)
         int_values.emplace_back(v);
 
-    p.post(GACGlobalCardinality{vars, int_values, counts, closed});
+    p.post(GlobalCardinality{vars, int_values, counts}.with_consistency(consistency::GAC{}).with_closed(closed));
 
     // Régin's flow makes the assignment variables GAC *relative to the count
     // bounds*: the network's value capacities are state.bounds(counts[j]), so it

@@ -36,6 +36,7 @@ add_library(glasgow_constraint_solver
         constraints/extensional_utils.cc
         constraints/global_cardinality/bounds_global_cardinality.cc
         constraints/global_cardinality/gac_global_cardinality.cc
+        constraints/global_cardinality/global_cardinality.cc
         constraints/global_cardinality/justify.cc
         constraints/in/in.cc
         constraints/increasing/increasing.cc
