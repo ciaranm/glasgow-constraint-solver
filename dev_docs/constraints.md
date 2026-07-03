@@ -77,22 +77,29 @@ gcs/constraints/all_different/*_test.cc                tests
 ```
 
 Here the umbrella `gcs/constraints/<family>.hh` `#include`s every
-variant's header and may add a `using AllDifferent = GACAllDifferent;`
-style alias to name the default implementation. `gcs/gcs.hh` then only
-needs the umbrella, not each variant.
+variant's header. `gcs/gcs.hh` then only needs the umbrella, not each
+variant.
 
-Newer constraints select behaviour with the `gcs/consistency.hh` tag
-types instead of separate public variant classes (issue #299): the
-constructor takes a `std::variant` over exactly the levels it supports,
-defaulted sensibly, as in `Multiply{x, y, z, consistency::Tabulated{}}`. `consistency::GAC`
-names a genuine algorithm that achieves the level; a constraint that can
-only get there by enumerating a table takes `consistency::Tabulated`, so
-the very different cost model is visible in the signature. The
-arithmetic family (`Multiply`, `Divide`, `Modulus`, `Power`, `Plus`,
-`Minus`) also accepts `consistency::Auto`, which tabulates the relation
-for GAC when the domains involved are small (see
+Constraints that offer more than one consistency level or propagation
+algorithm select it with a fluent `.with_*()` setter and the
+`gcs/consistency.hh` tag types, not a constructor argument or a separate
+public class (issue #299): the constructor takes only variables and data,
+and the setter takes a `std::variant` over exactly the levels the
+constraint supports, so requesting an unsupported one is a compile-time
+error, as in
+`problem.post(Multiply{x, y, z}.with_consistency(consistency::Tabulated{}))`.
+`consistency::GAC` names a genuine algorithm that achieves the level; a
+constraint that can only get there by enumerating a table takes
+`consistency::Tabulated`, so the very different cost model is visible in
+the signature. The arithmetic family (`Multiply`, `Divide`, `Modulus`,
+`Power`, `Plus`, `Minus`) also accepts `consistency::Auto`, which
+tabulates the relation for GAC when the domains involved are small (see
 `gcs/constraints/innards/tabulation.hh`); the tag never changes the OPB
-encoding, since the table is derived in-proof.
+encoding, since the table is derived in-proof. Families that used to
+expose several public classes behind a `using` alias — `AllDifferent`,
+`GlobalCardinality`, `Circuit` — are now a single class each, the choice
+moved onto the setter (`.with_consistency()`, or `.with_algorithm()` for
+`Circuit`'s `circuit::SCC`/`circuit::Prevent`).
 
 A compound constraint should emit one flat `@c[id][role]` OPB block and
 install one propagator, reusing the exposed machinery (`mult_bc::
