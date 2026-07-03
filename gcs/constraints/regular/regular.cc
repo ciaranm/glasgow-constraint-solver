@@ -392,8 +392,8 @@ namespace
     }
 }
 
-Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f, bool sr) :
-    _vars(move(v)), _num_states(n), _transitions(t.size()), _final_states(move(f)), _short_reasons(sr), _regex(nullopt)
+Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integer, long>> t, vector<long> f) :
+    _vars(move(v)), _num_states(n), _transitions(t.size()), _final_states(move(f)), _regex(nullopt)
 {
     for (size_t q = 0; q < t.size(); ++q)
         for (const auto & [val, target] : t[q])
@@ -402,8 +402,8 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integ
     _symbols = symbols_of(_transitions);
 }
 
-Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> transitions, vector<long> f, bool sr) :
-    _vars(move(v)), _num_states(n), _transitions(n), _final_states(move(f)), _short_reasons(sr), _regex(nullopt)
+Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> transitions, vector<long> f) :
+    _vars(move(v)), _num_states(n), _transitions(n), _final_states(move(f)), _regex(nullopt)
 {
     for (size_t i = 0; i < transitions.size(); i++)
         for (size_t j = 0; j < transitions[i].size(); j++)
@@ -412,7 +412,7 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<vector<long>> trans
     _symbols = symbols_of(_transitions);
 }
 
-Regular::Regular(vector<IntegerVariableID> v, string regex, bool sr) : _vars(move(v)), _num_states(0), _short_reasons(sr), _regex(move(regex))
+Regular::Regular(vector<IntegerVariableID> v, string regex) : _vars(move(v)), _num_states(0), _regex(move(regex))
 {
     // The automaton is compiled from the regex in prepare(), once the
     // variables' domains (and hence the alphabet for "." and "[^...]") are known.
@@ -422,6 +422,12 @@ Regular::Regular(vector<IntegerVariableID> v, long n, vector<unordered_map<Integ
     optional<string> regex) :
     _vars(move(v)), _num_states(n), _transitions(move(t)), _final_states(move(f)), _short_reasons(sr), _regex(move(regex)), _symbols(move(syms))
 {
+}
+
+auto Regular::with_short_reasons(std::optional<bool> short_reasons) -> Regular &
+{
+    _short_reasons = short_reasons.value_or(true);
+    return *this;
 }
 
 auto Regular::clone() const -> unique_ptr<Constraint>

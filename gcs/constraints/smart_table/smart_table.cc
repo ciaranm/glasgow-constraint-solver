@@ -79,7 +79,7 @@ namespace
     }
 }
 
-SmartTable::SmartTable(vector<IntegerVariableID> v, SmartTuples t, bool s) : _vars(move(v)), _tuples(move(t)), _short_reasons(s)
+SmartTable::SmartTable(vector<IntegerVariableID> v, SmartTuples t) : _vars(move(v)), _tuples(move(t))
 {
     // Aliased BinaryEntry endpoints break build_forests: both ends
     // hash to the same `deview` key, so adjacent_edges holds the entry
@@ -767,9 +767,17 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
     return new_tuple;
 }
 
+auto SmartTable::with_short_reasons(std::optional<bool> short_reasons) -> SmartTable &
+{
+    _short_reasons = short_reasons.value_or(true);
+    return *this;
+}
+
 auto SmartTable::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<SmartTable>(_vars, _tuples, _short_reasons);
+    auto cloned = make_unique<SmartTable>(_vars, _tuples);
+    cloned->with_short_reasons(_short_reasons);
+    return cloned;
 }
 
 auto SmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

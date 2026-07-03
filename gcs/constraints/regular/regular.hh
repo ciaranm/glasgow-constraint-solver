@@ -34,7 +34,7 @@ namespace gcs
         long _num_states;
         std::vector<std::unordered_map<Integer, std::set<long>>> _transitions;
         std::vector<long> _final_states;
-        const bool _short_reasons;
+        bool _short_reasons = true;
         const std::optional<std::string> _regex;
         std::vector<Integer> _symbols;
         std::vector<std::vector<innards::ProofFlag>> _state_at_pos_flags;
@@ -52,17 +52,22 @@ namespace gcs
 
     public:
         explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, long>> transitions,
-            std::vector<long> final_states, bool short_reasons = true);
+            std::vector<long> final_states);
 
-        explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::vector<long>> transitions,
-            std::vector<long> final_states, bool sr = true);
+        explicit Regular(
+            std::vector<IntegerVariableID> vars, long num_states, std::vector<std::vector<long>> transitions, std::vector<long> final_states);
 
         /**
          * \brief Constrain that the sequence of variables matches the given
          * regular expression. The expression is compiled to an NFA over the
          * contiguous min..max range of the variables' domains.
          */
-        explicit Regular(std::vector<IntegerVariableID> vars, std::string regex, bool short_reasons = true);
+        explicit Regular(std::vector<IntegerVariableID> vars, std::string regex);
+
+        /// Whether to use short reasons in the proof log (default true). Takes a
+        /// std::optional<bool> so a runtime flag can be passed directly; nullopt
+        /// or no argument leaves it at true.
+        auto with_short_reasons(std::optional<bool> short_reasons = true) -> Regular &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

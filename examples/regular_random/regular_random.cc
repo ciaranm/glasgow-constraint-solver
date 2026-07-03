@@ -78,7 +78,8 @@ auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_r
         }
     }
 
-    p.post(Regular{x, num_states, transitions, final_states, short_reasons});
+    p.post(Regular{x, num_states, transitions, final_states} //
+            .with_short_reasons(short_reasons));
 }
 
 auto main(int argc, char * argv[]) -> int
