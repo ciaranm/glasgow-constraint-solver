@@ -83,7 +83,7 @@ auto run_bgcc_test(bool proofs, const vector<Range> & vars_range, const vector<i
     for (auto & v : values)
         int_values.emplace_back(v);
 
-    p.post(BoundsGlobalCardinality{vars, int_values, counts, closed});
+    p.post(GlobalCardinality{vars, int_values, counts}.with_consistency(consistency::BC{}).with_closed(closed));
 
     // This dedicated propagator claims bounds consistency on both the
     // assignment variables and the count variables.
