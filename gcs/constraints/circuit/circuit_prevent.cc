@@ -101,15 +101,24 @@ namespace
         }
     }
 
-    auto propagate_circuit_using_prevent(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
-        const ConstraintStateHandle & unassigned_handle, const ConstraintStateHandle & chain_handle, const State & state, auto & inference,
-        ProofLogger * const logger) -> void
-    {
-        if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
-            return; // contradiction: the cycle checks below would read junk state; the loop sees contradicted()
-        prevent_small_cycles_incrementally(succ, owner, pos_var_data, chain_handle, state, inference, logger);
-    }
 }
+
+auto gcs::innards::circuit::propagate_circuit_using_prevent(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner,
+    const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const ConstraintStateHandle & chain_handle,
+    const State & state, auto & inference, ProofLogger * const logger) -> void
+{
+    if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
+        return; // contradiction: the cycle checks below would read junk state; the loop sees contradicted()
+    prevent_small_cycles_incrementally(succ, owner, pos_var_data, chain_handle, state, inference, logger);
+}
+
+template auto gcs::innards::circuit::propagate_circuit_using_prevent(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner,
+    const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const ConstraintStateHandle & chain_handle,
+    const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> void;
+
+template auto gcs::innards::circuit::propagate_circuit_using_prevent(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner,
+    const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const ConstraintStateHandle & chain_handle,
+    const State & state, EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger) -> void;
 
 auto CircuitPrevent::clone() const -> unique_ptr<Constraint>
 {

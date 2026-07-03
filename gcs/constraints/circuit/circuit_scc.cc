@@ -1062,29 +1062,40 @@ namespace
         }
     }
 
-    auto propagate_circuit_using_scc(const State & state, auto & inference, ProofLogger * const logger, const ReasonLiterals & reason,
-        const ConstraintID & owner, const vector<IntegerVariableID> & succ, const SCCOptions & scc_options,
-        const ConstraintStateHandle & pos_var_data_handle, const ConstraintStateHandle & proof_flag_data_handle,
-        const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void
-    {
-        auto & pos_var_data = any_cast<PosVarDataMap &>(state.get_persistent_constraint_state(pos_var_data_handle));
-        if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
-            return; // contradiction: the SCC check below would read junk state; the loop sees contradicted()
-        auto proof_data = SCCProofData{pos_var_data, proof_flag_data_handle, pos_alldiff_data_handle};
-        check_sccs(state, inference, logger, reason, owner, succ, scc_options, proof_data);
-        auto & unassigned = any_cast<NonGacAllDifferentUnassigned &>(state.get_constraint_state(unassigned_handle));
-        // Remove any newly assigned vals from unassigned (swap-and-pop; order is irrelevant).
-        for (std::size_t k = 0; k < unassigned.size();) {
-            if (state.optional_single_value(unassigned[k])) {
-                unassigned[k] = unassigned.back();
-                unassigned.pop_back();
-            }
-            else
-                ++k;
-        }
-        prevent_small_cycles(succ, owner, pos_var_data, unassigned_handle, state, inference, logger);
-    }
 }
+
+auto gcs::innards::circuit::propagate_circuit_using_scc(const State & state, auto & inference, ProofLogger * const logger,
+    const ReasonLiterals & reason, const ConstraintID & owner, const std::vector<IntegerVariableID> & succ, const SCCOptions & scc_options,
+    const ConstraintStateHandle & pos_var_data_handle, const ConstraintStateHandle & proof_flag_data_handle,
+    const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void
+{
+    auto & pos_var_data = any_cast<PosVarDataMap &>(state.get_persistent_constraint_state(pos_var_data_handle));
+    if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
+        return; // contradiction: the SCC check below would read junk state; the loop sees contradicted()
+    auto proof_data = SCCProofData{pos_var_data, proof_flag_data_handle, pos_alldiff_data_handle};
+    check_sccs(state, inference, logger, reason, owner, succ, scc_options, proof_data);
+    auto & unassigned = any_cast<NonGacAllDifferentUnassigned &>(state.get_constraint_state(unassigned_handle));
+    // Remove any newly assigned vals from unassigned (swap-and-pop; order is irrelevant).
+    for (std::size_t k = 0; k < unassigned.size();) {
+        if (state.optional_single_value(unassigned[k])) {
+            unassigned[k] = unassigned.back();
+            unassigned.pop_back();
+        }
+        else
+            ++k;
+    }
+    prevent_small_cycles(succ, owner, pos_var_data, unassigned_handle, state, inference, logger);
+}
+
+template auto gcs::innards::circuit::propagate_circuit_using_scc(const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger,
+    const ReasonLiterals & reason, const ConstraintID & owner, const std::vector<IntegerVariableID> & succ, const SCCOptions & scc_options,
+    const ConstraintStateHandle & pos_var_data_handle, const ConstraintStateHandle & proof_flag_data_handle,
+    const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void;
+
+template auto gcs::innards::circuit::propagate_circuit_using_scc(const State & state, EagerProofLoggingInferenceTracker & inference,
+    ProofLogger * const logger, const ReasonLiterals & reason, const ConstraintID & owner, const std::vector<IntegerVariableID> & succ,
+    const SCCOptions & scc_options, const ConstraintStateHandle & pos_var_data_handle, const ConstraintStateHandle & proof_flag_data_handle,
+    const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void;
 
 CircuitSCC::CircuitSCC(std::vector<IntegerVariableID> var, bool gacAllDifferent, const SCCOptions s) :
     CircuitBase(std::move(var), gacAllDifferent), scc_options(s)
