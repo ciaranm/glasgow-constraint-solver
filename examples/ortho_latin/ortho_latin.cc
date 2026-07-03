@@ -91,7 +91,8 @@ auto main(int argc, char * argv[]) -> int
         if (all_different_mode == "gac")
             p.post(AllDifferent{vars});
         else if (all_different_mode == "vc")
-            p.post(VCAllDifferent{vars});
+            p.post(AllDifferent{vars} //
+                    .with_consistency(consistency::VC{}));
         else
             for (unsigned i = 0; i < vars.size(); ++i)
                 for (unsigned j = i + 1; j < vars.size(); ++j)

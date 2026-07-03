@@ -13,6 +13,7 @@ add_library(glasgow_constraint_solver
         variable_id.cc
         constraints/abs/abs.cc
         constraints/abs/justify.cc
+        constraints/all_different/all_different.cc
         constraints/all_different/all_different_except.cc
         constraints/all_different/encoding.cc
         constraints/all_different/gac_all_different.cc

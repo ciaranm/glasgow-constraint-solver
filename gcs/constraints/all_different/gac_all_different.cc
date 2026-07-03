@@ -77,15 +77,6 @@ namespace gcs::innards::hints
     }
 }
 
-GACAllDifferent::GACAllDifferent(vector<IntegerVariableID> v) : _vars(move(v))
-{
-}
-
-auto GACAllDifferent::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<GACAllDifferent>(_vars);
-}
-
 namespace
 {
     struct Left
@@ -589,65 +580,6 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     }
 }
 
-auto GACAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model);
-
-    install_propagators(propagators);
-}
-
-auto GACAllDifferent::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
-{
-    _sanitised_vars = move(_vars);
-    sort(_sanitised_vars);
-    _has_duplicate_vars = adjacent_find(_sanitised_vars) != _sanitised_vars.end();
-    if (_has_duplicate_vars) {
-        // The matching propagator can't model duplicate left-vertices, so
-        // install_propagators only installs a contradiction initialiser. We
-        // still let define_proof_model run unchanged: the encoding emits a
-        // self-contradicting half-reified pair for the duplicated variable
-        // for the initialiser to cite.
-        return true;
-    }
-
-    for (auto & var : _sanitised_vars)
-        for (const auto & val : initial_state.each_value_immutable(var))
-            if (_compressed_vals.end() == find(_compressed_vals.begin(), _compressed_vals.end(), val))
-                _compressed_vals.push_back(val);
-
-    return true;
-}
-
-auto GACAllDifferent::define_proof_model(ProofModel & model) -> void
-{
-    define_clique_not_equals_encoding(model, _constraint_id, _sanitised_vars);
-}
-
-auto GACAllDifferent::install_propagators(Propagators & propagators) -> void
-{
-    if (_has_duplicate_vars) {
-        install_clique_duplicate_contradiction_initialiser(propagators, hints::AllDifferent{constraint_id()});
-        return;
-    }
-
-    Triggers triggers;
-    triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
-
-    auto value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
-    propagators.install(
-        constraint_id(),
-        [vars = move(_sanitised_vars), vals = move(_compressed_vals), value_am1_constraint_numbers = move(value_am1_constraint_numbers),
-            constraint_id = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(constraint_id, vars, vals, vector<Integer>{}, *value_am1_constraint_numbers.get(), state, inference, logger);
-            return PropagatorState::Enable;
-        },
-        triggers);
-}
-
 template auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals, const std::vector<Integer> & excluded, std::map<Integer, ProofLine> & value_am1_constraint_numbers,
     const State & state, SimpleInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
@@ -655,12 +587,3 @@ template auto gcs::innards::propagate_gac_all_different(const ConstraintID & con
 template auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_id, const std::vector<IntegerVariableID> & vars,
     const std::vector<Integer> & vals, const std::vector<Integer> & excluded, std::map<Integer, ProofLine> & value_am1_constraint_numbers,
     const State & state, EagerProofLoggingInferenceTracker & inference_tracker, ProofLogger * const logger) -> void;
-
-auto GACAllDifferent::s_expr(const innards::ProofModel * const model) const -> SExpr
-{
-    auto & tracker = model->names_and_ids_tracker();
-    vector<SExpr> vars;
-    for (const auto & var : _vars)
-        vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_different"), SExpr::list(std::move(vars))});
-}

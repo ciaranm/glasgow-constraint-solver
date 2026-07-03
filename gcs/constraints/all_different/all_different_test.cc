@@ -90,8 +90,8 @@ auto run_all_different_test(bool proofs, const ViewWrapConfig & view_cfg, varian
 // clique-of-not-equals encoding (which emits a self-contradicting
 // half-reified pair for the duplicated variable) and a contradiction
 // initialiser that derives false by plain RUP.
-template <typename AllDifferentVariant_>
-auto run_alldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domains, const vector<int> & positions, const string & flavour) -> void
+auto run_alldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domains, const vector<int> & positions, const string & flavour,
+    AllDifferentConsistency level) -> void
 {
     print(cerr, "all_different_dup [{}] domains {} positions {}{}", flavour, unique_domains, positions, proofs ? " with proofs:" : ":");
     cerr << flush;
@@ -110,7 +110,7 @@ auto run_alldiff_dup_test(bool proofs, const vector<vector<int>> & unique_domain
     vector<IntegerVariableID> posted_vars;
     for (auto pos : positions)
         posted_vars.push_back(unique_vars[pos]);
-    p.post(AllDifferentVariant_{posted_vars});
+    p.post(AllDifferent{posted_vars}.with_consistency(level));
 
     auto proof_name = proofs ? make_optional("all_different_test") : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{unique_vars});
@@ -205,8 +205,8 @@ auto main(int argc, char * argv[]) -> int
             for (auto & [unique_domains, positions] : vector<pair<vector<vector<int>>, vector<int>>>{{{{0, 1}}, {0, 0}}, //
                      {{{0, 3}, {0, 3}}, {0, 0, 1}},                                                                      //
                      {{{0, 3}, {0, 3}}, {0, 0, 1, 1}}}) {
-                run_alldiff_dup_test<GACAllDifferent>(proofs, unique_domains, positions, "gac");
-                run_alldiff_dup_test<VCAllDifferent>(proofs, unique_domains, positions, "vc");
+                run_alldiff_dup_test(proofs, unique_domains, positions, "gac", consistency::GAC{});
+                run_alldiff_dup_test(proofs, unique_domains, positions, "vc", consistency::VC{});
             }
 
             // Degenerate collections (issue #254).
