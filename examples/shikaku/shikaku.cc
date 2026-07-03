@@ -192,7 +192,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     // No two rectangles overlap (diffn). All sizes are >= 1, so strict.
-    p.post(Disjunctive2D{xs_id, ys_id, ws_id, hs_id, true});
+    p.post(Disjunctive2D{xs_id, ys_id, ws_id, hs_id});
 
     auto n = inst.clues.size();
     auto stats = solve_with(p, //

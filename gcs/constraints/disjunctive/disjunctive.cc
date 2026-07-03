@@ -71,8 +71,7 @@ namespace
     }
 }
 
-Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths, bool strict) :
-    _starts(move(starts)), _lengths(move(lengths)), _strict(strict)
+Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths) : _starts(move(starts)), _lengths(move(lengths))
 {
     if (_starts.size() != _lengths.size())
         throw InvalidProblemDefinitionException{"Disjunctive: starts and lengths must have the same size"};
@@ -83,14 +82,21 @@ Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<IntegerVariabl
             throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
 }
 
-Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<Integer> lengths, bool strict) :
-    Disjunctive(move(starts), as_constant_var_ids(lengths), strict)
+Disjunctive::Disjunctive(vector<IntegerVariableID> starts, vector<Integer> lengths) : Disjunctive(move(starts), as_constant_var_ids(lengths))
 {
+}
+
+auto Disjunctive::with_strict(std::optional<bool> strict) -> Disjunctive &
+{
+    _strict = strict.value_or(true);
+    return *this;
 }
 
 auto Disjunctive::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Disjunctive>(_starts, _lengths, _strict);
+    auto cloned = make_unique<Disjunctive>(_starts, _lengths);
+    cloned->with_strict(_strict);
+    return cloned;
 }
 
 auto Disjunctive::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

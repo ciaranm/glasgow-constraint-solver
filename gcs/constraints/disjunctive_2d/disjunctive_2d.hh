@@ -52,7 +52,7 @@ namespace gcs
         std::vector<IntegerVariableID> _ys;
         std::vector<IntegerVariableID> _widths;
         std::vector<IntegerVariableID> _heights;
-        bool _strict;
+        bool _strict = true;
         std::vector<std::size_t> _active_rects;
 
         // Size snapshots resolved in prepare(). _*_vals holds the constant
@@ -111,14 +111,19 @@ namespace gcs
          * (constants pass through as ConstantIntegerVariableID).
          */
         explicit Disjunctive2D(std::vector<IntegerVariableID> xs, std::vector<IntegerVariableID> ys, std::vector<IntegerVariableID> widths,
-            std::vector<IntegerVariableID> heights, bool strict = true);
+            std::vector<IntegerVariableID> heights);
 
         /**
          * \brief Convenience form for constant rectangle sizes. Delegates to
          * the general constructor.
          */
-        explicit Disjunctive2D(std::vector<IntegerVariableID> xs, std::vector<IntegerVariableID> ys, std::vector<Integer> widths,
-            std::vector<Integer> heights, bool strict = true);
+        explicit Disjunctive2D(
+            std::vector<IntegerVariableID> xs, std::vector<IntegerVariableID> ys, std::vector<Integer> widths, std::vector<Integer> heights);
+
+        /// Whether the rectangles are strictly disjunctive (zero-area rectangles
+        /// also may not overlap); default true. Takes std::optional<bool> so a
+        /// runtime flag can be passed straight through.
+        auto with_strict(std::optional<bool> strict = true) -> Disjunctive2D &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

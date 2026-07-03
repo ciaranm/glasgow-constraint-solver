@@ -71,7 +71,7 @@ namespace
 }
 
 Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariableID> ys, vector<IntegerVariableID> widths,
-    vector<IntegerVariableID> heights, bool strict) : _xs(move(xs)), _ys(move(ys)), _widths(move(widths)), _heights(move(heights)), _strict(strict)
+    vector<IntegerVariableID> heights) : _xs(move(xs)), _ys(move(ys)), _widths(move(widths)), _heights(move(heights))
 {
     if (_xs.size() != _ys.size() || _xs.size() != _widths.size() || _xs.size() != _heights.size())
         throw InvalidProblemDefinitionException{"Disjunctive2D: xs, ys, widths, heights must have the same size"};
@@ -85,14 +85,22 @@ Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariabl
             throw InvalidProblemDefinitionException{"Disjunctive2D: heights must be non-negative"};
 }
 
-Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariableID> ys, vector<Integer> widths, vector<Integer> heights,
-    bool strict) : Disjunctive2D(move(xs), move(ys), as_constant_var_ids(widths), as_constant_var_ids(heights), strict)
+Disjunctive2D::Disjunctive2D(vector<IntegerVariableID> xs, vector<IntegerVariableID> ys, vector<Integer> widths, vector<Integer> heights) :
+    Disjunctive2D(move(xs), move(ys), as_constant_var_ids(widths), as_constant_var_ids(heights))
 {
+}
+
+auto Disjunctive2D::with_strict(std::optional<bool> strict) -> Disjunctive2D &
+{
+    _strict = strict.value_or(true);
+    return *this;
 }
 
 auto Disjunctive2D::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Disjunctive2D>(_xs, _ys, _widths, _heights, _strict);
+    auto cloned = make_unique<Disjunctive2D>(_xs, _ys, _widths, _heights);
+    cloned->with_strict(_strict);
+    return cloned;
 }
 
 auto Disjunctive2D::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

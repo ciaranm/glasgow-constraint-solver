@@ -94,7 +94,7 @@ namespace
         for (auto l : lengths)
             lengths_i.push_back(Integer{l});
 
-        p.post(Disjunctive{starts, lengths_i, strict});
+        p.post(Disjunctive{starts, lengths_i}.with_strict(strict));
 
         auto proof_name = proofs ? make_optional("disjunctive_test_" + mode + "_dup") : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{unique_starts});
@@ -138,7 +138,7 @@ namespace
         for (auto l : lengths)
             lengths_i.push_back(Integer{l});
 
-        p.post(Disjunctive{starts, lengths_i, strict});
+        p.post(Disjunctive{starts, lengths_i}.with_strict(strict));
 
         auto proof_name = proofs ? make_optional("disjunctive_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{starts});
@@ -206,7 +206,7 @@ namespace
                 lengths_v.push_back(constant_variable(Integer{length_specs[i].first}));
         }
 
-        p.post(Disjunctive{starts, lengths_v, strict});
+        p.post(Disjunctive{starts, lengths_v}.with_strict(strict));
 
         auto proof_name = proofs ? make_optional("disjunctive_test_" + mode + "_var") : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{all_vars});
@@ -271,7 +271,7 @@ namespace
                 lengths_v.push_back(constant_variable(Integer{length_specs[i].first}));
         }
 
-        p.post(Disjunctive{starts, lengths_v, strict});
+        p.post(Disjunctive{starts, lengths_v}.with_strict(strict));
 
         auto proof_name = proofs ? make_optional("disjunctive_test_" + mode + "_cstart") : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{all_vars});

@@ -628,10 +628,12 @@ TEST_CASE("read_scp: regular, disjunctive, disjunctive2d and cumulative survive 
     auto y1 = original.create_integer_variable(0_i, 3_i, "Y1");
     original.post(Regular{std::vector<IntegerVariableID>{x0, x1}, 2,
         std::vector<std::unordered_map<Integer, long>>{{{0_i, 0}, {1_i, 1}}, {{0_i, 1}, {1_i, 0}}}, std::vector<long>{0}});
-    original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}});        // strict -> disjunctive_strict
-    original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}, false}); // non-strict -> disjunctive
+    original.post(Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}}); // strict -> disjunctive_strict
+    original.post(
+        Disjunctive{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}}.with_strict(false)); // non-strict -> disjunctive
     original.post(Disjunctive2D{std::vector<IntegerVariableID>{s0, s1}, std::vector<IntegerVariableID>{y0, y1}, std::vector<Integer>{2_i, 2_i},
-        std::vector<Integer>{2_i, 2_i}, false});
+        std::vector<Integer>{2_i, 2_i}}
+            .with_strict(false));
     original.post(Cumulative{std::vector<IntegerVariableID>{s0, s1}, std::vector<Integer>{2_i, 2_i}, std::vector<Integer>{1_i, 1_i}, 2_i});
     auto scp_a = prove_to_scp(original, "scp_reader_regdisj_a");
 

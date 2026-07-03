@@ -856,7 +856,8 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 throw ScpReadError{"disjunctive is (label " + op + " (starts...) (lengths...))"};
             post_constraint(problem,
                 Disjunctive{resolve_variable_list(variables, terms[2], "the disjunctive start list"),
-                    resolve_variable_list(variables, terms[3], "the disjunctive length list"), op.ends_with("_strict")},
+                    resolve_variable_list(variables, terms[3], "the disjunctive length list")}
+                    .with_strict(op.ends_with("_strict")),
                 label);
         }
         else if (op == "disjunctive2d" || op == "disjunctive2d_strict") {
@@ -870,7 +871,8 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 Disjunctive2D{resolve_variable_list(variables, terms[2], "the disjunctive2d x list"),
                     resolve_variable_list(variables, terms[3], "the disjunctive2d y list"),
                     resolve_variable_list(variables, terms[4], "the disjunctive2d width list"),
-                    resolve_variable_list(variables, terms[5], "the disjunctive2d height list"), op.ends_with("_strict")},
+                    resolve_variable_list(variables, terms[5], "the disjunctive2d height list")}
+                    .with_strict(op.ends_with("_strict")),
                 label);
         }
         else if (op == "cumulative") {
