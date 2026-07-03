@@ -248,6 +248,9 @@ install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/GlasgowConstraintSolverConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GlasgowConstraintSolver)
 
+# TEMPORARY: C++23 library-feature probe, to be removed once CI confirms support.
+add_executable(cxx23_feature_probe cxx23_feature_probe.cc)
+
 if(GCS_ENABLE_EXAMPLES)
     add_subdirectory(examples)
     add_subdirectory(verified_encodings)
