@@ -112,14 +112,21 @@ namespace
     }
 }
 
-Minus::Minus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result, MinusConsistency level) :
-    _a(a), _b(b), _result(result), _level(level)
+Minus::Minus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) : _a(a), _b(b), _result(result)
 {
+}
+
+auto Minus::with_consistency(MinusConsistency level) -> Minus &
+{
+    _level = level;
+    return *this;
 }
 
 auto Minus::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Minus>(_a, _b, _result, _level);
+    auto cloned = make_unique<Minus>(_a, _b, _result);
+    cloned->with_consistency(_level);
+    return cloned;
 }
 
 auto Minus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

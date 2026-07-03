@@ -165,7 +165,8 @@ auto main(int argc, char * argv[]) -> int
         // Area = clue, as a (deliberately weak) bounds-consistent product:
         // pinned to BC so that --autotable stays meaningful, since the Auto
         // default would tabulate to GAC at these domain sizes.
-        p.post(Multiply{w, h, area, consistency::BC{}});
+        p.post(Multiply{w, h, area} //
+                .with_consistency(consistency::BC{}));
         // The rectangle covers the clue cell: x + w >= c + 1, y + h >= r + 1.
         p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * x + 1_i * w, Integer{c + 1}});
         p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * y + 1_i * h, Integer{r + 1}});

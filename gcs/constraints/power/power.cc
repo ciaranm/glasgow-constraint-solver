@@ -58,14 +58,21 @@ namespace
     }
 }
 
-Power::Power(IntegerVariableID base, IntegerVariableID exponent, IntegerVariableID result, PowerConsistency level) :
-    _base(base), _exponent(exponent), _result(result), _level(level)
+Power::Power(IntegerVariableID base, IntegerVariableID exponent, IntegerVariableID result) : _base(base), _exponent(exponent), _result(result)
 {
+}
+
+auto Power::with_consistency(PowerConsistency level) -> Power &
+{
+    _level = level;
+    return *this;
 }
 
 auto Power::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Power>(_base, _exponent, _result, _level);
+    auto cloned = make_unique<Power>(_base, _exponent, _result);
+    cloned->with_consistency(_level);
+    return cloned;
 }
 
 auto Power::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

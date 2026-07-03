@@ -36,14 +36,18 @@ namespace gcs
     {
     private:
         IntegerVariableID _a, _b, _result;
-        PlusConsistency _level;
+        PlusConsistency _level = consistency::Auto{};
         std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _sum_line;
 
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
-        explicit Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result, PlusConsistency level = consistency::Auto{});
+        explicit Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result);
+
+        /// Select the consistency level; consistency::Auto (the default) tabulates when the
+        /// domains are small. Requesting an unsupported level is a compile-time error.
+        auto with_consistency(PlusConsistency level) -> Plus &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

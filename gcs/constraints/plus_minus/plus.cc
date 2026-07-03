@@ -99,13 +99,21 @@ namespace
     }
 }
 
-Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result, PlusConsistency level) : _a(a), _b(b), _result(result), _level(level)
+Plus::Plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result) : _a(a), _b(b), _result(result)
 {
+}
+
+auto Plus::with_consistency(PlusConsistency level) -> Plus &
+{
+    _level = level;
+    return *this;
 }
 
 auto Plus::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Plus>(_a, _b, _result, _level);
+    auto cloned = make_unique<Plus>(_a, _b, _result);
+    cloned->with_consistency(_level);
+    return cloned;
 }
 
 auto Plus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

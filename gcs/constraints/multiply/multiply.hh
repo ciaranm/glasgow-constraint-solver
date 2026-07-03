@@ -53,10 +53,14 @@ namespace gcs
     {
     private:
         IntegerVariableID _v1, _v2, _result;
-        MultiplyConsistency _level;
+        MultiplyConsistency _level = consistency::Auto{};
 
     public:
-        explicit Multiply(IntegerVariableID v1, IntegerVariableID v2, IntegerVariableID result, MultiplyConsistency level = consistency::Auto{});
+        explicit Multiply(IntegerVariableID v1, IntegerVariableID v2, IntegerVariableID result);
+
+        /// Select the consistency level; consistency::Auto (the default) tabulates when the
+        /// domains are small. Requesting an unsupported level is a compile-time error.
+        auto with_consistency(MultiplyConsistency level) -> Multiply &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

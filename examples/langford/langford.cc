@@ -91,7 +91,8 @@ auto main(int argc, char * argv[]) -> int
         // position[i + k] = position[i] + i + 2, tabulated for GAC (this was
         // written for the old PlusGAC, and Auto would fall back to bounds
         // consistency once the positions range over more than ten values)
-        p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i], consistency::Tabulated{}});
+        p.post(Plus{position[i + k], constant_variable(Integer{i + 2}), position[i]} //
+                .with_consistency(consistency::Tabulated{}));
     }
 
     auto stats = solve(

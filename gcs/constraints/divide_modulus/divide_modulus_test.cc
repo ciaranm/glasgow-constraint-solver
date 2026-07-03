@@ -69,9 +69,9 @@ namespace
         -> void
     {
         if (is_div)
-            p.post(Divide{x, y, out, level});
+            p.post(Divide{x, y, out}.with_consistency(level));
         else
-            p.post(Modulus{x, y, out, level});
+            p.post(Modulus{x, y, out}.with_consistency(level));
     }
 }
 
