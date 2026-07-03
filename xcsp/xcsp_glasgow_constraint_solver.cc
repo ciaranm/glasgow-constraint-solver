@@ -650,7 +650,7 @@ namespace
             counts.reserve(occurs.size());
             for (auto o : occurs)
                 counts.emplace_back(constant_variable(Integer{o}));
-            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts), closed});
+            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts)}.with_closed(closed));
         }
 
         auto buildConstraintCardinality(string, vector<XVariable *> & x_vars, vector<int> values, vector<XVariable *> & occurs, bool closed)
@@ -659,7 +659,7 @@ namespace
             if (values.size() != occurs.size())
                 report_unsupported("cardinality", "values/occurs size mismatch");
             auto vars = need_variables(x_vars);
-            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), need_variables(occurs), closed});
+            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), need_variables(occurs)}.with_closed(closed));
         }
 
         auto buildConstraintCardinality(string, vector<XVariable *> & x_vars, vector<int> values, vector<XInterval> & occurs, bool closed)
@@ -673,7 +673,7 @@ namespace
             for (size_t i = 0; i != occurs.size(); ++i)
                 counts.emplace_back(
                     _problem.create_integer_variable(Integer{occurs[i].min}, Integer{occurs[i].max}, "gccoccurs" + std::to_string(i)));
-            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts), closed});
+            _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts)}.with_closed(closed));
         }
 
         auto buildConstraintIntension(string, Tree * tree) -> void override

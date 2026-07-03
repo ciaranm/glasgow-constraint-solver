@@ -684,7 +684,7 @@ auto main(int argc, char * argv[]) -> int
                 auto cover = arg_as_array_of_integer(data, args, 1);
                 const auto & counts = arg_as_array_of_var(data, args, 2);
                 auto closed = (id == "glasgow_global_cardinality_closed");
-                problem.post(GlobalCardinality{vars, *cover, counts, closed});
+                problem.post(GlobalCardinality{vars, *cover, counts}.with_closed(closed));
             }
             else if (id == "glasgow_increasing_int" || id == "glasgow_increasing_bool") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);

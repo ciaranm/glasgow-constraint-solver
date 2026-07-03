@@ -699,10 +699,8 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 values.push_back(as_integer(v));
             auto counts = resolve_variable_list(variables, terms[4], "the global cardinality count list");
             bool closed = op.ends_with("closed");
-            if (op.starts_with("gac"))
-                post_constraint(problem, GACGlobalCardinality{move(vars), move(values), move(counts), closed}, label);
-            else
-                post_constraint(problem, BoundsGlobalCardinality{move(vars), move(values), move(counts), closed}, label);
+            auto level = op.starts_with("gac") ? GlobalCardinalityConsistency{consistency::GAC{}} : GlobalCardinalityConsistency{consistency::BC{}};
+            post_constraint(problem, GlobalCardinality{move(vars), move(values), move(counts)}.with_consistency(level).with_closed(closed), label);
         }
         else if (op == "increasing" || op == "strictly_increasing" || op == "decreasing" || op == "strictly_decreasing") {
             // The keyword carries the strict / descending flags that IncreasingChain

@@ -138,48 +138,6 @@ namespace
     };
 }
 
-GACGlobalCardinality::GACGlobalCardinality(vector<IntegerVariableID> vars, vector<Integer> values, vector<IntegerVariableID> counts, bool closed) :
-    _vars(move(vars)), _values(move(values)), _counts(move(counts)), _closed(closed)
-{
-}
-
-auto GACGlobalCardinality::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<GACGlobalCardinality>(_vars, _values, _counts, _closed);
-}
-
-auto GACGlobalCardinality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model);
-
-    install_propagators(propagators);
-
-    if (_closed)
-        for (const auto & var : _vars)
-            In{var, _values}.install(propagators, initial_state, optional_model);
-}
-
-auto GACGlobalCardinality::prepare(Propagators &, State &, ProofModel * const) -> bool
-{
-    return true;
-}
-
-auto GACGlobalCardinality::define_proof_model(ProofModel & model) -> void
-{
-    for (const auto & [j, value] : enumerate(_values)) {
-        WPBSum sum;
-        for (const auto & var : _vars)
-            sum += 1_i * (var == value);
-        // cake_pb_cp labels the per-value count equality @c[<id>_<j>][le/ge].
-        _count_lines.push_back(model.add_labelled_constraint(
-            as_string(constraint_id()) + "_" + std::to_string(j), "le", "ge", "GCC", "count for value", sum == 1_i * _counts[j]));
-    }
-}
-
 auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariableID> & vars, const ConstraintID & owner,
     const vector<Integer> & values, const vector<IntegerVariableID> & counts, bool closed,
     const vector<pair<optional<ProofLine>, optional<ProofLine>>> & count_lines, const vector<IntegerVariableID> & all_vars, const State & state,
@@ -641,35 +599,3 @@ template auto gcs::innards::propagate_gac_global_cardinality(const std::vector<I
     const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts, bool closed,
     const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines, const std::vector<IntegerVariableID> & all_vars,
     const State & state, EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
-
-auto GACGlobalCardinality::install_propagators(Propagators & propagators) -> void
-{
-    Triggers triggers;
-    triggers.on_change.insert(triggers.on_change.end(), _vars.begin(), _vars.end());
-    triggers.on_bounds.insert(triggers.on_bounds.end(), _counts.begin(), _counts.end());
-
-    vector<IntegerVariableID> all_vars = _vars;
-    all_vars.insert(all_vars.end(), _counts.begin(), _counts.end());
-
-    propagators.install(
-        constraint_id(),
-        [vars = _vars, owner = constraint_id(), values = _values, counts = _counts, closed = _closed, count_lines = _count_lines,
-            all_vars = move(all_vars)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            return propagate_gac_global_cardinality(vars, owner, values, counts, closed, count_lines, all_vars, state, inference, logger);
-        },
-        triggers);
-}
-
-auto GACGlobalCardinality::s_expr(const ProofModel * const model) const -> SExpr
-{
-    auto & tracker = model->names_and_ids_tracker();
-    vector<SExpr> vars, values, counts;
-    for (const auto & var : _vars)
-        vars.push_back(tracker.s_expr_term_of(var));
-    for (const auto & val : _values)
-        values.push_back(SExpr::atom(val.to_string()));
-    for (const auto & c : _counts)
-        counts.push_back(tracker.s_expr_term_of(c));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(_closed ? "gacglobalcardinalityclosed" : "gacglobalcardinality"),
-        SExpr::list(std::move(vars)), SExpr::list(std::move(values)), SExpr::list(std::move(counts))});
-}
