@@ -5,6 +5,8 @@
 #include <gcs/extensional.hh>
 #include <gcs/variable_id.hh>
 
+#include <optional>
+
 namespace gcs
 {
     namespace innards
@@ -64,10 +66,16 @@ namespace gcs
     private:
         const std::vector<IntegerVariableID> _vars;
         SmartTuples _tuples;
-        bool _short_reasons;
+        bool _short_reasons = true;
 
     public:
-        explicit SmartTable(std::vector<IntegerVariableID> vars, SmartTuples tuples, bool short_reasons = true);
+        explicit SmartTable(std::vector<IntegerVariableID> vars, SmartTuples tuples);
+
+        /// Whether to use short reasons in the proof log (default true). Takes a
+        /// std::optional<bool> so a runtime flag (e.g. command_line.has("...")) can
+        /// be passed directly; std::nullopt or no argument leaves it at true.
+        auto with_short_reasons(std::optional<bool> short_reasons = true) -> SmartTable &;
+
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
 
