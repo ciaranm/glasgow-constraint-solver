@@ -20,6 +20,14 @@ namespace gcs
      * error: the setter's signature is the documentation. These tags select
      * propagation strength only; they never change the constraint's meaning,
      * and they never change how the constraint is encoded for proof logging.
+     *
+     * A few constraints choose between genuine *algorithms* that are not
+     * ordered by strength (so a consistency level would be the wrong
+     * vocabulary). They follow the same shape with their own tag family and a
+     * sibling setter — for example `Circuit` selects `circuit::SCC` (the
+     * default) or `circuit::Prevent` via `with_algorithm()`. As with the
+     * consistency tags, the choice is propagation-only and never changes the
+     * encoding.
      */
 
     namespace consistency
@@ -93,9 +101,9 @@ namespace gcs
          * enforced, but no stronger reasoning is carried out.
          *
          * This is the weakest level, and usually the cheapest per search node.
-         * No constraint accepts it yet: it is here for when the AllDifferent
-         * family (whose fastest propagator is exactly this) migrates onto
-         * consistency tags in issue #299.
+         * AllDifferent takes it (`AllDifferent{vars}.with_consistency(consistency::VC{})`)
+         * to select its value-consistent propagator, which only removes a fixed
+         * variable's value from the other variables' domains.
          *
          * \ingroup Consistency
          */
