@@ -69,7 +69,9 @@ auto run_element_test(bool proofs, const string & mode, const ViewWrapConfig & v
     vector<IntegerVariableID> array;
     for (const auto & r : array_range)
         array.push_back(create_integer_variable_or_constant_with_view(p, r, wraps.at(array.size() + 2)));
-    p.post(Element{var, idx, &array});
+    // GAC is Element's default; setting it explicitly drives the with_consistency
+    // setter end-to-end while keeping the checking_gac assertion valid.
+    p.post(Element{var, idx, &array}.with_consistency(consistency::GAC{}));
 
     auto proof_name = proofs ? make_optional("element_test_" + mode + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{var, idx, array});
