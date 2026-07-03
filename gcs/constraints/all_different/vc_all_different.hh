@@ -34,31 +34,5 @@ namespace gcs
             const std::vector<Reason> * single_value_reasons = nullptr, unsigned long long reason_base = 0) -> bool;
     }
 
-    /**
-     * \brief "Value-consistent" all different constraint, each var takes a different value, but
-     * only do minimum pruning to enforce this (only remove the value of fixed variables from the domains of the others).
-     *
-     * \ingroup Constraints
-     * \sa NValue
-     */
-    class VCAllDifferent : public Constraint
-    {
-    private:
-        const std::vector<IntegerVariableID> _vars;
-        std::vector<IntegerVariableID> _sanitised_vars;
-        innards::ConstraintStateHandle _unassigned_handle;
-        bool _has_duplicate_vars = false;
-
-        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
-        virtual auto define_proof_model(innards::ProofModel &) -> void override;
-        virtual auto install_propagators(innards::Propagators &) -> void override;
-
-    public:
-        explicit VCAllDifferent(std::vector<IntegerVariableID> vars);
-
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
-        virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
-    };
 }
 #endif // GLASGOW_CONSTRAINT_SOLVER_VC_ALL_DIFFERENT_HH

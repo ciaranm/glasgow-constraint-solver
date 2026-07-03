@@ -161,7 +161,7 @@ auto CircuitBase::set_up(Propagators & propagators, State & initial_state, Proof
 
     // Define all different, either gac or non-gac
     if (_gac_all_different) {
-        GACAllDifferent all_diff{_succ};
+        AllDifferent all_diff{_succ};
         std::move(all_diff).install(propagators, initial_state, model);
     }
     else {

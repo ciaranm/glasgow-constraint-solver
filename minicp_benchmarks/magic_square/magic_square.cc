@@ -92,7 +92,8 @@ auto main(int argc, char * argv[]) -> int
         p.post(AllDifferent{grid_flat});
     }
     else if (all_different_mode == "vc") {
-        p.post(VCAllDifferent{grid_flat});
+        p.post(AllDifferent{grid_flat} //
+                .with_consistency(consistency::VC{}));
     }
     else {
         for (unsigned x = 0; x < grid_flat.size(); ++x)
