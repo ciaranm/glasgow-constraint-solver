@@ -374,16 +374,16 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
             // initialiser) as end_*_ge / end_*_le accessors. function-typed so the
             // free/forced-axis dispatch below can select one by axis.
             function<optional<ProofLine>(size_t)> end_x_ge = [&](size_t i) -> optional<ProofLine> {
-                return (*end_x_lines)[i] ? optional<ProofLine>{(*end_x_lines)[i]->first} : nullopt;
+                return (*end_x_lines)[i].transform([](const auto & p) { return p.first; });
             };
             function<optional<ProofLine>(size_t)> end_x_le = [&](size_t i) -> optional<ProofLine> {
-                return (*end_x_lines)[i] ? optional<ProofLine>{(*end_x_lines)[i]->second} : nullopt;
+                return (*end_x_lines)[i].transform([](const auto & p) { return p.second; });
             };
             function<optional<ProofLine>(size_t)> end_y_ge = [&](size_t i) -> optional<ProofLine> {
-                return (*end_y_lines)[i] ? optional<ProofLine>{(*end_y_lines)[i]->first} : nullopt;
+                return (*end_y_lines)[i].transform([](const auto & p) { return p.first; });
             };
             function<optional<ProofLine>(size_t)> end_y_le = [&](size_t i) -> optional<ProofLine> {
-                return (*end_y_lines)[i] ? optional<ProofLine>{(*end_y_lines)[i]->second} : nullopt;
+                return (*end_y_lines)[i].transform([](const auto & p) { return p.second; });
             };
             // Pairwise 2D time-table. The mandatory box of rectangle i is
             //   [ub(x_i), lb(x_i)+lb(w_i)) x [ub(y_i), lb(y_i)+lb(h_i))

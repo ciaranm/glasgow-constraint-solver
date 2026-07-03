@@ -98,8 +98,7 @@ auto gcs::innards::is_literally_true_or_false(const Literal & lit) -> optional<b
 
 auto gcs::innards::is_literally_true(const Literal & lit) -> bool
 {
-    auto result = is_literally_true_or_false(lit);
-    return result && *result;
+    return is_literally_true_or_false(lit).value_or(false);
 }
 
 auto gcs::innards::is_literally_false(const Literal & lit) -> bool
