@@ -86,7 +86,16 @@ Known unavailable in libc++ (clang 21):
 
 Known unavailable in libstdc++ on the GitHub Actions Ubuntu 24.04 runner (GCC 13), which
 we still support:
-- `std::vector::append_range` — use `vec.insert(vec.end(), src.begin(), src.end())` instead
+- `std::vector::append_range` (and the other P1206 `*_range` container members) —
+  `__cpp_lib_containers_ranges` is undefined there. Use
+  `vec.insert(vec.end(), src.begin(), src.end())` instead. Reconfirmed unavailable on the
+  Ubuntu 24.04 lane via CI on 2026-07-03; libc++ (macOS) and GCC 15 both have it.
+
+Confirmed available on **all** supported toolchains (including GCC 13 and macOS libc++),
+verified via CI on 2026-07-03 — prefer them where they read more clearly than a hand-rolled
+`if`/ternary:
+- `std::optional` monadic operations: `.transform()`, `.and_then()`, `.or_else()`, and
+  `.value_or()`.
 
 When adding a new C++23 feature, build with both compilers before committing.
 

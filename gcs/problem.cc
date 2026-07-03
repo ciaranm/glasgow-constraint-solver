@@ -23,7 +23,6 @@ using namespace gcs::innards;
 
 using std::deque;
 using std::generator;
-using std::make_optional;
 using std::make_unique;
 using std::move;
 using std::nullopt;
@@ -134,7 +133,7 @@ auto Problem::create_integer_variable_vector(size_t how_many, Integer lower, Int
     vector<IntegerVariableID> result;
     result.reserve(how_many);
     for (size_t n = 0; n < how_many; ++n)
-        result.push_back(create_integer_variable(lower, upper, name ? make_optional(*name + "[" + to_string(n) + "]") : nullopt));
+        result.push_back(create_integer_variable(lower, upper, name.transform([&](const string & s) { return s + "[" + to_string(n) + "]"; })));
     return result;
 }
 

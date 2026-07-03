@@ -72,9 +72,7 @@ namespace
                     for (const auto & v : problem.all_normal_variables())
                         vars_and_values.emplace_back(v, state(v));
                     logger->solution(vars_and_values,
-                        problem.optional_minimise_variable()
-                            ? make_optional(pair{*problem.optional_minimise_variable(), state(*problem.optional_minimise_variable())})
-                            : nullopt);
+                        problem.optional_minimise_variable().transform([&](const IntegerVariableID & var) { return pair{var, state(var)}; }));
                 }
 
                 if (problem.optional_minimise_variable())

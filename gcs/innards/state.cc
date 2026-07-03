@@ -471,9 +471,7 @@ auto State::optional_single_value(const VarType_ & var) const -> optional<Intege
         },
         [&](const ConstantIntegerVariableID & v) -> optional<Integer> { return make_optional(v.const_value); });
 
-    if (raw)
-        return apply_view(*raw, negate_first, then_add);
-    return nullopt;
+    return raw.transform([negate_first = negate_first, then_add = then_add](Integer v) { return apply_view(v, negate_first, then_add); });
 }
 
 auto State::has_single_value(const IntegerVariableID var) const -> bool
