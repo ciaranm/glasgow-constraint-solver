@@ -726,7 +726,7 @@ correctness work wants the full enumeration check.
     - **Throw `InvalidProblemDefinitionException`** at construction
       when alias has no meaningful semantics, the propagator path is
       unsafe, or the proof encoding can't tolerate it. The Bucket A
-      family — `NotEquals`, `LessThan`, `GreaterThan`, `Circuit*`,
+      family — `NotEquals`, `LessThan`, `GreaterThan`, `Circuit`,
       `Inverse`, `innards::MultiplyBC` (via `Multiply`), `SmartTable` `BinaryEntry` — uses this.
       By convention the check is gated on
       `! is_constant_variable(...)` so two slots pinned to the same

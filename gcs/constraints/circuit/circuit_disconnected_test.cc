@@ -46,7 +46,7 @@ auto main(int argc, char * argv[]) -> int
     p.post(In{x[6], {5_i, 7_i}});
     p.post(In{x[7], {4_i, 6_i}});
 
-    p.post(CircuitSCC{x});
+    p.post(Circuit{x}.with_algorithm(circuit::SCC{}));
 
     bool proofs = can_run_veripb();
     auto proof_name = proofs ? make_optional("circuit_disconnected_test_" + view_wrap_config_label(view_cfg)) : nullopt;

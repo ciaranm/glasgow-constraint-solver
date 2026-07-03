@@ -90,12 +90,10 @@ auto main(int argc, char * argv[]) -> int
     auto dist = p.create_integer_variable_vector(n, 0_i, 745_i);
 
     if (options_vars["propagator"].as<string>() == "prevent") {
-        p.post(CircuitPrevent{succ, false});
+        p.post(Circuit{succ}.with_algorithm(circuit::Prevent{}));
     }
     else {
-        SCCOptions options{};
-        options.enable_comments = false;
-        p.post(CircuitSCC{succ, false, options});
+        p.post(Circuit{succ}.with_algorithm(circuit::SCC{}).with_enable_comments(false));
     }
 
     for (unsigned i = 0; i < n; ++i)

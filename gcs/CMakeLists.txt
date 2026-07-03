@@ -23,6 +23,7 @@ add_library(glasgow_constraint_solver
         constraints/all_equal/all_equal.cc
         constraints/among/among.cc
         constraints/at_most_one/at_most_one.cc
+        constraints/circuit/circuit.cc
         constraints/circuit/circuit_base.cc
         constraints/circuit/circuit_prevent.cc
         constraints/circuit/circuit_scc.cc
