@@ -58,26 +58,6 @@ namespace gcs::innards::circuit
 
     auto prevent_small_cycles(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
         const ConstraintStateHandle & unassigned_handle, const State & state, auto & inference_tracker, ProofLogger * const logger) -> void;
-
-    /**
-     * \brief Circuit constraint: requires the variables, representing graph nodes, take values
-     * such that each variable's value represents the index of the next node in a tour that visits
-     * all variables.
-     *
-     * \ingroup Constraints
-     */
-    class CircuitBase : public Constraint
-    {
-    protected:
-        const bool _gac_all_different;
-        const std::vector<IntegerVariableID> _succ;
-        virtual auto set_up(innards::Propagators &, innards::State &, ProofModel * const) -> innards::circuit::PosVarDataMap;
-
-    public:
-        explicit CircuitBase(std::vector<IntegerVariableID> var, bool gac_all_different = false);
-        [[nodiscard]] auto clone() const -> std::unique_ptr<Constraint> override = 0;
-        [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
-    };
 }
 
 #endif // GLASGOW_CONSTRAINT_SOLVER_CIRCUIT_BASE_HH

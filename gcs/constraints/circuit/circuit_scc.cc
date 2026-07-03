@@ -41,7 +41,6 @@ using std::pair;
 using std::set;
 using std::string;
 using std::stringstream;
-using std::unique_ptr;
 using std::vector;
 
 using namespace gcs;
@@ -1097,35 +1096,24 @@ template auto gcs::innards::circuit::propagate_circuit_using_scc(const State & s
     const SCCOptions & scc_options, const ConstraintStateHandle & pos_var_data_handle, const ConstraintStateHandle & proof_flag_data_handle,
     const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void;
 
-CircuitSCC::CircuitSCC(std::vector<IntegerVariableID> var, bool gacAllDifferent, const SCCOptions s) :
-    CircuitBase(std::move(var), gacAllDifferent), scc_options(s)
+auto gcs::innards::circuit::install_circuit_scc(Propagators & propagators, State & initial_state, const ConstraintID & owner,
+    const vector<IntegerVariableID> & succ, const SCCOptions & scc_options, PosVarDataMap pos_var_data) -> void
 {
-}
-
-auto CircuitSCC::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<CircuitSCC>(_succ, _gac_all_different, scc_options);
-}
-
-auto CircuitSCC::install(Propagators & propagators, State & initial_state, ProofModel * const model) && -> void
-{
-    auto pos_var_data = CircuitBase::set_up(propagators, initial_state, model);
-
     // Keep track of unassigned vars
     NonGacAllDifferentUnassigned unassigned{};
-    for (auto v : _succ) {
+    for (auto v : succ) {
         unassigned.emplace_back(v);
     }
-    auto pos_var_data_handle = initial_state.add_persistent_constraint_state(pos_var_data);
+    auto pos_var_data_handle = initial_state.add_persistent_constraint_state(std::move(pos_var_data));
     auto unassigned_handle = initial_state.add_constraint_state(unassigned);
     auto proof_flag_data_handle = initial_state.add_persistent_constraint_state(map<long, ShiftedPosDataMaps>{});
     auto pos_alldiff_data_handle = initial_state.add_persistent_constraint_state(PosAllDiffData{});
 
     Triggers triggers;
-    triggers.on_change = {_succ.begin(), _succ.end()};
+    triggers.on_change = {succ.begin(), succ.end()};
     propagators.install(
-        constraint_id(),
-        [succ = _succ, owner = constraint_id(), pos_var_data_handle = pos_var_data_handle, proof_flag_data_handle = proof_flag_data_handle,
+        owner,
+        [succ, owner, pos_var_data_handle = pos_var_data_handle, proof_flag_data_handle = proof_flag_data_handle,
             pos_alldiff_data_handle = pos_alldiff_data_handle, unassigned_handle = unassigned_handle,
             options = scc_options](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             ReasonLiterals reason = eager_reason(generic_reason(succ), state);

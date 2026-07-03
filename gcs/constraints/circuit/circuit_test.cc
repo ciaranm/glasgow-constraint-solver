@@ -83,9 +83,9 @@ auto run_circuit_test(bool proofs, const ViewWrapConfig & view_cfg, int n, Circu
     for (int i = 0; i < n; ++i)
         succ.push_back(create_integer_variable_or_constant_with_view(p, pair{0, n - 1}, wraps.at(static_cast<std::size_t>(i))));
     if (propagator == CircuitPropagator::prevent)
-        p.post(CircuitPrevent{succ, false});
+        p.post(Circuit{succ}.with_algorithm(circuit::Prevent{}));
     else
-        p.post(Circuit{succ});
+        p.post(Circuit{succ}.with_algorithm(circuit::SCC{}));
 
     auto proof_name = proofs ? make_optional("circuit_test_" + std::string{prop_label} + "_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{succ});

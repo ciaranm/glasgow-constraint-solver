@@ -62,12 +62,7 @@ auto main(int argc, char * argv[]) -> int
 
     post_constraints(p, nodes);
 
-    SCCOptions scc_options;
-    scc_options.fix_req = true;
-    scc_options.prune_root = false;
-    scc_options.prune_within = false;
-    scc_options.prune_skip = false;
-    p.post(CircuitSCC{nodes, false, scc_options});
+    p.post(Circuit{nodes}.with_algorithm(circuit::SCC{}).with_fix_req(true).with_prune_root(false).with_prune_within(false).with_prune_skip(false));
 
     bool proofs = can_run_veripb();
     auto proof_name = proofs ? make_optional("circuit_no_backedges_test_" + view_wrap_config_label(view_cfg)) : nullopt;

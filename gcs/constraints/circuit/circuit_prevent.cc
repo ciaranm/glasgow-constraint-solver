@@ -7,7 +7,6 @@
 #include <gcs/innards/propagators.hh>
 
 #include <any>
-#include <map>
 #include <utility>
 #include <vector>
 
@@ -16,10 +15,7 @@ using namespace gcs::innards;
 using namespace gcs::innards::circuit;
 
 using std::any_cast;
-using std::map;
 using std::size_t;
-using std::stringstream;
-using std::unique_ptr;
 using std::vector;
 
 namespace
@@ -120,23 +116,19 @@ template auto gcs::innards::circuit::propagate_circuit_using_prevent(const std::
     const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const ConstraintStateHandle & chain_handle,
     const State & state, EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger) -> void;
 
-auto CircuitPrevent::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<CircuitPrevent>(_succ, _gac_all_different);
-}
-
-auto CircuitPrevent::install(innards::Propagators & propagators, innards::State & initial_state, innards::ProofModel * const model) && -> void
+auto gcs::innards::circuit::install_circuit_prevent(Propagators & propagators, State & initial_state, const ConstraintID & owner,
+    const vector<IntegerVariableID> & succ, PosVarDataMap pos_var_data) -> void
 {
     // Keep track of unassigned vars
     NonGacAllDifferentUnassigned unassigned{};
-    for (auto v : _succ) {
+    for (auto v : succ) {
         unassigned.emplace_back(v);
     }
     auto unassigned_handle = initial_state.add_constraint_state(unassigned);
 
     // Backtrackable chain endpoints for the incremental small-cycle prevention. Each
     // node starts as its own length-zero chain; edges fold in as successors are fixed.
-    auto num_nodes = _succ.size();
+    auto num_nodes = succ.size();
     PreventChainData chain;
     chain.orig.resize(num_nodes);
     chain.dest.resize(num_nodes);
@@ -149,13 +141,11 @@ auto CircuitPrevent::install(innards::Propagators & propagators, innards::State 
     }
     auto chain_handle = initial_state.add_constraint_state(std::move(chain));
 
-    auto pos_var_data = CircuitBase::set_up(propagators, initial_state, model);
-
     Triggers triggers;
-    triggers.on_instantiated = {_succ.begin(), _succ.end()};
+    triggers.on_instantiated = {succ.begin(), succ.end()};
     propagators.install(
-        constraint_id(),
-        [succ = _succ, owner = constraint_id(), pvd = pos_var_data, unassigned_handle = unassigned_handle, chain_handle = chain_handle](
+        owner,
+        [succ, owner, pvd = std::move(pos_var_data), unassigned_handle = unassigned_handle, chain_handle = chain_handle](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             propagate_circuit_using_prevent(succ, owner, pvd, unassigned_handle, chain_handle, state, inference, logger);
             return PropagatorState::Enable;

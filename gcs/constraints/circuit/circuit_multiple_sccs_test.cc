@@ -50,7 +50,7 @@ auto main(int argc, char * argv[]) -> int
 
     post_constraints(p, nodes);
 
-    p.post(CircuitSCC{nodes});
+    p.post(Circuit{nodes}.with_algorithm(circuit::SCC{}));
 
     bool proofs = can_run_veripb();
     auto proof_name = proofs ? make_optional("circuit_multiple_sccs_test_" + view_wrap_config_label(view_cfg)) : nullopt;

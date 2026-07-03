@@ -60,7 +60,16 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOpti
         }
     }
     auto use_gac_all_different = false;
-    p.post(Circuit{x, use_gac_all_different, options});
+    p.post(Circuit{x}
+            .with_gac_all_different(use_gac_all_different)
+            .with_prune_root(options.prune_root)
+            .with_prune_skip(options.prune_skip)
+            .with_fix_req(options.fix_req)
+            .with_prune_within(options.prune_within)
+            .with_prove_using_dominance(options.prove_using_dominance)
+            .with_enable_comments(options.enable_comments)
+            .with_prove_am1_by_contradiction(options.prove_am1_by_contradiction)
+            .with_short_reasons(options.short_reasons));
 
     // Minimise the distance between any two stops
     auto max_leg = p.create_integer_variable(0_i, 100_i, "max_leg");

@@ -105,15 +105,13 @@ auto main(int argc, char * argv[]) -> int
     }
 
     if (options_vars["propagator"].as<string>() == "prevent") {
-        p.post(CircuitPrevent{succ, false});
+        p.post(Circuit{succ}.with_algorithm(circuit::Prevent{}));
     }
     else if (options_vars["propagator"].as<string>() == "scc") {
-        SCCOptions options{};
-        options.enable_comments = false;
-        p.post(CircuitSCC{succ, false, options});
+        p.post(Circuit{succ}.with_algorithm(circuit::SCC{}).with_enable_comments(false));
     }
     else {
-        p.post(Circuit{succ, false});
+        p.post(Circuit{succ});
     }
 
     // Minimise the distance between any two stops

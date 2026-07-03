@@ -79,10 +79,10 @@ auto main(int argc, char * argv[]) -> int
     post_constraints(p, nodes);
 
     if (options_vars["propagator"].as<string>() == "prevent") {
-        p.post(CircuitPrevent{nodes});
+        p.post(Circuit{nodes}.with_algorithm(circuit::Prevent{}));
     }
     else if (options_vars["propagator"].as<string>() == "scc") {
-        p.post(CircuitSCC{nodes});
+        p.post(Circuit{nodes}.with_algorithm(circuit::SCC{}));
     }
     else {
         p.post(Circuit{nodes});
