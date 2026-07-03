@@ -445,13 +445,13 @@ namespace
             vector<Integer> lengths_i;
             for (auto l : lengths)
                 lengths_i.push_back(Integer{l});
-            _problem.post(Disjunctive{starts, lengths_i, ! zeroIgnored});
+            _problem.post(Disjunctive{starts, lengths_i}.with_strict(! zeroIgnored));
         }
 
         auto buildConstraintNoOverlap(string, vector<XVariable *> & origins, vector<XVariable *> & lengths, bool zeroIgnored) -> void override
         {
             // 1D noOverlap with variable lengths.
-            _problem.post(Disjunctive{need_variables(origins), need_variables(lengths), ! zeroIgnored});
+            _problem.post(Disjunctive{need_variables(origins), need_variables(lengths)}.with_strict(! zeroIgnored));
         }
 
         auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins, vector<vector<int>> & lengths, bool zeroIgnored) -> void override
@@ -469,7 +469,7 @@ namespace
                 widths.push_back(Integer{lengths[r][0]});
                 heights.push_back(Integer{lengths[r][1]});
             }
-            _problem.post(Disjunctive2D{xs, ys, widths, heights, ! zeroIgnored});
+            _problem.post(Disjunctive2D{xs, ys, widths, heights}.with_strict(! zeroIgnored));
         }
 
         auto buildConstraintNoOverlap(string, vector<vector<XVariable *>> & origins, vector<vector<XVariable *>> & lengths, bool zeroIgnored)
@@ -487,7 +487,7 @@ namespace
                 widths.push_back(need_variable(lengths[r][0]->id));
                 heights.push_back(need_variable(lengths[r][1]->id));
             }
-            _problem.post(Disjunctive2D{xs, ys, widths, heights, ! zeroIgnored});
+            _problem.post(Disjunctive2D{xs, ys, widths, heights}.with_strict(! zeroIgnored));
         }
 
         // Shared backend for every cumulative shape: lengths and heights are

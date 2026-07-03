@@ -669,7 +669,7 @@ auto main(int argc, char * argv[]) -> int
                 const auto & starts = arg_as_array_of_var(data, args, 0);
                 const auto & lengths = arg_as_array_of_var(data, args, 1);
                 auto strict = (id == "glasgow_disjunctive_strict");
-                problem.post(Disjunctive{starts, lengths, strict});
+                problem.post(Disjunctive{starts, lengths}.with_strict(strict));
             }
             else if (id == "glasgow_diffn" || id == "glasgow_diffn_nonstrict") {
                 const auto & xs = arg_as_array_of_var(data, args, 0);
@@ -677,7 +677,7 @@ auto main(int argc, char * argv[]) -> int
                 const auto & widths = arg_as_array_of_var(data, args, 2);
                 const auto & heights = arg_as_array_of_var(data, args, 3);
                 auto strict = (id == "glasgow_diffn");
-                problem.post(Disjunctive2D{xs, ys, widths, heights, strict});
+                problem.post(Disjunctive2D{xs, ys, widths, heights}.with_strict(strict));
             }
             else if (id == "glasgow_global_cardinality" || id == "glasgow_global_cardinality_closed") {
                 const auto & vars = arg_as_array_of_var(data, args, 0);

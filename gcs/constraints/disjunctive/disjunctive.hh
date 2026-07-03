@@ -53,7 +53,7 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _starts;
         std::vector<IntegerVariableID> _lengths;
-        bool _strict;
+        bool _strict = true;
         std::vector<std::size_t> _active_tasks;
 
         // Length snapshots resolved in prepare(). _length_vals holds the
@@ -109,13 +109,18 @@ namespace gcs
          * \brief General form: durations may be variables or constants
          * (constants pass through as ConstantIntegerVariableID).
          */
-        explicit Disjunctive(std::vector<IntegerVariableID> starts, std::vector<IntegerVariableID> lengths, bool strict = true);
+        explicit Disjunctive(std::vector<IntegerVariableID> starts, std::vector<IntegerVariableID> lengths);
 
         /**
          * \brief Convenience form for constant durations. Delegates to the
          * general constructor.
          */
-        explicit Disjunctive(std::vector<IntegerVariableID> starts, std::vector<Integer> lengths, bool strict = true);
+        explicit Disjunctive(std::vector<IntegerVariableID> starts, std::vector<Integer> lengths);
+
+        /// Whether the tasks are strictly disjunctive (zero-length tasks also may
+        /// not overlap); default true. Takes std::optional<bool> so a runtime flag
+        /// can be passed straight through.
+        auto with_strict(std::optional<bool> strict = true) -> Disjunctive &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

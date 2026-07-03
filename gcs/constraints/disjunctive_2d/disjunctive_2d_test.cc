@@ -104,7 +104,7 @@ namespace
         for (auto h : heights)
             heights_i.push_back(Integer{h});
 
-        p.post(Disjunctive2D{xs, ys, widths_i, heights_i, strict});
+        p.post(Disjunctive2D{xs, ys, widths_i, heights_i}.with_strict(strict));
 
         auto proof_name = proofs ? make_optional("disjunctive_2d_test_" + mode + "_" + tag) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{all_vars});
@@ -167,7 +167,7 @@ namespace
         for (auto h : heights)
             heights_i.push_back(Integer{h});
 
-        p.post(Disjunctive2D{xs, ys, widths_i, heights_i, strict});
+        p.post(Disjunctive2D{xs, ys, widths_i, heights_i}.with_strict(strict));
 
         auto proof_name = proofs ? make_optional("disjunctive_2d_test_" + mode + "_dup") : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{all_vars});
@@ -251,7 +251,7 @@ namespace
         for (size_t i = 0; i < n; ++i)
             heights.push_back(make(h_specs[i], hvar[i]));
 
-        p.post(Disjunctive2D{xs, ys, widths, heights, strict});
+        p.post(Disjunctive2D{xs, ys, widths, heights}.with_strict(strict));
 
         auto proof_name = proofs ? make_optional("disjunctive_2d_test_" + mode + "_var_" + tag) : nullopt;
         solve_for_tests(p, proof_name, actual, tuple{all_vars});
