@@ -15,6 +15,14 @@ library. For an introduction to *using* the solver, start with the top-level
   the `State` class, the `IntervalSet` domain representation, chronological
   backtracking via epochs, and the inference paths through which propagators
   modify domains. Read first when changing the solver internals.
+- [Variable encodings: state, OPB, and proof](variable-encodings.md) — the map of
+  the ways to bring a variable into existence, along two axes (does it have solver
+  state, and is its encoding asserted in the OPB or introduced inside the proof).
+  A table of every mechanism plus the `register_bits_variable_encoding` primitive
+  they share, why "not in the OPB" is what makes an auxiliary chain-portable
+  against `cake_pb_cp`, and the footguns of a state variable whose bits are
+  introduced in-proof. Read when choosing how to create an auxiliary for a
+  proof-logged constraint.
 - [Implementing a constraint](constraints.md) — the structural pattern every
   constraint follows: class shape, the `install` method, the propagator
   framework, triggers, the inference and justification APIs, OPB encoding

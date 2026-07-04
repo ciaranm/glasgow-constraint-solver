@@ -13,8 +13,12 @@
 #include <gcs/constraints/multiply/multiply_bc.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
@@ -34,6 +38,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::make_unique;
 using std::max;
 using std::min;
@@ -41,6 +46,7 @@ using std::move;
 using std::nullopt;
 using std::numeric_limits;
 using std::optional;
+using std::shared_ptr;
 using std::string;
 using std::to_string;
 using std::unique_ptr;
@@ -111,6 +117,19 @@ namespace
             q_hi = max({xlo / ylo, xlo / yhi, xhi / ylo, xhi / yhi});
         }
 
+        // cake_pb_cp's divide encoding: the product |q|*|y| lives only in bit-product
+        // flags feeding rem_* rows, with no w or r in the OPB. We take that path for
+        // plain non-negative Divide (milestone 1), emitting cake's OPB and introducing
+        // w and r inside the proof; otherwise the legacy two's-complement path below.
+        // cake path: plain Divide. The remainder-hi stage splits on sign(y), and the
+        // dividend must be non-negative (x >= 0) so q*y >= 0 keeps the product w =
+        // |q||y| a non-negative magnitude. The stages support signed y/q, but the GAC
+        // tabulation (which references the eliminated aux r) can't be built in-proof,
+        // so signed y/q -- which need GAC on tiny domains -- stay on the legacy path
+        // for now; full signed (signed x, in-proof r, GAC) is the next step.
+        bool use_cake = expose_quotient && optional_model && xlo >= 0_i && ylo >= 0_i && initial_state.lower_bound(out) >= 0_i && ax.coeff == 1_i &&
+            ax.offset == 0_i && ay.var && ay.coeff == 1_i && ay.offset == 0_i && aout.var && aout.coeff == 1_i && aout.offset == 0_i;
+
         // The exposed slot is the user's; the other is an auxiliary, with
         // bounds tightened by the sign-of-dividend rule where easy.
         IntegerVariableID q = 0_c, r = 0_c;
@@ -119,9 +138,17 @@ namespace
             q = out;
             auto r_lo = xlo >= 0_i ? 0_i : -rmax;
             auto r_hi = xhi <= 0_i ? 0_i : rmax;
-            aux = initial_state.allocate_integer_variable_with_state(r_lo, r_hi);
-            if (optional_model)
+            // The cake path introduces r = x - w in-proof; the form x - w reaches xhi, so
+            // r's bits must span [0, xhi] for introduce_bits_of's upper proofgoal. Widen
+            // BOTH the solver state and the proof registration to keep the GAC tabulation
+            // (which enumerates the solver range) consistent with the proof bits; the
+            // rem_* rows still pin r to [0, |y|-1].
+            auto r_hi_cake = max(r_hi, xhi);
+            aux = initial_state.allocate_integer_variable_with_state(r_lo, use_cake ? r_hi_cake : r_hi);
+            if (optional_model && ! use_cake)
                 optional_model->set_up_integer_variable(aux, r_lo, r_hi, "aux_divide_remainder" + to_string(aux.index), nullopt);
+            else if (optional_model)
+                optional_model->register_state_variable_bits_in_proof(aux, r_lo, r_hi_cake, "aux_divide_remainder" + to_string(aux.index));
             r = aux;
         }
         else {
@@ -151,8 +178,147 @@ namespace
         mult_bc::EncodingData encoding;
         optional<ConstraintStateHandle> bit_products_handle;
         SimpleIntegerVariableID mult_q = aux, mult_y = aux, mult_w = aux; // overwritten when needs_mult
+        shared_ptr<mult_bc::EncodingData> cake_encoding;
+        shared_ptr<vector<LinearStage>> cake_stages;
 
-        if (! needs_mult) {
+        if (use_cake) {
+            auto q_eff = *aq.var, y_eff = *ay.var, x_eff = *ax.var;
+
+            cake_encoding = make_shared<mult_bc::EncodingData>();
+            auto & enc = *cake_encoding;
+            enc.z_product_ge0_gated = false;
+
+            // Operand magnitude channels (cake letters: q -> "Z" axis 0, y -> "Y" axis
+            // 1), the bit-product flags x[id][i_j][prod], and their sum |q|*|y|.
+            auto product_sum = WPBSum{};
+            auto make_mag = [&](SimpleIntegerVariableID v, long long axis, const string & letter) -> ProofOnlySimpleIntegerVariableID {
+                auto mag_ub = max(abs(initial_state.lower_bound(v)), abs(initial_state.upper_bound(v)));
+                auto mag = optional_model->create_proof_only_integer_variable(0_i, mag_ub, "div_mag_" + letter,
+                    IntegerVariableProofRepresentation::Bits, CakeBitNaming{owner, {axis}, "bin", nullopt, false, true});
+                auto ge0 = HalfReifyOnConjunctionOf{v >= 0_i};
+                auto lt0 = HalfReifyOnConjunctionOf{v < 0_i};
+                auto pos_ge = optional_model->add_labelled_constraint(
+                    label, letter + "ge0_ge", "Divide", "magnitude channel", WPBSum{} + 1_i * v + -1_i * mag >= 0_i, ge0);
+                auto pos_le = optional_model->add_labelled_constraint(
+                    label, letter + "ge0_le", "Divide", "magnitude channel", WPBSum{} + -1_i * v + 1_i * mag >= 0_i, ge0);
+                auto neg_ge = optional_model->add_labelled_constraint(
+                    label, letter + "lt0_ge", "Divide", "magnitude channel", WPBSum{} + 1_i * v + 1_i * mag >= 0_i, lt0);
+                auto neg_le = optional_model->add_labelled_constraint(
+                    label, letter + "lt0_le", "Divide", "magnitude channel", WPBSum{} + -1_i * v + -1_i * mag >= 0_i, lt0);
+                enc.channelling_constraints.insert(
+                    {v, mult_bc::ChannellingData{pos_ge, pos_le, neg_ge, neg_le, true, initial_state.lower_bound(v) < 0_i}});
+                enc.mag_var.insert({v, mag});
+                return mag;
+            };
+            auto mag_z = make_mag(q_eff, 0, "Z");
+            auto mag_y = make_mag(y_eff, 1, "Y");
+            auto n1 = optional_model->names_and_ids_tracker().num_bits(mag_z);
+            auto n2 = optional_model->names_and_ids_tracker().num_bits(mag_y);
+            for (Integer i = 0_i; i < n1; ++i) {
+                enc.initial_bit_products.emplace_back();
+                for (Integer j = 0_i; j < n2; ++j) {
+                    auto flag = optional_model->create_proof_flag_fully_reifying(owner, {i.raw_value, j.raw_value}, "prod",
+                        WPBSum{} + 1_i * ProofBitVariable{mag_z, i, true} + 1_i * ProofBitVariable{mag_y, j, true} >= 2_i);
+                    auto base = "x[" + label + "][" + to_string(i.raw_value) + "_" + to_string(j.raw_value) + "][prod]";
+                    enc.initial_bit_products[i.as_index()].emplace_back(
+                        mult_bc::BitProductData{flag, ProofLineLabel{base + "[r]"}, ProofLineLabel{base + "[f]"}, nullopt, nullopt});
+                    product_sum += power2(i + j) * flag;
+                }
+            }
+            auto neg_product = WPBSum{};
+            for (const auto & t : product_sum.terms)
+                neg_product += -t.coefficient * t.variable;
+
+            // w = |q||y|: a state variable driving mult_bc::propagate, ranged to hold
+            // the full bit-product sum (the magnitude bits can exceed the operands'
+            // actual maxima, so this is >= q_hi*y_hi). Its bits are introduced in-proof.
+            auto w_hi = (power2(n1) - 1_i) * (power2(n2) - 1_i);
+            auto w = initial_state.allocate_integer_variable_with_state(0_i, w_hi);
+            mult_q = q_eff, mult_y = y_eff, mult_w = w;
+
+            // rem_* : 0 <= x - |q||y| < |y|, split on sign(x). Only the pos rows are
+            // active for non-negative x; |y| is the y magnitude variable mag_y.
+            auto xge0 = HalfReifyOnConjunctionOf{x >= 0_i};
+            auto xlt0 = HalfReifyOnConjunctionOf{x < 1_i};
+            auto rem_pos_lo =
+                optional_model->add_labelled_constraint(label, "rem_pos_lo", "Divide", "remainder", neg_product + 1_i * x_eff >= 0_i, xge0);
+            auto rem_pos_hi = optional_model->add_labelled_constraint(
+                label, "rem_pos_hi", "Divide", "remainder", product_sum + -1_i * x_eff + 1_i * mag_y >= 1_i, xge0);
+            optional_model->add_labelled_constraint(label, "rem_neg_hi", "Divide", "remainder", neg_product + -1_i * x_eff >= 0_i, xlt0);
+            optional_model->add_labelled_constraint(label, "rem_neg_lo", "Divide", "remainder", product_sum + 1_i * x_eff + 1_i * mag_y >= 1_i, xlt0);
+
+            // Sign clauses (cake's division orientation over the atoms of x, y, q).
+            enc.sign_lines.emplace_back(optional_model->add_labelled_constraint(
+                label, "sgn_pp", "Divide", "sign", WPBSum{} + 1_i * (x < 1_i) + 1_i * (y < 1_i) + 1_i * (q >= 0_i) >= 1_i));
+            enc.sign_lines.emplace_back(optional_model->add_labelled_constraint(
+                label, "sgn_nn", "Divide", "sign", WPBSum{} + 1_i * (x >= 0_i) + 1_i * (y >= 0_i) + 1_i * (q >= 0_i) >= 1_i));
+            enc.sign_lines.emplace_back(optional_model->add_labelled_constraint(
+                label, "sgn_pn", "Divide", "sign", WPBSum{} + 1_i * (x < 1_i) + 1_i * (y >= 0_i) + 1_i * (q < 1_i) >= 1_i));
+            enc.sign_lines.emplace_back(optional_model->add_labelled_constraint(
+                label, "sgn_np", "Divide", "sign", WPBSum{} + 1_i * (x >= 0_i) + 1_i * (y < 1_i) + 1_i * (q < 1_i) >= 1_i));
+            enc.sign_lines.emplace_back(
+                optional_model->add_labelled_constraint(label, "sgn_x0", "Divide", "sign", WPBSum{} + 1_i * (x != 0_i) + 1_i * (q < 1_i) >= 1_i));
+            optional_model->add_labelled_constraint(
+                label, "nonzero", "Divide", "divisor is not zero", WPBSum{} + 1_i * (y >= 1_i) + 1_i * (y < 0_i) >= 1_i);
+
+            // w = |q||y| is a state variable (drives mult_bc::propagate) whose bits are
+            // introduced inside the proof, so nothing about it is asserted in the OPB.
+            // r is eliminated: cake's rem_* express 0 <= x - w < y directly over w, so r
+            // needs no proof presence (it stays an inert state auxiliary here).
+            optional_model->register_state_variable_bits_in_proof(w, 0_i, w_hi, "aux_divide_product" + to_string(w.index));
+            bit_products_handle = initial_state.add_persistent_constraint_state(enc.initial_bit_products);
+
+            // Stages over w (0 <= x - w < |y|): wlo (w <= x) gated [x>=0]; and the
+            // remainder-hi (x - w <= |y| - 1) split on sign(y) so each stage carries a
+            // single gate -- x-w-y<=-1 gated [y>=1] (|y|=y), x-w+y<=-1 gated [y<0]
+            // (|y|=-y). The stage lines keep rem_*'s [x>=0] gate and the channel's [y
+            // sign] gate; propagate_linear's ThenRUP discharges [x>=0] by unit
+            // propagation (x's domain lb >= 0) and the [y sign] from the stage gate.
+            cake_stages = make_shared<vector<LinearStage>>();
+            auto [t_wlo, m_wlo] = tidy_up_linear(WeightedSum{} + 1_i * w + -1_i * x);
+            cake_stages->emplace_back(LinearStage{t_wlo, 0_i + m_wlo, false, {nullopt, nullopt}, optional{x_eff >= 0_i}});
+            auto [t_whip, m_whip] = tidy_up_linear(WeightedSum{} + 1_i * x + -1_i * w + -1_i * y);
+            cake_stages->emplace_back(LinearStage{t_whip, -1_i + m_whip, false, {nullopt, nullopt}, optional{y >= 1_i}});
+            auto [t_whin, m_whin] = tidy_up_linear(WeightedSum{} + 1_i * x + -1_i * w + 1_i * y);
+            cake_stages->emplace_back(LinearStage{t_whin, -1_i + m_whin, false, {nullopt, nullopt}, optional{y < 0_i}});
+
+            auto y_ge0_ge = enc.channelling_constraints.at(y_eff).pos_ge; // y - mag_y >= 0 gated [y>=0]
+            auto y_lt0_le = enc.channelling_constraints.at(y_eff).neg_le; // -y - mag_y >= 0 gated [y<0]
+            propagators.install_initialiser([enc = cake_encoding, stg = cake_stages, product_sum, w, w_hi, r = aux, x_eff, rem_pos_lo, rem_pos_hi,
+                                                y_ge0_ge, y_lt0_le](State &, auto &, ProofLogger * const logger) -> void {
+                if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+                    return;
+                // w = |q||y|, introduced as a conservative extension.
+                // v3_eq_product_lines = {w >= product, w <= product}.
+                enc->v3_eq_product_lines = logger->introduce_bits_of(product_sum, w, ProofLevel::Top);
+                // Ungated x - w >= 0 in the DB, so introduce_bits_of(x-w, r) below can
+                // auto-prove r's non-negativity: rem_pos_lo (x - product >= 0, gated
+                // [x>=0], big-M w_hi) + (product >= w) + w_hi*[x>=0] discharges the gate.
+                auto x_ge0 = logger->emit_rup_proof_line(WPBSum{} + 1_i * (x_eff >= 0_i) >= 1_i, ProofLevel::Top);
+                PolBuilder pb_xw;
+                pb_xw.add(rem_pos_lo).add(enc->v3_eq_product_lines.second).add(x_ge0, w_hi);
+                pb_xw.emit(*logger, ProofLevel::Top);
+                // r = x - w, introduced so the tabulation's determined r unit-propagates.
+                logger->introduce_bits_of(WPBSum{} + 1_i * x_eff + -1_i * w, r, ProofLevel::Top);
+                // wlo, [x>=0]-gated (w <= x): rem_pos_lo (x - product >= 0) + (w <= product).
+                PolBuilder pb_wlo;
+                pb_wlo.add(rem_pos_lo).add(enc->v3_eq_product_lines.second);
+                (*stg)[0].lines = {pb_wlo.emit(*logger, ProofLevel::Top), nullopt};
+                // whi_ypos (x - w - y <= -1, |y|=y): rem_pos_hi (product - x + |y| >= 1)
+                // + (w >= product) + Yge0_ge (y - |y| >= 0). |y| = mag_y cancels; the
+                // channel's [y>=0] gate rides along and the stage gates on [y>=1].
+                PolBuilder pb_whip;
+                pb_whip.add(rem_pos_hi).add(enc->v3_eq_product_lines.first).add(y_ge0_ge);
+                (*stg)[1].lines = {pb_whip.emit(*logger, ProofLevel::Top), nullopt};
+                // whi_yneg (x - w + y <= -1, |y|=-y): rem_pos_hi + (w >= product)
+                // + Ylt0_le (-y - |y| >= 0). Stage gates on [y<0].
+                PolBuilder pb_whin;
+                pb_whin.add(rem_pos_hi).add(enc->v3_eq_product_lines.first).add(y_lt0_le);
+                (*stg)[2].lines = {pb_whin.emit(*logger, ProofLevel::Top), nullopt};
+            });
+        }
+
+        if (! use_cake && ! needs_mult) {
             // one of d * q + r - x = 0 (constant divisor) or c * y + r - x = 0
             // (Divide with a constant quotient)
             if (! ay.var)
@@ -160,7 +326,7 @@ namespace
             else
                 add_equality(WeightedSum{} + aq.offset * y + 1_i * r + -1_i * x, 0_i, "sum");
         }
-        else {
+        else if (! use_cake) {
             auto y_eff = *ay.var;
             if (ay.coeff != 1_i || ay.offset != 0_i) {
                 auto y_plain = initial_state.allocate_integer_variable_with_state(min(ylo, yhi), max(ylo, yhi));
@@ -208,38 +374,40 @@ namespace
         // slot's range suffices: it is baked into the auxiliary's bounds for
         // Divide, and posted on the user's remainder for Modulus. With a
         // variable divisor, split on the divisor's sign.
-        if (! ay.var) {
-            if (! expose_quotient) {
-                add_le(WeightedSum{} + 1_i * r, rmax, "remhi", nullopt);
-                add_le(WeightedSum{} + -1_i * r, rmax, "remlo", nullopt);
+        if (! use_cake) {
+            if (! ay.var) {
+                if (! expose_quotient) {
+                    add_le(WeightedSum{} + 1_i * r, rmax, "remhi", nullopt);
+                    add_le(WeightedSum{} + -1_i * r, rmax, "remlo", nullopt);
+                }
             }
-        }
-        else {
-            if (optional_model)
-                optional_model->add_labelled_constraint(
-                    label, "nonzero", "DivideModulus", "divisor is not zero", WPBSum{} + 1_i * (y >= 1_i) + 1_i * (y < 0_i) >= 1_i);
+            else {
+                if (optional_model)
+                    optional_model->add_labelled_constraint(
+                        label, "nonzero", "DivideModulus", "divisor is not zero", WPBSum{} + 1_i * (y >= 1_i) + 1_i * (y < 0_i) >= 1_i);
 
-            // y >= 1 -> r <= y - 1 and r >= -y + 1
-            add_le(WeightedSum{} + 1_i * r + -1_i * y, -1_i, "rangeposhi", y >= 1_i);
-            add_le(WeightedSum{} + -1_i * r + -1_i * y, -1_i, "rangeposlo", y >= 1_i);
-            // y <= -1 -> r <= -y - 1 and r >= y + 1
-            add_le(WeightedSum{} + 1_i * r + 1_i * y, -1_i, "rangeneghi", y < 0_i);
-            add_le(WeightedSum{} + -1_i * r + 1_i * y, -1_i, "rangeneglo", y < 0_i);
-        }
+                // y >= 1 -> r <= y - 1 and r >= -y + 1
+                add_le(WeightedSum{} + 1_i * r + -1_i * y, -1_i, "rangeposhi", y >= 1_i);
+                add_le(WeightedSum{} + -1_i * r + -1_i * y, -1_i, "rangeposlo", y >= 1_i);
+                // y <= -1 -> r <= -y - 1 and r >= y + 1
+                add_le(WeightedSum{} + 1_i * r + 1_i * y, -1_i, "rangeneghi", y < 0_i);
+                add_le(WeightedSum{} + -1_i * r + 1_i * y, -1_i, "rangeneglo", y < 0_i);
+            }
 
-        // The remainder takes the sign of the dividend, which is what pins
-        // truncation: without it, the identity and |r| < |y| admit both the
-        // truncated and the floored (quotient, remainder) pair when the signs
-        // differ.
-        if (ax.var) {
-            add_le(WeightedSum{} + -1_i * r, 0_i, "signpos", x >= 0_i);
-            add_le(WeightedSum{} + 1_i * r, 0_i, "signneg", x < 1_i);
-        }
-        else {
-            if (ax.offset >= 0_i)
-                add_le(WeightedSum{} + -1_i * r, 0_i, "signpos", nullopt);
-            if (ax.offset <= 0_i)
-                add_le(WeightedSum{} + 1_i * r, 0_i, "signneg", nullopt);
+            // The remainder takes the sign of the dividend, which is what pins
+            // truncation: without it, the identity and |r| < |y| admit both the
+            // truncated and the floored (quotient, remainder) pair when the signs
+            // differ.
+            if (ax.var) {
+                add_le(WeightedSum{} + -1_i * r, 0_i, "signpos", x >= 0_i);
+                add_le(WeightedSum{} + 1_i * r, 0_i, "signneg", x < 1_i);
+            }
+            else {
+                if (ax.offset >= 0_i)
+                    add_le(WeightedSum{} + -1_i * r, 0_i, "signpos", nullopt);
+                if (ax.offset <= 0_i)
+                    add_le(WeightedSum{} + 1_i * r, 0_i, "signneg", nullopt);
+            }
         }
 
         Triggers triggers;
@@ -260,25 +428,45 @@ namespace
         triggers.on_bounds = watched;
 
         bool prune_zero = ay.var != nullopt;
-        propagators.install(
-            owner,
-            [stages = stages, needs_mult = needs_mult, encoding = encoding, bit_products_handle = bit_products_handle, mult_q = mult_q,
-                mult_y = mult_y, mult_w = mult_w, prune_zero = prune_zero, y = y,
-                owner = owner](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                do {
-                    if (prune_zero && state.in_domain(y, 0_i))
-                        inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
+        if (use_cake) {
+            propagators.install(
+                owner,
+                [enc = cake_encoding, stg = cake_stages, bph = *bit_products_handle, mult_q = mult_q, mult_y = mult_y, mult_w = mult_w, y = y,
+                    owner = owner](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    do {
+                        if (state.in_domain(y, 0_i))
+                            inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
 
-                    if (! propagate_stages(stages, state, inference, logger, owner))
-                        return PropagatorState::Enable;
+                        if (! propagate_stages(*stg, state, inference, logger, owner))
+                            return PropagatorState::Enable;
 
-                    if (needs_mult)
-                        mult_bc::propagate(mult_q, mult_y, mult_w, state, inference, logger, encoding, *bit_products_handle, owner);
-                } while (inference.did_anything_since_last_call_inside_propagator());
+                        mult_bc::propagate(mult_q, mult_y, mult_w, state, inference, logger, *enc, bph, owner);
+                    } while (inference.did_anything_since_last_call_inside_propagator());
 
-                return PropagatorState::Enable;
-            },
-            triggers);
+                    return PropagatorState::Enable;
+                },
+                triggers);
+        }
+        else
+            propagators.install(
+                owner,
+                [stages = stages, needs_mult = needs_mult, encoding = encoding, bit_products_handle = bit_products_handle, mult_q = mult_q,
+                    mult_y = mult_y, mult_w = mult_w, prune_zero = prune_zero, y = y,
+                    owner = owner](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    do {
+                        if (prune_zero && state.in_domain(y, 0_i))
+                            inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
+
+                        if (! propagate_stages(stages, state, inference, logger, owner))
+                            return PropagatorState::Enable;
+
+                        if (needs_mult)
+                            mult_bc::propagate(mult_q, mult_y, mult_w, state, inference, logger, encoding, *bit_products_handle, owner);
+                    } while (inference.did_anything_since_last_call_inside_propagator());
+
+                    return PropagatorState::Enable;
+                },
+                triggers);
 
         // Tabulation for GAC: enumerate the distinct underlying variables and
         // the auxiliary slot, so a complete assignment fixes x, y, q and r and

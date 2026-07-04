@@ -257,6 +257,19 @@ namespace gcs::innards
          */
         [[nodiscard]] auto create_proof_only_integer_variable_in_proof(Integer, Integer, const std::string &) -> ProofOnlySimpleIntegerVariableID;
 
+        /**
+         * Register a bits encoding for an already-state-allocated integer variable
+         * WITHOUT emitting anything to the OPB, so the caller can define the
+         * variable's meaning inside the proof (ProofLogger::introduce_bits_of).
+         * Unlike set_up_integer_variable (which asserts the bound constraints in the
+         * OPB), this keeps the variable a free bit-sum, so a proof that introduces it
+         * as a conservative extension stays chain-portable against cake_pb_cp's OPB.
+         * The variable keeps its solver state, so it can still drive propagation ---
+         * the combination the pure proof-only
+         * create_proof_only_integer_variable_in_proof cannot provide.
+         */
+        auto register_state_variable_bits_in_proof(const SimpleIntegerVariableID &, Integer, Integer, const std::string &) -> void;
+
         [[nodiscard]] auto create_proof_flag(const std::string & stem) -> ProofFlag;
 
         /**
