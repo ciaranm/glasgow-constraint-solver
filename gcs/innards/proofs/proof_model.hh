@@ -51,6 +51,14 @@ namespace gcs::innards
         // fix is for cake's arg_sort encoder to drop the sign bit when the range is
         // non-negative, after which this flag (and its embarrassing name) can go.
         bool add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does = false;
+
+        // Which flag family the bits render in: the default `v[id][...]` (Values,
+        // matching create_proof_flag_values, e.g. arg_sort/sort/value_precede) or
+        // cake's `x[id][...]` (Indices, matching create_proof_flag). cake's
+        // multiply/divide/modulus encoders name their magnitude bits
+        // x[id][axis_i][bin], so those magnitude variables set this to true so the
+        // bit-product cutting-planes resolve against cake's flags unchanged.
+        bool use_indices_family = false;
     };
 
     class ProofModel

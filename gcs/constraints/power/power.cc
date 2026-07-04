@@ -116,7 +116,7 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
     auto add_link = [&](const string & prefix, SimpleIntegerVariableID a, SimpleIntegerVariableID b, SimpleIntegerVariableID product) {
         mult_bc::EncodingData encoding;
         if (optional_model)
-            encoding = mult_bc::define_encoding(*optional_model, initial_state, label, prefix, a, b, product);
+            encoding = mult_bc::define_encoding(*optional_model, initial_state, constraint_id(), label, prefix, a, b, product);
         auto handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
         links.emplace_back(MultLink{a, b, product, move(encoding), handle});
     };

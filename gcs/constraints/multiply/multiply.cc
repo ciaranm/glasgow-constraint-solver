@@ -183,7 +183,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
     mult_bc::EncodingData encoding;
     optional<pair<optional<ProofLine>, optional<ProofLine>>> copy_lines, fold_lines;
     if (optional_model) {
-        encoding = mult_bc::define_encoding(*optional_model, initial_state, as_string(constraint_id()), "", u1, m2, *t);
+        encoding = mult_bc::define_encoding(*optional_model, initial_state, constraint_id(), as_string(constraint_id()), "", u1, m2, *t, true);
 
         auto as_wpb = [](const WeightedSum & ws) {
             WPBSum terms;

@@ -45,6 +45,10 @@ namespace gcs::innards
             ProofLine pos_le;
             ProofLine neg_ge;
             ProofLine neg_le;
+            // The magnitude channel is gated on the reified sign atom [v>=0]
+            // (cake_pb_cp's scheme) rather than the two's-complement sign bit
+            // (the legacy scheme); channel_to_sign_bit reifies accordingly.
+            bool ge0_gated = false;
         };
 
         /**
@@ -71,8 +75,12 @@ namespace gcs::innards
          * several of these (Power's chains); the emitted lines are byte-for-
          * byte what MultiplyBC has always produced when it is empty.
          */
-        [[nodiscard]] auto define_encoding(ProofModel & model, const State & initial_state, const std::string & label_id,
-            const std::string & role_prefix, SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3) -> EncodingData;
+        // allow_cake_scheme opts into cake_pb_cp's magnitude-bit-product encoding
+        // for non-negative operands (Multiply / MultiplyBC); divide/modulus keep the
+        // legacy two's-complement encoding for now. See define_encoding_cake.
+        [[nodiscard]] auto define_encoding(ProofModel & model, const State & initial_state, const ConstraintID & constraint_id,
+            const std::string & label_id, const std::string & role_prefix, SimpleIntegerVariableID v1, SimpleIntegerVariableID v2,
+            SimpleIntegerVariableID v3, bool allow_cake_scheme = false) -> EncodingData;
 
         /**
          * \brief One pass of bounds consistent multiplication filtering for
