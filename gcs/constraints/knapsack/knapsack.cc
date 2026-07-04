@@ -612,12 +612,13 @@ auto Knapsack::define_proof_model(ProofModel & model) -> void
         WPBSum sum_eq;
         for (const auto & [idx, v] : enumerate(_vars))
             sum_eq += cc.at(idx) * v;
-        // cake_pb_cp emits each row's totals equality under its own constraint id
-        // `name ^ row` (@c[_1<row>][le]/[ge]), not a row-indexed role on a single id
-        // (@c[_1][le<row>]); match that so the propagator's pol steps, which cite
-        // these lines by label, resolve against cake's OPB. The bodies are identical.
-        auto [eq1, eq2] = model.add_labelled_constraint(
-            as_string(constraint_id()) + std::to_string(cc_idx), "le", "ge", "Knapsack", "totals", sum_eq == 1_i * _totals.at(cc_idx));
+        // cake_pb_cp labels each row's totals equality @c[<id>][<row>_le]/[<row>_ge]:
+        // the row index lives in the annotation tag, not the constraint name (a
+        // name-embedded row could collide with a sibling constraint's name). Match
+        // that so the propagator's pol steps, which cite these lines by label,
+        // resolve against cake's OPB. The bodies are identical.
+        auto [eq1, eq2] = model.add_labelled_constraint(as_string(constraint_id()), std::to_string(cc_idx) + "_le", std::to_string(cc_idx) + "_ge",
+            "Knapsack", "totals", sum_eq == 1_i * _totals.at(cc_idx));
         _eqns_lines.emplace_back(eq1, eq2);
     }
 }
