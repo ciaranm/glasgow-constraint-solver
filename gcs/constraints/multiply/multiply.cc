@@ -308,6 +308,8 @@ auto Multiply::s_expr(const ProofModel * const model) const -> SExpr
     }
 
     auto & tracker = model->names_and_ids_tracker();
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("multiply"),
-        SExpr::list({tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2), tracker.s_expr_term_of(_result)})});
+    // cake_pb_cp wants the flat primitive shape `(id multiply X Y Z)`, like the
+    // other arithmetic terms (plus/minus), not a nested variable list.
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("multiply"), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2),
+        tracker.s_expr_term_of(_result)});
 }

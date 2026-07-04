@@ -215,7 +215,12 @@ namespace
             rup_hints.emplace_back(add_lines(logger, channel_line, constr.line, false));
         }
         else if (channelling_constraints.contains(var)) {
-            reif = ge0_gated ? HalfReifyOnConjunctionOf{var >= 0_i} : HalfReifyOnConjunctionOf{ProofBitVariable{var, 0_i, false}};
+            // A ge0-gated (cake) channel on a non-negative operand has [v>=0] entailed,
+            // so leave it OUT of the reification and let RUP discharge it: otherwise the
+            // fusion resolution keeps a residual {ge0(x), ge0(y)} it can't eliminate
+            // (a non-negative operand yields no negative conditional bound to resolve
+            // against). The legacy signed path still conditions on the sign bit.
+            reif = ge0_gated ? HalfReifyOnConjunctionOf{} : HalfReifyOnConjunctionOf{ProofBitVariable{var, 0_i, false}};
 
             if (is_lower_bound) {
                 channel_line = channelling_constraints.at(var).pos_le;
@@ -1109,8 +1114,15 @@ namespace
         // z_eq_product pair (.first: Z >= product, .second: Z <= product).
         auto zge0 = HalfReifyOnConjunctionOf{v3 >= 0_i};
         auto zlt0 = HalfReifyOnConjunctionOf{v3 < 0_i};
-        auto mag_z_ge = model.add_labelled_constraint(mbid, "mag_Zge0_ge", "MultiplyBC", "z = product", neg_product_sum + 1_i * v3 >= 0_i, zge0);
-        auto mag_z_le = model.add_labelled_constraint(mbid, "mag_Zge0_le", "MultiplyBC", "z = product", product_sum + -1_i * v3 >= 0_i, zge0);
+        // NOTE (step-1 WIP): cake gates these two rows on [Z>=0] (a `M ~ge0(Z)`
+        // slack term, M = max(Sum prod) / max(Z) respectively). Emitting them ungated
+        // makes workflow-1 self-verify, but the chain uses cake's *gated* rows, so the
+        // ~ge0(Z) term rides into the product-bound pol and the `ia` step fails. The
+        // remaining step is to emit them gated (byte-matching cake) and discharge the
+        // entailed ge0(Z) in prove_positive_product_{lower,upper}_bound via
+        // `pol <row> + M * ge0(Z)` (Z is non-negative here, so ge0(Z) is a unit).
+        auto mag_z_ge = model.add_labelled_constraint(mbid, "mag_Zge0_ge", "MultiplyBC", "z = product", neg_product_sum + 1_i * v3 >= 0_i);
+        auto mag_z_le = model.add_labelled_constraint(mbid, "mag_Zge0_le", "MultiplyBC", "z = product", product_sum + -1_i * v3 >= 0_i);
         model.add_labelled_constraint(mbid, "mag_Zlt0_ge", "MultiplyBC", "z = product", product_sum + 1_i * v3 >= 0_i, zlt0);
         model.add_labelled_constraint(mbid, "mag_Zlt0_le", "MultiplyBC", "z = product", neg_product_sum + -1_i * v3 >= 0_i, zlt0);
         result.v3_eq_product_lines = make_pair(mag_z_ge, mag_z_le);
@@ -1316,6 +1328,7 @@ auto MultiplyBC::install(Propagators & propagators, State & initial_state, Proof
 auto MultiplyBC::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("multiply"),
-        SExpr::list({tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2), tracker.s_expr_term_of(_v3)})});
+    // Flat primitive shape `(id multiply X Y Z)`, matching cake_pb_cp.
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("multiply"), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2),
+        tracker.s_expr_term_of(_v3)});
 }

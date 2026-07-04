@@ -323,7 +323,7 @@ TEST_CASE("read_scp: multiply enumerates correctly")
     auto solutions = enumerate(R"(
         (
             ( (X 1 3) (Y 1 3) (Z 1 9) )
-            ( (_1 multiply (X Y Z)) )
+            ( (_1 multiply X Y Z) )
         ))");
 
     CHECK(solutions.size() == 9);
