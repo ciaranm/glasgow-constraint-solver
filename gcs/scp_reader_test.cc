@@ -359,7 +359,7 @@ TEST_CASE("read_scp: divide and modulus enumerate correctly")
     auto div_solutions = enumerate(R"(
         (
             ( (X -3 3) (Y -2 2) (Q -3 3) )
-            ( (_1 divide (X Y Q)) )
+            ( (_1 divide X Y Q) )
         ))");
 
     CHECK(! div_solutions.empty());
@@ -372,7 +372,7 @@ TEST_CASE("read_scp: divide and modulus enumerate correctly")
     auto mod_solutions = enumerate(R"(
         (
             ( (X -3 3) (Y -2 2) (R -3 3) )
-            ( (_1 modulus (X Y R)) )
+            ( (_1 modulus X Y R) )
         ))");
 
     CHECK(! mod_solutions.empty());
