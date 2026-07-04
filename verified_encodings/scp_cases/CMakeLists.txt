@@ -522,9 +522,13 @@ add_scp_chain_test(sort_unsat  none)
 add_scp_chain_test(arg_sort_sat    none)
 add_scp_chain_test(arg_sort_unsat  none)
 
-# multiply (non-negative operands): MultiplyBC's bit-product proof conformed to
-# cake's magnitude-bit-product encoding (fresh x[id][axis_i][bin] magnitude flags,
-# reified sign atoms, product channelled to |Z|). none, not strict: the operand
-# eq/ge ladder still differs by the #358 lazy-vs-eager variable encoding.
-add_scp_chain_test(multiply_sat    none)
-add_scp_chain_test(multiply_unsat  none)
+# multiply: MultiplyBC's bit-product proof conformed to cake's magnitude-bit-product
+# encoding (fresh x[id][axis_i][bin] magnitude flags, reified sign atoms, product
+# channelled to |Z|). The signed cases exercise cake's four sign-gated magnitude
+# rows per operand and the six sign clauses: the propagator picks the negative rows
+# via cake's [v>=0] atoms and pins z's sign = sign(x)*sign(y). none, not strict: the
+# operand eq/ge ladder still differs by the #358 lazy-vs-eager variable encoding.
+add_scp_chain_test(multiply_sat           none)
+add_scp_chain_test(multiply_unsat         none)
+add_scp_chain_test(multiply_signed_sat    none)
+add_scp_chain_test(multiply_signed_unsat  none)

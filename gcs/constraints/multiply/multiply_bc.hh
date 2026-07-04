@@ -49,6 +49,12 @@ namespace gcs::innards
             // (cake_pb_cp's scheme) rather than the two's-complement sign bit
             // (the legacy scheme); channel_to_sign_bit reifies accordingly.
             bool ge0_gated = false;
+            // Whether the operand's own encoding can take negative values (its
+            // initial domain included negatives, so it has a sign bit). In the
+            // legacy scheme channelling <=> signed, but cake channels every operand
+            // including non-negative ones, so the quotient reasoning reads this to
+            // pick the operand's outer bit-range rather than assuming non-negative.
+            bool has_negatives = false;
         };
 
         /**
@@ -61,10 +67,13 @@ namespace gcs::innards
             std::map<SimpleIntegerVariableID, ChannellingData> channelling_constraints{};
             std::map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> mag_var{};
             std::pair<ProofLine, ProofLine> v3_eq_product_lines{};
-            // cake_pb_cp gates the product->|Z| channel (v3_eq_product_lines) on the
-            // sign atom [Z>=0]; when set, the product-bound provers discharge that
-            // (entailed, non-negative Z) with the ge0(Z) unit. The legacy scheme's
-            // ungated zprod lines leave this false.
+            // cake_pb_cp gates the product->|Z| channel on the sign atom [Z>=0]
+            // (v3_eq_product_lines: {mag_Zge0_ge, mag_Zge0_le}) and mirrors it on
+            // [Z<0] (v3_eq_product_lines_neg: {mag_Zlt0_ge, mag_Zlt0_le}). The
+            // product-bound provers pick the row matching Z's sign in each branch
+            // (sign(X)*sign(Y)) and discharge the sign atom. The legacy scheme's
+            // ungated zprod lines leave z_product_ge0_gated false and _neg empty.
+            std::optional<std::pair<ProofLine, ProofLine>> v3_eq_product_lines_neg{};
             bool z_product_ge0_gated = false;
             std::vector<ProofLine> sign_lines{};
             // Consumed at install time to create the persistent constraint
