@@ -119,22 +119,21 @@ namespace
 
         // cake_pb_cp's divide encoding: the product |q|*|y| lives only in bit-product
         // flags feeding rem_* rows, with no w or r in the OPB. We take that path for
-        // plain, fully non-negative Divide (x, y, q all >= 0), emitting cake's OPB and
-        // introducing w and r inside the proof; otherwise the legacy two's-complement
-        // path below. The non-negativity is load-bearing in two ways: x >= 0 keeps the
-        // product w = |q||y| = x - r and the remainder r = x - w non-negative (only the
-        // pos rem_* rows and the wlo stage are then active), and requiring q >= 0
-        // alongside x, y >= 0 means every operand sign agrees, so the sign machinery is
-        // never asked to refute a mismatch. Relaxing any of the three -- signed x, a
-        // zero-spanning or negative divisor, or a quotient free to take the opposite
-        // sign -- exercises the product-sign reconciliation inside introduce_bits_of's
-        // w = |q||y| subproof, whose proofgoal reconciles w's sign against cake's
-        // division sgn_* clauses. That RUP is not yet derivable whenever sign(q) can
-        // differ from sign(x)*sign(y) (e.g. an unsatisfiable q<0 under x, y >= 0); GAC
-        // tabulation hides it for tiny domains but it surfaces under BC / large domains.
-        // Fixing that sign proofgoal is the next step for any signed divide.
-        bool use_cake = expose_quotient && optional_model && xlo >= 0_i && ylo >= 0_i && initial_state.lower_bound(out) >= 0_i && ax.coeff == 1_i &&
-            ax.offset == 0_i && ay.var && ay.coeff == 1_i && ay.offset == 0_i && aout.var && aout.coeff == 1_i && aout.offset == 0_i;
+        // Divide with a non-negative dividend, emitting cake's OPB and introducing w and
+        // r inside the proof; otherwise the legacy two's-complement path below. The
+        // dividend must be non-negative (x >= 0) so that q*y = x - r >= 0 keeps the
+        // product w = |q||y| and remainder r = x - w non-negative (only the pos rem_*
+        // rows and the wlo stage are active). The divisor y and quotient q may take
+        // either sign: make_mag's sign-atom-gated channel converts each to |q|, |y|, the
+        // remainder-hi stage splits on sign(y), and the five sign clauses pin sign(q).
+        // Because w is the magnitude |q||y| (not the signed product q*y), mult_bc is told
+        // z_is_magnitude so it bounds w by the operand magnitudes -- otherwise an
+        // opposite-sign q, y would make it infer a negative bound on the (non-negative) w
+        // and its RUP justification would be unprovable. Signed x -- where r follows x's
+        // sign, needing the neg rem_* rows and neg identity -- is the remaining step and
+        // stays on the legacy path for now.
+        bool use_cake = expose_quotient && optional_model && xlo >= 0_i && ax.coeff == 1_i && ax.offset == 0_i && ay.var && ay.coeff == 1_i &&
+            ay.offset == 0_i && aout.var && aout.coeff == 1_i && aout.offset == 0_i;
 
         // The exposed slot is the user's; the other is an auxiliary, with
         // bounds tightened by the sign-of-dividend rule where easy.
@@ -193,6 +192,9 @@ namespace
             cake_encoding = make_shared<mult_bc::EncodingData>();
             auto & enc = *cake_encoding;
             enc.z_product_ge0_gated = false;
+            // w is the magnitude |q||y| (not the signed product q*y), so mult_bc bounds
+            // it by the operand magnitudes; see EncodingData::z_is_magnitude.
+            enc.z_is_magnitude = true;
 
             // Operand magnitude channels (cake letters: q -> "Z" axis 0, y -> "Y" axis
             // 1), the bit-product flags x[id][i_j][prod], and their sum |q|*|y|.
