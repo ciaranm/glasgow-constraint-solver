@@ -191,13 +191,17 @@ namespace
         Integer channel_rhs = constr.rhs;
         auto reif = HalfReifyOnConjunctionOf{};
 
+        // cake_pb_cp's magnitude channel is gated on the reified sign atom [v>=0]
+        // rather than the two's-complement sign bit; reify accordingly.
+        auto ge0_gated = channelling_constraints.contains(var) && channelling_constraints.at(var).ge0_gated;
+
         vector<ProofLine> rup_hints = {};
         if (is_negative && ! channelling_constraints.contains(var)) {
             throw UnexpectedException{"Missing channelling constraints."};
         }
         else if (is_negative) {
             // Negative
-            reif = HalfReifyOnConjunctionOf{ProofBitVariable{var, 0_i, true}};
+            reif = ge0_gated ? HalfReifyOnConjunctionOf{var < 0_i} : HalfReifyOnConjunctionOf{ProofBitVariable{var, 0_i, true}};
             // channel_rhs = -channel_rhs;
             if (is_lower_bound) {
                 channel_line = channelling_constraints.at(var).neg_le;
@@ -211,7 +215,12 @@ namespace
             rup_hints.emplace_back(add_lines(logger, channel_line, constr.line, false));
         }
         else if (channelling_constraints.contains(var)) {
-            reif = HalfReifyOnConjunctionOf{ProofBitVariable{var, 0_i, false}};
+            // A ge0-gated (cake) channel on a non-negative operand has [v>=0] entailed,
+            // so leave it OUT of the reification and let RUP discharge it: otherwise the
+            // fusion resolution keeps a residual {ge0(x), ge0(y)} it can't eliminate
+            // (a non-negative operand yields no negative conditional bound to resolve
+            // against). The legacy signed path still conditions on the sign bit.
+            reif = ge0_gated ? HalfReifyOnConjunctionOf{} : HalfReifyOnConjunctionOf{ProofBitVariable{var, 0_i, false}};
 
             if (is_lower_bound) {
                 channel_line = channelling_constraints.at(var).pos_le;
@@ -512,7 +521,7 @@ namespace
 
     auto prove_positive_product_lower_bound(ProofLogger & logger, DerivedPBConstraint lb_1, DerivedPBConstraint lb_2, const SimpleIntegerVariableID z,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var, const pair<ProofLine, ProofLine> z_eq_product_lines,
-        vector<vector<BitProductData>> & bit_products, const ReasonLiterals & reason) -> DerivedPBConstraint
+        vector<vector<BitProductData>> & bit_products, const ReasonLiterals & reason, bool z_ge0_gated) -> DerivedPBConstraint
     {
         // logger.emit_proof_comment("Prove Conditional Product Lower Bound:");
         auto mag_z_sum = WPBSum{};
@@ -551,7 +560,17 @@ namespace
         outer_sum.add(lb_1.line, lb_2.rhs);
 
         auto bitproducts_bound = outer_sum.emit(logger, ProofLevel::Temporary);
-        add_lines(logger, bitproducts_bound, z_eq_product_lines.first);
+        auto combined = add_lines(logger, bitproducts_bound, z_eq_product_lines.first);
+
+        if (z_ge0_gated) {
+            // cake gates z_eq_product_lines on [z>=0]; `combined` still carries the
+            // M*~ge0(z) slack. z is non-negative here, so discharge the entailed
+            // ge0(z): `combined` is now a bound on the single variable z, so RUP with
+            // the ge0(z) unit closes it (no need to know the exact big-M).
+            auto ge0z = logger.emit_rup_proof_line(WPBSum{} + 1_i * (z >= 0_i) >= 1_i, ProofLevel::Temporary);
+            return result_of_deriving(
+                logger, RUPProofRule{vector<ProofLine>{combined, ge0z}}, mag_z_sum >= lb_1.rhs * lb_2.rhs, reif, ProofLevel::Temporary, reason);
+        }
 
         return result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(ProofLineNumber{-1})}, mag_z_sum >= lb_1.rhs * lb_2.rhs, reif,
             ProofLevel::Temporary, reason);
@@ -559,7 +578,7 @@ namespace
 
     auto prove_positive_product_upper_bound(ProofLogger & logger, DerivedPBConstraint ub_1, DerivedPBConstraint ub_2, const SimpleIntegerVariableID z,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var, const pair<ProofLine, ProofLine> z_eq_product_lines,
-        vector<vector<BitProductData>> & bit_products, const ReasonLiterals & reason) -> DerivedPBConstraint
+        vector<vector<BitProductData>> & bit_products, const ReasonLiterals & reason, bool z_ge0_gated) -> DerivedPBConstraint
     {
         auto mag_z_sum = WPBSum{};
         if (mag_var.contains(z))
@@ -629,7 +648,15 @@ namespace
         outer_sum.add(ub_1.line, -ub_2.rhs);
         auto bitproducts_bound = outer_sum.emit(logger, ProofLevel::Temporary);
 
-        add_lines(logger, bitproducts_bound, z_eq_product_lines.second);
+        auto combined = add_lines(logger, bitproducts_bound, z_eq_product_lines.second);
+
+        if (z_ge0_gated) {
+            // Discharge the entailed ge0(z) gating cake's mag_Z (see the lower-bound
+            // prover); `combined` is a bound on the single variable z, so RUP closes.
+            auto ge0z = logger.emit_rup_proof_line(WPBSum{} + 1_i * (z >= 0_i) >= 1_i, ProofLevel::Temporary);
+            return result_of_deriving(
+                logger, RUPProofRule{vector<ProofLine>{combined, ge0z}}, mag_z_sum >= -ub_1.rhs * ub_2.rhs, reif, ProofLevel::Temporary, reason);
+        }
 
         return result_of_deriving(logger, ImpliesProofRule{make_optional<ProofLine>(ProofLineNumber{-1})}, mag_z_sum >= -ub_1.rhs * ub_2.rhs, reif,
             ProofLevel::Temporary, reason);
@@ -640,7 +667,7 @@ namespace
         const map<IntegerVariableID, pair<Integer, Integer>> & var_bounds, const Integer & smallest_product, const Integer & largest_product,
         const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var, const pair<ProofLine, ProofLine> z_eq_product_lines,
-        const vector<ProofLine> & sign_lines) -> void
+        const vector<ProofLine> & sign_lines, bool z_ge0_gated) -> void
     {
         // First obtain the current bounds
         // logger.emit_proof_comment("Current Bounds:");
@@ -689,15 +716,15 @@ namespace
                 auto conditional_product_bound = DerivedPBConstraint{};
                 if (x_bound.sum.terms[0].coefficient == 1_i && y_bound.sum.terms[0].coefficient == 1_i) {
                     // Both lower bounds
-                    auto conditional_product_mag_bound =
-                        prove_positive_product_lower_bound(logger, x_bound, y_bound, z, mag_var, z_eq_product_lines, bit_products, reason);
+                    auto conditional_product_mag_bound = prove_positive_product_lower_bound(
+                        logger, x_bound, y_bound, z, mag_var, z_eq_product_lines, bit_products, reason, z_ge0_gated);
                     conditional_product_bound =
                         channel_z_from_sign_bit(logger, conditional_product_mag_bound, x, y, z, channelling_constraints, reason);
                 }
                 else if (x_bound.sum.terms[0].coefficient == -1_i && y_bound.sum.terms[0].coefficient == -1_i) {
                     // Both upper bounds
-                    auto conditional_product_mag_bound =
-                        prove_positive_product_upper_bound(logger, x_bound, y_bound, z, mag_var, z_eq_product_lines, bit_products, reason);
+                    auto conditional_product_mag_bound = prove_positive_product_upper_bound(
+                        logger, x_bound, y_bound, z, mag_var, z_eq_product_lines, bit_products, reason, z_ge0_gated);
                     conditional_product_bound =
                         channel_z_from_sign_bit(logger, conditional_product_mag_bound, x, y, z, channelling_constraints, reason);
                 }
@@ -747,12 +774,15 @@ namespace
         const map<IntegerVariableID, pair<Integer, Integer>> & var_bounds, const Integer smallest_quotient, const Integer largest_quotient,
         const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var, const pair<ProofLine, ProofLine> z_eq_product_lines,
-        bool x_is_first, bool assume_upper) -> void
+        bool x_is_first, bool assume_upper, bool z_ge0_gated) -> void
     {
         auto rup_bounds = map<IntegerVariableID, DerivedBounds>{};
 
         auto x_bits = logger.names_and_ids_tracker().num_bits(x);
-        auto x_has_neg = channelling_constraints.contains(x);
+        // Whether x's own encoding is two's-complement signed (has a sign bit). In
+        // the legacy scheme channelling <=> signed; in cake's scheme every operand
+        // is channelled but a non-negative one (ge0_gated) has no sign bit.
+        auto x_has_neg = channelling_constraints.contains(x) && ! channelling_constraints.at(x).ge0_gated;
         auto min_x = Integer{x_has_neg ? -(power2(x_bits - 1_i)) : 0_i};
         auto max_x = Integer{x_has_neg ? (power2(x_bits - 1_i)) : power2(x_bits)} - 1_i;
 
@@ -838,11 +868,11 @@ namespace
                     // Both lower bounds
                     DerivedPBConstraint conditional_product_mag_bound{};
                     if (x_is_first)
-                        conditional_product_mag_bound =
-                            prove_positive_product_lower_bound(logger, x_bound, y_bound, z, mag_var, z_eq_product_lines, bit_products, reason);
+                        conditional_product_mag_bound = prove_positive_product_lower_bound(
+                            logger, x_bound, y_bound, z, mag_var, z_eq_product_lines, bit_products, reason, z_ge0_gated);
                     else
-                        conditional_product_mag_bound =
-                            prove_positive_product_lower_bound(logger, y_bound, x_bound, z, mag_var, z_eq_product_lines, bit_products, reason);
+                        conditional_product_mag_bound = prove_positive_product_lower_bound(
+                            logger, y_bound, x_bound, z, mag_var, z_eq_product_lines, bit_products, reason, z_ge0_gated);
 
                     conditional_product_bound =
                         channel_z_from_sign_bit(logger, conditional_product_mag_bound, x, y, z, channelling_constraints, reason);
@@ -851,11 +881,11 @@ namespace
                     // Both upper bounds
                     DerivedPBConstraint conditional_product_mag_bound{};
                     if (x_is_first)
-                        conditional_product_mag_bound =
-                            prove_positive_product_upper_bound(logger, x_bound, y_bound, z, mag_var, z_eq_product_lines, bit_products, reason);
+                        conditional_product_mag_bound = prove_positive_product_upper_bound(
+                            logger, x_bound, y_bound, z, mag_var, z_eq_product_lines, bit_products, reason, z_ge0_gated);
                     else
-                        conditional_product_mag_bound =
-                            prove_positive_product_upper_bound(logger, y_bound, x_bound, z, mag_var, z_eq_product_lines, bit_products, reason);
+                        conditional_product_mag_bound = prove_positive_product_upper_bound(
+                            logger, y_bound, x_bound, z, mag_var, z_eq_product_lines, bit_products, reason, z_ge0_gated);
 
                     conditional_product_bound =
                         channel_z_from_sign_bit(logger, conditional_product_mag_bound, x, y, z, channelling_constraints, reason);
@@ -920,7 +950,7 @@ namespace
         const map<SimpleIntegerVariableID, ChannellingData> & channelling_constraints,
         const map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> & mag_var, const pair<ProofLine, ProofLine> z_eq_product_lines,
         ProofLogger * const logger, vector<vector<BitProductData>> & bit_products, const bool x_is_first, const vector<ProofLine> & sign_lines,
-        const ConstraintID & owner) -> void
+        const ConstraintID & owner, bool z_ge0_gated) -> void
     {
         // This is based on the case breakdown in JaCoP
         // https://github.com/radsz/jacop/blob/develop/src/main/java/org/jacop/core/IntDomain.java#L1377
@@ -941,7 +971,7 @@ namespace
                 {x_var, state.bounds(x_var)}, {y_var, state.bounds(y_var)}, {z_var, state.bounds(z_var)}};
             auto lower_justf = [&](const ReasonLiterals & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds, smallest_possible_quotient,
-                    largest_possible_quotient, channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
+                    largest_possible_quotient, channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false, z_ge0_gated);
                 logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (x_var <= largest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
@@ -952,7 +982,7 @@ namespace
             var_bounds.at(x_var).first = min(var_bounds.at(x_var).first, largest_possible_quotient);
             auto upper_justf = [&](const ReasonLiterals & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds, smallest_possible_quotient,
-                    largest_possible_quotient, channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
+                    largest_possible_quotient, channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true, z_ge0_gated);
                 logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
@@ -963,12 +993,12 @@ namespace
         else if (y_min == 0_i && y_max != 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y is either 0 or strictly positive and z has either all positive or all negative values
             filter_quotient(x_var, y_var, z_var, z_min, z_max, 1_i, y_max, state, inference, channelling_constraints, mag_var, z_eq_product_lines,
-                logger, bit_products, x_is_first, sign_lines, owner);
+                logger, bit_products, x_is_first, sign_lines, owner, z_ge0_gated);
         }
         else if (y_min != 0_i && y_max == 0_i && (z_min > 0_i || z_max < 0_i)) {
             // y is either 0 or strictly negative z has either all positive or all negative values
             filter_quotient(x_var, y_var, z_var, z_min, z_max, y_min, -1_i, state, inference, channelling_constraints, mag_var, z_eq_product_lines,
-                logger, bit_products, x_is_first, sign_lines, owner);
+                logger, bit_products, x_is_first, sign_lines, owner, z_ge0_gated);
         }
         else if ((y_min > 0_i || y_max < 0_i) && y_min <= y_max) {
             auto smallest_possible_quotient = min({div_ceil(z_min, y_min), div_ceil(z_min, y_max), div_ceil(z_max, y_min), div_ceil(z_max, y_max)});
@@ -979,13 +1009,13 @@ namespace
                 {x_var, state.bounds(x_var)}, {y_var, state.bounds(y_var)}, {z_var, state.bounds(z_var)}};
             auto upper_justf = [&](const ReasonLiterals & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds, smallest_possible_quotient,
-                    largest_possible_quotient, channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false);
+                    largest_possible_quotient, channelling_constraints, mag_var, z_eq_product_lines, x_is_first, false, z_ge0_gated);
                 logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (x_var <= largest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
             auto lower_justf = [&](const ReasonLiterals & reason) {
                 prove_quotient_bounds(reason, *logger, bit_products, x_var, y_var, z_var, var_bounds, smallest_possible_quotient,
-                    largest_possible_quotient, channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true);
+                    largest_possible_quotient, channelling_constraints, mag_var, z_eq_product_lines, x_is_first, true, z_ge0_gated);
                 logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (x_var >= smallest_possible_quotient) >= 1_i, ProofLevel::Current);
             };
 
@@ -1034,8 +1064,103 @@ auto MultiplyBC::clone() const -> unique_ptr<Constraint>
     return make_unique<MultiplyBC>(_v1, _v2, _v3);
 }
 
-auto gcs::innards::mult_bc::define_encoding(ProofModel & model, const State & initial_state, const std::string & label_id,
-    const std::string & role_prefix, SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3) -> EncodingData
+namespace
+{
+    // cake_pb_cp's multiplication encoding (magnitude bit-products over fresh
+    // x[id][axis_i][bin] flags channelled to |X|, reified sign atoms, product
+    // channelled to |Z|), for non-negative operands. Populates `result` so the
+    // existing bounds propagator's cutting-planes resolve against cake's flags
+    // unchanged: the magnitude variables' bits ARE cake's bin flags. See the cake
+    // ENCODING_MULTIPLY spec and dev_docs.
+    auto define_encoding_cake(ProofModel & model, const State & initial_state, const ConstraintID & constraint_id, const string & label_id,
+        SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3, mult_bc::EncodingData & result) -> void
+    {
+        auto & bit_products = result.initial_bit_products;
+        auto & channelling_constraints = result.channelling_constraints;
+        auto & mag_var = result.mag_var;
+        auto & sign_lines = result.sign_lines;
+        const auto & mbid = label_id;
+
+        // A magnitude variable per operand: a free bit-sum whose bits are named
+        // cake's x[id][axis_i][bin] (use_indices_family), channelled to |v| = v
+        // (non-negative) via cake's four sign-gated rows. axis 0 -> "X", 1 -> "Y".
+        auto make_mag = [&](SimpleIntegerVariableID v, long long axis, const string & letter) -> ProofOnlySimpleIntegerVariableID {
+            auto mag = model.create_proof_only_integer_variable(0_i, initial_state.upper_bound(v), "mult_mag_" + letter,
+                IntegerVariableProofRepresentation::Bits, CakeBitNaming{constraint_id, {axis}, "bin", nullopt, false, true});
+            auto ge0 = HalfReifyOnConjunctionOf{v >= 0_i};
+            auto lt0 = HalfReifyOnConjunctionOf{v < 0_i};
+            auto pos_ge = model.add_labelled_constraint(
+                mbid, letter + "ge0_ge", "MultiplyBC", "magnitude channel", WPBSum{} + 1_i * v + -1_i * mag >= 0_i, ge0);
+            auto pos_le = model.add_labelled_constraint(
+                mbid, letter + "ge0_le", "MultiplyBC", "magnitude channel", WPBSum{} + -1_i * v + 1_i * mag >= 0_i, ge0);
+            auto neg_ge =
+                model.add_labelled_constraint(mbid, letter + "lt0_ge", "MultiplyBC", "magnitude channel", WPBSum{} + 1_i * v + 1_i * mag >= 0_i, lt0);
+            auto neg_le = model.add_labelled_constraint(
+                mbid, letter + "lt0_le", "MultiplyBC", "magnitude channel", WPBSum{} + -1_i * v + -1_i * mag >= 0_i, lt0);
+            channelling_constraints.insert({v, mult_bc::ChannellingData{pos_ge, pos_le, neg_ge, neg_le, true}});
+            mag_var.insert({v, mag});
+            return mag;
+        };
+        auto mag1 = make_mag(v1, 0, "X");
+        auto mag2 = make_mag(v2, 1, "Y");
+
+        auto & tracker = model.names_and_ids_tracker();
+        auto n1 = tracker.num_bits(mag1);
+        auto n2 = tracker.num_bits(mag2);
+
+        // Bit products x[id][i_j][prod] <=> binX_i AND binY_j, summed with 2^(i+j).
+        // The two reifying halves carry deterministic labels (create_proof_flag_-
+        // fully_reifying): [r] = flag -> ineq ("forwards"), [f] = ~flag -> ~ineq
+        // ("reverse"); the propagator references them by those labels.
+        auto product_sum = WPBSum{};     // Sum 2^(i+j) prod[i][j]
+        auto neg_product_sum = WPBSum{}; // -Sum 2^(i+j) prod[i][j]
+        for (Integer i = 0_i; i < n1; ++i) {
+            bit_products.emplace_back();
+            for (Integer j = 0_i; j < n2; ++j) {
+                auto flag = model.create_proof_flag_fully_reifying(constraint_id, {i.raw_value, j.raw_value}, "prod",
+                    WPBSum{} + 1_i * ProofBitVariable{mag1, i, true} + 1_i * ProofBitVariable{mag2, j, true} >= 2_i);
+                auto base = "x[" + mbid + "][" + std::to_string(i.raw_value) + "_" + std::to_string(j.raw_value) + "][prod]";
+                bit_products[i.as_index()].emplace_back(
+                    mult_bc::BitProductData{flag, ProofLineLabel{base + "[r]"}, ProofLineLabel{base + "[f]"}, nullopt, nullopt});
+                product_sum += power2(i + j) * flag;
+                neg_product_sum += -power2(i + j) * flag;
+            }
+        }
+
+        // Channel the product magnitude to |Z| = Z (non-negative), gated on [Z>=0].
+        // The two ge0 halves give Sum(prod) == Z; the propagator uses them as the
+        // z_eq_product pair (.first: Z >= product, .second: Z <= product).
+        auto zge0 = HalfReifyOnConjunctionOf{v3 >= 0_i};
+        auto zlt0 = HalfReifyOnConjunctionOf{v3 < 0_i};
+        // Gated on [Z>=0] (byte-matching cake); the product-bound provers discharge
+        // the entailed ge0(Z) with the ge0(Z) unit (Z is non-negative here).
+        auto mag_z_ge = model.add_labelled_constraint(mbid, "mag_Zge0_ge", "MultiplyBC", "z = product", neg_product_sum + 1_i * v3 >= 0_i, zge0);
+        auto mag_z_le = model.add_labelled_constraint(mbid, "mag_Zge0_le", "MultiplyBC", "z = product", product_sum + -1_i * v3 >= 0_i, zge0);
+        model.add_labelled_constraint(mbid, "mag_Zlt0_ge", "MultiplyBC", "z = product", product_sum + 1_i * v3 >= 0_i, zlt0);
+        model.add_labelled_constraint(mbid, "mag_Zlt0_le", "MultiplyBC", "z = product", neg_product_sum + -1_i * v3 >= 0_i, zlt0);
+        result.v3_eq_product_lines = make_pair(mag_z_ge, mag_z_le);
+        result.z_product_ge0_gated = true;
+
+        // Sign clauses over reified atoms (all entailed for non-negative operands,
+        // but cake always emits them; mirror it so the labels resolve in the chain).
+        sign_lines.emplace_back(
+            model.add_labelled_constraint(mbid, "sgn_x0", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 != 0_i) + 1_i * (v3 >= 0_i) >= 1_i));
+        sign_lines.emplace_back(
+            model.add_labelled_constraint(mbid, "sgn_y0", "MultiplyBC", "sign", WPBSum{} + 1_i * (v2 != 0_i) + 1_i * (v3 >= 0_i) >= 1_i));
+        sign_lines.emplace_back(model.add_labelled_constraint(
+            mbid, "sgn_pp", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 < 1_i) + 1_i * (v2 < 1_i) + 1_i * (v3 >= 0_i) >= 1_i));
+        sign_lines.emplace_back(model.add_labelled_constraint(
+            mbid, "sgn_nn", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 >= 0_i) + 1_i * (v2 >= 0_i) + 1_i * (v3 >= 0_i) >= 1_i));
+        sign_lines.emplace_back(model.add_labelled_constraint(
+            mbid, "sgn_np", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 >= 0_i) + 1_i * (v2 < 1_i) + 1_i * (v3 < 0_i) >= 1_i));
+        sign_lines.emplace_back(model.add_labelled_constraint(
+            mbid, "sgn_pn", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 < 1_i) + 1_i * (v2 >= 0_i) + 1_i * (v3 < 0_i) >= 1_i));
+    }
+}
+
+auto gcs::innards::mult_bc::define_encoding(ProofModel & model, const State & initial_state, const ConstraintID & constraint_id,
+    const std::string & label_id, const std::string & role_prefix, SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3,
+    bool allow_cake_scheme) -> EncodingData
 {
     EncodingData result;
     auto & bit_products = result.initial_bit_products;
@@ -1044,6 +1169,16 @@ auto gcs::innards::mult_bc::define_encoding(ProofModel & model, const State & in
     auto & v3_eq_product_lines = result.v3_eq_product_lines;
     auto & sign_lines = result.sign_lines;
     auto * const optional_model = &model;
+
+    // cake_pb_cp's multiplication encoding: fresh magnitude bit-product flags over
+    // x[id][axis_i][bin] flags, reified sign atoms, product channelled to |Z|. For
+    // non-negative operands only for now (step 1 of the conform); signed operands
+    // still use the legacy two's-complement path below. See dev_docs and the cake
+    // ENCODING_MULTIPLY spec.
+    if (allow_cake_scheme && initial_state.lower_bound(v1) >= 0_i && initial_state.lower_bound(v2) >= 0_i && initial_state.lower_bound(v3) >= 0_i) {
+        define_encoding_cake(model, initial_state, constraint_id, label_id, v1, v2, v3, result);
+        return result;
+    }
 
     {
         // PB Encoding
@@ -1156,7 +1291,7 @@ auto gcs::innards::mult_bc::propagate(SimpleIntegerVariableID v1, SimpleIntegerV
 
     auto justf = [&](const ReasonLiterals & reason) {
         prove_product_bounds(reason, *logger, bit_products, v1, v2, v3, var_bounds, smallest_product, largest_product,
-            encoding.channelling_constraints, encoding.mag_var, encoding.v3_eq_product_lines, encoding.sign_lines);
+            encoding.channelling_constraints, encoding.mag_var, encoding.v3_eq_product_lines, encoding.sign_lines, encoding.z_product_ge0_gated);
         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (v3 <= largest_product) >= 1_i, ProofLevel::Current);
         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (v3 >= smallest_product) >= 1_i, ProofLevel::Current);
     };
@@ -1166,11 +1301,11 @@ auto gcs::innards::mult_bc::propagate(SimpleIntegerVariableID v1, SimpleIntegerV
 
     auto bounds3 = state.bounds(v3);
     filter_quotient(v1, v2, v3, bounds3.first, bounds3.second, bounds2.first, bounds2.second, state, inference, encoding.channelling_constraints,
-        encoding.mag_var, encoding.v3_eq_product_lines, logger, bit_products, true, encoding.sign_lines, owner);
+        encoding.mag_var, encoding.v3_eq_product_lines, logger, bit_products, true, encoding.sign_lines, owner, encoding.z_product_ge0_gated);
 
     bounds1 = state.bounds(v1);
     filter_quotient(v2, v1, v3, bounds3.first, bounds3.second, bounds1.first, bounds1.second, state, inference, encoding.channelling_constraints,
-        encoding.mag_var, encoding.v3_eq_product_lines, logger, bit_products, false, encoding.sign_lines, owner);
+        encoding.mag_var, encoding.v3_eq_product_lines, logger, bit_products, false, encoding.sign_lines, owner, encoding.z_product_ge0_gated);
 }
 
 template auto gcs::innards::mult_bc::propagate(SimpleIntegerVariableID, SimpleIntegerVariableID, SimpleIntegerVariableID, const State &,
@@ -1187,7 +1322,7 @@ auto MultiplyBC::install(Propagators & propagators, State & initial_state, Proof
 
     mult_bc::EncodingData encoding;
     if (optional_model)
-        encoding = mult_bc::define_encoding(*optional_model, initial_state, as_string(constraint_id()), "", _v1, _v2, _v3);
+        encoding = mult_bc::define_encoding(*optional_model, initial_state, constraint_id(), as_string(constraint_id()), "", _v1, _v2, _v3, true);
 
     ConstraintStateHandle bit_products_handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
 
@@ -1207,6 +1342,7 @@ auto MultiplyBC::install(Propagators & propagators, State & initial_state, Proof
 auto MultiplyBC::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("multiply"),
-        SExpr::list({tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2), tracker.s_expr_term_of(_v3)})});
+    // Flat primitive shape `(id multiply X Y Z)`, matching cake_pb_cp.
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("multiply"), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2),
+        tracker.s_expr_term_of(_v3)});
 }

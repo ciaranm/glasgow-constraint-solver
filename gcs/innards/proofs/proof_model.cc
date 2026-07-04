@@ -498,7 +498,9 @@ auto ProofModel::register_bits_variable_encoding(
     auto cake_bit_name = [&](const vector<long long> & values, const string & annotation) -> optional<string> {
         if (! bit_naming)
             return nullopt;
-        string s = "v[" + as_string(bit_naming->id) + "][";
+        // Default v[...] (Values family); cake's multiply-style magnitude bits are
+        // the x[...] Indices family (see CakeBitNaming::use_indices_family).
+        string s = (bit_naming->use_indices_family ? "x[" : "v[") + as_string(bit_naming->id) + "][";
         for (size_t k = 0; k < values.size(); ++k)
             s += (k != 0 ? "_" : "") + std::to_string(values[k]);
         return s + "][" + annotation + "]";

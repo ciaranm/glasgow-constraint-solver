@@ -45,6 +45,10 @@ namespace gcs::innards
             ProofLine pos_le;
             ProofLine neg_ge;
             ProofLine neg_le;
+            // The magnitude channel is gated on the reified sign atom [v>=0]
+            // (cake_pb_cp's scheme) rather than the two's-complement sign bit
+            // (the legacy scheme); channel_to_sign_bit reifies accordingly.
+            bool ge0_gated = false;
         };
 
         /**
@@ -57,6 +61,11 @@ namespace gcs::innards
             std::map<SimpleIntegerVariableID, ChannellingData> channelling_constraints{};
             std::map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> mag_var{};
             std::pair<ProofLine, ProofLine> v3_eq_product_lines{};
+            // cake_pb_cp gates the product->|Z| channel (v3_eq_product_lines) on the
+            // sign atom [Z>=0]; when set, the product-bound provers discharge that
+            // (entailed, non-negative Z) with the ge0(Z) unit. The legacy scheme's
+            // ungated zprod lines leave this false.
+            bool z_product_ge0_gated = false;
             std::vector<ProofLine> sign_lines{};
             // Consumed at install time to create the persistent constraint
             // state that propagate() mutates through its handle.
@@ -71,8 +80,12 @@ namespace gcs::innards
          * several of these (Power's chains); the emitted lines are byte-for-
          * byte what MultiplyBC has always produced when it is empty.
          */
-        [[nodiscard]] auto define_encoding(ProofModel & model, const State & initial_state, const std::string & label_id,
-            const std::string & role_prefix, SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3) -> EncodingData;
+        // allow_cake_scheme opts into cake_pb_cp's magnitude-bit-product encoding
+        // for non-negative operands (Multiply / MultiplyBC); divide/modulus keep the
+        // legacy two's-complement encoding for now. See define_encoding_cake.
+        [[nodiscard]] auto define_encoding(ProofModel & model, const State & initial_state, const ConstraintID & constraint_id,
+            const std::string & label_id, const std::string & role_prefix, SimpleIntegerVariableID v1, SimpleIntegerVariableID v2,
+            SimpleIntegerVariableID v3, bool allow_cake_scheme = false) -> EncodingData;
 
         /**
          * \brief One pass of bounds consistent multiplication filtering for
