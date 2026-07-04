@@ -119,14 +119,20 @@ namespace
 
         // cake_pb_cp's divide encoding: the product |q|*|y| lives only in bit-product
         // flags feeding rem_* rows, with no w or r in the OPB. We take that path for
-        // plain non-negative Divide (milestone 1), emitting cake's OPB and introducing
-        // w and r inside the proof; otherwise the legacy two's-complement path below.
-        // cake path: plain Divide. The remainder-hi stage splits on sign(y), and the
-        // dividend must be non-negative (x >= 0) so q*y >= 0 keeps the product w =
-        // |q||y| a non-negative magnitude. The stages support signed y/q, but the GAC
-        // tabulation (which references the eliminated aux r) can't be built in-proof,
-        // so signed y/q -- which need GAC on tiny domains -- stay on the legacy path
-        // for now; full signed (signed x, in-proof r, GAC) is the next step.
+        // plain, fully non-negative Divide (x, y, q all >= 0), emitting cake's OPB and
+        // introducing w and r inside the proof; otherwise the legacy two's-complement
+        // path below. The non-negativity is load-bearing in two ways: x >= 0 keeps the
+        // product w = |q||y| = x - r and the remainder r = x - w non-negative (only the
+        // pos rem_* rows and the wlo stage are then active), and requiring q >= 0
+        // alongside x, y >= 0 means every operand sign agrees, so the sign machinery is
+        // never asked to refute a mismatch. Relaxing any of the three -- signed x, a
+        // zero-spanning or negative divisor, or a quotient free to take the opposite
+        // sign -- exercises the product-sign reconciliation inside introduce_bits_of's
+        // w = |q||y| subproof, whose proofgoal reconciles w's sign against cake's
+        // division sgn_* clauses. That RUP is not yet derivable whenever sign(q) can
+        // differ from sign(x)*sign(y) (e.g. an unsatisfiable q<0 under x, y >= 0); GAC
+        // tabulation hides it for tiny domains but it surfaces under BC / large domains.
+        // Fixing that sign proofgoal is the next step for any signed divide.
         bool use_cake = expose_quotient && optional_model && xlo >= 0_i && ylo >= 0_i && initial_state.lower_bound(out) >= 0_i && ax.coeff == 1_i &&
             ax.offset == 0_i && ay.var && ay.coeff == 1_i && ay.offset == 0_i && aout.var && aout.coeff == 1_i && aout.offset == 0_i;
 

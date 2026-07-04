@@ -538,8 +538,9 @@ add_scp_chain_test(multiply_signed_unsat  none)
 # reified product-bit block, remainder rows gated on sign(x), and the five
 # division sign clauses); the internal product w = |q||y| and remainder r = x - w
 # are proof-only state vars reintroduced in-proof via introduce_bits_of. Only the
-# non-negative case takes this path (the use_cake guard needs x, y, q lower
-# bounds >= 0); signed operands still go through the legacy encoding. none, not
-# strict, for the same #358 lazy-vs-eager operand-ladder reason as multiply.
+# the fully non-negative case (x, y, q all >= 0) takes this path (the use_cake
+# guard); signed operands exercise a product-sign reconciliation proofgoal that
+# is not yet derivable, so they stay on the legacy encoding. none, not strict,
+# for the same #358 lazy-vs-eager operand-ladder reason as multiply.
 add_scp_chain_test(divide_sat             none)
 add_scp_chain_test(divide_unsat           none)
