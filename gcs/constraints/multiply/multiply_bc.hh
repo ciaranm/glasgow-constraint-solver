@@ -61,6 +61,11 @@ namespace gcs::innards
             std::map<SimpleIntegerVariableID, ChannellingData> channelling_constraints{};
             std::map<SimpleIntegerVariableID, ProofOnlySimpleIntegerVariableID> mag_var{};
             std::pair<ProofLine, ProofLine> v3_eq_product_lines{};
+            // cake_pb_cp gates the product->|Z| channel (v3_eq_product_lines) on the
+            // sign atom [Z>=0]; when set, the product-bound provers discharge that
+            // (entailed, non-negative Z) with the ge0(Z) unit. The legacy scheme's
+            // ungated zprod lines leave this false.
+            bool z_product_ge0_gated = false;
             std::vector<ProofLine> sign_lines{};
             // Consumed at install time to create the persistent constraint
             // state that propagate() mutates through its handle.
