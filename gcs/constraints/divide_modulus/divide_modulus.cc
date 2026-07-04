@@ -117,23 +117,30 @@ namespace
             q_hi = max({xlo / ylo, xlo / yhi, xhi / ylo, xhi / yhi});
         }
 
-        // cake_pb_cp's divide encoding: the product |q|*|y| lives only in bit-product
-        // flags feeding rem_* rows, with no w or r in the OPB. We take that path for
-        // Divide with a non-negative dividend, emitting cake's OPB and introducing w and
-        // r inside the proof; otherwise the legacy two's-complement path below. The
-        // dividend must be non-negative (x >= 0) so that q*y = x - r >= 0 keeps the
-        // product w = |q||y| and remainder r = x - w non-negative (only the pos rem_*
-        // rows and the wlo stage are active). The divisor y and quotient q may take
-        // either sign: make_mag's sign-atom-gated channel converts each to |q|, |y|, the
-        // remainder-hi stage splits on sign(y), and the five sign clauses pin sign(q).
-        // Because w is the magnitude |q||y| (not the signed product q*y), mult_bc is told
-        // z_is_magnitude so it bounds w by the operand magnitudes -- otherwise an
-        // opposite-sign q, y would make it infer a negative bound on the (non-negative) w
-        // and its RUP justification would be unprovable. Signed x -- where r follows x's
-        // sign, needing the neg rem_* rows and neg identity -- is the remaining step and
-        // stays on the legacy path for now.
-        bool use_cake = expose_quotient && optional_model && xlo >= 0_i && ax.coeff == 1_i && ax.offset == 0_i && ay.var && ay.coeff == 1_i &&
-            ay.offset == 0_i && aout.var && aout.coeff == 1_i && aout.offset == 0_i;
+        // cake_pb_cp's divide/modulus encoding: the product |q|*|y| lives only in
+        // bit-product flags feeding the remainder/identity rows, with no w (and, for
+        // divide, no r) in the OPB. We take that path for plain operands with a
+        // non-negative dividend, emitting cake's OPB and introducing the internal
+        // handles inside the proof; otherwise the legacy two's-complement path below.
+        //
+        // Divide (use_cake_divide): x >= 0 keeps w = |q||y| and r = x - w non-negative
+        // (only the pos rem_* rows and the wlo stage are active). The divisor y and
+        // quotient q may take either sign: make_mag's sign-atom-gated channel converts
+        // each to |q|, |y|, the remainder-hi stage splits on sign(y), and the five sign
+        // clauses pin sign(q). Because w is the magnitude |q||y| (not the signed product
+        // q*y), mult_bc is told z_is_magnitude so it bounds w by the operand magnitudes.
+        //
+        // Modulus (use_cake_modulus): the exposed slot is r, and cake leaves the
+        // quotient's magnitude a FREE axis-0 bit-sum with no i[Q] channel. We restrict
+        // to x >= 0 and y >= 1, so q >= 0 too and every sign agrees: q's own in-proof
+        // bits (registered in cake's naming below) ARE that free magnitude, needing no
+        // channel, and r's range/sign come straight off cake's id_*/rng_*/sgn_* rows.
+        // Signed dividends (and, for modulus, a signed divisor) stay on the legacy path.
+        bool plain_operands = optional_model && ax.coeff == 1_i && ax.offset == 0_i && ay.var && ay.coeff == 1_i && ay.offset == 0_i && aout.var &&
+            aout.coeff == 1_i && aout.offset == 0_i;
+        bool use_cake_divide = expose_quotient && plain_operands && xlo >= 0_i;
+        bool use_cake_modulus = (! expose_quotient) && plain_operands && xlo >= 0_i && ylo >= 1_i;
+        bool use_cake = use_cake_divide || use_cake_modulus;
 
         // The exposed slot is the user's; the other is an auxiliary, with
         // bounds tightened by the sign-of-dividend rule where easy.
@@ -155,6 +162,22 @@ namespace
             else if (optional_model)
                 optional_model->register_state_variable_bits_in_proof(aux, r_lo, r_hi_cake, "aux_divide_remainder" + to_string(aux.index));
             r = aux;
+        }
+        else if (use_cake) {
+            r = out;
+            // cake leaves the quotient a free axis-0 magnitude sized by the dividend's
+            // bit count (q <= x when y >= 1), so its provable range is the bit-implied
+            // [0, 2^n - 1]. Give the state the same range (like divide's product w) and
+            // register its bits in cake's x[id][0_*][bin] naming with no OPB bounds, so
+            // q's own bits ARE the magnitude the bit products multiply.
+            auto q_bits = 0_i;
+            while (power2(q_bits) <= xhi)
+                q_bits += 1_i;
+            auto q_bit_max = power2(q_bits) - 1_i;
+            aux = initial_state.allocate_integer_variable_with_state(0_i, q_bit_max);
+            optional_model->register_state_variable_bits_in_proof(
+                aux, 0_i, q_bit_max, "aux_modulus_quotient" + to_string(aux.index), CakeBitNaming{owner, {0}, "bin", nullopt, false, true});
+            q = aux;
         }
         else {
             r = out;
@@ -186,7 +209,7 @@ namespace
         shared_ptr<mult_bc::EncodingData> cake_encoding;
         shared_ptr<vector<LinearStage>> cake_stages;
 
-        if (use_cake) {
+        if (use_cake && expose_quotient) {
             auto q_eff = *aq.var, y_eff = *ay.var, x_eff = *ax.var;
 
             cake_encoding = make_shared<mult_bc::EncodingData>();
@@ -323,6 +346,137 @@ namespace
                 PolBuilder pb_whin;
                 pb_whin.add(rem_pos_hi).add(enc->v3_eq_product_lines.first).add(y_lt0_le);
                 (*stg)[2].lines = {pb_whin.emit(*logger, ProofLevel::Top), nullopt};
+            });
+        }
+        else if (use_cake) {
+            // Modulus's cake path: the exposed slot is r, the quotient q a free axis-0
+            // magnitude whose bits (registered above) are its own -- no i[Q], no channel,
+            // since q >= 0 means q = |q|. w = q * y (both non-negative) is a product state
+            // variable introduced in the proof; r = x - w comes off cake's id_pos rows and
+            // 0 <= r < |y| off rng_*. The id_neg_*/rng_lo/sgn_* rows are cake's inert
+            // (satisfiable) mirror for x < 0, emitted only to match cake's OPB.
+            //
+            // The identity stage propagates the exposed r, so r must be the plain underlying
+            // variable *aout.var (r_eff), not any view wrapper: propagating a change through
+            // a view's deviewed bits while the identity spans the wide product w defeats the
+            // reverse unit propagation. The guard's coeff-1/offset-0 restriction makes r_eff
+            // exactly the exposed value, and cake names it i[R] too, so this also matches.
+            auto q_eff = *aq.var, y_eff = *ay.var, x_eff = *ax.var, r_eff = *aout.var;
+
+            cake_encoding = make_shared<mult_bc::EncodingData>();
+            auto & enc = *cake_encoding;
+            enc.z_product_ge0_gated = false;
+            enc.z_is_magnitude = false; // q, y >= 0, so w = q * y is the plain product
+
+            // Axis-1 magnitude channel for y (cake letter "Y"); q needs none, as its own
+            // cake-named bits are the axis-0 magnitude.
+            auto mag_y_ub = max(abs(initial_state.lower_bound(y_eff)), abs(initial_state.upper_bound(y_eff)));
+            auto mag_y = optional_model->create_proof_only_integer_variable(
+                0_i, mag_y_ub, "mod_mag_Y", IntegerVariableProofRepresentation::Bits, CakeBitNaming{owner, {1}, "bin", nullopt, false, true});
+            auto y_ge0 = HalfReifyOnConjunctionOf{y_eff >= 0_i};
+            auto y_lt0 = HalfReifyOnConjunctionOf{y_eff < 0_i};
+            auto y_pos_ge = optional_model->add_labelled_constraint(
+                label, "Yge0_ge", "Modulus", "magnitude channel", WPBSum{} + 1_i * y_eff + -1_i * mag_y >= 0_i, y_ge0);
+            auto y_pos_le = optional_model->add_labelled_constraint(
+                label, "Yge0_le", "Modulus", "magnitude channel", WPBSum{} + -1_i * y_eff + 1_i * mag_y >= 0_i, y_ge0);
+            auto y_neg_ge = optional_model->add_labelled_constraint(
+                label, "Ylt0_ge", "Modulus", "magnitude channel", WPBSum{} + 1_i * y_eff + 1_i * mag_y >= 0_i, y_lt0);
+            auto y_neg_le = optional_model->add_labelled_constraint(
+                label, "Ylt0_le", "Modulus", "magnitude channel", WPBSum{} + -1_i * y_eff + -1_i * mag_y >= 0_i, y_lt0);
+            enc.channelling_constraints.insert(
+                {y_eff, mult_bc::ChannellingData{y_pos_ge, y_pos_le, y_neg_ge, y_neg_le, true, initial_state.lower_bound(y_eff) < 0_i}});
+            enc.mag_var.insert({y_eff, mag_y});
+
+            // Bit-product flags x[id][i_j][prod] = q_i ^ mag_y_j and their weighted sum
+            // |q|*|y|. q's axis-0 bits are q_eff's own registered (cake-named) bits.
+            auto n1 = optional_model->names_and_ids_tracker().num_bits(q_eff);
+            auto n2 = optional_model->names_and_ids_tracker().num_bits(mag_y);
+            auto product_sum = WPBSum{};
+            for (Integer i = 0_i; i < n1; ++i) {
+                enc.initial_bit_products.emplace_back();
+                for (Integer j = 0_i; j < n2; ++j) {
+                    auto flag = optional_model->create_proof_flag_fully_reifying(owner, {i.raw_value, j.raw_value}, "prod",
+                        WPBSum{} + 1_i * ProofBitVariable{q_eff, i, true} + 1_i * ProofBitVariable{mag_y, j, true} >= 2_i);
+                    auto base = "x[" + label + "][" + to_string(i.raw_value) + "_" + to_string(j.raw_value) + "][prod]";
+                    enc.initial_bit_products[i.as_index()].emplace_back(
+                        mult_bc::BitProductData{flag, ProofLineLabel{base + "[r]"}, ProofLineLabel{base + "[f]"}, nullopt, nullopt});
+                    product_sum += power2(i + j) * flag;
+                }
+            }
+            auto neg_product = WPBSum{};
+            for (const auto & t : product_sum.terms)
+                neg_product += -t.coefficient * t.variable;
+
+            optional_model->add_labelled_constraint(
+                label, "nonzero", "Modulus", "divisor is not zero", WPBSum{} + 1_i * (y >= 1_i) + 1_i * (y < 0_i) >= 1_i);
+
+            // r = x - |q||y|, split on sign(x): id_pos_* (gated [x>=0]) is the active
+            // r = x - w equality; id_neg_* (gated [x<0]) its inert mirror.
+            auto xge0 = HalfReifyOnConjunctionOf{x_eff >= 0_i};
+            auto xlt0 = HalfReifyOnConjunctionOf{x_eff < 1_i};
+            auto id_pos_ge = optional_model->add_labelled_constraint(
+                label, "id_pos_ge", "Modulus", "identity", neg_product + 1_i * x_eff + -1_i * r_eff >= 0_i, xge0);
+            auto id_pos_le = optional_model->add_labelled_constraint(
+                label, "id_pos_le", "Modulus", "identity", product_sum + -1_i * x_eff + 1_i * r_eff >= 0_i, xge0);
+            optional_model->add_labelled_constraint(label, "id_neg_ge", "Modulus", "identity", neg_product + -1_i * x_eff + 1_i * r_eff >= 0_i, xlt0);
+            optional_model->add_labelled_constraint(label, "id_neg_le", "Modulus", "identity", product_sum + 1_i * x_eff + -1_i * r_eff >= 0_i, xlt0);
+
+            // 0 <= r < |y|: rng_hi (r < |y|, active) and rng_lo (r > -|y|, inert), plus
+            // the r-sign rows (r takes x's sign; sgn_pos trivial, sgn_neg inert here).
+            auto rng_hi = optional_model->add_labelled_constraint(label, "rng_hi", "Modulus", "range", WPBSum{} + -1_i * r_eff + 1_i * mag_y >= 1_i);
+            optional_model->add_labelled_constraint(label, "rng_lo", "Modulus", "range", WPBSum{} + 1_i * r_eff + 1_i * mag_y >= 1_i);
+            auto sgn_pos = optional_model->add_labelled_constraint(label, "sgn_pos", "Modulus", "sign", WPBSum{} + 1_i * r_eff >= 0_i, xge0);
+            optional_model->add_labelled_constraint(label, "sgn_neg", "Modulus", "sign", WPBSum{} + -1_i * r_eff >= 0_i, xlt0);
+
+            // w = |q||y| is a product state variable driving mult_bc, sized to the full
+            // bit-product sum; its bits are introduced in the proof.
+            auto w_hi = (power2(n1) - 1_i) * (power2(n2) - 1_i);
+            auto w = initial_state.allocate_integer_variable_with_state(0_i, w_hi);
+            optional_model->register_state_variable_bits_in_proof(w, 0_i, w_hi, "aux_modulus_product" + to_string(w.index));
+            mult_q = q_eff, mult_y = y_eff, mult_w = w;
+            bit_products_handle = initial_state.add_persistent_constraint_state(enc.initial_bit_products);
+
+            // Stages over the underlying operands: the identity r = x - w (two [x>=0]-gated
+            // inequalities off id_pos_*), the range r < |y| (gated [y>=1], off rng_hi + the y
+            // channel), and r >= 0 (gated [x>=0], off sgn_pos) which -- since r takes x's sign
+            // -- prunes a would-be negative remainder when r's domain spans zero. The gates
+            // ride along, discharged by propagate_linear's ThenRUP from x's / y's domains.
+            // Proof lines are filled once w = product is introduced in the initialiser.
+            cake_stages = make_shared<vector<LinearStage>>();
+            auto [t_idle, m_idle] = tidy_up_linear(WeightedSum{} + 1_i * x_eff + -1_i * w + -1_i * r_eff);
+            cake_stages->emplace_back(LinearStage{t_idle, 0_i + m_idle, false, {nullopt, nullopt}, optional{x_eff >= 0_i}});
+            auto [t_idge, m_idge] = tidy_up_linear(WeightedSum{} + -1_i * x_eff + 1_i * w + 1_i * r_eff);
+            cake_stages->emplace_back(LinearStage{t_idge, 0_i + m_idge, false, {nullopt, nullopt}, optional{x_eff >= 0_i}});
+            auto [t_rhi, m_rhi] = tidy_up_linear(WeightedSum{} + 1_i * r_eff + -1_i * y_eff);
+            cake_stages->emplace_back(LinearStage{t_rhi, -1_i + m_rhi, false, {nullopt, nullopt}, optional{y_eff >= 1_i}});
+            auto [t_slo, m_slo] = tidy_up_linear(WeightedSum{} + -1_i * r_eff);
+            cake_stages->emplace_back(LinearStage{t_slo, 0_i + m_slo, false, {nullopt, nullopt}, optional{x_eff >= 0_i}});
+
+            propagators.install_initialiser([enc = cake_encoding, stg = cake_stages, product_sum, w, id_pos_ge, id_pos_le, rng_hi, sgn_pos, y_pos_ge](
+                                                State &, auto &, ProofLogger * const logger) -> void {
+                if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
+                    return;
+                // w = |q||y|; v3_eq_product_lines = {w >= product, w <= product}.
+                enc->v3_eq_product_lines = logger->introduce_bits_of(product_sum, w, ProofLevel::Top);
+                // identity r >= x - w (x - w - r <= 0): id_pos_le (r - x + product >= 0)
+                // + (w >= product). The [x>=0] gate rides along, discharged by x's domain.
+                PolBuilder pb_idle;
+                pb_idle.add(id_pos_le).add(enc->v3_eq_product_lines.first);
+                (*stg)[0].lines = {pb_idle.emit(*logger, ProofLevel::Top), nullopt};
+                // identity r <= x - w (w + r - x <= 0): id_pos_ge (x - product - r >= 0)
+                // + (w <= product).
+                PolBuilder pb_idge;
+                pb_idge.add(id_pos_ge).add(enc->v3_eq_product_lines.second);
+                (*stg)[1].lines = {pb_idge.emit(*logger, ProofLevel::Top), nullopt};
+                // range r < |y| (r - y <= -1, |y|=y): rng_hi (|y| - r >= 1) + Yge0_ge
+                // (y - |y| >= 0); |y| = mag_y cancels, the [y>=0] gate rides along.
+                PolBuilder pb_rhi;
+                pb_rhi.add(rng_hi).add(y_pos_ge);
+                (*stg)[2].lines = {pb_rhi.emit(*logger, ProofLevel::Top), nullopt};
+                // r >= 0 (-r <= 0): straight off sgn_pos, [x>=0] gate discharged by x's domain.
+                PolBuilder pb_slo;
+                pb_slo.add(sgn_pos);
+                (*stg)[3].lines = {pb_slo.emit(*logger, ProofLevel::Top), nullopt};
             });
         }
 

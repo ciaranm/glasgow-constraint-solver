@@ -369,12 +369,14 @@ auto ProofModel::create_proof_only_integer_variable_in_proof(Integer lower, Inte
     return id;
 }
 
-auto ProofModel::register_state_variable_bits_in_proof(const SimpleIntegerVariableID & id, Integer lower, Integer upper, const string & name) -> void
+auto ProofModel::register_state_variable_bits_in_proof(
+    const SimpleIntegerVariableID & id, Integer lower, Integer upper, const string & name, const optional<CakeBitNaming> & bit_naming) -> void
 {
     // Like create_proof_only_integer_variable_in_proof, but for a variable that is
     // ALSO state-allocated (so it can drive propagation): register its bits, emit
-    // nothing to the OPB, and leave the caller to introduce its meaning in-proof.
-    register_bits_variable_encoding(id, lower, upper, name);
+    // nothing to the OPB, and leave the caller to introduce its meaning in-proof. A
+    // CakeBitNaming names the bits in cake's value-flag scheme (modulus's quotient).
+    register_bits_variable_encoding(id, lower, upper, name, bit_naming);
 }
 
 auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID id, Integer lower, Integer upper, const string & name)

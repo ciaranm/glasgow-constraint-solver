@@ -267,8 +267,13 @@ namespace gcs::innards
          * The variable keeps its solver state, so it can still drive propagation ---
          * the combination the pure proof-only
          * create_proof_only_integer_variable_in_proof cannot provide.
+         *
+         * With a CakeBitNaming the bits render in cake_pb_cp's value-flag scheme (as
+         * for create_proof_only_integer_variable): modulus registers its quotient state
+         * variable this way so its bits ARE cake's free axis-0 magnitude x[id][0_*][bin].
          */
-        auto register_state_variable_bits_in_proof(const SimpleIntegerVariableID &, Integer, Integer, const std::string &) -> void;
+        auto register_state_variable_bits_in_proof(
+            const SimpleIntegerVariableID &, Integer, Integer, const std::string &, const std::optional<CakeBitNaming> & = std::nullopt) -> void;
 
         [[nodiscard]] auto create_proof_flag(const std::string & stem) -> ProofFlag;
 
