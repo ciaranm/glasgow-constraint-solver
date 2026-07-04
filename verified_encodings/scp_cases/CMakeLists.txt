@@ -532,3 +532,14 @@ add_scp_chain_test(multiply_sat           none)
 add_scp_chain_test(multiply_unsat         none)
 add_scp_chain_test(multiply_signed_sat    none)
 add_scp_chain_test(multiply_signed_unsat  none)
+
+# divide: truncated division x = q*y + r, |r| < |y|, sign(r) = sign(x). The
+# proof emits cake's divide OPB (|Q| axis-0 and |Y| axis-1 magnitude channels, a
+# reified product-bit block, remainder rows gated on sign(x), and the five
+# division sign clauses); the internal product w = |q||y| and remainder r = x - w
+# are proof-only state vars reintroduced in-proof via introduce_bits_of. Only the
+# non-negative case takes this path (the use_cake guard needs x, y, q lower
+# bounds >= 0); signed operands still go through the legacy encoding. none, not
+# strict, for the same #358 lazy-vs-eager operand-ladder reason as multiply.
+add_scp_chain_test(divide_sat             none)
+add_scp_chain_test(divide_unsat           none)
