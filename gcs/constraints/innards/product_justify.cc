@@ -150,6 +150,15 @@ auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, c
     if (a_val < 0_i || b_val < 0_i)
         throw UnexpectedException{"magnitude upper bound is negative"};
 
+    // A zero magnitude empties the grid outright: under the zero side's bound
+    // line its bits are all zero, and the [r] halves then clear every cell,
+    // so the claim is plain RUP -- and the pol scaling below would need a
+    // zero coefficient, which PolBuilder rightly refuses.
+    if (a_val == 0_i || b_val == 0_i) {
+        auto line = logger.emit_under_reason(RUPProofRule{}, logger.reify(grid.neg_sum >= 0_i, cases), ProofLevel::Temporary, reason);
+        return ConditionalBound{grid.neg_sum, 0_i, cases, line};
+    }
+
     // Thesis Justification Subprocedure 7.2. Unlike the lower bound there is
     // no known short pure-cutting-planes derivation; each grid row's bound
     //   Sum_j 2^j ~prod_ij + b_val * bit_a_i >= 2^m - 1
