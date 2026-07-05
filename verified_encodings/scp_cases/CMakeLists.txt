@@ -542,13 +542,22 @@ add_scp_chain_test(multiply_signed_unsat  none)
 # bound >= 0); the divisor and quotient may take either sign. The signed_sat case
 # has a zero-spanning divisor, and signed_unsat is contradictory (x>0, y>0 forces
 # q>=0 but q<0) -- both exercise the magnitude-bounded product w = |q||y| that
-# lets mult_bc bound the non-negative w without a false negative range. Signed x
-# still uses the legacy encoding. none, not strict, for the same #358 lazy-vs-
-# eager operand-ladder reason as multiply.
+# lets mult_bc bound the non-negative w without a false negative range. A signed
+# (strictly negative) dividend takes a second cake path (divide_neg_*): both mult
+# operands are the non-negative magnitudes |q| and |y|, so mult_bc divides w by the
+# non-negative |y| (dividing by the signed divisor was the x<0 blocker), and the
+# exposed quotient's sign is pinned off the sgn_* clauses directly. The neg_yspan
+# case flips sign(q) with a zero-spanning divisor; neg_negneg forces q>=0; neg_unsat
+# is contradictory. none, not strict, for the same #358 lazy-vs-eager operand-ladder
+# reason as multiply.
 add_scp_chain_test(divide_sat             none)
 add_scp_chain_test(divide_unsat           none)
 add_scp_chain_test(divide_signed_sat      none)
 add_scp_chain_test(divide_signed_unsat    none)
+add_scp_chain_test(divide_neg_sat         none)
+add_scp_chain_test(divide_neg_yspan_sat   none)
+add_scp_chain_test(divide_neg_negneg_sat  none)
+add_scp_chain_test(divide_neg_unsat       none)
 
 # modulus: the same truncated-division relation exposing r instead of q. cake's
 # modulus OPB leaves the quotient a FREE axis-0 magnitude (no i[Q], no channel):
