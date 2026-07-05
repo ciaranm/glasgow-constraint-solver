@@ -558,6 +558,14 @@ add_scp_chain_test(divide_neg_sat         none)
 add_scp_chain_test(divide_neg_yspan_sat   none)
 add_scp_chain_test(divide_neg_negneg_sat  none)
 add_scp_chain_test(divide_neg_unsat       none)
+# A dividend spanning zero (divide_span_*) takes a third cake path: both the x>=0
+# and x<0 remainder rows and w-stages are live (gated on sign(x)), and no remainder
+# is materialised (cake's rem_* rows range x-w directly, and a rejected (x,y,q) leaf
+# refutes off them once magq/absy/w are pinned by the assigned q,y) -- so there is no
+# |r| aux and no proof-only |x|. span_yspan spans BOTH operands; span_unsat has |q| too big.
+add_scp_chain_test(divide_span_sat        none)
+add_scp_chain_test(divide_span_yspan_sat  none)
+add_scp_chain_test(divide_span_unsat      none)
 
 # modulus: the same truncated-division relation exposing r instead of q. cake's
 # modulus OPB leaves the quotient a FREE axis-0 magnitude (no i[Q], no channel):
