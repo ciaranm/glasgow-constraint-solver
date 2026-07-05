@@ -1099,8 +1099,8 @@ MultiplyBC::MultiplyBC(const SimpleIntegerVariableID v1, const SimpleIntegerVari
 {
     // Aliased slots are well-defined semantically (squaring, fixed
     // points) but the bit-product proof encoding doesn't tolerate
-    // them: make_magnitude_representation, prove_product_bounds, and
-    // the sign_lines accounting all assume distinct underlying
+    // them: the magnitude channels, prove_product_bounds, and the
+    // sign_lines accounting all assume distinct underlying
     // variables. See GitHub issue for the deeper fix; until then
     // surface as an InvalidProblemDefinitionException so users get
     // an actionable error instead of a proof-verification failure.
