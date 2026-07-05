@@ -809,17 +809,16 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                 Minus{resolve_variable(variables, terms[2]), resolve_variable(variables, terms[3]), resolve_variable(variables, terms[4])}, label);
         }
         else if (op == "divide" || op == "modulus") {
-            // (label divide (x y quotient)) / (label modulus (x y remainder)):
-            // truncated division, with the divide-by-zero case relational.
-            if (terms.size() != 3)
-                throw ScpReadError{"divide/modulus takes (label " + op + " (x y result))"};
-            auto vars = resolve_variable_list(variables, terms[2], "the divide/modulus variable list");
-            if (vars.size() != 3)
-                throw ScpReadError{op + " takes exactly three variables"};
+            // (label divide x y quotient) / (label modulus x y remainder):
+            // truncated division, with the divide-by-zero case relational. Flat
+            // shape matching cake_pb_cp.
+            if (terms.size() != 5)
+                throw ScpReadError{"divide/modulus takes (label " + op + " x y result)"};
+            auto x = resolve_variable(variables, terms[2]), y = resolve_variable(variables, terms[3]), result = resolve_variable(variables, terms[4]);
             if (op == "divide")
-                post_constraint(problem, Divide{vars[0], vars[1], vars[2]}, label);
+                post_constraint(problem, Divide{x, y, result}, label);
             else
-                post_constraint(problem, Modulus{vars[0], vars[1], vars[2]}, label);
+                post_constraint(problem, Modulus{x, y, result}, label);
         }
         else if (op == "power") {
             // (label power (base exponent result)): base ^ exponent = result,
