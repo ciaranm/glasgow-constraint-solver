@@ -553,13 +553,19 @@ add_scp_chain_test(divide_signed_unsat    none)
 # modulus: the same truncated-division relation exposing r instead of q. cake's
 # modulus OPB leaves the quotient a FREE axis-0 magnitude (no i[Q], no channel):
 # the exposed r reads its identity r = x - |q||y| off the id_pos rows and 0 <= r <
-# |y| off rng_*, while the quotient q is a state variable whose own cake-named bits
-# ARE that magnitude. Only a non-negative dividend with a strictly positive divisor
-# (x >= 0, y >= 1, so q >= 0, r >= 0 -- every sign agrees) takes this path; signed
-# cases stay on the legacy encoding. big_sat widens the bit counts (X[0,20], Y[0,4])
-# and fixedy_sat fixes the divisor so the quotient's bit width is sized by the
-# dividend, not the quotient's range. none, for the same #358 reason as divide.
-add_scp_chain_test(modulus_sat            none)
-add_scp_chain_test(modulus_unsat          none)
-add_scp_chain_test(modulus_big_sat        none)
-add_scp_chain_test(modulus_fixedy_sat     none)
+# |y| off rng_*, while the quotient magnitude |q| is a state variable whose own
+# cake-named bits ARE that magnitude. Requires a non-negative dividend (x >= 0), but
+# ANY-sign divisor: the divisor magnitude |y| is a second magnitude state variable
+# (absy) pinned to |y| by cake's Yge0/Ylt0 channel, so mult_bc multiplies the two
+# non-negative magnitudes with no signed reasoning; the tabulation recovers the signed
+# quotient. big_sat widens the bit counts and fixedy_sat fixes the divisor. The
+# signed_* cases exercise a fixed-negative / zero-spanning / larger / unsat divisor.
+# none, for the same #358 reason as divide.
+add_scp_chain_test(modulus_sat                  none)
+add_scp_chain_test(modulus_unsat                none)
+add_scp_chain_test(modulus_big_sat              none)
+add_scp_chain_test(modulus_fixedy_sat           none)
+add_scp_chain_test(modulus_signed_divisor_sat   none)
+add_scp_chain_test(modulus_yspan_sat            none)
+add_scp_chain_test(modulus_signed_big_sat       none)
+add_scp_chain_test(modulus_signed_unsat         none)
