@@ -3,8 +3,9 @@ name: CMake
 on:
   push:
     branches: [ "main" ]
+  # No base-branch filter here, so PRs onto a feature branch (a stacked PR, not
+  # just onto main) are built and checked too.
   pull_request:
-    branches: [ "main" ]
 
 jobs:
   build:
