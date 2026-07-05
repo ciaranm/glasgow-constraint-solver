@@ -39,6 +39,17 @@ namespace gcs::innards::product_justify
         -> ConditionalBound;
 
     /**
+     * \brief As derive_operand_bound, but under an assumed atom rather than
+     * the reason: `[v>=b] => v >= b` (or the upper-bound mirror), the atom
+     * kept in `cases`. This is how the factor-bound justifications assume the
+     * refuted excluded range (thesis Procedures 7.6/7.7): the driver's
+     * negated goal supplies the atom as a unit.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto derive_assumed_operand_bound(ProofLogger &, SimpleIntegerVariableID v, bool lower, Integer bound) -> ConditionalBound;
+
+    /**
      * \brief Thesis Justification Subprocedure 7.3, cake flavour: channel a
      * signed operand bound to a bound on the slot's magnitude, conditional on
      * the slot's sign-case literal. For the non-negative branch ([v>=0]) a
@@ -52,7 +63,7 @@ namespace gcs::innards::product_justify
      * \ingroup Innards
      */
     [[nodiscard]] auto channel_bound_to_magnitude(ProofLogger &, const ConditionalBound & operand_bound, SimpleIntegerVariableID v,
-        const product_enc::MagnitudeChannel & channel, bool negative_branch) -> ConditionalBound;
+        const product_enc::MagnitudeChannel & channel, bool negative_branch, bool strengthen_nonzero = false) -> ConditionalBound;
 
     /**
      * \brief Thesis Justification Subprocedure 7.1: from magnitude lower
@@ -117,7 +128,8 @@ namespace gcs::innards::product_justify
      * \ingroup Innards
      */
     auto conclude_by_sign_cases(ProofLogger &, const ReasonLiterals & reason, const WPBSumLE & conclusion,
-        const std::vector<SignCaseDimension> & dims, const std::vector<std::optional<ConditionalBound>> & premise_by_pattern) -> ProofLine;
+        const std::vector<SignCaseDimension> & dims, const std::vector<std::optional<ConditionalBound>> & premise_by_pattern,
+        const std::vector<Literal> & zero_refutations = {}) -> ProofLine;
 }
 
 #endif

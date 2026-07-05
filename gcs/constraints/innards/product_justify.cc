@@ -38,8 +38,20 @@ auto gcs::innards::product_justify::derive_operand_bound(
     return ConditionalBound{sum, rhs, HalfReifyOnConjunctionOf{}, line};
 }
 
+auto gcs::innards::product_justify::derive_assumed_operand_bound(ProofLogger & logger, SimpleIntegerVariableID v, bool lower, Integer bound)
+    -> ConditionalBound
+{
+    // The claim is RUP hint-free: its negation asserts the atom and the
+    // violated bound together, which the atom's definition rows refute.
+    auto sum = lower ? WPBSum{} + 1_i * v : WPBSum{} + -1_i * v;
+    auto rhs = lower ? bound : -bound;
+    auto cases = HalfReifyOnConjunctionOf{lower ? v >= bound : v < bound + 1_i};
+    auto line = logger.emit_rup_proof_line(logger.reify(sum >= rhs, cases), ProofLevel::Temporary);
+    return ConditionalBound{sum, rhs, cases, line};
+}
+
 auto gcs::innards::product_justify::channel_bound_to_magnitude(ProofLogger & logger, const ConditionalBound & operand_bound,
-    SimpleIntegerVariableID v, const product_enc::MagnitudeChannel & channel, bool negative_branch) -> ConditionalBound
+    SimpleIntegerVariableID v, const product_enc::MagnitudeChannel & channel, bool negative_branch, bool strengthen_nonzero) -> ConditionalBound
 {
     if (operand_bound.sum.terms.size() != 1 || abs(operand_bound.sum.terms[0].coefficient) != 1_i)
         throw UnexpectedException{"operand bound is not a single +/-v term"};
@@ -66,6 +78,20 @@ auto gcs::innards::product_justify::channel_bound_to_magnitude(ProofLogger & log
         }}.visit(channel.mag);
 
     auto cases = merge_cases(operand_bound.cases, HalfReifyOnConjunctionOf{negative_branch ? v < 0_i : v >= 0_i});
+
+    // A magnitude lower bound of zero or less is useless to the grid
+    // procedures. When the caller needs strictness (a spanning co-factor
+    // whose zero case the driver's final RUP will close through the grid),
+    // add [v != 0] to the cases and lift the bound to 1: RUP, since the
+    // branch atom plus [v != 0] give |v| >= 1 through the eq0 rows and the
+    // channel. (The old code's mysterious RHS clamp did this via reif
+    // riders; here it is an explicit, documented choice.)
+    if (strengthen_nonzero && mag_coeff == 1_i && operand_bound.rhs < 1_i) {
+        cases = merge_cases(cases, HalfReifyOnConjunctionOf{v != 0_i});
+        auto strengthened = logger.emit_rup_proof_line(logger.reify(mag_sum >= 1_i, cases), ProofLevel::Temporary);
+        return ConditionalBound{mag_sum, 1_i, cases, strengthened};
+    }
+
     return ConditionalBound{mag_sum, operand_bound.rhs, cases, line};
 }
 
@@ -205,7 +231,8 @@ auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & l
 }
 
 auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger, const ReasonLiterals & reason, const WPBSumLE & conclusion,
-    const vector<SignCaseDimension> & dims, const vector<std::optional<ConditionalBound>> & premise_by_pattern) -> ProofLine
+    const vector<SignCaseDimension> & dims, const vector<std::optional<ConditionalBound>> & premise_by_pattern,
+    const vector<Literal> & zero_refutations) -> ProofLine
 {
     if (premise_by_pattern.size() != (1u << dims.size()))
         throw UnexpectedException{"wrong number of case patterns"};
@@ -221,7 +248,13 @@ auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger,
         // through the order encoding).
         vector<ProofLine> clauses;
         for (std::size_t pattern = 0; pattern < premise_by_pattern.size(); ++pattern) {
-            if (premise_by_pattern[pattern]) {
+            if (premise_by_pattern[pattern] && premise_by_pattern[pattern]->sum.terms.empty()) {
+                // Already a refutation clause over its case atoms (a factor
+                // bound's clash with the reason's bounds): adding the negated
+                // goal would only inject its terms as free slack.
+                clauses.emplace_back(premise_by_pattern[pattern]->line);
+            }
+            else if (premise_by_pattern[pattern]) {
                 PolBuilder builder;
                 builder.add(premise_by_pattern[pattern]->line).add(negation).saturate();
                 clauses.emplace_back(builder.emit(sub_logger, ProofLevel::Temporary));
@@ -245,6 +278,14 @@ auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger,
             }
             clauses = std::move(next);
         }
+
+        // Unit clauses refuting a strengthened co-factor's zero case: [v=0]
+        // forces the magnitude, the grid, and hence the result to zero, which
+        // the reason's result bounds exclude - all by unit propagation. As
+        // units these cascade into the cut result's leftover [v=0] terms,
+        // which mere propagation could otherwise satisfy rather than refute.
+        for (const auto & lit : zero_refutations)
+            sub_logger.emit_rup_proof_line(WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Temporary);
 
         sub_logger.emit(RUPProofRule{}, WPBSum{} >= 1_i, ProofLevel::Temporary);
     }});
