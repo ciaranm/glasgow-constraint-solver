@@ -246,6 +246,12 @@ auto main(int, char *[]) -> int
         // completeness are still checked, per-node consistency is not.
         run_multiply_test(proofs, consistency::Auto{}, false, {-10, 10}, {-10, 10}, {-100, 100});
         run_multiply_test(proofs, consistency::Auto{}, false, {2, 20}, {-8, 8}, {-160, 160}, {1, 0, 1, 1, 1, 0});
+        // A wide product with a small operand: the quotient estimate for the small operand can
+        // fall outside its bit-encoding, so filter_quotient reports an inconsistent (empty)
+        // quotient range on an infeasible node. Regression for a prove_quotient_bounds crash on
+        // that empty range (the bound is then trivially entailed by the operand's own bounds).
+        run_multiply_test(proofs, consistency::Auto{}, false, {-120, 120}, {-5, 5}, {-620, 620});
+        run_multiply_test(proofs, consistency::Auto{}, false, {-350, 350}, {-3, 3}, {-1100, 1100});
         run_alias_test(proofs, consistency::Auto{}, false, "xxy", {-12, 12}, {0, 144});
         run_constant_test(proofs, consistency::Auto{}, "cv", 7, {-30, 30}, {-210, 210});
 

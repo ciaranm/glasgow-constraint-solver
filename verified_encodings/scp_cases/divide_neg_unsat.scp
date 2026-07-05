@@ -1,0 +1,1 @@
+( ( (X -9 -2) (Y 3 6) (Q 1 5) ) ( (_1 divide X Y Q) ) (enumerate) )

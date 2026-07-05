@@ -532,3 +532,64 @@ add_scp_chain_test(multiply_sat           none)
 add_scp_chain_test(multiply_unsat         none)
 add_scp_chain_test(multiply_signed_sat    none)
 add_scp_chain_test(multiply_signed_unsat  none)
+
+# divide: truncated division x = q*y + r, |r| < |y|, sign(r) = sign(x). The
+# proof emits cake's divide OPB (|Q| axis-0 and |Y| axis-1 magnitude channels, a
+# reified product-bit block, remainder rows gated on sign(x), and the five
+# division sign clauses); the internal product w = |q||y| and remainder r = x - w
+# are proof-only state vars reintroduced in-proof via introduce_bits_of. Only the
+# a non-negative dividend takes this path (the use_cake guard needs x's lower
+# bound >= 0); the divisor and quotient may take either sign. The signed_sat case
+# has a zero-spanning divisor, and signed_unsat is contradictory (x>0, y>0 forces
+# q>=0 but q<0) -- both exercise the magnitude-bounded product w = |q||y| that
+# lets mult_bc bound the non-negative w without a false negative range. A signed
+# (strictly negative) dividend takes a second cake path (divide_neg_*): both mult
+# operands are the non-negative magnitudes |q| and |y|, so mult_bc divides w by the
+# non-negative |y| (dividing by the signed divisor was the x<0 blocker), and the
+# exposed quotient's sign is pinned off the sgn_* clauses directly. The neg_yspan
+# case flips sign(q) with a zero-spanning divisor; neg_negneg forces q>=0; neg_unsat
+# is contradictory. none, not strict, for the same #358 lazy-vs-eager operand-ladder
+# reason as multiply.
+add_scp_chain_test(divide_sat             none)
+add_scp_chain_test(divide_unsat           none)
+add_scp_chain_test(divide_signed_sat      none)
+add_scp_chain_test(divide_signed_unsat    none)
+add_scp_chain_test(divide_neg_sat         none)
+add_scp_chain_test(divide_neg_yspan_sat   none)
+add_scp_chain_test(divide_neg_negneg_sat  none)
+add_scp_chain_test(divide_neg_unsat       none)
+# A dividend spanning zero (divide_span_*) takes a third cake path: both the x>=0
+# and x<0 remainder rows and w-stages are live (gated on sign(x)), and no remainder
+# is materialised (cake's rem_* rows range x-w directly, and a rejected (x,y,q) leaf
+# refutes off them once magq/absy/w are pinned by the assigned q,y) -- so there is no
+# |r| aux and no proof-only |x|. span_yspan spans BOTH operands; span_unsat has |q| too big.
+add_scp_chain_test(divide_span_sat        none)
+add_scp_chain_test(divide_span_yspan_sat  none)
+add_scp_chain_test(divide_span_unsat      none)
+
+# modulus: the same truncated-division relation exposing r instead of q. cake's
+# modulus OPB leaves the quotient a FREE axis-0 magnitude (no i[Q], no channel):
+# the exposed r reads its identity r = x - |q||y| off the id_pos rows and 0 <= r <
+# |y| off rng_*, while the quotient magnitude |q| is a state variable whose own
+# cake-named bits ARE that magnitude. Requires a non-negative dividend (x >= 0), but
+# ANY-sign divisor: the divisor magnitude |y| is a second magnitude state variable
+# (absy) pinned to |y| by cake's Yge0/Ylt0 channel, so mult_bc multiplies the two
+# non-negative magnitudes with no signed reasoning; the tabulation recovers the signed
+# quotient. big_sat widens the bit counts and fixedy_sat fixes the divisor. The
+# signed_* cases exercise a fixed-negative / zero-spanning / larger / unsat divisor.
+# A signed DIVIDEND (x < 0) works too: x is not a mult operand, so only the identity/
+# range/sign stages mirror (r = x + w and r <= 0 gated [x<0]); signed_dividend / negneg /
+# fully_signed exercise x < 0, both operands negative, and both spanning zero. none, for
+# the same #358 reason as divide.
+add_scp_chain_test(modulus_sat                  none)
+add_scp_chain_test(modulus_unsat                none)
+add_scp_chain_test(modulus_big_sat              none)
+add_scp_chain_test(modulus_fixedy_sat           none)
+add_scp_chain_test(modulus_signed_divisor_sat   none)
+add_scp_chain_test(modulus_yspan_sat            none)
+add_scp_chain_test(modulus_signed_big_sat       none)
+add_scp_chain_test(modulus_signed_unsat         none)
+add_scp_chain_test(modulus_signed_dividend_sat  none)
+add_scp_chain_test(modulus_fully_signed_sat     none)
+add_scp_chain_test(modulus_negneg_sat           none)
+add_scp_chain_test(modulus_signed_dividend_unsat none)

@@ -663,8 +663,8 @@ auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBool
     return record_proof_line(advance_proof_line_number(), level);
 }
 
-auto ProofLogger::introduce_bits_of(const SumOf<Weighted<PseudoBooleanTerm>> & linear_form, ProofOnlySimpleIntegerVariableID target, ProofLevel level)
-    -> pair<ProofLine, ProofLine>
+auto ProofLogger::introduce_bits_of(
+    const SumOf<Weighted<PseudoBooleanTerm>> & linear_form, SimpleOrProofOnlyIntegerVariableID target, ProofLevel level) -> pair<ProofLine, ProofLine>
 {
     // Wietze Koops's construction: walk target's bits from the top, defining each
     // bit e_k as the reified `running-remainder >= 2^k` via a single red whose

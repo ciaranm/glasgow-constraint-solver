@@ -113,10 +113,14 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         ConstraintStateHandle bit_products_handle;
     };
     vector<MultLink> links;
-    auto add_link = [&](const string & prefix, SimpleIntegerVariableID a, SimpleIntegerVariableID b, SimpleIntegerVariableID product) {
+    auto add_link = [&](long long link, SimpleIntegerVariableID a, SimpleIntegerVariableID b, SimpleIntegerVariableID product) {
+        // Each chain link is a signed multiplication encoded with cake's magnitude scheme, the
+        // same one Multiply uses; `link` disambiguates the per-link flags. (cake has no power
+        // encoder, so this self-verifies rather than chain-verifying, but it keeps Power off
+        // mult_bc's legacy encoding.)
         mult_bc::EncodingData encoding;
         if (optional_model)
-            encoding = mult_bc::define_encoding(*optional_model, initial_state, constraint_id(), label, prefix, a, b, product);
+            encoding = mult_bc::define_encoding(*optional_model, initial_state, constraint_id(), label, a, b, product, link);
         auto handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
         links.emplace_back(MultLink{a, b, product, move(encoding), handle});
     };
@@ -219,7 +223,7 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
                     optional_model->set_up_integer_variable(t, lo, hi, "aux_power" + to_string(t.index), nullopt);
             }
 
-            add_link("c" + to_string(i) + "_", prev, other, t);
+            add_link(i, prev, other, t);
 
             if (is_last && ! (result_plain && t == *a3.var))
                 add_equality(WeightedSum{} + 1_i * t + -1_i * _result, 0_i, "resultsum");

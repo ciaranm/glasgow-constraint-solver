@@ -319,7 +319,7 @@ namespace gcs::innards
          * two reds --- so the caller can reference the variable's bound-defining
          * lines (e.g. an end = start + length proxy's end_ge / end_le).
          */
-        [[nodiscard]] auto introduce_bits_of(const SumOf<Weighted<PseudoBooleanTerm>> & linear_form, ProofOnlySimpleIntegerVariableID target,
+        [[nodiscard]] auto introduce_bits_of(const SumOf<Weighted<PseudoBooleanTerm>> & linear_form, SimpleOrProofOnlyIntegerVariableID target,
             ProofLevel level) -> std::pair<ProofLine, ProofLine>;
 
         auto create_proof_flag(const std::string &) -> ProofFlag;

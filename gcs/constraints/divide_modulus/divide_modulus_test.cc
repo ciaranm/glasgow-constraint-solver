@@ -239,6 +239,22 @@ auto main(int, char *[]) -> int
                 // forced, since the tree is over the Auto threshold.
                 run_divmod_test(proofs, is_div, level, force_gac, {-3, 3}, {-2, 2}, {-3, 3});
 
+                // Strictly negative dividend (x < 0): Divide's cake path works in
+                // magnitude space (|q| * |y| = w) and pins sign(q) off the sign
+                // clauses. The BC level exercises the pure propagation proof (no
+                // tabulation to mask it); the zero-spanning divisor flips sign(q).
+                // GAC-checked only when forced (the tree is over the Auto threshold).
+                run_divmod_test(proofs, is_div, level, force_gac, {-8, -1}, {1, 3}, {-8, 0});
+                run_divmod_test(proofs, is_div, level, force_gac, {-8, -1}, {-3, -1}, {0, 8});
+                run_divmod_test(proofs, is_div, level, force_gac, {-6, -1}, {-3, 3}, {-6, 6});
+
+                // Dividend spanning zero (xlo < 0 < xhi): both the x >= 0 and x < 0
+                // remainder rows and w-stages are live, gated on sign(x). No remainder
+                // is materialised (the rem rows range x - w directly), so the
+                // tabulation enumerates only x, y, q; BC exercises the propagation proof.
+                run_divmod_test(proofs, is_div, level, force_gac, {-6, 6}, {1, 3}, {-6, 6});
+                run_divmod_test(proofs, is_div, level, force_gac, {-5, 5}, {-3, 3}, {-5, 5});
+
                 // Aliased shapes.
                 run_divmod_alias_test(proofs, is_div, level, ! is_bc, "xxy", {-2, 2}, {-1, 2});
                 run_divmod_alias_test(proofs, is_div, level, force_gac, "xyx", {-2, 2}, {-2, 2});
