@@ -75,11 +75,6 @@ namespace gcs::innards
             // ungated zprod lines leave z_product_ge0_gated false and _neg empty.
             std::optional<std::pair<ProofLine, ProofLine>> v3_eq_product_lines_neg{};
             bool z_product_ge0_gated = false;
-            // When v3 is a non-negative magnitude |v1|*|v2| (divide/modulus's product w)
-            // rather than the signed product v1*v2, propagate() bounds it by the operand
-            // magnitudes, so an opposite-sign operand pair does not infer a negative
-            // bound that contradicts the magnitude's own non-negativity.
-            bool z_is_magnitude = false;
             std::vector<ProofLine> sign_lines{};
             // Consumed at install time to create the persistent constraint
             // state that propagate() mutates through its handle.

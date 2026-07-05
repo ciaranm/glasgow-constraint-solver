@@ -300,7 +300,6 @@ namespace
             cake_encoding = make_shared<mult_bc::EncodingData>();
             auto & enc = *cake_encoding;
             enc.z_product_ge0_gated = false;
-            enc.z_is_magnitude = false; // magq, absy >= 0, so w = magq * absy is a plain product
 
             // magq = |q| (Z channel to the exposed quotient) and absy = |y| (Y channel to the
             // divisor) are the two non-negative mult_bc operands; w = magq * absy.
@@ -405,7 +404,6 @@ namespace
             cake_encoding = make_shared<mult_bc::EncodingData>();
             auto & enc = *cake_encoding;
             enc.z_product_ge0_gated = false;
-            enc.z_is_magnitude = false; // |q|, absy >= 0, so w = |q| * absy is a plain product
 
             // absy = |y| (Y channel to the divisor) is mult_bc's divisor operand; the quotient
             // magnitude q_eff is the free axis-0 aux (no Z channel -- cake leaves it free), so

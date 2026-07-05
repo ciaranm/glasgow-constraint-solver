@@ -989,17 +989,6 @@ namespace
         return {smallest_possible_product, largest_possible_product};
     }
 
-    // When v3 is a magnitude (|v1|*|v2|, e.g. divide's product w) rather than the
-    // signed product, bound it by the operand magnitudes: |v| ranges over
-    // [spans0 ? 0 : min(|lo|,|hi|), max(|lo|,|hi|)]. This never produces a negative
-    // range, so mult_bc does not infer a (false) negative bound on a magnitude v3.
-    auto get_magnitude_product_bounds(Integer x_min, Integer x_max, Integer y_min, Integer y_max) -> pair<Integer, Integer>
-    {
-        auto mag_lo = [](Integer lo, Integer hi) { return (lo < 0_i && hi > 0_i) ? 0_i : min(abs(lo), abs(hi)); };
-        auto mag_hi = [](Integer lo, Integer hi) { return max(abs(lo), abs(hi)); };
-        return {mag_lo(x_min, x_max) * mag_lo(y_min, y_max), mag_hi(x_min, x_max) * mag_hi(y_min, y_max)};
-    }
-
     // Filter variable x where x * y = z based on bounds of y and z
     auto filter_quotient(SimpleIntegerVariableID x_var, SimpleIntegerVariableID y_var, SimpleIntegerVariableID z_var, Integer z_min, Integer z_max,
         Integer y_min, Integer y_max, const State & state, auto & inference,
@@ -1351,12 +1340,7 @@ auto gcs::innards::mult_bc::propagate(SimpleIntegerVariableID v1, SimpleIntegerV
 {
     auto var_bounds = map<IntegerVariableID, pair<Integer, Integer>>{{v1, state.bounds(v1)}, {v2, state.bounds(v2)}, {v3, state.bounds(v3)}};
     auto bounds1 = state.bounds(v1), bounds2 = state.bounds(v2);
-    // A magnitude v3 (|v1|*|v2|, e.g. divide's product w) is bounded by the operand
-    // magnitudes so an opposite-sign operand pair does not yield a negative range that
-    // contradicts the magnitude's own non-negativity; a signed v3 uses the signed range.
-    auto [smallest_product, largest_product] = encoding.z_is_magnitude
-        ? get_magnitude_product_bounds(bounds1.first, bounds1.second, bounds2.first, bounds2.second)
-        : get_product_bounds(bounds1.first, bounds1.second, bounds2.first, bounds2.second);
+    auto [smallest_product, largest_product] = get_product_bounds(bounds1.first, bounds1.second, bounds2.first, bounds2.second);
     auto & bit_products = any_cast<vector<vector<BitProductData>> &>(state.get_persistent_constraint_state(bit_products_handle));
 
     auto justf = [&](const ReasonLiterals & reason) {
