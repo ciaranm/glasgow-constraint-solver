@@ -176,6 +176,8 @@ if(GCS_BUILD_TESTS)
     add_executable(parity_test constraints/parity/parity_test.cc)
     add_executable(plus_minus_test constraints/plus_minus/plus_minus_test.cc)
     add_executable(power_test constraints/power/power_test.cc)
+    add_executable(product_bounds_test constraints/innards/product_bounds_test.cc)
+    add_executable(product_justify_test constraints/innards/product_justify_test.cc)
     add_executable(regular_test constraints/regular/regular_test.cc)
     add_executable(seq_precede_chain_test constraints/seq_precede_chain/seq_precede_chain_test.cc)
     add_executable(smart_table_test constraints/smart_table/smart_table_test.cc)
@@ -194,7 +196,7 @@ if(GCS_BUILD_TESTS)
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test comparison_test
             count_test cumulative_test disjunctive_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
             logical_test min_max_test multiply_bc_test multiply_test n_value_test parity_test
-            plus_minus_test power_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
+            plus_minus_test power_test product_bounds_test product_justify_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
@@ -349,6 +351,8 @@ if(GCS_BUILD_TESTS)
     add_test(NAME negative_table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:negative_table_test>)
     add_test(NAME symmetric_all_different_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:symmetric_all_different_test>)
     add_test(NAME table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:table_test>)
+    add_test(NAME product_bounds COMMAND $<TARGET_FILE:product_bounds_test>)
+    add_test(NAME product_justify COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:product_justify_test>)
     add_test(NAME tabulation_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tabulation_test>)
     add_test(NAME value_precede_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:value_precede_test>)
 
