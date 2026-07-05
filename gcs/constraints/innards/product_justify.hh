@@ -90,18 +90,34 @@ namespace gcs::innards::product_justify
         const product_enc::ResultChannel & channel, const ConditionalBound & grid_bound, bool result_negative, bool lower) -> ConditionalBound;
 
     /**
-     * \brief Conclude an inference from its per-case refutations: one
-     * red-with-empty-witness derivation of `reason => conclusion`, whose
-     * subproof derives a clause per case (each premise added to the negated
-     * goal), closes dead and zero cases by RUP, and combines everything with
-     * the fixed nested saturating cut (thesis ResolveSigns), never a search.
-     * Pass the premises with their `cases` intact; the conclusion literal is
-     * then established by the caller's ThenRUP.
+     * \brief One sign-case dimension: the two complementary atoms the case
+     * split branches on ([v>=0] and [v<0] for a slot's operand).
      *
      * \ingroup Innards
      */
-    auto conclude_by_sign_cases(
-        ProofLogger &, const ReasonLiterals & reason, const WPBSumLE & conclusion, const std::vector<ConditionalBound> & premises) -> void;
+    struct SignCaseDimension
+    {
+        Literal positive_atom;
+        Literal negative_atom;
+    };
+
+    /**
+     * \brief Conclude an inference from its per-case bounds: one
+     * red-with-empty-witness derivation of `reason => conclusion`, whose
+     * subproof derives a clause per case pattern — a pol add of the case's
+     * premise line onto the negated goal where a premise exists, a plain RUP
+     * clause where the case is dead under the reason — then combines them
+     * with the fixed nested saturating cut over the dimensions (thesis
+     * ResolveSigns, made total by [v>=0]/[v<0] being complementary: no
+     * separate zero cases). Never a search. premise_by_pattern is indexed by
+     * bitmask over dims, bit k set meaning dim k's negative branch; its size
+     * must be 2^dims.size(). Returns the derived reified conclusion line;
+     * the inferred literal itself then follows by the caller's ThenRUP.
+     *
+     * \ingroup Innards
+     */
+    auto conclude_by_sign_cases(ProofLogger &, const ReasonLiterals & reason, const WPBSumLE & conclusion,
+        const std::vector<SignCaseDimension> & dims, const std::vector<std::optional<ConditionalBound>> & premise_by_pattern) -> ProofLine;
 }
 
 #endif

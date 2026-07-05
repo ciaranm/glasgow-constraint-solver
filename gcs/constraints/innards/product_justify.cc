@@ -177,3 +177,77 @@ auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, c
 
     return ConditionalBound{grid.neg_sum, -(a_val * b_val), cases, line};
 }
+
+auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & logger, const ReasonLiterals & reason, SimpleIntegerVariableID v3,
+    const product_enc::ResultChannel & channel, const ConditionalBound & grid_bound, bool result_negative, bool lower) -> ConditionalBound
+{
+    // The mag_Z rows pin |z| = grid sum, gated on z's sign atom; the atom
+    // itself is entailed by the operand sign-case atoms through the sign
+    // clauses (via the eq0 definition rows when an operand's non-negative
+    // branch includes zero), so it is discharged by RUP rather than kept in
+    // the cases. A magnitude bound flips direction on a negative result,
+    // exactly as in the operand channel.
+    auto row = lower ? (result_negative ? channel.lt0_le : channel.ge0_ge) : (result_negative ? channel.lt0_ge : channel.ge0_le);
+    PolBuilder builder;
+    builder.add(grid_bound.line).add(row);
+    auto combined = builder.emit(logger, ProofLevel::Temporary);
+
+    // No standalone sign-atom discharge: a mixed sign case does not entail
+    // the result's sign when the non-negative operand may be zero (y = 0
+    // gives z = 0), so that claim would simply be false. The bound claim
+    // itself is RUP instead: its negation either pins the result's sign atom
+    // (activating `combined`'s gated row), or unit propagation closes
+    // through the sign clauses, the eq0 definition rows and the grid.
+    auto coeff = (lower != result_negative) ? 1_i : -1_i;
+    auto sum = WPBSum{} + coeff * v3;
+    auto line = logger.emit_under_reason(RUPProofRule{}, logger.reify(sum >= grid_bound.rhs, grid_bound.cases), ProofLevel::Temporary, reason);
+    return ConditionalBound{sum, grid_bound.rhs, grid_bound.cases, line};
+}
+
+auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger, const ReasonLiterals & reason, const WPBSumLE & conclusion,
+    const vector<SignCaseDimension> & dims, const vector<std::optional<ConditionalBound>> & premise_by_pattern) -> ProofLine
+{
+    if (premise_by_pattern.size() != (1u << dims.size()))
+        throw UnexpectedException{"wrong number of case patterns"};
+
+    auto goal = logger.reify(conclusion, reason);
+    std::map<ProofGoal, Subproof> subproofs{};
+    subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
+        // The negated goal is the last line added when the subproof opens.
+        auto negation = sub_logger.get_current_proof_line();
+
+        // One clause per case pattern: added premise for a live case, plain
+        // RUP for a dead one (its branch atoms contradict the reason's units
+        // through the order encoding).
+        vector<ProofLine> clauses;
+        for (std::size_t pattern = 0; pattern < premise_by_pattern.size(); ++pattern) {
+            if (premise_by_pattern[pattern]) {
+                PolBuilder builder;
+                builder.add(premise_by_pattern[pattern]->line).add(negation).saturate();
+                clauses.emplace_back(builder.emit(sub_logger, ProofLevel::Temporary));
+            }
+            else {
+                auto clause = WPBSum{};
+                for (std::size_t k = 0; k < dims.size(); ++k)
+                    clause += 1_i * ((pattern & (1u << k)) ? dims[k].positive_atom : dims[k].negative_atom);
+                clauses.emplace_back(sub_logger.emit_rup_proof_line(clause >= 1_i, ProofLevel::Temporary));
+            }
+        }
+
+        // The fixed nested cut: pair patterns differing in dimension k and
+        // saturate, one dimension at a time, until one line remains.
+        for (std::size_t k = 0; k < dims.size(); ++k) {
+            vector<ProofLine> next;
+            for (std::size_t low = 0; low < clauses.size(); low += 2) {
+                PolBuilder builder;
+                builder.add(clauses[low]).add(clauses[low + 1]).saturate();
+                next.emplace_back(builder.emit(sub_logger, ProofLevel::Temporary));
+            }
+            clauses = std::move(next);
+        }
+
+        sub_logger.emit(RUPProofRule{}, WPBSum{} >= 1_i, ProofLevel::Temporary);
+    }});
+
+    return logger.emit_red_proof_line(goal, {}, ProofLevel::Temporary, subproofs);
+}

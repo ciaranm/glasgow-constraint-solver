@@ -1,4 +1,5 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/innards/product_bounds.hh>
 #include <gcs/constraints/innards/product_encoding.hh>
 #include <gcs/constraints/innards/product_justify.hh>
 #include <gcs/exception.hh>
@@ -67,6 +68,7 @@ namespace
         ChannelBounds, // channel v1's live sign branches' bounds to its slot magnitude
         GridLower,     // subprocedure 7.1: grid_sum >= lb|x| * lb|y| on the positive branches
         GridUpper,     // subprocedure 7.2: grid_sum <= ub|x| * ub|y|, called twice to exercise the W-line cache
+        ProductBounds, // procedure 7.5 end to end: both bounds on z via the sign-case driver
     };
 
     // The slot-keyed cake encoding handles the fragments work against.
@@ -197,6 +199,53 @@ namespace
                         assert_claimed_bound(*logger, reason, gub2);
                         break;
                     }
+
+                    case Fragment::ProductBounds: {
+                        auto [xlo, xhi] = state.bounds(v1);
+                        auto [ylo, yhi] = state.bounds(v2);
+                        auto reason = ReasonLiterals{v1 >= xlo, v1 <= xhi, v2 >= ylo, v2 <= yhi};
+                        auto [prod_lo, prod_hi] = product_bounds(xlo, xhi, ylo, yhi);
+
+                        auto dims = vector<product_justify::SignCaseDimension>{{v1 >= 0_i, v1 < 0_i}, {v2 >= 0_i, v2 < 0_i}};
+                        vector<optional<ConditionalBound>> lower_premises(4, nullopt), upper_premises(4, nullopt);
+                        for (unsigned pattern = 0; pattern < 4; ++pattern) {
+                            bool xneg = pattern & 1u, yneg = pattern & 2u;
+                            if ((xneg ? xlo >= 0_i : xhi < 0_i) || (yneg ? ylo >= 0_i : yhi < 0_i))
+                                continue;
+                            bool zneg = xneg != yneg;
+                            // magnitude lower bound: positive branch from the operand's lower
+                            // bound, negative branch from its upper; uppers the other way round
+                            auto x_mag_lb = product_justify::channel_bound_to_magnitude(
+                                *logger, product_justify::derive_operand_bound(*logger, reason, v1, ! xneg, xneg ? xhi : xlo), v1, enc.chan1, xneg);
+                            auto y_mag_lb = product_justify::channel_bound_to_magnitude(
+                                *logger, product_justify::derive_operand_bound(*logger, reason, v2, ! yneg, yneg ? yhi : ylo), v2, enc.chan2, yneg);
+                            auto x_mag_ub = product_justify::channel_bound_to_magnitude(
+                                *logger, product_justify::derive_operand_bound(*logger, reason, v1, xneg, xneg ? xlo : xhi), v1, enc.chan1, xneg);
+                            auto y_mag_ub = product_justify::channel_bound_to_magnitude(
+                                *logger, product_justify::derive_operand_bound(*logger, reason, v2, yneg, yneg ? ylo : yhi), v2, enc.chan2, yneg);
+
+                            auto glb = product_justify::grid_sum_lower_bound(*logger, reason, enc.grid, enc.chan1.mag, x_mag_lb, y_mag_lb);
+                            auto gub =
+                                product_justify::grid_sum_upper_bound(*logger, reason, enc.grid, enc.chan1.mag, enc.chan2.mag, x_mag_ub, y_mag_ub);
+                            if (! zneg) {
+                                lower_premises[pattern] =
+                                    product_justify::channel_grid_bound_to_result(*logger, reason, v3, enc.zchan, glb, false, true);
+                                upper_premises[pattern] =
+                                    product_justify::channel_grid_bound_to_result(*logger, reason, v3, enc.zchan, gub, false, false);
+                            }
+                            else {
+                                lower_premises[pattern] =
+                                    product_justify::channel_grid_bound_to_result(*logger, reason, v3, enc.zchan, gub, true, false);
+                                upper_premises[pattern] =
+                                    product_justify::channel_grid_bound_to_result(*logger, reason, v3, enc.zchan, glb, true, true);
+                            }
+                        }
+                        product_justify::conclude_by_sign_cases(*logger, reason, WPBSum{} + 1_i * v3 >= prod_lo, dims, lower_premises);
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (v3 >= prod_lo) >= 1_i, ProofLevel::Temporary);
+                        product_justify::conclude_by_sign_cases(*logger, reason, WPBSum{} + -1_i * v3 >= -prod_hi, dims, upper_premises);
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (v3 <= prod_hi) >= 1_i, ProofLevel::Temporary);
+                        break;
+                    }
                     }
                 },
                 InitialiserPriority::Expensive);
@@ -263,6 +312,12 @@ auto main(int, char *[]) -> int
 
         run_fragment_test(proofs, Fragment::GridUpper, "grid upper pos/pos", {2, 5}, {1, 3}, {2, 15});
         run_fragment_test(proofs, Fragment::GridUpper, "grid upper zero ub", {0, 3}, {0, 2}, {0, 6});
+
+        run_fragment_test(proofs, Fragment::ProductBounds, "product bounds pos/pos", {2, 5}, {1, 3}, {1, 16});
+        run_fragment_test(proofs, Fragment::ProductBounds, "product bounds neg/neg", {-5, -2}, {-3, -1}, {1, 16});
+        run_fragment_test(proofs, Fragment::ProductBounds, "product bounds pos/neg", {2, 5}, {-3, -1}, {-16, 0});
+        run_fragment_test(proofs, Fragment::ProductBounds, "product bounds span/span", {-3, 3}, {-2, 4}, {-13, 13});
+        run_fragment_test(proofs, Fragment::ProductBounds, "product bounds span/pos", {-3, 3}, {1, 4}, {-13, 13});
     }
 
     return EXIT_SUCCESS;
