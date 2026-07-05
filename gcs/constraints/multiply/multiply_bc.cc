@@ -823,6 +823,21 @@ namespace
         auto min_x = Integer{x_has_neg ? -(power2(x_bits - 1_i)) : 0_i};
         auto max_x = Integer{x_has_neg ? (power2(x_bits - 1_i)) : power2(x_bits)} - 1_i;
 
+        // The range of x that would violate the bound being proved: x < smallest_quotient (when
+        // proving x >= smallest_quotient) or x > largest_quotient (when proving x <= it),
+        // intersected with x's own bit-encoding range [min_x, max_x].
+        auto x_excl_lower = assume_upper ? min_x : largest_quotient + 1_i;
+        auto x_excl_upper = assume_upper ? smallest_quotient - 1_i : max_x;
+        // When the quotient bound falls outside x's encoding range that intersection is empty:
+        // x can never reach the quotient bound, so the bound is trivially entailed by x's own
+        // bit bounds and needs no product-based derivation -- the caller's RUP line closes
+        // against x's encoding directly. (This arises when filter_quotient reports an
+        // inconsistent quotient range [smallest > largest] on an infeasible node: one of the
+        // two bounds is outside x's encoding and vacuous, the other is genuinely derived, and
+        // the caller's contradiction combines them.)
+        if (x_excl_lower > x_excl_upper)
+            return;
+
         // logger.emit_proof_comment("X bounds for quotient");
         auto upper_x_lit = assume_upper ? x < smallest_quotient : x > largest_quotient;
         auto upper_x_lit_def_line = get_def_line_for_lit(logger, upper_x_lit);
@@ -862,10 +877,11 @@ namespace
             auto [lower, upper] = var_bounds.at(var);
 
             if (var == x) {
-                lower = (assume_upper ? min_x : largest_quotient + 1_i);
-                upper = (! assume_upper ? max_x : smallest_quotient - 1_i);
+                lower = x_excl_lower;
+                upper = x_excl_upper;
             }
 
+            // x's excluded range was already checked non-empty above; y's is its live domain.
             if (lower > upper)
                 throw UnexpectedException{format("var == x is {}, lower is {}, upper is {}, assume_upper is {}, min_x is {}, max_x is {}, "
                                                  "largest_quotient is {}, smallest_quotient is {}",
