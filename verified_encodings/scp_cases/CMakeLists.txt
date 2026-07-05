@@ -560,7 +560,10 @@ add_scp_chain_test(divide_signed_unsat    none)
 # non-negative magnitudes with no signed reasoning; the tabulation recovers the signed
 # quotient. big_sat widens the bit counts and fixedy_sat fixes the divisor. The
 # signed_* cases exercise a fixed-negative / zero-spanning / larger / unsat divisor.
-# none, for the same #358 reason as divide.
+# A signed DIVIDEND (x < 0) works too: x is not a mult operand, so only the identity/
+# range/sign stages mirror (r = x + w and r <= 0 gated [x<0]); signed_dividend / negneg /
+# fully_signed exercise x < 0, both operands negative, and both spanning zero. none, for
+# the same #358 reason as divide.
 add_scp_chain_test(modulus_sat                  none)
 add_scp_chain_test(modulus_unsat                none)
 add_scp_chain_test(modulus_big_sat              none)
@@ -569,3 +572,7 @@ add_scp_chain_test(modulus_signed_divisor_sat   none)
 add_scp_chain_test(modulus_yspan_sat            none)
 add_scp_chain_test(modulus_signed_big_sat       none)
 add_scp_chain_test(modulus_signed_unsat         none)
+add_scp_chain_test(modulus_signed_dividend_sat  none)
+add_scp_chain_test(modulus_fully_signed_sat     none)
+add_scp_chain_test(modulus_negneg_sat           none)
+add_scp_chain_test(modulus_signed_dividend_unsat none)
