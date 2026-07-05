@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/product_encoding.hh>
 #include <gcs/constraints/multiply/hints.hh>
 #include <gcs/constraints/multiply/multiply_bc.hh>
 #include <gcs/exception.hh>
@@ -1144,103 +1145,37 @@ auto gcs::innards::mult_bc::define_encoding(ProofModel & model, const State & in
     // nullopt for a single multiplication (Multiply, Divide, Modulus), keeping the names byte-
     // identical to cake's. See the cake ENCODING_MULTIPLY spec and dev_docs.
     EncodingData result;
-    auto & bit_products = result.initial_bit_products;
-    auto & channelling_constraints = result.channelling_constraints;
-    auto & mag_var = result.mag_var;
-    auto & sign_lines = result.sign_lines;
-    const auto & mbid = label_id;
+    product_enc::LinkNaming naming{link};
 
-    // Per-link naming: `lp` prefixes @c roles, `idx` folds the link into a cake bit-name
-    // index tuple, `pidx` into a product-flag name. All no-ops when link is nullopt.
-    auto lp = link ? "l" + std::to_string(*link) + "_" : string{};
-    auto idx = [&](std::vector<long long> t) {
-        if (link)
-            t.insert(t.begin(), *link);
-        return t;
-    };
-    auto pidx = [&](Integer i, Integer j) {
-        return (link ? std::to_string(*link) + "_" : string{}) + std::to_string(i.raw_value) + "_" + std::to_string(j.raw_value);
-    };
+    // A magnitude channel per operand slot (axis 0 -> "X", 1 -> "Y"), a
+    // fresh proof-only magnitude each, even for a repeated operand.
+    auto chan1 = product_enc::emit_magnitude_channel(model, initial_state, constraint_id, label_id, "MultiplyBC", v1, 0, "X", naming);
+    result.channelling_constraints.insert(
+        {v1, ChannellingData{chan1.pos_ge, chan1.pos_le, chan1.neg_ge, chan1.neg_le, true, initial_state.lower_bound(v1) < 0_i}});
+    result.mag_var.insert({v1, get<ProofOnlySimpleIntegerVariableID>(chan1.mag)});
+    auto chan2 = product_enc::emit_magnitude_channel(model, initial_state, constraint_id, label_id, "MultiplyBC", v2, 1, "Y", naming);
+    result.channelling_constraints.insert(
+        {v2, ChannellingData{chan2.pos_ge, chan2.pos_le, chan2.neg_ge, chan2.neg_le, true, initial_state.lower_bound(v2) < 0_i}});
+    result.mag_var.insert({v2, get<ProofOnlySimpleIntegerVariableID>(chan2.mag)});
 
-    // A magnitude variable per operand: a free bit-sum whose bits are named
-    // cake's x[id][axis_i][bin] (use_indices_family), channelled to |v| = v
-    // (non-negative) via cake's four sign-gated rows. axis 0 -> "X", 1 -> "Y".
-    auto make_mag = [&](SimpleIntegerVariableID v, long long axis, const string & letter) -> ProofOnlySimpleIntegerVariableID {
-        // Range [0, max(|lb|, |ub|)] so a signed operand's magnitude has enough
-        // bits; for a non-negative operand this is just [0, ub], unchanged.
-        auto mag_ub = max(abs(initial_state.lower_bound(v)), abs(initial_state.upper_bound(v)));
-        auto mag = model.create_proof_only_integer_variable(0_i, mag_ub, "mult_mag_" + lp + letter, IntegerVariableProofRepresentation::Bits,
-            CakeBitNaming{constraint_id, idx({axis}), "bin", nullopt, false, true});
-        auto ge0 = HalfReifyOnConjunctionOf{v >= 0_i};
-        auto lt0 = HalfReifyOnConjunctionOf{v < 0_i};
-        auto pos_ge = model.add_labelled_constraint(
-            mbid, lp + letter + "ge0_ge", "MultiplyBC", "magnitude channel", WPBSum{} + 1_i * v + -1_i * mag >= 0_i, ge0);
-        auto pos_le = model.add_labelled_constraint(
-            mbid, lp + letter + "ge0_le", "MultiplyBC", "magnitude channel", WPBSum{} + -1_i * v + 1_i * mag >= 0_i, ge0);
-        auto neg_ge = model.add_labelled_constraint(
-            mbid, lp + letter + "lt0_ge", "MultiplyBC", "magnitude channel", WPBSum{} + 1_i * v + 1_i * mag >= 0_i, lt0);
-        auto neg_le = model.add_labelled_constraint(
-            mbid, lp + letter + "lt0_le", "MultiplyBC", "magnitude channel", WPBSum{} + -1_i * v + -1_i * mag >= 0_i, lt0);
-        channelling_constraints.insert({v, mult_bc::ChannellingData{pos_ge, pos_le, neg_ge, neg_le, true, initial_state.lower_bound(v) < 0_i}});
-        mag_var.insert({v, mag});
-        return mag;
-    };
-    auto mag1 = make_mag(v1, 0, "X");
-    auto mag2 = make_mag(v2, 1, "Y");
-
-    auto & tracker = model.names_and_ids_tracker();
-    auto n1 = tracker.num_bits(mag1);
-    auto n2 = tracker.num_bits(mag2);
-
-    // Bit products x[id][i_j][prod] <=> binX_i AND binY_j, summed with 2^(i+j).
-    // The two reifying halves carry deterministic labels (create_proof_flag_-
-    // fully_reifying): [r] = flag -> ineq ("forwards"), [f] = ~flag -> ~ineq
-    // ("reverse"); the propagator references them by those labels.
-    auto product_sum = WPBSum{};     // Sum 2^(i+j) prod[i][j]
-    auto neg_product_sum = WPBSum{}; // -Sum 2^(i+j) prod[i][j]
-    for (Integer i = 0_i; i < n1; ++i) {
-        bit_products.emplace_back();
-        for (Integer j = 0_i; j < n2; ++j) {
-            auto flag = model.create_proof_flag_fully_reifying(constraint_id, idx({i.raw_value, j.raw_value}), "prod",
-                WPBSum{} + 1_i * ProofBitVariable{mag1, i, true} + 1_i * ProofBitVariable{mag2, j, true} >= 2_i);
-            auto base = "x[" + mbid + "][" + pidx(i, j) + "][prod]";
-            bit_products[i.as_index()].emplace_back(
-                mult_bc::BitProductData{flag, ProofLineLabel{base + "[r]"}, ProofLineLabel{base + "[f]"}, nullopt, nullopt});
-            product_sum += power2(i + j) * flag;
-            neg_product_sum += -power2(i + j) * flag;
-        }
+    auto grid = product_enc::emit_bit_product_grid(model, constraint_id, label_id, chan1.mag, chan2.mag, naming);
+    for (const auto & row : grid.cells) {
+        result.initial_bit_products.emplace_back();
+        for (const auto & cell : row)
+            result.initial_bit_products.back().emplace_back(BitProductData{cell.flag, cell.forwards_reif, cell.reverse_reif, nullopt, nullopt});
     }
 
-    // Channel the product magnitude to |Z| = Z (non-negative), gated on [Z>=0].
     // The two ge0 halves give Sum(prod) == Z; the propagator uses them as the
-    // z_eq_product pair (.first: Z >= product, .second: Z <= product).
-    auto zge0 = HalfReifyOnConjunctionOf{v3 >= 0_i};
-    auto zlt0 = HalfReifyOnConjunctionOf{v3 < 0_i};
-    // Gated on [Z>=0] (byte-matching cake); the product-bound provers discharge
-    // the entailed ge0(Z) with the ge0(Z) unit (Z is non-negative here).
-    auto mag_z_ge = model.add_labelled_constraint(mbid, lp + "mag_Zge0_ge", "MultiplyBC", "z = product", neg_product_sum + 1_i * v3 >= 0_i, zge0);
-    auto mag_z_le = model.add_labelled_constraint(mbid, lp + "mag_Zge0_le", "MultiplyBC", "z = product", product_sum + -1_i * v3 >= 0_i, zge0);
-    auto mag_z_neg_ge = model.add_labelled_constraint(mbid, lp + "mag_Zlt0_ge", "MultiplyBC", "z = product", product_sum + 1_i * v3 >= 0_i, zlt0);
-    auto mag_z_neg_le =
-        model.add_labelled_constraint(mbid, lp + "mag_Zlt0_le", "MultiplyBC", "z = product", neg_product_sum + -1_i * v3 >= 0_i, zlt0);
-    result.v3_eq_product_lines = make_pair(mag_z_ge, mag_z_le);
-    result.v3_eq_product_lines_neg = make_pair(mag_z_neg_ge, mag_z_neg_le);
+    // z_eq_product pair (.first: Z >= product, .second: Z <= product), and the
+    // product-bound provers discharge the entailed ge0(Z) with the ge0(Z) unit.
+    auto zchan = product_enc::emit_result_channel(model, label_id, "MultiplyBC", v3, grid, naming);
+    result.v3_eq_product_lines = make_pair(zchan.ge0_ge, zchan.ge0_le);
+    result.v3_eq_product_lines_neg = make_pair(zchan.lt0_ge, zchan.lt0_le);
     result.z_product_ge0_gated = true;
 
     // Sign clauses over reified atoms (all entailed for non-negative operands,
     // but cake always emits them; mirror it so the labels resolve in the chain).
-    sign_lines.emplace_back(
-        model.add_labelled_constraint(mbid, lp + "sgn_x0", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 != 0_i) + 1_i * (v3 >= 0_i) >= 1_i));
-    sign_lines.emplace_back(
-        model.add_labelled_constraint(mbid, lp + "sgn_y0", "MultiplyBC", "sign", WPBSum{} + 1_i * (v2 != 0_i) + 1_i * (v3 >= 0_i) >= 1_i));
-    sign_lines.emplace_back(model.add_labelled_constraint(
-        mbid, lp + "sgn_pp", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 < 1_i) + 1_i * (v2 < 1_i) + 1_i * (v3 >= 0_i) >= 1_i));
-    sign_lines.emplace_back(model.add_labelled_constraint(
-        mbid, lp + "sgn_nn", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 >= 0_i) + 1_i * (v2 >= 0_i) + 1_i * (v3 >= 0_i) >= 1_i));
-    sign_lines.emplace_back(model.add_labelled_constraint(
-        mbid, lp + "sgn_np", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 >= 0_i) + 1_i * (v2 < 1_i) + 1_i * (v3 < 0_i) >= 1_i));
-    sign_lines.emplace_back(model.add_labelled_constraint(
-        mbid, lp + "sgn_pn", "MultiplyBC", "sign", WPBSum{} + 1_i * (v1 < 1_i) + 1_i * (v2 >= 0_i) + 1_i * (v3 < 0_i) >= 1_i));
+    result.sign_lines = product_enc::emit_sign_clauses(model, label_id, "MultiplyBC", v1, v2, v3, naming);
 
     return result;
 }

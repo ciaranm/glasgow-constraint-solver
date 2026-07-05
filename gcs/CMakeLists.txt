@@ -43,6 +43,7 @@ add_library(glasgow_constraint_solver
         constraints/in/in.cc
         constraints/increasing/increasing.cc
         constraints/innards/linear_stages.cc
+        constraints/innards/product_encoding.cc
         constraints/innards/justify_not_in_range.cc
         constraints/innards/recover_am1.cc
         constraints/innards/reified_state.cc

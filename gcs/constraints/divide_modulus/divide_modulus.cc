@@ -2,6 +2,7 @@
 #include <gcs/constraints/divide_modulus/hints.hh>
 #include <gcs/constraints/innards/arithmetic_utils.hh>
 #include <gcs/constraints/innards/linear_stages.hh>
+#include <gcs/constraints/innards/product_encoding.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/linear/hints.hh>
@@ -86,15 +87,9 @@ namespace
         auto mag = state.allocate_integer_variable_with_state(0_i, power2(bits) - 1_i);
         if (! model)
             return {mag, bits, nullopt, nullopt, nullopt, nullopt};
-        model->register_state_variable_bits_in_proof(
-            mag, 0_i, power2(bits) - 1_i, aux_name + to_string(mag.index), CakeBitNaming{owner, {axis}, "bin", nullopt, false, true});
-        auto ge0 = HalfReifyOnConjunctionOf{v >= 0_i};
-        auto lt0 = HalfReifyOnConjunctionOf{v < 0_i};
-        return {mag, bits,
-            model->add_labelled_constraint(label, letter + "ge0_ge", op, "magnitude channel", WPBSum{} + 1_i * v + -1_i * mag >= 0_i, ge0),
-            model->add_labelled_constraint(label, letter + "ge0_le", op, "magnitude channel", WPBSum{} + -1_i * v + 1_i * mag >= 0_i, ge0),
-            model->add_labelled_constraint(label, letter + "lt0_ge", op, "magnitude channel", WPBSum{} + 1_i * v + 1_i * mag >= 0_i, lt0),
-            model->add_labelled_constraint(label, letter + "lt0_le", op, "magnitude channel", WPBSum{} + -1_i * v + -1_i * mag >= 0_i, lt0)};
+        auto chan =
+            product_enc::emit_magnitude_channel(*model, owner, label, op, v, mag, power2(bits) - 1_i, axis, letter, aux_name + to_string(mag.index));
+        return {mag, bits, chan.pos_ge, chan.pos_le, chan.neg_ge, chan.neg_le};
     }
 
     // The bit-product flags x[id][i_j][prod] = mag_a_i AND mag_b_j and their weighted sum
@@ -108,24 +103,14 @@ namespace
     auto emit_cake_bit_products(ProofModel & model, const ConstraintID & owner, const std::string & label, SimpleIntegerVariableID mag_a,
         SimpleIntegerVariableID mag_b, mult_bc::EncodingData & enc) -> CakeBitProducts
     {
-        auto n1 = model.names_and_ids_tracker().num_bits(mag_a);
-        auto n2 = model.names_and_ids_tracker().num_bits(mag_b);
-        auto product_sum = WPBSum{};
-        for (Integer i = 0_i; i < n1; ++i) {
+        auto grid = product_enc::emit_bit_product_grid(model, owner, label, mag_a, mag_b, product_enc::LinkNaming{});
+        for (const auto & row : grid.cells) {
             enc.initial_bit_products.emplace_back();
-            for (Integer j = 0_i; j < n2; ++j) {
-                auto flag = model.create_proof_flag_fully_reifying(owner, {i.raw_value, j.raw_value}, "prod",
-                    WPBSum{} + 1_i * ProofBitVariable{mag_a, i, true} + 1_i * ProofBitVariable{mag_b, j, true} >= 2_i);
-                auto base = "x[" + label + "][" + to_string(i.raw_value) + "_" + to_string(j.raw_value) + "][prod]";
-                enc.initial_bit_products[i.as_index()].emplace_back(
-                    mult_bc::BitProductData{flag, ProofLineLabel{base + "[r]"}, ProofLineLabel{base + "[f]"}, nullopt, nullopt});
-                product_sum += power2(i + j) * flag;
-            }
+            for (const auto & cell : row)
+                enc.initial_bit_products.back().emplace_back(
+                    mult_bc::BitProductData{cell.flag, cell.forwards_reif, cell.reverse_reif, nullopt, nullopt});
         }
-        auto neg_product = WPBSum{};
-        for (const auto & t : product_sum.terms)
-            neg_product += -t.coefficient * t.variable;
-        return {product_sum, neg_product};
+        return {grid.sum, grid.neg_sum};
     }
 
     // The four stages pinning mag = |v| in both directions off its cake channel, split on
