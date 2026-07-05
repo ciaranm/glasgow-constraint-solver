@@ -82,19 +82,14 @@ namespace gcs::innards
         };
 
         /**
-         * \brief Emit the magnitude/sign bit-product encoding of
-         * v1 * v2 = v3 into the OPB, labelled `@c[label_id][<role_prefix>...]`.
-         *
-         * The role_prefix keeps roles distinct when one constraint emits
-         * several of these (Power's chains); the emitted lines are byte-for-
-         * byte what MultiplyBC has always produced when it is empty.
+         * \brief Emit cake_pb_cp's magnitude bit-product encoding of v1 * v2 = v3 into the
+         * OPB (the only scheme; it covers signed operands). `link`, when set, disambiguates
+         * one multiplication of a chain sharing a constraint id (Power's base^k), folding it
+         * into the bit-name index tuples and @c roles so the per-link flags do not clash.
          */
-        // allow_cake_scheme opts into cake_pb_cp's magnitude-bit-product encoding
-        // for non-negative operands (Multiply / MultiplyBC); divide/modulus keep the
-        // legacy two's-complement encoding for now. See define_encoding_cake.
         [[nodiscard]] auto define_encoding(ProofModel & model, const State & initial_state, const ConstraintID & constraint_id,
-            const std::string & label_id, const std::string & role_prefix, SimpleIntegerVariableID v1, SimpleIntegerVariableID v2,
-            SimpleIntegerVariableID v3, bool allow_cake_scheme = false) -> EncodingData;
+            const std::string & label_id, SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3,
+            std::optional<long long> link = std::nullopt) -> EncodingData;
 
         /**
          * \brief One pass of bounds consistent multiplication filtering for

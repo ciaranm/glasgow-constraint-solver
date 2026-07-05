@@ -536,7 +536,7 @@ namespace
                     w, w_lo, w_hi, (expose_quotient ? "aux_divide_product" : "aux_modulus_product") + to_string(w.index), nullopt);
 
             if (optional_model)
-                encoding = mult_bc::define_encoding(*optional_model, initial_state, owner, label, "", q_eff, y_eff, w, true);
+                encoding = mult_bc::define_encoding(*optional_model, initial_state, owner, label, q_eff, y_eff, w);
             bit_products_handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
             mult_q = q_eff;
             mult_y = y_eff;
