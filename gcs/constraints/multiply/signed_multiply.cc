@@ -47,7 +47,7 @@ auto gcs::innards::signed_multiply::make_data(ProofModel * const optional_model,
         data.chan_y = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id, label, "MultiplyBC", y, 1, "Y", naming);
         data.grid = product_enc::emit_bit_product_grid(*optional_model, constraint_id, label, data.chan_x->mag, data.chan_y->mag, naming);
         data.zchan = product_enc::emit_result_channel(*optional_model, label, "MultiplyBC", z, data.grid, naming);
-        product_enc::emit_sign_clauses(*optional_model, label, "MultiplyBC", x, y, z, naming);
+        data.sign_lines = product_enc::emit_sign_clauses(*optional_model, label, "MultiplyBC", x, y, z, naming);
     }
 
     return data;
@@ -81,6 +81,34 @@ namespace
         return {mag_lb, mag_ub};
     }
 
+    // Everything the unit propagation behind a result-bound claim can touch:
+    // the mag_Z rows' gate atoms and z's bound atoms, the sign clauses and
+    // the operand atoms they mention (including the eq0 definitions that
+    // bridge the zero cases), the channel rows, and the grid's [r] halves
+    // (the deep mixed-with-zero chains empty the grid by propagation). RUP
+    // hints restrict the checker to these lines, so the set must be complete.
+    auto result_claim_hints(ProofLogger & logger, Data & d) -> vector<ProofLine>
+    {
+        vector<ProofLine> hints;
+        for (const auto & v : {d.x, d.y}) {
+            pj::add_condition_def_hints(logger, v >= 0_i, hints);
+            pj::add_condition_def_hints(logger, v >= 1_i, hints);
+            pj::add_condition_def_hints(logger, v == 0_i, hints);
+        }
+        if (! is_constant_variable(d.z))
+            pj::add_condition_def_hints(logger, d.z >= 0_i, hints);
+        for (const auto & chan : {*d.chan_x, *d.chan_y})
+            for (const auto & row : {chan.pos_ge, chan.pos_le, chan.neg_ge, chan.neg_le})
+                hints.emplace_back(row);
+        for (const auto & row : {d.zchan->ge0_ge, d.zchan->ge0_le, d.zchan->lt0_ge, d.zchan->lt0_le})
+            hints.emplace_back(row);
+        hints.insert(hints.end(), d.sign_lines.begin(), d.sign_lines.end());
+        for (const auto & row : d.grid.cells)
+            for (const auto & cell : row)
+                hints.emplace_back(cell.forwards_reif);
+        return hints;
+    }
+
     // Justify both bounds on z (thesis Justification Procedure 7.5): derive
     // each live sign case's product bound through the grid, channel to z, and
     // resolve the cases; then restate the two bound atoms, which the caller's
@@ -93,6 +121,7 @@ namespace
 
         auto xs = BoundSources{pj::derive_operand_bound(logger, reason, d.x, true, x_lo), pj::derive_operand_bound(logger, reason, d.x, false, x_hi)};
         auto ys = BoundSources{pj::derive_operand_bound(logger, reason, d.y, true, y_lo), pj::derive_operand_bound(logger, reason, d.y, false, y_hi)};
+        auto hints = result_claim_hints(logger, d);
 
         bool square = d.x == d.y;
         for (unsigned pattern = 0; pattern < 4; ++pattern) {
@@ -111,19 +140,29 @@ namespace
             auto glb = pj::grid_sum_lower_bound(logger, reason, d.grid, d.chan_x->mag, xc.mag_lb, yc.mag_lb);
             auto gub = pj::grid_sum_upper_bound(logger, reason, d.grid, d.chan_x->mag, d.chan_y->mag, xc.mag_ub, yc.mag_ub);
             if (! zneg) {
-                lower_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, false, true);
-                upper_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, false, false);
+                lower_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, false, true, hints);
+                upper_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, false, false, hints);
             }
             else {
-                lower_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, true, false);
-                upper_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, true, true);
+                lower_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, true, false, hints);
+                upper_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, true, true, hints);
             }
         }
 
-        pj::conclude_by_sign_cases(logger, reason, WPBSum{} + 1_i * d.z >= prod_lo, dims, lower_premises);
-        pj::conclude_by_sign_cases(logger, reason, WPBSum{} + -1_i * d.z >= -prod_hi, dims, upper_premises);
-        logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (d.z <= prod_hi) >= 1_i, ProofLevel::Current);
-        logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (d.z >= prod_lo) >= 1_i, ProofLevel::Current);
+        auto lower_red = pj::conclude_by_sign_cases(logger, reason, WPBSum{} + 1_i * d.z >= prod_lo, dims, lower_premises);
+        auto upper_red = pj::conclude_by_sign_cases(logger, reason, WPBSum{} + -1_i * d.z >= -prod_hi, dims, upper_premises);
+        auto closer_hints = [&](ProofLine red, const IntegerVariableCondition & lit) {
+            vector<ProofLine> h{red};
+            if (auto def = pj::def_line_for(logger, lit))
+                h.emplace_back(*def);
+            if (auto def = pj::def_line_for(logger, ! lit))
+                h.emplace_back(*def);
+            return h;
+        };
+        logger.emit_under_reason(
+            RUPProofRule{closer_hints(upper_red, d.z <= prod_hi)}, WPBSum{} + 1_i * (d.z <= prod_hi) >= 1_i, ProofLevel::Current, reason);
+        logger.emit_under_reason(
+            RUPProofRule{closer_hints(lower_red, d.z >= prod_lo)}, WPBSum{} + 1_i * (d.z >= prod_lo) >= 1_i, ProofLevel::Current, reason);
     }
 
     // Justify one factor bound (thesis Justification Procedures 7.6/7.7):
@@ -155,6 +194,7 @@ namespace
                                pj::derive_operand_bound(logger, reason, cofactor, false, cof_hi)};
         auto z_lb = pj::derive_operand_bound(logger, reason, d.z, true, z_lo);
         auto z_ub = pj::derive_operand_bound(logger, reason, d.z, false, z_hi);
+        auto hints = result_claim_hints(logger, d);
 
         auto excl_lo = upper ? t + 1_i : target_lo;
         auto excl_hi = upper ? target_hi : t - 1_i;
@@ -185,10 +225,10 @@ namespace
                             : pj::grid_sum_lower_bound(logger, reason, d.grid, d.chan_x->mag, cc.mag_lb, tc.mag_lb);
             auto gub = on_x ? pj::grid_sum_upper_bound(logger, reason, d.grid, d.chan_x->mag, d.chan_y->mag, tc.mag_ub, cc.mag_ub)
                             : pj::grid_sum_upper_bound(logger, reason, d.grid, d.chan_x->mag, d.chan_y->mag, cc.mag_ub, tc.mag_ub);
-            auto z_case_lower = zneg ? pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, true, false)
-                                     : pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, false, true);
-            auto z_case_upper = zneg ? pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, true, true)
-                                     : pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, false, false);
+            auto z_case_lower = zneg ? pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, true, false, hints)
+                                     : pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, false, true, hints);
+            auto z_case_upper = zneg ? pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, true, true, hints)
+                                     : pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, false, false, hints);
 
             optional<ProofLine> clash;
             HalfReifyOnConjunctionOf clash_cases;
@@ -210,8 +250,14 @@ namespace
         }
 
         auto conclusion = upper ? WPBSum{} + -1_i * target >= -t : WPBSum{} + 1_i * target >= t;
-        pj::conclude_by_sign_cases(logger, reason, conclusion, dims, premises, zero_refs);
-        logger.emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (upper ? target <= t : target >= t) >= 1_i, ProofLevel::Current);
+        auto red = pj::conclude_by_sign_cases(logger, reason, conclusion, dims, premises, zero_refs);
+        auto lit = upper ? target <= t : target >= t;
+        vector<ProofLine> closer{red};
+        if (auto def = pj::def_line_for(logger, lit))
+            closer.emplace_back(*def);
+        if (auto def = pj::def_line_for(logger, ! lit))
+            closer.emplace_back(*def);
+        logger.emit_under_reason(RUPProofRule{closer}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
     }
 
     // Filter one factor from the cofactor's and z's bounds, mirroring the

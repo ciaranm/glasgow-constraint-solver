@@ -15,8 +15,92 @@ using namespace gcs::innards::product_justify;
 
 using std::vector;
 
+auto gcs::innards::product_justify::def_line_for(ProofLogger & logger, const IntegerVariableCondition & cond) -> std::optional<ProofLine>
+{
+    // a condition on a constant is literally true or false: no definition
+    if (is_constant_variable(cond.var))
+        return std::nullopt;
+    auto def = logger.names_and_ids_tracker().need_pol_item_defining_literal(cond);
+    return overloaded{[&](const ProofLine & line) -> std::optional<ProofLine> { return line; },
+        [&](const XLiteral &) -> std::optional<ProofLine> {
+            // a primitive atom (say, a declared domain boundary) has no
+            // reified definition to cite; callers fall back to RUP
+            return std::nullopt;
+        }}
+        .visit(def);
+}
+
+auto gcs::innards::product_justify::add_condition_def_hints(ProofLogger & logger, const IntegerVariableCondition & cond, vector<ProofLine> & hints)
+    -> void
+{
+    auto add = [&](const IntegerVariableCondition & c) {
+        if (auto def = def_line_for(logger, c))
+            hints.emplace_back(*def);
+    };
+    add(cond);
+    add(! cond);
+    switch (cond.op) {
+        using enum VariableConditionOperator;
+    case Equal:
+    case NotEqual:
+        add(cond.var >= cond.value);
+        add(cond.var < cond.value);
+        add(cond.var >= cond.value + 1_i);
+        break;
+    case GreaterEqual:
+    case Less:
+    case InRange:
+    case NotInRange: break;
+    }
+}
+
+auto gcs::innards::product_justify::add_order_bridge_hints(ProofLogger & logger, const IntegerVariableCondition & cond, vector<ProofLine> & hints)
+    -> void
+{
+    // Unit propagation cannot cross between two order atoms of the same
+    // variable through their bit-level definitions alone (the bits stay
+    // unpinned), and the ladder link lines the tracker emits at atom
+    // creation are not recorded anywhere we can cite. So pol-derive the
+    // needed ladder clause [v>=h] -> [v>=l] from the two atoms' defining
+    // rows, exactly as the tracker builds its own chain lines, and hint it.
+    auto bridge = [&](IntegerVariableID v, Integer h, Integer l) {
+        if (h <= l)
+            return;
+        if ((! def_line_for(logger, v >= h)) || (! def_line_for(logger, v < l)))
+            return;
+        PolBuilder b;
+        b.add_for_literal(logger.names_and_ids_tracker(), v < l).add_for_literal(logger.names_and_ids_tracker(), v >= h).saturate();
+        hints.emplace_back(b.emit(logger, ProofLevel::Temporary));
+    };
+
+    // The sign clauses test strictness through [v>=1], [v>=0] and the eq0
+    // atoms only, so those are the bridge targets that matter.
+    switch (cond.op) {
+        using enum VariableConditionOperator;
+    case GreaterEqual:
+        bridge(cond.var, cond.value, 1_i);
+        bridge(cond.var, cond.value, 0_i);
+        break;
+    case Less:
+        // ~[v>=k] with k <= 0 refutes [v>=0] through the same clause
+        bridge(cond.var, 0_i, cond.value);
+        break;
+    case Equal:
+        // the eq atom's own defining rows (hinted alongside) pin
+        // [v>=k] and ~[v>=k+1]; bridge those onward
+        bridge(cond.var, cond.value, 1_i);
+        bridge(cond.var, cond.value, 0_i);
+        bridge(cond.var, 0_i, cond.value + 1_i);
+        break;
+    case NotEqual:
+    case InRange:
+    case NotInRange: break;
+    }
+}
+
 namespace
 {
+
     // The union of two case sets: premises built from two operands carry
     // both operands' sign-case literals.
     auto merge_cases(const HalfReifyOnConjunctionOf & a, const HalfReifyOnConjunctionOf & b) -> HalfReifyOnConjunctionOf
@@ -31,22 +115,30 @@ namespace
 auto gcs::innards::product_justify::derive_operand_bound(
     ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v, bool lower, Integer bound) -> ConditionalBound
 {
-    // V-form, so the line cancels against the V-form channel rows.
+    // V-form, so the line cancels against the V-form channel rows. One `ia`
+    // citing the bound atom's definition, rather than a database-wide RUP.
     auto sum = lower ? WPBSum{} + 1_i * v : WPBSum{} + -1_i * v;
     auto rhs = lower ? bound : -bound;
-    auto line = logger.emit_rup_proof_line_under_reason(reason, sum >= rhs, ProofLevel::Temporary);
+    // The `ia` shape only lines up when the cited bound is itself carried by
+    // the reason (the drivers always arrange this); otherwise fall back to RUP.
+    auto def = reason.empty() ? std::nullopt : def_line_for(logger, lower ? v >= bound : v < bound + 1_i);
+    auto line = def
+        ? logger.emit_under_reason(ImpliesProofRule{*def}, logger.reify(sum >= rhs, HalfReifyOnConjunctionOf{}), ProofLevel::Temporary, reason)
+        : logger.emit_rup_proof_line_under_reason(reason, sum >= rhs, ProofLevel::Temporary);
     return ConditionalBound{sum, rhs, HalfReifyOnConjunctionOf{}, line};
 }
 
 auto gcs::innards::product_justify::derive_assumed_operand_bound(ProofLogger & logger, IntegerVariableID v, bool lower, Integer bound)
     -> ConditionalBound
 {
-    // The claim is RUP hint-free: its negation asserts the atom and the
-    // violated bound together, which the atom's definition rows refute.
+    // One `ia` citing the assumed atom's definition: the claim is exactly
+    // that definition's forward half.
     auto sum = lower ? WPBSum{} + 1_i * v : WPBSum{} + -1_i * v;
     auto rhs = lower ? bound : -bound;
     auto cases = HalfReifyOnConjunctionOf{lower ? v >= bound : v < bound + 1_i};
-    auto line = logger.emit_rup_proof_line(logger.reify(sum >= rhs, cases), ProofLevel::Temporary);
+    auto def = def_line_for(logger, lower ? v >= bound : v < bound + 1_i);
+    auto line = def ? logger.emit(ImpliesProofRule{*def}, logger.reify(sum >= rhs, cases), ProofLevel::Temporary)
+                    : logger.emit_rup_proof_line(logger.reify(sum >= rhs, cases), ProofLevel::Temporary);
     return ConditionalBound{sum, rhs, cases, line};
 }
 
@@ -179,12 +271,13 @@ auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, c
         for (Integer j = 0_i; j < n_cols; ++j) {
             auto & cell = row[j.as_index()];
             if (! cell.w_a)
-                cell.w_a = logger.emit_rup_proof_line(
+                cell.w_a = logger.emit(RUPProofRule{vector<ProofLine>{cell.forwards_reif}},
                     WPBSum{} + 1_i * ! cell.flag + 1_i * ProofBitVariable{bits_a, i, false} + 1_i * ProofBitVariable{bits_b, j, true} >= 1_i,
                     ProofLevel::Top);
             inner_w_a.add(*cell.w_a, power2(j));
             if (! cell.w_b)
-                cell.w_b = logger.emit_rup_proof_line(WPBSum{} + 1_i * ! cell.flag + 1_i * ProofBitVariable{bits_a, i, true} >= 1_i, ProofLevel::Top);
+                cell.w_b = logger.emit(RUPProofRule{vector<ProofLine>{cell.forwards_reif}},
+                    WPBSum{} + 1_i * ! cell.flag + 1_i * ProofBitVariable{bits_a, i, true} >= 1_i, ProofLevel::Top);
             inner_w_b.add(*cell.w_b, power2(j));
             neg_row_sum += power2(j) * ! cell.flag;
         }
@@ -214,7 +307,8 @@ auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, c
 }
 
 auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v3,
-    const product_enc::ResultChannel & channel, const ConditionalBound & grid_bound, bool result_negative, bool lower) -> ConditionalBound
+    const product_enc::ResultChannel & channel, const ConditionalBound & grid_bound, bool result_negative, bool lower,
+    const vector<ProofLine> & claim_hints) -> ConditionalBound
 {
     // The mag_Z rows pin |z| = grid sum, gated on z's sign atom; the atom
     // itself is entailed by the operand sign-case atoms through the sign
@@ -235,7 +329,35 @@ auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & l
     // through the sign clauses, the eq0 definition rows and the grid.
     auto coeff = (lower != result_negative) ? 1_i : -1_i;
     auto sum = WPBSum{} + coeff * v3;
-    auto line = logger.emit_under_reason(RUPProofRule{}, logger.reify(sum >= grid_bound.rhs, grid_bound.cases), ProofLevel::Temporary, reason);
+    auto hints = claim_hints;
+    if (! hints.empty()) {
+        hints.emplace_back(combined);
+        // the bridges from the negated claim's units to the bit level: the
+        // claimed bound's own atom definitions, the definitions of every
+        // reason and case literal (a reason unit only reaches the channel
+        // and grid rows through its atom's defining rows), and the ladder
+        // clauses linking each such atom to the sign-clause thresholds
+        auto lit = coeff == 1_i ? v3 >= grid_bound.rhs : v3 < -grid_bound.rhs + 1_i;
+        add_condition_def_hints(logger, lit, hints);
+        for (const auto & cl : grid_bound.cases)
+            if (const auto * pl = std::get_if<ProofLiteral>(&cl))
+                if (const auto * l = std::get_if<Literal>(pl))
+                    if (const auto * cond = std::get_if<IntegerVariableCondition>(l)) {
+                        add_condition_def_hints(logger, *cond, hints);
+                        add_order_bridge_hints(logger, *cond, hints);
+                    }
+        for (const auto & rl : reason)
+            if (const auto * pl = std::get_if<ProofLiteral>(&rl))
+                if (const auto * l = std::get_if<Literal>(pl))
+                    if (const auto * cond = std::get_if<IntegerVariableCondition>(l)) {
+                        add_condition_def_hints(logger, *cond, hints);
+                        add_order_bridge_hints(logger, *cond, hints);
+                    }
+    }
+    // an empty hint list is not "no hints" to the checker: it restricts
+    // propagation to nothing at all
+    auto rule = hints.empty() ? RUPProofRule{} : RUPProofRule{hints};
+    auto line = logger.emit_under_reason(rule, logger.reify(sum >= grid_bound.rhs, grid_bound.cases), ProofLevel::Temporary, reason);
     return ConditionalBound{sum, grid_bound.rhs, grid_bound.cases, line};
 }
 

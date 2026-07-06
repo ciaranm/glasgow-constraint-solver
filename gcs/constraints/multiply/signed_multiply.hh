@@ -10,6 +10,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace gcs::innards::signed_multiply
 {
@@ -30,6 +31,7 @@ namespace gcs::innards::signed_multiply
         std::optional<product_enc::MagnitudeChannel> chan_x, chan_y;
         product_enc::BitProductGrid grid{};
         std::optional<product_enc::ResultChannel> zchan;
+        std::vector<ProofLine> sign_lines{};
     };
 
     /**

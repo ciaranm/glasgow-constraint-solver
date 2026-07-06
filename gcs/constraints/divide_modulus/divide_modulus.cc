@@ -30,6 +30,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -603,7 +604,7 @@ namespace
             case Kind::EmptyBecauseYZero: {
                 auto justf = [&](const ReasonLiterals & reason) {
                     grid_lower_line(*logger, reason, d, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines);
-                    pj::derive_operand_bound(*logger, reason, other, false, 0_i);
+                    std::ignore = pj::derive_operand_bound(*logger, reason, other, false, 0_i);
                 };
                 inference.infer(logger, FalseLiteral{}, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}},
                     as_reason(merge_lits(side_reason(w.lo_side, true), {other <= 0_i})));

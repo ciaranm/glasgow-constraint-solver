@@ -98,7 +98,35 @@ namespace gcs::innards::product_justify
      * \ingroup Innards
      */
     [[nodiscard]] auto channel_grid_bound_to_result(ProofLogger &, const ReasonLiterals & reason, IntegerVariableID v3,
-        const product_enc::ResultChannel & channel, const ConditionalBound & grid_bound, bool result_negative, bool lower) -> ConditionalBound;
+        const product_enc::ResultChannel & channel, const ConditionalBound & grid_bound, bool result_negative, bool lower,
+        const std::vector<ProofLine> & claim_hints = {}) -> ConditionalBound;
+
+    /**
+     * \brief The defining proof line for an atomic condition, if it has one
+     * (a primitive atom, say a declared domain boundary, does not). Used as
+     * `ia` antecedents and assembled into RUP hint sets, which restrict the
+     * checker's propagation to the given lines and so must be complete.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto def_line_for(ProofLogger &, const IntegerVariableCondition &) -> std::optional<ProofLine>;
+
+    /**
+     * \brief Append the definition lines a unit-propagation chain through an
+     * atomic condition can touch: the condition's own definition and its
+     * negation's, and for (in)equality atoms the order-atom definitions they
+     * bridge to (the eq0 rows connect [v=0] with [v>=0] and [v>=1]).
+     *
+     * \ingroup Innards
+     */
+    auto add_condition_def_hints(ProofLogger &, const IntegerVariableCondition &, std::vector<ProofLine> & hints) -> void;
+
+    /**
+     * Pol-derive and hint the order-ladder clauses linking `cond`'s atom to
+     * the sign-clause threshold atoms ([v>=1], [v>=0]), so a hinted RUP
+     * claim can cross between order atoms of the same variable.
+     */
+    auto add_order_bridge_hints(ProofLogger &, const IntegerVariableCondition &, std::vector<ProofLine> & hints) -> void;
 
     /**
      * \brief One sign-case dimension: the two complementary atoms the case

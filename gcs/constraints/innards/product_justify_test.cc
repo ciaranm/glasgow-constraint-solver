@@ -260,12 +260,13 @@ namespace
                             exit(EXIT_FAILURE);
                         }
                         auto q_hi = qf.hi;
-                        auto reason = ReasonLiterals{v2 >= ylo, v2 <= yhi, v3 >= zlo, v3 <= zhi};
+                        auto reason = ReasonLiterals{v2 >= ylo, v2 <= yhi, v3 >= zlo, v3 <= zhi, v1 <= xhi};
 
                         // x's bounds over the refuted excluded range (q_hi+1 .. xhi):
-                        // the assumed atom is supplied as a unit by the negated goal.
+                        // the assumed atom is supplied as a unit by the negated goal,
+                        // and the far side is carried by the reason (as production does).
                         auto x_lb_excl = product_justify::derive_assumed_operand_bound(*logger, v1, true, q_hi + 1_i);
-                        auto x_ub_plain = product_justify::derive_operand_bound(*logger, ReasonLiterals{}, v1, false, xhi);
+                        auto x_ub_plain = product_justify::derive_operand_bound(*logger, reason, v1, false, xhi);
                         auto y_lb = product_justify::derive_operand_bound(*logger, reason, v2, true, ylo);
                         auto y_ub = product_justify::derive_operand_bound(*logger, reason, v2, false, yhi);
                         auto z_lb = product_justify::derive_operand_bound(*logger, reason, v3, true, zlo);
