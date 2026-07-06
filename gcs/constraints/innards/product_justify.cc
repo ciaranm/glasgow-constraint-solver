@@ -113,7 +113,7 @@ namespace
 }
 
 auto gcs::innards::product_justify::derive_operand_bound(
-    ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v, bool lower, Integer bound) -> ConditionalBound
+    ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v, bool lower, Integer bound, ProofLevel result_level) -> ConditionalBound
 {
     // V-form, so the line cancels against the V-form channel rows. One `ia`
     // citing the bound atom's definition, rather than a database-wide RUP.
@@ -122,14 +122,13 @@ auto gcs::innards::product_justify::derive_operand_bound(
     // The `ia` shape only lines up when the cited bound is itself carried by
     // the reason (the drivers always arrange this); otherwise fall back to RUP.
     auto def = reason.empty() ? std::nullopt : def_line_for(logger, lower ? v >= bound : v < bound + 1_i);
-    auto line = def
-        ? logger.emit_under_reason(ImpliesProofRule{*def}, logger.reify(sum >= rhs, HalfReifyOnConjunctionOf{}), ProofLevel::Temporary, reason)
-        : logger.emit_rup_proof_line_under_reason(reason, sum >= rhs, ProofLevel::Temporary);
+    auto line = def ? logger.emit_under_reason(ImpliesProofRule{*def}, logger.reify(sum >= rhs, HalfReifyOnConjunctionOf{}), result_level, reason)
+                    : logger.emit_rup_proof_line_under_reason(reason, sum >= rhs, result_level);
     return ConditionalBound{sum, rhs, HalfReifyOnConjunctionOf{}, line};
 }
 
-auto gcs::innards::product_justify::derive_assumed_operand_bound(ProofLogger & logger, IntegerVariableID v, bool lower, Integer bound)
-    -> ConditionalBound
+auto gcs::innards::product_justify::derive_assumed_operand_bound(
+    ProofLogger & logger, IntegerVariableID v, bool lower, Integer bound, ProofLevel result_level) -> ConditionalBound
 {
     // One `ia` citing the assumed atom's definition: the claim is exactly
     // that definition's forward half.
@@ -137,8 +136,8 @@ auto gcs::innards::product_justify::derive_assumed_operand_bound(ProofLogger & l
     auto rhs = lower ? bound : -bound;
     auto cases = HalfReifyOnConjunctionOf{lower ? v >= bound : v < bound + 1_i};
     auto def = def_line_for(logger, lower ? v >= bound : v < bound + 1_i);
-    auto line = def ? logger.emit(ImpliesProofRule{*def}, logger.reify(sum >= rhs, cases), ProofLevel::Temporary)
-                    : logger.emit_rup_proof_line(logger.reify(sum >= rhs, cases), ProofLevel::Temporary);
+    auto line = def ? logger.emit(ImpliesProofRule{*def}, logger.reify(sum >= rhs, cases), result_level)
+                    : logger.emit_rup_proof_line(logger.reify(sum >= rhs, cases), result_level);
     return ConditionalBound{sum, rhs, cases, line};
 }
 
@@ -189,14 +188,14 @@ auto gcs::innards::product_justify::channel_bound_to_magnitude(ProofLogger & log
 
 auto gcs::innards::product_justify::grid_sum_lower_bound(ProofLogger & logger, const ReasonLiterals & reason,
     const product_enc::BitProductGrid & grid, const SimpleOrProofOnlyIntegerVariableID & bits_a, const ConditionalBound & a_lb,
-    const ConditionalBound & b_lb) -> ConditionalBound
+    const ConditionalBound & b_lb, ProofLevel result_level) -> ConditionalBound
 {
     auto cases = merge_cases(a_lb.cases, b_lb.cases);
 
     // A non-positive magnitude bound multiplies out to the trivial
     // grid-sum >= 0, which every cell's non-negativity gives for free.
     if (a_lb.rhs <= 0_i || b_lb.rhs <= 0_i) {
-        auto line = logger.emit_under_reason(ImpliesProofRule{}, logger.reify(grid.sum >= 0_i, cases), ProofLevel::Temporary, reason);
+        auto line = logger.emit_under_reason(ImpliesProofRule{}, logger.reify(grid.sum >= 0_i, cases), result_level, reason);
         return ConditionalBound{grid.sum, 0_i, cases, line};
     }
 
@@ -225,14 +224,14 @@ auto gcs::innards::product_justify::grid_sum_lower_bound(ProofLogger & logger, c
         outer.add(implied, power2(i));
     }
     outer.add(a_lb.line, b_lb.rhs);
-    auto line = outer.emit(logger, ProofLevel::Temporary);
+    auto line = outer.emit(logger, result_level);
 
     return ConditionalBound{grid.sum, a_lb.rhs * b_lb.rhs, cases, line};
 }
 
 auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, const ReasonLiterals & reason, product_enc::BitProductGrid & grid,
     const SimpleOrProofOnlyIntegerVariableID & bits_a, const SimpleOrProofOnlyIntegerVariableID & bits_b, const ConditionalBound & a_ub,
-    const ConditionalBound & b_ub) -> ConditionalBound
+    const ConditionalBound & b_ub, ProofLevel result_level) -> ConditionalBound
 {
     auto cases = merge_cases(a_ub.cases, b_ub.cases);
 
@@ -247,7 +246,7 @@ auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, c
     // so the claim is plain RUP -- and the pol scaling below would need a
     // zero coefficient, which PolBuilder rightly refuses.
     if (a_val == 0_i || b_val == 0_i) {
-        auto line = logger.emit_under_reason(RUPProofRule{}, logger.reify(grid.neg_sum >= 0_i, cases), ProofLevel::Temporary, reason);
+        auto line = logger.emit_under_reason(RUPProofRule{}, logger.reify(grid.neg_sum >= 0_i, cases), result_level, reason);
         return ConditionalBound{grid.neg_sum, 0_i, cases, line};
     }
 
@@ -301,7 +300,7 @@ auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, c
         outer.add(resolvent, power2(i));
     }
     outer.add(a_ub.line, b_val);
-    auto line = outer.emit(logger, ProofLevel::Temporary);
+    auto line = outer.emit(logger, result_level);
 
     return ConditionalBound{grid.neg_sum, -(a_val * b_val), cases, line};
 }

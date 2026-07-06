@@ -35,8 +35,8 @@ namespace gcs::innards::product_justify
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto derive_operand_bound(ProofLogger &, const ReasonLiterals & reason, IntegerVariableID v, bool lower, Integer bound)
-        -> ConditionalBound;
+    [[nodiscard]] auto derive_operand_bound(ProofLogger &, const ReasonLiterals & reason, IntegerVariableID v, bool lower, Integer bound,
+        ProofLevel result_level = ProofLevel::Temporary) -> ConditionalBound;
 
     /**
      * \brief As derive_operand_bound, but under an assumed atom rather than
@@ -47,7 +47,8 @@ namespace gcs::innards::product_justify
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto derive_assumed_operand_bound(ProofLogger &, IntegerVariableID v, bool lower, Integer bound) -> ConditionalBound;
+    [[nodiscard]] auto derive_assumed_operand_bound(
+        ProofLogger &, IntegerVariableID v, bool lower, Integer bound, ProofLevel result_level = ProofLevel::Temporary) -> ConditionalBound;
 
     /**
      * \brief Thesis Justification Subprocedure 7.3, cake flavour: channel a
@@ -74,7 +75,8 @@ namespace gcs::innards::product_justify
      * \ingroup Innards
      */
     [[nodiscard]] auto grid_sum_lower_bound(ProofLogger &, const ReasonLiterals & reason, const product_enc::BitProductGrid & grid,
-        const SimpleOrProofOnlyIntegerVariableID & bits_a, const ConditionalBound & a_lb, const ConditionalBound & b_lb) -> ConditionalBound;
+        const SimpleOrProofOnlyIntegerVariableID & bits_a, const ConditionalBound & a_lb, const ConditionalBound & b_lb,
+        ProofLevel result_level = ProofLevel::Temporary) -> ConditionalBound;
 
     /**
      * \brief Thesis Justification Subprocedure 7.2: from magnitude upper
@@ -86,7 +88,7 @@ namespace gcs::innards::product_justify
      */
     [[nodiscard]] auto grid_sum_upper_bound(ProofLogger &, const ReasonLiterals & reason, product_enc::BitProductGrid & grid,
         const SimpleOrProofOnlyIntegerVariableID & bits_a, const SimpleOrProofOnlyIntegerVariableID & bits_b, const ConditionalBound & a_ub,
-        const ConditionalBound & b_ub) -> ConditionalBound;
+        const ConditionalBound & b_ub, ProofLevel result_level = ProofLevel::Temporary) -> ConditionalBound;
 
     /**
      * \brief Channel a grid-sum bound to a bound on the signed result via the

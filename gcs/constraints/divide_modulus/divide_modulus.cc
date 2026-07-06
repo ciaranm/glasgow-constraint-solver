@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -39,6 +40,7 @@ using namespace gcs::innards;
 
 using std::make_shared;
 using std::make_unique;
+using std::map;
 using std::max;
 using std::min;
 using std::move;
@@ -49,6 +51,7 @@ using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::to_string;
+using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
@@ -103,22 +106,6 @@ namespace
     // computes its interval locally each call, and every justification talks
     // about the grid sum directly through the rem/id rows, which contain it
     // verbatim (cake's no-materialised-remainder design).
-    struct DefaultProductData
-    {
-        SimpleIntegerVariableID mag_a{0}, mag_b{0}; // |q| (or the free quotient magnitude) and |y|
-        IntegerVariableID x = 0_c;
-        IntegerVariableID y = 0_c; // the signed divisor mag_b channels to
-        // The divisor channel halves needed to push a magnitude lower bound
-        // back through the hole: [y>=0] => y >= |y| and [y<0] => -y >= |y|.
-        optional<ProofLine> ychan_pos_ge, ychan_neg_le;
-        product_enc::BitProductGrid grid{}; // cells empty when proofs are off
-        // Divide's remainder rows: 0 <= x - Sum < |y| gated [x>=0], and the
-        // mirror 0 <= -x - Sum < |y| gated [x<1].
-        optional<ProofLine> rem_pos_lo, rem_pos_hi, rem_neg_hi, rem_neg_lo;
-        // Modulus's identity rows: r = x - Sum gated [x>=0], r = x + Sum gated [x<1].
-        optional<ProofLine> id_pos_ge, id_pos_le, id_neg_ge, id_neg_le;
-    };
-
     // The local product interval, remembering which side established each
     // bound so the justifications can rebuild exactly that chain.
     enum class WSide
@@ -137,117 +124,225 @@ namespace
 
     namespace pj = gcs::innards::product_justify;
 
-    // A line asserting Sum >= w.lo under the reason, built from whichever
-    // side currently gives that bound. For divide the x sides go through the
-    // rem rows; for modulus through the identity rows and r's bounds.
-    auto grid_lower_line(ProofLogger & logger, const ReasonLiterals & reason, DefaultProductData & d, const WInterval & w, Integer a_lo, Integer b_lo,
-        Integer x_lo, Integer x_hi, Integer b_hi, const optional<pair<IntegerVariableID, pair<Integer, Integer>>> & modulus_r) -> ProofLine
+    struct DefaultProductData
     {
-        switch (w.lo_side) {
-        case WSide::Mag: {
-            auto a = pj::derive_operand_bound(logger, reason, d.mag_a, true, a_lo);
-            auto b = pj::derive_operand_bound(logger, reason, d.mag_b, true, b_lo);
-            return pj::grid_sum_lower_bound(logger, reason, d.grid, d.mag_a, a, b).line;
+        SimpleIntegerVariableID mag_a{0}, mag_b{0}; // |q| (or the free quotient magnitude) and |y|
+        IntegerVariableID x = 0_c;
+        IntegerVariableID y = 0_c; // the signed divisor mag_b channels to
+        // The divisor channel halves needed to push a magnitude lower bound
+        // back through the hole: [y>=0] => y >= |y| and [y<0] => -y >= |y|.
+        optional<ProofLine> ychan_pos_ge, ychan_neg_le;
+        product_enc::BitProductGrid grid{}; // cells empty when proofs are off
+        // Divide's remainder rows: 0 <= x - Sum < |y| gated [x>=0], and the
+        // mirror 0 <= -x - Sum < |y| gated [x<1].
+        optional<ProofLine> rem_pos_lo, rem_pos_hi, rem_neg_hi, rem_neg_lo;
+        // Modulus's identity rows: r = x - Sum gated [x>=0], r = x + Sum gated [x<1].
+        optional<ProofLine> id_pos_ge, id_pos_le, id_neg_ge, id_neg_le;
+
+        // Constraint-lifetime caches of derived proof lines, keyed by the
+        // bound values they were derived from. The bounds a search revisits
+        // repeat heavily, so each distinct line is derived once, at
+        // ProofLevel::Top (never deleted), under only the literals that
+        // support it -- a subset of every citing inference's reason, so the
+        // citing claim's negation discharges them. Proofs-only state: all
+        // empty when proofs are off.
+        map<tuple<IntegerVariableID, bool, Integer>, pj::ConditionalBound> operand_bound_lines;
+        map<tuple<IntegerVariableID, bool, Integer>, pj::ConditionalBound> assumed_bound_lines;
+        // magnitude-corner chain lines: (lower, a bound, b bound). Only the
+        // Mag side lives here: its keys repeat heavily across the search and
+        // each entry is a whole Subprocedure 7.1/7.2 grid derivation. The x
+        // sides' keys churn with x's bounds, so a constraint-lifetime cache
+        // of them would flood the checker's live database (every hint-free
+        // RUP step pays for each standing constraint); they get a per-pass
+        // cache instead.
+        map<tuple<bool, Integer, Integer>, ProofLine> mag_chain_lines;
+        // filter grid bounds: (lower, target, excluded bound, other bound)
+        map<tuple<bool, IntegerVariableID, Integer, Integer>, pj::ConditionalBound> filter_grid_lines;
+    };
+
+    // The per-pass cache for the x-side chain lines, at ProofLevel::Current
+    // (justification scopes forget Temporary lines; backtracking cleans
+    // Current ones up, so the checker's live database stays bounded). Within
+    // a pass the bounds are fixed, so (lower, side) identifies the line.
+    struct PassChains
+    {
+        vector<pair<pair<bool, WSide>, ProofLine>> lines;
+    };
+
+    auto cached_operand_bound(ProofLogger & logger, DefaultProductData & d, IntegerVariableID v, bool lower, Integer bound) -> pj::ConditionalBound
+    {
+        auto key = tuple{v, lower, bound};
+        if (auto it = d.operand_bound_lines.find(key); it != d.operand_bound_lines.end())
+            return it->second;
+        ReasonLiterals reason;
+        reason.emplace_back(Literal{lower ? v >= bound : v <= bound});
+        auto result = pj::derive_operand_bound(logger, reason, v, lower, bound, ProofLevel::Top);
+        d.operand_bound_lines.emplace(key, result);
+        return result;
+    }
+
+    auto cached_assumed_bound(ProofLogger & logger, DefaultProductData & d, IntegerVariableID v, bool lower, Integer bound) -> pj::ConditionalBound
+    {
+        auto key = tuple{v, lower, bound};
+        if (auto it = d.assumed_bound_lines.find(key); it != d.assumed_bound_lines.end())
+            return it->second;
+        auto result = pj::derive_assumed_operand_bound(logger, v, lower, bound, ProofLevel::Top);
+        d.assumed_bound_lines.emplace(key, result);
+        return result;
+    }
+
+    // A line asserting Sum >= w.lo under the side's support literals, built
+    // from whichever side currently gives that bound, cached for the
+    // constraint's lifetime keyed by the bound values. For divide the x
+    // sides go through the rem rows; for modulus through the identity rows
+    // and r's bounds.
+    auto grid_lower_line(ProofLogger & logger, const ReasonLiterals & reason, DefaultProductData & d, PassChains & pass, const WInterval & w,
+        Integer a_lo, Integer b_lo, Integer x_lo, Integer x_hi, Integer b_hi,
+        const optional<pair<IntegerVariableID, pair<Integer, Integer>>> & modulus_r) -> ProofLine
+    {
+        if (w.lo_side == WSide::Mag) {
+            auto key = tuple{true, a_lo, b_lo};
+            if (auto it = d.mag_chain_lines.find(key); it != d.mag_chain_lines.end())
+                return it->second;
+            auto a = cached_operand_bound(logger, d, d.mag_a, true, a_lo);
+            auto b = cached_operand_bound(logger, d, d.mag_b, true, b_lo);
+            auto line = pj::grid_sum_lower_bound(logger, reason, d.grid, d.mag_a, a, b, ProofLevel::Top).line;
+            d.mag_chain_lines.emplace(key, line);
+            return line;
         }
+        auto key = pair{true, w.lo_side};
+        for (const auto & [k, line] : pass.lines)
+            if (k == key)
+                return line;
+        auto remember = [&](ProofLine line) {
+            pass.lines.emplace_back(key, line);
+            return line;
+        };
+        switch (w.lo_side) {
+        case WSide::Mag: throw NonExhaustiveSwitch{}; // handled above
         case WSide::XPos: {
             PolBuilder builder;
             if (modulus_r) {
                 // id_pos_le: Sum - x + r >= 0, so Sum >= x - r >= x_lo - r_hi
                 builder.add(*d.id_pos_le);
-                builder.add(pj::derive_operand_bound(logger, reason, d.x, true, x_lo).line);
-                builder.add(pj::derive_operand_bound(logger, reason, modulus_r->first, false, modulus_r->second.second).line);
+                builder.add(cached_operand_bound(logger, d, d.x, true, x_lo).line);
+                builder.add(cached_operand_bound(logger, d, modulus_r->first, false, modulus_r->second.second).line);
             }
             else {
                 // rem_pos_hi: Sum - x + |y| >= 1, so Sum >= x - |y| + 1 >= x_lo - b_hi + 1
                 builder.add(*d.rem_pos_hi);
-                builder.add(pj::derive_operand_bound(logger, reason, d.x, true, x_lo).line);
-                builder.add(pj::derive_operand_bound(logger, reason, d.mag_b, false, b_hi).line);
+                builder.add(cached_operand_bound(logger, d, d.x, true, x_lo).line);
+                builder.add(cached_operand_bound(logger, d, d.mag_b, false, b_hi).line);
             }
-            return builder.emit(logger, ProofLevel::Temporary);
+            return remember(builder.emit(logger, ProofLevel::Current));
         }
         case WSide::XNeg: {
             PolBuilder builder;
             if (modulus_r) {
                 // id_neg_le: Sum + x - r >= 0, so Sum >= r - x >= r_lo - x_hi
                 builder.add(*d.id_neg_le);
-                builder.add(pj::derive_operand_bound(logger, reason, d.x, false, x_hi).line);
-                builder.add(pj::derive_operand_bound(logger, reason, modulus_r->first, true, modulus_r->second.first).line);
+                builder.add(cached_operand_bound(logger, d, d.x, false, x_hi).line);
+                builder.add(cached_operand_bound(logger, d, modulus_r->first, true, modulus_r->second.first).line);
             }
             else {
                 // rem_neg_lo: Sum + x + |y| >= 1, so Sum >= 1 - x - |y| >= 1 - x_hi - b_hi
                 builder.add(*d.rem_neg_lo);
-                builder.add(pj::derive_operand_bound(logger, reason, d.x, false, x_hi).line);
-                builder.add(pj::derive_operand_bound(logger, reason, d.mag_b, false, b_hi).line);
+                builder.add(cached_operand_bound(logger, d, d.x, false, x_hi).line);
+                builder.add(cached_operand_bound(logger, d, d.mag_b, false, b_hi).line);
             }
-            return builder.emit(logger, ProofLevel::Temporary);
+            return remember(builder.emit(logger, ProofLevel::Current));
         }
         case WSide::XDisj: {
             // x's sign undecided: derive the bound in each sign case (the same
             // chains as XPos/XNeg) and resolve them into one implication line.
             auto pos = WInterval{w.lo, w.hi, WSide::XPos, WSide::XPos};
             auto neg = WInterval{w.lo, w.hi, WSide::XNeg, WSide::XNeg};
-            auto pos_line = grid_lower_line(logger, reason, d, pos, a_lo, b_lo, x_lo, x_hi, b_hi, modulus_r);
-            auto neg_line = grid_lower_line(logger, reason, d, neg, a_lo, b_lo, x_lo, x_hi, b_hi, modulus_r);
+            auto pos_line = grid_lower_line(logger, reason, d, pass, pos, a_lo, b_lo, x_lo, x_hi, b_hi, modulus_r);
+            auto neg_line = grid_lower_line(logger, reason, d, pass, neg, a_lo, b_lo, x_lo, x_hi, b_hi, modulus_r);
             auto dims = vector<pj::SignCaseDimension>{{d.x >= 0_i, d.x < 0_i}};
             auto premises =
                 vector<optional<pj::ConditionalBound>>{pj::ConditionalBound{d.grid.sum, w.lo, HalfReifyOnConjunctionOf{d.x >= 0_i}, pos_line},
                     pj::ConditionalBound{d.grid.sum, w.lo, HalfReifyOnConjunctionOf{d.x < 0_i}, neg_line}};
-            return pj::conclude_by_sign_cases(logger, reason, d.grid.sum >= w.lo, dims, premises);
+            auto concluded = pj::conclude_by_sign_cases(logger, reason, d.grid.sum >= w.lo, dims, premises);
+            // restate at Current: the conclusion itself lands at Temporary
+            PolBuilder copy;
+            copy.add(concluded);
+            return remember(copy.emit(logger, ProofLevel::Current));
         }
         }
         throw NonExhaustiveSwitch{};
     }
 
-    // A line asserting -Sum >= -w.hi under the reason, likewise by side.
-    auto grid_upper_line(ProofLogger & logger, const ReasonLiterals & reason, DefaultProductData & d, const WInterval & w, Integer a_hi, Integer b_hi,
-        Integer x_lo, Integer x_hi, const optional<pair<IntegerVariableID, pair<Integer, Integer>>> & modulus_r) -> ProofLine
+    // A line asserting -Sum >= -w.hi under the side's support literals,
+    // likewise by side and cached.
+    auto grid_upper_line(ProofLogger & logger, const ReasonLiterals & reason, DefaultProductData & d, PassChains & pass, const WInterval & w,
+        Integer a_hi, Integer b_hi, Integer x_lo, Integer x_hi, const optional<pair<IntegerVariableID, pair<Integer, Integer>>> & modulus_r)
+        -> ProofLine
     {
-        switch (w.hi_side) {
-        case WSide::Mag: {
-            auto a = pj::derive_operand_bound(logger, reason, d.mag_a, false, a_hi);
-            auto b = pj::derive_operand_bound(logger, reason, d.mag_b, false, b_hi);
-            return pj::grid_sum_upper_bound(logger, reason, d.grid, d.mag_a, d.mag_b, a, b).line;
+        if (w.hi_side == WSide::Mag) {
+            auto key = tuple{false, a_hi, b_hi};
+            if (auto it = d.mag_chain_lines.find(key); it != d.mag_chain_lines.end())
+                return it->second;
+            auto a = cached_operand_bound(logger, d, d.mag_a, false, a_hi);
+            auto b = cached_operand_bound(logger, d, d.mag_b, false, b_hi);
+            auto line = pj::grid_sum_upper_bound(logger, reason, d.grid, d.mag_a, d.mag_b, a, b, ProofLevel::Top).line;
+            d.mag_chain_lines.emplace(key, line);
+            return line;
         }
+        auto key = pair{false, w.hi_side};
+        for (const auto & [k, line] : pass.lines)
+            if (k == key)
+                return line;
+        auto remember = [&](ProofLine line) {
+            pass.lines.emplace_back(key, line);
+            return line;
+        };
+        switch (w.hi_side) {
+        case WSide::Mag: throw NonExhaustiveSwitch{}; // handled above
         case WSide::XPos: {
             PolBuilder builder;
             if (modulus_r) {
                 // id_pos_ge: -Sum + x - r >= 0, so Sum <= x - r <= x_hi - r_lo
                 builder.add(*d.id_pos_ge);
-                builder.add(pj::derive_operand_bound(logger, reason, d.x, false, x_hi).line);
-                builder.add(pj::derive_operand_bound(logger, reason, modulus_r->first, true, modulus_r->second.first).line);
+                builder.add(cached_operand_bound(logger, d, d.x, false, x_hi).line);
+                builder.add(cached_operand_bound(logger, d, modulus_r->first, true, modulus_r->second.first).line);
             }
             else {
                 // rem_pos_lo: -Sum + x >= 0, so Sum <= x <= x_hi
                 builder.add(*d.rem_pos_lo);
-                builder.add(pj::derive_operand_bound(logger, reason, d.x, false, x_hi).line);
+                builder.add(cached_operand_bound(logger, d, d.x, false, x_hi).line);
             }
-            return builder.emit(logger, ProofLevel::Temporary);
+            return remember(builder.emit(logger, ProofLevel::Current));
         }
         case WSide::XNeg: {
             PolBuilder builder;
             if (modulus_r) {
                 // id_neg_ge: -Sum - x + r >= 0, so Sum <= r - x <= r_hi - x_lo
                 builder.add(*d.id_neg_ge);
-                builder.add(pj::derive_operand_bound(logger, reason, d.x, true, x_lo).line);
-                builder.add(pj::derive_operand_bound(logger, reason, modulus_r->first, false, modulus_r->second.second).line);
+                builder.add(cached_operand_bound(logger, d, d.x, true, x_lo).line);
+                builder.add(cached_operand_bound(logger, d, modulus_r->first, false, modulus_r->second.second).line);
             }
             else {
                 // rem_neg_hi: -Sum - x >= 0, so Sum <= -x <= -x_lo
                 builder.add(*d.rem_neg_hi);
-                builder.add(pj::derive_operand_bound(logger, reason, d.x, true, x_lo).line);
+                builder.add(cached_operand_bound(logger, d, d.x, true, x_lo).line);
             }
-            return builder.emit(logger, ProofLevel::Temporary);
+            return remember(builder.emit(logger, ProofLevel::Current));
         }
         case WSide::XDisj: {
             auto pos = WInterval{w.lo, w.hi, WSide::XPos, WSide::XPos};
             auto neg = WInterval{w.lo, w.hi, WSide::XNeg, WSide::XNeg};
-            auto pos_line = grid_upper_line(logger, reason, d, pos, a_hi, b_hi, x_lo, x_hi, modulus_r);
-            auto neg_line = grid_upper_line(logger, reason, d, neg, a_hi, b_hi, x_lo, x_hi, modulus_r);
+            auto pos_line = grid_upper_line(logger, reason, d, pass, pos, a_hi, b_hi, x_lo, x_hi, modulus_r);
+            auto neg_line = grid_upper_line(logger, reason, d, pass, neg, a_hi, b_hi, x_lo, x_hi, modulus_r);
             auto dims = vector<pj::SignCaseDimension>{{d.x >= 0_i, d.x < 0_i}};
             auto premises =
                 vector<optional<pj::ConditionalBound>>{pj::ConditionalBound{d.grid.neg_sum, -w.hi, HalfReifyOnConjunctionOf{d.x >= 0_i}, pos_line},
                     pj::ConditionalBound{d.grid.neg_sum, -w.hi, HalfReifyOnConjunctionOf{d.x < 0_i}, neg_line}};
-            return pj::conclude_by_sign_cases(logger, reason, d.grid.neg_sum >= -w.hi, dims, premises);
+            auto concluded = pj::conclude_by_sign_cases(logger, reason, d.grid.neg_sum >= -w.hi, dims, premises);
+            // restate at Current: the conclusion itself lands at Temporary
+            PolBuilder copy;
+            copy.add(concluded);
+            return remember(copy.emit(logger, ProofLevel::Current));
         }
         }
         throw NonExhaustiveSwitch{};
@@ -359,14 +454,27 @@ namespace
             return a;
         };
 
+        // The per-pass x-side chain cache (see PassChains).
+        PassChains pass;
+
+        // The pass-level reasons the cached chains are derived under:
+        // exactly the side's support literals, which every inference that
+        // cites the chain merges into its own reason.
+        auto chain_reason = [&](WSide side, bool for_lower) -> ReasonLiterals {
+            ReasonLiterals result;
+            for (auto & l : side_reason(side, for_lower))
+                result.emplace_back(l);
+            return result;
+        };
+
         // An inconsistent interval refutes the node: both chains together.
         if (w.lo > w.hi) {
-            auto justf = [&](const ReasonLiterals & reason) {
+            auto justf = [&](const ReasonLiterals &) {
                 // RUP cannot combine two opposing linear bounds on the grid
                 // sum (a cutting-planes step), so add them explicitly.
                 PolBuilder builder;
-                builder.add(grid_lower_line(*logger, reason, d, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
-                builder.add(grid_upper_line(*logger, reason, d, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                builder.add(grid_lower_line(*logger, chain_reason(w.lo_side, true), d, pass, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
                 builder.emit(*logger, ProofLevel::Temporary);
             };
             inference.infer(logger, FalseLiteral{}, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}},
@@ -393,9 +501,9 @@ namespace
                 // x >= Sum >= mag corners (rem_pos_lo)
                 infer_bound(
                     d.x, true, pw_lo,
-                    [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                        builder.add(grid_lower_line(
-                            *logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(grid_lower_line(*logger, chain_reason(WSide::Mag, true), d, pass, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag},
+                            a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
                         builder.add(*d.rem_pos_lo);
                     },
                     merge_lits(side_reason(WSide::Mag, true), {d.x >= 0_i}));
@@ -403,9 +511,9 @@ namespace
                 // -x >= Sum (rem_neg_hi)
                 infer_bound(
                     d.x, false, -pw_lo,
-                    [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                        builder.add(grid_lower_line(
-                            *logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(grid_lower_line(*logger, chain_reason(WSide::Mag, true), d, pass, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag},
+                            a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
                         builder.add(*d.rem_neg_hi);
                     },
                     merge_lits(side_reason(WSide::Mag, true), {d.x < 1_i}));
@@ -416,18 +524,18 @@ namespace
                 if (pw_lo > x_hi)
                     infer_bound(
                         d.x, false, -1_i,
-                        [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                            builder.add(grid_lower_line(
-                                *logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                        [&](PolBuilder & builder, const ReasonLiterals &) {
+                            builder.add(grid_lower_line(*logger, chain_reason(WSide::Mag, true), d, pass,
+                                WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
                             builder.add(*d.rem_pos_lo);
                         },
                         merge_lits(side_reason(WSide::Mag, true), {d.x <= x_hi}));
                 if (pw_lo > -x_lo)
                     infer_bound(
                         d.x, true, 1_i,
-                        [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                            builder.add(grid_lower_line(
-                                *logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                        [&](PolBuilder & builder, const ReasonLiterals &) {
+                            builder.add(grid_lower_line(*logger, chain_reason(WSide::Mag, true), d, pass,
+                                WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
                             builder.add(*d.rem_neg_hi);
                         },
                         merge_lits(side_reason(WSide::Mag, true), {d.x >= x_lo}));
@@ -437,20 +545,20 @@ namespace
             // the claimed bound pins the sign, activating the matching row).
             infer_bound(
                 d.x, false, pw_hi + b_hi - 1_i,
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                    builder.add(
-                        grid_upper_line(*logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                [&](PolBuilder & builder, const ReasonLiterals &) {
+                    builder.add(grid_upper_line(*logger, chain_reason(WSide::Mag, false), d, pass, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag},
+                        a_hi, b_hi, x_lo, x_hi, r_for_lines));
                     builder.add(*d.rem_pos_hi);
-                    builder.add(pj::derive_operand_bound(*logger, reason, d.mag_b, false, b_hi).line);
+                    builder.add(cached_operand_bound(*logger, d, d.mag_b, false, b_hi).line);
                 },
                 side_reason(WSide::Mag, false));
             infer_bound(
                 d.x, true, -(pw_hi + b_hi - 1_i),
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                    builder.add(
-                        grid_upper_line(*logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                [&](PolBuilder & builder, const ReasonLiterals &) {
+                    builder.add(grid_upper_line(*logger, chain_reason(WSide::Mag, false), d, pass, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag},
+                        a_hi, b_hi, x_lo, x_hi, r_for_lines));
                     builder.add(*d.rem_neg_lo);
-                    builder.add(pj::derive_operand_bound(*logger, reason, d.mag_b, false, b_hi).line);
+                    builder.add(cached_operand_bound(*logger, d, d.mag_b, false, b_hi).line);
                 },
                 side_reason(WSide::Mag, false));
 
@@ -458,19 +566,19 @@ namespace
             if (x_pos)
                 infer_bound(
                     d.mag_b, true, x_lo - w.hi + 1_i,
-                    [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
                         builder.add(*d.rem_pos_hi);
-                        builder.add(grid_upper_line(*logger, reason, d, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                        builder.add(pj::derive_operand_bound(*logger, reason, d.x, true, x_lo).line);
+                        builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                        builder.add(cached_operand_bound(*logger, d, d.x, true, x_lo).line);
                     },
                     merge_lits(side_reason(w.hi_side, false), {d.x >= x_lo, d.x >= 0_i}));
             else if (x_neg)
                 infer_bound(
                     d.mag_b, true, 1_i - x_hi - w.hi,
-                    [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
                         builder.add(*d.rem_neg_lo);
-                        builder.add(grid_upper_line(*logger, reason, d, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                        builder.add(pj::derive_operand_bound(*logger, reason, d.x, false, x_hi).line);
+                        builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                        builder.add(cached_operand_bound(*logger, d, d.x, false, x_hi).line);
                     },
                     merge_lits(side_reason(w.hi_side, false), {d.x <= x_hi, d.x < 1_i}));
         }
@@ -478,34 +586,34 @@ namespace
             // r = x - Sum: both directions on r and on x
             infer_bound(
                 *modulus_r, false, x_hi - w.lo,
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                [&](PolBuilder & builder, const ReasonLiterals &) {
                     builder.add(*d.id_pos_ge);
-                    builder.add(grid_lower_line(*logger, reason, d, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
-                    builder.add(pj::derive_operand_bound(*logger, reason, d.x, false, x_hi).line);
+                    builder.add(grid_lower_line(*logger, chain_reason(w.lo_side, true), d, pass, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                    builder.add(cached_operand_bound(*logger, d, d.x, false, x_hi).line);
                 },
                 merge_lits(side_reason(w.lo_side, true), {d.x <= x_hi, d.x >= 0_i}));
             infer_bound(
                 *modulus_r, true, x_lo - w.hi,
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                [&](PolBuilder & builder, const ReasonLiterals &) {
                     builder.add(*d.id_pos_le);
-                    builder.add(grid_upper_line(*logger, reason, d, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                    builder.add(pj::derive_operand_bound(*logger, reason, d.x, true, x_lo).line);
+                    builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                    builder.add(cached_operand_bound(*logger, d, d.x, true, x_lo).line);
                 },
                 merge_lits(side_reason(w.hi_side, false), {d.x >= x_lo, d.x >= 0_i}));
             infer_bound(
                 d.x, true, r_bounds->first + w.lo,
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                [&](PolBuilder & builder, const ReasonLiterals &) {
                     builder.add(*d.id_pos_ge);
-                    builder.add(grid_lower_line(*logger, reason, d, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
-                    builder.add(pj::derive_operand_bound(*logger, reason, *modulus_r, true, r_bounds->first).line);
+                    builder.add(grid_lower_line(*logger, chain_reason(w.lo_side, true), d, pass, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                    builder.add(cached_operand_bound(*logger, d, *modulus_r, true, r_bounds->first).line);
                 },
                 merge_lits(side_reason(w.lo_side, true), {*modulus_r >= r_bounds->first, d.x >= 0_i}));
             infer_bound(
                 d.x, false, r_bounds->second + w.hi,
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                [&](PolBuilder & builder, const ReasonLiterals &) {
                     builder.add(*d.id_pos_le);
-                    builder.add(grid_upper_line(*logger, reason, d, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                    builder.add(pj::derive_operand_bound(*logger, reason, *modulus_r, false, r_bounds->second).line);
+                    builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                    builder.add(cached_operand_bound(*logger, d, *modulus_r, false, r_bounds->second).line);
                 },
                 merge_lits(side_reason(w.hi_side, false), {*modulus_r <= r_bounds->second, d.x >= 0_i}));
         }
@@ -513,34 +621,34 @@ namespace
             // r = x + Sum
             infer_bound(
                 *modulus_r, true, x_lo + w.lo,
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                [&](PolBuilder & builder, const ReasonLiterals &) {
                     builder.add(*d.id_neg_ge);
-                    builder.add(grid_lower_line(*logger, reason, d, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
-                    builder.add(pj::derive_operand_bound(*logger, reason, d.x, true, x_lo).line);
+                    builder.add(grid_lower_line(*logger, chain_reason(w.lo_side, true), d, pass, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                    builder.add(cached_operand_bound(*logger, d, d.x, true, x_lo).line);
                 },
                 merge_lits(side_reason(w.lo_side, true), {d.x >= x_lo, d.x < 1_i}));
             infer_bound(
                 *modulus_r, false, x_hi + w.hi,
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                [&](PolBuilder & builder, const ReasonLiterals &) {
                     builder.add(*d.id_neg_le);
-                    builder.add(grid_upper_line(*logger, reason, d, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                    builder.add(pj::derive_operand_bound(*logger, reason, d.x, false, x_hi).line);
+                    builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                    builder.add(cached_operand_bound(*logger, d, d.x, false, x_hi).line);
                 },
                 merge_lits(side_reason(w.hi_side, false), {d.x <= x_hi, d.x < 1_i}));
             infer_bound(
                 d.x, true, r_bounds->first - w.hi,
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                [&](PolBuilder & builder, const ReasonLiterals &) {
                     builder.add(*d.id_neg_le);
-                    builder.add(grid_upper_line(*logger, reason, d, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                    builder.add(pj::derive_operand_bound(*logger, reason, *modulus_r, true, r_bounds->first).line);
+                    builder.add(grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                    builder.add(cached_operand_bound(*logger, d, *modulus_r, true, r_bounds->first).line);
                 },
                 merge_lits(side_reason(w.hi_side, false), {*modulus_r >= r_bounds->first, d.x < 1_i}));
             infer_bound(
                 d.x, false, r_bounds->second - w.lo,
-                [&](PolBuilder & builder, const ReasonLiterals & reason) {
+                [&](PolBuilder & builder, const ReasonLiterals &) {
                     builder.add(*d.id_neg_ge);
-                    builder.add(grid_lower_line(*logger, reason, d, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
-                    builder.add(pj::derive_operand_bound(*logger, reason, *modulus_r, false, r_bounds->second).line);
+                    builder.add(grid_lower_line(*logger, chain_reason(w.lo_side, true), d, pass, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                    builder.add(cached_operand_bound(*logger, d, *modulus_r, false, r_bounds->second).line);
                 },
                 merge_lits(side_reason(w.lo_side, true), {*modulus_r <= r_bounds->second, d.x < 1_i}));
         }
@@ -552,41 +660,41 @@ namespace
             if (pw_lo > x_hi - r_bounds->first)
                 infer_bound(
                     d.x, false, -1_i,
-                    [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                        builder.add(grid_lower_line(
-                            *logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(grid_lower_line(*logger, chain_reason(WSide::Mag, true), d, pass, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag},
+                            a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
                         builder.add(*d.id_pos_ge);
-                        builder.add(pj::derive_operand_bound(*logger, reason, *modulus_r, true, r_bounds->first).line);
+                        builder.add(cached_operand_bound(*logger, d, *modulus_r, true, r_bounds->first).line);
                     },
                     merge_lits(side_reason(WSide::Mag, true), {d.x <= x_hi, *modulus_r >= r_bounds->first}));
             if (pw_hi < x_lo - r_bounds->second)
                 infer_bound(
                     d.x, false, -1_i,
-                    [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                        builder.add(grid_upper_line(
-                            *logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(grid_upper_line(*logger, chain_reason(WSide::Mag, false), d, pass,
+                            WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_hi, b_hi, x_lo, x_hi, r_for_lines));
                         builder.add(*d.id_pos_le);
-                        builder.add(pj::derive_operand_bound(*logger, reason, *modulus_r, false, r_bounds->second).line);
+                        builder.add(cached_operand_bound(*logger, d, *modulus_r, false, r_bounds->second).line);
                     },
                     merge_lits(side_reason(WSide::Mag, false), {d.x >= x_lo, *modulus_r <= r_bounds->second}));
             if (pw_lo > r_bounds->second - x_lo)
                 infer_bound(
                     d.x, true, 1_i,
-                    [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                        builder.add(grid_lower_line(
-                            *logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(grid_lower_line(*logger, chain_reason(WSide::Mag, true), d, pass, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag},
+                            a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
                         builder.add(*d.id_neg_le);
-                        builder.add(pj::derive_operand_bound(*logger, reason, *modulus_r, false, r_bounds->second).line);
+                        builder.add(cached_operand_bound(*logger, d, *modulus_r, false, r_bounds->second).line);
                     },
                     merge_lits(side_reason(WSide::Mag, true), {d.x >= x_lo, *modulus_r <= r_bounds->second}));
             if (pw_hi < r_bounds->first - x_hi)
                 infer_bound(
                     d.x, true, 1_i,
-                    [&](PolBuilder & builder, const ReasonLiterals & reason) {
-                        builder.add(grid_upper_line(
-                            *logger, reason, d, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_hi, b_hi, x_lo, x_hi, r_for_lines));
+                    [&](PolBuilder & builder, const ReasonLiterals &) {
+                        builder.add(grid_upper_line(*logger, chain_reason(WSide::Mag, false), d, pass,
+                            WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_hi, b_hi, x_lo, x_hi, r_for_lines));
                         builder.add(*d.id_neg_ge);
-                        builder.add(pj::derive_operand_bound(*logger, reason, *modulus_r, true, r_bounds->first).line);
+                        builder.add(cached_operand_bound(*logger, d, *modulus_r, true, r_bounds->first).line);
                     },
                     merge_lits(side_reason(WSide::Mag, false), {d.x <= x_hi, *modulus_r >= r_bounds->first}));
         }
@@ -602,9 +710,9 @@ namespace
             switch (qf.kind) {
             case Kind::NoFilter: return;
             case Kind::EmptyBecauseYZero: {
-                auto justf = [&](const ReasonLiterals & reason) {
-                    grid_lower_line(*logger, reason, d, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines);
-                    std::ignore = pj::derive_operand_bound(*logger, reason, other, false, 0_i);
+                auto justf = [&](const ReasonLiterals &) {
+                    grid_lower_line(*logger, chain_reason(w.lo_side, true), d, pass, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines);
+                    std::ignore = cached_operand_bound(*logger, d, other, false, 0_i);
                 };
                 inference.infer(logger, FalseLiteral{}, JustifyExplicitly{justf, ThenRUP::Yes, Hint_{owner}},
                     as_reason(merge_lits(side_reason(w.lo_side, true), {other <= 0_i})));
@@ -613,23 +721,37 @@ namespace
             case Kind::Bounds: {
                 if (qf.hi < t_hi) {
                     auto justf = [&, t = qf.hi](const ReasonLiterals & reason) {
-                        auto w_hi_line = grid_upper_line(*logger, reason, d, w, a_hi, b_hi, x_lo, x_hi, r_for_lines);
-                        auto assumed = pj::derive_assumed_operand_bound(*logger, target, true, t + 1_i);
+                        auto w_hi_line = grid_upper_line(*logger, chain_reason(w.hi_side, false), d, pass, w, a_hi, b_hi, x_lo, x_hi, r_for_lines);
                         vector<Literal> zero_refs;
-                        auto other_lb = [&]() -> pj::ConditionalBound {
-                            if (o_lo >= 1_i)
-                                return pj::derive_operand_bound(*logger, reason, other, true, o_lo);
+                        // Away from the zero endpoint the whole assumed-bound
+                        // grid line depends only on (target, t, o_lo): cache it.
+                        auto glb = [&]() -> pj::ConditionalBound {
+                            if (o_lo >= 1_i) {
+                                auto key = tuple{true, IntegerVariableID{target}, t, o_lo};
+                                if (auto it = d.filter_grid_lines.find(key); it != d.filter_grid_lines.end())
+                                    return it->second;
+                                auto assumed = cached_assumed_bound(*logger, d, target, true, t + 1_i);
+                                auto other_lb = cached_operand_bound(*logger, d, other, true, o_lo);
+                                ReasonLiterals narrow;
+                                narrow.emplace_back(Literal{other >= o_lo});
+                                auto result = target == d.mag_a
+                                    ? pj::grid_sum_lower_bound(*logger, narrow, d.grid, d.mag_a, assumed, other_lb, ProofLevel::Top)
+                                    : pj::grid_sum_lower_bound(*logger, narrow, d.grid, d.mag_a, other_lb, assumed, ProofLevel::Top);
+                                d.filter_grid_lines.emplace(key, result);
+                                return result;
+                            }
                             // the zero-endpoint drop: [other != 0] gives |other| >= 1,
                             // and the w-lower chain refutes [other = 0] by making the
                             // grid empty against a positive product
-                            grid_lower_line(*logger, reason, d, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines);
+                            auto assumed = pj::derive_assumed_operand_bound(*logger, target, true, t + 1_i);
+                            grid_lower_line(*logger, chain_reason(w.lo_side, true), d, pass, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines);
                             auto cases = HalfReifyOnConjunctionOf{other != 0_i};
                             auto line = logger->emit_rup_proof_line(logger->reify(WPBSum{} + 1_i * other >= 1_i, cases), ProofLevel::Temporary);
                             zero_refs.emplace_back(other != 0_i);
-                            return pj::ConditionalBound{WPBSum{} + 1_i * other, 1_i, cases, line};
-                        }();
-                        auto glb = target == d.mag_a ? pj::grid_sum_lower_bound(*logger, reason, d.grid, d.mag_a, assumed, other_lb)
+                            auto other_lb = pj::ConditionalBound{WPBSum{} + 1_i * other, 1_i, cases, line};
+                            return target == d.mag_a ? pj::grid_sum_lower_bound(*logger, reason, d.grid, d.mag_a, assumed, other_lb)
                                                      : pj::grid_sum_lower_bound(*logger, reason, d.grid, d.mag_a, other_lb, assumed);
+                        }();
                         PolBuilder clash;
                         clash.add(glb.line).add(w_hi_line).saturate();
                         auto clause = clash.emit(*logger, ProofLevel::Temporary);
@@ -643,11 +765,24 @@ namespace
                 }
                 if (qf.lo > max(t_lo, 0_i)) {
                     auto justf = [&, t = qf.lo](const ReasonLiterals & reason) {
-                        auto w_lo_line = grid_lower_line(*logger, reason, d, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines);
-                        auto assumed = pj::derive_assumed_operand_bound(*logger, target, false, t - 1_i);
-                        auto other_ub = pj::derive_operand_bound(*logger, reason, other, false, o_hi);
-                        auto gub = target == d.mag_a ? pj::grid_sum_upper_bound(*logger, reason, d.grid, d.mag_a, d.mag_b, assumed, other_ub)
-                                                     : pj::grid_sum_upper_bound(*logger, reason, d.grid, d.mag_a, d.mag_b, other_ub, assumed);
+                        auto w_lo_line =
+                            grid_lower_line(*logger, chain_reason(w.lo_side, true), d, pass, w, a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines);
+                        // The assumed-bound grid line depends only on
+                        // (target, t, o_hi): cache it.
+                        auto gub = [&]() -> pj::ConditionalBound {
+                            auto key = tuple{false, IntegerVariableID{target}, t, o_hi};
+                            if (auto it = d.filter_grid_lines.find(key); it != d.filter_grid_lines.end())
+                                return it->second;
+                            auto assumed = cached_assumed_bound(*logger, d, target, false, t - 1_i);
+                            auto other_ub = cached_operand_bound(*logger, d, other, false, o_hi);
+                            ReasonLiterals narrow;
+                            narrow.emplace_back(Literal{other <= o_hi});
+                            auto result = target == d.mag_a
+                                ? pj::grid_sum_upper_bound(*logger, narrow, d.grid, d.mag_a, d.mag_b, assumed, other_ub, ProofLevel::Top)
+                                : pj::grid_sum_upper_bound(*logger, narrow, d.grid, d.mag_a, d.mag_b, other_ub, assumed, ProofLevel::Top);
+                            d.filter_grid_lines.emplace(key, result);
+                            return result;
+                        }();
                         PolBuilder clash;
                         clash.add(gub.line).add(w_lo_line).saturate();
                         auto clause = clash.emit(*logger, ProofLevel::Temporary);
@@ -673,8 +808,8 @@ namespace
         auto [y_lo_now, y_hi_now] = state.bounds(d.y);
         if (b_lo_now > y_hi_now && -b_lo_now < y_hi_now + 1_i) {
             auto justf = [&](const ReasonLiterals & reason) {
-                auto mag_lb = pj::derive_operand_bound(*logger, reason, d.mag_b, true, b_lo_now);
-                auto y_ub = pj::derive_operand_bound(*logger, reason, d.y, false, y_hi_now);
+                auto mag_lb = cached_operand_bound(*logger, d, d.mag_b, true, b_lo_now);
+                auto y_ub = cached_operand_bound(*logger, d, d.y, false, y_hi_now);
                 PolBuilder pos_clash;
                 pos_clash.add(*d.ychan_pos_ge).add(mag_lb.line).add(y_ub.line).saturate();
                 auto pos_clause = pos_clash.emit(*logger, ProofLevel::Temporary);
@@ -692,8 +827,8 @@ namespace
         }
         else if (b_lo_now > -y_lo_now && b_lo_now > y_lo_now) {
             auto justf = [&](const ReasonLiterals & reason) {
-                auto mag_lb = pj::derive_operand_bound(*logger, reason, d.mag_b, true, b_lo_now);
-                auto y_lb = pj::derive_operand_bound(*logger, reason, d.y, true, y_lo_now);
+                auto mag_lb = cached_operand_bound(*logger, d, d.mag_b, true, b_lo_now);
+                auto y_lb = cached_operand_bound(*logger, d, d.y, true, y_lo_now);
                 PolBuilder pos_bound;
                 pos_bound.add(*d.ychan_pos_ge).add(mag_lb.line);
                 auto pos_line = pos_bound.emit(*logger, ProofLevel::Temporary);
