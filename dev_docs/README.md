@@ -73,6 +73,7 @@ library. For an introduction to *using* the solver, start with the top-level
   W1–W5 witness suite as the regression defence against re-simplification.
   Read when touching range/interval reasons, branching, or `infer_not_in_range`.
 - [View proof logging](view-proof-logging.md) — how the proof layer handles
+- [arithmetic-proofs.md](arithmetic-proofs.md) — how Multiply/Divide/Modulus/Power propagate and justify against cake's encoding: the slot-keyed emitters, the ConditionalBound justification layer, the sign-case driver, and the hard-won RUP/pol rules.
   views (`ViewOfIntegerVariableID`): the V↔X link constraints that tie a view's
   proof variable to its underlying variable, and how literals over views are
   deviewed for emission. Read when touching view handling in proofs.

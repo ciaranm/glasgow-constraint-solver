@@ -98,9 +98,8 @@ auto run_multiply_test(bool proofs, const MultiplyConsistency & level, bool chec
     check_results(proof_name, expected, actual);
 }
 
-// Aliased shapes: x * x = y, x * y = x, y * x = x, and x * x = x. These used
-// to be only expressible through the table-based Times; MultiplyBC itself
-// still throws on them, so Multiply decomposes.
+// Aliased shapes: x * x = y (views of one variable included), x * y = x,
+// y * x = x, and x * x = x, all taken natively on the actual handles.
 auto run_alias_test(
     bool proofs, const MultiplyConsistency & level, bool check_gac, const string & shape, pair<int, int> x_range, pair<int, int> y_range) -> void
 {
@@ -247,11 +246,10 @@ auto main(int argc, char * argv[]) -> int
     vector<MultiplyConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}};
 
     // Random instances for the forced-BC variant: domains big enough that Auto
-    // would not tabulate, so this is the decomposition's bounds propagation.
-    // Soundness and completeness are checked against a full enumeration;
-    // per-node bounds consistency is deliberately not claimed (the composition
-    // is weaker than bounds consistency on the product, and MultiplyBC's own
-    // test notes the same).
+    // would not tabulate, so this is the raw bounds propagation. Soundness and
+    // completeness are checked against a full enumeration; per-node bounds
+    // consistency is deliberately not claimed (interval reasoning leaves
+    // unsupported endpoints, as the product_bounds test pins).
     random_device rand_dev;
     mt19937 rand(rand_dev());
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> random_bc_data;

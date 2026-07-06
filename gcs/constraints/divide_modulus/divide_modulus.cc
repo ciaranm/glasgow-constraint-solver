@@ -777,28 +777,24 @@ namespace
         }
 
         // The default divide/modulus route emits cake_pb_cp's encoding: the product |q|*|y|
-        // lives only in bit-product flags feeding the remainder/identity rows, with no w (and,
-        // for divide, no r) in the OPB. Plain variable operands take this route (introducing the
-        // internal handles inside the proof); views and constant operands fall back to the
-        // legacy two's-complement path below. The route is chosen on operand SHAPE alone, so the
-        // propagation is the same with or without proofs -- only the proof emission is guarded.
-        // Both directions multiply the two NON-NEGATIVE magnitudes |q| and |y| into w = |q||y|
-        // (mult_bc with no signed reasoning), split the identity/remainder on sign(x), and
-        // recover signed values in the tabulation -- a single magnitude machinery covering
-        // every sign of both operands.
+        // lives only in the bit-product grid feeding the remainder/identity rows, with no w
+        // (and, for divide, no r) anywhere -- not in the OPB, not in the State, not in the
+        // proof. Both directions multiply the two NON-NEGATIVE magnitudes, split the
+        // identity/remainder on sign(x), and recover signed values in the tabulation -- a
+        // single magnitude machinery covering every sign of both operands, views included.
         //
-        // Divide (default_divide): the exposed slot is q. magq = |q| (a state var
-        // channelled to q by cake's Zge0/Zlt0 channel) and absy = |y| (channelled by
-        // Yge0/Ylt0) are the mult operands; cake's rem_* rows range 0 <= x - w < |y| over
-        // w and x directly (rem_pos gated [x>=0], rem_neg gated [x<0]), so no remainder is
-        // materialised at all. The magnitude product carries no mult_bc sign_lines, so the
-        // exposed quotient's sign is pinned off the five sgn_* clauses by RUP in the
-        // propagator. The tabulation enumerates only x, y, q; a rejected leaf pins
-        // magq/absy/w by unit propagation from the assigned q, y and the rem rows refute it.
+        // Divide (default_divide): the exposed slot is q. magq = |q| (a state var channelled
+        // to q by cake's Zge0/Zlt0 channel) and absy = |y| (channelled by Yge0/Ylt0) are the
+        // grid operands; cake's rem_* rows range 0 <= x - w < |y| over the grid sum and x
+        // directly (rem_pos gated [x>=0], rem_neg gated [x<1]), so no remainder is
+        // materialised at all. The exposed quotient's sign is pinned off the five sgn_*
+        // clauses by RUP in the propagator. The tabulation enumerates only x, y, q; a
+        // rejected leaf pins magq/absy by unit propagation from the assigned q, y and the
+        // rem rows refute it.
         //
         // Modulus (default_modulus): the exposed slot is r, and cake leaves the quotient's
         // magnitude a FREE axis-0 bit-sum with no i[Q] channel (no Zge0/Zlt0, no sgn_*). The
-        // aux is the quotient magnitude |q|; absy = |y| is the second mult operand. cake
+        // aux is the quotient magnitude |q|; absy = |y| is the second grid operand. cake
         // splits the identity r = x -/+ |q||y| on sign(x), the range/sign rows bound r, and
         // the tabulation recovers the signed quotient sign(x)sign(y)|q|.
         // The default route runs whenever there is a product to reason about:
