@@ -833,8 +833,8 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
         else if (op == "multiply") {
             // (label multiply v1 v2 result): v1 * v2 = result. Flat shape matching
             // cake_pb_cp. Written by both Multiply and a directly-posted
-            // innards::MultiplyBC; reposting as Multiply resolves to the same
-            // encoding for the plain three-distinct-variables shape that MultiplyBC
+            // the signed multiply innards; reposting as Multiply resolves to the
+            // same encoding for the plain three-distinct-variables shape that it
             // accepts.
             if (terms.size() != 5)
                 throw ScpReadError{"multiply takes (label multiply v1 v2 result)"};

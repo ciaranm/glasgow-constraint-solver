@@ -242,6 +242,14 @@ auto main(int, char *[]) -> int
             run_constant_test(proofs, level, "result", 6, {-8, 8}, {-8, 8});
         }
 
+        // issue #254: all-fixed (singleton-domain) operands, both directions -
+        // nothing to search, the propagator alone must accept or refute.
+        run_multiply_test(proofs, consistency::BC{}, false, {2, 2}, {3, 3}, {6, 6});
+        run_multiply_test(proofs, consistency::BC{}, false, {2, 2}, {3, 3}, {7, 7});
+        run_multiply_test(proofs, consistency::BC{}, false, {0, 0}, {5, 5}, {0, 0});
+        run_multiply_test(proofs, consistency::BC{}, false, {-2, -2}, {3, 3}, {-6, -6});
+        run_multiply_test(proofs, consistency::BC{}, false, {-2, -2}, {3, 3}, {6, 6});
+
         // Wider domains: Auto falls back on bounds consistency; soundness and
         // completeness are still checked, per-node consistency is not.
         run_multiply_test(proofs, consistency::Auto{}, false, {-10, 10}, {-10, 10}, {-100, 100});

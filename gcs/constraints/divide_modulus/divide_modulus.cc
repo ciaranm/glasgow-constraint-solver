@@ -10,7 +10,7 @@
 #include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
-#include <gcs/constraints/multiply/multiply_bc.hh>
+#include <gcs/constraints/multiply/signed_multiply.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/power.hh>
@@ -872,8 +872,7 @@ namespace
         // propagation whenever x and r are known) and multiply directly into
         // it: q * y = w, on plain variables.
         bool needs_mult = ay.var && aq.var;
-        mult_bc::EncodingData legacy_encoding;
-        optional<ConstraintStateHandle> bit_products_handle;
+        shared_ptr<signed_multiply::Data> legacy_product;
         SimpleIntegerVariableID mult_q = aux, mult_y = aux, mult_w = aux; // overwritten when needs_mult
         shared_ptr<DefaultProductData> default_data;
         shared_ptr<vector<LinearStage>> default_stages;
@@ -1063,9 +1062,8 @@ namespace
                 optional_model->set_up_integer_variable(
                     w, w_lo, w_hi, (expose_quotient ? "aux_divide_product" : "aux_modulus_product") + to_string(w.index), nullopt);
 
-            if (optional_model)
-                legacy_encoding = mult_bc::define_encoding(*optional_model, initial_state, owner, label, q_eff, y_eff, w);
-            bit_products_handle = initial_state.add_persistent_constraint_state(legacy_encoding.initial_bit_products);
+            legacy_product =
+                make_shared<signed_multiply::Data>(signed_multiply::make_data(optional_model, initial_state, owner, label, q_eff, y_eff, w));
             mult_q = q_eff;
             mult_y = y_eff;
             mult_w = w;
@@ -1179,9 +1177,8 @@ namespace
         else
             propagators.install(
                 owner,
-                [stages = legacy_stages, needs_mult = needs_mult, encoding = legacy_encoding, bit_products_handle = bit_products_handle,
-                    mult_q = mult_q, mult_y = mult_y, mult_w = mult_w, prune_zero = prune_zero, y = y,
-                    owner = owner](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                [stages = legacy_stages, needs_mult = needs_mult, legacy_product = legacy_product, prune_zero = prune_zero, y = y, owner = owner](
+                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     do {
                         if (prune_zero && state.in_domain(y, 0_i))
                             inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
@@ -1190,7 +1187,7 @@ namespace
                             return PropagatorState::Enable;
 
                         if (needs_mult)
-                            mult_bc::propagate(mult_q, mult_y, mult_w, state, inference, logger, encoding, *bit_products_handle, owner);
+                            signed_multiply::propagate(*legacy_product, state, inference, logger, owner);
                     } while (inference.did_anything_since_last_call_inside_propagator());
 
                     return PropagatorState::Enable;

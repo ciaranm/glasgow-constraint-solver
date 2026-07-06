@@ -2,7 +2,7 @@
 #include <gcs/constraints/innards/linear_stages.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
-#include <gcs/constraints/multiply/multiply_bc.hh>
+#include <gcs/constraints/multiply/signed_multiply.hh>
 #include <gcs/constraints/power/hints.hh>
 #include <gcs/constraints/power/power.hh>
 #include <gcs/constraints/power/power_table.hh>
@@ -29,6 +29,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::clamp;
+using std::make_shared;
 using std::make_unique;
 using std::max;
 using std::min;
@@ -106,23 +107,12 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
 
     // One multiplication link of the chain, with its own encoding block
     // (role-prefixed) and persistent bit-product state.
-    struct MultLink
-    {
-        SimpleIntegerVariableID a, b, product;
-        mult_bc::EncodingData encoding;
-        ConstraintStateHandle bit_products_handle;
-    };
-    vector<MultLink> links;
+    auto links = make_shared<vector<signed_multiply::Data>>();
     auto add_link = [&](long long link, SimpleIntegerVariableID a, SimpleIntegerVariableID b, SimpleIntegerVariableID product) {
         // Each chain link is a signed multiplication encoded with cake's magnitude scheme, the
         // same one Multiply uses; `link` disambiguates the per-link flags. (cake has no power
-        // encoder, so this self-verifies rather than chain-verifying, but it keeps Power off
-        // mult_bc's legacy encoding.)
-        mult_bc::EncodingData encoding;
-        if (optional_model)
-            encoding = mult_bc::define_encoding(*optional_model, initial_state, constraint_id(), label, a, b, product, link);
-        auto handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
-        links.emplace_back(MultLink{a, b, product, move(encoding), handle});
+        // encoder, so this self-verifies rather than chain-verifying.)
+        links->emplace_back(signed_multiply::make_data(optional_model, initial_state, constraint_id(), label, a, b, product, link));
     };
 
     bool prune_zero_base = false;
@@ -233,7 +223,7 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         }
     }
 
-    if ((! stages.empty()) || (! links.empty()) || prune_zero_base) {
+    if ((! stages.empty()) || (! links->empty()) || prune_zero_base) {
         Triggers triggers;
         vector<IntegerVariableID> watched;
         auto watch = [&](const IntegerVariableID & v) {
@@ -242,10 +232,10 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         };
         watch(_base);
         watch(_result);
-        for (const auto & link : links) {
-            watch(link.a);
-            watch(link.b);
-            watch(link.product);
+        for (const auto & link : *links) {
+            watch(link.x);
+            watch(link.y);
+            watch(link.z);
         }
         triggers.on_bounds = watched;
 
@@ -260,8 +250,8 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
                     if (! propagate_stages(stages, state, inference, logger, owner))
                         return PropagatorState::Enable;
 
-                    for (const auto & link : links)
-                        mult_bc::propagate(link.a, link.b, link.product, state, inference, logger, link.encoding, link.bit_products_handle, owner);
+                    for (auto & link : *links)
+                        signed_multiply::propagate(link, state, inference, logger, owner);
                 } while (inference.did_anything_since_last_call_inside_propagator());
 
                 return PropagatorState::Enable;

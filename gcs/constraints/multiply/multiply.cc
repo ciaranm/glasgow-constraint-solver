@@ -7,7 +7,7 @@
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/constraints/multiply/hints.hh>
 #include <gcs/constraints/multiply/multiply.hh>
-#include <gcs/constraints/multiply/multiply_bc.hh>
+#include <gcs/constraints/multiply/signed_multiply.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -29,6 +29,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::make_unique;
 using std::max;
 using std::min;
@@ -180,10 +181,10 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
         fold_value = -(a1.offset * a2.offset);
     }
 
-    mult_bc::EncodingData encoding;
+    auto product_data = make_shared<signed_multiply::Data>(
+        signed_multiply::make_data(optional_model, initial_state, constraint_id(), as_string(constraint_id()), u1, m2, *t));
     optional<pair<optional<ProofLine>, optional<ProofLine>>> copy_lines, fold_lines;
     if (optional_model) {
-        encoding = mult_bc::define_encoding(*optional_model, initial_state, constraint_id(), as_string(constraint_id()), u1, m2, *t);
 
         auto as_wpb = [](const WeightedSum & ws) {
             WPBSum terms;
@@ -203,8 +204,6 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
         }
     }
 
-    auto bit_products_handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
-
     auto [copy_tidied, copy_modifier] = tidy_up_linear(copy_sum);
     auto [fold_tidied, fold_modifier] = tidy_up_linear(fold_sum);
 
@@ -218,9 +217,9 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
 
     propagators.install(
         constraint_id(),
-        [u1 = u1, m2 = m2, t = *t, has_copy = copy_to_make.has_value(), has_fold = need_linear, copy_tidied = copy_tidied,
-            copy_modifier = copy_modifier, fold_tidied = fold_tidied, fold_modifier = fold_modifier, fold_value = fold_value, copy_lines = copy_lines,
-            fold_lines = fold_lines, encoding = encoding, bit_products_handle = bit_products_handle,
+        [has_copy = copy_to_make.has_value(), has_fold = need_linear, copy_tidied = copy_tidied, copy_modifier = copy_modifier,
+            fold_tidied = fold_tidied, fold_modifier = fold_modifier, fold_value = fold_value, copy_lines = copy_lines, fold_lines = fold_lines,
+            product_data = product_data,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             do {
                 // propagate_linear signals failure through the tracker's
@@ -237,7 +236,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
                         return PropagatorState::Enable;
                 }
 
-                mult_bc::propagate(u1, m2, t, state, inference, logger, encoding, bit_products_handle, owner);
+                signed_multiply::propagate(*product_data, state, inference, logger, owner);
 
                 if (has_fold) {
                     visit(
