@@ -683,7 +683,7 @@ namespace
                     [&](PolBuilder & builder, const ReasonLiterals &) {
                         builder.add(grid_lower_line(*logger, chain_reason(WSide::Mag, true), d, pass, WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag},
                             a_lo, b_lo, x_lo, x_hi, b_hi, r_for_lines));
-                        builder.add(*d.id_neg_le);
+                        builder.add(*d.id_neg_ge);
                         builder.add(cached_operand_bound(*logger, d, *modulus_r, false, r_bounds->second).line);
                     },
                     merge_lits(side_reason(WSide::Mag, true), {d.x >= x_lo, *modulus_r <= r_bounds->second}));
@@ -693,7 +693,7 @@ namespace
                     [&](PolBuilder & builder, const ReasonLiterals &) {
                         builder.add(grid_upper_line(*logger, chain_reason(WSide::Mag, false), d, pass,
                             WInterval{pw_lo, pw_hi, WSide::Mag, WSide::Mag}, a_hi, b_hi, x_lo, x_hi, r_for_lines));
-                        builder.add(*d.id_neg_ge);
+                        builder.add(*d.id_neg_le);
                         builder.add(cached_operand_bound(*logger, d, *modulus_r, true, r_bounds->first).line);
                     },
                     merge_lits(side_reason(WSide::Mag, false), {d.x <= x_hi, *modulus_r >= r_bounds->first}));
