@@ -82,6 +82,8 @@ namespace
 }
 
 // A variable exponent, which goes through the PowerTable fallback and is GAC.
+string test_proof_suffix = "";
+
 auto run_power_var_exp_test(bool proofs, pair<int, int> base_range, pair<int, int> exp_range, pair<int, int> result_range) -> void
 {
     print(cerr, "power var-exp {} {} {} {}", base_range, exp_range, result_range, proofs ? " with proofs:" : ":");
@@ -97,7 +99,7 @@ auto run_power_var_exp_test(bool proofs, pair<int, int> base_range, pair<int, in
     auto v3 = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second), "r");
     p.post(Power{v1, v2, v3});
 
-    auto proof_name = proofs ? make_optional("power_test") : nullopt;
+    auto proof_name = proofs ? make_optional("power_test" + test_proof_suffix) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
     check_results(proof_name, expected, actual);
 }
@@ -129,7 +131,7 @@ auto run_power_const_exp_test(bool proofs, const PowerConsistency & level, bool 
     };
     p.post(Power{wrap(v1, m1, o1), constant_variable(Integer{exp}), wrap(v3, m3, o3)}.with_consistency(level));
 
-    auto proof_name = proofs ? make_optional("power_test") : nullopt;
+    auto proof_name = proofs ? make_optional("power_test" + test_proof_suffix) : nullopt;
     if (check_gac)
         solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v3});
     else
@@ -157,7 +159,7 @@ auto run_power_pinned_test(
         p.post(Power{v1, v2, v3});
     }
 
-    auto proof_name = proofs ? make_optional<string>("power_test") : nullopt;
+    auto proof_name = proofs ? make_optional<string>("power_test" + test_proof_suffix) : nullopt;
 
     set<long long> actual_results;
     solve_with(p,      //
@@ -204,7 +206,7 @@ auto run_power_const_base_view_exp_test(bool proofs, int base, pair<int, int> ex
     auto r = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second));
     p.post(Power{ConstantIntegerVariableID{Integer{base}}, e + Integer{exp_offset}, r});
 
-    auto proof_name = proofs ? make_optional("power_test") : nullopt;
+    auto proof_name = proofs ? make_optional("power_test" + test_proof_suffix) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{e, r});
     check_results(proof_name, expected, actual);
 }
@@ -223,13 +225,43 @@ auto run_power_alias_test(bool proofs, pair<int, int> x_range) -> void
     build_expected(expected, [](int a) { return power_is_satisfying(a, 2, a); }, x_range);
     println(cerr, " expecting {} solutions", expected.size());
 
-    auto proof_name = proofs ? make_optional("power_test") : nullopt;
+    auto proof_name = proofs ? make_optional("power_test" + test_proof_suffix) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{x});
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    // The view-wrap sweep over (base, result): a focused constant-exponent
+    // battery under wraps, proof files suffixed per config.
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+    constexpr int n_positions = 2;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "power view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+    if (! view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+        test_proof_suffix = "_" + view_wrap_config_label(view_cfg);
+        auto wraps = wraps_for_positions(view_cfg, n_positions);
+        auto spec_of = [&](int pos) -> pair<int, int> {
+            if (wraps[static_cast<size_t>(pos)].bare)
+                return {1, 0};
+            return {wraps[static_cast<size_t>(pos)].negate ? -1 : 1, wraps[static_cast<size_t>(pos)].offset};
+        };
+        auto [m1, o1] = spec_of(0);
+        auto [m3, o3] = spec_of(1);
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                break;
+            for (const auto & level : vector<PowerConsistency>{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}}) {
+                bool is_bc = holds_alternative<consistency::BC>(level);
+                run_power_const_exp_test(proofs, level, ! is_bc, {-3, 3}, 2, {-2, 9}, tuple{m1, o1, m3, o3});
+                run_power_const_exp_test(proofs, level, ! is_bc, {-2, 3}, 3, {-8, 27}, tuple{m1, o1, m3, o3});
+            }
+        }
+        return EXIT_SUCCESS;
+    }
+
     vector<PowerConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}};
 
     for (bool proofs : {false, true}) {
