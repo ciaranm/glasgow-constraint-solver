@@ -29,7 +29,7 @@ namespace
 }
 
 auto gcs::innards::product_justify::derive_operand_bound(
-    ProofLogger & logger, const ReasonLiterals & reason, SimpleIntegerVariableID v, bool lower, Integer bound) -> ConditionalBound
+    ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v, bool lower, Integer bound) -> ConditionalBound
 {
     // V-form, so the line cancels against the V-form channel rows.
     auto sum = lower ? WPBSum{} + 1_i * v : WPBSum{} + -1_i * v;
@@ -38,7 +38,7 @@ auto gcs::innards::product_justify::derive_operand_bound(
     return ConditionalBound{sum, rhs, HalfReifyOnConjunctionOf{}, line};
 }
 
-auto gcs::innards::product_justify::derive_assumed_operand_bound(ProofLogger & logger, SimpleIntegerVariableID v, bool lower, Integer bound)
+auto gcs::innards::product_justify::derive_assumed_operand_bound(ProofLogger & logger, IntegerVariableID v, bool lower, Integer bound)
     -> ConditionalBound
 {
     // The claim is RUP hint-free: its negation asserts the atom and the
@@ -50,8 +50,8 @@ auto gcs::innards::product_justify::derive_assumed_operand_bound(ProofLogger & l
     return ConditionalBound{sum, rhs, cases, line};
 }
 
-auto gcs::innards::product_justify::channel_bound_to_magnitude(ProofLogger & logger, const ConditionalBound & operand_bound,
-    SimpleIntegerVariableID v, const product_enc::MagnitudeChannel & channel, bool negative_branch, bool strengthen_nonzero) -> ConditionalBound
+auto gcs::innards::product_justify::channel_bound_to_magnitude(ProofLogger & logger, const ConditionalBound & operand_bound, IntegerVariableID v,
+    const product_enc::MagnitudeChannel & channel, bool negative_branch, bool strengthen_nonzero) -> ConditionalBound
 {
     if (operand_bound.sum.terms.size() != 1 || abs(operand_bound.sum.terms[0].coefficient) != 1_i)
         throw UnexpectedException{"operand bound is not a single +/-v term"};
@@ -213,7 +213,7 @@ auto gcs::innards::product_justify::grid_sum_upper_bound(ProofLogger & logger, c
     return ConditionalBound{grid.neg_sum, -(a_val * b_val), cases, line};
 }
 
-auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & logger, const ReasonLiterals & reason, SimpleIntegerVariableID v3,
+auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v3,
     const product_enc::ResultChannel & channel, const ConditionalBound & grid_bound, bool result_negative, bool lower) -> ConditionalBound
 {
     // The mag_Z rows pin |z| = grid sum, gated on z's sign atom; the atom

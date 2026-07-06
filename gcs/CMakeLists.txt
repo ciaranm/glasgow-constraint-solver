@@ -282,6 +282,7 @@ if(GCS_BUILD_TESTS)
     # always-on `_view_mixed` test is registered either way.
     add_view_tests(equals_constraint equals_test 2)
     add_view_tests(abs_constraint abs_test 2)
+    add_view_tests(multiply_constraint multiply_test 3)
     add_view_tests(plus_minus_constraint plus_minus_test 3)
     foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
         add_view_tests(comparison_constraint_${mode} comparison_test 2 ${mode})

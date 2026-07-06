@@ -16,7 +16,7 @@ namespace
 {
     // The four half-reified rows pinning mag = |v|: [v>=0] => mag = v and
     // [v<0] => mag = -v, with cake's role names <prefix><letter>{ge0,lt0}_{ge,le}.
-    auto emit_channel_rows(ProofModel & model, const string & label, const StringLiteral & op, SimpleIntegerVariableID v,
+    auto emit_channel_rows(ProofModel & model, const string & label, const StringLiteral & op, IntegerVariableID v,
         const SimpleOrProofOnlyIntegerVariableID & mag, const string & role_prefix, const string & letter) -> MagnitudeChannel
     {
         auto as_term = [&](Integer coeff) -> Weighted<PseudoBooleanTerm> {
@@ -39,7 +39,7 @@ namespace
 }
 
 auto gcs::innards::product_enc::emit_magnitude_channel(ProofModel & model, const State & initial_state, const ConstraintID & owner,
-    const string & label, const StringLiteral & op, SimpleIntegerVariableID v, long long axis, const string & letter, const LinkNaming & naming)
+    const string & label, const StringLiteral & op, IntegerVariableID v, long long axis, const string & letter, const LinkNaming & naming)
     -> MagnitudeChannel
 {
     // Range [0, max(|lb|, |ub|)] so a signed operand's magnitude has enough
@@ -85,7 +85,7 @@ auto gcs::innards::product_enc::emit_bit_product_grid(ProofModel & model, const 
     return grid;
 }
 
-auto gcs::innards::product_enc::emit_result_channel(ProofModel & model, const string & label, const StringLiteral & op, SimpleIntegerVariableID v3,
+auto gcs::innards::product_enc::emit_result_channel(ProofModel & model, const string & label, const StringLiteral & op, IntegerVariableID v3,
     const BitProductGrid & grid, const LinkNaming & naming) -> ResultChannel
 {
     auto lp = naming.role_prefix();
@@ -98,8 +98,8 @@ auto gcs::innards::product_enc::emit_result_channel(ProofModel & model, const st
     return ResultChannel{ge0_ge, ge0_le, lt0_ge, lt0_le};
 }
 
-auto gcs::innards::product_enc::emit_sign_clauses(ProofModel & model, const string & label, const StringLiteral & op, SimpleIntegerVariableID v1,
-    SimpleIntegerVariableID v2, SimpleIntegerVariableID v3, const LinkNaming & naming) -> vector<ProofLine>
+auto gcs::innards::product_enc::emit_sign_clauses(ProofModel & model, const string & label, const StringLiteral & op, IntegerVariableID v1,
+    IntegerVariableID v2, IntegerVariableID v3, const LinkNaming & naming) -> vector<ProofLine>
 {
     auto lp = naming.role_prefix();
     vector<ProofLine> lines;

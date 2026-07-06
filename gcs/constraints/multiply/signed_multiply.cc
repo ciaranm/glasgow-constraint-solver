@@ -26,7 +26,7 @@ using std::vector;
 namespace pj = gcs::innards::product_justify;
 
 auto gcs::innards::signed_multiply::make_data(ProofModel * const optional_model, const State & initial_state, const ConstraintID & constraint_id,
-    const string & label, SimpleIntegerVariableID x, SimpleIntegerVariableID y, SimpleIntegerVariableID z, optional<long long> link) -> Data
+    const string & label, IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, optional<long long> link) -> Data
 {
     Data data;
     data.x = x;
@@ -73,7 +73,7 @@ namespace
         pj::ConditionalBound mag_ub;
     };
 
-    auto channel_pair(ProofLogger & logger, const BoundSources & src, SimpleIntegerVariableID v, const product_enc::MagnitudeChannel & chan,
+    auto channel_pair(ProofLogger & logger, const BoundSources & src, IntegerVariableID v, const product_enc::MagnitudeChannel & chan,
         bool negative_branch, bool strengthen_lb) -> ChannelledPair
     {
         auto mag_lb = pj::channel_bound_to_magnitude(logger, negative_branch ? src.upper : src.lower, v, chan, negative_branch, strengthen_lb);
@@ -94,9 +94,15 @@ namespace
         auto xs = BoundSources{pj::derive_operand_bound(logger, reason, d.x, true, x_lo), pj::derive_operand_bound(logger, reason, d.x, false, x_hi)};
         auto ys = BoundSources{pj::derive_operand_bound(logger, reason, d.y, true, y_lo), pj::derive_operand_bound(logger, reason, d.y, false, y_hi)};
 
+        bool square = d.x == d.y;
         for (unsigned pattern = 0; pattern < 4; ++pattern) {
             bool xneg = pattern & 1u, yneg = pattern & 2u;
             if ((xneg ? x_lo >= 0_i : x_hi < 0_i) || (yneg ? y_lo >= 0_i : y_hi < 0_i))
+                continue;
+            // For a square the mixed cases assert both sign atoms of one
+            // variable at once; the driver's dead-case clause is then the
+            // trivially-RUP [x>=0] or [x<0] tautology.
+            if (square && xneg != yneg)
                 continue;
             bool zneg = xneg != yneg;
 
@@ -124,8 +130,8 @@ namespace
     // assume the refuted excluded range for the target, derive each live sign
     // case's product bound, clash it with whichever of z's actual bounds it
     // violates, and resolve the cases into the new bound on the target.
-    auto justify_factor_bound(ProofLogger & logger, const ReasonLiterals & reason, Data & d, bool on_x, bool upper, Integer t, Integer target_init_lo,
-        Integer target_init_hi, Integer cof_lo, Integer cof_hi, Integer z_lo, Integer z_hi) -> void
+    auto justify_factor_bound(ProofLogger & logger, const ReasonLiterals & reason, Data & d, bool on_x, bool upper, Integer t, Integer target_lo,
+        Integer target_hi, Integer cof_lo, Integer cof_hi, Integer z_lo, Integer z_hi) -> void
     {
         auto target = on_x ? d.x : d.y;
         auto cofactor = on_x ? d.y : d.x;
@@ -133,28 +139,36 @@ namespace
         const auto & cof_chan = on_x ? *d.chan_y : *d.chan_x;
 
         // The target's bounds over the refuted excluded range: the assumed
-        // atom is supplied as a unit by the negated goal; the other side is
-        // the target's initial-domain row.
+        // atom is supplied as a unit by the negated goal; the far side is the
+        // target's current bound, carried by the reason (a tight far side is
+        // what keeps each excluded branch uniformly refutable).
         auto ts = upper ? BoundSources{pj::derive_assumed_operand_bound(logger, target, true, t + 1_i),
-                              pj::derive_operand_bound(logger, ReasonLiterals{}, target, false, target_init_hi)}
-                        : BoundSources{pj::derive_operand_bound(logger, ReasonLiterals{}, target, true, target_init_lo),
+                              pj::derive_operand_bound(logger, reason, target, false, target_hi)}
+                        : BoundSources{pj::derive_operand_bound(logger, reason, target, true, target_lo),
                               pj::derive_assumed_operand_bound(logger, target, false, t - 1_i)};
-        auto cs = BoundSources{
-            pj::derive_operand_bound(logger, reason, cofactor, true, cof_lo), pj::derive_operand_bound(logger, reason, cofactor, false, cof_hi)};
+        // For a square the cofactor IS the target: share the excluded-range
+        // sources so the refuted product is (t+-1)^2 rather than a mix with
+        // the stale domain bound.
+        bool square = target == cofactor;
+        auto cs = square ? ts
+                         : BoundSources{pj::derive_operand_bound(logger, reason, cofactor, true, cof_lo),
+                               pj::derive_operand_bound(logger, reason, cofactor, false, cof_hi)};
         auto z_lb = pj::derive_operand_bound(logger, reason, d.z, true, z_lo);
         auto z_ub = pj::derive_operand_bound(logger, reason, d.z, false, z_hi);
 
-        auto excl_lo = upper ? t + 1_i : target_init_lo;
-        auto excl_hi = upper ? target_init_hi : t - 1_i;
+        auto excl_lo = upper ? t + 1_i : target_lo;
+        auto excl_hi = upper ? target_hi : t - 1_i;
 
         auto dims = vector<pj::SignCaseDimension>{{target >= 0_i, target < 0_i}, {cofactor >= 0_i, cofactor < 0_i}};
         vector<optional<pj::ConditionalBound>> premises(4, nullopt);
         vector<Literal> zero_refs;
         for (unsigned pattern = 0; pattern < 4; ++pattern) {
             bool tneg = pattern & 1u, cneg = pattern & 2u;
-            if (tneg ? (excl_lo >= 0_i || target_init_lo >= 0_i) : (excl_hi < 0_i || target_init_hi < 0_i))
+            if (tneg ? excl_lo >= 0_i : excl_hi < 0_i)
                 continue;
             if (cneg ? cof_lo >= 0_i : cof_hi < 0_i)
+                continue;
+            if (square && tneg != cneg)
                 continue;
             bool zneg = tneg != cneg;
 
@@ -210,8 +224,6 @@ namespace
         auto [cof_lo, cof_hi] = state.bounds(cofactor);
         auto [z_lo, z_hi] = state.bounds(d.z);
         auto [t_lo, t_hi] = state.bounds(target);
-        auto target_init_lo = on_x ? d.x_init_lo : d.y_init_lo;
-        auto target_init_hi = on_x ? d.x_init_hi : d.y_init_hi;
 
         auto qf = quotient_filter(cof_lo, cof_hi, z_lo, z_hi);
         using Kind = QuotientFilter::Kind;
@@ -222,18 +234,19 @@ namespace
             inference.contradiction(logger, JustifyUsingRUP{hints::Multiply{owner}}, ExplicitReason{ReasonLiterals{cofactor == 0_i, d.z != 0_i}});
             return;
         case Kind::Bounds: {
-            auto reason = ReasonLiterals{d.z >= z_lo, d.z <= z_hi, cofactor >= cof_lo, cofactor <= cof_hi};
             if (qf.hi < t_hi) {
                 auto justf = [&, t = qf.hi](const ReasonLiterals & materialised) {
-                    justify_factor_bound(*logger, materialised, d, on_x, true, t, target_init_lo, target_init_hi, cof_lo, cof_hi, z_lo, z_hi);
+                    justify_factor_bound(*logger, materialised, d, on_x, true, t, t_lo, t_hi, cof_lo, cof_hi, z_lo, z_hi);
                 };
-                inference.infer(logger, target < qf.hi + 1_i, JustifyExplicitly{justf, ThenRUP::No, hints::Multiply{owner}}, ExplicitReason{reason});
+                inference.infer(logger, target < qf.hi + 1_i, JustifyExplicitly{justf, ThenRUP::No, hints::Multiply{owner}},
+                    ExplicitReason{ReasonLiterals{d.z >= z_lo, d.z <= z_hi, cofactor >= cof_lo, cofactor <= cof_hi, target <= t_hi}});
             }
             if (qf.lo > t_lo) {
                 auto justf = [&, t = qf.lo](const ReasonLiterals & materialised) {
-                    justify_factor_bound(*logger, materialised, d, on_x, false, t, target_init_lo, target_init_hi, cof_lo, cof_hi, z_lo, z_hi);
+                    justify_factor_bound(*logger, materialised, d, on_x, false, t, t_lo, t_hi, cof_lo, cof_hi, z_lo, z_hi);
                 };
-                inference.infer(logger, target >= qf.lo, JustifyExplicitly{justf, ThenRUP::No, hints::Multiply{owner}}, ExplicitReason{reason});
+                inference.infer(logger, target >= qf.lo, JustifyExplicitly{justf, ThenRUP::No, hints::Multiply{owner}},
+                    ExplicitReason{ReasonLiterals{d.z >= z_lo, d.z <= z_hi, cofactor >= cof_lo, cofactor <= cof_hi, target >= t_lo}});
             }
             return;
         }
@@ -246,11 +259,50 @@ auto gcs::innards::signed_multiply::propagate(Data & d, const State & state, aut
 {
     auto [x_lo, x_hi] = state.bounds(d.x);
     auto [y_lo, y_hi] = state.bounds(d.y);
-    auto [prod_lo, prod_hi] = product_bounds(x_lo, x_hi, y_lo, y_hi);
+    bool square = d.x == d.y;
+    auto [prod_lo, prod_hi] = square ? square_bounds(x_lo, x_hi) : product_bounds(x_lo, x_hi, y_lo, y_hi);
 
     auto justf = [&](const ReasonLiterals & reason) { justify_z_bounds(*logger, reason, d, x_lo, x_hi, y_lo, y_hi, prod_lo, prod_hi); };
     inference.infer_all(logger, {d.z <= prod_hi, d.z >= prod_lo}, JustifyExplicitly{justf, ThenRUP::No, hints::Multiply{owner}},
         ReasonLiterals{d.x >= x_lo, d.x <= x_hi, d.y >= y_lo, d.y <= y_hi});
+
+    if (square) {
+        // x from z: the outer square-root bounds first, then, against the
+        // tightened domain, the inner lift over the excluded middle. The
+        // ordering is what keeps every refuted branch uniform: after the
+        // outer clamp, an excluded branch is either entirely too small or
+        // entirely too big for dom(z), which is exactly when the box-shaped
+        // case refutations in justify_factor_bound apply.
+        auto [z_lo, z_hi] = state.bounds(d.z);
+        if (z_hi < 0_i)
+            return; // the product-bound inference above has already refuted the node
+
+        auto infer_square_bound = [&](bool is_upper, Integer t) {
+            auto [cur_lo, cur_hi] = state.bounds(d.x);
+            if (is_upper ? t >= cur_hi : t <= cur_lo)
+                return;
+            auto justf_sq = [&, t, cur_lo = cur_lo, cur_hi = cur_hi](const ReasonLiterals & materialised) {
+                justify_factor_bound(*logger, materialised, d, true, is_upper, t, cur_lo, cur_hi, cur_lo, cur_hi, z_lo, z_hi);
+            };
+            // both current bounds: the cofactor of a square is the target, so
+            // the case liveness checks depend on both sides of its domain
+            inference.infer(logger, is_upper ? d.x < t + 1_i : d.x >= t, JustifyExplicitly{justf_sq, ThenRUP::No, hints::Multiply{owner}},
+                ExplicitReason{ReasonLiterals{d.z >= z_lo, d.z <= z_hi, d.x >= cur_lo, d.x <= cur_hi}});
+        };
+
+        auto u = isqrt(z_hi);
+        infer_square_bound(true, u);
+        infer_square_bound(false, -u);
+        if (z_lo > 0_i) {
+            auto m = ceil_isqrt(z_lo);
+            auto [cur_lo, cur_hi] = state.bounds(d.x);
+            if (cur_lo > -m)
+                infer_square_bound(false, m);
+            else if (cur_hi < m)
+                infer_square_bound(true, -m);
+        }
+        return;
+    }
 
     filter_factor(d, true, state, inference, logger, owner);
     filter_factor(d, false, state, inference, logger, owner);

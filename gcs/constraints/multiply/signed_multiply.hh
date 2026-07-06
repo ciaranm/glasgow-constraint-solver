@@ -24,7 +24,7 @@ namespace gcs::innards::signed_multiply
      */
     struct Data
     {
-        SimpleIntegerVariableID x{0}, y{0}, z{0};
+        IntegerVariableID x = 0_c, y = 0_c, z = 0_c;
         Integer x_init_lo{0}, x_init_hi{0};
         Integer y_init_lo{0}, y_init_hi{0};
         std::optional<product_enc::MagnitudeChannel> chan_x, chan_y;
@@ -42,8 +42,8 @@ namespace gcs::innards::signed_multiply
      * \ingroup Innards
      */
     [[nodiscard]] auto make_data(ProofModel * const optional_model, const State & initial_state, const ConstraintID & constraint_id,
-        const std::string & label, SimpleIntegerVariableID x, SimpleIntegerVariableID y, SimpleIntegerVariableID z,
-        std::optional<long long> link = std::nullopt) -> Data;
+        const std::string & label, IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, std::optional<long long> link = std::nullopt)
+        -> Data;
 
     /**
      * \brief One pass of bounds consistent multiplication filtering for

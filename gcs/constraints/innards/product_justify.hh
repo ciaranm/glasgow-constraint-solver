@@ -35,7 +35,7 @@ namespace gcs::innards::product_justify
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto derive_operand_bound(ProofLogger &, const ReasonLiterals & reason, SimpleIntegerVariableID v, bool lower, Integer bound)
+    [[nodiscard]] auto derive_operand_bound(ProofLogger &, const ReasonLiterals & reason, IntegerVariableID v, bool lower, Integer bound)
         -> ConditionalBound;
 
     /**
@@ -47,7 +47,7 @@ namespace gcs::innards::product_justify
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto derive_assumed_operand_bound(ProofLogger &, SimpleIntegerVariableID v, bool lower, Integer bound) -> ConditionalBound;
+    [[nodiscard]] auto derive_assumed_operand_bound(ProofLogger &, IntegerVariableID v, bool lower, Integer bound) -> ConditionalBound;
 
     /**
      * \brief Thesis Justification Subprocedure 7.3, cake flavour: channel a
@@ -62,7 +62,7 @@ namespace gcs::innards::product_justify
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto channel_bound_to_magnitude(ProofLogger &, const ConditionalBound & operand_bound, SimpleIntegerVariableID v,
+    [[nodiscard]] auto channel_bound_to_magnitude(ProofLogger &, const ConditionalBound & operand_bound, IntegerVariableID v,
         const product_enc::MagnitudeChannel & channel, bool negative_branch, bool strengthen_nonzero = false) -> ConditionalBound;
 
     /**
@@ -97,7 +97,7 @@ namespace gcs::innards::product_justify
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto channel_grid_bound_to_result(ProofLogger &, const ReasonLiterals & reason, SimpleIntegerVariableID v3,
+    [[nodiscard]] auto channel_grid_bound_to_result(ProofLogger &, const ReasonLiterals & reason, IntegerVariableID v3,
         const product_enc::ResultChannel & channel, const ConditionalBound & grid_bound, bool result_negative, bool lower) -> ConditionalBound;
 
     /**

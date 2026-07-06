@@ -81,8 +81,7 @@ namespace gcs::innards::product_enc
      * \ingroup Innards
      */
     [[nodiscard]] auto emit_magnitude_channel(ProofModel & model, const State & initial_state, const ConstraintID & owner, const std::string & label,
-        const StringLiteral & op, SimpleIntegerVariableID v, long long axis, const std::string & letter, const LinkNaming & naming)
-        -> MagnitudeChannel;
+        const StringLiteral & op, IntegerVariableID v, long long axis, const std::string & letter, const LinkNaming & naming) -> MagnitudeChannel;
 
     /**
      * \brief Emit a magnitude channel for an existing non-negative state
@@ -154,7 +153,7 @@ namespace gcs::innards::product_enc
         ProofLine lt0_le;
     };
 
-    [[nodiscard]] auto emit_result_channel(ProofModel & model, const std::string & label, const StringLiteral & op, SimpleIntegerVariableID v3,
+    [[nodiscard]] auto emit_result_channel(ProofModel & model, const std::string & label, const StringLiteral & op, IntegerVariableID v3,
         const BitProductGrid & grid, const LinkNaming & naming) -> ResultChannel;
 
     /**
@@ -164,8 +163,8 @@ namespace gcs::innards::product_enc
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto emit_sign_clauses(ProofModel & model, const std::string & label, const StringLiteral & op, SimpleIntegerVariableID v1,
-        SimpleIntegerVariableID v2, SimpleIntegerVariableID v3, const LinkNaming & naming) -> std::vector<ProofLine>;
+    [[nodiscard]] auto emit_sign_clauses(ProofModel & model, const std::string & label, const StringLiteral & op, IntegerVariableID v1,
+        IntegerVariableID v2, IntegerVariableID v3, const LinkNaming & naming) -> std::vector<ProofLine>;
 }
 
 #endif
