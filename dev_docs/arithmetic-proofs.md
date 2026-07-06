@@ -85,11 +85,69 @@ square-root lift is sequenced after the outer clamp so each refuted
 branch is uniformly too small or too big, which is exactly when the
 box-shaped case refutations apply.
 
+## RUP hints
+
+VeriPB's cost model drives everything here: a hinted RUP step costs
+O(hints), a hint-free one costs O(live database). Hints restrict unit
+propagation to exactly the cited lines, so a hint set must cover the
+*whole* conflict path or verification fails outright — half-hinting
+breaks, and `RUPProofRule{}` with an engaged-but-empty vector renders
+`: ;` ("restrict to nothing"), which always fails.
+
+- Operand bounds are single-antecedent `ia` steps citing the bound
+  atom's defining row (`derive_operand_bound`), falling back to RUP for
+  constants, XLiteral domain boundaries and empty reasons.
+- Multiply's result-bound claims carry a kit
+  (`signed_multiply.cc: result_claim_hints`): channel rows, sign
+  clauses, grid `[r]` halves, and the ge0/ge1/eq0 atom-definition
+  families, plus per-claim additions for the claimed atom and every
+  reason/case literal.
+- Unit propagation cannot cross between two order atoms of the same
+  variable (reason `[y>=5]` to sign-clause literal `[y>=1]`) through
+  their bit-level definitions — the bits stay unpinned — and the ladder
+  link lines the tracker emits at atom creation are not recorded
+  anywhere citable. `product_justify::add_order_bridge_hints`
+  pol-derives the needed ladder clause from the two atoms' defining
+  rows, exactly as the tracker builds its own chain lines, and hints
+  the fresh line.
+- To debug a failing hinted claim, sed-strip the hints
+  (`s/^rup ([^:]*):.*;$/rup \1;/` — note claims emitted under a reason
+  render `>= K:` with no space before the colon) and re-verify: a pass
+  means the hint set is incomplete, a failure means the claim itself is
+  wrong. `veripb --trace-failed` shows where propagation stalls;
+  `--trace-ids N..=N` shows where a cited constraint came from.
+
+## Line caches (divide/modulus)
+
+Divide's justifications would otherwise re-derive the same chains for
+every inference in a pass, and across passes the bound values repeat
+heavily. Derived lines are cached and cited instead, split by how the
+cache key behaves — the veripb cost model above is why the split
+matters, since divide's final claims are hint-free:
+
+- Magnitude-corner chains (whole Subprocedure 7.1/7.2 derivations keyed
+  only by `(direction, a bound, b bound)`), the quotient filter's
+  assumed-bound grid lines and the operand/assumed bound lines live in
+  constraint-lifetime maps at `ProofLevel::Top`. Their key populations
+  stay small (hundreds), and each entry saves kilobytes per reuse.
+- The x-side chains' keys churn with x's bounds; a standing copy of
+  each would flood the checker's live database and tax every later
+  hint-free step (a full-Top experiment cost 9x check time on
+  modulus). They share a per-pass `PassChains` cache at
+  `ProofLevel::Current` — justification scopes forget Temporary lines,
+  and backtracking cleans Current ones up.
+- Cached lines are derived under just their support literals, always a
+  subset of every citing inference's reason (each merges
+  `side_reason(...)` into its own), so the citing claim's negation
+  discharges the guard terms.
+- The derivation helpers take a defaulted `ProofLevel result_level`
+  applying to the final line only; intermediates stay Temporary, since
+  a pol result stands alone once emitted. Every early return must
+  honour it — a trivial-bound shortcut still pinned to Temporary
+  surfaces as veripb's "constraint ... has already been deleted".
+
 ## Hard-won rules
 
-- VeriPB's hinted RUP restricts propagation to the hinted lines: a claim
-  that needs the sign-clause chain must be emitted hint-free. (Complete
-  hint sets are a planned optimisation; half-hinting breaks.)
 - RUP cannot combine two opposing linear bounds on the grid sum — that is
   a cutting-planes step; pol-add them before claiming a contradiction.
 - Bounds used by a justification must be axioms (initial-domain rows,
