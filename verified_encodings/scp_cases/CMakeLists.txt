@@ -484,18 +484,25 @@ add_scp_chain_test(element_2d_unsat            none)
 # steps resolve against cake's OPB (previously pos[v] was a generic proof-only
 # integer variable named p[..]/po[..], foreign to cake). seq_precede_chain
 # delegates to value_precede (clamp + chain 1..m), so it comes along.
-# These use n = 3 variables (= 2^2 - 1) on purpose: pos[v] spans exactly [0, 3],
-# so an absent value (forced pos[v] >= n) is pinned to n by unit propagation.
-# cake (and the solver) omit a pos[v] <= n bound, so for n not of the form
-# 2^w - 1 an absent value leaves pos[v] under-determined and enumeration cannot
-# pin it -- a cake encoding gap flagged upstream; the solver re-adds the bound for
-# its own (workflow-1) proofs but cake's OPB lacks it, so the chain is restricted
-# to the exact-width sizes here. value_precede_unsat pins a leading value with no
-# legal predecessor; seq_precede_chain_unsat starts the sequence at 2 (1 absent).
-add_scp_chain_test(value_precede_sat          none)
-add_scp_chain_test(value_precede_unsat        none)
-add_scp_chain_test(seq_precede_chain_sat      none)
-add_scp_chain_test(seq_precede_chain_unsat    none)
+# An absent value is forced to pos[v] >= n by the existence pins and must then be
+# pinned to exactly n at a solution. When n = 2^w - 1 the w-bit sum spans exactly
+# [0, n], so the bits alone pin it; when n is not of that form the top bits are
+# free and an explicit pos[v] <= n bound is required. cake_pb_cp used to omit that
+# bound, leaving its own OPB under-determined for absent values at non-exact widths
+# (a gap flagged upstream), so the *_sat/*_unsat cases below stayed at n = 3 (the
+# solver omitted the redundant bound there to byte-match cake). Upstream
+# f43d14aa8 now emits the pos[v] <= n bound row unconditionally (@c[id][ubn_<v>]),
+# and the solver emits it to match, so the chain verifies at any width -- the
+# _nonexact_sat cases use n = 4 (pos in [0, 4], a 3-bit sum that over-represents),
+# whose all-absent solutions only pin pos[v] via that bound. value_precede_unsat
+# pins a leading value with no legal predecessor; seq_precede_chain_unsat starts
+# the sequence at 2 (1 absent).
+add_scp_chain_test(value_precede_sat            none)
+add_scp_chain_test(value_precede_nonexact_sat   none)
+add_scp_chain_test(value_precede_unsat          none)
+add_scp_chain_test(seq_precede_chain_sat            none)
+add_scp_chain_test(seq_precede_chain_nonexact_sat   none)
+add_scp_chain_test(seq_precede_chain_unsat          none)
 
 # none (chain-only): knapsack. Per coefficient row the encoding is a single linear
 # equality sum_i coeffs[row][i]*vars[i] = totals[row] -- arithmetically identical to

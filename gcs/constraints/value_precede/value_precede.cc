@@ -9,7 +9,6 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
-#include <bit>
 #include <map>
 #include <memory>
 #include <optional>
@@ -74,9 +73,8 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
     // pos[v] is pinned to the leftmost occurrence of v (or n if absent) via the
     // upper-bound and existence constraints; the precede constraints order first
     // occurrences along the chain. The bit-sum is implicitly bounded below by 0
-    // (the bits are Boolean); a pos[v] <= n bound is added below only when the
-    // bit-width over-represents [0, n] (see there).
-    auto width = static_cast<size_t>(std::bit_width(n));
+    // (the bits are Boolean); an explicit pos[v] <= n bound row caps it above
+    // (see there).
 
     map<Integer, ProofOnlySimpleIntegerVariableID> pos; // value -> pos[v]
     map<Integer, vector<ProofFlag>> pge;                // value -> [ [pos>=1], [pos>=2], ..., [pos>=n] ]
@@ -92,16 +90,18 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
             IntegerVariableProofRepresentation::Bits, CakeBitNaming{_constraint_id, {v.raw_value}, "pos", std::nullopt});
         pos.emplace(v, pos_v);
 
-        // pos[v] <= n (the bit-sum width 2^w-1 may exceed the sentinel n). Without
-        // this, an absent value v -- forced to pos[v] >= n by the existence pins --
-        // leaves the high bits free, so the proof-only pos[v] is not pinned by unit
-        // propagation at a solution (it must be: see proof_only_aux_must_be_determined).
-        // cake_pb_cp omits this bound, so its encoding is itself under-determined for
-        // an absent value when n is not 2^w - 1 -- flagged upstream; the chain only
-        // verifies for instances where the bit-width is exact (n = 2^w - 1), where
-        // this bound is redundant and so omitted (keeping those byte-identical to cake).
-        if ((1ULL << width) - 1 != n)
-            model.add_constraint("ValuePrecede", "position bound", WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(n)});
+        // pos[v] <= n. Without this, an absent value v -- forced to pos[v] >= n by
+        // the existence pins -- leaves the high bits free whenever the bit-width
+        // over-represents [0, n] (n not 2^w - 1), so the proof-only pos[v] is not
+        // pinned by unit propagation at a solution (it must be: see
+        // proof_only_aux_must_be_determined). cake_pb_cp emits this bound row
+        // unconditionally (labelled @c[id][ubn_<v>], upstream f43d14aa8), so the
+        // solver matches it on both sides for every n: it is what lets the chain
+        // verify at any width, not just the exact-width (n = 2^w - 1) sizes where
+        // the bits alone already cap pos[v]. At those exact widths the row is
+        // logically redundant but keeps the two OPBs in step.
+        model.add_labelled_constraint(
+            id, "ubn_" + v.to_string(), "ValuePrecede", "position bound", WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(n)});
 
         // [pos[v] >= k] <=> pos[v] >= k, for k = 1..n.
         vector<ProofFlag> ges;
