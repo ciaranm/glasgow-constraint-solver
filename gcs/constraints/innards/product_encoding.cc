@@ -51,7 +51,7 @@ auto gcs::innards::product_enc::emit_magnitude_channel(ProofModel & model, const
 }
 
 auto gcs::innards::product_enc::emit_magnitude_channel(ProofModel & model, const ConstraintID & owner, const string & label, const StringLiteral & op,
-    SimpleIntegerVariableID v, SimpleIntegerVariableID mag, Integer mag_bit_max, long long axis, const string & letter, const string & mag_name)
+    IntegerVariableID v, SimpleIntegerVariableID mag, Integer mag_bit_max, long long axis, const string & letter, const string & mag_name)
     -> MagnitudeChannel
 {
     model.register_state_variable_bits_in_proof(mag, 0_i, mag_bit_max, mag_name, CakeBitNaming{owner, {axis}, "bin", std::nullopt, false, true});

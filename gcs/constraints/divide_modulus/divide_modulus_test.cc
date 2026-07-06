@@ -78,6 +78,8 @@ namespace
 // Three distinct variables, optionally through views: constrain
 // (m1 * x + o1) op (m2 * y + o2) = (m3 * out + o3), enumerating over the
 // underlying variables.
+string test_proof_suffix = "";
+
 auto run_divmod_test(bool proofs, bool is_div, const DivideConsistency & level, bool check_gac, pair<int, int> x_range, pair<int, int> y_range,
     pair<int, int> out_range, tuple<int, int, int, int, int, int> view_spec = {1, 0, 1, 0, 1, 0}) -> void
 {
@@ -106,7 +108,7 @@ auto run_divmod_test(bool proofs, bool is_div, const DivideConsistency & level, 
     };
     post_divmod(p, is_div, wrap(x, m1, o1), wrap(y, m2, o2), wrap(out, m3, o3), level);
 
-    auto proof_name = proofs ? make_optional("divide_modulus_test") : nullopt;
+    auto proof_name = proofs ? make_optional("divide_modulus_test" + test_proof_suffix) : nullopt;
 
     if (check_gac)
         solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y, out});
@@ -148,7 +150,7 @@ auto run_divmod_alias_test(bool proofs, bool is_div, const DivideConsistency & l
 
     println(cerr, " expecting {} solutions", expected.size());
 
-    auto proof_name = proofs ? make_optional("divide_modulus_test") : nullopt;
+    auto proof_name = proofs ? make_optional("divide_modulus_test" + test_proof_suffix) : nullopt;
 
     if (check_gac)
         solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y});
@@ -192,13 +194,45 @@ auto run_divmod_constant_test(bool proofs, bool is_div, const DivideConsistency 
 
     println(cerr, " expecting {} solutions", expected.size());
 
-    auto proof_name = proofs ? make_optional("divide_modulus_test") : nullopt;
+    auto proof_name = proofs ? make_optional("divide_modulus_test" + test_proof_suffix) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{a, b});
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    // The view-wrap sweep: wrap each position per the config and run a
+    // focused deterministic subset, proof files suffixed per config.
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+    constexpr int n_positions = 3;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "divide/modulus view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+    if (! view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+        test_proof_suffix = "_" + view_wrap_config_label(view_cfg);
+        auto wraps = wraps_for_positions(view_cfg, n_positions);
+        auto spec_of = [&](int pos) -> pair<int, int> {
+            if (wraps[static_cast<size_t>(pos)].bare)
+                return {1, 0};
+            return {wraps[static_cast<size_t>(pos)].negate ? -1 : 1, wraps[static_cast<size_t>(pos)].offset};
+        };
+        auto [m1, o1] = spec_of(0);
+        auto [m2, o2] = spec_of(1);
+        auto [m3, o3] = spec_of(2);
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                break;
+            for (bool is_div : {true, false})
+                for (const auto & level : vector<DivideConsistency>{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}}) {
+                    bool is_bc = holds_alternative<consistency::BC>(level);
+                    run_divmod_test(proofs, is_div, level, ! is_bc, {-4, 4}, {-2, 3}, {-4, 4}, tuple{m1, o1, m2, o2, m3, o3});
+                    run_divmod_test(proofs, is_div, level, ! is_bc, {0, 5}, {1, 3}, {0, 5}, tuple{m1, o1, m2, o2, m3, o3});
+                }
+        }
+        return EXIT_SUCCESS;
+    }
+
     vector<DivideConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}};
 
     // Random instances for the forced-BC variant: soundness and completeness

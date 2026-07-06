@@ -93,7 +93,7 @@ namespace gcs::innards::product_enc
      * \ingroup Innards
      */
     [[nodiscard]] auto emit_magnitude_channel(ProofModel & model, const ConstraintID & owner, const std::string & label, const StringLiteral & op,
-        SimpleIntegerVariableID v, SimpleIntegerVariableID mag, Integer mag_bit_max, long long axis, const std::string & letter,
+        IntegerVariableID v, SimpleIntegerVariableID mag, Integer mag_bit_max, long long axis, const std::string & letter,
         const std::string & mag_name) -> MagnitudeChannel;
 
     /**
