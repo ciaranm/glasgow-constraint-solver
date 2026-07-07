@@ -143,6 +143,24 @@ namespace gcs::innards::product_justify
     };
 
     /**
+     * \brief Whether conclude_by_sign_cases hints its subproof RUP steps.
+     * Assemble is right when the premises' sum terms cancel exactly against
+     * the negated goal (product bounds through
+     * channel_grid_bound_to_result), so the dead-pattern clauses and the cut
+     * result close from the reason atoms, their ladders and the premise
+     * lines alone. Leave None when the premises drag further encoding terms
+     * into the cut (divide/modulus premises carry view bits and aux-atom
+     * rows), where only a database-wide RUP reaches the closing conflict.
+     *
+     * \ingroup Innards
+     */
+    enum class SubproofRUPHints
+    {
+        None,
+        Assemble,
+    };
+
+    /**
      * \brief Conclude an inference from its per-case bounds: one
      * red-with-empty-witness derivation of `reason => conclusion`, whose
      * subproof derives a clause per case pattern — a pol add of the case's
@@ -159,7 +177,7 @@ namespace gcs::innards::product_justify
      */
     auto conclude_by_sign_cases(ProofLogger &, const ReasonLiterals & reason, const WPBSumLE & conclusion,
         const std::vector<SignCaseDimension> & dims, const std::vector<std::optional<ConditionalBound>> & premise_by_pattern,
-        const std::vector<Literal> & zero_refutations = {}) -> ProofLine;
+        const std::vector<Literal> & zero_refutations = {}, SubproofRUPHints hint_rups = SubproofRUPHints::None) -> ProofLine;
 }
 
 #endif

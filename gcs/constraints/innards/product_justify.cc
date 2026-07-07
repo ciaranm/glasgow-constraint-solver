@@ -365,16 +365,57 @@ auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & l
 
 auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger, const ReasonLiterals & reason, const WPBSumLE & conclusion,
     const vector<SignCaseDimension> & dims, const vector<std::optional<ConditionalBound>> & premise_by_pattern,
-    const vector<Literal> & zero_refutations) -> ProofLine
+    const vector<Literal> & zero_refutations, SubproofRUPHints hint_rups) -> ProofLine
 {
     if (premise_by_pattern.size() != (1u << dims.size()))
         throw UnexpectedException{"wrong number of case patterns"};
+
+    // Hints for the subproof's RUP steps, assembled outside the subproof so
+    // the defining rows and ladder bridges land at the outer level. A dead
+    // pattern's clause refutes either shallowly (a branch atom clashes with
+    // the reason's units through the order ladder) or numerically (the
+    // opposite corner is live, and its premise meets the negated goal), and
+    // the closing contradiction propagates between the negated goal and the
+    // cut result; when the premises cancel exactly against the goal, the
+    // union of premise lines, premise case-literal defs, reason defs and
+    // their bridges covers all of these. Hinting keeps the checker off the
+    // hint-free path, which costs time proportional to the live database at
+    // every step.
+    vector<ProofLine> case_hints;
+    if (hint_rups == SubproofRUPHints::Assemble) {
+        auto add_hints_for = [&](const Literal & l) {
+            if (const auto * cond = std::get_if<IntegerVariableCondition>(&l)) {
+                add_condition_def_hints(logger, *cond, case_hints);
+                add_order_bridge_hints(logger, *cond, case_hints);
+            }
+        };
+        for (const auto & dim : dims)
+            add_hints_for(dim.positive_atom);
+        for (const auto & rl : reason)
+            if (const auto * pl = std::get_if<ProofLiteral>(&rl))
+                if (const auto * l = std::get_if<Literal>(pl))
+                    add_hints_for(*l);
+        for (const auto & premise : premise_by_pattern)
+            if (premise) {
+                case_hints.emplace_back(premise->line);
+                for (const auto & cl : premise->cases)
+                    if (const auto * pl = std::get_if<ProofLiteral>(&cl))
+                        if (const auto * l = std::get_if<Literal>(pl))
+                            add_hints_for(*l);
+            }
+    }
 
     auto goal = logger.reify(conclusion, reason);
     std::map<ProofGoal, Subproof> subproofs{};
     subproofs.emplace("#1", Subproof{[&](ProofLogger & sub_logger) {
         // The negated goal is the last line added when the subproof opens.
         auto negation = sub_logger.get_current_proof_line();
+        auto sub_hints = case_hints;
+        sub_hints.emplace_back(negation);
+        // an empty hint list would restrict propagation to nothing at all
+        auto rup_rule = [&](const vector<ProofLine> & hints) {
+            return hint_rups == SubproofRUPHints::Assemble ? RUPProofRule{hints} : RUPProofRule{};
+        };
 
         // One clause per case pattern: added premise for a live case, plain
         // RUP for a dead one (its branch atoms contradict the reason's units
@@ -396,7 +437,7 @@ auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger,
                 auto clause = WPBSum{};
                 for (std::size_t k = 0; k < dims.size(); ++k)
                     clause += 1_i * ((pattern & (1u << k)) ? dims[k].positive_atom : dims[k].negative_atom);
-                clauses.emplace_back(sub_logger.emit_rup_proof_line(clause >= 1_i, ProofLevel::Temporary));
+                clauses.emplace_back(sub_logger.emit(rup_rule(sub_hints), clause >= 1_i, ProofLevel::Temporary));
             }
         }
 
@@ -417,10 +458,14 @@ auto gcs::innards::product_justify::conclude_by_sign_cases(ProofLogger & logger,
         // the reason's result bounds exclude - all by unit propagation. As
         // units these cascade into the cut result's leftover [v=0] terms,
         // which mere propagation could otherwise satisfy rather than refute.
+        // These stay hint-free: their conflict path runs through the whole
+        // encoding (channels, w-lines, grid), which no local hint set covers.
+        auto closing_hints = sub_hints;
+        closing_hints.emplace_back(clauses[0]);
         for (const auto & lit : zero_refutations)
-            sub_logger.emit_rup_proof_line(WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Temporary);
+            closing_hints.emplace_back(sub_logger.emit_rup_proof_line(WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Temporary));
 
-        sub_logger.emit(RUPProofRule{}, WPBSum{} >= 1_i, ProofLevel::Temporary);
+        sub_logger.emit(rup_rule(closing_hints), WPBSum{} >= 1_i, ProofLevel::Temporary);
     }});
 
     return logger.emit_red_proof_line(goal, {}, ProofLevel::Temporary, subproofs);

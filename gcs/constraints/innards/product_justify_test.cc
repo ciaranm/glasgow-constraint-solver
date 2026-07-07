@@ -243,9 +243,11 @@ namespace
                                     product_justify::channel_grid_bound_to_result(*logger, reason, v3, enc.zchan, glb, true, true);
                             }
                         }
-                        product_justify::conclude_by_sign_cases(*logger, reason, WPBSum{} + 1_i * v3 >= prod_lo, dims, lower_premises);
+                        product_justify::conclude_by_sign_cases(
+                            *logger, reason, WPBSum{} + 1_i * v3 >= prod_lo, dims, lower_premises, {}, product_justify::SubproofRUPHints::Assemble);
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (v3 >= prod_lo) >= 1_i, ProofLevel::Temporary);
-                        product_justify::conclude_by_sign_cases(*logger, reason, WPBSum{} + -1_i * v3 >= -prod_hi, dims, upper_premises);
+                        product_justify::conclude_by_sign_cases(
+                            *logger, reason, WPBSum{} + -1_i * v3 >= -prod_hi, dims, upper_premises, {}, product_justify::SubproofRUPHints::Assemble);
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (v3 <= prod_hi) >= 1_i, ProofLevel::Temporary);
                         break;
                     }
@@ -320,7 +322,8 @@ namespace
                         auto zero_refutations = vector<Literal>{};
                         if (ylo < 0_i && yhi >= 0_i)
                             zero_refutations.emplace_back(v2 != 0_i);
-                        product_justify::conclude_by_sign_cases(*logger, reason, WPBSum{} + -1_i * v1 >= -q_hi, dims, premises, zero_refutations);
+                        product_justify::conclude_by_sign_cases(*logger, reason, WPBSum{} + -1_i * v1 >= -q_hi, dims, premises, zero_refutations,
+                            product_justify::SubproofRUPHints::Assemble);
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (v1 <= q_hi) >= 1_i, ProofLevel::Temporary);
                         break;
                     }
@@ -352,9 +355,11 @@ namespace
                             upper_premises[pattern] =
                                 product_justify::channel_grid_bound_to_result(*logger, reason, v3, enc.zchan, gub, false, false);
                         }
-                        product_justify::conclude_by_sign_cases(*logger, reason, WPBSum{} + 1_i * v3 >= sq_lo, dims, lower_premises);
+                        product_justify::conclude_by_sign_cases(
+                            *logger, reason, WPBSum{} + 1_i * v3 >= sq_lo, dims, lower_premises, {}, product_justify::SubproofRUPHints::Assemble);
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (v3 >= sq_lo) >= 1_i, ProofLevel::Temporary);
-                        product_justify::conclude_by_sign_cases(*logger, reason, WPBSum{} + -1_i * v3 >= -sq_hi, dims, upper_premises);
+                        product_justify::conclude_by_sign_cases(
+                            *logger, reason, WPBSum{} + -1_i * v3 >= -sq_hi, dims, upper_premises, {}, product_justify::SubproofRUPHints::Assemble);
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (v3 <= sq_hi) >= 1_i, ProofLevel::Temporary);
                         break;
                     }
