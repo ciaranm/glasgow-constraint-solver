@@ -464,6 +464,14 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(state_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME state_test COMMAND $<TARGET_FILE:state_test>)
 
+    add_executable(propagators_test innards/propagators_test.cc)
+    target_link_libraries(propagators_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME propagators_test COMMAND $<TARGET_FILE:propagators_test>)
+
+    add_executable(idempotent_claim_checker_test innards/idempotent_claim_checker_test.cc)
+    target_link_libraries(idempotent_claim_checker_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME idempotent_claim_checker_test COMMAND $<TARGET_FILE:idempotent_claim_checker_test>)
+
     add_executable(linear_utils_test constraints/linear/utils_test.cc)
     target_link_libraries(linear_utils_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME linear_utils_test COMMAND $<TARGET_FILE:linear_utils_test>)

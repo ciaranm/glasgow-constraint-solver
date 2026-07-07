@@ -214,6 +214,23 @@ on backtrack to a level above where it was disabled. Don't return
 *right now* — the propagator will be triggered again as soon as a
 domain changes.
 
+In between the two sits `PropagatorState::EnableButIdempotent`: the
+propagator stays registered, but this run reached its own fixpoint —
+re-running it immediately, against the domains exactly as this run
+left them, would infer nothing and not contradict — so the propagation
+queue skips re-waking it from its own inferences (changes made by
+other propagators wake it as usual). The claim is per-run, and only
+correct for algorithms that process all their internal cascades in one
+call *and* whose scope has no two positions aliasing the same
+underlying variable; `Propagators::install` detects aliased trigger
+scopes (including through views) and silently ignores claims from such
+propagators, which relies on claiming propagators registering triggers
+1:1 with their scope positions. A wrong claim silently under-propagates
+or is unsound, so every adoption needs an audit note, and the test
+harness sets `GCS_CHECK_IDEMPOTENT_CLAIMS` to re-run every honoured
+claim and abort if it infers anything. When in doubt, return `Enable`:
+the only cost is a possible wasted no-op run.
+
 ### Triggers
 
 Three trigger kinds, applied to specific variables:

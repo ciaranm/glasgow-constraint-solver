@@ -361,6 +361,13 @@ namespace gcs::test_innards
     auto solve_for_tests_with_callbacks(
         Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
     {
+        // Every constraint test runs with the idempotence claim checker on:
+        // each honoured PropagatorState::EnableButIdempotent claim is verified
+        // by an immediate re-run, which aborts the solve if it infers anything.
+        // Deterministic, at most doubles the cost of claiming runs, and a
+        // passing re-run emits nothing, so the proof lanes are unaffected.
+        setenv("GCS_CHECK_IDEMPOTENT_CLAIMS", "1", 0);
+
         // Apply the optional runtime caps (see env_cap). The wrappers count
         // solutions / internal search nodes and return false to stop the solve
         // once a cap is reached; `f` and `t` and these counters all outlive the

@@ -10,6 +10,8 @@ using std::ostream;
 auto gcs::operator<<(ostream & o, const Stats & s) -> ostream &
 {
     o << "propagators: " << s.n_propagators << '\n';
+    if (0 != s.idempotence_downgrades)
+        o << "idempotence downgrades: " << s.idempotence_downgrades << '\n';
     o << "recursions: " << s.recursions << '\n';
     o << "failures: " << s.failures << '\n';
     o << "propagations: " << s.propagations << " " << s.effectful_propagations << " " << s.contradicting_propagations << '\n';
