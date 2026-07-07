@@ -151,7 +151,17 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
                     if (! propagate_non_gac_alldifferent(
                             unassigned_handle, state, tracker, logger, owner, reasons.empty() ? nullptr : &reasons, reason_base))
                         return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
-                    return PropagatorState::Enable;
+                    // Idempotent: the to_propagate worklist re-checks
+                    // optional_single_value after every removal and processes the
+                    // whole cascade in this call, so at return no variable left in
+                    // unassigned is single-valued and a re-run collects nothing.
+                    // Duplicate scope variables never reach here (prepare rejects
+                    // them), and triggers are 1:1 with the scope, so view aliasing
+                    // is caught by the install-time downgrade. The claim is this
+                    // call site's, deliberately not the shared helper's: circuit
+                    // wraps the same helper in propagators that do more work in
+                    // the same run and must not claim.
+                    return PropagatorState::EnableButIdempotent;
                 },
                 triggers);
         }}
