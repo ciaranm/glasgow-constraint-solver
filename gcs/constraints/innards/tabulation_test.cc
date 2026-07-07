@@ -1,7 +1,7 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
-#include <gcs/constraints/multiply/multiply_bc.hh>
+#include <gcs/constraints/multiply/multiply.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/propagators.hh>
@@ -56,12 +56,12 @@ using namespace gcs::test_innards;
 namespace
 {
     // A deliberately minimal tabulating constraint: it defines no OPB encoding
-    // of its own, relying on an accompanying MultiplyBC over the same three
-    // variables for the structural definition, and derives the product
+    // of its own, relying on an accompanying bounds-consistent Multiply over
+    // the same three variables for the structural definition, and derives the product
     // relation's table in-proof for GAC. This is the mechanism the friendly
     // arithmetic constraints use to offer tabulated GAC without a table in the
     // OPB (issue #444); this test exists to establish that
-    // build_table_in_proof's leaf backtrack RUP lines verify against MultiplyBC's
+    // build_table_in_proof's leaf backtrack RUP lines verify against the
     // non-linear bit-product encoding, not just against a linear sum. When
     // claim_determined is set, the product is claimed as functionally
     // determined by the operands, additionally establishing that the skipped
@@ -138,7 +138,7 @@ auto run_tabulated_product_test(bool proofs, bool claim_determined, pair<int, in
     auto v1 = p.create_integer_variable(Integer(v1_range.first), Integer(v1_range.second), "v1");
     auto v2 = p.create_integer_variable(Integer(v2_range.first), Integer(v2_range.second), "v2");
     auto v3 = p.create_integer_variable(Integer(v3_range.first), Integer(v3_range.second), "v3");
-    p.post(MultiplyBC{v1, v2, v3});
+    p.post(Multiply{v1, v2, v3}.with_consistency(consistency::BC{}));
     p.post(TabulateProductForTest{v1, v2, v3, claim_determined});
 
     auto proof_name = proofs ? make_optional("tabulation_test") : nullopt;

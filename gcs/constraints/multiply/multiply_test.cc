@@ -60,6 +60,8 @@ namespace
 // (m1 * v1 + o1) * (m2 * v2 + o2) = (m3 * v3 + o3) and enumerate over the
 // underlying variables. With all multipliers 1 and offsets 0 this is the plain
 // case.
+string test_proof_suffix = "";
+
 auto run_multiply_test(bool proofs, const MultiplyConsistency & level, bool check_gac, pair<int, int> v1_range, pair<int, int> v2_range,
     pair<int, int> v3_range, tuple<int, int, int, int, int, int> view_spec = {1, 0, 1, 0, 1, 0}) -> void
 {
@@ -86,7 +88,7 @@ auto run_multiply_test(bool proofs, const MultiplyConsistency & level, bool chec
     };
     p.post(Multiply{wrap(v1, m1, o1), wrap(v2, m2, o2), wrap(v3, m3, o3)}.with_consistency(level));
 
-    auto proof_name = proofs ? make_optional("multiply_test") : nullopt;
+    auto proof_name = proofs ? make_optional("multiply_test" + test_proof_suffix) : nullopt;
 
     if (check_gac)
         solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{v1, v2, v3});
@@ -96,9 +98,8 @@ auto run_multiply_test(bool proofs, const MultiplyConsistency & level, bool chec
     check_results(proof_name, expected, actual);
 }
 
-// Aliased shapes: x * x = y, x * y = x, y * x = x, and x * x = x. These used
-// to be only expressible through the table-based Times; MultiplyBC itself
-// still throws on them, so Multiply decomposes.
+// Aliased shapes: x * x = y (views of one variable included), x * y = x,
+// y * x = x, and x * x = x, all taken natively on the actual handles.
 auto run_alias_test(
     bool proofs, const MultiplyConsistency & level, bool check_gac, const string & shape, pair<int, int> x_range, pair<int, int> y_range) -> void
 {
@@ -123,12 +124,27 @@ auto run_alias_test(
         build_expected(expected, [](int a, int b) { return b * a == a; }, x_range, y_range);
         p.post(Multiply{y, x, x}.with_consistency(level));
     }
+    else if (shape == "viewed square") {
+        // (x + 1) * (x + 1) = y: the same view on both slots is still a square
+        build_expected(expected, [](int a, int b) { return (a + 1) * (a + 1) == b; }, x_range, y_range);
+        p.post(Multiply{x + 1_i, x + 1_i, y}.with_consistency(level));
+    }
+    else if (shape == "negated") {
+        // x * -x = y: same underlying variable, different views, box reasoning
+        build_expected(expected, [](int a, int b) { return a * -a == b; }, x_range, y_range);
+        p.post(Multiply{x, -x, y}.with_consistency(level));
+    }
+    else if (shape == "shifted pair") {
+        // (x + 1) * (x - 1) = y
+        build_expected(expected, [](int a, int b) { return (a + 1) * (a - 1) == b; }, x_range, y_range);
+        p.post(Multiply{x + 1_i, x + -1_i, y}.with_consistency(level));
+    }
     else
         throw UnexpectedException{"unknown alias shape"};
 
     println(cerr, " expecting {} solutions", expected.size());
 
-    auto proof_name = proofs ? make_optional("multiply_test") : nullopt;
+    auto proof_name = proofs ? make_optional("multiply_test" + test_proof_suffix) : nullopt;
 
     if (check_gac)
         solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{x, y});
@@ -152,7 +168,7 @@ auto run_all_same_test(bool proofs, const MultiplyConsistency & level, pair<int,
     build_expected(expected, [](int a) { return a * a == a; }, x_range);
     println(cerr, " expecting {} solutions", expected.size());
 
-    auto proof_name = proofs ? make_optional("multiply_test") : nullopt;
+    auto proof_name = proofs ? make_optional("multiply_test" + test_proof_suffix) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{x});
     check_results(proof_name, expected, actual);
 }
@@ -187,21 +203,53 @@ auto run_constant_test(
 
     println(cerr, " expecting {} solutions", expected.size());
 
-    auto proof_name = proofs ? make_optional("multiply_test") : nullopt;
+    auto proof_name = proofs ? make_optional("multiply_test" + test_proof_suffix) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{v, r});
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    // The view-wrap sweep: wrap each operand position per the config and run
+    // a focused deterministic subset, with the proof files suffixed so
+    // parallel ctest entries never clobber each other.
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+    constexpr int n_positions = 3;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "multiply view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
+        return EXIT_SUCCESS;
+    }
+    if (! view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+        test_proof_suffix = "_" + view_wrap_config_label(view_cfg);
+        auto wraps = wraps_for_positions(view_cfg, n_positions);
+        auto spec_of = [&](int pos) -> pair<int, int> {
+            if (wraps[static_cast<size_t>(pos)].bare)
+                return {1, 0};
+            return {wraps[static_cast<size_t>(pos)].negate ? -1 : 1, wraps[static_cast<size_t>(pos)].offset};
+        };
+        auto [m1, o1] = spec_of(0);
+        auto [m2, o2] = spec_of(1);
+        auto [m3, o3] = spec_of(2);
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                break;
+            for (const auto & level : vector<MultiplyConsistency>{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}}) {
+                bool is_bc = holds_alternative<consistency::BC>(level);
+                run_multiply_test(proofs, level, ! is_bc, {1, 3}, {1, 3}, {1, 9}, tuple{m1, o1, m2, o2, m3, o3});
+                run_multiply_test(proofs, level, ! is_bc, {-2, 2}, {1, 2}, {-4, 4}, tuple{m1, o1, m2, o2, m3, o3});
+                run_multiply_test(proofs, level, ! is_bc, {-3, 2}, {-2, 3}, {-6, 7}, tuple{m1, o1, m2, o2, m3, o3});
+            }
+        }
+        return EXIT_SUCCESS;
+    }
+
     vector<MultiplyConsistency> levels{consistency::Auto{}, consistency::BC{}, consistency::Tabulated{}};
 
     // Random instances for the forced-BC variant: domains big enough that Auto
-    // would not tabulate, so this is the decomposition's bounds propagation.
-    // Soundness and completeness are checked against a full enumeration;
-    // per-node bounds consistency is deliberately not claimed (the composition
-    // is weaker than bounds consistency on the product, and MultiplyBC's own
-    // test notes the same).
+    // would not tabulate, so this is the raw bounds propagation. Soundness and
+    // completeness are checked against a full enumeration; per-node bounds
+    // consistency is deliberately not claimed (interval reasoning leaves
+    // unsupported endpoints, as the product_bounds test pins).
     random_device rand_dev;
     mt19937 rand(rand_dev());
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> random_bc_data;
@@ -233,6 +281,9 @@ auto main(int, char *[]) -> int
             run_alias_test(proofs, level, ! is_bc, "xxy", {-3, 3}, {0, 9});
             run_alias_test(proofs, level, ! is_bc, "xyx", {-2, 4}, {-3, 3});
             run_alias_test(proofs, level, ! is_bc, "yxx", {-3, 3}, {-2, 2});
+            run_alias_test(proofs, level, ! is_bc, "viewed square", {-3, 2}, {-1, 9});
+            run_alias_test(proofs, level, ! is_bc, "negated", {-3, 3}, {-9, 2});
+            run_alias_test(proofs, level, ! is_bc, "shifted pair", {-3, 3}, {-2, 8});
             run_all_same_test(proofs, level, {-2, 2});
 
             // Constants fold to a linear equality.
@@ -241,6 +292,14 @@ auto main(int, char *[]) -> int
             run_constant_test(proofs, level, "vc", 0, {-4, 4}, {-2, 2});
             run_constant_test(proofs, level, "result", 6, {-8, 8}, {-8, 8});
         }
+
+        // issue #254: all-fixed (singleton-domain) operands, both directions -
+        // nothing to search, the propagator alone must accept or refute.
+        run_multiply_test(proofs, consistency::BC{}, false, {2, 2}, {3, 3}, {6, 6});
+        run_multiply_test(proofs, consistency::BC{}, false, {2, 2}, {3, 3}, {7, 7});
+        run_multiply_test(proofs, consistency::BC{}, false, {0, 0}, {5, 5}, {0, 0});
+        run_multiply_test(proofs, consistency::BC{}, false, {-2, -2}, {3, 3}, {-6, -6});
+        run_multiply_test(proofs, consistency::BC{}, false, {-2, -2}, {3, 3}, {6, 6});
 
         // Wider domains: Auto falls back on bounds consistency; soundness and
         // completeness are still checked, per-node consistency is not.

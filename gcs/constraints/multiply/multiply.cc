@@ -7,7 +7,7 @@
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/constraints/multiply/hints.hh>
 #include <gcs/constraints/multiply/multiply.hh>
-#include <gcs/constraints/multiply/multiply_bc.hh>
+#include <gcs/constraints/multiply/signed_multiply.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -29,6 +29,7 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::make_shared;
 using std::make_unique;
 using std::max;
 using std::min;
@@ -125,132 +126,29 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
         return;
     }
 
-    // Both operands are genuine variables, possibly through views. MultiplyBC
-    // wants three distinct plain variable handles, so: an aliased operand pair
-    // gets an auxiliary copy tied with Equals, and anything else that stops
-    // the result slot being a plain distinct variable (views, a constant or
-    // aliased result) goes through an auxiliary product variable tied back
-    // with a linear equality over the affine expansion.
+    // Both operands are genuine variables, possibly through views, aliased
+    // with each other, or aliased with the result; the result may also be a
+    // view or a constant. The encoding rows and the propagation take the
+    // actual handles directly: a repeated operand gets one magnitude channel
+    // per slot, exactly as cake_pb_cp emits for (multiply X X Z), and the
+    // propagator's square case works on the true relation, so x * x = z gets
+    // exact square and square-root hull filtering (issue #232).
     auto u1 = *a1.var, u2 = *a2.var;
 
-    auto m2 = u2;
-    optional<pair<SimpleIntegerVariableID, SimpleIntegerVariableID>> copy_to_make;
-    if (u1 == u2) {
-        auto [lo, hi] = initial_state.bounds(u2);
-        m2 = initial_state.allocate_integer_variable_with_state(lo, hi);
-        if (optional_model)
-            optional_model->set_up_integer_variable(m2, lo, hi, "aux_multiply_copy" + to_string(m2.index), nullopt);
-        copy_to_make = pair{u2, m2};
-    }
-
-    bool operands_plain = a1.coeff == 1_i && a1.offset == 0_i && a2.coeff == 1_i && a2.offset == 0_i;
-    bool result_plain = a3.var && a3.coeff == 1_i && a3.offset == 0_i;
-
-    optional<SimpleIntegerVariableID> t;
-    if (operands_plain && result_plain && *a3.var != u1 && *a3.var != m2)
-        t = *a3.var;
-
-    bool need_linear = ! t.has_value();
-    if (! t) {
-        auto [l1, h1] = initial_state.bounds(u1);
-        auto [l2, h2] = initial_state.bounds(u2);
-        auto lo = min({l1 * l2, l1 * h2, h1 * l2, h1 * h2});
-        auto hi = max({l1 * l2, l1 * h2, h1 * l2, h1 * h2});
-        t = initial_state.allocate_integer_variable_with_state(lo, hi);
-        if (optional_model)
-            optional_model->set_up_integer_variable(*t, lo, hi, "aux_multiply_product" + to_string(t->index), nullopt);
-    }
-
-    // One flat encoding block under our own identity, and one propagator over
-    // everything (issue #448): the aliased-operand copy channel and the affine
-    // fold are linear lines in our block, and the propagator runs the exposed
-    // sub-propagations to a local fixpoint.
-    WeightedSum copy_sum, fold_sum;
-    Integer fold_value = 0_i;
-    if (copy_to_make)
-        copy_sum = WeightedSum{} + 1_i * copy_to_make->first + -1_i * copy_to_make->second;
-    if (need_linear) {
-        // v1 * v2 = (c1 u1 + b1)(c2 u2 + b2) = c1 c2 t + c1 b2 u1 + c2 b1 u2 + b1 b2
-        fold_sum += (a1.coeff * a2.coeff) * *t;
-        if (a1.coeff * a2.offset != 0_i)
-            fold_sum += (a1.coeff * a2.offset) * u1;
-        if (a2.coeff * a1.offset != 0_i)
-            fold_sum += (a2.coeff * a1.offset) * u2;
-        fold_sum += -1_i * _result;
-        fold_value = -(a1.offset * a2.offset);
-    }
-
-    mult_bc::EncodingData encoding;
-    optional<pair<optional<ProofLine>, optional<ProofLine>>> copy_lines, fold_lines;
-    if (optional_model) {
-        encoding = mult_bc::define_encoding(*optional_model, initial_state, constraint_id(), as_string(constraint_id()), u1, m2, *t);
-
-        auto as_wpb = [](const WeightedSum & ws) {
-            WPBSum terms;
-            for (const auto & [c, v] : ws.terms)
-                terms += c * v;
-            return terms;
-        };
-        if (copy_to_make) {
-            auto lines = optional_model->add_labelled_constraint(
-                as_string(constraint_id()), "copyle", "copyge", "Multiply", "aliased operand copy", as_wpb(copy_sum) == 0_i);
-            copy_lines = pair{optional{lines.first}, optional{lines.second}};
-        }
-        if (need_linear) {
-            auto lines = optional_model->add_labelled_constraint(
-                as_string(constraint_id()), "foldle", "foldge", "Multiply", "affine fold", as_wpb(fold_sum) == fold_value);
-            fold_lines = pair{optional{lines.first}, optional{lines.second}};
-        }
-    }
-
-    auto bit_products_handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
-
-    auto [copy_tidied, copy_modifier] = tidy_up_linear(copy_sum);
-    auto [fold_tidied, fold_modifier] = tidy_up_linear(fold_sum);
+    auto product_data = make_shared<signed_multiply::Data>(
+        signed_multiply::make_data(optional_model, initial_state, constraint_id(), as_string(constraint_id()), _v1, _v2, _result));
 
     Triggers triggers;
-    vector<SimpleIntegerVariableID> watched{u1, m2, *t};
-    if (a3.var && *a3.var != *t)
-        watched.push_back(*a3.var);
-    for (const auto & v : watched)
-        if (std::find(triggers.on_bounds.begin(), triggers.on_bounds.end(), IntegerVariableID{v}) == triggers.on_bounds.end())
+    for (const auto & v : {_v1, _v2, _result})
+        if ((! is_constant_variable(v)) && triggers.on_bounds.end() == std::find(triggers.on_bounds.begin(), triggers.on_bounds.end(), v))
             triggers.on_bounds.emplace_back(v);
 
     propagators.install(
         constraint_id(),
-        [u1 = u1, m2 = m2, t = *t, has_copy = copy_to_make.has_value(), has_fold = need_linear, copy_tidied = copy_tidied,
-            copy_modifier = copy_modifier, fold_tidied = fold_tidied, fold_modifier = fold_modifier, fold_value = fold_value, copy_lines = copy_lines,
-            fold_lines = fold_lines, encoding = encoding, bit_products_handle = bit_products_handle,
-            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [product_data = product_data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             do {
-                // propagate_linear signals failure through the tracker's
-                // non-throwing path, so check contradicted() after each call
-                // before running the next stage on an emptied domain.
-                if (has_copy) {
-                    visit(
-                        [&](const auto & cv) {
-                            propagate_linear(
-                                cv, 0_i + copy_modifier, state, inference, logger, true, copy_lines, nullopt, hints::LinearEquality{owner});
-                        },
-                        copy_tidied);
-                    if (inference.contradicted())
-                        return PropagatorState::Enable;
-                }
-
-                mult_bc::propagate(u1, m2, t, state, inference, logger, encoding, bit_products_handle, owner);
-
-                if (has_fold) {
-                    visit(
-                        [&](const auto & cv) {
-                            propagate_linear(
-                                cv, fold_value + fold_modifier, state, inference, logger, true, fold_lines, nullopt, hints::LinearEquality{owner});
-                        },
-                        fold_tidied);
-                    if (inference.contradicted())
-                        return PropagatorState::Enable;
-                }
+                signed_multiply::propagate(*product_data, state, inference, logger, owner);
             } while (inference.did_anything_since_last_call_inside_propagator());
-
             return PropagatorState::Enable;
         },
         triggers);

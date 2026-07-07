@@ -21,7 +21,6 @@
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/multiply.hh>
-#include <gcs/constraints/multiply/multiply_bc.hh>
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
@@ -343,7 +342,7 @@ TEST_CASE("read_scp: multiply constraints survive write -> read -> write unchang
     // the reader's resolve_variable only handles atoms, as for every other
     // constraint -- so no view case here)
     original.post(Multiply{constant_variable(2_i), y, z}); // constant operand: resolves to lin_equals
-    original.post(innards::MultiplyBC{x, y, z});           // directly-posted innards form writes the same term
+    original.post(Multiply{x, y, z});                      // the plain three-distinct-variables shape
     auto scp_a = prove_to_scp(original, "scp_reader_multiply_a");
 
     Problem rebuilt;

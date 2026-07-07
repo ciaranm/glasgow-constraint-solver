@@ -539,6 +539,12 @@ add_scp_chain_test(multiply_sat           none)
 add_scp_chain_test(multiply_unsat         none)
 add_scp_chain_test(multiply_signed_sat    none)
 add_scp_chain_test(multiply_signed_unsat  none)
+# aliased shapes go through the same slot-keyed emitters natively: cake
+# accepts repeated variables in multiply arguments (no distinctness
+# hypotheses in its soundness theorems), so squares chain-verify too
+add_scp_chain_test(multiply_square_sat    none)
+add_scp_chain_test(multiply_square_unsat  none)
+add_scp_chain_test(multiply_result_alias_sat none)
 
 # divide: truncated division x = q*y + r, |r| < |y|, sign(r) = sign(x). The
 # proof emits cake's divide OPB (|Q| axis-0 and |Y| axis-1 magnitude channels, a

@@ -2,7 +2,7 @@
 #include <gcs/constraints/innards/linear_stages.hh>
 #include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/constraints/innards/triggers.hh>
-#include <gcs/constraints/multiply/multiply_bc.hh>
+#include <gcs/constraints/multiply/signed_multiply.hh>
 #include <gcs/constraints/power/hints.hh>
 #include <gcs/constraints/power/power.hh>
 #include <gcs/constraints/power/power_table.hh>
@@ -29,6 +29,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::clamp;
+using std::make_shared;
 using std::make_unique;
 using std::max;
 using std::min;
@@ -106,23 +107,12 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
 
     // One multiplication link of the chain, with its own encoding block
     // (role-prefixed) and persistent bit-product state.
-    struct MultLink
-    {
-        SimpleIntegerVariableID a, b, product;
-        mult_bc::EncodingData encoding;
-        ConstraintStateHandle bit_products_handle;
-    };
-    vector<MultLink> links;
-    auto add_link = [&](long long link, SimpleIntegerVariableID a, SimpleIntegerVariableID b, SimpleIntegerVariableID product) {
+    auto links = make_shared<vector<signed_multiply::Data>>();
+    auto add_link = [&](long long link, IntegerVariableID a, IntegerVariableID b, IntegerVariableID product) {
         // Each chain link is a signed multiplication encoded with cake's magnitude scheme, the
         // same one Multiply uses; `link` disambiguates the per-link flags. (cake has no power
-        // encoder, so this self-verifies rather than chain-verifying, but it keeps Power off
-        // mult_bc's legacy encoding.)
-        mult_bc::EncodingData encoding;
-        if (optional_model)
-            encoding = mult_bc::define_encoding(*optional_model, initial_state, constraint_id(), label, a, b, product, link);
-        auto handle = initial_state.add_persistent_constraint_state(encoding.initial_bit_products);
-        links.emplace_back(MultLink{a, b, product, move(encoding), handle});
+        // encoder, so this self-verifies rather than chain-verifying.)
+        links->emplace_back(signed_multiply::make_data(optional_model, initial_state, constraint_id(), label, a, b, product, link));
     };
 
     bool prune_zero_base = false;
@@ -182,58 +172,36 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         // the result -- so the auxiliaries' ranges are clamped by the
         // result's. That keeps a hopeless chain (say 10^20 with a small
         // result) failing by propagation rather than overflowing at install
-        // time. The base multiplies itself on the first link, so it gets a
-        // plain copy; a view base gets channelled to a plain variable first.
+        // time. The first link is base * base, a native square (view bases
+        // included), and the last writes the result handle directly.
         auto [zlo, zhi] = initial_state.bounds(_result);
         auto m = max({1_i, zlo < 0_i ? -zlo : zlo, zhi < 0_i ? -zhi : zhi});
 
-        auto base_eff = *a1.var;
-        if (a1.coeff != 1_i || a1.offset != 0_i) {
-            auto [blo, bhi] = initial_state.bounds(_base);
-            auto base_plain = initial_state.allocate_integer_variable_with_state(blo, bhi);
-            if (optional_model)
-                optional_model->set_up_integer_variable(base_plain, blo, bhi, "aux_power_base" + to_string(base_plain.index), nullopt);
-            add_equality(WeightedSum{} + 1_i * base_plain + -1_i * _base, 0_i, "base");
-            base_eff = base_plain;
-        }
-
-        auto [blo, bhi] = initial_state.bounds(base_eff);
-        auto base_copy = initial_state.allocate_integer_variable_with_state(blo, bhi);
-        if (optional_model)
-            optional_model->set_up_integer_variable(base_copy, blo, bhi, "aux_power_copy" + to_string(base_copy.index), nullopt);
-        add_equality(WeightedSum{} + 1_i * base_eff + -1_i * base_copy, 0_i, "copy");
-
-        bool result_plain = a3.var && a3.coeff == 1_i && a3.offset == 0_i;
-        auto prev = base_eff;
-        auto other = base_copy;
+        IntegerVariableID prev = _base;
         for (long long i = 2; i <= k.raw_value; ++i) {
-            SimpleIntegerVariableID t = prev;
             bool is_last = i == k.raw_value;
-            if (is_last && result_plain && *a3.var != prev && *a3.var != other)
-                t = *a3.var;
+            IntegerVariableID t = 0_c;
+            if (is_last)
+                t = _result;
             else {
                 auto [plo, phi] = initial_state.bounds(prev);
-                auto [xlo, xhi] = initial_state.bounds(other);
+                auto [xlo, xhi] = initial_state.bounds(_base);
                 auto lo = min({saturating_product(plo, xlo, m), saturating_product(plo, xhi, m), saturating_product(phi, xlo, m),
                     saturating_product(phi, xhi, m)});
                 auto hi = max({saturating_product(plo, xlo, m), saturating_product(plo, xhi, m), saturating_product(phi, xlo, m),
                     saturating_product(phi, xhi, m)});
-                t = initial_state.allocate_integer_variable_with_state(lo, hi);
+                auto aux = initial_state.allocate_integer_variable_with_state(lo, hi);
                 if (optional_model)
-                    optional_model->set_up_integer_variable(t, lo, hi, "aux_power" + to_string(t.index), nullopt);
+                    optional_model->set_up_integer_variable(aux, lo, hi, "aux_power" + to_string(aux.index), nullopt);
+                t = aux;
             }
 
-            add_link(i, prev, other, t);
-
-            if (is_last && ! (result_plain && t == *a3.var))
-                add_equality(WeightedSum{} + 1_i * t + -1_i * _result, 0_i, "resultsum");
-
+            add_link(i, prev, _base, t);
             prev = t;
-            other = base_eff;
         }
     }
 
-    if ((! stages.empty()) || (! links.empty()) || prune_zero_base) {
+    if ((! stages.empty()) || (! links->empty()) || prune_zero_base) {
         Triggers triggers;
         vector<IntegerVariableID> watched;
         auto watch = [&](const IntegerVariableID & v) {
@@ -242,10 +210,10 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         };
         watch(_base);
         watch(_result);
-        for (const auto & link : links) {
-            watch(link.a);
-            watch(link.b);
-            watch(link.product);
+        for (const auto & link : *links) {
+            watch(link.x);
+            watch(link.y);
+            watch(link.z);
         }
         triggers.on_bounds = watched;
 
@@ -260,8 +228,8 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
                     if (! propagate_stages(stages, state, inference, logger, owner))
                         return PropagatorState::Enable;
 
-                    for (const auto & link : links)
-                        mult_bc::propagate(link.a, link.b, link.product, state, inference, logger, link.encoding, link.bit_products_handle, owner);
+                    for (auto & link : *links)
+                        signed_multiply::propagate(link, state, inference, logger, owner);
                 } while (inference.did_anything_since_last_call_inside_propagator());
 
                 return PropagatorState::Enable;

@@ -43,6 +43,8 @@ add_library(glasgow_constraint_solver
         constraints/in/in.cc
         constraints/increasing/increasing.cc
         constraints/innards/linear_stages.cc
+        constraints/innards/product_encoding.cc
+        constraints/innards/product_justify.cc
         constraints/innards/justify_not_in_range.cc
         constraints/innards/recover_am1.cc
         constraints/innards/reified_state.cc
@@ -63,7 +65,7 @@ add_library(glasgow_constraint_solver
         constraints/min_max/min_max.cc
         constraints/plus_minus/minus.cc
         constraints/multiply/multiply.cc
-        constraints/multiply/multiply_bc.cc
+        constraints/multiply/signed_multiply.cc
         constraints/n_value/n_value.cc
         constraints/parity/parity.cc
         constraints/plus_minus/plus.cc
@@ -170,12 +172,13 @@ if(GCS_BUILD_TESTS)
     add_executable(linear_constant_test constraints/linear/linear_constant_test.cc)
     add_executable(logical_test constraints/logical/logical_test.cc)
     add_executable(min_max_test constraints/min_max/min_max_test.cc)
-    add_executable(multiply_bc_test constraints/multiply/multiply_bc_test.cc)
     add_executable(multiply_test constraints/multiply/multiply_test.cc)
     add_executable(n_value_test constraints/n_value/n_value_test.cc)
     add_executable(parity_test constraints/parity/parity_test.cc)
     add_executable(plus_minus_test constraints/plus_minus/plus_minus_test.cc)
     add_executable(power_test constraints/power/power_test.cc)
+    add_executable(product_bounds_test constraints/innards/product_bounds_test.cc)
+    add_executable(product_justify_test constraints/innards/product_justify_test.cc)
     add_executable(regular_test constraints/regular/regular_test.cc)
     add_executable(seq_precede_chain_test constraints/seq_precede_chain/seq_precede_chain_test.cc)
     add_executable(smart_table_test constraints/smart_table/smart_table_test.cc)
@@ -193,8 +196,8 @@ if(GCS_BUILD_TESTS)
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test comparison_test
             count_test cumulative_test disjunctive_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test lex_test linear_test linear_constant_test
-            logical_test min_max_test multiply_bc_test multiply_test n_value_test parity_test
-            plus_minus_test power_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
+            logical_test min_max_test multiply_test n_value_test parity_test
+            plus_minus_test power_test product_bounds_test product_justify_test regular_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
@@ -279,6 +282,9 @@ if(GCS_BUILD_TESTS)
     # always-on `_view_mixed` test is registered either way.
     add_view_tests(equals_constraint equals_test 2)
     add_view_tests(abs_constraint abs_test 2)
+    add_view_tests(divide_modulus_constraint divide_modulus_test 3)
+    add_view_tests(power_constraint power_test 2)
+    add_view_tests(multiply_constraint multiply_test 3)
     add_view_tests(plus_minus_constraint plus_minus_test 3)
     foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
         add_view_tests(comparison_constraint_${mode} comparison_test 2 ${mode})
@@ -332,7 +338,6 @@ if(GCS_BUILD_TESTS)
     add_test(NAME min_max_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:min_max_test>)
     add_test(NAME divide_modulus_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:divide_modulus_test>)
     add_test(NAME power_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:power_test>)
-    add_test(NAME multiply_bc_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:multiply_bc_test>)
     add_test(NAME multiply_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:multiply_test>)
     add_test(NAME n_value_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:n_value_test>)
     add_test(NAME parity_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
@@ -349,6 +354,8 @@ if(GCS_BUILD_TESTS)
     add_test(NAME negative_table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:negative_table_test>)
     add_test(NAME symmetric_all_different_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:symmetric_all_different_test>)
     add_test(NAME table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:table_test>)
+    add_test(NAME product_bounds COMMAND $<TARGET_FILE:product_bounds_test>)
+    add_test(NAME product_justify COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:product_justify_test>)
     add_test(NAME tabulation_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tabulation_test>)
     add_test(NAME value_precede_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:value_precede_test>)
 
