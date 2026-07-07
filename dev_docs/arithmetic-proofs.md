@@ -5,7 +5,8 @@ inferences. The encoding is cake_pb_cp's, fixed by the verified encoding
 chain (`verified_encodings/`); the proofs follow Chapter 7 of Matthew
 McIlree's thesis, adapted to cake's sign-magnitude scheme. There is no
 in-proof reformulation anywhere: every justification cites the OPB rows
-and combines them with `pol`, `ia` and hint-free `rup` steps.
+and combines them with `pol`, `ia` and `rup` steps, hinted wherever the
+conflict path is locally known.
 
 ## The encoding (fixed by cake)
 
@@ -48,7 +49,15 @@ sign-case-conditional bound as its raw pol line plus its case literals.
 - `derive_operand_bound` / `derive_assumed_operand_bound`: a bound line in
   V-form (view terms cancel against the V-form channel rows; never
   `_then_deview`), under the reason or under an assumed excluded-range
-  atom that the driver's negated goal later supplies as a unit;
+  atom that the driver's negated goal later supplies as a unit. The
+  reason-carried flavour cites the bound atom's defining row directly —
+  its gate term rides the downstream pol chains as one more
+  reason-shaped rider and dies wherever the reason's units pin the
+  atom. The assumed flavour must keep its `ia` restatement: it
+  renormalises the definition's gate coefficient to reify's choice,
+  which the syntactic `ia` row implications in `grid_sum_lower_bound`
+  rely on when an assumed bound composes with view channel rows
+  (Power's factor paths fail "not syntactically implied" without it);
 - `channel_bound_to_magnitude` (thesis 7.3, cake flavour): one pol add
   against the matching channel row; directions flip on the negative
   branch; `strengthen_nonzero` lifts a useless non-positive magnitude
@@ -58,23 +67,33 @@ sign-case-conditional bound as its raw pol line plus its case literals.
   with the per-cell W-lines cached in the grid; a zero magnitude takes a
   direct-RUP path (the grid empties by unit propagation);
 - `channel_grid_bound_to_result` (thesis 7.4, cake flavour): pol against
-  the matching mag_Z row, then one **hint-free** RUP of the bound claim.
-  There is deliberately no standalone sign-atom discharge: a mixed sign
-  case does not entail the result's sign when the non-negative operand
-  may be zero; the claim's own negation pins the sign atom instead, or
-  unit propagation closes through the sign clauses and the eq0 rows;
+  the matching mag_Z row, then one hinted RUP of the bound claim (the
+  caller's kit plus the combined line and the reason/case literals'
+  defs and bridges — but never definitions for the claimed bound
+  itself; see the hints section). There is deliberately no standalone
+  sign-atom discharge: a mixed sign case does not entail the result's
+  sign when the non-negative operand may be zero; the claim's own
+  negation pins the sign atom instead, or unit propagation closes
+  through the sign clauses and the eq0 rows;
 - `conclude_by_sign_cases`: the fixed-shape replacement for case
   resolution. One red-with-empty-witness derivation of
   `reason => conclusion`; the subproof takes each case pattern's premise
   pol-added onto the negated goal (premises that are already refutation
   clauses — factor-bound clashes — are used directly: adding the negation
-  would inject its terms as free slack), closes dead cases with a plain
-  RUP clause of the opposite atoms, emits any zero-refutation units
+  would inject its terms as free slack), closes dead cases with a RUP
+  clause of the opposite atoms, emits any zero-refutation units
   (`[v=0]` empties the grid against the reason's result bounds), and runs
   the nested saturating cut one dimension at a time. Because `[v>=0]` and
   `[v<0]` are complementary atoms — unlike the thesis's two's-complement
   sign bits — no separate zero cases are needed, and a square's mixed
-  patterns die as tautology clauses.
+  patterns die as tautology clauses. The subproof's RUP steps (dead
+  patterns and the closing contradiction) are hinted when the caller
+  passes `SubproofRUPHints::Assemble`, which is sound exactly when the
+  premises' sum terms cancel against the negated goal — product bounds
+  arrange this, so multiply/squares/Power engage it; divide/modulus
+  premises drag view bits and aux-atom rows into the cut result, where
+  only a database-wide RUP reaches the closing conflict, so they stay
+  on the default hint-free path.
 
 Inference drivers: product bounds are thesis Procedure 7.5 (per live sign
 case: channel, 7.1/7.2, channel to the result, conclude); factor and
@@ -94,14 +113,23 @@ propagation to exactly the cited lines, so a hint set must cover the
 breaks, and `RUPProofRule{}` with an engaged-but-empty vector renders
 `: ;` ("restrict to nothing"), which always fails.
 
-- Operand bounds are single-antecedent `ia` steps citing the bound
-  atom's defining row (`derive_operand_bound`), falling back to RUP for
-  constants, XLiteral domain boundaries and empty reasons.
+- Reason-carried operand bounds cite the bound atom's defining row
+  directly (`derive_operand_bound`), falling back to RUP for constants,
+  XLiteral domain boundaries and empty reasons; assumed bounds keep a
+  single-antecedent `ia` restatement (see the justification layer).
 - Multiply's result-bound claims carry a kit
   (`signed_multiply.cc: result_claim_hints`): channel rows, sign
   clauses, grid `[r]` halves, and the ge0/ge1/eq0 atom-definition
-  families, plus per-claim additions for the claimed atom and every
-  reason/case literal.
+  families, plus per-claim additions for every reason/case literal —
+  but **never for the claimed bound itself**. The claim is stated over
+  the result's bits, so its own atom appears in no constraint the
+  checker propagates; and because `def_line_for` *creates* missing
+  atoms, hinting a per-inference value's definitions permanently mints
+  fresh defining rows and ladder links at every inference. That grows
+  the live database linearly with search nodes and turns every
+  hint-free step's cost with it — checking goes quadratic in node
+  count on wide-but-shallow trees (the PR #471 review regression:
+  2–9x and climbing with instance size).
 - Unit propagation cannot cross between two order atoms of the same
   variable (reason `[y>=5]` to sign-clause literal `[y>=1]`) through
   their bit-level definitions — the bits stay unpinned — and the ladder
@@ -150,6 +178,15 @@ matters, since divide's final claims are hint-free:
 
 - RUP cannot combine two opposing linear bounds on the grid sum — that is
   a cutting-planes step; pol-add them before claiming a contradiction.
+- Hint assembly must never route a fresh-valued literal through
+  `def_line_for` / `need_pol_item_defining_literal`: those *create*
+  missing atoms, permanently. Only ever ask for definitions of atoms
+  that exist independently — reason literals, case literals, and the
+  fixed ge0/ge1/eq0 families.
+- When a checker step is hint-free by design, ask what its cost scales
+  with: `perf` on veripb plus prefix-truncation timing (cut at
+  `% backtracking` markers, append `conclusion NONE`) separates
+  per-step cost from accumulating live-database cost in minutes.
 - Bounds used by a justification must be axioms (initial-domain rows,
   atom definitions) or carried by the reason; a case's liveness test must
   only consult values the proof can see the same way.
