@@ -115,16 +115,21 @@ namespace
 auto gcs::innards::product_justify::derive_operand_bound(
     ProofLogger & logger, const ReasonLiterals & reason, IntegerVariableID v, bool lower, Integer bound, ProofLevel result_level) -> ConditionalBound
 {
-    // The bound atom's defining row already carries the claim in V-form, so
-    // cite it directly rather than restating it: the extra gate term it
-    // brings along rides through the downstream pol chains as one more
-    // reason-shaped rider, and dies wherever the reason's units pin the
-    // atom. Only lines up when the cited bound is itself carried by the
-    // reason (the drivers always arrange this); otherwise fall back to RUP.
+    // V-form, so the line cancels against the V-form channel rows. One `ia`
+    // citing the bound atom's definition, rather than a database-wide RUP.
+    // The restatement is load-bearing, not a convenience: it renormalises
+    // the definition's gate coefficient to reify's choice, which the
+    // syntactic `ia` row implications in the grid procedures depend on.
+    // Citing the definition directly verifies or not depending on the
+    // instance's coefficient values -- it passed a full local battery and
+    // then failed power and multiply on three of five CI lanes.
     auto sum = lower ? WPBSum{} + 1_i * v : WPBSum{} + -1_i * v;
     auto rhs = lower ? bound : -bound;
+    // The `ia` shape only lines up when the cited bound is itself carried by
+    // the reason (the drivers always arrange this); otherwise fall back to RUP.
     auto def = reason.empty() ? std::nullopt : def_line_for(logger, lower ? v >= bound : v < bound + 1_i);
-    auto line = def ? *def : logger.emit_rup_proof_line_under_reason(reason, sum >= rhs, result_level);
+    auto line = def ? logger.emit_under_reason(ImpliesProofRule{*def}, logger.reify(sum >= rhs, HalfReifyOnConjunctionOf{}), result_level, reason)
+                    : logger.emit_rup_proof_line_under_reason(reason, sum >= rhs, result_level);
     return ConditionalBound{sum, rhs, HalfReifyOnConjunctionOf{}, line};
 }
 
@@ -132,11 +137,10 @@ auto gcs::innards::product_justify::derive_assumed_operand_bound(
     ProofLogger & logger, IntegerVariableID v, bool lower, Integer bound, ProofLevel result_level) -> ConditionalBound
 {
     // One `ia` citing the assumed atom's definition: the claim is exactly
-    // that definition's forward half, but the restatement is load-bearing —
-    // it renormalises the gate coefficient to reify's choice, which the
-    // syntactic `ia` implications in the grid row procedures rely on when
-    // this bound composes with view channel rows (Power's factor paths).
-    // Citing the definition directly fails verification there.
+    // that definition's forward half, but the restatement is load-bearing
+    // for the same coefficient-renormalisation reason as in
+    // derive_operand_bound above -- citing the definition directly fails
+    // verification whenever the coefficient values fall the wrong way.
     auto sum = lower ? WPBSum{} + 1_i * v : WPBSum{} + -1_i * v;
     auto rhs = lower ? bound : -bound;
     auto cases = HalfReifyOnConjunctionOf{lower ? v >= bound : v < bound + 1_i};

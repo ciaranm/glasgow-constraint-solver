@@ -49,15 +49,15 @@ sign-case-conditional bound as its raw pol line plus its case literals.
 - `derive_operand_bound` / `derive_assumed_operand_bound`: a bound line in
   V-form (view terms cancel against the V-form channel rows; never
   `_then_deview`), under the reason or under an assumed excluded-range
-  atom that the driver's negated goal later supplies as a unit. The
-  reason-carried flavour cites the bound atom's defining row directly —
-  its gate term rides the downstream pol chains as one more
-  reason-shaped rider and dies wherever the reason's units pin the
-  atom. The assumed flavour must keep its `ia` restatement: it
-  renormalises the definition's gate coefficient to reify's choice,
-  which the syntactic `ia` row implications in `grid_sum_lower_bound`
-  rely on when an assumed bound composes with view channel rows
-  (Power's factor paths fail "not syntactically implied" without it);
+  atom that the driver's negated goal later supplies as a unit. Both are
+  single-antecedent `ia` restatements of the bound atom's defining row,
+  and the restatement is load-bearing: it renormalises the definition's
+  gate coefficient to reify's choice, which the syntactic `ia` row
+  implications in the grid procedures depend on. Citing the definition
+  directly instead verifies or not depending on the instance's
+  coefficient values — it survived a full local battery and a
+  300-instance sweep, then failed power and multiply with "not
+  syntactically implied" on three of five CI lanes;
 - `channel_bound_to_magnitude` (thesis 7.3, cake flavour): one pol add
   against the matching channel row; directions flip on the negative
   branch; `strengthen_nonzero` lifts a useless non-positive magnitude
@@ -113,10 +113,10 @@ propagation to exactly the cited lines, so a hint set must cover the
 breaks, and `RUPProofRule{}` with an engaged-but-empty vector renders
 `: ;` ("restrict to nothing"), which always fails.
 
-- Reason-carried operand bounds cite the bound atom's defining row
-  directly (`derive_operand_bound`), falling back to RUP for constants,
-  XLiteral domain boundaries and empty reasons; assumed bounds keep a
-  single-antecedent `ia` restatement (see the justification layer).
+- Operand bounds are single-antecedent `ia` steps citing the bound
+  atom's defining row (`derive_operand_bound`), falling back to RUP for
+  constants, XLiteral domain boundaries and empty reasons; the
+  restatement is load-bearing (see the justification layer).
 - Multiply's result-bound claims carry a kit
   (`signed_multiply.cc: result_claim_hints`): channel rows, sign
   clauses, grid `[r]` halves, and the ge0/ge1/eq0 atom-definition
@@ -187,6 +187,12 @@ matters, since divide's final claims are hint-free:
   with: `perf` on veripb plus prefix-truncation timing (cut at
   `% backtracking` markers, append `conclusion NONE`) separates
   per-step cost from accumulating live-database cost in minutes.
+- Syntactic `ia` implication checks are coefficient-exact, and search
+  order varies with memory layout, so a proof-shape change in their
+  antecedents can pass every local run and still fail on other CI
+  lanes. Local batteries validate hint *completeness* (propagation
+  either reaches the conflict or it does not); they do not validate
+  removing a restatement that an `ia` implication depends on.
 - Bounds used by a justification must be axioms (initial-domain rows,
   atom definitions) or carried by the reason; a case's liveness test must
   only consult values the proof can see the same way.
