@@ -332,12 +332,15 @@ auto gcs::innards::product_justify::channel_grid_bound_to_result(ProofLogger & l
     if (! hints.empty()) {
         hints.emplace_back(combined);
         // the bridges from the negated claim's units to the bit level: the
-        // claimed bound's own atom definitions, the definitions of every
-        // reason and case literal (a reason unit only reaches the channel
-        // and grid rows through its atom's defining rows), and the ladder
-        // clauses linking each such atom to the sign-clause thresholds
-        auto lit = coeff == 1_i ? v3 >= grid_bound.rhs : v3 < -grid_bound.rhs + 1_i;
-        add_condition_def_hints(logger, lit, hints);
+        // definitions of every reason and case literal (a reason unit only
+        // reaches the channel and grid rows through its atom's defining
+        // rows), and the ladder clauses linking each such atom to the
+        // sign-clause thresholds. The claimed bound itself needs no atom
+        // definitions: the claim is stated over the result's bits, so no
+        // atom of it appears anywhere the checker propagates -- and minting
+        // one would add permanent defining rows for a fresh raw grid value
+        // at every inference, growing the live database and turning every
+        // later hint-free RUP step quadratic over a search tree.
         for (const auto & cl : grid_bound.cases)
             if (const auto * pl = std::get_if<ProofLiteral>(&cl))
                 if (const auto * l = std::get_if<Literal>(pl))
