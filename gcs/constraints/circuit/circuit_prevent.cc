@@ -39,9 +39,13 @@ namespace
     // (succ[end] != start), force the full chain to close (succ[end] == start), and
     // contradict if a sub-cycle has actually closed. Each edge is processed once, in
     // O(1); the outer loop re-runs only because forcing an edge fixes a new one.
+    // Returns whether any successor became single-valued along the way -- the one
+    // event whose alldifferent consequences this pass does not handle itself, so the
+    // caller knows whether another alldifferent pass is needed.
     auto prevent_small_cycles_incrementally(const vector<IntegerVariableID> & succ, const ConstraintID & owner, const PosVarDataMap & pos_var_data,
-        const ConstraintStateHandle & chain_handle, const State & state, auto & inference, ProofLogger * const logger) -> void
+        const ConstraintStateHandle & chain_handle, const State & state, auto & inference, ProofLogger * const logger) -> bool
     {
+        bool fixed_a_successor = false;
         auto & chain = any_cast<PreventChainData &>(state.get_constraint_state(chain_handle));
         auto n = static_cast<long>(succ.size());
 
@@ -87,14 +91,19 @@ namespace
                         };
                         inference.infer(
                             logger, succ[d] != Integer{o}, JustifyExplicitly{justf, ThenRUP::Yes, hints::Circuit{owner}}, generic_reason(succ));
+                        if (state.optional_single_value(succ[d]))
+                            fixed_a_successor = true;
                     }
                     else {
                         // The chain spans every node; it must close to complete the tour.
                         inference.infer(logger, succ[d] == Integer{o}, JustifyUsingRUP{hints::Circuit{owner}}, generic_reason(succ));
+                        fixed_a_successor = true;
                     }
                 }
             }
         }
+
+        return fixed_a_successor;
     }
 
 }
@@ -103,9 +112,21 @@ auto gcs::innards::circuit::propagate_circuit_using_prevent(const std::vector<In
     const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const ConstraintStateHandle & chain_handle,
     const State & state, auto & inference, ProofLogger * const logger) -> void
 {
-    if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
-        return; // contradiction: the cycle checks below would read junk state; the loop sees contradicted()
-    prevent_small_cycles_incrementally(succ, owner, pos_var_data, chain_handle, state, inference, logger);
+    // Each phase runs its own internal cascade to quiescence, but they feed
+    // each other: a small-cycle prevention (succ[end] != start) or a forced
+    // closing (succ[end] == start) can fix a successor, whose alldifferent
+    // consequences -- and any chain work those fixings cascade into -- used
+    // to be caught only by the self-requeue. Alternate the phases until the
+    // prevention pass stops fixing successors (mere removals need no
+    // alldifferent attention, so the common run still makes exactly one pass
+    // of each), so a single call reaches this propagator's own fixpoint and
+    // the caller can claim idempotence.
+    while (true) {
+        if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
+            return; // contradiction: the cycle checks below would read junk state; the loop sees contradicted()
+        if (! prevent_small_cycles_incrementally(succ, owner, pos_var_data, chain_handle, state, inference, logger))
+            return;
+    }
 }
 
 template auto gcs::innards::circuit::propagate_circuit_using_prevent(const std::vector<IntegerVariableID> & succ, const ConstraintID & owner,
@@ -148,7 +169,17 @@ auto gcs::innards::circuit::install_circuit_prevent(Propagators & propagators, S
         [succ, owner, pvd = std::move(pos_var_data), unassigned_handle = unassigned_handle, chain_handle = chain_handle](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             propagate_circuit_using_prevent(succ, owner, pvd, unassigned_handle, chain_handle, state, inference, logger);
-            return PropagatorState::Enable;
+            // Idempotent: propagate_circuit_using_prevent alternates its
+            // alldifferent and small-cycle passes until the latter stops
+            // inferring, so at return no unassigned successor is
+            // single-valued and every fixed edge is folded into its chain
+            // with the closing inference made -- a re-run finds nothing.
+            // (This was the propagator whose skipped self-requeue made the
+            // global-skip prototype unsound on tsp; the alternation is what
+            // makes the claim honest.) Triggers are 1:1 with the scope, so
+            // view aliasing is caught by the install-time downgrade, and the
+            // Circuit constructor rejects repeated variable handles outright.
+            return PropagatorState::EnableButIdempotent;
         },
         triggers);
 }
