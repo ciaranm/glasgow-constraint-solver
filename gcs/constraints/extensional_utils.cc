@@ -117,7 +117,18 @@ auto gcs::innards::propagate_extensional(
         },
         table.tuples);
 
-    return PropagatorState::Enable;
+    // Idempotent when the vars are distinct: this call prunes to the closure.
+    // A value survives the support pass only if some still-selectable tuple
+    // matches it, and a selectable tuple's own entries are therefore all still
+    // in domain (wildcards match everything), so a re-run finds every
+    // selectable tuple still feasible and every remaining value still
+    // supported. A repeated variable breaks exactly this self-witnessing (a
+    // tuple can be feasible per-position yet killed by a removal at the other
+    // occurrence, noticed only on the next run) -- that is the motivating case
+    // for the install-time downgrade, which every caller's 1:1 triggers make
+    // detectable. The claim rides the shared helper because, unlike the
+    // non-GAC alldifferent helper, every caller's run is exactly this call.
+    return PropagatorState::EnableButIdempotent;
 }
 
 // One instantiation per (inference tracker, hint) pair actually used: NoHint for
