@@ -113,7 +113,16 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
                     constraint_id = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     propagate_gac_all_different(
                         constraint_id, vars, vals, vector<Integer>{}, *value_am1_constraint_numbers.get(), state, inference, logger);
-                    return PropagatorState::Enable;
+                    // Idempotent: one call prunes to the GAC closure. The
+                    // matching and SCCs are built from an entry snapshot, and
+                    // what survives is exactly the union of maximum matchings,
+                    // so a re-run deletes nothing (every remaining edge is in
+                    // some maximum matching) and a matching still exists (no
+                    // contradiction). Duplicate scope variables never reach here
+                    // (prepare rejects them), and triggers are 1:1 with the
+                    // scope, so view aliasing is caught by the install-time
+                    // downgrade.
+                    return PropagatorState::EnableButIdempotent;
                 },
                 triggers);
         },
