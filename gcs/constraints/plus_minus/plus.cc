@@ -56,10 +56,6 @@ namespace
     auto propagate_plus(IntegerVariableID a, IntegerVariableID b, IntegerVariableID result, const State & state, auto & inference,
         ProofLogger * const logger, const pair<optional<ProofLine>, optional<ProofLine>> & sum_line, const ConstraintID & owner) -> PropagatorState
     {
-        auto a_vals = state.bounds(a);
-        auto b_vals = state.bounds(b);
-        auto result_vals = state.bounds(result);
-
         enum class Conclude
         {
             GE,
@@ -71,31 +67,52 @@ namespace
             return JustifyExplicitly{hints::Plus{owner, sum_line_value}, ThenRUP::Yes};
         };
 
-        // min(result) = min(a) + min(b);
-        inference.infer(logger, result >= a_vals.first + b_vals.first, justify(Conclude::LE),
-            ExplicitReason{ReasonLiterals{a >= a_vals.first, b >= b_vals.first}});
+        // result = a + b is a unit-coefficient linear equality, so a single snapshot
+        // pass of the six bound inferences is already the bounds fixpoint -- unless a
+        // written bound snaps across a hole in its own domain, which is the only way
+        // the reads-of-a-just-written-bound below fail to cancel (see propagate_linear
+        // for the same argument). A snap is picked up only by the other two variables,
+        // and only on a fresh snapshot, so alternate the pass until nothing fires:
+        // that reaches this propagator's own fixpoint in one call, so it can claim
+        // idempotence. The common (no-snap) case is one pass plus a cheap no-op check.
+        // Change is detected with the non-destructive inference count; a contradicting
+        // infer throws, unwinding straight out of the loop.
+        while (true) {
+            auto before = inference.count_inferences();
 
-        // max(result) = max(a) + max(b);
-        inference.infer(logger, result <= a_vals.second + b_vals.second, justify(Conclude::GE),
-            ExplicitReason{ReasonLiterals{a <= a_vals.second, b <= b_vals.second}});
+            auto a_vals = state.bounds(a);
+            auto b_vals = state.bounds(b);
+            auto result_vals = state.bounds(result);
 
-        // min(a) = min(result) - max(b);
-        inference.infer(logger, a >= result_vals.first - b_vals.second, justify(Conclude::GE),
-            ExplicitReason{ReasonLiterals{result >= result_vals.first, b <= b_vals.second}});
+            // min(result) = min(a) + min(b);
+            inference.infer(logger, result >= a_vals.first + b_vals.first, justify(Conclude::LE),
+                ExplicitReason{ReasonLiterals{a >= a_vals.first, b >= b_vals.first}});
 
-        // max(a) = max(result) - min(b);
-        inference.infer(logger, a <= result_vals.second - b_vals.first, justify(Conclude::LE),
-            ExplicitReason{ReasonLiterals{result <= result_vals.second, b >= b_vals.first}});
+            // max(result) = max(a) + max(b);
+            inference.infer(logger, result <= a_vals.second + b_vals.second, justify(Conclude::GE),
+                ExplicitReason{ReasonLiterals{a <= a_vals.second, b <= b_vals.second}});
 
-        // min(b) = min(result) - max(a);
-        inference.infer(logger, b >= result_vals.first - a_vals.second, justify(Conclude::GE),
-            ExplicitReason{ReasonLiterals{result >= result_vals.first, a <= a_vals.second}});
+            // min(a) = min(result) - max(b);
+            inference.infer(logger, a >= result_vals.first - b_vals.second, justify(Conclude::GE),
+                ExplicitReason{ReasonLiterals{result >= result_vals.first, b <= b_vals.second}});
 
-        // max(b) = max(result) - min(a);
-        inference.infer(logger, b <= result_vals.second - a_vals.first, justify(Conclude::LE),
-            ExplicitReason{ReasonLiterals{result <= result_vals.second, a >= a_vals.first}});
+            // max(a) = max(result) - min(b);
+            inference.infer(logger, a <= result_vals.second - b_vals.first, justify(Conclude::LE),
+                ExplicitReason{ReasonLiterals{result <= result_vals.second, b >= b_vals.first}});
 
-        return PropagatorState::Enable;
+            // min(b) = min(result) - max(a);
+            inference.infer(logger, b >= result_vals.first - a_vals.second, justify(Conclude::GE),
+                ExplicitReason{ReasonLiterals{result >= result_vals.first, a <= a_vals.second}});
+
+            // max(b) = max(result) - min(a);
+            inference.infer(logger, b <= result_vals.second - a_vals.first, justify(Conclude::LE),
+                ExplicitReason{ReasonLiterals{result <= result_vals.second, a >= a_vals.first}});
+
+            if (inference.count_inferences() == before)
+                break;
+        }
+
+        return PropagatorState::EnableButIdempotent;
     }
 }
 

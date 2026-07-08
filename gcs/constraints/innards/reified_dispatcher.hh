@@ -162,10 +162,21 @@ namespace gcs::innards
                 enforce_constraint_must_not_hold = std::move(enforce_constraint_must_not_hold),
                 infer_cond_when_undecided = std::move(infer_cond_when_undecided)](
                 const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                // An enforce pass may claim idempotence (EnableButIdempotent),
+                // but this runtime dispatch does not forward the claim: a
+                // re-run of the dispatcher also re-tests the reification
+                // condition, and nobody has audited that interplay yet. The
+                // install-time decided paths above forward claims unchanged,
+                // since there the run is exactly the enforce call.
+                auto without_any_idempotency_claim = [](PropagatorState s) {
+                    return s == PropagatorState::EnableButIdempotent ? PropagatorState::Enable : s;
+                };
                 return overloaded{
-                    [&](const evaluated_reif::MustHold & reif) { return enforce_constraint_must_hold(state, inference, logger, reif.cond); }, //
+                    [&](const evaluated_reif::MustHold & reif) {
+                        return without_any_idempotency_claim(enforce_constraint_must_hold(state, inference, logger, reif.cond));
+                    }, //
                     [&](const evaluated_reif::MustNotHold & reif) {
-                        return enforce_constraint_must_not_hold(state, inference, logger, reif.cond);
+                        return without_any_idempotency_claim(enforce_constraint_must_not_hold(state, inference, logger, reif.cond));
                     }, //
                     [&](const evaluated_reif::Undecided & reif) {
                         // The verdict's justification type varies per constraint

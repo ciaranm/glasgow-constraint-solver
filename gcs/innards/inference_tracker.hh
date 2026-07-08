@@ -552,6 +552,16 @@ namespace gcs::innards
             }(_inferences);
         }
 
+        // How many firing inferences have been recorded since the last reset().
+        // Unlike the did_anything_since_last_call_* flags, this is a
+        // non-destructive read: the propagation queue brackets each propagator
+        // run with it to attribute the run's (contiguous) inference range back
+        // to that propagator.
+        [[nodiscard]] auto count_inferences() const -> std::size_t
+        {
+            return _inferences.size();
+        }
+
         auto reset() -> void
         {
             _inferences.clear();

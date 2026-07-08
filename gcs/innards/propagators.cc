@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <unordered_map>
@@ -30,6 +31,8 @@ using std::swap;
 using std::to_underlying;
 using std::vector;
 using std::visit;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 
 namespace
 {
@@ -49,6 +52,28 @@ namespace
             return std::hash<std::string>{}(as_string(id));
         }
     };
+
+    // The GCS_CHECK_IDEMPOTENT_CLAIMS re-run: the claim says an immediate
+    // re-run, against the domains exactly as the claiming run left them,
+    // infers nothing and does not contradict. Check exactly that; a passing
+    // re-run emits nothing, so proofs are unaffected. The re-run's own
+    // PropagatorState is meaningless (the claim covered the first run) and is
+    // discarded. Out of line and noinline so its exception-handling region
+    // stays out of the propagation loop, whose per-run cost is measurable in
+    // whole-program benchmarks.
+    template <typename Tracker_>
+    [[gnu::noinline]] auto recheck_idempotence_claim_or_throw(
+        PropagationFunction & f, const State & state, Tracker_ & tracker, ProofLogger * const logger, const ConstraintID & id) -> void
+    {
+        const auto inferences_before_recheck = tracker.count_inferences();
+        try {
+            (void)f(state, tracker, logger);
+        }
+        catch (const TrackedPropagationFailed &) {
+        }
+        if (tracker.contradicted() || tracker.count_inferences() != inferences_before_recheck)
+            throw UnexpectedException{"propagator for constraint " + as_string(id) + " claimed idempotence, but re-running it did more"};
+    }
 }
 
 struct Propagators::Imp
@@ -68,6 +93,33 @@ struct Propagators::Imp
     // Reused scratch for the disable-until-backtrack propagators of the current round
     // (see the run loop); a member so it isn't reallocated on every propagate() call.
     vector<int> to_disable;
+
+    // One entry per run this round that returned EnableButIdempotent (and whose
+    // claim is not ignored): runs are serial and the store applies inferences
+    // immediately, so a run whose end left the tracker holding
+    // end_inference_index inferences had seen every one of them -- its own
+    // included -- and the round-boundary replay uses these to skip re-waking a
+    // claiming propagator from any inference it had already seen. Ordered by
+    // end_inference_index (non-decreasing) by construction. Cleared at every
+    // round boundary (and at propagate() entry, since a contradiction or abort
+    // ends a round without replaying it).
+    struct IdempotentRunClaim
+    {
+        std::size_t end_inference_index;
+        int propagator_id;
+    };
+    vector<IdempotentRunClaim> idempotent_run_claims;
+
+    // Indexed by propagator id: 1 if install() found two trigger positions
+    // aliasing the same underlying variable, in which case any
+    // EnableButIdempotent this propagator returns is treated as Enable.
+    vector<uint8_t> idempotence_claims_ignored;
+
+    // Scratch, indexed by propagator id: set transiently during the boundary
+    // replay for claimants that must not be woken by the inference currently
+    // being replayed (it predates their run's end). All zeroes outside that
+    // block.
+    vector<uint8_t> claim_protected;
 
     unsigned long long total_propagations = 0, effectful_propagations = 0, contradicting_propagations = 0;
     vector<TriggerIDs> iv_triggers;
@@ -128,20 +180,46 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         _imp->constraint_ids.push_back(constraint_id);
     _imp->propagator_constraint_index.push_back(it->second);
 
+    // Most propagation algorithms are only idempotent when no two scope
+    // positions alias the same underlying variable, and only the posted scope
+    // (visible here, as the triggers) tells us whether they do: views hide
+    // repeats from the author (x and -x + 3 alias), though a single +-x + c
+    // view on its own is harmless, being a bijection on Z. (If a view kind
+    // that is not a bijection is ever added -- a multiplier, say -- any
+    // occurrence of it must flag the scope as risky, not just a repeat.) So
+    // canonicalise every trigger variable and, on a repeat, ignore any
+    // EnableButIdempotent claims this propagator makes: a false positive
+    // merely restores the always-requeue behaviour.
+    vector<unsigned long long> underlying_trigger_vars;
+    auto add_underlying = [&](const IntegerVariableID & v) {
+        overloaded{
+            [&](const SimpleIntegerVariableID & sv) { underlying_trigger_vars.push_back(sv.index); },                 //
+            [&](const ViewOfIntegerVariableID & vv) { underlying_trigger_vars.push_back(vv.actual_variable.index); }, //
+            [&](const ConstantIntegerVariableID &) {}                                                                 //
+        }
+            .visit(v);
+    };
+
     for (const auto & v : triggers.on_change) {
         trigger_on_change(v, id);
         increase_degree(v);
+        add_underlying(v);
     }
 
     for (const auto & v : triggers.on_bounds) {
         trigger_on_bounds(v, id);
         increase_degree(v);
+        add_underlying(v);
     }
 
     for (const auto & v : triggers.on_instantiated) {
         trigger_on_instantiated(v, id);
         increase_degree(v);
+        add_underlying(v);
     }
+
+    sort(underlying_trigger_vars);
+    _imp->idempotence_claims_ignored.push_back(adjacent_find(underlying_trigger_vars) != underlying_trigger_vars.end() ? 1 : 0);
 }
 
 auto Propagators::install_initialiser(InitialisationFunction && f, InitialiserPriority priority) -> void
@@ -175,21 +253,50 @@ auto Propagators::initialise(State & state, ProofLogger * const logger) const ->
 
 auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger * const logger, atomic<bool> * optional_abort_flag) const -> bool
 {
-    auto requeue = [&](const SimpleIntegerVariableID & v, const Inference inf) {
-        if (v.index < _imp->iv_triggers.size()) {
-            auto & triggers = _imp->iv_triggers[v.index];
+    // Test-mode net for EnableButIdempotent (see propagators-fwd.hh): re-run
+    // every honoured claim immediately and abort if it infers anything or
+    // contradicts. Read once: the constraint test harness sets this before the
+    // first solve in the process.
+    static const bool check_idempotent_claims = nullptr != std::getenv("GCS_CHECK_IDEMPOTENT_CLAIMS");
 
-            for (auto & [p, mask] : triggers.ids_and_masks)
-                if (mask & (1 << to_underlying(inf))) {
-                    if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
-                        auto being_swapped_item = _imp->queue[_imp->enqueued_end];
-                        swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
-                        swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
-                        ++_imp->enqueued_end;
-                    }
-                }
+    auto enqueue_if_idle = [&](const int p) {
+        if (_imp->lookup[p] >= _imp->enqueued_end && _imp->lookup[p] < _imp->idle_end) {
+            auto being_swapped_item = _imp->queue[_imp->enqueued_end];
+            swap(_imp->queue[_imp->lookup[p]], _imp->queue[_imp->enqueued_end]);
+            swap(_imp->lookup[p], _imp->lookup[being_swapped_item]);
+            ++_imp->enqueued_end;
         }
     };
+
+    auto requeue = [&](const SimpleIntegerVariableID & v, const Inference inf) {
+        if (v.index < _imp->iv_triggers.size())
+            for (auto & [p, mask] : _imp->iv_triggers[v.index].ids_and_masks)
+                if (mask & (1 << to_underlying(inf)))
+                    enqueue_if_idle(p);
+    };
+
+    // A run that claimed idempotence must not be re-woken by any inference it
+    // had already seen (everything recorded up to its run's end, its own
+    // inferences included): the round-boundary replay uses this variant, with
+    // claim_protected flagging the claimants whose runs ended after the
+    // inference being replayed, when (and only when) the round produced
+    // claims -- the plain requeue above keeps the claim-free hot path free of
+    // the extra load.
+    auto requeue_unless_already_seen = [&](const SimpleIntegerVariableID & v, const Inference inf) {
+        if (v.index < _imp->iv_triggers.size())
+            for (auto & [p, mask] : _imp->iv_triggers[v.index].ids_and_masks)
+                if ((mask & (1 << to_underlying(inf))) && ! _imp->claim_protected[p])
+                    enqueue_if_idle(p);
+    };
+
+    // A contradiction or an abort ends a round without replaying it, so a
+    // previous propagate() call may have left stale claims behind. The
+    // claim_protected flags need no such clearing: they are nonzero only
+    // within the boundary-replay block itself, which always clears them
+    // before running anything. Just make sure the scratch is big enough.
+    _imp->idempotent_run_claims.clear();
+    if (_imp->claim_protected.size() < _imp->propagation_functions.size())
+        _imp->claim_protected.resize(_imp->propagation_functions.size(), 0);
 
     if (guesses.empty()) {
         // On the first pass, walk propagators in registration order. The queue runs
@@ -262,10 +369,43 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                 // propagators triggered by this round's inferences. each_inference() yields
                 // oldest-first, so propagators are requeued in the order their triggers
                 // occurred -- keeping the queue properly FIFO (the drain is already FIFO).
+                // An inference must not re-wake a claiming propagator whose run ended
+                // after it was recorded: that propagator had already seen it (the store
+                // applies inferences immediately, and its claim says re-running against
+                // what it saw infers nothing). Runs are serial, so the claims are
+                // ordered by end index, and a single cursor un-protects each claimant
+                // as the replay passes its run's end. (This can delay work by a round
+                // relative to the unclaimed engine: a re-woken run there sees, for
+                // free, changes made after the wake it was requeued by, where the
+                // claiming engine waits for those changes to wake it at the next
+                // boundary. Both reach the same per-node fixpoint -- propagators are
+                // monotone, so the fixpoint is unique and the search tree identical --
+                // but inference attribution, and hence proof lines, the total and
+                // effectful propagation counts, can differ in either direction.)
                 _imp->enqueued_begin = 0;
                 _imp->enqueued_end = 0;
-                for (const auto & [v, inf] : tracker.each_inference())
-                    requeue(v, inf);
+                if (_imp->idempotent_run_claims.empty()) {
+                    for (const auto & [v, inf] : tracker.each_inference())
+                        requeue(v, inf);
+                }
+                else {
+                    for (const auto & c : _imp->idempotent_run_claims)
+                        _imp->claim_protected[c.propagator_id] = 1;
+                    auto claim = _imp->idempotent_run_claims.begin();
+                    const auto claims_end = _imp->idempotent_run_claims.end();
+                    std::size_t inference_index = 0;
+                    for (const auto & [v, inf] : tracker.each_inference()) {
+                        while (claim != claims_end && claim->end_inference_index <= inference_index) {
+                            _imp->claim_protected[claim->propagator_id] = 0;
+                            ++claim;
+                        }
+                        requeue_unless_already_seen(v, inf);
+                        ++inference_index;
+                    }
+                    for (; claim != claims_end; ++claim)
+                        _imp->claim_protected[claim->propagator_id] = 0;
+                    _imp->idempotent_run_claims.clear();
+                }
                 tracker.reset();
             }
 
@@ -288,6 +428,25 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                         ++_imp->effectful_propagations;
                     switch (propagator_state) {
                     case PropagatorState::Enable: break;
+                    case PropagatorState::EnableButIdempotent:
+                        // An ignored claim (aliased trigger scope, see install)
+                        // just behaves like Enable. Every other claiming run is
+                        // recorded, even one that inferred nothing: the record
+                        // protects the claimant from being re-woken by anything
+                        // it had already seen, and a no-op run saw everything
+                        // recorded so far just the same. A run that ended before
+                        // the round's first inference has nothing to be
+                        // protected from, though, and leaving it out keeps the
+                        // boundary replay on its claim-free fast path in rounds
+                        // where the claimants all came up empty early.
+                        if (! _imp->idempotence_claims_ignored[propagator_id]) {
+                            if (check_idempotent_claims) [[unlikely]]
+                                recheck_idempotence_claim_or_throw(_imp->propagation_functions[propagator_id], state, tracker, logger,
+                                    _imp->constraint_ids[_imp->propagator_constraint_index[propagator_id]]);
+                            if (const auto seen = tracker.count_inferences(); 0 != seen)
+                                _imp->idempotent_run_claims.emplace_back(seen, propagator_id);
+                        }
+                        break;
                     case PropagatorState::DisableUntilBacktrack: _imp->to_disable.push_back(propagator_id); break;
                     }
                 }
@@ -320,6 +479,8 @@ auto Propagators::fill_in_constraint_stats(Stats & stats) const -> void
     stats.propagations += _imp->total_propagations;
     stats.effectful_propagations += _imp->effectful_propagations;
     stats.contradicting_propagations += _imp->contradicting_propagations;
+    for (const auto & ignored : _imp->idempotence_claims_ignored)
+        stats.idempotence_downgrades += ignored;
 }
 
 auto Propagators::trigger_on_change(IntegerVariableID var, int t) -> void

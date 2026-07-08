@@ -33,6 +33,13 @@ namespace gcs
 
         unsigned long long n_propagators = 0;
 
+        /// How many propagators had their EnableButIdempotent claims ignored
+        /// because their trigger scope aliases a variable (directly or
+        /// through a view). A downgraded propagator just keeps today's
+        /// always-requeue behaviour; this counter makes the downgrade
+        /// observable.
+        unsigned long long idempotence_downgrades = 0;
+
         std::chrono::microseconds solve_time;
     };
 

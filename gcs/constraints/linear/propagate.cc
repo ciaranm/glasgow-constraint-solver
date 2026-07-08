@@ -187,47 +187,85 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
         return PropagatorState::DisableUntilBacktrack;
     }
 
-    Integer lower_sum{0};
-    for (const auto & cv : coeff_vars.terms) {
-        const auto & var = get_var(cv);
-        bounds.push_back(state.bounds(var));
-        if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
-            lower_sum += bounds.back().first;
-        else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
-            lower_sum += (cv.first ? bounds.back().first : -bounds.back().second);
-        else {
-            auto coeff = get_coeff(cv);
-            lower_sum += (coeff >= 0_i) ? (coeff * bounds.back().first) : (coeff * bounds.back().second);
+    for (const auto & cv : coeff_vars.terms)
+        bounds.push_back(state.bounds(get_var(cv)));
+
+    // lower_sum, the least value the (forward) sum can take, from each term's
+    // min contribution. It is invariant within a forward sweep -- the sweep
+    // writes only upper bounds of positive-coefficient terms and lower bounds
+    // of negative ones, neither of which feeds lower_sum -- so one recompute at
+    // the top of each sweep from the current bounds is exact, and picks up any
+    // tightening a previous inverse sweep made.
+    auto compute_lower_sum = [&]() -> Integer {
+        Integer s{0};
+        for (unsigned i = 0, e = coeff_vars.terms.size(); i != e; ++i) {
+            const auto & cv = coeff_vars.terms[i];
+            if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
+                s += bounds[i].first;
+            else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
+                s += (cv.first ? bounds[i].first : -bounds[i].second);
+            else {
+                auto coeff = get_coeff(cv);
+                s += (coeff >= 0_i) ? (coeff * bounds[i].first) : (coeff * bounds[i].second);
+            }
         }
-    }
+        return s;
+    };
 
-    for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
-        const auto & cv = coeff_vars.terms[p];
+    // The forward (sum <= value) sweep reaches the <= fixpoint in one pass and is
+    // idempotent on its own: a positive-coefficient term is only ever written on
+    // its upper bound and only ever read (via lower_sum) on its lower, and vice
+    // versa for negative coefficients, so reads and writes are disjoint per
+    // variable and no write -- not even one that snaps past a hole, since removing
+    // values above a bound cannot raise a minimum -- can re-enable a guard.
+    //
+    // An equality additionally runs the inverse (sum >= value) sweep, which reads
+    // exactly the upper bounds the forward sweep wrote and writes the lower bounds
+    // it read: a closed loop, so the inverse can tighten a bound that lets the
+    // forward tighten further. We therefore alternate the two sweeps until neither
+    // infers anything, reaching the propagator's own fixpoint in a single call, so
+    // it can claim idempotence. Previously the equality left that alternation to
+    // the propagation queue's self-requeue (a full re-dispatch, re-reading every
+    // bound, per fwd<->inv exchange); the internal loop keeps the bounds snapshot
+    // warm and reaches the identical fixpoint (propagators are monotone).
+    // Per-sweep change detection lets the loop stop the moment a sweep is clean,
+    // rather than always paying one confirming double-sweep: after a clean
+    // forward the inverse's inputs (the forward's upper bounds) are unchanged
+    // from last time, and after a clean inverse the forward's inputs (the
+    // inverse's lower bounds) are, so either clean sweep proves the fixpoint. We
+    // detect change with the tracker's non-destructive inference count rather
+    // than did_anything_since_last_call_inside_propagator(), because that flag
+    // is shared with the propagate_stages callers (multiply/divide/power run
+    // their own do-while on it across all stages), so clearing it here would
+    // corrupt their loop.
+    for (bool first = true;; first = false) {
+        auto inferences_before_forward = inference.count_inferences();
 
-        Integer lower_without_me{0_i};
-        if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
-            lower_without_me = lower_sum - bounds[p].first;
-        else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
-            lower_without_me = lower_sum - (cv.first ? bounds[p].first : -bounds[p].second);
-        else
-            lower_without_me = lower_sum - ((get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
-        Integer remainder = value - lower_without_me;
+        Integer lower_sum = compute_lower_sum();
+        for (unsigned p = 0, p_end = coeff_vars.terms.size(); p != p_end; ++p) {
+            const auto & cv = coeff_vars.terms[p];
 
-        if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason, hint))
-            return PropagatorState::Enable;    // contradiction: stop before reading the (now junk) state
-        bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
+            Integer lower_without_me{0_i};
+            if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
+                lower_without_me = lower_sum - bounds[p].first;
+            else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>)
+                lower_without_me = lower_sum - (cv.first ? bounds[p].first : -bounds[p].second);
+            else
+                lower_without_me = lower_sum - ((get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
+            Integer remainder = value - lower_without_me;
 
-        if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
-            lower_sum = lower_without_me + bounds[p].first;
-        else if constexpr (is_same_v<decltype(cv), const pair<bool, SimpleIntegerVariableID> &>) {
-            lower_sum = lower_without_me + (cv.first ? bounds[p].first : -bounds[p].second);
+            if (! infer(
+                    inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason, hint))
+                return PropagatorState::Enable;    // contradiction: stop before reading the (now junk) state
+            bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
         }
-        else {
-            lower_sum = lower_without_me + ((get_coeff(cv) >= 0_i) ? (get_coeff(cv) * bounds[p].first) : (get_coeff(cv) * bounds[p].second));
-        }
-    }
 
-    if (equality) {
+        // A clean forward sweep after the first iteration means the inverse's
+        // last output fed the forward nothing new; the fixpoint is reached.
+        if (! equality || (! first && inference.count_inferences() == inferences_before_forward))
+            break;
+
+        auto inferences_before_inverse = inference.count_inferences();
         Integer inv_lower_sum{0};
         for (const auto & [idx, cv] : enumerate(coeff_vars.terms)) {
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
@@ -264,9 +302,14 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
                 inv_lower_sum =
                     inv_lower_without_me + ((-get_coeff(cv) >= 0_i) ? (-get_coeff(cv) * bounds[p].first) : (-get_coeff(cv) * bounds[p].second));
         }
+
+        // A clean inverse sweep means the forward's last output fed the inverse
+        // nothing new; the fixpoint is reached.
+        if (inference.count_inferences() == inferences_before_inverse)
+            break;
     }
 
-    return PropagatorState::Enable;
+    return PropagatorState::EnableButIdempotent;
 }
 
 // Two hint instantiations per (coeff-vector type, tracker): hints::LinearEquality
@@ -355,23 +398,40 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
         for (std::size_t k = st.n_active; k != n; ++k)
             bounds[active[k]] = state.bounds(get_var(coeff_vars.terms[active[k]]));
 
-    // Forward (<=): coeff_p * x_p <= value - (lower_sum - contrib_p).
-    Integer lower_sum = st.fixed_lower;
-    for (std::size_t k = 0; k != st.n_active; ++k)
-        lower_sum += min_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
+    // Alternate the forward (<=) and inverse (>=) sweeps over the active terms
+    // to the equality's own fixpoint in a single call, so it can claim
+    // idempotence -- see propagate_linear for the read/write reasoning (the
+    // inverse writes the lower bounds the forward reads, so it can feed a
+    // further forward tightening) and the same non-destructive change detection
+    // (the shared did_anything flag belongs to the propagate_stages callers).
+    // lower_sum / inv_lower_sum are invariant within a sweep, so each is
+    // recomputed at the sweep top from the current active-term bounds plus the
+    // folded fixed_lower. An inequality does a single forward sweep, as before.
+    for (bool first = true;; first = false) {
+        auto inferences_before_forward = inference.count_inferences();
 
-    for (std::size_t k = 0; k != st.n_active; ++k) {
-        auto p = active[k];
-        const auto & cv = coeff_vars.terms[p];
-        Integer lower_without_me = lower_sum - min_contrib(cv, bounds[p]);
-        Integer remainder = value - lower_without_me;
-        if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason, hint))
-            return PropagatorState::Enable;
-        bounds[p] = state.bounds(get_var(cv));
-        lower_sum = lower_without_me + min_contrib(cv, bounds[p]);
-    }
+        // Forward (<=): coeff_p * x_p <= value - (lower_sum - contrib_p).
+        Integer lower_sum = st.fixed_lower;
+        for (std::size_t k = 0; k != st.n_active; ++k)
+            lower_sum += min_contrib(coeff_vars.terms[active[k]], bounds[active[k]]);
 
-    if (equality) {
+        for (std::size_t k = 0; k != st.n_active; ++k) {
+            auto p = active[k];
+            const auto & cv = coeff_vars.terms[p];
+            Integer lower_without_me = lower_sum - min_contrib(cv, bounds[p]);
+            Integer remainder = value - lower_without_me;
+            if (! infer(
+                    inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason, hint))
+                return PropagatorState::Enable;
+            bounds[p] = state.bounds(get_var(cv));
+            lower_sum = lower_without_me + min_contrib(cv, bounds[p]);
+        }
+
+        if (! equality || (! first && inference.count_inferences() == inferences_before_forward))
+            break;
+
+        auto inferences_before_inverse = inference.count_inferences();
+
         // Backward (>=): mirror of the forward pass on the inverse sum.
         Integer inv_lower_sum = -st.fixed_lower;
         for (std::size_t k = 0; k != st.n_active; ++k)
@@ -388,6 +448,9 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
             bounds[p] = state.bounds(get_var(cv));
             inv_lower_sum = inv_lower_without_me + inv_contrib(cv, bounds[p]);
         }
+
+        if (inference.count_inferences() == inferences_before_inverse)
+            break;
     }
 
     // Fold any newly-instantiated active terms out of the active set, but ALWAYS keep at
@@ -408,7 +471,13 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
             ++k;
     }
 
-    return PropagatorState::Enable;
+    // Idempotent for both equality and inequality: the sweeps above ran to the
+    // fixpoint, and the fold is internal bookkeeping, not inference -- it moves a
+    // fixed term's contribution from the active sum into fixed_lower without
+    // changing the total, so an immediate re-run computes the same remainders
+    // (over the smaller active set plus the larger fixed_lower) and every guard
+    // stays false.
+    return PropagatorState::EnableButIdempotent;
 }
 
 // One instantiation per (coeff vector, tracker, hint): hints::LinearEquality for the
