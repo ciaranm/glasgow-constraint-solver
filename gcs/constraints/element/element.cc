@@ -16,6 +16,7 @@
 #include <gch/small_vector.hpp>
 
 #include <util/enumerate.hh>
+#include <util/overloaded.hh>
 
 #include <version>
 
@@ -47,6 +48,8 @@ using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::adjacent_find;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -284,8 +287,40 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 elem.pop_back();
             }
         };
-        if (array_has_nonconstants)
+        // A variable-entried array's variables are needed for the aliasing
+        // check below even when they are all root-fixed; the trigger sets
+        // still guard on array_has_nonconstants.
+        if constexpr (std::is_same_v<EntryType_, IntegerVariableID>)
             collect_array_variables(0);
+    }
+
+    // The idempotence claims below must de-alias their own scope: the index
+    // propagators deliberately do not watch the variable they write (before
+    // claims existed, a self-wake was pure waste), so Propagators::install's
+    // trigger-scope downgrade cannot see aliasing that involves the written
+    // variable. If any two scope positions share an underlying variable --
+    // result also an index (the *_dup_xx tests), an index repeated, result or
+    // an index inside the array -- a claiming propagator's snapshot of its
+    // read side can be invalidated by its own writes, so no propagator of
+    // this constraint claims.
+    bool scope_has_aliasing = false;
+    {
+        vector<unsigned long long> underlying;
+        auto add_underlying = [&](const IntegerVariableID & v) {
+            overloaded{
+                [&](const SimpleIntegerVariableID & sv) { underlying.push_back(sv.index); },                 //
+                [&](const ViewOfIntegerVariableID & vv) { underlying.push_back(vv.actual_variable.index); }, //
+                [&](const ConstantIntegerVariableID &) {}                                                    //
+            }
+                .visit(v);
+        };
+        add_underlying(_result_var);
+        for (const auto & v : index_vars)
+            add_underlying(v);
+        for (const auto & v : all_array_vars)
+            add_underlying(v);
+        sort(underlying);
+        scope_has_aliasing = adjacent_find(underlying) != underlying.end();
     }
 
     for (unsigned fixed_dim = 0; fixed_dim != index_vars.size(); ++fixed_dim) {
@@ -306,7 +341,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
         propagators.install(
             constraint_id(),
             [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var, fixed_dim = fixed_dim,
-                array_has_nonconstants = array_has_nonconstants,
+                array_has_nonconstants = array_has_nonconstants, scope_has_aliasing = scope_has_aliasing,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // for each index variable, update it to only contain values where
                 // there's at least one supporting option. result_var's domain is
@@ -419,7 +454,15 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                     }
                 });
 
-                return PropagatorState::Enable;
+                // Idempotent when the scope has no aliasing: this run writes
+                // only index_vars[fixed_dim], and no support test reads it (a
+                // value's support depends on result, the other index
+                // variables, and the array only), so at return every
+                // remaining value's support is intact and a re-run removes
+                // nothing. The engine's trigger downgrade cannot stand in for
+                // the scope_has_aliasing guard here, because the written
+                // variable is deliberately absent from the triggers.
+                return scope_has_aliasing ? PropagatorState::Enable : PropagatorState::EnableButIdempotent;
             },
             index_triggers);
     }
@@ -525,6 +568,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 if (highest_found && *highest_found < current_bounds.second)
                     infer_bound(*highest_found, false);
 
+                // Deliberately not EnableButIdempotent: this propagator reads
+                // and writes result's bounds, and a bound write that snaps
+                // past a hole tightens the range the next run filters array
+                // entries against, which can exclude the entries that
+                // supported the old bounds and so licence a strictly tighter
+                // inference on an immediate re-run (result {0,3,6,10} against
+                // entries {2,5,9} first infers [2,9], snapping to [3,6], and
+                // only a re-run gets >= 5 from the sole surviving entry).
                 return PropagatorState::Enable;
             },
             result_triggers);
@@ -538,7 +589,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
         propagators.install(
             constraint_id(),
             [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var,
-                array_has_nonconstants = array_has_nonconstants,
+                array_has_nonconstants = array_has_nonconstants, scope_has_aliasing = scope_has_aliasing,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // the result variable has to be in the union of possible values
                 gch::small_vector<size_t, dimensions_> elem;
@@ -610,7 +661,14 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                         reason);
                 }
 
-                return PropagatorState::Enable;
+                // Idempotent when the scope has no aliasing: this run writes
+                // only result, whose values play no part in the supported-set
+                // computation (that reads the index variables and the array
+                // only), so the values that survive are exactly the supported
+                // ones and a re-run removes nothing. Value removals are
+                // exact, so there is no snapping hazard, unlike the bounds
+                // variant above.
+                return scope_has_aliasing ? PropagatorState::Enable : PropagatorState::EnableButIdempotent;
             },
             result_triggers);
     }
@@ -621,8 +679,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
         equality_triggers.on_change.emplace_back(_result_var);
         propagators.install(
             constraint_id(),
-            [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var, owner = constraint_id()](
-                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            [array = _array, index_vars = index_vars, index_starts = _index_starts, result_var = _result_var, scope_has_aliasing = scope_has_aliasing,
+                owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // if there's only a single possible array variable left, it can only take values
                 // that are present in the result variable
                 bool index_is_fully_defined = true;
@@ -643,7 +701,16 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                     enforce_equality(logger, result_var, array_var, state, inference, index_reason, owner);
                 }
 
-                return PropagatorState::Enable;
+                // Idempotent when the scope has no aliasing: a run that did
+                // nothing (index not fully defined) trivially so; otherwise
+                // the run writes only result and the selected array variable,
+                // which enforce_equality leaves with equal domains -- the
+                // holey path prunes both sides' symmetric difference from
+                // entry snapshots, the hole-free path intersects bounds
+                // exactly (no snapping without holes) -- so a re-run finds
+                // nothing left to remove, and its single-value shortcut can
+                // only re-infer an equality that already holds (NoChange).
+                return scope_has_aliasing ? PropagatorState::Enable : PropagatorState::EnableButIdempotent;
             },
             equality_triggers);
     }
