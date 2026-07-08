@@ -86,8 +86,13 @@ namespace
 
     // Returns false if the inference contradicted: the caller must stop immediately
     // (it may not read state again until backtrack). Uses the non-throwing
-    // infer_*_or_stop path so a failure does not unwind via an exception.
-    [[nodiscard]] auto infer(auto & inference, ProofLogger * const logger, const LinearBounds & bounds, const auto & coeff_vars, int p,
+    // infer_*_or_stop path so a failure does not unwind via an exception. When an
+    // inference fires, the tightened side of bounds[p] is updated in place from the
+    // value the operation landed on (upper for a positive coefficient, lower for a
+    // negative one) -- the bound can be tighter than requested when it snaps across
+    // a hole, and the other side is untouched, so this is exactly the state.bounds()
+    // re-read the caller used to do, without the round trip.
+    [[nodiscard]] auto infer(auto & inference, ProofLogger * const logger, LinearBounds & bounds, const auto & coeff_vars, int p,
         const SimpleIntegerVariableID & var, Integer remainder, const bool coeff, bool second_constraint_for_equality,
         const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason, const auto & hint)
         -> bool
@@ -97,9 +102,12 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.infer_less_than_or_stop(logger, var, 1_i + remainder, JustifyExplicitly{justf, ThenRUP::Yes, hint},
-                        linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
+                auto landed =
+                    inference.infer_less_than_or_stop_with_updated_bound(logger, var, 1_i + remainder, JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                        linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                if (! landed)
                     return false;
+                bounds[p].second = *landed;
             }
         }
         else {
@@ -107,28 +115,37 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.infer_greater_than_or_equal_or_stop(logger, var, -remainder, JustifyExplicitly{justf, ThenRUP::Yes, hint},
-                        linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
+                auto landed = inference.infer_greater_than_or_equal_or_stop_with_updated_bound(logger, var, -remainder,
+                    JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                    linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                if (! landed)
                     return false;
+                bounds[p].first = *landed;
             }
         }
         return true;
     }
 
-    [[nodiscard]] auto infer(auto & inference, ProofLogger * const logger, const LinearBounds & bounds, const auto & coeff_vars, int p,
+    [[nodiscard]] auto infer(auto & inference, ProofLogger * const logger, LinearBounds & bounds, const auto & coeff_vars, int p,
         const SimpleIntegerVariableID & var, Integer remainder, const Integer coeff, bool second_constraint_for_equality,
         const optional<pair<optional<ProofLine>, optional<ProofLine>>> & proof_line, const optional<Literal> & add_to_reason, const auto & hint)
         -> bool
     {
-        // lots of conditionals to get the rounding right...
+        // lots of conditionals to get the rounding right... a positive coefficient
+        // tightens the upper bound, a negative one the lower; either way bounds[p]'s
+        // tightened side is refreshed in place from where the inference landed (see
+        // the bool-coefficient overload above).
         if (coeff > 0_i && remainder >= 0_i) {
             if (bounds[p].second >= (1_i + remainder / coeff)) {
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.infer_less_than_or_stop(logger, var, 1_i + remainder / coeff, JustifyExplicitly{justf, ThenRUP::Yes, hint},
-                        linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
+                auto landed = inference.infer_less_than_or_stop_with_updated_bound(logger, var, 1_i + remainder / coeff,
+                    JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                    linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                if (! landed)
                     return false;
+                bounds[p].second = *landed;
             }
         }
         else if (coeff > 0_i && remainder < 0_i) {
@@ -137,9 +154,12 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.infer_less_than_or_stop(logger, var, 1_i + div_with_rounding, JustifyExplicitly{justf, ThenRUP::Yes, hint},
-                        linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
+                auto landed = inference.infer_less_than_or_stop_with_updated_bound(logger, var, 1_i + div_with_rounding,
+                    JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                    linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                if (! landed)
                     return false;
+                bounds[p].second = *landed;
             }
         }
         else if (coeff < 0_i && remainder >= 0_i) {
@@ -147,9 +167,12 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.infer_greater_than_or_equal_or_stop(logger, var, remainder / coeff, JustifyExplicitly{justf, ThenRUP::Yes, hint},
-                        linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
+                auto landed = inference.infer_greater_than_or_equal_or_stop_with_updated_bound(logger, var, remainder / coeff,
+                    JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                    linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                if (! landed)
                     return false;
+                bounds[p].first = *landed;
             }
         }
         else if (coeff < 0_i && remainder < 0_i) {
@@ -158,9 +181,12 @@ namespace
                 auto justf = [&](const ReasonLiterals &) {
                     justify_linear_bounds(*logger, coeff_vars, bounds, var, second_constraint_for_equality, proof_line.value());
                 };
-                if (! inference.infer_greater_than_or_equal_or_stop(logger, var, div_with_rounding, JustifyExplicitly{justf, ThenRUP::Yes, hint},
-                        linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason)))
+                auto landed = inference.infer_greater_than_or_equal_or_stop_with_updated_bound(logger, var, div_with_rounding,
+                    JustifyExplicitly{justf, ThenRUP::Yes, hint},
+                    linear_bounds_reason(inference.want_reasons(), coeff_vars, bounds, var, second_constraint_for_equality, add_to_reason));
+                if (! landed)
                     return false;
+                bounds[p].first = *landed;
             }
         }
         else
@@ -256,8 +282,8 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
 
             if (! infer(
                     inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason, hint))
-                return PropagatorState::Enable;    // contradiction: stop before reading the (now junk) state
-            bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
+                return PropagatorState::Enable; // contradiction: stop before reading the (now junk) state
+            // infer() has refreshed bounds[p]'s tightened side in place.
         }
 
         // A clean forward sweep after the first iteration means the inverse's
@@ -291,8 +317,8 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
 
             if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)), true, proof_line,
                     add_to_reason, hint))
-                return PropagatorState::Enable;    // contradiction: stop before reading the (now junk) state
-            bounds[p] = state.bounds(get_var(cv)); // might be tighter than expected if we had holes
+                return PropagatorState::Enable; // contradiction: stop before reading the (now junk) state
+            // infer() has refreshed bounds[p]'s tightened side in place.
 
             if constexpr (is_same_v<decltype(cv), const SimpleIntegerVariableID &>)
                 inv_lower_sum = inv_lower_without_me - bounds[p].second;
@@ -423,7 +449,7 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
             if (! infer(
                     inference, logger, bounds, coeff_vars, p, get_var(cv), remainder, get_coeff_or_bool(cv), false, proof_line, add_to_reason, hint))
                 return PropagatorState::Enable;
-            bounds[p] = state.bounds(get_var(cv));
+            // infer() has refreshed bounds[p]'s tightened side in place.
             lower_sum = lower_without_me + min_contrib(cv, bounds[p]);
         }
 
@@ -445,7 +471,7 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
             if (! infer(inference, logger, bounds, coeff_vars, p, get_var(cv), inv_remainder, negate(get_coeff_or_bool(cv)), true, proof_line,
                     add_to_reason, hint))
                 return PropagatorState::Enable;
-            bounds[p] = state.bounds(get_var(cv));
+            // infer() has refreshed bounds[p]'s tightened side in place.
             inv_lower_sum = inv_lower_without_me + inv_contrib(cv, bounds[p]);
         }
 
