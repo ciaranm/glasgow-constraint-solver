@@ -117,6 +117,104 @@ TEST_CASE("A claimant's inference wakes a sharing propagator, whose inference re
     CHECK(follower_runs == 3);
 }
 
+TEST_CASE("A claimant is not re-woken by a foreign inference it had already seen")
+{
+    State state;
+    Propagators propagators;
+    auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
+    auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
+
+    // The setter runs first (registration order) and caps y at 7.
+    int setter_runs = 0;
+    Triggers setter_triggers;
+    setter_triggers.on_change = {y};
+    propagators.install(
+        ConstraintID{NumberedConstraint{1}},
+        [&setter_runs, y](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            ++setter_runs;
+            if (state.upper_bound(y) > 7_i)
+                inference.infer(logger, y < 8_i, NoJustificationNeeded{}, NoReason{});
+            return PropagatorState::Enable;
+        },
+        setter_triggers);
+
+    // The claimant runs after the setter in the same round, so it has already
+    // seen y's change when it acts on it; that change must not re-wake it.
+    // Element-style, it does not watch the variable it writes.
+    int claimant_runs = 0;
+    Triggers claimant_triggers;
+    claimant_triggers.on_change = {y};
+    propagators.install(
+        ConstraintID{NumberedConstraint{2}},
+        [&claimant_runs, x, y](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            ++claimant_runs;
+            if (state.upper_bound(y) <= 7_i && state.upper_bound(x) > 2_i)
+                inference.infer(logger, x < 3_i, NoJustificationNeeded{}, NoReason{});
+            return PropagatorState::EnableButIdempotent;
+        },
+        claimant_triggers);
+
+    REQUIRE(propagators.propagate(Literals{}, state, nullptr));
+    CHECK(state.upper_bound(x) == 2_i);
+    CHECK(state.upper_bound(y) == 7_i);
+
+    // Round 1: the setter caps y, then the claimant (which saw that) caps x.
+    // The y-inference predates the claimant's run's end, so only the setter is
+    // re-woken (by its own inference); round 2 finds nothing. Without the
+    // already-seen rule the claimant would run a wasted second time.
+    CHECK(setter_runs == 2);
+    CHECK(claimant_runs == 1);
+}
+
+TEST_CASE("A claimant is re-woken by a foreign inference recorded after its run ended")
+{
+    State state;
+    Propagators propagators;
+    auto x = state.allocate_integer_variable_with_state(0_i, 10_i);
+    auto y = state.allocate_integer_variable_with_state(0_i, 10_i);
+
+    // Same two propagators, but with the claimant registered first: in round
+    // one it runs before the setter, finds nothing to do (y is still wide),
+    // and claims; the setter's y-inference lands after the claimant's run
+    // ended, so it must wake the claimant for round two.
+    int claimant_runs = 0;
+    Triggers claimant_triggers;
+    claimant_triggers.on_change = {y};
+    propagators.install(
+        ConstraintID{NumberedConstraint{1}},
+        [&claimant_runs, x, y](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            ++claimant_runs;
+            if (state.upper_bound(y) <= 7_i && state.upper_bound(x) > 2_i)
+                inference.infer(logger, x < 3_i, NoJustificationNeeded{}, NoReason{});
+            return PropagatorState::EnableButIdempotent;
+        },
+        claimant_triggers);
+
+    int setter_runs = 0;
+    Triggers setter_triggers;
+    setter_triggers.on_change = {y};
+    propagators.install(
+        ConstraintID{NumberedConstraint{2}},
+        [&setter_runs, y](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            ++setter_runs;
+            if (state.upper_bound(y) > 7_i)
+                inference.infer(logger, y < 8_i, NoJustificationNeeded{}, NoReason{});
+            return PropagatorState::Enable;
+        },
+        setter_triggers);
+
+    REQUIRE(propagators.propagate(Literals{}, state, nullptr));
+    CHECK(state.upper_bound(x) == 2_i);
+    CHECK(state.upper_bound(y) == 7_i);
+
+    // Round 1: claimant no-ops, setter caps y. Round 2: both re-run (the
+    // claimant because y changed after its run ended -- even a no-op run's
+    // claim only covers what it had seen), and the claimant caps x. Nobody
+    // watches x, so round 3 is empty.
+    CHECK(claimant_runs == 2);
+    CHECK(setter_runs == 2);
+}
+
 TEST_CASE("A repeated trigger variable downgrades the claim")
 {
     State state;

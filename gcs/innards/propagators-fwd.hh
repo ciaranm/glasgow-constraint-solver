@@ -26,12 +26,16 @@ namespace gcs::innards
          * fixpoint: re-running this propagator immediately, against the
          * domains exactly as this run left them, would infer nothing and not
          * contradict. The propagation queue uses this to skip re-waking the
-         * propagator from its own inferences; changes made by any other
-         * propagator wake it as usual. Because propagators are monotone the
+         * propagator from anything it had already seen when its run ended --
+         * its own inferences, and inferences made earlier in the same round
+         * (the store applies them immediately, so the run read them, and a
+         * change the propagator has already processed cannot licence more
+         * from a propagator at its own fixpoint). Changes recorded after the
+         * run ended wake it as usual. Because propagators are monotone the
          * per-node fixpoint (and so the search tree) is unchanged, though
          * work can shift by a round, so inference attribution -- and with it
-         * proof line order and the effectful-propagation split -- can differ
-         * from the never-claiming engine.
+         * proof line order and the total and effectful propagation counts --
+         * can differ from the never-claiming engine, in either direction.
          *
          * The claim is per-run: a propagator whose algorithm is only
          * sometimes idempotent claims only on the runs where it is true.
