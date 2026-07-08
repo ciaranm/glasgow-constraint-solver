@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -66,6 +67,29 @@ namespace gcs::test_innards
     [[nodiscard]] inline auto can_run_veripb() -> bool
     {
         return run_veripb("--help", ">/dev/null");
+    }
+
+    /**
+     * Verify a test's proof with VeriPB, then, on success, delete its .opb/.pbp
+     * files.
+     *
+     * Every proving test instance writes its proof into the working directory,
+     * and VeriPB .pbp files for enumeration tests routinely reach hundreds of
+     * megabytes. Left in place they accumulate over a run: a full parallel
+     * `ctest` otherwise holds gigabytes of proofs at once, which can exhaust the
+     * disk mid-run and make an *unrelated* lane's proof write fail (an uncaught
+     * std::ios_failure that terminates that test). Deleting each proof as soon as
+     * it verifies bounds the footprint to the lanes running concurrently.
+     *
+     * The files are kept when verification fails, so a failing proof is still on
+     * disk to inspect. std::remove of an already-absent file is a harmless no-op.
+     */
+    inline auto verify_proof_and_clean_up(const std::string & proof_name) -> void
+    {
+        if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
+            throw UnexpectedException{"veripb verification failed"};
+        std::remove((proof_name + ".opb").c_str());
+        std::remove((proof_name + ".pbp").c_str());
     }
 
     /**
@@ -280,8 +304,7 @@ namespace gcs::test_innards
                 }
             println(cerr, "[truncated run: {} of <= {} solutions checked sound]", actual.size(), expected.size());
             if (proof_name)
-                if (! run_veripb(*proof_name + ".opb", *proof_name + ".pbp"))
-                    throw UnexpectedException{"veripb verification failed"};
+                verify_proof_and_clean_up(*proof_name);
             return;
         }
 
@@ -300,8 +323,7 @@ namespace gcs::test_innards
         }
 
         if (proof_name)
-            if (! run_veripb(*proof_name + ".opb", *proof_name + ".pbp"))
-                throw UnexpectedException{"veripb verification failed"};
+            verify_proof_and_clean_up(*proof_name);
     }
 
     /**
@@ -415,8 +437,7 @@ namespace gcs::test_innards
         solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }, .branch = random_branch_with_optional_seed(p)},
             std::make_optional<ProofOptions>(ProofFileNames{proof_name}));
 
-        if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
-            throw UnexpectedException{"veripb verification failed"};
+        verify_proof_and_clean_up(proof_name);
     }
 
     auto extract_from_state(const CurrentState & s, IntegerVariableID v) -> int
