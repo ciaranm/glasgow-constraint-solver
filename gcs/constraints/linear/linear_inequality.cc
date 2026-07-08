@@ -166,8 +166,13 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
         },
         sanitised_cv);
 
+    // Trigger on the sanitised terms, not the user's: tidy_up_linear coalesces
+    // repeats and resolves views (2a + 3a -> 5a), and these deduplicated
+    // underlying variables are the propagator's actual read/write scope. The
+    // user's raw terms would register a repeated variable twice and spuriously
+    // trip the idempotence-claim downgrade.
     Triggers triggers;
-    for (auto & [_, v] : _coeff_vars.terms)
+    for (const auto & v : vars)
         triggers.on_bounds.push_back(v);
 
     visit(

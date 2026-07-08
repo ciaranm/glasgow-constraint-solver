@@ -266,7 +266,17 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
         }
     }
 
-    return PropagatorState::Enable;
+    // The pure inequality pass is idempotent: a positive-coefficient term is
+    // only ever written on its upper bound and only ever read (via lower_sum)
+    // on its lower, and vice versa for negative coefficients, so reads and
+    // writes are disjoint per variable and no write -- not even one that
+    // snaps past a hole, since removing values above a bound cannot raise a
+    // minimum -- can re-enable an inference guard. The equality's inverted
+    // second pass reads exactly the bounds the first pass wrote (a closed
+    // read/write loop), so a re-run there can infer more and it must not
+    // claim. Callers whose runs do more than this one call (the runtime
+    // reified dispatch, propagate_stages) do not forward the claim.
+    return equality ? PropagatorState::Enable : PropagatorState::EnableButIdempotent;
 }
 
 // Two hint instantiations per (coeff-vector type, tracker): hints::LinearEquality
@@ -408,7 +418,12 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
             ++k;
     }
 
-    return PropagatorState::Enable;
+    // The inequality claim carries over from propagate_linear: the read/write
+    // analysis there is per-tier-of-term, and the fold above is internal
+    // bookkeeping, not inference -- it moves a fixed term's contribution from
+    // the active sum into fixed_lower without changing the total, so a re-run
+    // computes the same remainders and every guard stays false.
+    return equality ? PropagatorState::Enable : PropagatorState::EnableButIdempotent;
 }
 
 // One instantiation per (coeff vector, tracker, hint): hints::LinearEquality for the
