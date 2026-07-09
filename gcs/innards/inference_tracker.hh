@@ -372,6 +372,43 @@ namespace gcs::innards
             return ! _contradicted;
         }
 
+        // Bound-returning counterparts of the two _or_stop methods above: identical
+        // except that, having narrowed the bound, they return where it landed rather
+        // than a bool, saving the caller a State::bounds() re-read to observe a snap.
+        // nullopt == contradicted (the caller must stop), exactly as a false bool did.
+        // The resulting bound is read back through State::upper_bound / lower_bound, so
+        // it is the updated bound of the side just tightened (upper for less_than,
+        // lower for greater_than_or_equal), in var's own frame even when var is a view
+        // -- those accessors already map a negating view back, swapping which
+        // underlying bound is read, so a view stays invisible to the caller.
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        [[nodiscard]] auto infer_less_than_or_stop_with_updated_bound(ProofLogger * const logger, const VarType_ & var, Integer value,
+            const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt)
+            -> std::optional<Integer>
+        {
+            if (_contradicted) [[unlikely]]
+                return std::nullopt;
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_explicit(logger, _state.infer_less_than(var, value), var < value, why, snapshotted, fallback, false);
+            if (_contradicted) [[unlikely]]
+                return std::nullopt;
+            return _state.upper_bound(var);
+        }
+
+        template <IntegerVariableIDLike VarType_, typename Emit_, typename Hint_>
+        [[nodiscard]] auto infer_greater_than_or_equal_or_stop_with_updated_bound(ProofLogger * const logger, const VarType_ & var, Integer value,
+            const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt)
+            -> std::optional<Integer>
+        {
+            if (_contradicted) [[unlikely]]
+                return std::nullopt;
+            auto snapshotted = snapshot_reason(logger, reason, _state);
+            track_explicit(logger, _state.infer_greater_than_or_equal(var, value), var >= value, why, snapshotted, fallback, false);
+            if (_contradicted) [[unlikely]]
+                return std::nullopt;
+            return _state.lower_bound(var);
+        }
+
         // Non-throwing counterparts on the JustifyUsingRUP path (used by the
         // reified-equals and comparison enforce passes). On contradiction they set
         // _contradicted and return false instead of throwing; [[nodiscard]] forces
