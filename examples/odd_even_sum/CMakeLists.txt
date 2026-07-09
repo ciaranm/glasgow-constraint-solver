@@ -4,4 +4,4 @@ target_link_libraries(odd_even_sum PRIVATE glasgow_constraint_solver)
 
 target_link_libraries(odd_even_sum PRIVATE cxxopts)
 
-add_test(NAME odd_even_sum COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:odd_even_sum>)
+add_test(NAME odd_even_sum COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:odd_even_sum>)

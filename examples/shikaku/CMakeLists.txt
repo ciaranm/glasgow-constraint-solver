@@ -4,4 +4,4 @@ target_link_libraries(shikaku PRIVATE glasgow_constraint_solver)
 
 target_link_libraries(shikaku PRIVATE cxxopts)
 
-add_test(NAME shikaku COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:shikaku>)
+add_test(NAME shikaku COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:shikaku>)

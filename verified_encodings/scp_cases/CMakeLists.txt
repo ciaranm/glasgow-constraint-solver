@@ -12,7 +12,7 @@ set(_scp_chain_runner ${CMAKE_CURRENT_SOURCE_DIR}/../run_scp_chain.bash)
 # add_scp_chain_test(<case> <opbdiff-mode>)  -- mode: strict | aux | none
 function(add_scp_chain_test case mode)
     add_test(NAME scp_chain_${case}
-        COMMAND ${_scp_chain_runner} $<TARGET_FILE:glasgow_scp_solver>
+        COMMAND ${GCS_BASH} ${_scp_chain_runner} $<TARGET_FILE:glasgow_scp_solver>
             ${CMAKE_CURRENT_SOURCE_DIR}/${case}.scp ${mode})
     set_tests_properties(scp_chain_${case} PROPERTIES SKIP_RETURN_CODE 77)
 endfunction()

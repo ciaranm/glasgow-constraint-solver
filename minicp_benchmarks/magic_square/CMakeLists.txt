@@ -3,4 +3,4 @@ target_link_libraries(magic_square PRIVATE glasgow_constraint_solver)
 
 target_link_libraries(magic_square PRIVATE cxxopts)
 
-add_test(NAME magic_square-3 COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:magic_square> 3)
+add_test(NAME magic_square-3 COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:magic_square> 3)

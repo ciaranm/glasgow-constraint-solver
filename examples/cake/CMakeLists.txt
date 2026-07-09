@@ -5,4 +5,4 @@ target_link_libraries(cake PRIVATE glasgow_constraint_solver)
 target_link_libraries(cake PRIVATE cxxopts)
 target_link_libraries(cake PRIVATE gcs_fmt)
 
-add_test(NAME cake COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:cake>)
+add_test(NAME cake COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:cake>)

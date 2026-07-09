@@ -4,4 +4,4 @@ target_link_libraries(money PRIVATE glasgow_constraint_solver)
 
 target_link_libraries(money PRIVATE cxxopts)
 
-add_test(NAME money COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:money>)
+add_test(NAME money COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:money>)

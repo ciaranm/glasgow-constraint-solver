@@ -3,4 +3,4 @@ target_link_libraries(smart_table_random PRIVATE glasgow_constraint_solver)
 
 target_link_libraries(smart_table_random PRIVATE cxxopts)
 
-add_test(NAME smart_table_random COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:smart_table_random>)
+add_test(NAME smart_table_random COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:smart_table_random>)

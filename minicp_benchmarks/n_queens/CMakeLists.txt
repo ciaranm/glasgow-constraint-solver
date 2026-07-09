@@ -3,4 +3,4 @@ target_link_libraries(n_queens PRIVATE glasgow_constraint_solver)
 
 target_link_libraries(n_queens PRIVATE cxxopts)
 
-add_test(NAME n_queens-all-10 COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:n_queens> --all 10)
+add_test(NAME n_queens-all-10 COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:n_queens> --all 10)
