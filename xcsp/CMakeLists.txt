@@ -21,7 +21,7 @@ target_link_libraries(xcsp_glasgow_constraint_solver PRIVATE
 # missing, the test skips (ctest exit code 66) rather than failing.
 function(add_xcsp_test name)
     add_test(NAME xcsp_${name}
-        COMMAND ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash
+        COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash
             $<TARGET_FILE:xcsp_glasgow_constraint_solver>
             ${CMAKE_SOURCE_DIR}/xcsp/tests/
             ${name})
