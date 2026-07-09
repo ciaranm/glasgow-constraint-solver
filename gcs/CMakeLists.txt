@@ -111,8 +111,11 @@ target_include_directories(glasgow_constraint_solver PUBLIC
 # via FetchContent or find_package.
 add_library(GlasgowConstraintSolver::glasgow_constraint_solver ALIAS glasgow_constraint_solver)
 
-if(GCS_COMPILER_HAS_STACKTRACE)
+if(GCS_COMPILER_HAS_STACKTRACE AND NOT MSVC)
     # stacktrace is only used in .cc files, not public headers, so PRIVATE suffices.
+    # stdc++exp is the libstdc++ support library for <stacktrace>/<print>; it is
+    # GCC-specific. MSVC also provides <stacktrace> (so GCS_COMPILER_HAS_STACKTRACE
+    # is true there) but has no such library to link, hence the NOT MSVC guard.
     target_link_libraries(glasgow_constraint_solver PRIVATE stdc++exp)
 endif()
 
@@ -202,39 +205,39 @@ if(GCS_BUILD_TESTS)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
     endforeach()
 
-    add_test(NAME abs_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:abs_test>)
-    add_test(NAME all_different_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_different_test>)
-    add_test(NAME all_different_except_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_different_except_test>)
-    add_test(NAME all_equal_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_equal_test>)
-    add_test(NAME among_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:among_test>)
-    add_test(NAME at_most_one_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:at_most_one_test>)
+    add_test(NAME abs_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:abs_test>)
+    add_test(NAME all_different_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_different_test>)
+    add_test(NAME all_different_except_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_different_except_test>)
+    add_test(NAME all_equal_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:all_equal_test>)
+    add_test(NAME among_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:among_test>)
+    add_test(NAME at_most_one_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:at_most_one_test>)
     foreach(mode ge ge_if ge_iff gt gt_if gt_iff le le_if le_iff lt lt_if lt_iff)
         add_test(NAME comparison_constraint_${mode}
-            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:comparison_test> ${mode})
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:comparison_test> ${mode})
     endforeach()
-    add_test(NAME count_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:count_test>)
-    add_test(NAME bounds_global_cardinality_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:bounds_global_cardinality_test>)
-    add_test(NAME gac_global_cardinality_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:gac_global_cardinality_test>)
-    add_test(NAME cumulative_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
+    add_test(NAME count_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:count_test>)
+    add_test(NAME bounds_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:bounds_global_cardinality_test>)
+    add_test(NAME gac_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:gac_global_cardinality_test>)
+    add_test(NAME cumulative_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
     foreach(mode strict nonstrict)
         add_test(NAME disjunctive_constraint_${mode}
-            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_test> ${mode})
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_test> ${mode})
     endforeach()
     foreach(mode strict nonstrict)
         add_test(NAME disjunctive_2d_constraint_${mode}
-            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_test> ${mode})
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:disjunctive_2d_test> ${mode})
     endforeach()
     foreach(mode const const2d var var2d)
         add_test(NAME element_constraint_${mode}
-            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:element_test> ${mode})
     endforeach()
-    add_test(NAME equals_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
+    add_test(NAME equals_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:equals_test>)
     foreach(linmode incremental stateless)
         add_test(NAME linear_constant_constraint_${linmode}
-            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_constant_test>)
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_constant_test>)
     endforeach()
-    add_test(NAME sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:sort_test>)
-    add_test(NAME arg_sort_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:arg_sort_test>)
+    add_test(NAME sort_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:sort_test>)
+    add_test(NAME arg_sort_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:arg_sort_test>)
 
     # View-wrap sweep: feeds the constraint each variable as a ViewOfIntegerVariableID
     # (offset / negation / both) instead of a bare SimpleIntegerVariableID. The
@@ -261,17 +264,17 @@ if(GCS_BUILD_TESTS)
     function(add_view_tests test_name target n_positions)
         set(extra_args ${ARGN})
         add_test(NAME ${test_name}_view_mixed
-            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
             ${extra_args} --view-position=mixed)
         if(GCS_ENABLE_VIEW_WRAP_SWEEP)
             math(EXPR last_position "${n_positions} - 1")
             foreach(wrap RANGE 1 18)
                 add_test(NAME ${test_name}_view_w${wrap}_pall
-                    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
+                    COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
                     ${extra_args} --view-wrap=${wrap} --view-position=all)
                 foreach(pos RANGE 0 ${last_position})
                     add_test(NAME ${test_name}_view_w${wrap}_p${pos}
-                        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
+                        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:${target}>
                         ${extra_args} --view-wrap=${wrap} --view-position=${pos})
                 endforeach()
             endforeach()
@@ -319,11 +322,11 @@ if(GCS_BUILD_TESTS)
     endforeach()
     add_view_tests(cumulative_constraint cumulative_test 4)
     add_view_tests(regular_constraint regular_test 4)
-    add_test(NAME in_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
-    add_test(NAME increasing_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
-    add_test(NAME inverse_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
-    add_test(NAME knapsack_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:knapsack_test>)
-    add_test(NAME lex_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:lex_test>)
+    add_test(NAME in_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:in_test>)
+    add_test(NAME increasing_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:increasing_test>)
+    add_test(NAME inverse_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inverse_test>)
+    add_test(NAME knapsack_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:knapsack_test>)
+    add_test(NAME lex_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:lex_test>)
     # Run every linear test in both propagation modes: incremental (threshold 0) and
     # stateless (a huge threshold). The threshold env is appended below (after the cap
     # block, so it doesn't clobber it) and is folded into the proof file name by the
@@ -331,33 +334,33 @@ if(GCS_BUILD_TESTS)
     foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
         foreach(linmode incremental stateless)
             add_test(NAME linear_constraint_${mode}_${linmode}
-                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
+                COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
         endforeach()
     endforeach()
-    add_test(NAME logical_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:logical_test>)
-    add_test(NAME min_max_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:min_max_test>)
-    add_test(NAME divide_modulus_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:divide_modulus_test>)
-    add_test(NAME power_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:power_test>)
-    add_test(NAME multiply_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:multiply_test>)
-    add_test(NAME n_value_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:n_value_test>)
-    add_test(NAME parity_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
-    add_test(NAME plus_minus_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
-    add_test(NAME regular_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_test>)
-    add_test(NAME seq_precede_chain_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:seq_precede_chain_test>)
+    add_test(NAME logical_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:logical_test>)
+    add_test(NAME min_max_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:min_max_test>)
+    add_test(NAME divide_modulus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:divide_modulus_test>)
+    add_test(NAME power_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:power_test>)
+    add_test(NAME multiply_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:multiply_test>)
+    add_test(NAME n_value_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:n_value_test>)
+    add_test(NAME parity_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
+    add_test(NAME plus_minus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
+    add_test(NAME regular_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_test>)
+    add_test(NAME seq_precede_chain_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:seq_precede_chain_test>)
     foreach(mode lex_gt lex_ge lex_lt lex_le
                  lex_gt_fixed lex_ge_fixed lex_lt_fixed lex_le_fixed
                  am1_eq am1_in_set al1_eq al1_in_set
                  mixed_same_var stacked_unary wide_constants degenerate)
         add_test(NAME smart_table_constraint_${mode}
-            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:smart_table_test> ${mode})
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:smart_table_test> ${mode})
     endforeach()
-    add_test(NAME negative_table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:negative_table_test>)
-    add_test(NAME symmetric_all_different_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:symmetric_all_different_test>)
-    add_test(NAME table_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:table_test>)
+    add_test(NAME negative_table_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:negative_table_test>)
+    add_test(NAME symmetric_all_different_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:symmetric_all_different_test>)
+    add_test(NAME table_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:table_test>)
     add_test(NAME product_bounds COMMAND $<TARGET_FILE:product_bounds_test>)
-    add_test(NAME product_justify COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:product_justify_test>)
-    add_test(NAME tabulation_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tabulation_test>)
-    add_test(NAME value_precede_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:value_precede_test>)
+    add_test(NAME product_justify COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:product_justify_test>)
+    add_test(NAME tabulation_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:tabulation_test>)
+    add_test(NAME value_precede_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:value_precede_test>)
 
     # The circuit scenario tests self-verify (they call veripb internally on a
     # view-label-suffixed proof file), so they register with run_test_only.bash
@@ -365,34 +368,34 @@ if(GCS_BUILD_TESTS)
     # registration is the bare (no-view) config.
     add_executable(circuit_disconnected_test constraints/circuit/circuit_disconnected_test.cc)
     target_link_libraries(circuit_disconnected_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_disconnected COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_disconnected_test>)
+    add_test(NAME circuit_disconnected COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_disconnected_test>)
     add_view_tests(circuit_disconnected circuit_disconnected_test 8)
 
     add_executable(circuit_multiple_sccs_test constraints/circuit/circuit_multiple_sccs_test.cc)
     target_link_libraries(circuit_multiple_sccs_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_multiple_sccs COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_multiple_sccs_test>)
+    add_test(NAME circuit_multiple_sccs COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_multiple_sccs_test>)
     add_view_tests(circuit_multiple_sccs circuit_multiple_sccs_test 9)
 
     add_executable(circuit_no_backedges_test constraints/circuit/circuit_no_backedges_test.cc)
     target_link_libraries(circuit_no_backedges_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_no_backedges COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_no_backedges_test>)
+    add_test(NAME circuit_no_backedges COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_no_backedges_test>)
     add_view_tests(circuit_no_backedges circuit_no_backedges_test 8)
 
     add_executable(circuit_prune_root_test constraints/circuit/circuit_prune_root_test.cc)
     target_link_libraries(circuit_prune_root_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_prune_root COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_prune_root_test>)
+    add_test(NAME circuit_prune_root COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_prune_root_test>)
     add_view_tests(circuit_prune_root circuit_prune_root_test 6)
 
     add_executable(circuit_prune_skip_test constraints/circuit/circuit_prune_skip_test.cc)
     target_link_libraries(circuit_prune_skip_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_prune_skip COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_prune_skip_test>)
+    add_test(NAME circuit_prune_skip COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_prune_skip_test>)
     add_view_tests(circuit_prune_skip circuit_prune_skip_test 7)
 
     # Data-driven enumerating harness (small full-domain instances), matching
     # the shape of the other constraints' *_test.cc; self-verifies via veripb.
     add_executable(circuit_test constraints/circuit/circuit_test.cc)
     target_link_libraries(circuit_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME circuit_constraint COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_test>)
+    add_test(NAME circuit_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:circuit_test>)
     add_view_tests(circuit_constraint circuit_test 5)
 
     add_executable(circuit_dup_test constraints/circuit/circuit_dup_test.cc)
@@ -401,27 +404,27 @@ if(GCS_BUILD_TESTS)
 
     add_executable(reification_test innards/proofs/reification_test.cc)
     target_link_libraries(reification_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME reification_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:reification_test>)
+    add_test(NAME reification_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:reification_test>)
 
     add_executable(proof_model_tautology_test innards/proofs/proof_model_tautology_test.cc)
     target_link_libraries(proof_model_tautology_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME proof_model_tautology_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:proof_model_tautology_test>)
+    add_test(NAME proof_model_tautology_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:proof_model_tautology_test>)
 
     add_executable(introduce_bits_test innards/proofs/introduce_bits_test.cc)
     target_link_libraries(introduce_bits_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME introduce_bits_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:introduce_bits_test>)
+    add_test(NAME introduce_bits_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:introduce_bits_test>)
 
     add_executable(invar_test innards/proofs/invar_test.cc)
     target_link_libraries(invar_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME invar_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_test>)
+    add_test(NAME invar_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_test>)
 
     add_executable(range_branch_test innards/proofs/range_branch_test.cc)
     target_link_libraries(range_branch_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME range_branch_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_branch_test>)
+    add_test(NAME range_branch_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_branch_test>)
 
     add_executable(range_infer_test innards/proofs/range_infer_test.cc)
     target_link_libraries(range_infer_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME range_infer_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_infer_test>)
+    add_test(NAME range_infer_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_infer_test>)
 
     # The range-literal witness suite (dev_docs/range_literals_spec.md §8): each test
     # fails VeriPB within milliseconds if its clause family is removed or weakened.
@@ -429,7 +432,7 @@ if(GCS_BUILD_TESTS)
     foreach(witness w1 w2 w3 w5)
         add_executable(range_witness_${witness}_test innards/proofs/range_witness_${witness}_test.cc)
         target_link_libraries(range_witness_${witness}_test PRIVATE glasgow_constraint_solver)
-        add_test(NAME range_witness_${witness}_test COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_witness_${witness}_test>)
+        add_test(NAME range_witness_${witness}_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_witness_${witness}_test>)
     endforeach()
 
     add_executable(interval_set_test innards/interval_set_test.cc)

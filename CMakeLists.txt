@@ -19,32 +19,42 @@ include(GNUInstallDirs)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
-set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Release Debug Sanitize)
+# Multi-config generators (e.g. Visual Studio) leave CMAKE_BUILD_TYPE unset and
+# select the configuration at build time, so there is no cache entry to annotate.
+if(CMAKE_BUILD_TYPE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Release Debug Sanitize)
+endif()
 
 # Per-type flags.  These are applied automatically by CMake for the active build type,
-# on top of the always-on flags set below.
-#
-# Release: full optimisation, no sanitizers.  -march=native is added later after the
-#   compiler capability check.  We omit -DNDEBUG deliberately because the codebase does
-#   not use assert(), so it buys nothing while making behaviour harder to reason about.
-set(CMAKE_CXX_FLAGS_RELEASE         "-O3"
-    CACHE STRING "Flags for release builds")
-# Debug: disable optimisation so the debugger can follow every step.
-set(CMAKE_CXX_FLAGS_DEBUG           "-O0"
-    CACHE STRING "Flags for debug builds")
-# Sanitize: light optimisation keeps stack traces readable; -O0 is too slow and hides
-#   inlining bugs.  ASan + UBSan together catch memory errors and undefined behaviour.
-set(CMAKE_CXX_FLAGS_SANITIZE
-    "-O1 -fsanitize=address,undefined -fno-omit-frame-pointer"
-    CACHE STRING "Flags for sanitizer builds (ASan + UBSan)")
-set(CMAKE_EXE_LINKER_FLAGS_SANITIZE    "-fsanitize=address,undefined"
-    CACHE STRING "Linker flags for sanitizer builds")
-set(CMAKE_SHARED_LINKER_FLAGS_SANITIZE "-fsanitize=address,undefined"
-    CACHE STRING "Linker flags for sanitizer builds")
+# on top of the always-on flags set below.  They are GCC/Clang syntax, so on MSVC we
+# leave CMake's own sane per-config defaults (/O2 for Release, /Od /Zi for Debug) in
+# place instead.  The Sanitize configuration is GCC/Clang-only.
+if(NOT MSVC)
+    # Release: full optimisation, no sanitizers.  -march=native is added later after the
+    #   compiler capability check.  We omit -DNDEBUG deliberately because the codebase does
+    #   not use assert(), so it buys nothing while making behaviour harder to reason about.
+    set(CMAKE_CXX_FLAGS_RELEASE         "-O3"
+        CACHE STRING "Flags for release builds")
+    # Debug: disable optimisation so the debugger can follow every step.
+    set(CMAKE_CXX_FLAGS_DEBUG           "-O0"
+        CACHE STRING "Flags for debug builds")
+    # Sanitize: light optimisation keeps stack traces readable; -O0 is too slow and hides
+    #   inlining bugs.  ASan + UBSan together catch memory errors and undefined behaviour.
+    set(CMAKE_CXX_FLAGS_SANITIZE
+        "-O1 -fsanitize=address,undefined -fno-omit-frame-pointer"
+        CACHE STRING "Flags for sanitizer builds (ASan + UBSan)")
+    set(CMAKE_EXE_LINKER_FLAGS_SANITIZE    "-fsanitize=address,undefined"
+        CACHE STRING "Linker flags for sanitizer builds")
+    set(CMAKE_SHARED_LINKER_FLAGS_SANITIZE "-fsanitize=address,undefined"
+        CACHE STRING "Linker flags for sanitizer builds")
+endif()
 
 option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)
 option(GCS_ENABLE_XCSP "Support for the XCSP modelling language" ${PROJECT_IS_TOP_LEVEL})
 option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ${PROJECT_IS_TOP_LEVEL})
+# Off even at top level: unlike the other frontends it needs Python and pybind11.
+# scikit-build (python/pyproject.toml) turns it on explicitly.
+option(GCS_ENABLE_PYTHON "Build the Python bindings (requires Python and pybind11)" OFF)
 option(GCS_ENABLE_EXAMPLES "Build examples" ${PROJECT_IS_TOP_LEVEL})
 option(GCS_BUILD_TESTS "Build GCS tests" ${PROJECT_IS_TOP_LEVEL})
 option(GCS_ENABLE_VIEW_WRAP_SWEEP "Register the view-wrap proof-verification sweep (many tests, most failing today; opt in when working on view proof logging)" OFF)
@@ -80,29 +90,43 @@ CHECK_CXX_COMPILER_FLAG(-Wno-unqualified-std-cast-call COMPILER_SUPPORTS_NO_UNQU
 # Global compile/link options only apply when building as the top-level project.
 # When embedded as a subproject via FetchContent the parent controls these settings.
 if(PROJECT_IS_TOP_LEVEL)
-    add_compile_options(-W)
-    add_compile_options(-Wall)
+    if(MSVC)
+        # MSVC / Visual Studio equivalents of the GCC/Clang flags below. The
+        # -W/-Wall/-g/-pthread/-march flags are all GCC/Clang syntax that MSVC
+        # either rejects or ignores with a D9002 warning, so it needs its own set.
+        add_compile_options(/W3)               # baseline warnings (the GCC/Clang lane uses -Wall)
+        add_compile_options(/EHsc)             # standard C++ exception model
+        add_compile_options(/bigobj)           # heavily-templated TUs exceed the default section count
+        add_compile_options(/utf-8)            # treat sources (and narrow literals) as UTF-8
+        add_compile_options(/Zc:__cplusplus)   # report the real __cplusplus value, not 199711L
+        add_compile_options(/Zc:preprocessor)  # standards-conformant preprocessor
+        # We deliberately use getenv/std::system; silence the CRT "unsafe" deprecations.
+        add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    else()
+        add_compile_options(-W)
+        add_compile_options(-Wall)
 
-    if(COMPILER_SUPPORTS_NO_RESTRICT)
-        add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
-    endif()
-    if(COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
-        add_compile_options(-Wno-stringop-overread) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
-    endif()
-    if(COMPILER_SUPPORTS_NO_UNQUALIFIED_STD_CAST_CALL)
-        add_compile_options(-Wno-unqualified-std-cast-call)
-    endif()
+        if(COMPILER_SUPPORTS_NO_RESTRICT)
+            add_compile_options(-Wno-restrict) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
+        endif()
+        if(COMPILER_SUPPORTS_NO_STRINGOP_OVERREAD)
+            add_compile_options(-Wno-stringop-overread) # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104336
+        endif()
+        if(COMPILER_SUPPORTS_NO_UNQUALIFIED_STD_CAST_CALL)
+            add_compile_options(-Wno-unqualified-std-cast-call)
+        endif()
 
-    # Always include full debug info, even in release builds, so crash reports are useful.
-    add_compile_options(-g)
-    add_compile_options(-g3)
-    add_compile_options(-gdwarf-3)
-    add_compile_options(-pthread)
-    add_link_options(-pthread)
+        # Always include full debug info, even in release builds, so crash reports are useful.
+        add_compile_options(-g)
+        add_compile_options(-g3)
+        add_compile_options(-gdwarf-3)
+        add_compile_options(-pthread)
+        add_link_options(-pthread)
 
-    # Native CPU tuning is worthwhile for release performance but unhelpful for debugging.
-    if(COMPILER_SUPPORTS_MARCH_NATIVE)
-        add_compile_options($<$<CONFIG:Release>:-march=native>)
+        # Native CPU tuning is worthwhile for release performance but unhelpful for debugging.
+        if(COMPILER_SUPPORTS_MARCH_NATIVE)
+            add_compile_options($<$<CONFIG:Release>:-march=native>)
+        endif()
     endif()
 
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -110,6 +134,18 @@ endif()
 
 if(GCS_BUILD_TESTS)
     enable_testing()
+    # The test wrappers (run_test_only.bash / run_test_and_verify.bash) are bash
+    # scripts invoked via add_test. On Windows ctest cannot execute a .bash file
+    # through its shebang, so find bash (Git Bash on the GitHub runners) and
+    # invoke it explicitly. On other platforms the shebang works and GCS_BASH
+    # stays empty -- an empty leading COMMAND element expands to no argument, so
+    # those registrations are unchanged. Prepend ${GCS_BASH} to every bash-wrapped
+    # add_test COMMAND.
+    if(WIN32)
+        find_program(GCS_BASH bash REQUIRED)
+    else()
+        set(GCS_BASH "")
+    endif()
 endif()
 
 # FetchContent dependencies declared before the subdirectories that consume them.
