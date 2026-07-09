@@ -409,6 +409,14 @@ namespace gcs::innards
         auto track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer, Integer) -> void;
 
         /**
+         * The bounds recorded by track_bounds. For a model variable these are its
+         * initial-domain bounds, letting a constraint's s_expr recover
+         * domain-derived data (e.g. Regular's regex alphabet) at scp-writing
+         * time, when no State is in reach.
+         */
+        [[nodiscard]] auto tracked_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::pair<Integer, Integer>;
+
+        /**
          * Note that this variable's [lo, hi] bounds are not a trivial consequence of
          * the OPB (cake emits no bound line for it, and its bounds are only entailed
          * through conditional channels), so need_gevar must not pin its boundary order

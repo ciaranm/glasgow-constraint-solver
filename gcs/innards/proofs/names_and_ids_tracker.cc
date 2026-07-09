@@ -1391,6 +1391,11 @@ auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID &
     _imp->integer_variable_definition_bounds.emplace(id, pair{lower, upper});
 }
 
+auto NamesAndIDsTracker::tracked_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> pair<Integer, Integer>
+{
+    return _imp->integer_variable_definition_bounds.at(id);
+}
+
 auto NamesAndIDsTracker::note_bounds_not_trivially_derivable(const SimpleOrProofOnlyIntegerVariableID & id) -> void
 {
     _imp->bounds_not_trivially_derivable.insert(id);
