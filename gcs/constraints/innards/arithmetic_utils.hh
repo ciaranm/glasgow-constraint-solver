@@ -43,7 +43,7 @@ namespace gcs::innards
     [[nodiscard]] inline auto product_if_representable(Integer a, Integer b) -> std::optional<Integer>
     {
         long long result;
-        if (__builtin_mul_overflow(a.raw_value, b.raw_value, &result))
+        if (mul_overflows(a.raw_value, b.raw_value, &result))
             return std::nullopt;
         return Integer{result};
     }

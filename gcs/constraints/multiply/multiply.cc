@@ -109,7 +109,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
                                 skipped = true;
                                 continue;
                             }
-                            if (__builtin_mul_overflow(size, d.raw_value, &size))
+                            if (mul_overflows(size, d.raw_value, &size))
                                 return consistency::BC{};
                         }
                         if (size <= default_tabulation_threshold())

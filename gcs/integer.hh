@@ -121,14 +121,14 @@ namespace gcs
     [[nodiscard]] constexpr inline auto operator+(Integer a, Integer b) -> Integer
     {
         long long r;
-        if (__builtin_add_overflow(a.raw_value, b.raw_value, &r))
+        if (innards::add_overflows(a.raw_value, b.raw_value, &r))
             innards::throw_integer_overflow("+", a.raw_value, b.raw_value);
         return Integer{r};
     }
 
     constexpr inline auto operator+=(Integer & a, Integer b) -> Integer &
     {
-        if (__builtin_add_overflow(a.raw_value, b.raw_value, &a.raw_value))
+        if (innards::add_overflows(a.raw_value, b.raw_value, &a.raw_value))
             innards::throw_integer_overflow("+=", a.raw_value, b.raw_value);
         return a;
     }
@@ -136,14 +136,14 @@ namespace gcs
     [[nodiscard]] constexpr inline auto operator-(Integer a, Integer b) -> Integer
     {
         long long r;
-        if (__builtin_sub_overflow(a.raw_value, b.raw_value, &r))
+        if (innards::sub_overflows(a.raw_value, b.raw_value, &r))
             innards::throw_integer_overflow("-", a.raw_value, b.raw_value);
         return Integer{r};
     }
 
     constexpr inline auto operator-=(Integer & a, Integer b) -> Integer &
     {
-        if (__builtin_sub_overflow(a.raw_value, b.raw_value, &a.raw_value))
+        if (innards::sub_overflows(a.raw_value, b.raw_value, &a.raw_value))
             innards::throw_integer_overflow("-=", a.raw_value, b.raw_value);
         return a;
     }
@@ -151,7 +151,7 @@ namespace gcs
     [[nodiscard]] constexpr inline auto operator*(Integer a, Integer b) -> Integer
     {
         long long r;
-        if (__builtin_mul_overflow(a.raw_value, b.raw_value, &r))
+        if (innards::mul_overflows(a.raw_value, b.raw_value, &r))
             innards::throw_integer_overflow("*", a.raw_value, b.raw_value);
         return Integer{r};
     }

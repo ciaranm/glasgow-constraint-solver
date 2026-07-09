@@ -190,7 +190,7 @@ auto Minus::install(Propagators & propagators, State & initial_state, ProofModel
             auto bv = pb ? ab.coeff * vals[*pb] + ab.offset : ab.offset;
             auto cv = pc ? ac.coeff * vals[*pc] + ac.offset : ac.offset;
             long long sum;
-            if (__builtin_sub_overflow(av.raw_value, bv.raw_value, &sum))
+            if (sub_overflows(av.raw_value, bv.raw_value, &sum))
                 return false;
             return sum == cv.raw_value;
         };

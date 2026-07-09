@@ -42,11 +42,11 @@ auto gcs::innards::checked_integer_power(Integer base, Integer exp) -> optional<
     long long e = exp.raw_value;
     while (e > 0) {
         if (e & 1)
-            if (__builtin_mul_overflow(result, b, &result))
+            if (mul_overflows(result, b, &result))
                 return nullopt;
         e >>= 1;
         if (e > 0)
-            if (__builtin_mul_overflow(b, b, &b))
+            if (mul_overflows(b, b, &b))
                 return nullopt;
     }
     return Integer{result};
