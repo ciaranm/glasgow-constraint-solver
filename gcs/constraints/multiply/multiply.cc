@@ -149,7 +149,13 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
             do {
                 signed_multiply::propagate(*product_data, state, inference, logger, owner);
             } while (inference.did_anything_since_last_call_inside_propagator());
-            return PropagatorState::Enable;
+            // Idempotent: the do-while ran signed_multiply::propagate to quiescence
+            // (it exits only when a whole pass inferred nothing), so an immediate
+            // re-run is a single no-op pass. This needs no 1:1-trigger / non-aliasing
+            // assumption -- the loop reaches whatever fixpoint the true relation has,
+            // aliased or repeated operands (the square case) included, per the note at
+            // the scope above.
+            return PropagatorState::EnableButIdempotent;
         },
         triggers);
 

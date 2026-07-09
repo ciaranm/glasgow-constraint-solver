@@ -232,7 +232,11 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
                         signed_multiply::propagate(link, state, inference, logger, owner);
                 } while (inference.did_anything_since_last_call_inside_propagator());
 
-                return PropagatorState::Enable;
+                // Idempotent: the do-while ran the stages and multiply links to
+                // quiescence, so an immediate re-run is one no-op pass (see multiply.cc
+                // for the same argument). The mid-loop return above is the contradiction
+                // path and its state is ignored.
+                return PropagatorState::EnableButIdempotent;
             },
             triggers);
     }
