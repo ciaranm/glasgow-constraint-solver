@@ -32,7 +32,8 @@ Compiling
 **Required:**
 - A C++23 compiler. GCC 13 (Ubuntu 24.04) is the oldest tested; GCC 15 and Clang 21
   are the primary development compilers. Clang on macOS uses libc++ rather than
-  libstdc++, which affects which C++23 features are available natively.
+  libstdc++, which affects which C++23 features are available natively. MSVC (Visual
+  Studio 2022) also works on an experimental basis — see [Platform support](#platform-support).
 - CMake 3.21 or later.
 
 **Fetched automatically by CMake** (no manual installation needed):
@@ -57,6 +58,20 @@ Compiling
   (``minizincide`` via Brew on macOS). The frontend can be disabled with
   ``-DGCS_ENABLE_MINIZINC=OFF``.
 - [Doxygen](https://www.doxygen.nl) — required to generate API documentation.
+
+### Platform support
+
+Linux and macOS are the fully supported platforms and are covered by CI on every
+change.
+
+**Windows support is experimental.** The library, its full test suite, and the XCSP3,
+MiniZinc and Python frontends build with MSVC (Visual Studio 2022) and pass CI on
+`windows-2022`, but the platform is much less exercised than Linux and macOS, so rough
+edges are to be expected. It is best-effort and community-maintained: **bug reports and
+patches are very welcome**. The [`.github/workflows/windows.yml`](.github/workflows/windows.yml)
+lane is the reference for building everything on Windows — notably, libxml2 (for XCSP)
+is supplied via [vcpkg](https://vcpkg.io) and MiniZinc via its official bundle installer,
+and the bash-based test wrappers are run through Git Bash.
 
 ### Build types
 
