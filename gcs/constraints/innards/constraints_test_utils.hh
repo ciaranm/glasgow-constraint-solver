@@ -388,7 +388,14 @@ namespace gcs::test_innards
         // by an immediate re-run, which aborts the solve if it infers anything.
         // Deterministic, at most doubles the cost of claiming runs, and a
         // passing re-run emits nothing, so the proof lanes are unaffected.
+        // MSVC has no POSIX setenv; _putenv_s always overwrites, so mirror the
+        // don't-overwrite (overwrite == 0) semantics with a getenv check.
+#ifdef _WIN32
+        if (! std::getenv("GCS_CHECK_IDEMPOTENT_CLAIMS"))
+            _putenv_s("GCS_CHECK_IDEMPOTENT_CLAIMS", "1");
+#else
         setenv("GCS_CHECK_IDEMPOTENT_CLAIMS", "1", 0);
+#endif
 
         // Apply the optional runtime caps (see env_cap). The wrappers count
         // solutions / internal search nodes and return false to stop the solve
