@@ -248,7 +248,7 @@ auto gcs::innards::want_tabulation(const std::variant<consistency::Auto, consist
 
             long long size = 1;
             for (const auto & v : enum_vars)
-                if (v != skip && __builtin_mul_overflow(size, initial_state.domain_size(v).raw_value, &size))
+                if (v != skip && mul_overflows(size, initial_state.domain_size(v).raw_value, &size))
                     return false;
             return size <= default_tabulation_threshold();
         }}

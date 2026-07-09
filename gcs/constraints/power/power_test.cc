@@ -64,7 +64,7 @@ namespace
         long long r = 1;
         for (long long i = 0; i < b; ++i) {
             long long next;
-            if (__builtin_mul_overflow(r, a, &next))
+            if (innards::mul_overflows(r, a, &next))
                 return false;
             r = next;
         }
