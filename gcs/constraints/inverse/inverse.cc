@@ -170,23 +170,31 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
         [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s,
             constraint_id = constraint_id(),
             owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
-            for (const auto & [i, x_i] : enumerate(x)) {
-                for (auto x_i_value : state.each_value_mutable(x_i))
-                    if (! state.in_domain(y.at((x_i_value - y_start).as_index()), Integer(i) + x_start))
-                        inf.infer(logger, x_i != x_i_value, JustifyUsingRUP{hints::Inverse{owner}},
-                            ExplicitReason{ReasonLiterals{y.at((x_i_value - y_start).as_index()) != Integer(i) + x_start}});
-            }
+            // Channel x<->y and GAC-alldifferent on x feed each other: a GAC
+            // removal on x can leave a y value with no back-support (more
+            // channelling), which can force more x removals (more GAC), so a
+            // single pass is not the fixpoint. Alternate to quiescence so the run
+            // reaches its own fixpoint in one call and can claim idempotence (the
+            // arithmetic-core pattern). A contradicting infer throws straight out.
+            do {
+                for (const auto & [i, x_i] : enumerate(x)) {
+                    for (auto x_i_value : state.each_value_mutable(x_i))
+                        if (! state.in_domain(y.at((x_i_value - y_start).as_index()), Integer(i) + x_start))
+                            inf.infer(logger, x_i != x_i_value, JustifyUsingRUP{hints::Inverse{owner}},
+                                ExplicitReason{ReasonLiterals{y.at((x_i_value - y_start).as_index()) != Integer(i) + x_start}});
+                }
 
-            for (const auto & [i, y_i] : enumerate(y)) {
-                for (auto y_i_value : state.each_value_mutable(y_i))
-                    if (! state.in_domain(x.at((y_i_value - x_start).as_index()), Integer(i) + y_start))
-                        inf.infer(logger, y_i != y_i_value, JustifyUsingRUP{hints::Inverse{owner}},
-                            ExplicitReason{ReasonLiterals{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}});
-            }
+                for (const auto & [i, y_i] : enumerate(y)) {
+                    for (auto y_i_value : state.each_value_mutable(y_i))
+                        if (! state.in_domain(x.at((y_i_value - x_start).as_index()), Integer(i) + y_start))
+                            inf.infer(logger, y_i != y_i_value, JustifyUsingRUP{hints::Inverse{owner}},
+                                ExplicitReason{ReasonLiterals{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}});
+                }
 
-            propagate_gac_all_different(constraint_id, x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);
+                propagate_gac_all_different(constraint_id, x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);
+            } while (inf.did_anything_since_last_call_inside_propagator());
 
-            return PropagatorState::Enable;
+            return PropagatorState::EnableButIdempotent;
         },
         triggers);
 }
