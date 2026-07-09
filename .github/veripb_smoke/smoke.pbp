@@ -1,0 +1,97 @@
+pseudo-Boolean proof version 3.0
+% solution
+red 1 i[_1][b0] 2 i[_1][b1] 4 i[_1][b2] 5 ~i[_1][ge5] >= 5 : i[_1][ge5] -> 0;
+red -1 i[_1][b0] -2 i[_1][b1] -4 i[_1][b2] 3 i[_1][ge5] >= -4 : i[_1][ge5] -> 1;
+red 1 i[_1][b0] 2 i[_1][b1] 4 i[_1][b2] 6 ~i[_1][ge6] >= 6 : i[_1][ge6] -> 0;
+red -1 i[_1][b0] -2 i[_1][b1] -4 i[_1][b2] 2 i[_1][ge6] >= -5 : i[_1][ge6] -> 1;
+rup 1 ~i[_1][ge6] >= 1;
+pol -4 -3 + s ;
+red 1 i[_1][ge5] 1 ~i[_1][ge6] 2 ~i[_1][eq5] >= 2 : i[_1][eq5] -> 0;
+red -1 i[_1][ge5] -1 ~i[_1][ge6] 1 i[_1][eq5] >= -1 : i[_1][eq5] -> 1;
+solx i[_1][eq5] i[_2][b0];
+% backtracking
+red 1 i[_1][b0] 2 i[_1][b1] 4 i[_1][b2] 2 ~i[_1][ge2] >= 2 : i[_1][ge2] -> 0;
+red -1 i[_1][b0] -2 i[_1][b1] -4 i[_1][b2] 6 i[_1][ge2] >= -1 : i[_1][ge2] -> 1;
+rup 1 i[_1][ge2] >= 1;
+pol -2 -12 + s ;
+red 1 i[_1][b0] 2 i[_1][b1] 4 i[_1][b2] 3 ~i[_1][ge3] >= 3 : i[_1][ge3] -> 0;
+red -1 i[_1][b0] -2 i[_1][b1] -4 i[_1][b2] 5 i[_1][ge3] >= -2 : i[_1][ge3] -> 1;
+pol -1 -15 + s ;
+pol -6 -3 + s ;
+red 1 i[_1][ge2] 1 ~i[_1][ge3] 2 ~i[_1][eq2] >= 2 : i[_1][eq2] -> 0;
+red -1 i[_1][ge2] -1 ~i[_1][ge3] 1 i[_1][eq2] >= -1 : i[_1][eq2] -> 1;
+red 1 i[_1][ge3] 1 ~i[_1][ge5] 2 ~i[_1][in3_4] >= 2 : i[_1][in3_4] -> 0;
+red -1 i[_1][ge3] -1 ~i[_1][ge5] 1 i[_1][in3_4] >= -1 : i[_1][in3_4] -> 1;
+rup 1 i[_1][eq2] 1 i[_1][in3_4] 1 i[_1][eq5] >= 1;
+rup 1 ~i[_2][b0] 1 i[_1][in3_4] 1 i[_1][eq2] >= 1;
+% solution
+solx i[_1][eq2] i[_2][b0];
+% backtracking
+rup 1 ~i[_2][b0] 1 i[_1][in3_4] 1 ~i[_1][eq2] >= 1;
+% backtracking
+rup 1 ~i[_2][b0] 1 i[_1][in3_4] >= 1;
+del id -4;
+del id -2;
+% solution
+red 1 i[_1][b0] 2 i[_1][b1] 4 i[_1][b2] 4 ~i[_1][ge4] >= 4 : i[_1][ge4] -> 0;
+red -1 i[_1][b0] -2 i[_1][b1] -4 i[_1][b2] 4 i[_1][ge4] >= -3 : i[_1][ge4] -> 1;
+pol -1 -28 + s ;
+pol -15 -3 + s ;
+red 1 i[_1][ge4] 1 ~i[_1][ge5] 2 ~i[_1][eq4] >= 2 : i[_1][eq4] -> 0;
+red -1 i[_1][ge4] -1 ~i[_1][ge5] 1 i[_1][eq4] >= -1 : i[_1][eq4] -> 1;
+rup 1 ~i[_1][eq4] 1 i[_1][in3_4] >= 1;
+red 1 i[_1][ge3] 1 ~i[_1][ge4] 2 ~i[_1][eq3] >= 2 : i[_1][eq3] -> 0;
+red -1 i[_1][ge3] -1 ~i[_1][ge4] 1 i[_1][eq3] >= -1 : i[_1][eq3] -> 1;
+rup 1 ~i[_1][eq3] 1 i[_1][in3_4] >= 1;
+rup 1 ~i[_1][in3_4] 1 i[_1][eq3] 1 i[_1][eq4] >= 1;
+solx i[_1][eq4] i[_2][b0];
+% backtracking
+rup 1 ~i[_2][b0] 1 ~i[_1][in3_4] 1 i[_1][eq3] >= 1;
+% solution
+solx i[_1][eq3] i[_2][b0];
+% backtracking
+rup 1 ~i[_2][b0] 1 ~i[_1][in3_4] 1 ~i[_1][eq3] >= 1;
+% backtracking
+rup 1 ~i[_2][b0] 1 ~i[_1][in3_4] >= 1;
+del id -4;
+del id -2;
+% backtracking
+rup 1 ~i[_2][b0] >= 1;
+del id -18;
+del id -2;
+% solution
+solx i[_1][eq5] ~i[_2][b0];
+% backtracking
+rup 1 i[_2][b0] 1 i[_1][in3_4] 1 i[_1][eq2] >= 1;
+% solution
+solx i[_1][eq2] ~i[_2][b0];
+% backtracking
+rup 1 i[_2][b0] 1 i[_1][in3_4] 1 ~i[_1][eq2] >= 1;
+% backtracking
+rup 1 i[_2][b0] 1 i[_1][in3_4] >= 1;
+del id -4;
+del id -2;
+% solution
+solx i[_1][eq3] ~i[_2][b0];
+% backtracking
+rup 1 i[_2][b0] 1 ~i[_1][in3_4] 1 i[_1][eq4] >= 1;
+% solution
+solx i[_1][eq4] ~i[_2][b0];
+% backtracking
+rup 1 i[_2][b0] 1 ~i[_1][in3_4] 1 ~i[_1][eq4] >= 1;
+% backtracking
+rup 1 i[_2][b0] 1 ~i[_1][in3_4] >= 1;
+del id -4;
+del id -2;
+% backtracking
+rup 1 i[_2][b0] >= 1;
+del id -7;
+del id -2;
+% backtracking
+rup >= 1;
+del id -13;
+del id -2;
+rup >= 1 ;
+output NONE;
+conclusion ENUMERATION_COMPLETE 8 : -1 ;
+end pseudo-Boolean proof;

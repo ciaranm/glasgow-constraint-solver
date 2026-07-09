@@ -31,6 +31,23 @@ jobs:
       run: brew install minizincide
       if: startsWith(matrix.os, 'macos')
 
+    - name: Install MiniZinc bundle (Linux)
+      # The Ubuntu runners have no MiniZinc package, so the MiniZinc tests used to
+      # skip there. Download the official bundle (which ships the default gecode
+      # solver the differential tests compare against) and put its bin dir on PATH,
+      # mirroring the macOS brew install above. The bundle's fzn-gecode links Qt/GL
+      # (gecode's Gist is compiled in), so pull in libEGL/libGL for the headless
+      # runner -- without them fzn-gecode fails to load and every test errors.
+      if: startsWith(matrix.os, 'ubuntu')
+      run: |
+        sudo apt-get update && sudo apt-get install -y libegl1 libgl1
+        mkdir -p "$HOME/minizinc"
+        curl -fsSL https://github.com/MiniZinc/MiniZincIDE/releases/download/2.9.7/MiniZincIDE-2.9.7-bundle-linux-x86_64.tgz \
+          | tar xz -C "$HOME/minizinc" --strip-components=1
+        mzn="$(find "$HOME/minizinc" -name minizinc -type f | head -1)"
+        dirname "$mzn" >> "$GITHUB_PATH"
+        "$mzn" --version
+
     - name: Configure CMake
       # Turn the constraint-test runtime caps off on the Ubuntu release runners
       # so they do full-enumeration completeness checking; the macOS runners
