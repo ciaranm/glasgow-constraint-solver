@@ -20,7 +20,12 @@ namespace
 {
     auto enable_checker() -> void
     {
+        // MSVC has no POSIX setenv; _putenv_s matches the overwrite == 1 semantics.
+#ifdef _WIN32
+        _putenv_s("GCS_CHECK_IDEMPOTENT_CLAIMS", "1");
+#else
         setenv("GCS_CHECK_IDEMPOTENT_CLAIMS", "1", 1);
+#endif
     }
 }
 

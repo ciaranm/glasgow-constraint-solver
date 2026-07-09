@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <memory>
 #include <random>
+#include <ranges>
 
 using std::generator;
 using std::make_shared;
