@@ -13,6 +13,9 @@ Doxyfile
 *.scp
 # ... except the curated workflow-2 regression cases, which are source, not generated:
 !verified_encodings/scp_cases/*.scp
+# ... and the committed VeriPB smoke fixture used by the Windows CI lane:
+!.github/veripb_smoke/*.opb
+!.github/veripb_smoke/*.pbp
 *~
 XCSP3-CPP-Parser
 generator

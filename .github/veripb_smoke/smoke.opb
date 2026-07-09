@@ -1,0 +1,8 @@
+* #variable= 4 #constraint= 5
+preserved: i[_1][b0] i[_1][b1] i[_1][b2] i[_2][b0] ;
+@i[_1][lb] 1 i[_1][b0] 2 i[_1][b1] 4 i[_1][b2] >= 2 ;
+@i[_1][ub] -1 i[_1][b0] -2 i[_1][b1] -4 i[_1][b2] >= -5 ;
+1 i[_2][b0] >= 0 ;
+* constraint ReifiedEquals equals option
+@c[_1][le] -1 i[_1][b0] -2 i[_1][b1] -4 i[_1][b2] 1 i[_1][b0] 2 i[_1][b1] 4 i[_1][b2] >= 0;
+@c[_1][ge] 1 i[_1][b0] 2 i[_1][b1] 4 i[_1][b2] -1 i[_1][b0] -2 i[_1][b1] -4 i[_1][b2] >= 0;

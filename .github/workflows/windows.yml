@@ -1,0 +1,178 @@
+name: Windows (MSVC)
+
+# Builds the solver with Microsoft's compiler and runs the full gcs test suite
+# (Catch2 unit tests + the bash/veripb-verified constraint tests) on Windows,
+# plus the examples, minicp_benchmarks, glasgow_scp_solver and the verified-
+# encoding scp-chain cases (the last self-verify against their own OPB, since
+# cake_pb_cp is not built here). A second job (msvc-frontends) builds the XCSP3,
+# MiniZinc and Python bindings and runs their tests (installing MiniZinc for the
+# differential suite). Does not gate the Linux/macOS checks.
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  msvc:
+    name: windows-2022 / MSVC (library + ctest)
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Fetch VeriPB
+      run: git clone --depth 1 https://gitlab.com/MIAOresearch/software/VeriPB.git
+
+    - name: Install VeriPB using cargo
+      # Needed for the proof-verifying constraint tests: the wrapper scripts and
+      # the data-driven tests shell out to veripb, which cargo puts on PATH.
+      run: cargo install --path ./VeriPB
+
+    - name: Configure CMake (Ninja, MSVC)
+      # Ninja (single-config) lets the build keep going past errors so one CI
+      # round surfaces every compile problem rather than stopping at the first
+      # failing translation unit. The configure output reports whether MSVC
+      # supplies <format>/<print>/<generator>/<stacktrace> or the bundled
+      # fallbacks.
+      run: >
+        cmake -S . -B build -G Ninja
+        -DCMAKE_BUILD_TYPE=Release
+        -DGCS_ENABLE_XCSP=OFF
+        -DGCS_ENABLE_MINIZINC=OFF
+        -DGCS_ENABLE_EXAMPLES=ON
+        -DGCS_BUILD_TESTS=ON
+
+    - name: Build everything
+      # -k 0: keep going after failures so all errors (and any compiler ICEs) are
+      # reported in a single run.
+      run: cmake --build build -- -k 0
+
+    - name: Test
+      # Full ctest suite: the Catch2 unit tests, the bash-wrapped veripb-verified
+      # constraint tests, and the examples / benchmarks / scp-chain cases (all
+      # add_test COMMANDs invoke bash explicitly on Windows via GCS_BASH). Runtime
+      # caps stay on (default) to bound the data-driven tests. bash comes from Git
+      # for Windows; veripb is on PATH.
+      working-directory: build
+      shell: bash
+      run: ctest --output-on-failure --timeout 300 -j 4
+
+  msvc-frontends:
+    name: windows-2022 / MSVC (XCSP3 + MiniZinc + Python frontends)
+    runs-on: windows-2022
+    # Builds the three modelling frontends with MSVC and runs their tests: the
+    # cached XCSP3 cases (which veripb-verify their proofs), the two hand-written
+    # FlatZinc-JSON cases, and the differential MiniZinc suite (MiniZinc is
+    # installed below). The Python module has no ctest, so for it the job proves the
+    # binding compiles and links on MSVC. libxml2 (needed by the XCSP3 parser) comes
+    # from vcpkg. Kept separate from the library job so a vcpkg or Python-toolchain
+    # hiccup can't mask the main 382/382 baseline.
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Set up Python
+      # Provides the interpreter and development headers pybind11 needs for gcspy.
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install libxml2 (vcpkg)
+      # Dynamic x64-windows build: the import library pulls in a self-contained DLL
+      # (it carries zlib/lzma/iconv), so the XCSP3 binding links cleanly; the DLL is
+      # copied next to the built executables below so it is found at load time.
+      run: vcpkg install libxml2:x64-windows
+
+    - name: Fetch VeriPB
+      run: git clone --depth 1 https://gitlab.com/MIAOresearch/software/VeriPB.git
+
+    - name: Install VeriPB using cargo
+      # The XCSP3 and FlatZinc-JSON test runners shell out to veripb.
+      run: cargo install --path ./VeriPB
+
+    - name: Install MiniZinc bundle
+      # The differential MiniZinc tests need the `minizinc` compiler and its bundled
+      # default solver. Install the official Windows bundle silently (InnoSetup) and
+      # put it on PATH. No Windows-specific solver config is needed: MiniZinc resolves
+      # fzn-glasgow.exe from the PATH the test runner exports, appending .exe itself.
+      shell: pwsh
+      run: |
+        curl.exe -fsSL -o mzn-setup.exe https://github.com/MiniZinc/MiniZincIDE/releases/download/2.9.7/MiniZincIDE-2.9.7-bundled-setup-win64.exe
+        Start-Process -Wait -FilePath .\mzn-setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR=C:\minizinc'
+        $mzn = Get-ChildItem -Path C:\minizinc -Recurse -Filter minizinc.exe | Select-Object -First 1
+        $mzn.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        & $mzn.FullName --version
+
+    - name: Configure CMake (Ninja, MSVC, vcpkg toolchain)
+      # Derive the toolchain from the vcpkg that installed libxml2 above (the one on
+      # PATH) so both use the same root -- the runner has a second, VS-bundled vcpkg,
+      # and a bare $env: reference inside a folded run: was passed to cmake verbatim.
+      # GCS_BUILD_TESTS=ON is needed for enable_testing()/ctest and for the GCS_BASH
+      # launcher that lets ctest invoke the bash test wrappers on Windows.
+      shell: pwsh
+      run: |
+        $vcpkg = Split-Path (Get-Command vcpkg).Source
+        cmake -S . -B build -G Ninja `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DCMAKE_TOOLCHAIN_FILE="$vcpkg/scripts/buildsystems/vcpkg.cmake" `
+          -DGCS_ENABLE_XCSP=ON `
+          -DGCS_ENABLE_MINIZINC=ON `
+          -DGCS_ENABLE_PYTHON=ON `
+          -DGCS_ENABLE_EXAMPLES=OFF `
+          -DGCS_BUILD_TESTS=ON
+
+    - name: Build the frontends
+      # Only the three frontend targets and their dependencies -- the gcs unit-test
+      # binaries are already built and run by the library job. -k 0 keeps going so
+      # all three report their compile status in a single run.
+      run: cmake --build build --target fzn-glasgow gcspy xcsp_glasgow_constraint_solver -- -k 0
+
+    - name: Deploy libxml2 DLL next to the executables
+      # CMAKE_RUNTIME_OUTPUT_DIRECTORY puts every exe in the build root, which the
+      # Windows loader searches first, so the vcpkg runtime DLLs go there too. Same
+      # vcpkg root as the configure step (the one on PATH that installed libxml2).
+      shell: pwsh
+      run: |
+        $vcpkg = Split-Path (Get-Command vcpkg).Source
+        Copy-Item "$vcpkg/installed/x64-windows/bin/*.dll" -Destination build
+
+    - name: Test the frontends
+      # The XCSP3 cases, the two FlatZinc-JSON cases, and the differential MiniZinc
+      # suite (minizinc is now on PATH). bash is Git for Windows; veripb and minizinc
+      # are on PATH.
+      working-directory: build
+      shell: bash
+      run: ctest --output-on-failure --timeout 300 -j 4 -R 'xcsp_|minizinc-'
+
+  veripb:
+    name: windows-2022 / VeriPB
+    runs-on: windows-2022
+    # Independent of the library build: answers "does VeriPB itself build and
+    # verify a proof on Windows?", which gates whether the bash/veripb test
+    # harness is worth porting. VeriPB 3.x is a Rust tool, so cargo install here
+    # also exercises the MSVC Rust toolchain.
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Fetch VeriPB
+      run: git clone --depth 1 https://gitlab.com/MIAOresearch/software/VeriPB.git
+
+    - name: Install VeriPB using cargo
+      run: cargo install --path ./VeriPB
+
+    - name: Show VeriPB version
+      run: veripb --version
+
+    - name: Verify a real proof (reified equals, 8 solutions)
+      run: veripb .github/veripb_smoke/smoke.opb .github/veripb_smoke/smoke.pbp
