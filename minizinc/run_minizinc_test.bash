@@ -24,7 +24,16 @@ if ! command -v minizinc ; then
     exit 66
 fi
 
-minizinc --solver "$minizincdir/glasgow-for-tests.msc" --fzn "$testname.fzn" -a "$minizincdir/tests/$testname.mzn" | tee "$testname.glasgow.out" || exit 1
+# MiniZinc resolves the solver executable named in the .msc; a bare name relying on
+# PATH is not enough on Windows (it is not found / spawned as .exe), so generate a
+# config pointing at the absolute path of the built solver ($1, which already
+# carries the .exe suffix on Windows) with an absolute mznlib. Same result on Unix.
+solver_msc="$testname.glasgow.msc"
+sed -e "s|\"executable\": \"fzn-glasgow\"|\"executable\": \"$1\"|" \
+    -e "s|\"mznlib\": \"mznlib\"|\"mznlib\": \"$minizincdir/mznlib\"|" \
+    "$minizincdir/glasgow-for-tests.msc" > "$solver_msc"
+
+minizinc --solver "$solver_msc" --fzn "$testname.fzn" -a "$minizincdir/tests/$testname.mzn" | tee "$testname.glasgow.out" || exit 1
 minizinc -a "$minizincdir/tests/$testname.mzn" | tee "$testname.default.out" || exit 2
 
 if [[ "$enumeration" == "true" ]] ; then
@@ -50,7 +59,7 @@ else
 fi
 
 if [[ "$doproofs" == "true" ]] && veripb --help >/dev/null ; then
-    minizinc --solver "$minizincdir/glasgow-for-tests.msc" -a "$minizincdir/tests/$testname.mzn" --prove "$testname" | tee "$testname.glasgow.out" || exit 7
+    minizinc --solver "$solver_msc" -a "$minizincdir/tests/$testname.mzn" --prove "$testname" | tee "$testname.glasgow.out" || exit 7
     if ! veripb "$testname.opb" "$testname.pbp" ; then
         echo "Rerunning last 100 lines of proof verification in trace mode..."
         echo '$ ' veripb --trace "$(readlink -f "$testname.opb")" "$(readlink -f "$testname.pbp")"
