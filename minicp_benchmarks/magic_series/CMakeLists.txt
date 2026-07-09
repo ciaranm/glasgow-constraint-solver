@@ -3,4 +3,4 @@ target_link_libraries(magic_series PRIVATE glasgow_constraint_solver)
 
 target_link_libraries(magic_series PRIVATE cxxopts)
 
-add_test(NAME magic_series-10 COMMAND ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:magic_series> 10)
+add_test(NAME magic_series-10 COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:magic_series> 10)

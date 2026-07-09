@@ -5,6 +5,7 @@
 
 #include <cxxopts.hpp>
 
+#include <algorithm>
 #include <iostream>
 #include <random>
 #include <sstream>

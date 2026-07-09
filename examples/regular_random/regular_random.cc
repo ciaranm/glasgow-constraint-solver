@@ -1,10 +1,11 @@
 #include <gcs/constraints/comparison.hh>
+#include <gcs/constraints/regular.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
 #include <cxxopts.hpp>
 
-#include <gcs/constraints/regular.hh>
+#include <algorithm>
 #include <iostream>
 #include <numeric>
 #include <random>

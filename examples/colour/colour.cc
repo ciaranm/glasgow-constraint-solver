@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <ranges>
 #include <vector>
 
 #include <cxxopts.hpp>
