@@ -453,7 +453,7 @@ auto Python::post_global_cardinality(
     int_values.reserve(values.size());
     for (auto v : values)
         int_values.emplace_back(v);
-    p.post(GlobalCardinality(get_vars(var_ids), move(int_values), get_vars(count_ids), closed));
+    p.post(GlobalCardinality(get_vars(var_ids), move(int_values), get_vars(count_ids)).with_closed(closed));
 }
 
 auto Python::post_element(const string & var_id, const string & index_id, const vector<string> & var_ids) -> void
