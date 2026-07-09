@@ -1,10 +1,16 @@
 #ifndef GCS_API_HH
 #define GCS_API_HH
+#include <atomic>
+#include <csignal>
 #include <deque>
+#include <functional>
 #include <gcs/gcs.hh>
+#include <optional>
 #include <pybind11/pybind11.h>
+#include <sstream>
 #include <string>
 #include <unordered_map>
+#include <vector>
 using namespace gcs;
 
 using std::string;
