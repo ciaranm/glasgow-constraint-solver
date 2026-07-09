@@ -164,6 +164,29 @@ namespace
         throw ScpReadError{"unknown reification-condition operator '" + op + "'"};
     }
 
+    // A faithful literal term, as the logical constraints' `_lits` forms write
+    // them: the atoms 1 / 0 for the static literals, or a (variable op value)
+    // triple. See faithful_literal_term in cake_truthiness.
+    auto resolve_literal(const map<string, IntegerVariableID> & variables, const SExpr & term) -> innards::Literal
+    {
+        if (term.is_atom()) {
+            if (term.as_atom() == "1")
+                return innards::TrueLiteral{};
+            if (term.as_atom() == "0")
+                return innards::FalseLiteral{};
+            throw ScpReadError{"a literal must be 1, 0, or a (variable op value) triple"};
+        }
+        return resolve_condition(variables, term);
+    }
+
+    auto resolve_literal_list(const map<string, IntegerVariableID> & variables, const SExpr & list_term, const string & what) -> innards::Literals
+    {
+        innards::Literals result;
+        for (const auto & t : children_of(list_term, what.c_str()))
+            result.push_back(resolve_literal(variables, t));
+        return result;
+    }
+
     // For the equals-style families (equals / not_equals and their lin_
     // counterparts): map a keyword's reification suffix to a (condition, flipped)
     // pair. `flipped` is the cosmetic not-equals-iff flag (ReifiedEquals::_neq /
@@ -800,6 +823,28 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             if (as_integer(terms[3]) != Integer{1})
                 throw ScpReadError{"parity Y must be the constant 1 (only bare odd parity is supported)"};
             post_constraint(problem, ParityOdd{resolve_variable_list(variables, terms[2], "the parity variable list")}, label);
+        }
+        else if (op == "and_lits" || op == "or_lits" || op == "parity_lits") {
+            // The literal-shaped forms the solver writes when a logical
+            // constraint's literals have no cake positive form (negations,
+            // shifted comparisons, non-zero tests over negative-capable
+            // domains). cake_pb_cp has no such terms -- these exist for
+            // faithful round-trips, not for the verified-encoding chain.
+            if (terms.size() != 4)
+                throw ScpReadError{op + " takes (label " + op + " (literals...) reif-literal)"};
+            auto lits = resolve_literal_list(variables, terms[2], "the " + op + " literal list");
+            if (op == "parity_lits") {
+                if (as_integer(terms[3]) != Integer{1})
+                    throw ScpReadError{"parity_lits Y must be the constant 1 (only bare odd parity is supported)"};
+                post_constraint(problem, ParityOdd{move(lits)}, label);
+            }
+            else {
+                auto reif = resolve_literal(variables, terms[3]);
+                if (op == "and_lits")
+                    post_constraint(problem, And{move(lits), reif}, label);
+                else
+                    post_constraint(problem, Or{move(lits), reif}, label);
+            }
         }
         else if (op == "plus") {
             // (label plus a b result): a + b = result.
