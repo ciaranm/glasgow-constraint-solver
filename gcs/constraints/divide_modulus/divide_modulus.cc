@@ -1259,7 +1259,11 @@ namespace
                         propagate_default_product<Hint_>(*data, modulus_r, state, inference, logger, owner);
                     } while (inference.did_anything_since_last_call_inside_propagator());
 
-                    return PropagatorState::Enable;
+                    // Idempotent: the do-while ran the stages (and the default product)
+                    // to quiescence, so an immediate re-run is one no-op pass (see
+                    // multiply.cc for the same argument). The mid-loop return above is
+                    // the contradiction path and its state is ignored.
+                    return PropagatorState::EnableButIdempotent;
                 },
                 triggers);
         }
@@ -1276,7 +1280,11 @@ namespace
                             return PropagatorState::Enable;
                     } while (inference.did_anything_since_last_call_inside_propagator());
 
-                    return PropagatorState::Enable;
+                    // Idempotent: the do-while ran the stages (and the default product)
+                    // to quiescence, so an immediate re-run is one no-op pass (see
+                    // multiply.cc for the same argument). The mid-loop return above is
+                    // the contradiction path and its state is ignored.
+                    return PropagatorState::EnableButIdempotent;
                 },
                 triggers);
 
