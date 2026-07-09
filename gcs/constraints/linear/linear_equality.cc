@@ -40,6 +40,7 @@ using namespace gcs::innards;
 
 using std::decay_t;
 using std::function;
+using std::get;
 using std::is_same_v;
 using std::make_pair;
 using std::make_shared;
@@ -444,8 +445,15 @@ auto ReifiedLinearEquality::s_expr(const ProofModel * const model) const -> SExp
                            .visit(_reif_cond);
 
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cons)};
-    if (rei)
-        terms.push_back(*tracker.s_expr_term_of(_reif_cond));
+    if (rei) {
+        // A flipped iff stores the negated condition (the equality holds iff NOT
+        // the user's condition), but the not_equals_iff keyword already carries
+        // the negation: cake reads (r lin_not_equals_iff (cond) ...) as cond <=>
+        // sum != value. Emit the user's original condition, not the stored one,
+        // or the two negations cancel into the opposite constraint.
+        auto cond_to_write = _flipped_cond ? ReificationCondition{reif::Iff{! get<reif::Iff>(_reif_cond).cond}} : _reif_cond;
+        terms.push_back(*tracker.s_expr_term_of(cond_to_write));
+    }
 
     vector<SExpr> coeff_vars;
     for (const auto & [c, v] : _coeff_vars.terms) {

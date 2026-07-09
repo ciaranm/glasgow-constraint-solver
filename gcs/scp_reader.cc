@@ -172,8 +172,15 @@ namespace
     auto equality_reification(bool not_equals, bool iff, bool half, const map<string, IntegerVariableID> & variables, const SExpr & cond_term)
         -> std::pair<ReificationCondition, bool>
     {
+        // The not_equals_iff keyword carries the negation (cond <=> operands
+        // differ), and the flipped representation stores the equality's
+        // condition, so reading one means negating the written condition --
+        // mirroring the writers, which un-negate the stored condition. The
+        // half-reified NotIf stores the condition as written.
         if (iff)
-            return {ReificationCondition{reif::Iff{resolve_condition(variables, cond_term)}}, not_equals};
+            return {not_equals ? ReificationCondition{reif::Iff{! resolve_condition(variables, cond_term)}}
+                               : ReificationCondition{reif::Iff{resolve_condition(variables, cond_term)}},
+                not_equals};
         if (half)
             return {not_equals ? ReificationCondition{reif::NotIf{resolve_condition(variables, cond_term)}}
                                : ReificationCondition{reif::If{resolve_condition(variables, cond_term)}},
