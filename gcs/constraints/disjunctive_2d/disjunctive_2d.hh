@@ -61,9 +61,11 @@ namespace gcs
         // possible-active window and the active-rect filter).
         std::vector<Integer> _width_vals, _width_ub;
         std::vector<Integer> _height_vals, _height_ub;
-        // Non-strict mode: whether each rectangle's width/height can be 0
-        // (std::uint8_t rather than the vector<bool> bitset specialisation).
-        std::vector<std::uint8_t> _can_be_zero_w, _can_be_zero_h;
+        // Non-strict mode: whether each rectangle's width/height gets a
+        // zero-size escape in the separation clause -- every variable size
+        // does, matching cake_pb_cp (std::uint8_t rather than the
+        // vector<bool> bitset specialisation).
+        std::vector<std::uint8_t> _zero_escape_w, _zero_escape_h;
 
         // Per-rectangle possible-active windows in each dimension, from root
         // bounds in prepare(). Used to size the proof bridge and to index the

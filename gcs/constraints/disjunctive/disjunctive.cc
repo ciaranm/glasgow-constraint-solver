@@ -159,13 +159,18 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
         _per_task_t_hi[i] = s_hi + _length_ub[i] - 1_i;
     }
 
-    // Non-strict mode: note which active tasks' durations can be 0, so
-    // define_proof_model can add a zero-length escape to the separation clause.
-    // The propagator already ignores zero-mandatory tasks via lb(l).
-    _can_be_zero.assign(n, 0);
+    // Non-strict mode: every variable-duration task gets a zero-length escape
+    // in the separation clause, matching cake_pb_cp, which adds the zw
+    // disjunct for every variable-length argument regardless of its bounds.
+    // Gating it on lower_bound == 0 changes the labelled @c[id][.._sepal1]
+    // row's content, and proofs that pol-cite that label then fail to
+    // chain-verify (issue #482). An always-positive duration's escape is just
+    // statically false; add_escape_pins refutes it in one RUP step. The
+    // propagator already ignores zero-mandatory tasks via lb(l).
+    _zero_escape.assign(n, 0);
     if (! _strict)
         for (auto i : _active_tasks)
-            _can_be_zero[i] = (! is_constant_variable(_lengths[i]) && initial_state.lower_bound(_lengths[i]) == 0_i) ? 1 : 0;
+            _zero_escape[i] = is_constant_variable(_lengths[i]) ? 0 : 1;
 
     return true;
 }
@@ -201,12 +206,12 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
         if (! is_constant_variable(_lengths[i]))
             _end[i] = model.create_proof_only_integer_variable_in_proof(0_i, _per_task_t_hi[i] + 1_i, "disjend");
 
-    // Non-strict mode: a "duration <= 0" escape flag per can-be-zero task, added
-    // as a disjunct to the separation clause below (a zero-length task does not
-    // constrain). nullopt otherwise.
+    // Non-strict mode: a "duration <= 0" escape flag per variable-duration
+    // task, added as a disjunct to the separation clause below (a zero-length
+    // task does not constrain). nullopt otherwise.
     _zero.assign(_starts.size(), nullopt);
     for (auto i : _active_tasks)
-        if (_can_be_zero[i])
+        if (_zero_escape[i])
             // cake_pb_cp names the zero-duration escape x[id][i][zw].
             _zero[i] = model.create_proof_flag_fully_reifying(
                 _constraint_id, vector<long long>{static_cast<long long>(i)}, "zw", WPBSum{} + 1_i * _lengths[i] <= 0_i);

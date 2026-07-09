@@ -162,17 +162,21 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
         _active_rects.push_back(i);
     }
 
-    // Non-strict mode: a rectangle whose width or height can be 0 may be
-    // zero-area for some assignments, in which case it does not constrain. Note
-    // which sizes can be zero so define_proof_model can add a zero-size escape
-    // to the separation clause; the propagator already ignores zero-mandatory
+    // Non-strict mode: a rectangle whose width or height is 0 does not
+    // constrain, so every variable size gets a zero-size escape in the
+    // separation clause -- matching cake_pb_cp, which adds the zw/zh disjunct
+    // for every variable-size argument regardless of its bounds. Gating on
+    // lower_bound == 0 changes the labelled separation row's content, and
+    // proofs that pol-cite that label then fail to chain-verify (issue #482).
+    // An always-positive size's escape is statically false and is refuted in
+    // one RUP step where cited; the propagator already ignores zero-mandatory
     // rectangles via lb(size).
-    _can_be_zero_w.assign(n, false);
-    _can_be_zero_h.assign(n, false);
+    _zero_escape_w.assign(n, false);
+    _zero_escape_h.assign(n, false);
     if (! _strict)
         for (auto i : _active_rects) {
-            _can_be_zero_w[i] = ! is_constant_variable(_widths[i]) && initial_state.lower_bound(_widths[i]) == 0_i;
-            _can_be_zero_h[i] = ! is_constant_variable(_heights[i]) && initial_state.lower_bound(_heights[i]) == 0_i;
+            _zero_escape_w[i] = ! is_constant_variable(_widths[i]);
+            _zero_escape_h[i] = ! is_constant_variable(_heights[i]);
         }
 
     if (_active_rects.size() < 2)
@@ -240,10 +244,10 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
     _zero_h.assign(_xs.size(), nullopt);
     for (auto i : _active_rects) {
         // cake_pb_cp names the zero-size escapes x[id][i][zw] / x[id][i][zh].
-        if (_can_be_zero_w[i])
+        if (_zero_escape_w[i])
             _zero_w[i] = model.create_proof_flag_fully_reifying(
                 _constraint_id, vector<long long>{static_cast<long long>(i)}, "zw", WPBSum{} + 1_i * _widths[i] <= 0_i);
-        if (_can_be_zero_h[i])
+        if (_zero_escape_h[i])
             _zero_h[i] = model.create_proof_flag_fully_reifying(
                 _constraint_id, vector<long long>{static_cast<long long>(i)}, "zh", WPBSum{} + 1_i * _heights[i] <= 0_i);
     }

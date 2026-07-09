@@ -93,11 +93,13 @@ namespace gcs
         // task whose duration is constant (those reify after on s directly).
         std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end;
 
-        // Non-strict mode: whether each task's duration can be 0 (std::uint8_t
-        // rather than the vector<bool> bitset specialisation), and, for those
-        // tasks, a reified "duration <= 0" flag that escapes the separation
-        // clause (a zero-length task does not constrain in non-strict mode).
-        std::vector<std::uint8_t> _can_be_zero;
+        // Non-strict mode: whether each task gets a zero-length escape in the
+        // separation clause -- every variable-duration task does, matching
+        // cake_pb_cp (std::uint8_t rather than the vector<bool> bitset
+        // specialisation) -- and, for those tasks, the reified "duration <= 0"
+        // escape flag itself (a zero-length task does not constrain in
+        // non-strict mode).
+        std::vector<std::uint8_t> _zero_escape;
         std::vector<std::optional<innards::ProofFlag>> _zero;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
