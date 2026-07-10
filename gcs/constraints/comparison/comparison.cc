@@ -223,6 +223,12 @@ auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propa
     }
 }
 
+// cake_pb_cp's names: less_than / less_equal / greater_than / greater_equal.
+auto ReifiedCompareLessThanOrMaybeEqual::constraint_type() const -> std::string
+{
+    return format("{}_{}", _vars_swapped ? "greater" : "less", _or_equal ? "equal" : "than");
+}
+
 auto ReifiedCompareLessThanOrMaybeEqual::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -235,8 +241,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::s_expr(const ProofModel * const model) 
     }
                            .visit(_reif_cond);
 
-    // cake_pb_cp's names: less_than / less_equal / greater_than / greater_equal.
-    string cmp = format("{}_{}{}", _vars_swapped ? "greater" : "less", _or_equal ? "equal" : "than", reif_suffix);
+    string cmp = constraint_type() + reif_suffix;
 
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cmp)};
     if (auto cond = tracker.s_expr_term_of(_reif_cond))

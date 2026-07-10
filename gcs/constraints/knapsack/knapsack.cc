@@ -638,6 +638,11 @@ auto Knapsack::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Knapsack::constraint_type() const -> std::string
+{
+    return "knapsack";
+}
+
 auto Knapsack::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -658,6 +663,6 @@ auto Knapsack::s_expr(const innards::ProofModel * const model) const -> SExpr
     for (const auto & t : _totals)
         totals.push_back(tracker.s_expr_term_of(t));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("knapsack"), SExpr::list(move(coeff_rows)), SExpr::list(move(vars)),
-        SExpr::list(move(totals))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(coeff_rows)),
+        SExpr::list(move(vars)), SExpr::list(move(totals))});
 }

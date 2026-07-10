@@ -590,6 +590,11 @@ auto LexCompareGreaterThanOrMaybeEqual::install_propagators(Propagators & propag
         std::move(enforce_constraint_must_not_hold), std::move(infer_cond_when_undecided));
 }
 
+auto LexCompareGreaterThanOrMaybeEqual::constraint_type() const -> std::string
+{
+    return format("lex_{}_{}", _vars_swapped ? "less" : "greater", _or_equal ? "equal" : "than");
+}
+
 auto LexCompareGreaterThanOrMaybeEqual::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -610,7 +615,7 @@ auto LexCompareGreaterThanOrMaybeEqual::s_expr(const innards::ProofModel * const
     // lists. Its >/< flag layout differs from ours (it builds both directions
     // for the reified iff), so the chain verifies but the literals do not
     // byte-match -- a `none`-mode case in the harness.
-    string cmp = format("lex_{}_{}{}", _vars_swapped ? "less" : "greater", _or_equal ? "equal" : "than", reif_suffix);
+    string cmp = constraint_type() + reif_suffix;
 
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cmp)};
     // Emit the reification condition as cake's (var op value) triple, exactly as

@@ -227,11 +227,16 @@ auto Circuit::clone() const -> unique_ptr<Constraint>
     return cloned;
 }
 
+auto Circuit::constraint_type() const -> std::string
+{
+    return "circuit";
+}
+
 auto Circuit::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
     vector<SExpr> vars;
     for (const auto & var : _succ)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("circuit"), SExpr::list(std::move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars))});
 }

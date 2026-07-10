@@ -176,12 +176,17 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
         triggers);
 }
 
+auto SymmetricAllDifferent::constraint_type() const -> std::string
+{
+    return "symmetric_all_different";
+}
+
 auto SymmetricAllDifferent::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("symmetric_all_different"), SExpr::list(std::move(vars)),
-        SExpr::atom(_start.to_string())});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)), SExpr::atom(_start.to_string())});
 }

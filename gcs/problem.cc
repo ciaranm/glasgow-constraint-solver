@@ -13,15 +13,10 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
-#include <cstdlib>
 #include <deque>
-#include <memory>
 #include <regex>
 #include <tuple>
-#include <typeinfo>
 #include <unordered_set>
-
-#include <cxxabi.h>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -205,23 +200,6 @@ auto Problem::add_presolver(const Presolver & p) -> void
     _imp->presolvers.push_back(p.clone());
 }
 
-namespace
-{
-    // The dynamic type's class name (e.g. "AllDifferent"), for the OPB block
-    // header comment. Both supported toolchains use the Itanium ABI, so the
-    // mangled name from typeid demangles via abi::__cxa_demangle; if that ever
-    // fails, the mangled name is still a usable human-facing fallback.
-    auto constraint_type_name(const Constraint & c) -> string
-    {
-        int status = 0;
-        unique_ptr<char, decltype(&std::free)> demangled{abi::__cxa_demangle(typeid(c).name(), nullptr, nullptr, &status), &std::free};
-        string result = (0 == status && demangled) ? demangled.get() : typeid(c).name();
-        if (auto pos = result.rfind("::"); pos != string::npos)
-            result.erase(0, pos + 2);
-        return result;
-    }
-}
-
 auto Problem::create_propagators(State & state, ProofModel * const optional_proof_model) const -> Propagators
 {
     Propagators result;
@@ -234,7 +212,7 @@ auto Problem::create_propagators(State & state, ProofModel * const optional_proo
         // One provenance comment per constraint: install() emits this
         // constraint's OPB rows (near enough) contiguously after it.
         if (optional_proof_model)
-            optional_proof_model->begin_constraint_block_comment(constraint_type_name(*cc), cc->constraint_id());
+            optional_proof_model->begin_constraint_block_comment(cc->constraint_type(), cc->constraint_id());
         move(*cc).install(result, state, optional_proof_model);
     }
 

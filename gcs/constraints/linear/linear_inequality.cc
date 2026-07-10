@@ -270,23 +270,28 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
         sanitised_cv, sanitised_neg_cv);
 }
 
+// cake_pb_cp's name for the <= form is lin_less_equal (not lin_less_than_equal).
+auto ReifiedLinearInequality::constraint_type() const -> std::string
+{
+    return "lin_less_equal";
+}
+
 auto ReifiedLinearInequality::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    // cake_pb_cp's name for the <= form is lin_less_equal (not lin_less_than_equal).
-    auto [rei, cons] = overloaded{
-        [&](const reif::MustHold &) { return make_pair(false, "lin_less_equal"); }, //
-        [&](const reif::If &) { return make_pair(true, "lin_less_equal_if"); },     //
-        [&](const reif::Iff &) { return make_pair(true, "lin_less_equal_iff"); },   //
+    auto [rei, suffix] = overloaded{
+        [&](const reif::MustHold &) { return make_pair(false, ""); }, //
+        [&](const reif::If &) { return make_pair(true, "_if"); },     //
+        [&](const reif::Iff &) { return make_pair(true, "_iff"); },   //
         [&](const auto &) {
             throw UnexpectedException{"Unexpected reification type in s_expr"};
             return make_pair(false, "");
         } //
     }
-                           .visit(_reif_cond);
+                             .visit(_reif_cond);
 
-    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cons)};
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type() + suffix)};
     if (rei)
         terms.push_back(*tracker.s_expr_term_of(_reif_cond));
 

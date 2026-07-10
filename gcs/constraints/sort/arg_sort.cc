@@ -535,6 +535,11 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     // (full enumeration + BC consistency + VeriPB all unchanged when removed).
 }
 
+auto ArgSort::constraint_type() const -> std::string
+{
+    return "arg_sort";
+}
+
 auto ArgSort::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -549,6 +554,6 @@ auto ArgSort::s_expr(const ProofModel * const model) const -> SExpr
 
     // The offset is a trailing bare atom (not wrapped in its own list), matching
     // the old textual form.
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("arg_sort"), SExpr::list(move(xs)), SExpr::list(move(ps)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(xs)), SExpr::list(move(ps)),
         SExpr::atom(_offset.to_string())});
 }

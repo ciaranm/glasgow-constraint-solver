@@ -822,6 +822,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Disjunctive::constraint_type() const -> std::string
+{
+    return _strict ? "disjunctive_strict" : "disjunctive";
+}
+
 auto Disjunctive::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -830,6 +835,6 @@ auto Disjunctive::s_expr(const ProofModel * const model) const -> SExpr
         starts.push_back(tracker.s_expr_term_of(v));
     for (const auto & l : _lengths)
         lengths.push_back(is_constant_variable(l) ? SExpr::atom(const_value_of(l).to_string()) : tracker.s_expr_term_of(l));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(_strict ? "disjunctive_strict" : "disjunctive"),
-        SExpr::list(std::move(starts)), SExpr::list(std::move(lengths))});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)), SExpr::list(std::move(lengths))});
 }

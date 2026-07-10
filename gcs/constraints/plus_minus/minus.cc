@@ -222,11 +222,16 @@ auto Minus::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Minus::constraint_type() const -> std::string
+{
+    return "minus";
+}
+
 auto Minus::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
     // Three flat args (`minus X Y Z`) to match cake_pb_cp's binary prim parse.
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("minus"), tracker.s_expr_term_of(_a), tracker.s_expr_term_of(_b),
-        tracker.s_expr_term_of(_result)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), tracker.s_expr_term_of(_a),
+        tracker.s_expr_term_of(_b), tracker.s_expr_term_of(_result)});
 }

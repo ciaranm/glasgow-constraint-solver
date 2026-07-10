@@ -212,12 +212,17 @@ auto Plus::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Plus::constraint_type() const -> std::string
+{
+    return "plus";
+}
+
 auto Plus::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
     // cake_pb_cp's binary prim parse wants three flat args (`plus X Y Z`), not a
     // bracketed list, so X op Y = Z reads as rest = [X; Y; Z].
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("plus"), tracker.s_expr_term_of(_a), tracker.s_expr_term_of(_b),
-        tracker.s_expr_term_of(_result)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), tracker.s_expr_term_of(_a),
+        tracker.s_expr_term_of(_b), tracker.s_expr_term_of(_result)});
 }

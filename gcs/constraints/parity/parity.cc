@@ -190,6 +190,11 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
         },
         triggers);
 }
+auto ParityOdd::constraint_type() const -> std::string
+{
+    return "parity";
+}
+
 auto ParityOdd::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();

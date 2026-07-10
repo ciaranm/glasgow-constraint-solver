@@ -879,6 +879,11 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         triggers);
 }
 
+auto SmartTable::constraint_type() const -> std::string
+{
+    return "smart_table";
+}
+
 auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto to_op = [](SmartEntryConstraint c) {
@@ -930,5 +935,5 @@ auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("smart_table"), SExpr::list(move(rows)), SExpr::list(move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(rows)), SExpr::list(move(vars))});
 }

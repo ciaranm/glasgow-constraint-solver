@@ -45,9 +45,14 @@ auto PowerTable::install(Propagators & propagators, State & initial_state, Proof
     move(table).install(propagators, initial_state, optional_model);
 }
 
+auto PowerTable::constraint_type() const -> std::string
+{
+    return "power";
+}
+
 auto PowerTable::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("power"),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()),
         SExpr::list({tracker.s_expr_term_of(_base), tracker.s_expr_term_of(_exponent), tracker.s_expr_term_of(_result)})});
 }

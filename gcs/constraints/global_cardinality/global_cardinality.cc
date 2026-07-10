@@ -133,6 +133,14 @@ auto GlobalCardinality::install_propagators(Propagators & propagators) -> void
         .visit(_level);
 }
 
+// The name records which propagator ran, matching what cake_pb_cp's parser
+// and the .scp reader expect (the OPB encoding itself is level-independent).
+auto GlobalCardinality::constraint_type() const -> std::string
+{
+    return holds_alternative<consistency::GAC>(_level) ? (_closed ? "gacglobalcardinalityclosed" : "gacglobalcardinality")
+                                                       : (_closed ? "boundsglobalcardinalityclosed" : "boundsglobalcardinality");
+}
+
 auto GlobalCardinality::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -143,10 +151,6 @@ auto GlobalCardinality::s_expr(const ProofModel * const model) const -> SExpr
         values.push_back(SExpr::atom(val.to_string()));
     for (const auto & c : _counts)
         counts.push_back(tracker.s_expr_term_of(c));
-    // The term records which propagator ran, matching what cake_pb_cp's parser
-    // and the .scp reader expect (the OPB encoding itself is level-independent).
-    const auto * name = holds_alternative<consistency::GAC>(_level) ? (_closed ? "gacglobalcardinalityclosed" : "gacglobalcardinality")
-                                                                    : (_closed ? "boundsglobalcardinalityclosed" : "boundsglobalcardinality");
-    return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(name), SExpr::list(move(vars)), SExpr::list(move(values)), SExpr::list(move(counts))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(vars)), SExpr::list(move(values)),
+        SExpr::list(move(counts))});
 }

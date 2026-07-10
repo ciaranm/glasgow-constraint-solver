@@ -310,6 +310,11 @@ auto Among::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Among::constraint_type() const -> std::string
+{
+    return "among";
+}
+
 auto Among::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -319,6 +324,6 @@ auto Among::s_expr(const ProofModel * const model) const -> SExpr
     std::vector<SExpr> vals;
     for (const auto & val : _values_of_interest)
         vals.push_back(SExpr::atom(val.to_string()));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("among"), SExpr::list(std::move(vars)), SExpr::list(std::move(vals)),
-        tracker.s_expr_term_of(_how_many)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)),
+        SExpr::list(std::move(vals)), tracker.s_expr_term_of(_how_many)});
 }

@@ -134,14 +134,17 @@ auto IncreasingChain::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto IncreasingChain::constraint_type() const -> std::string
+{
+    return _strict ? (_descending ? "strictly_decreasing" : "strictly_increasing") : (_descending ? "decreasing" : "increasing");
+}
+
 auto IncreasingChain::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    const char * keyword = _strict ? (_descending ? "strictly_decreasing" : "strictly_increasing") : (_descending ? "decreasing" : "increasing");
-
     std::vector<SExpr> vars;
     for (const auto & v : _vars)
         vars.push_back(tracker.s_expr_term_of(v));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(keyword), SExpr::list(std::move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars))});
 }

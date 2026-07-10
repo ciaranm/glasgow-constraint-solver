@@ -1125,6 +1125,11 @@ auto Sort::install_propagators(Propagators & propagators) -> void
     install_sortedness_propagator(propagators, constraint_id(), _x, _y, _witness);
 }
 
+auto Sort::constraint_type() const -> std::string
+{
+    return "sort";
+}
+
 auto Sort::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -1137,5 +1142,5 @@ auto Sort::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & v : _y)
         ys.push_back(tracker.s_expr_term_of(v));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("sort"), SExpr::list(move(xs)), SExpr::list(move(ys))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(xs)), SExpr::list(move(ys))});
 }

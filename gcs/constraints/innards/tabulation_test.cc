@@ -118,8 +118,13 @@ namespace
 
         [[nodiscard]] auto s_expr(const ProofModel * const) const -> SExpr override
         {
-            vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom("test_tabulated_product")};
+            vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type())};
             return SExpr::list(std::move(terms));
+        }
+
+        [[nodiscard]] auto constraint_type() const -> std::string override
+        {
+            return "test_tabulated_product";
         }
     };
 }

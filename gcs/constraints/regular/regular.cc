@@ -551,6 +551,11 @@ auto Regular::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Regular::constraint_type() const -> std::string
+{
+    return "regular";
+}
+
 auto Regular::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -624,6 +629,6 @@ auto Regular::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & f : *final_states)
         finals.push_back(SExpr::atom(std::to_string(f)));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("regular"), SExpr::list(move(vars)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(vars)),
         SExpr::atom(std::to_string(num_states)), SExpr::list(move(states)), SExpr::list(move(finals))});
 }

@@ -48,6 +48,7 @@ using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
@@ -425,20 +426,32 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
     }
 }
 
+auto ReifiedLinearEquality::constraint_type() const -> std::string
+{
+    return overloaded{
+        [](const reif::MustHold &) -> string { return "lin_equals"; },                                //
+        [](const reif::If &) -> string { return "lin_equals"; },                                      //
+        [&](const reif::Iff &) -> string { return _flipped_cond ? "lin_not_equals" : "lin_equals"; }, //
+        [](const reif::MustNotHold &) -> string { return "lin_not_equals"; },                         //
+        [](const reif::NotIf &) -> string { return "lin_not_equals"; }                                //
+    }
+        .visit(_reif_cond);
+}
+
 auto ReifiedLinearEquality::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    auto [rei, cons] = overloaded{
-        [&](const reif::MustHold &) { return make_pair(false, "lin_equals"); },                                      //
-        [&](const reif::If &) { return make_pair(true, "lin_equals_if"); },                                          //
-        [&](const reif::Iff &) { return make_pair(true, _flipped_cond ? "lin_not_equals_iff" : "lin_equals_iff"); }, //
-        [&](const reif::MustNotHold &) { return make_pair(false, "lin_not_equals"); },                               //
-        [&](const reif::NotIf &) { return make_pair(true, "lin_not_equals_if"); }                                    //
+    auto [rei, suffix] = overloaded{
+        [&](const reif::MustHold &) { return make_pair(false, ""); },    //
+        [&](const reif::If &) { return make_pair(true, "_if"); },        //
+        [&](const reif::Iff &) { return make_pair(true, "_iff"); },      //
+        [&](const reif::MustNotHold &) { return make_pair(false, ""); }, //
+        [&](const reif::NotIf &) { return make_pair(true, "_if"); }      //
     }
-                           .visit(_reif_cond);
+                             .visit(_reif_cond);
 
-    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(cons)};
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type() + suffix)};
     if (rei) {
         // A flipped iff stores the negated condition (the equality holds iff NOT
         // the user's condition), but the not_equals_iff keyword already carries

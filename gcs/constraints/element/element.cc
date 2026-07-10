@@ -725,6 +725,12 @@ auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<C
 }
 
 template <typename EntryType_, unsigned dimensions_>
+auto NDimensionalElement<EntryType_, dimensions_>::constraint_type() const -> std::string
+{
+    return dimensions_ == 1 ? "element" : "element_2d";
+}
+
+template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -765,8 +771,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_expr(const ProofModel * con
     };
     build_array(build_array, *_array);
 
-    vector<SExpr> terms{
-        SExpr::atom(as_string(_constraint_id)), SExpr::atom(dimensions_ == 1 ? "element" : "element_2d"), SExpr::list(move(array_children))};
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(array_children))};
 
     for (size_t i = 0; i < _index_vars.size(); ++i)
         terms.push_back(SExpr::list({tracker.s_expr_term_of(_index_vars[i]), SExpr::atom(_index_starts[i].to_string())}));

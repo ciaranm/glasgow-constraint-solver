@@ -340,9 +340,14 @@ auto And::install_propagators(Propagators & propagators) -> void
         install_propagators_logical<hints::And>(propagators, constraint_id(), _lits, _full_reif, _reif_state);
 }
 
+auto And::constraint_type() const -> std::string
+{
+    return "and";
+}
+
 auto And::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, "and", _lits, _full_reif);
+    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, constraint_type(), _lits, _full_reif);
 }
 
 Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) : Or(to_lits(vars), full_reif != 0_i)
@@ -401,7 +406,12 @@ auto Or::install_propagators(Propagators & propagators) -> void
     install_propagators_logical<hints::Or>(propagators, constraint_id(), move(lits), _cake_reif ? ! *_cake_reif : ! _full_reif, _reif_state);
 }
 
+auto Or::constraint_type() const -> std::string
+{
+    return "or";
+}
+
 auto Or::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, "or", _lits, _full_reif);
+    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, constraint_type(), _lits, _full_reif);
 }

@@ -379,7 +379,12 @@ namespace
 
         [[nodiscard]] auto s_expr(const ProofModel * const) const -> SExpr override
         {
-            return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("test_product_fragment")});
+            return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type())});
+        }
+
+        [[nodiscard]] auto constraint_type() const -> std::string override
+        {
+            return "test_product_fragment";
         }
     };
 }

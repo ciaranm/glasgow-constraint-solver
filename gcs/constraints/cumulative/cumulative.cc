@@ -679,6 +679,11 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Cumulative::constraint_type() const -> std::string
+{
+    return "cumulative";
+}
+
 auto Cumulative::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -689,6 +694,6 @@ auto Cumulative::s_expr(const ProofModel * const model) const -> SExpr
         lengths.push_back(tracker.s_expr_term_of(l));
     for (const auto & h : _heights)
         heights.push_back(tracker.s_expr_term_of(h));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("cumulative"), SExpr::list(std::move(starts)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)),
         SExpr::list(std::move(lengths)), SExpr::list(std::move(heights)), tracker.s_expr_term_of(_capacity)});
 }

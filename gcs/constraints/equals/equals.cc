@@ -400,18 +400,31 @@ NotEqualsIff::NotEqualsIff(const IntegerVariableID v1, const IntegerVariableID v
 {
 }
 
+auto ReifiedEquals::constraint_type() const -> std::string
+{
+    return overloaded{
+        [](const reif::MustHold &) -> string { return "equals"; },                  //
+        [](const reif::MustNotHold &) -> string { return "not_equals"; },           //
+        [](const reif::If &) -> string { return "equals"; },                        //
+        [](const reif::NotIf &) -> string { return "not_equals"; },                 //
+        [&](const reif::Iff &) -> string { return _neq ? "not_equals" : "equals"; } //
+    }
+        .visit(_cond);
+}
+
 auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
-    string constraint_type = overloaded{
-        [](const reif::MustHold &) -> string { return "equals"; },                          //
-        [](const reif::MustNotHold &) -> string { return "not_equals"; },                   //
-        [](const reif::If &) -> string { return "equals_if"; },                             //
-        [](const reif::NotIf &) -> string { return "not_equals_if"; },                      //
-        [&](const reif::Iff &) -> string { return _neq ? "not_equals_iff" : "equals_iff"; } //
-    }
-                                 .visit(_cond);
+    string head = constraint_type() +
+        overloaded{
+            [](const reif::MustHold &) -> string { return ""; },    //
+            [](const reif::MustNotHold &) -> string { return ""; }, //
+            [](const reif::If &) -> string { return "_if"; },       //
+            [](const reif::NotIf &) -> string { return "_if"; },    //
+            [](const reif::Iff &) -> string { return "_iff"; }      //
+        }
+            .visit(_cond);
 
     // A not-equals iff stores the negated condition (equality holds iff NOT the
     // user's condition), but the not_equals_iff keyword already carries the
@@ -420,7 +433,7 @@ auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SEx
     // negations cancel into the opposite constraint.
     auto cond_to_write =
         _neq && std::holds_alternative<reif::Iff>(_cond) ? ReificationCondition{reif::Iff{! std::get<reif::Iff>(_cond).cond}} : _cond;
-    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type)};
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(head)};
     if (auto cond = tracker.s_expr_term_of(cond_to_write))
         terms.push_back(std::move(*cond));
     terms.push_back(tracker.s_expr_term_of(_v1));

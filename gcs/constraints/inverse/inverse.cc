@@ -197,6 +197,11 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Inverse::constraint_type() const -> std::string
+{
+    return "inverse";
+}
+
 auto Inverse::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -210,7 +215,7 @@ auto Inverse::s_expr(const innards::ProofModel * const model) const -> SExpr
     std::vector<SExpr> ys;
     for (const auto & y : _y)
         ys.push_back(tracker.s_expr_term_of(y));
-    return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("inverse"), SExpr::list({SExpr::list(std::move(xs)), SExpr::atom(_x_start.to_string())}),
-            SExpr::list({SExpr::list(std::move(ys)), SExpr::atom(_y_start.to_string())})});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()),
+        SExpr::list({SExpr::list(std::move(xs)), SExpr::atom(_x_start.to_string())}),
+        SExpr::list({SExpr::list(std::move(ys)), SExpr::atom(_y_start.to_string())})});
 }

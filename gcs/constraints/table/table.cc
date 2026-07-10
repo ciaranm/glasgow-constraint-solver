@@ -202,6 +202,11 @@ auto Table::install_propagators(Propagators & propagators) -> void
         move(_tuples));
 }
 
+auto Table::constraint_type() const -> std::string
+{
+    return "table";
+}
+
 auto Table::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -220,5 +225,5 @@ auto Table::s_expr(const innards::ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
     return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("table"), SExpr::list(std::move(tuple_terms)), SExpr::list(std::move(vars))});
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(tuple_terms)), SExpr::list(std::move(vars))});
 }

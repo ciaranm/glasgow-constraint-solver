@@ -1276,12 +1276,17 @@ auto Divide::install(Propagators & propagators, State & initial_state, ProofMode
     install_divide_modulus<hints::Divide>(constraint_id(), true, _x, _y, _quotient, _level, propagators, initial_state, optional_model);
 }
 
+auto Divide::constraint_type() const -> std::string
+{
+    return "divide";
+}
+
 auto Divide::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
     // Flat primitive shape `(id divide x y quotient)`, matching cake_pb_cp.
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("divide"), tracker.s_expr_term_of(_x), tracker.s_expr_term_of(_y),
-        tracker.s_expr_term_of(_quotient)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), tracker.s_expr_term_of(_x),
+        tracker.s_expr_term_of(_y), tracker.s_expr_term_of(_quotient)});
 }
 
 Modulus::Modulus(IntegerVariableID x, IntegerVariableID y, IntegerVariableID remainder) : _x(x), _y(y), _remainder(remainder)
@@ -1306,10 +1311,15 @@ auto Modulus::install(Propagators & propagators, State & initial_state, ProofMod
     install_divide_modulus<hints::Modulus>(constraint_id(), false, _x, _y, _remainder, _level, propagators, initial_state, optional_model);
 }
 
+auto Modulus::constraint_type() const -> std::string
+{
+    return "modulus";
+}
+
 auto Modulus::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
     // Flat primitive shape `(id modulus x y remainder)`, matching cake_pb_cp.
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("modulus"), tracker.s_expr_term_of(_x), tracker.s_expr_term_of(_y),
-        tracker.s_expr_term_of(_remainder)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), tracker.s_expr_term_of(_x),
+        tracker.s_expr_term_of(_y), tracker.s_expr_term_of(_remainder)});
 }

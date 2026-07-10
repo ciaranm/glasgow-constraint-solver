@@ -289,8 +289,14 @@ auto Abs::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Abs::constraint_type() const -> std::string
+{
+    return "abs";
+}
+
 auto Abs::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("abs"), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2)});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2)});
 }

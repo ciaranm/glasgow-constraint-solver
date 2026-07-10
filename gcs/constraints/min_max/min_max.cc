@@ -308,6 +308,11 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto ArrayMinMax::constraint_type() const -> std::string
+{
+    return _min ? "array_min" : "array_max";
+}
+
 auto ArrayMinMax::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -316,8 +321,8 @@ auto ArrayMinMax::s_expr(const innards::ProofModel * const model) const -> SExpr
         vars.push_back(tracker.s_expr_term_of(v));
     // cake_pb_cp's array aggregate keyword is array_min / array_max with shape
     // (id array_min (Xs) Y); a bare min / max is its *binary* op (X op Y = Z).
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(_min ? "array_min" : "array_max"), SExpr::list(std::move(vars)),
-        tracker.s_expr_term_of(_result)});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_result)});
 }
 
 Min::Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) : ArrayMinMax({v1, v2}, result, true)

@@ -141,6 +141,11 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto AtMostOne::constraint_type() const -> std::string
+{
+    return "at_most_one";
+}
+
 auto AtMostOne::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -148,7 +153,7 @@ auto AtMostOne::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
     return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("at_most_one"), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
 }
 
 // ----- AtMostOneSmartTable (kept for benchmarking) --------------------------
@@ -188,6 +193,11 @@ auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_sta
     move(smt_table).install(propagators, initial_state, optional_model);
 }
 
+auto AtMostOneSmartTable::constraint_type() const -> std::string
+{
+    return "at_most_one_smart_table";
+}
+
 auto AtMostOneSmartTable::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -195,5 +205,5 @@ auto AtMostOneSmartTable::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
     return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("at_most_one_smart_table"), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
 }

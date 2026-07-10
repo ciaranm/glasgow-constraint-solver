@@ -787,6 +787,11 @@ auto Disjunctive2D::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Disjunctive2D::constraint_type() const -> std::string
+{
+    return _strict ? "disjunctive2d_strict" : "disjunctive2d";
+}
+
 auto Disjunctive2D::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -799,6 +804,6 @@ auto Disjunctive2D::s_expr(const ProofModel * const model) const -> SExpr
         widths.push_back(tracker.s_expr_term_of(w));
     for (const auto & h : _heights)
         heights.push_back(tracker.s_expr_term_of(h));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(_strict ? "disjunctive2d_strict" : "disjunctive2d"),
-        SExpr::list(std::move(xs)), SExpr::list(std::move(ys)), SExpr::list(std::move(widths)), SExpr::list(std::move(heights))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(xs)),
+        SExpr::list(std::move(ys)), SExpr::list(std::move(widths)), SExpr::list(std::move(heights))});
 }
