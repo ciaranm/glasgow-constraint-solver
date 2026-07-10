@@ -183,8 +183,15 @@ namespace gcs
          * @{
          */
 
+        /**
+         * \brief Create a fresh state for a new search, returned by value.
+         */
         [[nodiscard]] auto create_state_for_new_search(innards::ProofModel * const) const -> innards::State;
 
+        /**
+         * \brief Create the propagators for a search over this Problem,
+         * returned by value.
+         */
         [[nodiscard]] auto create_propagators(innards::State &, innards::ProofModel * const) const -> innards::Propagators;
 
         /**
@@ -205,6 +212,10 @@ namespace gcs
          */
         [[nodiscard]] auto each_constraint() const -> std::generator<const Constraint &>;
 
+        /**
+         * \brief Returns a generator giving each variable together with its
+         * bounds and its name, all yielded by value.
+         */
         [[nodiscard]] auto each_variable_with_bounds_and_name() const -> std::generator<std::tuple<IntegerVariableID, Integer, Integer, std::string>>;
 
         /**
