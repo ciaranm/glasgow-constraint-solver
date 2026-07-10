@@ -77,9 +77,15 @@ with `git config core.hooksPath .githooks` (see CONTRIBUTING.md).
 
 ## Compiler and Standard Library Support
 
-The codebase is built with both **GCC 15.2.0** and **clang 21**. Clang on macOS uses
-**libc++** (Apple's standard library), not libstdc++. This matters for C++23 feature
-availability: some features are in libstdc++ but not yet libc++.
+The codebase is built with **GCC 15.2.0**, **clang 21**, and **MSVC (Visual Studio
+2022)**. Clang on macOS uses **libc++** (Apple's standard library), not libstdc++.
+This matters for C++23 feature availability: some features are in libstdc++ but not
+yet libc++.
+
+Windows/MSVC support is experimental (see README.md, Platform support), but the
+`windows-2022` CI lanes gate every push and pull request just like the Linux and
+macOS ones, so code must still compile there. In particular, do not use GCC/clang
+extensions or Itanium-ABI-only headers (`<cxxabi.h>`, `abi::__cxa_demangle`, ...).
 
 Known unavailable in libc++ (clang 21):
 - `std::views::enumerate` — use `util/enumerate.hh` instead; do not remove that file
@@ -97,7 +103,8 @@ verified via CI on 2026-07-03 — prefer them where they read more clearly than 
 - `std::optional` monadic operations: `.transform()`, `.and_then()`, `.or_else()`, and
   `.value_or()`.
 
-When adding a new C++23 feature, build with both compilers before committing.
+When adding a new C++23 feature, build with GCC and clang before committing, and check
+MSVC availability (CI is the backstop there).
 
 ## Code Style
 
