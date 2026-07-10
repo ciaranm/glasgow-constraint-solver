@@ -9,13 +9,24 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os }}
+    name: ${{ matrix.os }}${{ matrix.cxx && format(' ({0})', matrix.cxx) || '' }}
     runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-24.04, ubuntu-26.04, macos-15, macos-26 ]
+        # The Ubuntu lanes with caps: OFF build with the runner's default GCC
+        # and turn the constraint-test runtime caps off so they do
+        # full-enumeration completeness checking. The clang lane covers the
+        # clang + libstdc++ toolchain (including the clang-only lifetime
+        # annotation probe tests) and keeps the (faster) capped defaults, as
+        # do the macOS lanes, which build with Apple Clang + libc++.
+        include:
+          - { os: ubuntu-24.04, caps: 'OFF' }
+          - { os: ubuntu-26.04, caps: 'OFF' }
+          - { os: ubuntu-26.04, cc: clang, cxx: clang++ }
+          - { os: macos-15 }
+          - { os: macos-26 }
 
     steps:
     - name: Checkout
@@ -48,11 +59,19 @@ jobs:
         dirname "$mzn" >> "$GITHUB_PATH"
         "$mzn" --version
 
+    - name: Install clang
+      # Don't rely on the runner image preinstalling a particular clang; the
+      # distro package is the version this lane is meant to cover.
+      if: matrix.cxx == 'clang++'
+      run: sudo apt-get update && sudo apt-get install -y clang
+
     - name: Configure CMake
-      # Turn the constraint-test runtime caps off on the Ubuntu release runners
-      # so they do full-enumeration completeness checking; the macOS runners
-      # keep the (faster) capped defaults.
-      run: cmake --preset release -B ${{github.workspace}}/build ${{ startsWith(matrix.os, 'ubuntu') && '-DGCS_TEST_CAP_DEFAULTS=OFF' || '' }}
+      # An empty CC/CXX is ignored by CMake's compiler detection, so the
+      # default-compiler lanes are unaffected.
+      env:
+        CC: ${{ matrix.cc }}
+        CXX: ${{ matrix.cxx }}
+      run: cmake --preset release -B ${{github.workspace}}/build ${{ matrix.caps == 'OFF' && '-DGCS_TEST_CAP_DEFAULTS=OFF' || '' }}
 
     - name: Build
       run: cmake --build ${{github.workspace}}/build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
