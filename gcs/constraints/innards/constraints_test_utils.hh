@@ -135,16 +135,10 @@ namespace gcs::test_innards
             std::remove(vopb.c_str());
             return;
         }
-        // Known cake bug (reported upstream): a domain-{0} (ub == 0) variable
-        // gets a zero-bit encoding, so its bound lines print with an EMPTY
-        // left-hand side ("@i[X][lb]  >= 0"), which is invalid OPB. Filter these
-        // instances out so this one case doesn't mask other divergences.
-        if (! cake_capture("grep -qE '\\[(lb|ub)\\][[:space:]]*[<>]=' " + vopb + " && echo Y").empty()) {
-            log("SKIP_ZERO_DOMAIN");
-            std::remove(vopb.c_str());
-            return;
-        }
         // 2. veripb elaborates OUR proof against CAKE's OPB (the divergence gate).
+        // (A domain-{0} variable's zero-bit bound rows print with an EMPTY
+        // left-hand side, which needs a veripb with the labelled-empty-LHS
+        // parser fix of 2026-07-10.)
         auto elab = cake_capture("veripb " + vopb + " " + pbp + " --elaborate " + core + " 2>&1");
         if (! verified(elab)) {
             log("FAIL_ELAB", lastmeaningful(elab));

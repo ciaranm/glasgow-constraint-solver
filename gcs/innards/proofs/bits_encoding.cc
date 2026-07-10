@@ -22,13 +22,16 @@ auto gcs::innards::get_bits_encoding_coeffs(Integer lower, Integer upper) -> tup
     // since the sign bit contributes -2^(shift+1). This matches the tight u+1
     // two's-complement width (Step 5 of Matthew's thesis).
     //
-    // Step 5's "least strictly positive h" floor belongs to the non-negative
-    // branch only: a negative-capable variable always carries its sign bit, so
-    // the thesis width for {-1} and {-1,0} has *zero* magnitude bits (the value
-    // is -1 * sign). Flooring those to one magnitude bit is what cake_pb_cp
-    // calls out as a divergent encoding (issue #478). Every variable still has
-    // at least one atom: the sign bit when lower < 0, a magnitude bit otherwise.
-    Integer highest_abs_value = lower < 0_i ? max(abs(lower) - 1_i, upper) : max(upper, 1_i);
+    // No magnitude bits are allocated unless they can reach a value the domain
+    // contains: {-1} and {-1,0} are just the sign bit (the value is -1 * sign),
+    // and {0} is the *empty* sum, identically zero, with no atoms at all -- its
+    // bound rows print with an empty left-hand side, which veripb parses (since
+    // the 2026-07-10 labelled-empty-LHS fix) and every ge/eq atom over it is a
+    // pinned constant. This conforms to cake_pb_cp's width rule (issue #478);
+    // the thesis's "least strictly positive h" floor (eq. 3.21) would instead
+    // give {0} one magnitude bit, a divergence cake upstream asked us to drop
+    // in preference to adding the floor to cake.
+    Integer highest_abs_value = lower < 0_i ? max(abs(lower) - 1_i, upper) : upper;
     Integer highest_bit_shift = Integer{bit_width(static_cast<unsigned long long>(highest_abs_value.raw_value))} - 1_i;
     Integer highest_bit_coeff = highest_bit_shift >= 0_i ? power2(highest_bit_shift) : 0_i;
     auto negative_bit_coeff = lower < 0_i ? -power2(highest_bit_shift + 1_i) : 0_i;

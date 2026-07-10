@@ -10,6 +10,10 @@ using std::tuple;
 
 TEST_CASE("Bit encodings")
 {
+    // {0} has no atoms at all: the empty bit-sum is identically zero (cake's
+    // width rule; the thesis's strictly-positive-h floor would give one bit).
+    CHECK(get_bits_encoding_coeffs(0_i, 0_i) == tuple{-1_i, 0_i, 0_i});
+
     CHECK(get_bits_encoding_coeffs(0_i, 1_i) == tuple{0_i, 1_i, 0_i});
     CHECK(get_bits_encoding_coeffs(0_i, 2_i) == tuple{1_i, 2_i, 0_i});
     CHECK(get_bits_encoding_coeffs(0_i, 3_i) == tuple{1_i, 2_i, 0_i});
