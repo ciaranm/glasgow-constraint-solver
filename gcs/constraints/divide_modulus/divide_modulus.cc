@@ -10,7 +10,6 @@
 #include <gcs/constraints/linear/hints.hh>
 #include <gcs/constraints/linear/propagate.hh>
 #include <gcs/constraints/linear/utils.hh>
-#include <gcs/constraints/multiply/signed_multiply.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/power.hh>
@@ -846,33 +845,68 @@ namespace
         }
     }
 
+    // cake's sign atoms for one operand slot, in the two shapes the encoding
+    // uses them: WPBSum terms for the sign/nonzero clauses, and gates for the
+    // half-reified remainder/identity rows. A variable operand's atoms are its
+    // reified conditions, exactly as before; a constant k's are its pinned
+    // n[k][...] atoms, which is how cake encodes a constant slot (issue #483).
+    struct OperandSignAtoms
+    {
+        PseudoBooleanTerm ge0, lt0, ge1, lt1, ne0;
+        HalfReifyOnConjunctionOf ge0_gate, lt1_gate;
+    };
+
+    auto operand_sign_atoms(ProofModel & model, const IntegerVariableID & v) -> OperandSignAtoms
+    {
+        if (auto cv = get_if<ConstantIntegerVariableID>(&v)) {
+            auto atoms = model.cake_constant_atoms(cv->const_value);
+            return {atoms.ge0, ! atoms.ge0, atoms.ge1, ! atoms.ge1, ! atoms.eq0, HalfReifyOnConjunctionOf{atoms.ge0},
+                HalfReifyOnConjunctionOf{! atoms.ge1}};
+        }
+        return {ProofLiteral{v >= 0_i}, ProofLiteral{v < 0_i}, ProofLiteral{v >= 1_i}, ProofLiteral{v < 1_i}, ProofLiteral{v != 0_i},
+            HalfReifyOnConjunctionOf{v >= 0_i}, HalfReifyOnConjunctionOf{v < 1_i}};
+    }
+
     // The four stages pinning mag = |v| in both directions off its cake channel, split on
     // sign(v). pos_threshold gates the non-negative half: 0 when v may be zero (the quotient),
-    // 1 when v is known non-zero (the divisor).
+    // 1 when v is known non-zero (the divisor). A constant operand's sign is static, so only
+    // the matching half's stages exist, ungated: they pin mag = |v| at the root, and the
+    // concluding RUP discharges the channel rows' pinned-atom gate terms.
     auto append_magnitude_stages(std::vector<LinearStage> & stages, SimpleIntegerVariableID mag, IntegerVariableID v, const CakeMagnitude & chan,
         Integer pos_threshold) -> void
     {
-        auto [t_le, m_le] = tidy_up_linear(WeightedSum{} + 1_i * mag + -1_i * v);
-        stages.emplace_back(LinearStage{t_le, 0_i + m_le, false, {chan.pos_ge, nullopt}, optional{v >= pos_threshold}});
-        auto [t_ge, m_ge] = tidy_up_linear(WeightedSum{} + -1_i * mag + 1_i * v);
-        stages.emplace_back(LinearStage{t_ge, 0_i + m_ge, false, {chan.pos_le, nullopt}, optional{v >= pos_threshold}});
-        auto [t_nle, m_nle] = tidy_up_linear(WeightedSum{} + 1_i * mag + 1_i * v);
-        stages.emplace_back(LinearStage{t_nle, 0_i + m_nle, false, {chan.neg_le, nullopt}, optional{v < 0_i}});
-        auto [t_nge, m_nge] = tidy_up_linear(WeightedSum{} + -1_i * mag + -1_i * v);
-        stages.emplace_back(LinearStage{t_nge, 0_i + m_nge, false, {chan.neg_ge, nullopt}, optional{v < 0_i}});
+        optional<IntegerVariableCondition> pos_gate = v >= pos_threshold, neg_gate = v < 0_i;
+        bool want_pos = true, want_neg = true;
+        if (auto cv = get_if<ConstantIntegerVariableID>(&v)) {
+            want_pos = cv->const_value >= pos_threshold;
+            want_neg = cv->const_value < 0_i;
+            pos_gate = nullopt;
+            neg_gate = nullopt;
+        }
+        if (want_pos) {
+            auto [t_le, m_le] = tidy_up_linear(WeightedSum{} + 1_i * mag + -1_i * v);
+            stages.emplace_back(LinearStage{t_le, 0_i + m_le, false, {chan.pos_ge, nullopt}, pos_gate});
+            auto [t_ge, m_ge] = tidy_up_linear(WeightedSum{} + -1_i * mag + 1_i * v);
+            stages.emplace_back(LinearStage{t_ge, 0_i + m_ge, false, {chan.pos_le, nullopt}, pos_gate});
+        }
+        if (want_neg) {
+            auto [t_nle, m_nle] = tidy_up_linear(WeightedSum{} + 1_i * mag + 1_i * v);
+            stages.emplace_back(LinearStage{t_nle, 0_i + m_nle, false, {chan.neg_le, nullopt}, neg_gate});
+            auto [t_nge, m_nge] = tidy_up_linear(WeightedSum{} + -1_i * mag + -1_i * v);
+            stages.emplace_back(LinearStage{t_nge, 0_i + m_nge, false, {chan.neg_ge, nullopt}, neg_gate});
+        }
     }
 
     // The shared decomposition: x = q * y + r, |r| < |y|, sign(r) = sign(x)
     // (or r = 0), all emitted as one flat @c[id][role] OPB block and run by
     // one propagator (issue #448). Divide exposes q and creates r as an
-    // auxiliary; Modulus the other way around. A constant divisor (or, for
-    // Divide, a constant quotient) makes the product a linear term, so there
-    // is no multiplication at all; otherwise the product goes through the
-    // exposed mult_bc machinery on plain variables, with any views channelled
-    // through plain copies first -- once the user's variables are fixed, the
-    // multiplication must pin the unbranched auxiliary (or fail) by
-    // propagation alone, and mult_bc's quotient filtering does exactly that
-    // for plain arguments.
+    // auxiliary; Modulus the other way around. Every operand shape -- views
+    // and constants included -- goes through the one magnitude-product
+    // machinery, matching cake_pb_cp's uniform encoding: a constant operand
+    // just folds into the rows, gated on its pinned n[k][...] atoms (issue
+    // #483). Once the user's variables are fixed, the multiplication must pin
+    // the unbranched auxiliary (or fail) by propagation alone, and the
+    // quotient filtering does exactly that.
     template <typename Hint_>
     auto install_divide_modulus(const ConstraintID & owner, bool expose_quotient, const IntegerVariableID & x, const IntegerVariableID & y,
         const IntegerVariableID & out, const std::variant<consistency::Auto, consistency::BC, consistency::Tabulated> & level,
@@ -881,7 +915,6 @@ namespace
         auto ax = affine_of(x), ay = affine_of(y), aout = affine_of(out);
 
         auto [xlo, xhi] = initial_state.bounds(x);
-        auto [ylo, yhi] = initial_state.bounds(y);
 
         // A structurally constant zero divisor makes the whole constraint
         // unsatisfiable, relationally rather than as an error.
@@ -897,30 +930,22 @@ namespace
             return;
         }
 
-        // Biggest possible |y| bounds the remainder: |r| <= max|y| - 1.
-        auto may = max(ylo < 0_i ? -ylo : ylo, yhi < 0_i ? -yhi : yhi);
-        auto rmax = max(0_i, may - 1_i);
-
-        // The quotient can be no bigger in magnitude than the dividend (as
-        // |y| >= 1 whenever the relation holds at all), and when the divisor
-        // has a fixed sign, truncated division is monotone enough that the
-        // box corners bound it.
+        // The quotient magnitude can be no bigger than the dividend's (as
+        // |y| >= 1 whenever the relation holds at all).
         auto mx = max(xlo < 0_i ? -xlo : xlo, xhi < 0_i ? -xhi : xhi);
-        auto q_lo = -mx, q_hi = mx;
-        if (ylo > 0_i || yhi < 0_i) {
-            q_lo = min({xlo / ylo, xlo / yhi, xhi / ylo, xhi / yhi});
-            q_hi = max({xlo / ylo, xlo / yhi, xhi / ylo, xhi / yhi});
-        }
 
-        // The default divide/modulus route emits cake_pb_cp's encoding: the product |q|*|y|
-        // lives only in the bit-product grid feeding the remainder/identity rows, with no w
-        // (and, for divide, no r) anywhere -- not in the OPB, not in the State, not in the
-        // proof. Both directions multiply the two NON-NEGATIVE magnitudes, split the
+        // Both routes emit cake_pb_cp's encoding: the product |q|*|y| lives only in the
+        // bit-product grid feeding the remainder/identity rows, with no w (and, for
+        // divide, no r) anywhere -- not in the OPB, not in the State, not in the proof.
+        // Both directions multiply the two NON-NEGATIVE magnitudes, split the
         // identity/remainder on sign(x), and recover signed values in the tabulation -- a
-        // single magnitude machinery covering every sign of both operands, views included.
+        // single magnitude machinery covering every sign of both operands, views and
+        // constants included: a constant operand's channel folds the constant into the
+        // rows and gates on its pinned n[k][...] atoms, exactly as cake encodes a
+        // constant slot (issue #483).
         //
-        // Divide (default_divide): the exposed slot is q. magq = |q| (a state var channelled
-        // to q by cake's Zge0/Zlt0 channel) and absy = |y| (channelled by Yge0/Ylt0) are the
+        // Divide: the exposed slot is q. magq = |q| (a state var channelled to q by
+        // cake's Zge0/Zlt0 channel) and absy = |y| (channelled by Yge0/Ylt0) are the
         // grid operands; cake's rem_* rows range 0 <= x - w < |y| over the grid sum and x
         // directly (rem_pos gated [x>=0], rem_neg gated [x<1]), so no remainder is
         // materialised at all. The exposed quotient's sign is pinned off the five sgn_*
@@ -928,43 +953,24 @@ namespace
         // rejected leaf pins magq/absy by unit propagation from the assigned q, y and the
         // rem rows refute it.
         //
-        // Modulus (default_modulus): the exposed slot is r, and cake leaves the quotient's
+        // Modulus: the exposed slot is r, and cake leaves the quotient's
         // magnitude a FREE axis-0 bit-sum with no i[Q] channel (no Zge0/Zlt0, no sgn_*). The
         // aux is the quotient magnitude |q|; absy = |y| is the second grid operand. cake
         // splits the identity r = x -/+ |q||y| on sign(x), the range/sign rows bound r, and
         // the tabulation recovers the signed quotient sign(x)sign(y)|q|.
-        // The default route runs whenever there is a product to reason about:
-        // a variable divisor and (for Divide) a variable exposed quotient,
-        // views included -- the channel rows, the rem/id rows and the sign
-        // clauses all take view terms directly. A constant divisor or a
-        // constant quotient leaves only linear structure, handled below.
-        bool default_divide = expose_quotient && ay.var.has_value() && aout.var.has_value();
-        bool default_modulus = (! expose_quotient) && ay.var.has_value();
 
-        // The exposed slot is the user's; the other is an auxiliary, with
-        // bounds tightened by the sign-of-dividend rule where easy.
+        // The exposed slot is the user's; the other is an auxiliary.
         IntegerVariableID q = 0_c, r = 0_c;
         SimpleIntegerVariableID aux = SimpleIntegerVariableID{0};
-        if (expose_quotient && default_divide) {
+        if (expose_quotient) {
             q = out;
-            // The default divide path materialises no remainder (neither in the OPB nor in the
+            // The divide path materialises no remainder (neither in the OPB nor in the
             // proof): cake's rem_* rows range x - w directly, so the aux is an inert state
             // slot, never introduced, enumerated, or meaningfully watched.
             aux = initial_state.allocate_integer_variable_with_state(0_i, 0_i);
             r = aux;
         }
-        else if (expose_quotient) {
-            // Divide with a constant divisor or quotient: the remainder is a
-            // signed auxiliary in the OPB, pinned by the linear identity.
-            q = out;
-            auto r_lo = xlo >= 0_i ? 0_i : -rmax;
-            auto r_hi = xhi <= 0_i ? 0_i : rmax;
-            aux = initial_state.allocate_integer_variable_with_state(r_lo, r_hi);
-            if (optional_model)
-                optional_model->set_up_integer_variable(aux, r_lo, r_hi, "aux_divide_remainder" + to_string(aux.index), nullopt);
-            r = aux;
-        }
-        else if (default_modulus) {
+        else {
             r = out;
             // The aux is the quotient MAGNITUDE |q|, a free axis-0 bit-sum sized by the
             // dividend's magnitude (|q| <= |x| since |y| >= 1). Its provable range is the
@@ -983,33 +989,13 @@ namespace
                     aux, 0_i, q_bit_max, "aux_modulus_quotient" + to_string(aux.index), CakeBitNaming{owner, {0}, "bin", nullopt, false, true});
             q = aux;
         }
-        else {
-            r = out;
-            aux = initial_state.allocate_integer_variable_with_state(q_lo, q_hi);
-            if (optional_model)
-                optional_model->set_up_integer_variable(aux, q_lo, q_hi, "aux_modulus_quotient" + to_string(aux.index), nullopt);
-            q = aux;
-        }
-        auto aq = affine_of(q);
 
         auto label = as_string(owner);
 
-        vector<LinearStage> legacy_stages;
-        auto add_equality = [&](const WeightedSum & sum, Integer value, const string & role) {
-            add_equality_stage(legacy_stages, optional_model, label, sum, value, role);
-        };
-        auto add_le = [&](const WeightedSum & sum, Integer value, const string & role, const optional<IntegerVariableCondition> & gate) {
-            add_le_stage(legacy_stages, optional_model, label, sum, value, role, gate);
-        };
-
-        // x = q * y + r. With a constant divisor or a constant quotient the
-        // product is a linear term and everything is stages; otherwise the
-        // default path's grid carries the product.
-        bool needs_mult = ay.var && aq.var;
         shared_ptr<DefaultProductData> default_data;
         shared_ptr<vector<LinearStage>> default_stages;
 
-        if (default_divide) {
+        if (expose_quotient) {
             // Divide, any sign of the dividend. BOTH the x >= 0 and x < 0 remainder rows
             // are live, each gated on sign(x) so only the matching regime fires once x is
             // branched. The quotient's sign is pinned off the sgn_* clauses (for whichever
@@ -1046,33 +1032,35 @@ namespace
                 const auto & product_sum = default_data->grid.sum;
                 const auto & neg_product = default_data->grid.neg_sum;
 
+                auto xa = operand_sign_atoms(*optional_model, x);
+                auto ya = operand_sign_atoms(*optional_model, y);
+                auto qa = operand_sign_atoms(*optional_model, q);
+
                 // Both remainder-row sets: 0 <= x - |q||y| < |y| (rem_pos, gated [x>=0]) and
                 // 0 <= -x - |q||y| < |y| (rem_neg, gated [x<1]).
-                auto xge0 = HalfReifyOnConjunctionOf{x_eff >= 0_i};
-                auto xlt0 = HalfReifyOnConjunctionOf{x_eff < 1_i};
-                default_data->rem_pos_lo =
-                    optional_model->add_labelled_constraint(label, "rem_pos_lo", "Divide", "remainder", neg_product + 1_i * x_eff >= 0_i, xge0);
+                default_data->rem_pos_lo = optional_model->add_labelled_constraint(
+                    label, "rem_pos_lo", "Divide", "remainder", neg_product + 1_i * x_eff >= 0_i, xa.ge0_gate);
                 default_data->rem_pos_hi = optional_model->add_labelled_constraint(
-                    label, "rem_pos_hi", "Divide", "remainder", product_sum + -1_i * x_eff + 1_i * absy >= 1_i, xge0);
-                default_data->rem_neg_hi =
-                    optional_model->add_labelled_constraint(label, "rem_neg_hi", "Divide", "remainder", neg_product + -1_i * x_eff >= 0_i, xlt0);
+                    label, "rem_pos_hi", "Divide", "remainder", product_sum + -1_i * x_eff + 1_i * absy >= 1_i, xa.ge0_gate);
+                default_data->rem_neg_hi = optional_model->add_labelled_constraint(
+                    label, "rem_neg_hi", "Divide", "remainder", neg_product + -1_i * x_eff >= 0_i, xa.lt1_gate);
                 default_data->rem_neg_lo = optional_model->add_labelled_constraint(
-                    label, "rem_neg_lo", "Divide", "remainder", product_sum + 1_i * x_eff + 1_i * absy >= 1_i, xlt0);
+                    label, "rem_neg_lo", "Divide", "remainder", product_sum + 1_i * x_eff + 1_i * absy >= 1_i, xa.lt1_gate);
 
                 optional_model->add_labelled_constraint(
-                    label, "sgn_pp", "Divide", "sign", WPBSum{} + 1_i * (x < 1_i) + 1_i * (y < 1_i) + 1_i * (q >= 0_i) >= 1_i);
+                    label, "sgn_pp", "Divide", "sign", WPBSum{} + 1_i * xa.lt1 + 1_i * ya.lt1 + 1_i * qa.ge0 >= 1_i);
                 optional_model->add_labelled_constraint(
-                    label, "sgn_nn", "Divide", "sign", WPBSum{} + 1_i * (x >= 0_i) + 1_i * (y >= 0_i) + 1_i * (q >= 0_i) >= 1_i);
+                    label, "sgn_nn", "Divide", "sign", WPBSum{} + 1_i * xa.ge0 + 1_i * ya.ge0 + 1_i * qa.ge0 >= 1_i);
                 optional_model->add_labelled_constraint(
-                    label, "sgn_pn", "Divide", "sign", WPBSum{} + 1_i * (x < 1_i) + 1_i * (y >= 0_i) + 1_i * (q < 1_i) >= 1_i);
+                    label, "sgn_pn", "Divide", "sign", WPBSum{} + 1_i * xa.lt1 + 1_i * ya.ge0 + 1_i * qa.lt1 >= 1_i);
                 optional_model->add_labelled_constraint(
-                    label, "sgn_np", "Divide", "sign", WPBSum{} + 1_i * (x >= 0_i) + 1_i * (y < 1_i) + 1_i * (q < 1_i) >= 1_i);
-                optional_model->add_labelled_constraint(label, "sgn_x0", "Divide", "sign", WPBSum{} + 1_i * (x != 0_i) + 1_i * (q < 1_i) >= 1_i);
+                    label, "sgn_np", "Divide", "sign", WPBSum{} + 1_i * xa.ge0 + 1_i * ya.lt1 + 1_i * qa.lt1 >= 1_i);
+                optional_model->add_labelled_constraint(label, "sgn_x0", "Divide", "sign", WPBSum{} + 1_i * xa.ne0 + 1_i * qa.lt1 >= 1_i);
                 optional_model->add_labelled_constraint(
-                    label, "nonzero", "Divide", "divisor is not zero", WPBSum{} + 1_i * (y >= 1_i) + 1_i * (y < 0_i) >= 1_i);
+                    label, "nonzero", "Divide", "divisor is not zero", WPBSum{} + 1_i * ya.ge1 + 1_i * ya.lt0 >= 1_i);
             }
         }
-        else if (default_modulus) {
+        else {
             // The default modulus path: the exposed slot is r; the quotient magnitude |q| (the
             // aux, axis-0 free magnitude) and the divisor magnitude |y| (absy, pinned to |y| by
             // cake's Yge0/Ylt0 channel) multiply through the bit-product grid. The identity
@@ -1111,29 +1099,30 @@ namespace
                 const auto & product_sum = default_data->grid.sum;
                 const auto & neg_product = default_data->grid.neg_sum;
 
+                auto xa = operand_sign_atoms(*optional_model, x);
+                auto ya = operand_sign_atoms(*optional_model, y);
+
                 optional_model->add_labelled_constraint(
-                    label, "nonzero", "Modulus", "divisor is not zero", WPBSum{} + 1_i * (y >= 1_i) + 1_i * (y < 0_i) >= 1_i);
+                    label, "nonzero", "Modulus", "divisor is not zero", WPBSum{} + 1_i * ya.ge1 + 1_i * ya.lt0 >= 1_i);
 
                 // r = x - |q||y|, split on sign(x): id_pos_* (gated [x>=0], r = x - Sum) and
                 // id_neg_* (gated [x<0], r = x + Sum -- since for x < 0 the quotient product
                 // q*y has sign(x), i.e. q*y = -Sum).
-                auto xge0 = HalfReifyOnConjunctionOf{x_eff >= 0_i};
-                auto xlt0 = HalfReifyOnConjunctionOf{x_eff < 1_i};
                 default_data->id_pos_ge = optional_model->add_labelled_constraint(
-                    label, "id_pos_ge", "Modulus", "identity", neg_product + 1_i * x_eff + -1_i * r_eff >= 0_i, xge0);
+                    label, "id_pos_ge", "Modulus", "identity", neg_product + 1_i * x_eff + -1_i * r_eff >= 0_i, xa.ge0_gate);
                 default_data->id_pos_le = optional_model->add_labelled_constraint(
-                    label, "id_pos_le", "Modulus", "identity", product_sum + -1_i * x_eff + 1_i * r_eff >= 0_i, xge0);
+                    label, "id_pos_le", "Modulus", "identity", product_sum + -1_i * x_eff + 1_i * r_eff >= 0_i, xa.ge0_gate);
                 default_data->id_neg_ge = optional_model->add_labelled_constraint(
-                    label, "id_neg_ge", "Modulus", "identity", neg_product + -1_i * x_eff + 1_i * r_eff >= 0_i, xlt0);
+                    label, "id_neg_ge", "Modulus", "identity", neg_product + -1_i * x_eff + 1_i * r_eff >= 0_i, xa.lt1_gate);
                 default_data->id_neg_le = optional_model->add_labelled_constraint(
-                    label, "id_neg_le", "Modulus", "identity", product_sum + 1_i * x_eff + -1_i * r_eff >= 0_i, xlt0);
+                    label, "id_neg_le", "Modulus", "identity", product_sum + 1_i * x_eff + -1_i * r_eff >= 0_i, xa.lt1_gate);
 
                 // |r| < |y| = absy: rng_hi (r < absy) and rng_lo (r > -absy), plus the r-sign
                 // rows (r takes x's sign; sgn_pos gated [x>=0], sgn_neg gated [x<0]).
                 rng_hi = optional_model->add_labelled_constraint(label, "rng_hi", "Modulus", "range", WPBSum{} + -1_i * r_eff + 1_i * absy >= 1_i);
                 rng_lo = optional_model->add_labelled_constraint(label, "rng_lo", "Modulus", "range", WPBSum{} + 1_i * r_eff + 1_i * absy >= 1_i);
-                sgn_pos = optional_model->add_labelled_constraint(label, "sgn_pos", "Modulus", "sign", WPBSum{} + 1_i * r_eff >= 0_i, xge0);
-                sgn_neg = optional_model->add_labelled_constraint(label, "sgn_neg", "Modulus", "sign", WPBSum{} + -1_i * r_eff >= 0_i, xlt0);
+                sgn_pos = optional_model->add_labelled_constraint(label, "sgn_pos", "Modulus", "sign", WPBSum{} + 1_i * r_eff >= 0_i, xa.ge0_gate);
+                sgn_neg = optional_model->add_labelled_constraint(label, "sgn_neg", "Modulus", "sign", WPBSum{} + -1_i * r_eff >= 0_i, xa.lt1_gate);
             }
 
             // Stages (built regardless of proofs): the range 0 <= r < absy (x>=0) /
@@ -1152,56 +1141,6 @@ namespace
             append_magnitude_stages(*default_stages, absy, y_eff, ychan, 1_i);
         }
 
-        if (! needs_mult) {
-            // one of d * q + r - x = 0 (constant divisor) or c * y + r - x = 0
-            // (Divide with a constant quotient)
-            if (! ay.var)
-                add_equality(WeightedSum{} + ay.offset * q + 1_i * r + -1_i * x, 0_i, "sum");
-            else
-                add_equality(WeightedSum{} + aq.offset * y + 1_i * r + -1_i * x, 0_i, "sum");
-        }
-
-        // |r| < |y|, plus y != 0, which is where the relational division-by-
-        // zero semantics comes from. With a constant divisor the remainder
-        // slot's range suffices: it is baked into the auxiliary's bounds for
-        // Divide, and posted on the user's remainder for Modulus. With a
-        // variable divisor, split on the divisor's sign.
-        if (! needs_mult) {
-            if (! ay.var) {
-                if (! expose_quotient) {
-                    add_le(WeightedSum{} + 1_i * r, rmax, "remhi", nullopt);
-                    add_le(WeightedSum{} + -1_i * r, rmax, "remlo", nullopt);
-                }
-            }
-            else {
-                if (optional_model)
-                    optional_model->add_labelled_constraint(
-                        label, "nonzero", "DivideModulus", "divisor is not zero", WPBSum{} + 1_i * (y >= 1_i) + 1_i * (y < 0_i) >= 1_i);
-
-                // y >= 1 -> r <= y - 1 and r >= -y + 1
-                add_le(WeightedSum{} + 1_i * r + -1_i * y, -1_i, "rangeposhi", y >= 1_i);
-                add_le(WeightedSum{} + -1_i * r + -1_i * y, -1_i, "rangeposlo", y >= 1_i);
-                // y <= -1 -> r <= -y - 1 and r >= y + 1
-                add_le(WeightedSum{} + 1_i * r + 1_i * y, -1_i, "rangeneghi", y < 0_i);
-                add_le(WeightedSum{} + -1_i * r + 1_i * y, -1_i, "rangeneglo", y < 0_i);
-            }
-
-            // The remainder takes the sign of the dividend, which is what pins
-            // truncation: without it, the identity and |r| < |y| admit both the
-            // truncated and the floored (quotient, remainder) pair when the signs
-            // differ.
-            if (ax.var) {
-                add_le(WeightedSum{} + -1_i * r, 0_i, "signpos", x >= 0_i);
-                add_le(WeightedSum{} + 1_i * r, 0_i, "signneg", x < 1_i);
-            }
-            else {
-                if (ax.offset >= 0_i)
-                    add_le(WeightedSum{} + -1_i * r, 0_i, "signpos", nullopt);
-                if (ax.offset <= 0_i)
-                    add_le(WeightedSum{} + 1_i * r, 0_i, "signneg", nullopt);
-            }
-        }
-
         Triggers triggers;
         vector<IntegerVariableID> watched;
         auto watch = [&](const IntegerVariableID & v) {
@@ -1212,81 +1151,52 @@ namespace
         watch(y);
         watch(out);
         watch(aux);
-        if (needs_mult) {
-            watch(default_data->mag_a);
-            watch(default_data->mag_b);
-        }
+        watch(default_data->mag_a);
+        watch(default_data->mag_b);
         triggers.on_bounds = watched;
 
-        bool prune_zero = ay.var != nullopt;
-        if (needs_mult) {
-            propagators.install(
-                owner,
-                [data = default_data, stg = default_stages, y = y, q = q, x = x, pin_q_sign = default_divide,
-                    modulus_r = default_modulus ? optional{out} : optional<IntegerVariableID>{},
-                    owner = owner](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    do {
-                        if (state.in_domain(y, 0_i))
-                            inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
+        propagators.install(
+            owner,
+            [data = default_data, stg = default_stages, y = y, q = q, x = x, pin_q_sign = expose_quotient,
+                modulus_r = expose_quotient ? optional<IntegerVariableID>{} : optional{out},
+                owner = owner](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                do {
+                    if (state.in_domain(y, 0_i))
+                        inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
 
-                        if (pin_q_sign) {
-                            // The grid carries no signed reasoning, so the exposed quotient's
-                            // sign is pinned off the sgn_* clauses by RUP once the signs of x
-                            // and y are both established. sgn_pp: x>0 & y>0 -> q>=0; sgn_pn:
-                            // x>0 & y<0 -> q<=0; sgn_nn: x<0 & y<0 -> q>=0; sgn_np: x<0 & y>0
-                            // -> q<=0.
-                            if (state.lower_bound(x) >= 1_i) {
-                                if (state.lower_bound(y) >= 1_i && state.lower_bound(q) < 0_i)
-                                    inference.infer(
-                                        logger, q >= 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x >= 1_i, y >= 1_i}});
-                                else if (state.upper_bound(y) < 0_i && state.upper_bound(q) > 0_i)
-                                    inference.infer(
-                                        logger, q < 1_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x >= 1_i, y < 0_i}});
-                            }
-                            else if (state.upper_bound(x) < 0_i) {
-                                if (state.upper_bound(y) < 0_i && state.lower_bound(q) < 0_i)
-                                    inference.infer(
-                                        logger, q >= 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x < 0_i, y < 0_i}});
-                                else if (state.lower_bound(y) >= 1_i && state.upper_bound(q) > 0_i)
-                                    inference.infer(
-                                        logger, q < 1_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x < 0_i, y >= 1_i}});
-                            }
+                    if (pin_q_sign) {
+                        // The grid carries no signed reasoning, so the exposed quotient's
+                        // sign is pinned off the sgn_* clauses by RUP once the signs of x
+                        // and y are both established. sgn_pp: x>0 & y>0 -> q>=0; sgn_pn:
+                        // x>0 & y<0 -> q<=0; sgn_nn: x<0 & y<0 -> q>=0; sgn_np: x<0 & y>0
+                        // -> q<=0.
+                        if (state.lower_bound(x) >= 1_i) {
+                            if (state.lower_bound(y) >= 1_i && state.lower_bound(q) < 0_i)
+                                inference.infer(logger, q >= 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x >= 1_i, y >= 1_i}});
+                            else if (state.upper_bound(y) < 0_i && state.upper_bound(q) > 0_i)
+                                inference.infer(logger, q < 1_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x >= 1_i, y < 0_i}});
                         }
+                        else if (state.upper_bound(x) < 0_i) {
+                            if (state.upper_bound(y) < 0_i && state.lower_bound(q) < 0_i)
+                                inference.infer(logger, q >= 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x < 0_i, y < 0_i}});
+                            else if (state.lower_bound(y) >= 1_i && state.upper_bound(q) > 0_i)
+                                inference.infer(logger, q < 1_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{x < 0_i, y >= 1_i}});
+                        }
+                    }
 
-                        if (! propagate_stages(*stg, state, inference, logger, owner))
-                            return PropagatorState::Enable;
+                    if (! propagate_stages(*stg, state, inference, logger, owner))
+                        return PropagatorState::Enable;
 
-                        propagate_default_product<Hint_>(*data, modulus_r, state, inference, logger, owner);
-                    } while (inference.did_anything_since_last_call_inside_propagator());
+                    propagate_default_product<Hint_>(*data, modulus_r, state, inference, logger, owner);
+                } while (inference.did_anything_since_last_call_inside_propagator());
 
-                    // Idempotent: the do-while ran the stages (and the default product)
-                    // to quiescence, so an immediate re-run is one no-op pass (see
-                    // multiply.cc for the same argument). The mid-loop return above is
-                    // the contradiction path and its state is ignored.
-                    return PropagatorState::EnableButIdempotent;
-                },
-                triggers);
-        }
-        else
-            propagators.install(
-                owner,
-                [stages = legacy_stages, prune_zero = prune_zero, y = y, owner = owner](
-                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    do {
-                        if (prune_zero && state.in_domain(y, 0_i))
-                            inference.infer(logger, y != 0_i, JustifyUsingRUP{Hint_{owner}}, ExplicitReason{ReasonLiterals{}});
-
-                        if (! propagate_stages(stages, state, inference, logger, owner))
-                            return PropagatorState::Enable;
-                    } while (inference.did_anything_since_last_call_inside_propagator());
-
-                    // Idempotent: the do-while ran the stages (and the default product)
-                    // to quiescence, so an immediate re-run is one no-op pass (see
-                    // multiply.cc for the same argument). The mid-loop return above is
-                    // the contradiction path and its state is ignored.
-                    return PropagatorState::EnableButIdempotent;
-                },
-                triggers);
+                // Idempotent: the do-while ran the stages (and the default product)
+                // to quiescence, so an immediate re-run is one no-op pass (see
+                // multiply.cc for the same argument). The mid-loop return above is
+                // the contradiction path and its state is ignored.
+                return PropagatorState::EnableButIdempotent;
+            },
+            triggers);
 
         // Tabulation for GAC: enumerate the distinct underlying variables and
         // the auxiliary slot, so a complete assignment fixes x, y, q and r and
@@ -1296,44 +1206,30 @@ namespace
         auto px = ax.var ? optional{enum_vars.position_of(*ax.var)} : nullopt;
         auto py = ay.var ? optional{enum_vars.position_of(*ay.var)} : nullopt;
         auto pout = aout.var ? optional{enum_vars.position_of(*aout.var)} : nullopt;
-        // The default divide path materialises no remainder in the proof (cake's rem_* rows range
+        // The divide path materialises no remainder in the proof (cake's rem_* rows range
         // x - w directly, and a rejected (x, y, q) leaf pins magq/absy/w by unit propagation
         // from the assigned q, y so the rem rows refute a wrong remainder), so it enumerates
-        // only x, y and q, with no remainder aux and no determined slots.
-        bool no_rem_aux = default_divide;
+        // only x, y and q, with no remainder aux and no determined slots. The modulus path
+        // enumerates the quotient MAGNITUDE aux |q|; the signed quotient is recovered as
+        // sign(x)sign(y)|q| (a magnitude 0 keeps sign 0).
         std::size_t paux = 0;
-        if (! no_rem_aux)
+        if (! expose_quotient)
             paux = enum_vars.position_of(aux);
 
-        // x and r are each a function of the others, pinned by unit
-        // propagation forwards through the stages: q and y assigned pin
-        // w = q * y through the multiplication's bit products, and the
-        // linear x = w + r stage then pins whichever of x and r is left.
-        // q is a function of the others too, but recovering it means
-        // going backwards through the multiplication, which unit
-        // propagation cannot do; and y is not a function at all, since
-        // q = 0 leaves it anywhere bigger than the remainder. Aliasing
-        // spoils the argument, so only distinct slots are claimed (the
-        // auxiliary is always fresh).
-        // On the cake modulus path the aux is the quotient MAGNITUDE |q|; recover the signed
-        // quotient sign(x)sign(y)|q| (a magnitude 0 keeps sign 0). Everywhere else the aux is
-        // the signed quotient directly.
-        bool aux_is_magnitude = default_modulus;
-        auto recover_q = [aux_is_magnitude](Integer auxv, Integer xv, Integer yv) -> Integer {
-            return (aux_is_magnitude && ((xv >= 0_i) != (yv >= 0_i))) ? -auxv : auxv;
-        };
+        auto recover_q = [](Integer auxv, Integer xv, Integer yv) -> Integer { return ((xv >= 0_i) != (yv >= 0_i)) ? -auxv : auxv; };
 
+        // x is a function of the others, pinned by unit propagation forwards
+        // through the stages -- but only on the modulus path (divide has no
+        // aux to enumerate) and only when x has a fixed sign (for x spanning
+        // zero, r = 0 leaves x = +/-|q||y| ambiguous). Its sign then fixes
+        // the product's sign: x = sign(x)|q||y| + r. q is a function of the
+        // others too, but recovering it means going backwards through the
+        // multiplication, which unit propagation cannot do; and y is not a
+        // function at all, since q = 0 leaves it anywhere bigger than the
+        // remainder. Aliasing spoils the argument, so only distinct slots
+        // are claimed.
         vector<DeterminedVariable> determined;
-        // Only a constant-shape divide reaches here with a materialised remainder
-        // aux; there the aux is the signed remainder r = x - q * y.
-        if (expose_quotient && ! no_rem_aux)
-            determined.push_back({aux, [ax, ay, aout, px, py, pout](const vector<Integer> & vals) -> optional<Integer> {
-                                      auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
-                                      auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
-                                      auto qv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
-                                      return xv - qv * yv;
-                                  }});
-        else if (! expose_quotient && pout && pout != px && pout != py)
+        if (! expose_quotient && pout && pout != px && pout != py)
             determined.push_back({*aout.var, [ax, ay, aout, px, py, paux, recover_q](const vector<Integer> & vals) -> optional<Integer> {
                                       auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
                                       auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
@@ -1342,40 +1238,28 @@ namespace
                                           return nullopt;
                                       return (want - aout.offset) / aout.coeff;
                                   }});
-        // On the magnitude path x is a function of the others only when it has a fixed sign
-        // (for x spanning zero, r = 0 leaves x = +/-|q||y| ambiguous). Its sign then fixes
-        // the product's sign: x = sign(x)|q||y| + r.
         bool x_fixed_sign = xlo >= 0_i || xhi <= 0_i;
         Integer x_sign = xhi <= 0_i ? -1_i : 1_i;
-        if (px && px != py && px != pout && ! no_rem_aux && (! aux_is_magnitude || x_fixed_sign))
-            determined.push_back({*ax.var,
-                [ax, ay, aout, py, pout, paux, expose_quotient, aux_is_magnitude, x_sign](const vector<Integer> & vals) -> optional<Integer> {
-                    auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
-                    auto outv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
-                    auto auxv = vals[paux];
-                    // The remainder is the aux for a constant-shape Divide and the exposed slot for
-                    // Modulus; x = q * y + r.
-                    auto rv = expose_quotient ? auxv : outv;
-                    auto want = aux_is_magnitude ? x_sign * auxv * (yv < 0_i ? -yv : yv) + outv : (expose_quotient ? outv : auxv) * yv + rv;
-                    if ((want - ax.offset) % ax.coeff != 0_i)
-                        return nullopt;
-                    return (want - ax.offset) / ax.coeff;
-                }});
+        if (! expose_quotient && px && px != py && px != pout && x_fixed_sign)
+            determined.push_back({*ax.var, [ax, ay, py, pout, paux, aout, x_sign](const vector<Integer> & vals) -> optional<Integer> {
+                                      auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
+                                      auto outv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
+                                      auto want = x_sign * vals[paux] * (yv < 0_i ? -yv : yv) + outv;
+                                      if ((want - ax.offset) % ax.coeff != 0_i)
+                                          return nullopt;
+                                      return (want - ax.offset) / ax.coeff;
+                                  }});
 
         if (want_tabulation(level, enum_vars.vars(), determined, initial_state)) {
-            auto accept = [ax, ay, aout, px, py, pout, paux, no_rem_aux, expose_quotient, recover_q](const vector<Integer> & vals) -> bool {
+            auto accept = [ax, ay, aout, px, py, pout, paux, expose_quotient, recover_q](const vector<Integer> & vals) -> bool {
                 auto xv = px ? ax.coeff * vals[*px] + ax.offset : ax.offset;
                 auto yv = py ? ay.coeff * vals[*py] + ay.offset : ay.offset;
                 auto outv = pout ? aout.coeff * vals[*pout] + aout.offset : aout.offset;
-                // The default divide path enumerates no remainder aux: q is the exposed slot and
-                // the remainder is derived. Elsewhere the aux is the remainder (constant-shape Divide)
-                // or the quotient magnitude (Modulus).
-                if (no_rem_aux)
+                // Divide enumerates no remainder aux: q is the exposed slot and the
+                // remainder is derived. Modulus's aux is the quotient magnitude.
+                if (expose_quotient)
                     return is_in_relation(xv, yv, outv, xv - outv * yv);
-                auto auxv = vals[paux];
-                auto qv = expose_quotient ? outv : recover_q(auxv, xv, yv);
-                auto rv = expose_quotient ? auxv : outv;
-                return is_in_relation(xv, yv, qv, rv);
+                return is_in_relation(xv, yv, recover_q(vals[paux], xv, yv), outv);
             };
 
             install_tabulation<Hint_>(propagators, owner, enum_vars.vars(), move(determined), nullopt, accept, expose_quotient ? "divtab" : "modtab",

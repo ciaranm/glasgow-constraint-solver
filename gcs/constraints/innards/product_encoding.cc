@@ -4,11 +4,15 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <util/overloaded.hh>
 
+#include <utility>
+
 using namespace gcs;
 using namespace gcs::innards;
 using namespace gcs::innards::product_enc;
 
+using std::get_if;
 using std::max;
+using std::pair;
 using std::string;
 using std::vector;
 
@@ -16,6 +20,9 @@ namespace
 {
     // The four half-reified rows pinning mag = |v|: [v>=0] => mag = v and
     // [v<0] => mag = -v, with cake's role names <prefix><letter>{ge0,lt0}_{ge,le}.
+    // A constant operand keeps the same four rows, cake style: the constant
+    // folds into each row's degree and the sign gates become its pinned
+    // n[k][ge0] atom (issue #483).
     auto emit_channel_rows(ProofModel & model, const string & label, const StringLiteral & op, IntegerVariableID v,
         const SimpleOrProofOnlyIntegerVariableID & mag, const string & role_prefix, const string & letter) -> MagnitudeChannel
     {
@@ -24,8 +31,13 @@ namespace
                 [&](const ProofOnlySimpleIntegerVariableID & m) { return Weighted<PseudoBooleanTerm>{coeff, m}; }}
                 .visit(mag);
         };
-        auto ge0 = HalfReifyOnConjunctionOf{v >= 0_i};
-        auto lt0 = HalfReifyOnConjunctionOf{v < 0_i};
+        auto [ge0, lt0] = [&]() -> pair<HalfReifyOnConjunctionOf, HalfReifyOnConjunctionOf> {
+            if (auto cv = get_if<ConstantIntegerVariableID>(&v)) {
+                auto atoms = model.cake_constant_atoms(cv->const_value);
+                return {HalfReifyOnConjunctionOf{atoms.ge0}, HalfReifyOnConjunctionOf{! atoms.ge0}};
+            }
+            return {HalfReifyOnConjunctionOf{v >= 0_i}, HalfReifyOnConjunctionOf{v < 0_i}};
+        }();
         auto pos_ge = model.add_labelled_constraint(
             label, role_prefix + letter + "ge0_ge", op, "magnitude channel", WPBSum{} + 1_i * v + as_term(-1_i) >= 0_i, ge0);
         auto pos_le = model.add_labelled_constraint(

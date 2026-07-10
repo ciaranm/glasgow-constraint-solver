@@ -278,6 +278,27 @@ namespace gcs::innards
         [[nodiscard]] auto create_proof_flag(const std::string & stem) -> ProofFlag;
 
         /**
+         * cake_pb_cp reifies every integer operand's sign atoms uniformly, so a
+         * constant operand k carries the same ge0/ge1/eq0 atom family as a
+         * variable, named `n[k][ge0]` / `n[k][ge1]` / `n[k][eq0]`, with each ge
+         * atom pinned to its truth value by its `@n[k][geN][f]` / `[r]` rows and
+         * eq0 defined from the ge pair exactly as for a variable. See issue #483.
+         */
+        struct CakeConstantAtoms
+        {
+            ProofFlag ge0;
+            ProofFlag ge1;
+            ProofFlag eq0;
+        };
+
+        /**
+         * The pinned atom family for a constant operand, emitting the flags and
+         * their pin rows on a constant's first use and returning the same flags
+         * for every later use (the names are global to the model, like cake's).
+         */
+        [[nodiscard]] auto cake_constant_atoms(Integer) -> CakeConstantAtoms;
+
+        /**
          * Create a position-indexed flag named `x[id][i1_i2..][annotation?]`,
          * conforming to cake_pb_cp's naming for verified encodings. See
          * NamesAndIDsTracker::create_proof_flag(const ConstraintID &, const std::vector<long long> &, ...).

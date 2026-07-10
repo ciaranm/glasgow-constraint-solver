@@ -496,6 +496,16 @@ namespace gcs::innards
             const std::optional<std::string> & annotation = std::nullopt) -> ProofFlag;
 
         /**
+         * Create a flag named `n[k][atom]`, conforming to cake_pb_cp's rendering
+         * of a reified atom over a CONSTANT operand (cp_encScript.sml format_var
+         * for `Ge`/`Eq` over a constant): e.g. `n[3][ge0]`, `n[-2][eq0]`. cake
+         * reifies every operand's atoms uniformly, so a constant slot's atoms
+         * exist by name, pinned to their truth values; the pin rows are the
+         * ProofModel's job (cake_constant_atoms). See issue #483.
+         */
+        [[nodiscard]] auto create_proof_flag_for_constant(Integer k, const std::string & atom) -> ProofFlag;
+
+        /**
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
          */
         [[nodiscard]] auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;

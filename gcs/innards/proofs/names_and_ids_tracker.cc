@@ -1468,6 +1468,14 @@ auto NamesAndIDsTracker::create_proof_flag_values(const ConstraintID & id, const
     return make_proof_flag_named(name);
 }
 
+auto NamesAndIDsTracker::create_proof_flag_for_constant(Integer k, const string & atom) -> ProofFlag
+{
+    // Mirror cake_pb_cp's constant-atom rendering (cp_encScript.sml format_var,
+    // Ge/Eq over a constant): n[<k>][<atom>], the constant rendered with a
+    // leading '-' when negative, exactly like the eq/ge literal values.
+    return make_proof_flag_named("n[" + to_string(k.raw_value) + "][" + atom + "]");
+}
+
 auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> ProofFlag
 {
     // The supplied name is used verbatim as the PB-file variable name (rather

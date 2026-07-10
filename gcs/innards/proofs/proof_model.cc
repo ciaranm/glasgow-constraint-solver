@@ -14,6 +14,7 @@
 #include <exception>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <set>
 #include <sstream>
 
@@ -36,6 +37,7 @@ using std::ios;
 using std::ios_base;
 using std::istreambuf_iterator;
 using std::make_unique;
+using std::map;
 using std::nullopt;
 using std::ofstream;
 using std::optional;
@@ -65,6 +67,8 @@ struct ProofModel::Imp
     optional<IntegerVariableID> optional_minimise_variable;
     optional<vector<IntegerVariableID>> preserved_variables;
     unsigned long long proof_only_integer_variable_nr = 0;
+
+    map<Integer, ProofModel::CakeConstantAtoms> cake_constant_atoms;
 
     string opb_file;
     stringstream opb;
@@ -601,6 +605,34 @@ auto ProofModel::create_proof_flag(const ConstraintID & id, const string & annot
 auto ProofModel::create_proof_flag_values(const ConstraintID & id, const vector<long long> & values, const optional<string> & annotation) -> ProofFlag
 {
     return names_and_ids_tracker().create_proof_flag_values(id, values, annotation);
+}
+
+auto ProofModel::cake_constant_atoms(Integer k) -> CakeConstantAtoms
+{
+    if (auto it = _imp->cake_constant_atoms.find(k); it != _imp->cake_constant_atoms.end())
+        return it->second;
+
+    auto base = "n[" + std::to_string(k.raw_value) + "]";
+    auto ge0 = names_and_ids_tracker().create_proof_flag_for_constant(k, "ge0");
+    auto ge1 = names_and_ids_tracker().create_proof_flag_for_constant(k, "ge1");
+    auto eq0 = names_and_ids_tracker().create_proof_flag_for_constant(k, "eq0");
+
+    // A ge atom's [f] half pins a true atom and is vacuous for a false one; the
+    // [r] half is the mirror image. cake writes each vacuous half with a zero
+    // coefficient; a unit coefficient over a degree-0 row is the same vacuous
+    // truth without leaning on zero-coefficient parsing.
+    auto pin = [&](const string & atom_base, const ProofFlag & atom, bool truth) {
+        add_labelled_constraint(atom_base + "[f]", WPBSum{} + 1_i * atom >= (truth ? 1_i : 0_i));
+        add_labelled_constraint(atom_base + "[r]", WPBSum{} + 1_i * ! atom >= (truth ? 0_i : 1_i));
+    };
+    pin(base + "[ge0]", ge0, k >= 0_i);
+    pin(base + "[ge1]", ge1, k >= 1_i);
+    add_labelled_constraint(base + "[eq0][f]", WPBSum{} + 1_i * eq0 + -1_i * ge0 + -1_i * ! ge1 >= -1_i);
+    add_labelled_constraint(base + "[eq0][r]", WPBSum{} + 2_i * ! eq0 + 1_i * ge0 + 1_i * ! ge1 >= 2_i);
+
+    auto result = CakeConstantAtoms{ge0, ge1, eq0};
+    _imp->cake_constant_atoms.emplace(k, result);
+    return result;
 }
 
 auto ProofModel::finalise() -> void
