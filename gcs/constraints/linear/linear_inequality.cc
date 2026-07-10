@@ -115,16 +115,10 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
     overloaded{
         [&](const reif::MustHold &) {
             // cake_pb_cp labels the unconditional inequality @c[<id>] (no role).
-            auto ineq = terms <= _value;
-            auto line = model.add_labelled_constraint("c[" + as_string(constraint_id()) + "]", ineq);
-            model.names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
-            _proof_lines = pair{line, nullopt};
+            _proof_lines = pair{model.add_labelled_constraint(constraint_id(), "", terms <= _value), nullopt};
         }, //
         [&](const reif::MustNotHold &) {
-            auto ineq = terms >= _value + 1_i;
-            auto line = model.add_labelled_constraint("c[" + as_string(constraint_id()) + "]", ineq);
-            model.names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
-            _proof_lines = pair{line, nullopt};
+            _proof_lines = pair{model.add_labelled_constraint(constraint_id(), "", terms >= _value + 1_i), nullopt};
         }, //
         [&](const reif::If & cond) {
             // cake_pb_cp labels the half-reified inequality @c[<id>], with no role
