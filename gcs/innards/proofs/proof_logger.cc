@@ -672,6 +672,16 @@ auto ProofLogger::introduce_bits_of(
     // redundancy goal closes by RUP, and the final (k = 0) pair is
     // BinEnc(target) >= form (end_ge) / BinEnc(target) <= form (end_le).
     auto m = names_and_ids_tracker().num_bits(target).raw_value;
+
+    // A [0, 0] target now has zero bits (the empty sum, identically zero), for
+    // which the construction below would return default-constructed lines. No
+    // caller can currently supply one (every end proxy spans [0, t_hi + 1]),
+    // and the degenerate pair it would need (`form <= 0` / `form >= 0`, RUP
+    // from the operands' bound rows) should be written and tested when a real
+    // caller appears, not speculatively.
+    if (0 == m)
+        throw ProofError{"introduce_bits_of does not support a zero-width target"};
+
     pair<ProofLine, ProofLine> bounds;
     SumOf<Weighted<PseudoBooleanTerm>> bitsum; // Sigma_{j > k} 2^j e_j, grows as k descends
     for (long long kk = m - 1; kk >= 0; --kk) {

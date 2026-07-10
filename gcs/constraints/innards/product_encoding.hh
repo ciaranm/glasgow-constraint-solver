@@ -57,7 +57,10 @@ namespace gcs::innards::product_enc
      * rows gated on the reified sign atom, `[v>=0] => mag = v` and
      * `[v<0] => mag = -v`. The magnitude is a proof-only variable for
      * Multiply and Power, and a state variable (whose bits are registered
-     * as cake's encoder-internal bits) for Divide and Modulus.
+     * as cake's encoder-internal bits) for Divide and Modulus. A constant
+     * operand gets the same four rows with the constant folded into the
+     * degrees and the gates over its pinned n[k][ge0] atom, exactly as cake
+     * encodes a constant slot (issue #483).
      *
      * Slot-keyed by design: a repeated operand gets one channel per slot,
      * both over the same v, exactly as cake emits for `(multiply X X Z)`.

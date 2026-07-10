@@ -7,6 +7,7 @@
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
+#include <optional>
 #include <vector>
 
 namespace gcs
@@ -23,6 +24,14 @@ namespace gcs
         const innards::Literals _lits;
         const innards::Literal _full_reif;
         innards::LiteralIs _reif_state = innards::LiteralIs::Undecided;
+
+        // When every literal (and the reification) has a cake positive form
+        // (see cake_truthiness.hh), prepare() fills these with the
+        // state-equivalent `>= 1` literals; the encoding and the propagator
+        // then work in cake's terms, so the proof never touches atoms cake's
+        // OPB does not define. Empty / unset otherwise.
+        innards::Literals _cake_lits;
+        std::optional<innards::Literal> _cake_reif;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
@@ -54,6 +63,14 @@ namespace gcs
         const innards::Literals _lits;
         const innards::Literal _full_reif;
         innards::LiteralIs _reif_state = innards::LiteralIs::Undecided;
+
+        // When every literal (and the reification) has a cake positive form
+        // (see cake_truthiness.hh), prepare() fills these with the
+        // state-equivalent `>= 1` literals; the encoding and the propagator
+        // then work in cake's terms, so the proof never touches atoms cake's
+        // OPB does not define. Empty / unset otherwise.
+        innards::Literals _cake_lits;
+        std::optional<innards::Literal> _cake_reif;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;

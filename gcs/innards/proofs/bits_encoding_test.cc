@@ -10,6 +10,10 @@ using std::tuple;
 
 TEST_CASE("Bit encodings")
 {
+    // {0} has no atoms at all: the empty bit-sum is identically zero (cake's
+    // width rule; the thesis's strictly-positive-h floor would give one bit).
+    CHECK(get_bits_encoding_coeffs(0_i, 0_i) == tuple{-1_i, 0_i, 0_i});
+
     CHECK(get_bits_encoding_coeffs(0_i, 1_i) == tuple{0_i, 1_i, 0_i});
     CHECK(get_bits_encoding_coeffs(0_i, 2_i) == tuple{1_i, 2_i, 0_i});
     CHECK(get_bits_encoding_coeffs(0_i, 3_i) == tuple{1_i, 2_i, 0_i});
@@ -22,7 +26,11 @@ TEST_CASE("Bit encodings")
 
     CHECK(get_bits_encoding_coeffs(1_i, 9_i) == tuple{3_i, 8_i, 0_i});
 
-    CHECK(get_bits_encoding_coeffs(-1_i, 0_i) == tuple{0_i, 1_i, -2_i});
+    // {-1} and {-1,0} need no magnitude bits: the value is -1 * sign (the
+    // thesis's strictly-positive-h floor applies to non-negative ranges only).
+    CHECK(get_bits_encoding_coeffs(-1_i, -1_i) == tuple{-1_i, 0_i, -1_i});
+    CHECK(get_bits_encoding_coeffs(-1_i, 0_i) == tuple{-1_i, 0_i, -1_i});
+    CHECK(get_bits_encoding_coeffs(-2_i, -1_i) == tuple{0_i, 1_i, -2_i});
     CHECK(get_bits_encoding_coeffs(-2_i, 0_i) == tuple{0_i, 1_i, -2_i});
     CHECK(get_bits_encoding_coeffs(-3_i, 0_i) == tuple{1_i, 2_i, -4_i});
 

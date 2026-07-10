@@ -418,8 +418,15 @@ auto ReifiedEquals::s_expr(const innards::ProofModel * const model) const -> SEx
     }
                                  .visit(_cond);
 
+    // A not-equals iff stores the negated condition (equality holds iff NOT the
+    // user's condition), but the not_equals_iff keyword already carries the
+    // negation: cake reads (r not_equals_iff (cond) v1 v2) as cond <=> v1 != v2.
+    // Emit the user's original condition, not the stored one, or the two
+    // negations cancel into the opposite constraint.
+    auto cond_to_write =
+        _neq && std::holds_alternative<reif::Iff>(_cond) ? ReificationCondition{reif::Iff{! std::get<reif::Iff>(_cond).cond}} : _cond;
     vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type)};
-    if (auto cond = tracker.s_expr_term_of(_cond))
+    if (auto cond = tracker.s_expr_term_of(cond_to_write))
         terms.push_back(std::move(*cond));
     terms.push_back(tracker.s_expr_term_of(_v1));
     terms.push_back(tracker.s_expr_term_of(_v2));

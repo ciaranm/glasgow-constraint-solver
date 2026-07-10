@@ -160,6 +160,30 @@ auto run_divmod_alias_test(bool proofs, bool is_div, const DivideConsistency & l
     check_results(proof_name, expected, actual);
 }
 
+// Divisor and result both constants: only the dividend is a variable.
+auto run_divmod_two_constant_test(bool proofs, bool is_div, const DivideConsistency & level, int y_const, int out_const, pair<int, int> a_range)
+    -> void
+{
+    print(cerr, "{} {} two constants y={} out={} {} {}", is_div ? "divide" : "modulus", level_name(level), y_const, out_const, a_range,
+        proofs ? " with proofs:" : ":");
+    cerr << flush;
+
+    Problem p;
+    auto a = p.create_integer_variable(Integer(a_range.first), Integer(a_range.second), "a");
+
+    auto op_ok = [&](int av) { return is_div ? div_ok(av, y_const, out_const) : mod_ok(av, y_const, out_const); };
+
+    set<tuple<int>> expected, actual;
+    build_expected(expected, op_ok, a_range);
+    println(cerr, " expecting {} solutions", expected.size());
+
+    post_divmod(p, is_div, a, constant_variable(Integer{y_const}), constant_variable(Integer{out_const}), level);
+
+    auto proof_name = proofs ? make_optional("divide_modulus_test" + test_proof_suffix) : nullopt;
+    solve_for_tests(p, proof_name, actual, tuple{a});
+    check_results(proof_name, expected, actual);
+}
+
 // One slot is a constant: divisor (including zero and negative), dividend, or
 // result.
 auto run_divmod_constant_test(bool proofs, bool is_div, const DivideConsistency & level, const string & which, int constant, pair<int, int> a_range,
@@ -294,13 +318,22 @@ auto main(int argc, char * argv[]) -> int
                 run_divmod_alias_test(proofs, is_div, level, force_gac, "xyx", {-2, 2}, {-2, 2});
                 run_divmod_alias_test(proofs, is_div, level, force_gac, "yxx", {-2, 2}, {-2, 2});
 
-                // Constants in each slot, including the relational
-                // divide-by-constant-zero case (no solutions, not an error).
+                // Constants in each slot, both signs, including the relational
+                // divide-by-constant-zero case (no solutions, not an error) and
+                // a constant zero result (a zero-width quotient magnitude for
+                // Divide, a zero remainder for Modulus).
                 run_divmod_constant_test(proofs, is_div, level, "y", 3, {-7, 7}, {-3, 3});
                 run_divmod_constant_test(proofs, is_div, level, "y", -2, {-5, 5}, {-3, 3});
                 run_divmod_constant_test(proofs, is_div, level, "y", 0, {-2, 2}, {-2, 2});
                 run_divmod_constant_test(proofs, is_div, level, "x", 7, {-3, 3}, {-7, 7});
+                run_divmod_constant_test(proofs, is_div, level, "x", -7, {-3, 3}, {-7, 7});
                 run_divmod_constant_test(proofs, is_div, level, "out", 2, {-8, 8}, {-3, 3});
+                run_divmod_constant_test(proofs, is_div, level, "out", -2, {-8, 8}, {-3, 3});
+                run_divmod_constant_test(proofs, is_div, level, "out", 0, {-5, 5}, {-3, 3});
+
+                // Divisor and result both constants, both signs.
+                run_divmod_two_constant_test(proofs, is_div, level, 3, 2, {-7, 7});
+                run_divmod_two_constant_test(proofs, is_div, level, -3, -2, {-7, 7});
             }
 
             // Random instances, forced BC.

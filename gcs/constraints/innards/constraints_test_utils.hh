@@ -69,6 +69,109 @@ namespace gcs::test_innards
         return run_veripb("--help", ">/dev/null");
     }
 
+    // ---- PROBE (measurement only): workflow-2 cake_pb_cp chain -----------------
+    // Runs the full verified-encoding chain on a just-written .scp/.pbp, best
+    // effort, and logs a greppable "CAKECHAIN <name> <OUTCOME>" line. Never
+    // throws: this is for measuring the chain-verify rate across the random
+    // data-driven instances, not for gating the suite. Enabled by GCS_TEST_CAKE;
+    // cake_pb_cp path overridable via CAKE_PB_CP.
+#ifdef _WIN32
+    // The probe drives cake_pb_cp and veripb through popen() and a POSIX shell,
+    // and cake_pb_cp does not run on Windows anyway, so it compiles out to a
+    // no-op there.
+    inline auto cake_probe_chain(const std::string &) -> void
+    {
+    }
+#else
+    inline auto cake_capture(const std::string & cmd) -> std::string
+    {
+        std::string out;
+        if (FILE * p = ::popen((cmd + " 2>/dev/null").c_str(), "r")) {
+            char buf[8192];
+            size_t n;
+            while ((n = std::fread(buf, 1, sizeof buf, p)) > 0)
+                out.append(buf, n);
+            ::pclose(p);
+        }
+        return out;
+    }
+
+    inline auto cake_probe_chain(const std::string & pn) -> void
+    {
+        if (auto e = std::getenv("GCS_TEST_CAKE"); ! (e && *e))
+            return;
+        const char * cakeenv = std::getenv("CAKE_PB_CP");
+        std::string cake = (cakeenv && *cakeenv) ? cakeenv : "cake_pb_cp";
+        auto scp = pn + ".scp", pbp = pn + ".pbp";
+        auto vopb = pn + ".cakeopb", core = pn + ".cakecore";
+
+        auto has = [](const std::string & s, const char * m) { return s.find(m) != std::string::npos; };
+        // A VERIFIED line, or "s NO CONCLUSION": the latter is cake's success
+        // output for a proof whose conclusion is NONE (the init-only tests).
+        auto verified = [&](const std::string & s) { return has(s, "s VERIFIED") || has(s, "s NO CONCLUSION"); };
+        auto lastmeaningful = [](const std::string & s) {
+            std::string best;
+            size_t i = 0;
+            while (i < s.size()) {
+                auto e = s.find('\n', i);
+                auto line = s.substr(i, e == std::string::npos ? std::string::npos : e - i);
+                if (! line.empty() && line.find("Running VeriPB") == std::string::npos)
+                    best = line;
+                if (e == std::string::npos)
+                    break;
+                i = e + 1;
+            }
+            return best;
+        };
+        auto log = [&](const std::string & outcome, const std::string & extra = "") {
+            std::string line = "CAKECHAIN " + pn + " " + outcome;
+            if (! extra.empty())
+                line += " :: " + extra;
+            line += "\n";
+            std::fputs(line.c_str(), stderr);
+        };
+        auto firstline = [](const std::string & s) {
+            auto n = s.find('\n');
+            return n == std::string::npos ? s : s.substr(0, n);
+        };
+
+        // 1. cake_pb_cp re-derives its own OPB from the .scp.
+        std::system((cake + " " + scp + " > " + vopb + " 2>/dev/null").c_str());
+        std::string opb = cake_capture("cat " + vopb);
+        if (opb.find(">=") == std::string::npos && opb.find("<=") == std::string::npos) {
+            log("SKIP_NO_OPB");
+            std::remove(vopb.c_str());
+            return;
+        }
+        // 2. veripb elaborates OUR proof against CAKE's OPB (the divergence gate).
+        // (A domain-{0} variable's zero-bit bound rows print with an EMPTY
+        // left-hand side, which needs a veripb with the labelled-empty-LHS
+        // parser fix of 2026-07-10.)
+        auto elab = cake_capture("veripb " + vopb + " " + pbp + " --elaborate " + core + " 2>&1");
+        if (! verified(elab)) {
+            log("FAIL_ELAB", lastmeaningful(elab));
+            // Preserve the failing triple (scp/pbp + cake's OPB) for inspection.
+            // Uniquely numbered so multiple failures sharing a proof_name don't
+            // overwrite each other.
+            if (auto k = std::getenv("GCS_TEST_CAKE_KEEP"); k && *k) {
+                static int fail_seq = 0;
+                std::string dir{k}, sfx = std::to_string(++fail_seq);
+                for (auto ext : {".scp", ".pbp"})
+                    std::system(("mkdir -p " + dir + " && cp " + pn + ext + " " + dir + "/" + pn + "." + sfx + ext + " 2>/dev/null").c_str());
+                std::system(("cp " + vopb + " " + dir + "/" + pn + "." + sfx + ".cakeopb 2>/dev/null").c_str());
+            }
+            std::remove(vopb.c_str());
+            std::remove(core.c_str());
+            return;
+        }
+        // 3. cake_pb_cp re-checks the elaborated core.
+        auto rc = cake_capture(cake + " " + scp + " " + core);
+        log(verified(rc) ? "OK" : "FAIL_RECHECK", lastmeaningful(rc));
+        std::remove(vopb.c_str());
+        std::remove(core.c_str());
+    }
+#endif
+
     /**
      * Verify a test's proof with VeriPB, then, on success, delete its .opb/.pbp
      * files.
@@ -88,8 +191,11 @@ namespace gcs::test_innards
     {
         if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
             throw UnexpectedException{"veripb verification failed"};
+        cake_probe_chain(proof_name); // PROBE: measure workflow-2 chain (no-op unless GCS_TEST_CAKE)
         std::remove((proof_name + ".opb").c_str());
         std::remove((proof_name + ".pbp").c_str());
+        std::remove((proof_name + ".scp").c_str());
+        std::remove((proof_name + ".varmap").c_str());
     }
 
     /**

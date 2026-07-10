@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/cake_truthiness.hh>
 #include <gcs/constraints/innards/triggers.hh>
 #include <gcs/constraints/logical/hints.hh>
 #include <gcs/constraints/logical/logical.hh>
@@ -27,7 +28,10 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::move;
+using std::nullopt;
 using std::optional;
+using std::pair;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
@@ -176,6 +180,75 @@ namespace
             triggers);
     }
 
+    // The cake positive forms of a logical constraint's literals and its
+    // reification, as state-equivalent `>= 1` literals -- or empty / nullopt
+    // when some literal has no such form (see cake_truthiness.hh).
+    auto compute_cake_lits(const Literals & lits, const Literal & full_reif, const State & initial_state) -> pair<Literals, optional<Literal>>
+    {
+        auto bounds = [&](const SimpleIntegerVariableID & v) { return initial_state.bounds(v); };
+        auto reif_form = cake_positive_form(full_reif, bounds);
+        if (! reif_form)
+            return {};
+        Literals cake_lits;
+        for (const auto & l : lits) {
+            auto form = cake_positive_form(l, bounds);
+            if (! form)
+                return {};
+            cake_lits.push_back(cake_positive_literal(*form));
+        }
+        return {move(cake_lits), cake_positive_literal(*reif_form)};
+    }
+
+    // cake_pb_cp's and/or rows: @c[id][pos] says the reification implies the
+    // conjunction (and: all of them; or: at least one), @c[id][neg] the
+    // negation implies the negated disjunction. Uniform, with no
+    // statically-decided shortcuts, so the labelled rows' content matches
+    // cake's whatever the bounds.
+    auto define_cake_logical(ProofModel & model, const ConstraintID & id, const Literals & cake_lits, const Literal & cake_reif, bool is_and) -> void
+    {
+        auto n = Integer(static_cast<long long>(cake_lits.size()));
+        WPBSum pos, neg;
+        pos += (is_and ? -n : -1_i) * PseudoBooleanTerm{cake_reif};
+        neg += (is_and ? -1_i : -n) * PseudoBooleanTerm{! cake_reif};
+        for (const auto & l : cake_lits) {
+            pos += 1_i * PseudoBooleanTerm{l};
+            neg += 1_i * PseudoBooleanTerm{! l};
+        }
+        model.add_labelled_constraint(as_string(id), "pos", "Logical", "reif implies", move(pos) >= 0_i);
+        model.add_labelled_constraint(as_string(id), "neg", "Logical", "negated reif implies", move(neg) >= 0_i);
+    }
+
+    // The bare-operand `and` / `or` scp term when every literal conforms
+    // (recomputed from the tracker: this runs on the stored constraint, which
+    // never sees prepare()); the faithful `_lits` form otherwise, which cake
+    // skips and read_scp round-trips.
+    auto s_expr_logical(
+        const NamesAndIDsTracker & tracker, const ConstraintID & id, const string & op, const Literals & lits, const Literal & full_reif) -> SExpr
+    {
+        auto bounds = [&](const SimpleIntegerVariableID & v) { return tracker.tracked_bounds(v); };
+        vector<SExpr> terms;
+        bool conformable = static_cast<bool>(cake_positive_form(full_reif, bounds));
+        if (conformable)
+            for (const auto & lit : lits) {
+                auto form = cake_positive_form(lit, bounds);
+                if (! form) {
+                    conformable = false;
+                    break;
+                }
+                terms.push_back(tracker.s_expr_term_of(*form));
+            }
+        if (conformable) {
+            auto reif_form = cake_positive_form(full_reif, bounds);
+            return SExpr::list({SExpr::atom(as_string(id)), SExpr::atom(op), SExpr::list(move(terms)), tracker.s_expr_term_of(*reif_form)});
+        }
+
+        terms.clear();
+        for (const auto & lit : lits)
+            terms.push_back(faithful_literal_term(lit, tracker));
+        return SExpr::list(
+            {SExpr::atom(as_string(id)), SExpr::atom(op + "_lits"), SExpr::list(move(terms)), faithful_literal_term(full_reif, tracker)});
+    }
+
     auto define_proof_model_logical(ProofModel & model, const Literals & lits, const Literal & full_reif, LiteralIs reif_state) -> void
     {
         using enum LiteralIs;
@@ -245,27 +318,31 @@ auto And::install(Propagators & propagators, State & initial_state, ProofModel *
 auto And::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _reif_state = initial_state.test_literal(_full_reif);
+    std::tie(_cake_lits, _cake_reif) = compute_cake_lits(_lits, _full_reif, initial_state);
     return true;
 }
 
 auto And::define_proof_model(ProofModel & model) -> void
 {
-    define_proof_model_logical(model, _lits, _full_reif, _reif_state);
+    if (_cake_reif)
+        define_cake_logical(model, _constraint_id, _cake_lits, *_cake_reif, true);
+    else
+        define_proof_model_logical(model, _lits, _full_reif, _reif_state);
 }
 
 auto And::install_propagators(Propagators & propagators) -> void
 {
-    install_propagators_logical<hints::And>(propagators, constraint_id(), _lits, _full_reif, _reif_state);
+    // In cake terms when prepare() found positive forms, so the inferences'
+    // literals are the atoms the (cake-conform) encoding constrains.
+    if (_cake_reif)
+        install_propagators_logical<hints::And>(propagators, constraint_id(), _cake_lits, *_cake_reif, _reif_state);
+    else
+        install_propagators_logical<hints::And>(propagators, constraint_id(), _lits, _full_reif, _reif_state);
 }
 
 auto And::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    auto & tracker = model->names_and_ids_tracker();
-    std::vector<SExpr> lits;
-    for (const auto & lit : _lits)
-        lits.push_back(tracker.s_expr_term_of(lit));
-    return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("and"), SExpr::list(std::move(lits)), tracker.s_expr_term_of(_full_reif)});
+    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, "and", _lits, _full_reif);
 }
 
 Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) : Or(to_lits(vars), full_reif != 0_i)
@@ -299,11 +376,16 @@ auto Or::install(Propagators & propagators, State & initial_state, ProofModel * 
 auto Or::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _reif_state = initial_state.test_literal(! _full_reif);
+    std::tie(_cake_lits, _cake_reif) = compute_cake_lits(_lits, _full_reif, initial_state);
     return true;
 }
 
 auto Or::define_proof_model(ProofModel & model) -> void
 {
+    if (_cake_reif) {
+        define_cake_logical(model, _constraint_id, _cake_lits, *_cake_reif, false);
+        return;
+    }
     Literals lits = _lits;
     for (auto & l : lits)
         l = ! l;
@@ -312,17 +394,14 @@ auto Or::define_proof_model(ProofModel & model) -> void
 
 auto Or::install_propagators(Propagators & propagators) -> void
 {
-    Literals lits = _lits;
+    // As And: the dualised literals come from the cake forms when available.
+    Literals lits = _cake_reif ? _cake_lits : _lits;
     for (auto & l : lits)
         l = ! l;
-    install_propagators_logical<hints::Or>(propagators, constraint_id(), move(lits), ! _full_reif, _reif_state);
+    install_propagators_logical<hints::Or>(propagators, constraint_id(), move(lits), _cake_reif ? ! *_cake_reif : ! _full_reif, _reif_state);
 }
 
 auto Or::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    auto & tracker = model->names_and_ids_tracker();
-    std::vector<SExpr> lits;
-    for (const auto & lit : _lits)
-        lits.push_back(tracker.s_expr_term_of(lit));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("or"), SExpr::list(std::move(lits)), tracker.s_expr_term_of(_full_reif)});
+    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, "or", _lits, _full_reif);
 }

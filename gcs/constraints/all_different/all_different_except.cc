@@ -76,9 +76,13 @@ auto AllDifferentExcept::prepare(Propagators &, State & initial_state, ProofMode
     sort(_sanitised_vars);
 
     // Drop excluded values that don't appear in any variable's initial domain.
-    // Such values can never be taken anyway, so they neither shape the OPB
-    // encoding nor warrant phantom edges in the propagator's matching graph.
-    _sanitised_excluded = move(_excluded);
+    // Such values can never be taken anyway, so they don't warrant phantom
+    // edges in the propagator's matching graph. The OPB encoding keeps the
+    // original list (a copy, so s_expr and define_proof_model still see it):
+    // cake_pb_cp encodes every listed exception value uniformly, and dropping
+    // one changes the rows' unit-propagation strength, which the aliased-pair
+    // case turns into a chain-verification failure (issue #480).
+    _sanitised_excluded = _excluded;
     sort(_sanitised_excluded);
     _sanitised_excluded.erase(std::unique(_sanitised_excluded.begin(), _sanitised_excluded.end()), _sanitised_excluded.end());
     _sanitised_excluded.erase(std::remove_if(_sanitised_excluded.begin(), _sanitised_excluded.end(),
@@ -122,12 +126,22 @@ auto AllDifferentExcept::prepare(Propagators &, State & initial_state, ProofMode
 auto AllDifferentExcept::define_proof_model(ProofModel & model) -> void
 {
     _value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
-    _duplicate_selectors = define_clique_not_equals_except_encoding(model, _sanitised_vars, _sanitised_excluded);
+    // Encode from the original exception list, matching cake_pb_cp: an
+    // out-of-domain exception value still contributes its (statically-true)
+    // literals to the pair rows, keeping the rows' propagation strength -- and
+    // hence the proof steps they support -- identical on both sides.
+    _duplicate_selectors = define_clique_not_equals_except_encoding(model, _sanitised_vars, _excluded);
 }
 
 auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
 {
-    if (_has_duplicates && _sanitised_excluded.empty()) {
+    // Only the genuinely-no-exceptions form may assert the duplicate
+    // contradiction bare: its pair rows collapse to units on both our and
+    // cake's side, so the contradiction is unit-propagatable everywhere. With
+    // exception values present (even out-of-domain ones, which the encoding
+    // keeps -- see define_proof_model), the rows need the per-value inferences
+    // of the general duplicate path below to reach the wipeout.
+    if (_has_duplicates && _excluded.empty()) {
         install_clique_duplicate_contradiction_initialiser(propagators, hints::AllDifferentExcept{constraint_id()});
         return;
     }

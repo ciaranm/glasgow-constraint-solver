@@ -39,9 +39,12 @@ using namespace gcs::innards;
 using std::any_cast;
 using std::cmp_less;
 using std::ios;
+using std::max;
+using std::min;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::pair;
 using std::set;
 using std::string;
 using std::stringstream;
@@ -556,22 +559,58 @@ auto Regular::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
 
+    // A regex-built Regular only compiles its automaton in prepare(), and
+    // prepare runs on the installed clone, never on the stored constraint this
+    // is called on -- so without compiling here too, the written .scp would
+    // describe an empty automaton rather than the constraint actually solved
+    // (issue #481). Rebuild the same alphabet prepare() uses: the contiguous
+    // min..max range over the variables' initial domains, whose extremes are
+    // exactly the bounds the tracker recorded at variable set-up.
+    long num_states = _num_states;
+    const auto * transitions = &_transitions;
+    const auto * final_states = &_final_states;
+    RegexNfa compiled{};
+    if (_regex && 0 == num_states) {
+        auto lo = Integer::max_value(), hi = Integer::min_value();
+        for (const auto & var : _vars) {
+            auto [l, u] = overloaded{[&](const SimpleIntegerVariableID & v) -> pair<Integer, Integer> { return tracker.tracked_bounds(v); },
+                [&](const ViewOfIntegerVariableID & v) -> pair<Integer, Integer> {
+                    auto [al, au] = tracker.tracked_bounds(v.actual_variable);
+                    if (v.negate_first)
+                        return {-au + v.then_add, -al + v.then_add};
+                    return {al + v.then_add, au + v.then_add};
+                },
+                [&](const ConstantIntegerVariableID & v) -> pair<Integer, Integer> {
+                    return {v.const_value, v.const_value};
+                }}.visit(var);
+            lo = min(lo, l);
+            hi = max(hi, u);
+        }
+        vector<Integer> alphabet;
+        for (auto val = lo; val <= hi; ++val)
+            alphabet.push_back(val);
+        compiled = regex_to_nfa(*_regex, alphabet);
+        num_states = compiled.num_states;
+        transitions = &compiled.transitions;
+        final_states = &compiled.final_states;
+    }
+
     // One edge list per state, in state order: position i holds the edges out of
     // state i, and each edge is (symbol target) -- reading `symbol` moves from
     // state i to state `target`. This is the shape cake_pb_cp's regular parser
     // expects: `(vars...) nstates ((edges-of-0) (edges-of-1) ...) (finals...)`,
     // with no separate alphabet list (cake recovers the symbols from the edges).
     // A non-deterministic automaton emits several edges with the same symbol.
-    // _transitions[i] is an unordered_map, so collect the (symbol, target) pairs
+    // The transitions are unordered_maps, so collect the (symbol, target) pairs
     // and sort them: the written .scp must be byte-stable across standard
     // libraries (hash iteration order is not portable, which breaks the
     // write -> read -> write round-trip), and a canonical order does that.
     vector<SExpr> states;
-    for (long i = 0; i < _num_states; ++i) {
+    for (long i = 0; i < num_states; ++i) {
         vector<SExpr> edges;
-        if (static_cast<size_t>(i) < _transitions.size()) {
-            vector<std::pair<Integer, long>> sorted_edges;
-            for (const auto & tran : _transitions[i])
+        if (static_cast<size_t>(i) < transitions->size()) {
+            vector<pair<Integer, long>> sorted_edges;
+            for (const auto & tran : (*transitions)[i])
                 for (const auto & target : tran.second)
                     sorted_edges.emplace_back(tran.first, target);
             sort(sorted_edges);
@@ -582,9 +621,9 @@ auto Regular::s_expr(const ProofModel * const model) const -> SExpr
     }
 
     vector<SExpr> finals;
-    for (const auto & f : _final_states)
+    for (const auto & f : *final_states)
         finals.push_back(SExpr::atom(std::to_string(f)));
 
     return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("regular"), SExpr::list(move(vars)),
-        SExpr::atom(std::to_string(_num_states)), SExpr::list(move(states)), SExpr::list(move(finals))});
+        SExpr::atom(std::to_string(num_states)), SExpr::list(move(states)), SExpr::list(move(finals))});
 }

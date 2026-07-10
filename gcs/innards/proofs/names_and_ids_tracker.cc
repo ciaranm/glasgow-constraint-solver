@@ -1391,6 +1391,11 @@ auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID &
     _imp->integer_variable_definition_bounds.emplace(id, pair{lower, upper});
 }
 
+auto NamesAndIDsTracker::tracked_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> pair<Integer, Integer>
+{
+    return _imp->integer_variable_definition_bounds.at(id);
+}
+
 auto NamesAndIDsTracker::note_bounds_not_trivially_derivable(const SimpleOrProofOnlyIntegerVariableID & id) -> void
 {
     _imp->bounds_not_trivially_derivable.insert(id);
@@ -1461,6 +1466,14 @@ auto NamesAndIDsTracker::create_proof_flag_values(const ConstraintID & id, const
     if (annotation)
         name += "[" + *annotation + "]";
     return make_proof_flag_named(name);
+}
+
+auto NamesAndIDsTracker::create_proof_flag_for_constant(Integer k, const string & atom) -> ProofFlag
+{
+    // Mirror cake_pb_cp's constant-atom rendering (cp_encScript.sml format_var,
+    // Ge/Eq over a constant): n[<k>][<atom>], the constant rendered with a
+    // leading '-' when negative, exactly like the eq/ge literal values.
+    return make_proof_flag_named("n[" + to_string(k.raw_value) + "][" + atom + "]");
 }
 
 auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> ProofFlag

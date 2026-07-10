@@ -409,6 +409,14 @@ namespace gcs::innards
         auto track_bounds(const SimpleOrProofOnlyIntegerVariableID & id, Integer, Integer) -> void;
 
         /**
+         * The bounds recorded by track_bounds. For a model variable these are its
+         * initial-domain bounds, letting a constraint's s_expr recover
+         * domain-derived data (e.g. Regular's regex alphabet) at scp-writing
+         * time, when no State is in reach.
+         */
+        [[nodiscard]] auto tracked_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::pair<Integer, Integer>;
+
+        /**
          * Note that this variable's [lo, hi] bounds are not a trivial consequence of
          * the OPB (cake emits no bound line for it, and its bounds are only entailed
          * through conditional channels), so need_gevar must not pin its boundary order
@@ -486,6 +494,16 @@ namespace gcs::innards
          */
         [[nodiscard]] auto create_proof_flag_values(const ConstraintID & id, const std::vector<long long> & values,
             const std::optional<std::string> & annotation = std::nullopt) -> ProofFlag;
+
+        /**
+         * Create a flag named `n[k][atom]`, conforming to cake_pb_cp's rendering
+         * of a reified atom over a CONSTANT operand (cp_encScript.sml format_var
+         * for `Ge`/`Eq` over a constant): e.g. `n[3][ge0]`, `n[-2][eq0]`. cake
+         * reifies every operand's atoms uniformly, so a constant slot's atoms
+         * exist by name, pinned to their truth values; the pin rows are the
+         * ProofModel's job (cake_constant_atoms). See issue #483.
+         */
+        [[nodiscard]] auto create_proof_flag_for_constant(Integer k, const std::string & atom) -> ProofFlag;
 
         /**
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
