@@ -151,6 +151,35 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(array_param_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME array_param_test COMMAND $<TARGET_FILE:array_param_test>)
 
+    # The lifetime annotations in gcs/lifetime.hh only expand to anything under
+    # clang, so these probes are clang-only. Each dangling_*.cc probe contains a
+    # lifetime misuse that the annotations must turn into a -Wdangling
+    # diagnostic, promoted to an error here: the test builds the probe and
+    # passes only if the output contains that diagnostic, so it fails both if
+    # an annotation stops working and if a probe breaks for some other reason.
+    # valid_uses.cc holds the corrected twins and must build cleanly under the
+    # same flags. The RESOURCE_LOCK stops parallel ctest from running several
+    # builds of this tree at once.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_library(lifetime_annotation_valid_uses OBJECT EXCLUDE_FROM_ALL lifetime_annotation_tests/valid_uses.cc)
+        target_link_libraries(lifetime_annotation_valid_uses PRIVATE glasgow_constraint_solver)
+        target_compile_options(lifetime_annotation_valid_uses PRIVATE -Werror=dangling -Werror=dangling-gsl)
+        add_test(NAME lifetime_annotation_valid_uses
+                COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target lifetime_annotation_valid_uses --config $<CONFIG>)
+        set_tests_properties(lifetime_annotation_valid_uses PROPERTIES RESOURCE_LOCK lifetime_annotation_build)
+
+        foreach(probe dangling_array_param_deref dangling_all_normal_variables dangling_create_integer_variable)
+            add_library(lifetime_annotation_${probe} OBJECT EXCLUDE_FROM_ALL lifetime_annotation_tests/${probe}.cc)
+            target_link_libraries(lifetime_annotation_${probe} PRIVATE glasgow_constraint_solver)
+            target_compile_options(lifetime_annotation_${probe} PRIVATE -Werror=dangling -Werror=dangling-gsl)
+            add_test(NAME lifetime_annotation_${probe}
+                    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target lifetime_annotation_${probe} --config $<CONFIG>)
+            set_tests_properties(lifetime_annotation_${probe} PROPERTIES
+                    PASS_REGULAR_EXPRESSION "-Wdangling"
+                    RESOURCE_LOCK lifetime_annotation_build)
+        endforeach()
+    endif()
+
     add_executable(abs_test constraints/abs/abs_test.cc)
     add_executable(all_different_test constraints/all_different/all_different_test.cc)
     add_executable(all_different_except_test constraints/all_different/all_different_except_test.cc)
