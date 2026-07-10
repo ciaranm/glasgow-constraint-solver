@@ -75,6 +75,14 @@ namespace gcs::test_innards
     // throws: this is for measuring the chain-verify rate across the random
     // data-driven instances, not for gating the suite. Enabled by GCS_TEST_CAKE;
     // cake_pb_cp path overridable via CAKE_PB_CP.
+#ifdef _WIN32
+    // The probe drives cake_pb_cp and veripb through popen() and a POSIX shell,
+    // and cake_pb_cp does not run on Windows anyway, so it compiles out to a
+    // no-op there.
+    inline auto cake_probe_chain(const std::string &) -> void
+    {
+    }
+#else
     inline auto cake_capture(const std::string & cmd) -> std::string
     {
         std::string out;
@@ -162,6 +170,7 @@ namespace gcs::test_innards
         std::remove(vopb.c_str());
         std::remove(core.c_str());
     }
+#endif
 
     /**
      * Verify a test's proof with VeriPB, then, on success, delete its .opb/.pbp
