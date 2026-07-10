@@ -94,10 +94,10 @@ auto Abs::define_proof_model(ProofModel & model) -> void
     // Labels match cake_pb_cp's. cake names the V2 >= V1 half [posle] and the
     // V2 <= V1 half [posge] (i.e. its le/ge track the slack direction, opposite
     // to V2-vs-V1), so the roles go (LE-half, GE-half) = (posge, posle).
-    _abs_nonneg_lines = model.add_labelled_constraint(as_string(_constraint_id), "posge", "posle", "Abs", "non-negative",
-        WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
-    _abs_neg_lines = model.add_labelled_constraint(
-        as_string(_constraint_id), "negge", "negle", "Abs", "negative", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
+    _abs_nonneg_lines = model.add_labelled_constraint(
+        _constraint_id, "posge", "posle", WPBSum{} + 1_i * _v2 + -1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 >= 0_i});
+    _abs_neg_lines =
+        model.add_labelled_constraint(_constraint_id, "negge", "negle", WPBSum{} + 1_i * _v2 + 1_i * _v1 == 0_i, HalfReifyOnConjunctionOf{_v1 < 0_i});
 }
 
 auto Abs::install_propagators(Propagators & propagators) -> void
@@ -289,8 +289,14 @@ auto Abs::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Abs::constraint_type() const -> std::string
+{
+    return "abs";
+}
+
 auto Abs::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("abs"), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2)});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), tracker.s_expr_term_of(_v1), tracker.s_expr_term_of(_v2)});
 }

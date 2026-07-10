@@ -89,7 +89,6 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const Const
     const vector<IntegerVariableID> & y, bool arg_sort_labels) -> SortednessWitness
 {
     auto n = x.size();
-    auto id = as_string(cid);
     SortednessWitness w;
 
     // ArgSort reuses this inner sortedness encoding under cake's arg_sort label
@@ -114,7 +113,7 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const Const
 
     // (a) y non-decreasing: y[i] <= y[i+1], labelled @c[id][<i>] (or @c[id][yle<i>]).
     for (size_t i = 0; i + 1 < n; ++i)
-        model.add_labelled_constraint(id, chain_prefix + std::to_string(i), "Sort", "non-decreasing", WPBSum{} + 1_i * y[i + 1] + -1_i * y[i] >= 0_i);
+        model.add_labelled_constraint(cid, chain_prefix + std::to_string(i), WPBSum{} + 1_i * y[i + 1] + -1_i * y[i] >= 0_i);
 
     // (b) before[ip][i] : x[ip] precedes x[i] in the (value, then original index)
     // order. The index tie-break is constant per pair, so each flag is a plain
@@ -129,7 +128,7 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const Const
         for (size_t ip = 0; ip < n; ++ip) {
             auto bound = (ip < i) ? 0_i : -1_i;
             auto flag = model.create_proof_flag(cid, std::vector<long long>{static_cast<long long>(ip), static_cast<long long>(i)}, "bf");
-            auto [fwd, rev] = model.add_two_way_reified_constraint("Sort", "stable before", WPBSum{} + 1_i * x[ip] + -1_i * x[i] <= bound, flag);
+            auto [fwd, rev] = model.add_two_way_reified_constraint(WPBSum{} + 1_i * x[ip] + -1_i * x[i] <= bound, flag);
             w.before[ip][i] = flag;
             w.before_fwd[ip][i] = fwd;
             w.before_rev[ip][i] = rev;
@@ -152,8 +151,7 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const Const
         rank += 1_i * w.pos[i];
         for (size_t ip = 0; ip < n; ++ip)
             rank += -1_i * w.before[ip][i];
-        auto [le, ge] =
-            model.add_labelled_constraint(id, "rle" + std::to_string(i), "rge" + std::to_string(i), "Sort", "pos is stable rank", move(rank) == 0_i);
+        auto [le, ge] = model.add_labelled_constraint(cid, "rle" + std::to_string(i), "rge" + std::to_string(i), move(rank) == 0_i);
         w.rank_ge.push_back(ge);
         w.rank_le.push_back(le);
     }
@@ -168,8 +166,8 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const Const
             for (size_t b = 0; b < width; ++b)
                 guard.push_back(ProofBitVariable{w.pos[i], Integer{static_cast<long long>(b)}, ((j >> b) & 1) != 0});
             auto cell = std::to_string(i) + "_" + std::to_string(j);
-            model.add_labelled_constraint(id, channel_le + cell, "Sort", "position channel", WPBSum{} + 1_i * y[j] + -1_i * x[i] <= 0_i, guard);
-            model.add_labelled_constraint(id, channel_ge + cell, "Sort", "position channel", WPBSum{} + 1_i * y[j] + -1_i * x[i] >= 0_i, guard);
+            model.add_labelled_constraint(cid, channel_le + cell, WPBSum{} + 1_i * y[j] + -1_i * x[i] <= 0_i, guard);
+            model.add_labelled_constraint(cid, channel_ge + cell, WPBSum{} + 1_i * y[j] + -1_i * x[i] >= 0_i, guard);
         }
 
     return w;
@@ -1127,6 +1125,11 @@ auto Sort::install_propagators(Propagators & propagators) -> void
     install_sortedness_propagator(propagators, constraint_id(), _x, _y, _witness);
 }
 
+auto Sort::constraint_type() const -> std::string
+{
+    return "sort";
+}
+
 auto Sort::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -1139,5 +1142,5 @@ auto Sort::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & v : _y)
         ys.push_back(tracker.s_expr_term_of(v));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("sort"), SExpr::list(move(xs)), SExpr::list(move(ys))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(xs)), SExpr::list(move(ys))});
 }

@@ -66,6 +66,16 @@ namespace gcs
         {
             _constraint_id = std::move(constraint_id);
         }
+
+        /**
+         * \brief The constraint's type, as the stem of the s_expr() term's head:
+         * the `.scp` keyword without any reification suffix (e.g. `abs`,
+         * `lin_less_equal`, `array_min`). Unlike s_expr(), this is total and
+         * cheap --- it needs no ProofModel and must not throw --- so it is
+         * usable for the OPB block header comment even on instances whose full
+         * term the `.scp` grammar cannot express.
+         */
+        [[nodiscard]] virtual auto constraint_type() const -> std::string = 0;
         /**
          * Called internally to install the constraint. A Constraint is expected
          * to define zero or more propagators, and to provide a description of

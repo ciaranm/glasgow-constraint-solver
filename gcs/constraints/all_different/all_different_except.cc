@@ -200,6 +200,11 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto AllDifferentExcept::constraint_type() const -> std::string
+{
+    return "all_different_except";
+}
+
 auto AllDifferentExcept::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -208,6 +213,6 @@ auto AllDifferentExcept::s_expr(const ProofModel * const model) const -> SExpr
         vars.push_back(tracker.s_expr_term_of(var));
     for (const auto & v : _excluded)
         excluded.push_back(SExpr::atom(v.to_string()));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("all_different_except"), SExpr::list(std::move(vars)),
-        SExpr::list(std::move(excluded))});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)), SExpr::list(std::move(excluded))});
 }

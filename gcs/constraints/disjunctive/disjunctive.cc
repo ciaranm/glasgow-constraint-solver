@@ -225,7 +225,7 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
         auto flag = model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(i), static_cast<long long>(j)}, "bf");
         auto ineq = is_constant_variable(_lengths[i]) ? (WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] <= -_length_vals[i])
                                                       : (WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] + -1_i * _starts[j] <= 0_i);
-        auto [fwd, rev] = model.add_two_way_reified_constraint("Disjunctive", "first task finishes before second starts", ineq, flag);
+        auto [fwd, rev] = model.add_two_way_reified_constraint(ineq, flag);
         return BeforeFlagData{flag, fwd, rev};
     };
     for (size_t a = 0; a < _active_tasks.size(); ++a) {
@@ -240,8 +240,8 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
                 if (_zero[r])
                     clause_sum += 1_i * *_zero[r];
             // cake_pb_cp labels the separation clause @c[id][<i>_<j>sepal1].
-            auto clause = model.add_labelled_constraint(as_string(_constraint_id), std::to_string(i) + "_" + std::to_string(j) + "sepal1",
-                "Disjunctive", "one task must finish first", move(clause_sum) >= 1_i);
+            auto clause =
+                model.add_labelled_constraint(_constraint_id, std::to_string(i) + "_" + std::to_string(j) + "sepal1", move(clause_sum) >= 1_i);
             _before_flags.emplace(std::make_pair(i, j), data_ij);
             _before_flags.emplace(std::make_pair(j, i), data_ji);
             _clause_lines.emplace(std::make_pair(i, j), clause);
@@ -822,6 +822,11 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Disjunctive::constraint_type() const -> std::string
+{
+    return _strict ? "disjunctive_strict" : "disjunctive";
+}
+
 auto Disjunctive::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -830,6 +835,6 @@ auto Disjunctive::s_expr(const ProofModel * const model) const -> SExpr
         starts.push_back(tracker.s_expr_term_of(v));
     for (const auto & l : _lengths)
         lengths.push_back(is_constant_variable(l) ? SExpr::atom(const_value_of(l).to_string()) : tracker.s_expr_term_of(l));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(_strict ? "disjunctive_strict" : "disjunctive"),
-        SExpr::list(std::move(starts)), SExpr::list(std::move(lengths))});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)), SExpr::list(std::move(lengths))});
 }

@@ -209,6 +209,10 @@ auto Problem::create_propagators(State & state, ProofModel * const optional_proo
         // post() assigns a fresh number; here we preserve the original's, since
         // define_proof_model builds @c[id][...] labels that must match the .scp.
         cc->set_constraint_id(c->constraint_id());
+        // One provenance comment per constraint: install() emits this
+        // constraint's OPB rows (near enough) contiguously after it.
+        if (optional_proof_model)
+            optional_proof_model->begin_constraint_block_comment(cc->constraint_type(), cc->constraint_id());
         move(*cc).install(result, state, optional_proof_model);
     }
 

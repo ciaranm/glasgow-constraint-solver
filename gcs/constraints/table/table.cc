@@ -147,7 +147,7 @@ auto Table::define_proof_model(ProofModel & model) -> void
 {
     if (_has_no_tuples) {
         // Morally equivalent to a selector with empty domain (`0 ≥ 1`).
-        model.add_constraint("Table", "no allowed tuples", WPBSum{} >= 1_i);
+        model.add_constraint(WPBSum{} >= 1_i);
         return;
     }
 
@@ -202,6 +202,11 @@ auto Table::install_propagators(Propagators & propagators) -> void
         move(_tuples));
 }
 
+auto Table::constraint_type() const -> std::string
+{
+    return "table";
+}
+
 auto Table::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -220,5 +225,5 @@ auto Table::s_expr(const innards::ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
     return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("table"), SExpr::list(std::move(tuple_terms)), SExpr::list(std::move(vars))});
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(tuple_terms)), SExpr::list(std::move(vars))});
 }

@@ -106,7 +106,12 @@ auto ProofModel::emit_constraint_label(const string & constraint_id, const strin
     return ProofLineLabel{"c[" + constraint_id + "]" + (role.empty() ? "" : "[" + role + "]")};
 }
 
-auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> void
+auto ProofModel::begin_constraint_block_comment(const string & constraint_type, const ConstraintID & constraint_id) -> void
+{
+    _imp->opb << "* constraint " << constraint_type << ' ' << as_string(constraint_id) << '\n';
+}
+
+auto ProofModel::add_constraint(const Literals & lits) -> void
 {
     WPBSum sum;
 
@@ -129,22 +134,15 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     // remove duplicates
     sum.terms.erase(unique(sum.terms).begin(), sum.terms.end());
 
-    add_constraint(constraint_name, rule, move(sum) >= (tautological ? 0_i : 1_i), nullopt);
+    add_constraint(move(sum) >= (tautological ? 0_i : 1_i), nullopt);
 }
 
-auto ProofModel::add_constraint(const Literals & lits) -> void
-{
-    add_constraint("?", "?", lits);
-}
-
-auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
+auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
-    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
     emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
     _imp->opb << ";\n";
     auto line = advance_constraint_counter();
@@ -152,19 +150,12 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
 }
 
-auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
-{
-    add_constraint("?", "?", ineq, half_reif);
-}
-
-auto ProofModel::add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
-    const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
+auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
 {
     names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
-    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
     emit_inequality_to(
         names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
     _imp->opb << ";\n";
@@ -182,17 +173,21 @@ auto ProofModel::add_constraint(const StringLiteral & constraint_name, const Str
     names_and_ids_tracker().derive_deviewed_form_for(second, eq.lhs, /*le_half=*/false);
 }
 
-auto ProofModel::add_labelled_constraint(const string & constraint_id, const string & role_le, const string & role_ge,
-    const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif)
-    -> pair<ProofLine, ProofLine>
+auto ProofModel::add_labelled_constraint(const ConstraintID & constraint_id, const string & role_le, const string & role_ge, const WPBSumEq & eq,
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
+{
+    auto id = as_string(constraint_id);
+    return add_labelled_constraint(emit_constraint_label(id, role_le).label, emit_constraint_label(id, role_ge).label, eq, half_reif);
+}
+
+auto ProofModel::add_labelled_constraint(const string & label_le, const string & label_ge, const WPBSumEq & eq,
+    const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
 {
     names_and_ids_tracker().need_all_proof_names_in(eq.lhs);
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
-    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-
-    auto le = emit_constraint_label(constraint_id, role_le);
+    ProofLineLabel le{label_le};
     _imp->opb << le << " ";
     emit_inequality_to(
         names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
@@ -201,7 +196,7 @@ auto ProofModel::add_labelled_constraint(const string & constraint_id, const str
     // LE half: emit_inequality_to negates coefficients on emit.
     names_and_ids_tracker().derive_deviewed_form_for(le, eq.lhs, /*le_half=*/true);
 
-    auto ge = emit_constraint_label(constraint_id, role_ge);
+    ProofLineLabel ge{label_ge};
     _imp->opb << ge << " ";
     emit_inequality_to(
         names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
@@ -253,31 +248,13 @@ auto ProofModel::add_labelled_constraint(const string & label, const Literals & 
     return add_labelled_constraint(label, move(sum) >= (tautological ? 0_i : 1_i), nullopt);
 }
 
-auto ProofModel::add_labelled_constraint(const string & constraint_id, const string & role, const StringLiteral & constraint_name,
-    const StringLiteral & rule, const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
+auto ProofModel::add_labelled_constraint(
+    const ConstraintID & constraint_id, const string & role, const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
 {
-    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
-    if (half_reif)
-        names_and_ids_tracker().need_all_proof_names_in(*half_reif);
-
-    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
-    auto label = emit_constraint_label(constraint_id, role);
-    _imp->opb << label << " ";
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
-    _imp->opb << ";\n";
-    advance_constraint_counter();
-    // emit_inequality_to negates the LE inequality to land in PB >= form.
-    names_and_ids_tracker().derive_deviewed_form_for(label, ineq.lhs, /*le_half=*/true);
-    return label;
+    return add_labelled_constraint(emit_constraint_label(as_string(constraint_id), role).label, ineq, half_reif);
 }
 
-auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> void
-{
-    add_constraint("?", "?", eq, half_reif);
-}
-
-auto ProofModel::add_two_way_reified_constraint(
-    const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq, const ProofFlag & flag) -> pair<ProofLine, ProofLine>
+auto ProofModel::add_two_way_reified_constraint(const WPBSumLE & ineq, const ProofFlag & flag) -> pair<ProofLine, ProofLine>
 {
     // Emit both halves under labels derived from the flag's own name --- base[r]
     // is the forward half (flag -> ineq), base[f] the reverse (~flag -> ~ineq) ---
@@ -288,7 +265,6 @@ auto ProofModel::add_two_way_reified_constraint(
     // not name_of, whose plain-flag form is the bare stem and would collide across
     // flags sharing it.
     auto base = names_and_ids_tracker().pb_file_string_for(flag);
-    _imp->opb << "* constraint " << constraint_name.value << ' ' << rule.value << '\n';
     auto forward = add_labelled_constraint(base + "[r]", ineq, HalfReifyOnConjunctionOf{{flag}});
     names_and_ids_tracker().derive_deviewed_form_for(forward, ineq.lhs, /*le_half=*/true);
     auto reverse_ineq = negate_inequality(ineq);
@@ -297,11 +273,10 @@ auto ProofModel::add_two_way_reified_constraint(
     return {forward, reverse};
 }
 
-auto ProofModel::create_proof_flag_fully_reifying(
-    const string & flag_name, const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq) -> ProofFlag
+auto ProofModel::create_proof_flag_fully_reifying(const string & flag_name, const WPBSumLE & ineq) -> ProofFlag
 {
     auto flag = create_proof_flag(flag_name);
-    add_two_way_reified_constraint(constraint_name, rule, ineq, flag);
+    add_two_way_reified_constraint(ineq, flag);
     return flag;
 }
 

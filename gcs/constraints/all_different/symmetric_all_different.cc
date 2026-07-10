@@ -90,8 +90,8 @@ auto SymmetricAllDifferent::prepare(Propagators & propagators, State & initial_s
     }
 
     for (const auto & v : _vars) {
-        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, _start, "SymmetricAllDifferent", "value range");
-        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, _start + Integer(n) - 1_i, "SymmetricAllDifferent", "value range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, _start);
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, _start + Integer(n) - 1_i);
     }
 
     return true;
@@ -107,10 +107,8 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
     // for general x and y.)
     for (size_t i = 0; i < n; ++i)
         for (size_t j = i + 1; j < n; ++j) {
-            model.add_constraint("SymmetricAllDifferent", "x_i = j -> x_j = i",
-                WPBSum{} + 1_i * (_vars[i] != Integer(j) + _start) + 1_i * (_vars[j] == Integer(i) + _start) >= 1_i);
-            model.add_constraint("SymmetricAllDifferent", "x_j = i -> x_i = j",
-                WPBSum{} + 1_i * (_vars[j] != Integer(i) + _start) + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
+            model.add_constraint(WPBSum{} + 1_i * (_vars[i] != Integer(j) + _start) + 1_i * (_vars[j] == Integer(i) + _start) >= 1_i);
+            model.add_constraint(WPBSum{} + 1_i * (_vars[j] != Integer(i) + _start) + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
         }
 
     define_clique_not_equals_encoding(model, _constraint_id, _vars);
@@ -178,12 +176,17 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
         triggers);
 }
 
+auto SymmetricAllDifferent::constraint_type() const -> std::string
+{
+    return "symmetric_all_different";
+}
+
 auto SymmetricAllDifferent::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
     vector<SExpr> vars;
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("symmetric_all_different"), SExpr::list(std::move(vars)),
-        SExpr::atom(_start.to_string())});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)), SExpr::atom(_start.to_string())});
 }

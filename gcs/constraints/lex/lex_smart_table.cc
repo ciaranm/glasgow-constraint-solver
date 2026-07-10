@@ -64,6 +64,11 @@ auto LexSmartTable::install(Propagators & propagators, State & initial_state, Pr
     move(smt_table).install(propagators, initial_state, optional_model);
 }
 
+auto LexSmartTable::constraint_type() const -> std::string
+{
+    return "lex";
+}
+
 auto LexSmartTable::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -72,5 +77,6 @@ auto LexSmartTable::s_expr(const innards::ProofModel * const model) const -> SEx
         a.push_back(tracker.s_expr_term_of(var));
     for (const auto & var : _vars_2)
         b.push_back(tracker.s_expr_term_of(var));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("lex"), SExpr::list(std::move(a)), SExpr::list(std::move(b))});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(a)), SExpr::list(std::move(b))});
 }

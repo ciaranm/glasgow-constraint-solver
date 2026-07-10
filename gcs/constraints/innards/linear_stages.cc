@@ -34,28 +34,27 @@ auto gcs::innards::stage_gate_holds(const State & state, const IntegerVariableCo
     }
 }
 
-auto gcs::innards::add_equality_stage(
-    vector<LinearStage> & stages, ProofModel * const model, const string & label, const WeightedSum & sum, Integer value, const string & role) -> void
+auto gcs::innards::add_equality_stage(vector<LinearStage> & stages, ProofModel * const model, const ConstraintID & id, const WeightedSum & sum,
+    Integer value, const string & role) -> void
 {
     pair<optional<ProofLine>, optional<ProofLine>> lines;
     if (model) {
-        auto ll = model->add_labelled_constraint(label, role + "le", role + "ge", "FusedLinearStage", "sum", as_wpb(sum) == value);
+        auto ll = model->add_labelled_constraint(id, role + "le", role + "ge", as_wpb(sum) == value);
         lines = pair{optional{ll.first}, optional{ll.second}};
     }
     auto [tidied, modifier] = tidy_up_linear(sum);
     stages.emplace_back(LinearStage{tidied, value + modifier, true, lines, nullopt});
 }
 
-auto gcs::innards::add_le_stage(vector<LinearStage> & stages, ProofModel * const model, const string & label, const WeightedSum & sum, Integer value,
-    const string & role, const optional<IntegerVariableCondition> & gate) -> void
+auto gcs::innards::add_le_stage(vector<LinearStage> & stages, ProofModel * const model, const ConstraintID & id, const WeightedSum & sum,
+    Integer value, const string & role, const optional<IntegerVariableCondition> & gate) -> void
 {
     pair<optional<ProofLine>, optional<ProofLine>> lines;
     if (model) {
         if (gate)
-            lines.first = model->add_labelled_constraint(
-                label, role, "FusedLinearStage", "conditional bound", as_wpb(sum) <= value, HalfReifyOnConjunctionOf{Literal{*gate}});
+            lines.first = model->add_labelled_constraint(id, role, as_wpb(sum) <= value, HalfReifyOnConjunctionOf{Literal{*gate}});
         else
-            lines.first = model->add_labelled_constraint(label, role, "FusedLinearStage", "bound", as_wpb(sum) <= value);
+            lines.first = model->add_labelled_constraint(id, role, as_wpb(sum) <= value);
     }
     auto [tidied, modifier] = tidy_up_linear(sum);
     stages.emplace_back(LinearStage{tidied, value + modifier, false, lines, gate});

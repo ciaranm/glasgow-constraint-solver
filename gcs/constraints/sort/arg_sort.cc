@@ -119,8 +119,8 @@ auto ArgSort::prepare(Propagators & propagators, State & initial_state, ProofMod
     // The permutation values live in [offset, offset + n - 1]; pin those bounds
     // so the index arithmetic (and the OPB index range) is sound.
     for (const auto & v : _p) {
-        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, _offset, "ArgSort", "permutation range");
-        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, _offset + Integer(_x.size()) - 1_i, "ArgSort", "permutation range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, _offset);
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, _offset + Integer(_x.size()) - 1_i);
     }
 
     // Record the value range of x, used as the domain of the sorted-value
@@ -156,7 +156,6 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
     // @c[id][acle/acge<i>_<j>]) are emitted by define_sortedness_proof_model with
     // arg_sort_labels. Labels use the constraint id as cake does.
     auto n = _x.size();
-    auto id = as_string(_constraint_id);
 
     auto guard = [&](size_t j, size_t k) { return HalfReifyOnConjunctionOf{{_p[j] == _offset + Integer(static_cast<long long>(k))}}; };
 
@@ -166,7 +165,7 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
         WPBSum at_most_one;
         for (const auto & p_j : _p)
             at_most_one += 1_i * (p_j == _offset + Integer(static_cast<long long>(k)));
-        model.add_labelled_constraint(id, "perm" + std::to_string(k) + "am1", "ArgSort", "permutation", move(at_most_one) <= 1_i);
+        model.add_labelled_constraint(_constraint_id, "perm" + std::to_string(k) + "am1", move(at_most_one) <= 1_i);
     }
 
     // value channel: (p[j] = offset+k) -> y[j] = x[k], split into @c[id][vcle<j>_<k>]
@@ -175,8 +174,7 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
     for (size_t j = 0; j < n; ++j)
         for (size_t k = 0; k < n; ++k) {
             auto cell = std::to_string(j) + "_" + std::to_string(k);
-            model.add_labelled_constraint(
-                id, "vcle" + cell, "vcge" + cell, "ArgSort", "value channel", WPBSum{} + 1_i * _y[j] + -1_i * _x[k] == 0_i, guard(j, k));
+            model.add_labelled_constraint(_constraint_id, "vcle" + cell, "vcge" + cell, WPBSum{} + 1_i * _y[j] + -1_i * _x[k] == 0_i, guard(j, k));
         }
 
     // rank channel (inverse): position j holds element k exactly when element k's
@@ -186,8 +184,8 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
     for (size_t j = 0; j < n; ++j)
         for (size_t k = 0; k < n; ++k) {
             auto cell = std::to_string(j) + "_" + std::to_string(k);
-            model.add_labelled_constraint(id, "rcle" + cell, "rcge" + cell, "ArgSort", "rank channel",
-                WPBSum{} + 1_i * _witness.pos[k] == Integer(static_cast<long long>(j)), guard(j, k));
+            model.add_labelled_constraint(
+                _constraint_id, "rcle" + cell, "rcge" + cell, WPBSum{} + 1_i * _witness.pos[k] == Integer(static_cast<long long>(j)), guard(j, k));
         }
 
     // stable tie-break. The inner Sort already constrains y[j] <= y[j+1], so a flag
@@ -198,8 +196,8 @@ auto ArgSort::define_proof_model(ProofModel & model) -> void
     for (size_t j = 0; j + 1 < n; ++j) {
         auto yge = model.create_proof_flag_values_fully_reifying(
             _constraint_id, {static_cast<long long>(j)}, "yge", WPBSum{} + 1_i * _y[j] + -1_i * _y[j + 1] >= 0_i);
-        model.add_labelled_constraint(id, "tb" + std::to_string(j), "ArgSort", "stable tie-break", WPBSum{} + 1_i * _p[j] + -1_i * _p[j + 1] <= -1_i,
-            HalfReifyOnConjunctionOf{{yge}});
+        model.add_labelled_constraint(
+            _constraint_id, "tb" + std::to_string(j), WPBSum{} + 1_i * _p[j] + -1_i * _p[j + 1] <= -1_i, HalfReifyOnConjunctionOf{{yge}});
     }
 }
 
@@ -537,6 +535,11 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     // (full enumeration + BC consistency + VeriPB all unchanged when removed).
 }
 
+auto ArgSort::constraint_type() const -> std::string
+{
+    return "arg_sort";
+}
+
 auto ArgSort::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -551,6 +554,6 @@ auto ArgSort::s_expr(const ProofModel * const model) const -> SExpr
 
     // The offset is a trailing bare atom (not wrapped in its own list), matching
     // the old textual form.
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("arg_sort"), SExpr::list(move(xs)), SExpr::list(move(ps)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(xs)), SExpr::list(move(ps)),
         SExpr::atom(_offset.to_string())});
 }

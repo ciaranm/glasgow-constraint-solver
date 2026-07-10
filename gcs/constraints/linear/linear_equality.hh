@@ -80,6 +80,7 @@ namespace gcs
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
+        [[nodiscard]] virtual auto constraint_type() const -> std::string override;
     };
 
     class LinearEquality : public ReifiedLinearEquality

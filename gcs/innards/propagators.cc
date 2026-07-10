@@ -144,8 +144,7 @@ Propagators::Propagators(Propagators &&) = default;
 
 auto Propagators::operator=(Propagators &&) -> Propagators & = default;
 
-auto Propagators::define_bound(const State & state, ProofModel * const optional_model, IntegerVariableID var, Bound which, Integer val,
-    const StringLiteral & constraint_name, const StringLiteral & sub_rule) -> void
+auto Propagators::define_bound(const State & state, ProofModel * const optional_model, IntegerVariableID var, Bound which, Integer val) -> void
 {
     switch (which) {
         using enum Bound;
@@ -153,7 +152,7 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         if (state.lower_bound(var) >= val)
             return;
         if (optional_model)
-            optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var >= val);
+            optional_model->add_constraint(WPBSum{} + 1_i * var >= val);
         install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
             inference.infer(logger, var >= val, JustifyUsingRUP{}, NoReason{}, AssertionAnnotation{.hint_name = hints::InitialBound::hint_name});
         });
@@ -162,7 +161,7 @@ auto Propagators::define_bound(const State & state, ProofModel * const optional_
         if (state.upper_bound(var) <= val)
             return;
         if (optional_model)
-            optional_model->add_constraint(constraint_name, sub_rule, WPBSum{} + 1_i * var <= val);
+            optional_model->add_constraint(WPBSum{} + 1_i * var <= val);
         install_initialiser([var, val](const State &, auto & inference, ProofLogger * const logger) {
             inference.infer(logger, var <= val, JustifyUsingRUP{}, NoReason{}, AssertionAnnotation{.hint_name = hints::InitialBound::hint_name});
         });

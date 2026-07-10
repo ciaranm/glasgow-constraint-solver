@@ -214,8 +214,8 @@ namespace
             pos += 1_i * PseudoBooleanTerm{l};
             neg += 1_i * PseudoBooleanTerm{! l};
         }
-        model.add_labelled_constraint(as_string(id), "pos", "Logical", "reif implies", move(pos) >= 0_i);
-        model.add_labelled_constraint(as_string(id), "neg", "Logical", "negated reif implies", move(neg) >= 0_i);
+        model.add_labelled_constraint(id, "pos", move(pos) >= 0_i);
+        model.add_labelled_constraint(id, "neg", move(neg) >= 0_i);
     }
 
     // The bare-operand `and` / `or` scp term when every literal conforms
@@ -255,7 +255,7 @@ namespace
 
         if (reif_state == DefinitelyTrue) {
             for (auto & l : lits)
-                model.add_constraint("Logical", "cnf", Literals{l});
+                model.add_constraint(Literals{l});
             return;
         }
 
@@ -268,7 +268,7 @@ namespace
                 .visit(l);
 
         if (saw_false) {
-            model.add_constraint("Logical", "saw reif false", Literals{! full_reif});
+            model.add_constraint(Literals{! full_reif});
             return;
         }
 
@@ -276,14 +276,14 @@ namespace
             WPBSum forward;
             for (auto & l : lits)
                 forward += 1_i * PseudoBooleanTerm{l};
-            model.add_constraint("Logical", "if condition", forward >= Integer(lits.size()), HalfReifyOnConjunctionOf{full_reif});
+            model.add_constraint(forward >= Integer(lits.size()), HalfReifyOnConjunctionOf{full_reif});
         }
 
         Literals reverse;
         for (auto & l : lits)
             reverse.push_back(! l);
         reverse.push_back(full_reif);
-        model.add_constraint("Logical", "if not condition", move(reverse));
+        model.add_constraint(move(reverse));
     }
 }
 
@@ -340,9 +340,14 @@ auto And::install_propagators(Propagators & propagators) -> void
         install_propagators_logical<hints::And>(propagators, constraint_id(), _lits, _full_reif, _reif_state);
 }
 
+auto And::constraint_type() const -> std::string
+{
+    return "and";
+}
+
 auto And::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, "and", _lits, _full_reif);
+    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, constraint_type(), _lits, _full_reif);
 }
 
 Or::Or(const vector<IntegerVariableID> & vars, const IntegerVariableID & full_reif) : Or(to_lits(vars), full_reif != 0_i)
@@ -401,7 +406,12 @@ auto Or::install_propagators(Propagators & propagators) -> void
     install_propagators_logical<hints::Or>(propagators, constraint_id(), move(lits), _cake_reif ? ! *_cake_reif : ! _full_reif, _reif_state);
 }
 
+auto Or::constraint_type() const -> std::string
+{
+    return "or";
+}
+
 auto Or::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
-    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, "or", _lits, _full_reif);
+    return s_expr_logical(model->names_and_ids_tracker(), _constraint_id, constraint_type(), _lits, _full_reif);
 }

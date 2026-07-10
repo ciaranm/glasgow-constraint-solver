@@ -44,8 +44,7 @@ namespace gcs::innards::signed_multiply
      * \ingroup Innards
      */
     [[nodiscard]] auto make_data(ProofModel * const optional_model, const State & initial_state, const ConstraintID & constraint_id,
-        const std::string & label, IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, std::optional<long long> link = std::nullopt)
-        -> Data;
+        IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, std::optional<long long> link = std::nullopt) -> Data;
 
     /**
      * \brief One pass of bounds consistent multiplication filtering for

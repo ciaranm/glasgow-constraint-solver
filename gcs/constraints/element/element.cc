@@ -196,9 +196,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::prepare(Propagators & propaga
 
     for (const auto & [i, var] : enumerate(_index_vars)) {
         auto s = Integer(get_dimension_size<dimensions_>(i, *_array));
-        propagators.define_bound(initial_state, optional_model, var, Bound::Lower, _index_starts.at(i), "NDimensionalElement", "index range");
-        propagators.define_bound(
-            initial_state, optional_model, var, Bound::Upper, _index_starts.at(i) + s - 1_i, "NDimensionalElement", "index range");
+        propagators.define_bound(initial_state, optional_model, var, Bound::Lower, _index_starts.at(i));
+        propagators.define_bound(initial_state, optional_model, var, Bound::Upper, _index_starts.at(i) + s - 1_i);
     }
 
     _array_has_nonconstants = any_array_variable_is_nonconstant(initial_state, *_array);
@@ -213,7 +212,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
         // file remains self-describing. The encoding's recursion over the
         // empty dimension would have produced no constraints at all, which
         // wouldn't capture the unsatisfiability.
-        model.add_constraint("NDimensionalElement", "zero-sized dimension", WPBSum{} >= 1_i);
+        model.add_constraint(WPBSum{} >= 1_i);
         return;
     }
 
@@ -228,7 +227,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
             if (elem.size() == dimensions_) {
                 // this still works out fine if the variable is actually a constant
                 auto array_var = get_array_var<dimensions_>(elem, *_array);
-                model.add_constraint("NDimensionalElement", "equality", WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
+                model.add_constraint(WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
             }
             else {
                 build_implication_constraints(d + 1);
@@ -726,6 +725,12 @@ auto NDimensionalElement<EntryType_, dimensions_>::clone() const -> unique_ptr<C
 }
 
 template <typename EntryType_, unsigned dimensions_>
+auto NDimensionalElement<EntryType_, dimensions_>::constraint_type() const -> std::string
+{
+    return dimensions_ == 1 ? "element" : "element_2d";
+}
+
+template <typename EntryType_, unsigned dimensions_>
 auto NDimensionalElement<EntryType_, dimensions_>::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -766,8 +771,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::s_expr(const ProofModel * con
     };
     build_array(build_array, *_array);
 
-    vector<SExpr> terms{
-        SExpr::atom(as_string(_constraint_id)), SExpr::atom(dimensions_ == 1 ? "element" : "element_2d"), SExpr::list(move(array_children))};
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(array_children))};
 
     for (size_t i = 0; i < _index_vars.size(); ++i)
         terms.push_back(SExpr::list({tracker.s_expr_term_of(_index_vars[i]), SExpr::atom(_index_starts[i].to_string())}));

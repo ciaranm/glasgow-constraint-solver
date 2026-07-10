@@ -251,9 +251,9 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
                     cc.push_back(model.names_and_ids_tracker().create_proof_flag_values(
                         _constraint_id, std::vector<long long>{static_cast<long long>(i), t.raw_value, k.raw_value}, "cc"));
                 auto contrib = contrib_sum_of(cc);
-                model.add_constraint("Cumulative", "contrib >= h when active", contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_constraint("Cumulative", "contrib <= h when active", contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
-                model.add_constraint("Cumulative", "contrib = 0 when inactive", contrib <= 0_i, HalfReifyOnConjunctionOf{! active});
+                model.add_constraint(contrib + -1_i * _heights[i] >= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_constraint(contrib + -1_i * _heights[i] <= 0_i, HalfReifyOnConjunctionOf{active});
+                model.add_constraint(contrib <= 0_i, HalfReifyOnConjunctionOf{! active});
                 _contrib_flags[i].push_back(move(cc));
             }
         }
@@ -283,10 +283,8 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
             // is cake's cap line for time t. Emit the same label so the verified
             // chain references it by name rather than position.
             auto role = "cap_" + std::to_string(t.raw_value);
-            auto line = is_constant_variable(_capacity)
-                ? model.add_labelled_constraint(as_string(_constraint_id), role, "Cumulative", "load <= capacity", load <= _capacity_val)
-                : model.add_labelled_constraint(
-                      as_string(_constraint_id), role, "Cumulative", "load <= capacity", move(load) + -1_i * _capacity <= 0_i);
+            auto line = is_constant_variable(_capacity) ? model.add_labelled_constraint(_constraint_id, role, load <= _capacity_val)
+                                                        : model.add_labelled_constraint(_constraint_id, role, move(load) + -1_i * _capacity <= 0_i);
             _capacity_lines.emplace(t, line);
         }
     }
@@ -681,6 +679,11 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Cumulative::constraint_type() const -> std::string
+{
+    return "cumulative";
+}
+
 auto Cumulative::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -691,6 +694,6 @@ auto Cumulative::s_expr(const ProofModel * const model) const -> SExpr
         lengths.push_back(tracker.s_expr_term_of(l));
     for (const auto & h : _heights)
         heights.push_back(tracker.s_expr_term_of(h));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("cumulative"), SExpr::list(std::move(starts)),
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)),
         SExpr::list(std::move(lengths)), SExpr::list(std::move(heights)), tracker.s_expr_term_of(_capacity)});
 }

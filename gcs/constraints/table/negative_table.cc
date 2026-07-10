@@ -156,7 +156,7 @@ auto NegativeTable::define_proof_model(ProofModel & model) -> void
                 Literals lits;
                 for (const auto & [idx, v] : enumerate(_vars))
                     add_literal(lits, v, t[idx]);
-                model.add_constraint("NegativeTable", "forbidden", move(lits));
+                model.add_constraint(move(lits));
             }
         },
         _tuples);
@@ -318,6 +318,11 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
         _tuples);
 }
 
+auto NegativeTable::constraint_type() const -> std::string
+{
+    return "negative_table";
+}
+
 auto NegativeTable::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -336,5 +341,5 @@ auto NegativeTable::s_expr(const innards::ProofModel * const model) const -> SEx
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
     return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("negative_table"), SExpr::list(std::move(tuple_terms)), SExpr::list(std::move(vars))});
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(tuple_terms)), SExpr::list(std::move(vars))});
 }

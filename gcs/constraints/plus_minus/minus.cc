@@ -207,8 +207,7 @@ auto Minus::define_proof_model(ProofModel & model) -> void
     // Match those so the encoding byte-matches cake. The {LE, GE} return order is
     // unchanged from the unlabelled add_constraint, so _sum_line still feeds the
     // propagator's Conclude::LE/GE paths correctly.
-    _sum_line =
-        model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "Minus", "sum", WPBSum{} + 1_i * _a + -1_i * _b == 1_i * _result);
+    _sum_line = model.add_labelled_constraint(_constraint_id, "le", "ge", WPBSum{} + 1_i * _a + -1_i * _b == 1_i * _result);
 }
 
 auto Minus::install_propagators(Propagators & propagators) -> void
@@ -223,11 +222,16 @@ auto Minus::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Minus::constraint_type() const -> std::string
+{
+    return "minus";
+}
+
 auto Minus::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
 
     // Three flat args (`minus X Y Z`) to match cake_pb_cp's binary prim parse.
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("minus"), tracker.s_expr_term_of(_a), tracker.s_expr_term_of(_b),
-        tracker.s_expr_term_of(_result)});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), tracker.s_expr_term_of(_a),
+        tracker.s_expr_term_of(_b), tracker.s_expr_term_of(_result)});
 }

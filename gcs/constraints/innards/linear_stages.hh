@@ -57,7 +57,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    auto add_equality_stage(std::vector<LinearStage> & stages, ProofModel * const model, const std::string & label, const WeightedSum & sum,
+    auto add_equality_stage(std::vector<LinearStage> & stages, ProofModel * const model, const ConstraintID & id, const WeightedSum & sum,
         Integer value, const std::string & role) -> void;
 
     /**
@@ -67,7 +67,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    auto add_le_stage(std::vector<LinearStage> & stages, ProofModel * const model, const std::string & label, const WeightedSum & sum, Integer value,
+    auto add_le_stage(std::vector<LinearStage> & stages, ProofModel * const model, const ConstraintID & id, const WeightedSum & sum, Integer value,
         const std::string & role, const std::optional<IntegerVariableCondition> & gate) -> void;
 
     /**

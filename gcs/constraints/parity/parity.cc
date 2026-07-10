@@ -103,25 +103,21 @@ auto ParityOdd::define_proof_model(ProofModel & model) -> void
         // accumulator to 0, i.e. 1 XOR (parity of the literals) = 0.
         PseudoBooleanTerm acc = FalseLiteral{}, not_acc = TrueLiteral{};
         auto x0 = model.create_proof_flag(_constraint_id, vector<long long>{0}, nullopt);
-        model.add_labelled_constraint(as_string(_constraint_id), "0ge", "ParityOdd", "seed", WPBSum{} + 1_i * TrueLiteral{} + -1_i * x0 >= 0_i);
-        model.add_labelled_constraint(as_string(_constraint_id), "0le", "ParityOdd", "seed", WPBSum{} + 1_i * x0 + -1_i * TrueLiteral{} >= 0_i);
+        model.add_labelled_constraint(_constraint_id, "0ge", WPBSum{} + 1_i * TrueLiteral{} + -1_i * x0 >= 0_i);
+        model.add_labelled_constraint(_constraint_id, "0le", WPBSum{} + 1_i * x0 + -1_i * TrueLiteral{} >= 0_i);
         acc = x0;
         not_acc = ! x0;
         for (const auto & [k, l] : enumerate(_cake_lits)) {
             auto new_acc = model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(k) + 1}, nullopt);
             auto stem = to_string(k + 1);
-            model.add_labelled_constraint(
-                as_string(_constraint_id), stem + "_0_0", "ParityOdd", "xor", WPBSum{} + 1_i * acc + 1_i * l + 1_i * ! new_acc >= 1_i);
-            model.add_labelled_constraint(
-                as_string(_constraint_id), stem + "_1_1", "ParityOdd", "xor", WPBSum{} + 1_i * not_acc + 1_i * ! l + 1_i * ! new_acc >= 1_i);
-            model.add_labelled_constraint(
-                as_string(_constraint_id), stem + "_1_0", "ParityOdd", "xor", WPBSum{} + 1_i * not_acc + 1_i * l + 1_i * new_acc >= 1_i);
-            model.add_labelled_constraint(
-                as_string(_constraint_id), stem + "_0_1", "ParityOdd", "xor", WPBSum{} + 1_i * acc + 1_i * ! l + 1_i * new_acc >= 1_i);
+            model.add_labelled_constraint(_constraint_id, stem + "_0_0", WPBSum{} + 1_i * acc + 1_i * l + 1_i * ! new_acc >= 1_i);
+            model.add_labelled_constraint(_constraint_id, stem + "_1_1", WPBSum{} + 1_i * not_acc + 1_i * ! l + 1_i * ! new_acc >= 1_i);
+            model.add_labelled_constraint(_constraint_id, stem + "_1_0", WPBSum{} + 1_i * not_acc + 1_i * l + 1_i * new_acc >= 1_i);
+            model.add_labelled_constraint(_constraint_id, stem + "_0_1", WPBSum{} + 1_i * acc + 1_i * ! l + 1_i * new_acc >= 1_i);
             acc = new_acc;
             not_acc = ! new_acc;
         }
-        model.add_labelled_constraint(as_string(_constraint_id), "acc", "ParityOdd", "result", WPBSum{} + -1_i * acc >= 0_i);
+        model.add_labelled_constraint(_constraint_id, "acc", WPBSum{} + -1_i * acc >= 0_i);
         return;
     }
 
@@ -129,15 +125,15 @@ auto ParityOdd::define_proof_model(ProofModel & model) -> void
     for (const auto & l : _lits) {
         auto new_acc = model.create_proof_flag("xor");
 
-        model.add_constraint("ParityOdd", "xor", WPBSum{} + 1_i * acc + 1_i * l + 1_i * ! new_acc >= 1_i);
-        model.add_constraint("ParityOdd", "xor", WPBSum{} + 1_i * not_acc + 1_i * ! l + 1_i * ! new_acc >= 1_i);
-        model.add_constraint("ParityOdd", "xor", WPBSum{} + 1_i * not_acc + 1_i * l + 1_i * new_acc >= 1_i);
-        model.add_constraint("ParityOdd", "xor", WPBSum{} + 1_i * acc + 1_i * ! l + 1_i * new_acc >= 1_i);
+        model.add_constraint(WPBSum{} + 1_i * acc + 1_i * l + 1_i * ! new_acc >= 1_i);
+        model.add_constraint(WPBSum{} + 1_i * not_acc + 1_i * ! l + 1_i * ! new_acc >= 1_i);
+        model.add_constraint(WPBSum{} + 1_i * not_acc + 1_i * l + 1_i * new_acc >= 1_i);
+        model.add_constraint(WPBSum{} + 1_i * acc + 1_i * ! l + 1_i * new_acc >= 1_i);
 
         acc = new_acc;
         not_acc = ! new_acc;
     }
-    model.add_constraint("ParityOdd", "result", WPBSum{} + 1_i * acc >= 1_i);
+    model.add_constraint(WPBSum{} + 1_i * acc >= 1_i);
 }
 
 auto ParityOdd::install_propagators(Propagators & propagators) -> void
@@ -194,6 +190,11 @@ auto ParityOdd::install_propagators(Propagators & propagators) -> void
         },
         triggers);
 }
+auto ParityOdd::constraint_type() const -> std::string
+{
+    return "parity";
+}
+
 auto ParityOdd::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();

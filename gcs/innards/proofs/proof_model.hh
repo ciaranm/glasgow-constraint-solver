@@ -12,21 +12,10 @@
 
 #include <memory>
 #include <optional>
-#include <type_traits>
 #include <vector>
 
 namespace gcs::innards
 {
-    struct StringLiteral
-    {
-        template <typename T_, std::size_t n_, std::enable_if_t<std::is_same_v<T_, const char>>...>
-        consteval StringLiteral(T_ (&s)[n_]) : value(s)
-        {
-        }
-
-        char const * value;
-    };
-
     /**
      * \brief How to name a proof-only integer variable's bit literals to match
      * cake_pb_cp's value-flag scheme, instead of the default `p[index_name][b]`:
@@ -127,16 +116,14 @@ namespace gcs::innards
         auto add_constraint(const Literals & lits) -> void;
 
         /**
-         * Add a pseudo-Boolean constraint to a Proof model.
+         * \brief Emit a `* constraint <type> <id>` comment marking the start of a
+         * constraint's block of OPB definitions. Called once per constraint by
+         * the driver that installs it, rather than per row: a constraint's rows
+         * are emitted (near enough) contiguously, so one header gives every row
+         * provenance. The rows themselves carry no comments; a row's finer
+         * identity, where it matters, is its @c[id][role] label.
          */
-        auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> void;
-
-        /**
-         * Add a pair of pseudo-Boolean constraints representing an equality to a Proof model.
-         */
-        auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> void;
+        auto begin_constraint_block_comment(const std::string & constraint_type, const ConstraintID & constraint_id) -> void;
 
         /**
          * \brief Like add_constraint for an equality, but emits an @label on each
@@ -150,9 +137,8 @@ namespace gcs::innards
          * Part of moving every constraint reference off line numbers and onto
          * labels.
          */
-        auto add_labelled_constraint(const std::string & constraint_id, const std::string & role_le, const std::string & role_ge,
-            const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumEq & eq,
-            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
+        auto add_labelled_constraint(const ConstraintID & constraint_id, const std::string & role_le, const std::string & role_ge,
+            const WPBSumEq & eq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
 
         /**
          * \brief Add a single inequality under a caller-supplied @label, returning
@@ -162,6 +148,15 @@ namespace gcs::innards
          */
         auto add_labelled_constraint(
             const std::string & label, const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
+
+        /**
+         * \brief Add an equality under a caller-supplied pair of @labels, one per
+         * half, each the full label body. For callers whose labels are not
+         * c[id][role]-shaped (the tracker's view-link definitions); constraints
+         * use the ConstraintID overload instead.
+         */
+        auto add_labelled_constraint(const std::string & label_le, const std::string & label_ge, const WPBSumEq & eq,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
 
         /**
          * \brief Add a CNF clause under a caller-supplied @label, returning that
@@ -177,13 +172,8 @@ namespace gcs::innards
          * and returns that label as the ProofLine, so the proof references it by
          * label. The role must match what \c cake_pb_cp emits.
          */
-        auto add_labelled_constraint(const std::string & constraint_id, const std::string & role, const StringLiteral & constraint_name,
-            const StringLiteral & rule, const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
-
-        /**
-         * Add a CNF definition to a Proof model.
-         */
-        auto add_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const Literals & lits) -> void;
+        auto add_labelled_constraint(const ConstraintID & constraint_id, const std::string & role, const WPBSumLE & ineq,
+            const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
 
         /**
          * \brief Encode `flag ⇔ ineq` in OPB by emitting both halves of the equivalence:
@@ -194,16 +184,14 @@ namespace gcs::innards
          * it easy to forget one direction (leaving the flag UP-free under solution
          * extension) or to compute the negation incorrectly.
          */
-        auto add_two_way_reified_constraint(const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq,
-            const ProofFlag & flag) -> std::pair<ProofLine, ProofLine>;
+        auto add_two_way_reified_constraint(const WPBSumLE & ineq, const ProofFlag & flag) -> std::pair<ProofLine, ProofLine>;
 
         /**
          * \brief Create a fresh proof flag and fully reify it against `ineq` in one
          * go: equivalent to `create_proof_flag` followed by
          * `add_two_way_reified_constraint`.
          */
-        [[nodiscard]] auto create_proof_flag_fully_reifying(
-            const std::string & flag_name, const StringLiteral & constraint_name, const StringLiteral & rule, const WPBSumLE & ineq) -> ProofFlag;
+        [[nodiscard]] auto create_proof_flag_fully_reifying(const std::string & flag_name, const WPBSumLE & ineq) -> ProofFlag;
 
         /**
          * \brief As create_proof_flag_fully_reifying, but names the flag cake's
@@ -213,8 +201,8 @@ namespace gcs::innards
          *
          * The `x` prefix reflects that the flag is position-indexed, not that it is
          * reified: cake names count's fully-reified flags `x[...]` (scalar flags would
-         * be `b[...]`). The halves carry raw `@` labels and no `* constraint` comment,
-         * matching cake (and the variable-encoding @i labels). See issue #354.
+         * be `b[...]`). The halves carry raw `@` labels, matching cake (and the
+         * variable-encoding @i labels). See issue #354.
          */
         [[nodiscard]] auto create_proof_flag_fully_reifying(const ConstraintID & id, const std::vector<long long> & indices,
             const std::optional<std::string> & annotation, const WPBSumLE & ineq) -> ProofFlag;

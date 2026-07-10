@@ -91,13 +91,13 @@ auto Inverse::prepare(Propagators & propagators, State & initial_state, ProofMod
         throw InvalidProblemDefinitionException{"Inverse constraint on different sized arrays"};
 
     for (const auto & [idx, v] : enumerate(_x)) {
-        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, 0_i + _y_start, "Inverse", "x index range");
-        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, Integer(_y.size()) + _y_start - 1_i, "Inverse", "x index range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, 0_i + _y_start);
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, Integer(_y.size()) + _y_start - 1_i);
     }
 
     for (const auto & [idx, v] : enumerate(_y)) {
-        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, 0_i + _x_start, "Inverse", "y index range");
-        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, Integer(_x.size()) + _x_start - 1_i, "Inverse", "y index range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, 0_i + _x_start);
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, Integer(_x.size()) + _x_start - 1_i);
     }
 
     return true;
@@ -108,11 +108,9 @@ auto Inverse::define_proof_model(ProofModel & model) -> void
     for (const auto & [i, x_i] : enumerate(_x))
         for (const auto & [j, y_j] : enumerate(_y)) {
             // x[i] = j -> y[j] = i
-            model.add_constraint(
-                "Inverse", "x_i = j -> y[j] = i", WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
+            model.add_constraint(WPBSum{} + 1_i * (x_i != Integer(j) + _y_start) + 1_i * (y_j == Integer(i) + _x_start) >= 1_i);
             // y[j] = i -> x[i] = j
-            model.add_constraint(
-                "Inverse", "y_j = i -> x[i] = j", WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
+            model.add_constraint(WPBSum{} + 1_i * (y_j != Integer(i) + _x_start) + 1_i * (x_i == Integer(j) + _y_start) >= 1_i);
         }
 
     // Set up the AM1 map only when proof logging is on; the propagator captures it
@@ -199,6 +197,11 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto Inverse::constraint_type() const -> std::string
+{
+    return "inverse";
+}
+
 auto Inverse::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -212,7 +215,7 @@ auto Inverse::s_expr(const innards::ProofModel * const model) const -> SExpr
     std::vector<SExpr> ys;
     for (const auto & y : _y)
         ys.push_back(tracker.s_expr_term_of(y));
-    return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("inverse"), SExpr::list({SExpr::list(std::move(xs)), SExpr::atom(_x_start.to_string())}),
-            SExpr::list({SExpr::list(std::move(ys)), SExpr::atom(_y_start.to_string())})});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()),
+        SExpr::list({SExpr::list(std::move(xs)), SExpr::atom(_x_start.to_string())}),
+        SExpr::list({SExpr::list(std::move(ys)), SExpr::atom(_y_start.to_string())})});
 }

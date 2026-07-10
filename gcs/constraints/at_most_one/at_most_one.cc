@@ -71,13 +71,11 @@ auto AtMostOne::define_proof_model(ProofModel & model) -> void
     // For each var_i: define flag_i ⇔ (var_i = _val) via a Count-style
     // gt/lt/eq triple, then post sum_i flag_i ≤ 1.
     for (auto & var : _vars) {
-        auto var_minus_val_gt_0 =
-            model.create_proof_flag_fully_reifying("am1g", "AtMostOne", "var greater", WPBSum{} + 1_i * var + -1_i * _val >= 1_i);
+        auto var_minus_val_gt_0 = model.create_proof_flag_fully_reifying("am1g", WPBSum{} + 1_i * var + -1_i * _val >= 1_i);
 
-        auto var_minus_val_lt_0 = model.create_proof_flag_fully_reifying("am1l", "AtMostOne", "var less", WPBSum{} + 1_i * var + -1_i * _val <= -1_i);
+        auto var_minus_val_lt_0 = model.create_proof_flag_fully_reifying("am1l", WPBSum{} + 1_i * var + -1_i * _val <= -1_i);
 
-        auto eq = model.create_proof_flag_fully_reifying(
-            "am1eq", "AtMostOne", "var equal val", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i);
+        auto eq = model.create_proof_flag_fully_reifying("am1eq", WPBSum{} + 1_i * ! var_minus_val_gt_0 + 1_i * ! var_minus_val_lt_0 >= 2_i);
 
         _flags.emplace_back(eq, var_minus_val_gt_0, var_minus_val_lt_0);
     }
@@ -85,7 +83,7 @@ auto AtMostOne::define_proof_model(ProofModel & model) -> void
     WPBSum sum;
     for (auto & [flag, _gt, _lt] : _flags)
         sum += 1_i * flag;
-    model.add_constraint("AtMostOne", "at most one match", sum <= 1_i);
+    model.add_constraint(sum <= 1_i);
 }
 
 auto AtMostOne::install_propagators(Propagators & propagators) -> void
@@ -143,6 +141,11 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto AtMostOne::constraint_type() const -> std::string
+{
+    return "at_most_one";
+}
+
 auto AtMostOne::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -150,7 +153,7 @@ auto AtMostOne::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
     return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("at_most_one"), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
 }
 
 // ----- AtMostOneSmartTable (kept for benchmarking) --------------------------
@@ -190,6 +193,11 @@ auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_sta
     move(smt_table).install(propagators, initial_state, optional_model);
 }
 
+auto AtMostOneSmartTable::constraint_type() const -> std::string
+{
+    return "at_most_one_smart_table";
+}
+
 auto AtMostOneSmartTable::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -197,5 +205,5 @@ auto AtMostOneSmartTable::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
     return SExpr::list(
-        {SExpr::atom(as_string(_constraint_id)), SExpr::atom("at_most_one_smart_table"), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_val)});
 }

@@ -118,15 +118,15 @@ auto In::define_proof_model(ProofModel & model) -> void
     // Mirrors the encoding used by Count. Full reification of every
     // proof flag is the project rule for new OPB encodings.
     for (const auto & [idx, V] : enumerate(_var_vals)) {
-        auto lt = model.create_proof_flag_fully_reifying(format("inlt{}", idx), "In", "var less than", WPBSum{} + 1_i * _var + -1_i * V <= -1_i);
-        auto gt = model.create_proof_flag_fully_reifying(format("ingt{}", idx), "In", "var greater than", WPBSum{} + 1_i * _var + -1_i * V >= 1_i);
-        auto sel = model.create_proof_flag_fully_reifying(format("in{}", idx), "In", "var equal", WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i);
+        auto lt = model.create_proof_flag_fully_reifying(format("inlt{}", idx), WPBSum{} + 1_i * _var + -1_i * V <= -1_i);
+        auto gt = model.create_proof_flag_fully_reifying(format("ingt{}", idx), WPBSum{} + 1_i * _var + -1_i * V >= 1_i);
+        auto sel = model.create_proof_flag_fully_reifying(format("in{}", idx), WPBSum{} + 1_i * ! lt + 1_i * ! gt >= 2_i);
         _selectors.push_back(sel);
 
         sum += 1_i * sel;
     }
 
-    model.add_constraint("In", "var is one of these", sum >= 1_i);
+    model.add_constraint(sum >= 1_i);
 }
 
 auto In::install_propagators(Propagators & propagators) -> void
@@ -278,6 +278,11 @@ auto In::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto In::constraint_type() const -> std::string
+{
+    return "in";
+}
+
 auto In::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -289,5 +294,6 @@ auto In::s_expr(const ProofModel * const model) const -> SExpr
     // cake_pb_cp's `in` parser takes the candidate list first, then the
     // variable: (id in (values...) var). Emit that order so the workflow-2
     // re-derivation parses (it rejects the variable-first form outright).
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("in"), SExpr::list(std::move(vals)), tracker.s_expr_term_of(_var)});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vals)), tracker.s_expr_term_of(_var)});
 }

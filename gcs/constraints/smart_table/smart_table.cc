@@ -627,20 +627,17 @@ namespace
             model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i, HalfReifyOnConjunctionOf{{flag}});
 
             // !f => var1 != var2 via fully reified lt/gt and a selector
-            auto flag_gt = model.create_proof_flag_fully_reifying("gt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
-            auto flag_lt = model.create_proof_flag_fully_reifying("lt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
+            auto flag_gt = model.create_proof_flag_fully_reifying("gt", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
+            auto flag_lt = model.create_proof_flag_fully_reifying("lt", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
             model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i, HalfReifyOnConjunctionOf{{! flag}});
             return flag;
         }
 
-        case GreaterThan:
-            return model.create_proof_flag_fully_reifying("bin_gt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
+        case GreaterThan: return model.create_proof_flag_fully_reifying("bin_gt", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
 
-        case LessThan:
-            return model.create_proof_flag_fully_reifying("bin_lt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
+        case LessThan: return model.create_proof_flag_fully_reifying("bin_lt", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
 
-        case LessThanEqual:
-            return model.create_proof_flag_fully_reifying("bin_le", "SmartTable", "binary entry", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i);
+        case LessThanEqual: return model.create_proof_flag_fully_reifying("bin_le", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 0_i);
 
         case NotEqual: {
             // !f => var1 == var2
@@ -648,15 +645,14 @@ namespace
             model.add_constraint(WPBSum{} + 1_i * var_1 + -1_i * var_2 == 0_i, HalfReifyOnConjunctionOf{{! flag}});
 
             // f => var1 != var2, via fully reified lt/gt and a selector
-            auto flag_gt = model.create_proof_flag_fully_reifying("gt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
-            auto flag_lt = model.create_proof_flag_fully_reifying("lt", "SmartTable", "binary entry", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
+            auto flag_gt = model.create_proof_flag_fully_reifying("gt", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 1_i);
+            auto flag_lt = model.create_proof_flag_fully_reifying("lt", WPBSum{} + 1_i * var_2 + -1_i * var_1 >= 1_i);
             model.add_constraint(WPBSum{} + 1_i * flag_lt + 1_i * flag_gt >= 1_i, HalfReifyOnConjunctionOf{{flag}});
 
             return flag;
         }
 
-        case GreaterThanEqual:
-            return model.create_proof_flag_fully_reifying("bin_ge", "SmartTable", "binary entry", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i);
+        case GreaterThanEqual: return model.create_proof_flag_fully_reifying("bin_ge", WPBSum{} + 1_i * var_1 + -1_i * var_2 >= 0_i);
 
         case NotIn:
         case In: throw UnexpectedException{"Unexpected SmartEntry type encountered while creating PB model."};
@@ -883,6 +879,11 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
         triggers);
 }
 
+auto SmartTable::constraint_type() const -> std::string
+{
+    return "smart_table";
+}
+
 auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto to_op = [](SmartEntryConstraint c) {
@@ -934,5 +935,5 @@ auto SmartTable::s_expr(const ProofModel * const model) const -> SExpr
     for (const auto & var : _vars)
         vars.push_back(tracker.s_expr_term_of(var));
 
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom("smart_table"), SExpr::list(move(rows)), SExpr::list(move(vars))});
+    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(rows)), SExpr::list(move(vars))});
 }

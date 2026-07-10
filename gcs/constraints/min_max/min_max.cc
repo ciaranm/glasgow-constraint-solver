@@ -60,8 +60,7 @@ auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
 {
     // (for min) each var >= result, i.e. var - result >= 0
     for (const auto & v : _vars) {
-        model.add_constraint(
-            "ArrayMinMax", "result compared to value", WPBSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
+        model.add_constraint(WPBSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
     }
 
     WPBSum al1_selector;
@@ -73,15 +72,13 @@ auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
     for (const auto & [id, var] : enumerate(_vars)) {
         auto selector = model.create_proof_flag(_constraint_id, std::vector<long long>{static_cast<long long>(id)});
         _selectors.push_back(selector);
-        model.add_constraint(
-            "ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
-        model.add_constraint(
-            "ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
+        model.add_constraint(WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
+        model.add_constraint(WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
         al1_selector += 1_i * selector;
     }
 
     // sum f_i >= 1
-    model.add_constraint("ArrayMinMax", "result is one of the values", al1_selector >= 1_i);
+    model.add_constraint(al1_selector >= 1_i);
 }
 
 auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
@@ -311,6 +308,11 @@ auto ArrayMinMax::install_propagators(Propagators & propagators) -> void
         triggers);
 }
 
+auto ArrayMinMax::constraint_type() const -> std::string
+{
+    return _min ? "array_min" : "array_max";
+}
+
 auto ArrayMinMax::s_expr(const innards::ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
@@ -319,8 +321,8 @@ auto ArrayMinMax::s_expr(const innards::ProofModel * const model) const -> SExpr
         vars.push_back(tracker.s_expr_term_of(v));
     // cake_pb_cp's array aggregate keyword is array_min / array_max with shape
     // (id array_min (Xs) Y); a bare min / max is its *binary* op (X op Y = Z).
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(_min ? "array_min" : "array_max"), SExpr::list(std::move(vars)),
-        tracker.s_expr_term_of(_result)});
+    return SExpr::list(
+        {SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(vars)), tracker.s_expr_term_of(_result)});
 }
 
 Min::Min(const IntegerVariableID v1, const IntegerVariableID v2, const IntegerVariableID result) : ArrayMinMax({v1, v2}, result, true)

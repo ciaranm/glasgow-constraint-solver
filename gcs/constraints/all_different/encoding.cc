@@ -16,8 +16,6 @@ using namespace gcs::innards;
 auto gcs::innards::define_clique_not_equals_encoding(
     ProofModel & model, const ConstraintID & constraint_id, const vector<gcs::IntegerVariableID> & vars) -> void
 {
-    auto id_label = as_string(constraint_id);
-
     for (unsigned i = 0; i < vars.size(); ++i)
         for (unsigned j = i + 1; j < vars.size(); ++j) {
             // Conform to cake_pb_cp's naming so workflow-2 byte-matches (#354):
@@ -33,10 +31,10 @@ auto gcs::innards::define_clique_not_equals_encoding(
             // overload also present, a braced {i, j} is ambiguous against
             // std::string's (count, char) constructor.
             auto selector = model.create_proof_flag(constraint_id, vector<long long>{static_cast<long long>(i), static_cast<long long>(j)});
-            model.add_labelled_constraint(id_label, to_string(i) + "lt" + to_string(j), "AllDifferent", "not equals because lower",
-                WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{! selector});
-            model.add_labelled_constraint(id_label, to_string(i) + "gt" + to_string(j), "AllDifferent", "not equals because higher",
-                WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, HalfReifyOnConjunctionOf{selector});
+            model.add_labelled_constraint(constraint_id, to_string(i) + "lt" + to_string(j), WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i,
+                HalfReifyOnConjunctionOf{! selector});
+            model.add_labelled_constraint(constraint_id, to_string(i) + "gt" + to_string(j), WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i,
+                HalfReifyOnConjunctionOf{selector});
         }
 }
 
@@ -67,8 +65,8 @@ auto gcs::innards::define_clique_not_equals_except_encoding(
                 higher_conj.emplace_back(vars[i] != s);
                 higher_conj.emplace_back(vars[j] != s);
             }
-            model.add_constraint("AllDifferentExcept", "not equals because lower", WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, lower_conj);
-            model.add_constraint("AllDifferentExcept", "not equals because higher", WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, higher_conj);
+            model.add_constraint(WPBSum{} + 1_i * vars[i] + -1_i * vars[j] <= -1_i, lower_conj);
+            model.add_constraint(WPBSum{} + -1_i * vars[i] + 1_i * vars[j] <= -1_i, higher_conj);
 
             if (vars[i] == vars[j])
                 duplicate_selectors.insert_or_assign(vars[i], selector);
