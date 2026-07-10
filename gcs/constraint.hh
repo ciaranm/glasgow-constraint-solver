@@ -6,6 +6,7 @@
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/s_expr-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
+#include <gcs/lifetime.hh>
 
 #include <memory>
 #include <string>
@@ -51,7 +52,7 @@ namespace gcs
          * name --- as set by Problem::post() / Problem::post_named(). This is the
          * identity, not the type (e.g. `abs`); see ConstraintID.
          */
-        [[nodiscard]] auto constraint_id() const -> const ConstraintID &
+        [[nodiscard]] auto constraint_id() const GCS_LIFETIME_BOUND -> const ConstraintID &
         {
             return _constraint_id;
         }
