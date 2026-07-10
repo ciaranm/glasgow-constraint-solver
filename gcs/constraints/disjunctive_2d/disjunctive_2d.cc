@@ -221,7 +221,7 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
             model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(idx_i), static_cast<long long>(idx_j)}, axis_stem);
         auto ineq = is_constant_variable(size_i) ? (WPBSum{} + 1_i * pos_i + -1_i * pos_j <= -size_val_i)
                                                  : (WPBSum{} + 1_i * pos_i + 1_i * size_i + -1_i * pos_j <= 0_i);
-        auto [fwd, rev] = model.add_two_way_reified_constraint("Disjunctive2D", "first rectangle precedes second on this axis", ineq, flag);
+        auto [fwd, rev] = model.add_two_way_reified_constraint(ineq, flag);
         return BeforeFlagData{flag, fwd, rev};
     };
 
@@ -269,8 +269,8 @@ auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
                     clause_sum += 1_i * *_zero_h[r];
             }
             // cake_pb_cp labels the separation clause @c[id][<i>_<j>sepal1].
-            auto clause = model.add_labelled_constraint(as_string(_constraint_id), std::to_string(i) + "_" + std::to_string(j) + "sepal1",
-                "Disjunctive2D", "rectangles must be separated on some axis", move(clause_sum) >= 1_i);
+            auto clause =
+                model.add_labelled_constraint(_constraint_id, std::to_string(i) + "_" + std::to_string(j) + "sepal1", move(clause_sum) >= 1_i);
             _before_x.emplace(make_pair(i, j), bx_ij);
             _before_x.emplace(make_pair(j, i), bx_ji);
             _before_y.emplace(make_pair(i, j), by_ij);

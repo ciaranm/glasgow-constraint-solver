@@ -69,7 +69,7 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
     // v distinct earlier positions to host 1..v-1, so v ≤ n.
     if (max_upper > effective_max) {
         for (const auto & v : _vars)
-            propagators.define_bound(initial_state, optional_model, v, Bound::Upper, effective_max, "SeqPrecedeChain", "value bound");
+            propagators.define_bound(initial_state, optional_model, v, Bound::Upper, effective_max);
     }
 
     if (effective_max < 2_i)

@@ -83,8 +83,8 @@ namespace
     // The magnitude STATE variable and its bit count are allocated unconditionally so the
     // propagation runs with or without proofs; the channel rows and bit registration are only
     // emitted when there is a model (proofs on), leaving the channel lines nullopt otherwise.
-    auto make_cake_magnitude(ProofModel * const model, State & state, const ConstraintID & owner, const std::string & label, StringLiteral op,
-        IntegerVariableID v, long long axis, const std::string & letter, const std::string & aux_name) -> CakeMagnitude
+    auto make_cake_magnitude(ProofModel * const model, State & state, const ConstraintID & owner, IntegerVariableID v, long long axis,
+        const std::string & letter, const std::string & aux_name) -> CakeMagnitude
     {
         auto mag_ub = max(abs(state.lower_bound(v)), abs(state.upper_bound(v)));
         auto bits = 0_i;
@@ -93,8 +93,7 @@ namespace
         auto mag = state.allocate_integer_variable_with_state(0_i, power2(bits) - 1_i);
         if (! model)
             return {mag, bits, nullopt, nullopt, nullopt, nullopt};
-        auto chan =
-            product_enc::emit_magnitude_channel(*model, owner, label, op, v, mag, power2(bits) - 1_i, axis, letter, aux_name + to_string(mag.index));
+        auto chan = product_enc::emit_magnitude_channel(*model, owner, v, mag, power2(bits) - 1_i, axis, letter, aux_name + to_string(mag.index));
         return {mag, bits, chan.pos_ge, chan.pos_le, chan.neg_ge, chan.neg_le};
     }
 
@@ -919,13 +918,8 @@ namespace
         // A structurally constant zero divisor makes the whole constraint
         // unsatisfiable, relationally rather than as an error.
         if ((! ay.var) && ay.offset == 0_i) {
-            if (optional_model) {
-                // (StringLiteral wants an actual literal, hence the branch)
-                if (expose_quotient)
-                    optional_model->add_constraint("Divide", "division by constant zero", WPBSum{} >= 1_i);
-                else
-                    optional_model->add_constraint("Modulus", "division by constant zero", WPBSum{} >= 1_i);
-            }
+            if (optional_model)
+                optional_model->add_constraint(WPBSum{} >= 1_i);
             propagators.install_initial_contradiction("division by constant zero", JustifyUsingRUP{Hint_{owner}});
             return;
         }
@@ -990,8 +984,6 @@ namespace
             q = aux;
         }
 
-        auto label = as_string(owner);
-
         shared_ptr<DefaultProductData> default_data;
         shared_ptr<vector<LinearStage>> default_stages;
 
@@ -1009,8 +1001,8 @@ namespace
             // magq = |q| (Z channel to the exposed quotient) and absy = |y| (channelled by
             // Yge0/Ylt0) are the two non-negative grid operands. The magnitude state vars
             // are allocated regardless of proofs.
-            auto zchan = make_cake_magnitude(optional_model, initial_state, owner, label, "Divide", q_eff, 0, "Z", "aux_divide_qmag");
-            auto ychan = make_cake_magnitude(optional_model, initial_state, owner, label, "Divide", y_eff, 1, "Y", "aux_divide_absdivisor");
+            auto zchan = make_cake_magnitude(optional_model, initial_state, owner, q_eff, 0, "Z", "aux_divide_qmag");
+            auto ychan = make_cake_magnitude(optional_model, initial_state, owner, y_eff, 1, "Y", "aux_divide_absdivisor");
             auto magq = zchan.var, absy = ychan.var;
 
             default_data = make_shared<DefaultProductData>();
@@ -1028,7 +1020,7 @@ namespace
             append_magnitude_stages(*default_stages, absy, y_eff, ychan, 1_i);
 
             if (optional_model) {
-                default_data->grid = product_enc::emit_bit_product_grid(*optional_model, owner, label, magq, absy, product_enc::LinkNaming{});
+                default_data->grid = product_enc::emit_bit_product_grid(*optional_model, owner, magq, absy, product_enc::LinkNaming{});
                 const auto & product_sum = default_data->grid.sum;
                 const auto & neg_product = default_data->grid.neg_sum;
 
@@ -1038,26 +1030,21 @@ namespace
 
                 // Both remainder-row sets: 0 <= x - |q||y| < |y| (rem_pos, gated [x>=0]) and
                 // 0 <= -x - |q||y| < |y| (rem_neg, gated [x<1]).
-                default_data->rem_pos_lo = optional_model->add_labelled_constraint(
-                    label, "rem_pos_lo", "Divide", "remainder", neg_product + 1_i * x_eff >= 0_i, xa.ge0_gate);
-                default_data->rem_pos_hi = optional_model->add_labelled_constraint(
-                    label, "rem_pos_hi", "Divide", "remainder", product_sum + -1_i * x_eff + 1_i * absy >= 1_i, xa.ge0_gate);
-                default_data->rem_neg_hi = optional_model->add_labelled_constraint(
-                    label, "rem_neg_hi", "Divide", "remainder", neg_product + -1_i * x_eff >= 0_i, xa.lt1_gate);
-                default_data->rem_neg_lo = optional_model->add_labelled_constraint(
-                    label, "rem_neg_lo", "Divide", "remainder", product_sum + 1_i * x_eff + 1_i * absy >= 1_i, xa.lt1_gate);
+                default_data->rem_pos_lo =
+                    optional_model->add_labelled_constraint(owner, "rem_pos_lo", neg_product + 1_i * x_eff >= 0_i, xa.ge0_gate);
+                default_data->rem_pos_hi =
+                    optional_model->add_labelled_constraint(owner, "rem_pos_hi", product_sum + -1_i * x_eff + 1_i * absy >= 1_i, xa.ge0_gate);
+                default_data->rem_neg_hi =
+                    optional_model->add_labelled_constraint(owner, "rem_neg_hi", neg_product + -1_i * x_eff >= 0_i, xa.lt1_gate);
+                default_data->rem_neg_lo =
+                    optional_model->add_labelled_constraint(owner, "rem_neg_lo", product_sum + 1_i * x_eff + 1_i * absy >= 1_i, xa.lt1_gate);
 
-                optional_model->add_labelled_constraint(
-                    label, "sgn_pp", "Divide", "sign", WPBSum{} + 1_i * xa.lt1 + 1_i * ya.lt1 + 1_i * qa.ge0 >= 1_i);
-                optional_model->add_labelled_constraint(
-                    label, "sgn_nn", "Divide", "sign", WPBSum{} + 1_i * xa.ge0 + 1_i * ya.ge0 + 1_i * qa.ge0 >= 1_i);
-                optional_model->add_labelled_constraint(
-                    label, "sgn_pn", "Divide", "sign", WPBSum{} + 1_i * xa.lt1 + 1_i * ya.ge0 + 1_i * qa.lt1 >= 1_i);
-                optional_model->add_labelled_constraint(
-                    label, "sgn_np", "Divide", "sign", WPBSum{} + 1_i * xa.ge0 + 1_i * ya.lt1 + 1_i * qa.lt1 >= 1_i);
-                optional_model->add_labelled_constraint(label, "sgn_x0", "Divide", "sign", WPBSum{} + 1_i * xa.ne0 + 1_i * qa.lt1 >= 1_i);
-                optional_model->add_labelled_constraint(
-                    label, "nonzero", "Divide", "divisor is not zero", WPBSum{} + 1_i * ya.ge1 + 1_i * ya.lt0 >= 1_i);
+                optional_model->add_labelled_constraint(owner, "sgn_pp", WPBSum{} + 1_i * xa.lt1 + 1_i * ya.lt1 + 1_i * qa.ge0 >= 1_i);
+                optional_model->add_labelled_constraint(owner, "sgn_nn", WPBSum{} + 1_i * xa.ge0 + 1_i * ya.ge0 + 1_i * qa.ge0 >= 1_i);
+                optional_model->add_labelled_constraint(owner, "sgn_pn", WPBSum{} + 1_i * xa.lt1 + 1_i * ya.ge0 + 1_i * qa.lt1 >= 1_i);
+                optional_model->add_labelled_constraint(owner, "sgn_np", WPBSum{} + 1_i * xa.ge0 + 1_i * ya.lt1 + 1_i * qa.lt1 >= 1_i);
+                optional_model->add_labelled_constraint(owner, "sgn_x0", WPBSum{} + 1_i * xa.ne0 + 1_i * qa.lt1 >= 1_i);
+                optional_model->add_labelled_constraint(owner, "nonzero", WPBSum{} + 1_i * ya.ge1 + 1_i * ya.lt0 >= 1_i);
             }
         }
         else {
@@ -1078,7 +1065,7 @@ namespace
             auto y_eff = y, x_eff = x, r_eff = out;
             auto q_eff = aux; // the free quotient magnitude
 
-            auto ychan = make_cake_magnitude(optional_model, initial_state, owner, label, "Modulus", y_eff, 1, "Y", "aux_modulus_absdivisor");
+            auto ychan = make_cake_magnitude(optional_model, initial_state, owner, y_eff, 1, "Y", "aux_modulus_absdivisor");
             auto absy = ychan.var;
 
             default_data = make_shared<DefaultProductData>();
@@ -1095,34 +1082,33 @@ namespace
             default_stages = make_shared<vector<LinearStage>>();
 
             if (optional_model) {
-                default_data->grid = product_enc::emit_bit_product_grid(*optional_model, owner, label, q_eff, absy, product_enc::LinkNaming{});
+                default_data->grid = product_enc::emit_bit_product_grid(*optional_model, owner, q_eff, absy, product_enc::LinkNaming{});
                 const auto & product_sum = default_data->grid.sum;
                 const auto & neg_product = default_data->grid.neg_sum;
 
                 auto xa = operand_sign_atoms(*optional_model, x);
                 auto ya = operand_sign_atoms(*optional_model, y);
 
-                optional_model->add_labelled_constraint(
-                    label, "nonzero", "Modulus", "divisor is not zero", WPBSum{} + 1_i * ya.ge1 + 1_i * ya.lt0 >= 1_i);
+                optional_model->add_labelled_constraint(owner, "nonzero", WPBSum{} + 1_i * ya.ge1 + 1_i * ya.lt0 >= 1_i);
 
                 // r = x - |q||y|, split on sign(x): id_pos_* (gated [x>=0], r = x - Sum) and
                 // id_neg_* (gated [x<0], r = x + Sum -- since for x < 0 the quotient product
                 // q*y has sign(x), i.e. q*y = -Sum).
-                default_data->id_pos_ge = optional_model->add_labelled_constraint(
-                    label, "id_pos_ge", "Modulus", "identity", neg_product + 1_i * x_eff + -1_i * r_eff >= 0_i, xa.ge0_gate);
-                default_data->id_pos_le = optional_model->add_labelled_constraint(
-                    label, "id_pos_le", "Modulus", "identity", product_sum + -1_i * x_eff + 1_i * r_eff >= 0_i, xa.ge0_gate);
-                default_data->id_neg_ge = optional_model->add_labelled_constraint(
-                    label, "id_neg_ge", "Modulus", "identity", neg_product + -1_i * x_eff + 1_i * r_eff >= 0_i, xa.lt1_gate);
-                default_data->id_neg_le = optional_model->add_labelled_constraint(
-                    label, "id_neg_le", "Modulus", "identity", product_sum + 1_i * x_eff + -1_i * r_eff >= 0_i, xa.lt1_gate);
+                default_data->id_pos_ge =
+                    optional_model->add_labelled_constraint(owner, "id_pos_ge", neg_product + 1_i * x_eff + -1_i * r_eff >= 0_i, xa.ge0_gate);
+                default_data->id_pos_le =
+                    optional_model->add_labelled_constraint(owner, "id_pos_le", product_sum + -1_i * x_eff + 1_i * r_eff >= 0_i, xa.ge0_gate);
+                default_data->id_neg_ge =
+                    optional_model->add_labelled_constraint(owner, "id_neg_ge", neg_product + -1_i * x_eff + 1_i * r_eff >= 0_i, xa.lt1_gate);
+                default_data->id_neg_le =
+                    optional_model->add_labelled_constraint(owner, "id_neg_le", product_sum + 1_i * x_eff + -1_i * r_eff >= 0_i, xa.lt1_gate);
 
                 // |r| < |y| = absy: rng_hi (r < absy) and rng_lo (r > -absy), plus the r-sign
                 // rows (r takes x's sign; sgn_pos gated [x>=0], sgn_neg gated [x<0]).
-                rng_hi = optional_model->add_labelled_constraint(label, "rng_hi", "Modulus", "range", WPBSum{} + -1_i * r_eff + 1_i * absy >= 1_i);
-                rng_lo = optional_model->add_labelled_constraint(label, "rng_lo", "Modulus", "range", WPBSum{} + 1_i * r_eff + 1_i * absy >= 1_i);
-                sgn_pos = optional_model->add_labelled_constraint(label, "sgn_pos", "Modulus", "sign", WPBSum{} + 1_i * r_eff >= 0_i, xa.ge0_gate);
-                sgn_neg = optional_model->add_labelled_constraint(label, "sgn_neg", "Modulus", "sign", WPBSum{} + -1_i * r_eff >= 0_i, xa.lt1_gate);
+                rng_hi = optional_model->add_labelled_constraint(owner, "rng_hi", WPBSum{} + -1_i * r_eff + 1_i * absy >= 1_i);
+                rng_lo = optional_model->add_labelled_constraint(owner, "rng_lo", WPBSum{} + 1_i * r_eff + 1_i * absy >= 1_i);
+                sgn_pos = optional_model->add_labelled_constraint(owner, "sgn_pos", WPBSum{} + 1_i * r_eff >= 0_i, xa.ge0_gate);
+                sgn_neg = optional_model->add_labelled_constraint(owner, "sgn_neg", WPBSum{} + -1_i * r_eff >= 0_i, xa.lt1_gate);
             }
 
             // Stages (built regardless of proofs): the range 0 <= r < absy (x>=0) /

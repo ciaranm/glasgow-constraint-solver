@@ -61,7 +61,6 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
     auto n = _vars.size();
     if (n == 0)
         return;
-    auto id = as_string(_constraint_id);
 
     // OPB encoding, matching cake_pb_cp's value_precede / seq_precede encoder
     // (cp_to_ilp_lexicographicalScript.sml): one proof-only first-occurrence
@@ -100,8 +99,7 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
         // verify at any width, not just the exact-width (n = 2^w - 1) sizes where
         // the bits alone already cap pos[v]. At those exact widths the row is
         // logically redundant but keeps the two OPBs in step.
-        model.add_labelled_constraint(
-            id, "ubn_" + v.to_string(), "ValuePrecede", "position bound", WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(n)});
+        model.add_labelled_constraint(_constraint_id, "ubn_" + v.to_string(), WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(n)});
 
         // [pos[v] >= k] <=> pos[v] >= k, for k = 1..n.
         vector<ProofFlag> ges;
@@ -112,8 +110,8 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
 
         // Upper bound: (vars[i] = v) -> pos[v] <= i.
         for (size_t i = 0; i < n; ++i)
-            model.add_labelled_constraint(id, std::to_string(i) + "ub", "ValuePrecede", "upper bound",
-                WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(i)}, HalfReifyOnConjunctionOf{{_vars[i] == v}});
+            model.add_labelled_constraint(_constraint_id, std::to_string(i) + "ub", WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(i)},
+                HalfReifyOnConjunctionOf{{_vars[i] == v}});
 
         // Existence: [pos[v] >= i+1] OR (exists k <= i. vars[k] = v).
         for (size_t i = 0; i < n; ++i) {
@@ -121,7 +119,7 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
             existence += 1_i * pge.at(v)[i]; // [pos[v] >= i+1]
             for (size_t k = 0; k <= i; ++k)
                 existence += 1_i * (_vars[k] == v);
-            model.add_labelled_constraint(id, std::to_string(i) + "ex", "ValuePrecede", "existence", move(existence) >= 1_i);
+            model.add_labelled_constraint(_constraint_id, std::to_string(i) + "ex", move(existence) >= 1_i);
         }
     }
 
@@ -131,12 +129,12 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
         auto pi = std::to_string(j - 1);
         if (s == t) {
             // pos[s] >= n: s must be absent from vars.
-            model.add_labelled_constraint(id, pi + "nos", "ValuePrecede", "no s", WPBSum{} + 1_i * pos.at(s) >= Integer{static_cast<long long>(n)});
+            model.add_labelled_constraint(_constraint_id, pi + "nos", WPBSum{} + 1_i * pos.at(s) >= Integer{static_cast<long long>(n)});
         }
         else {
             // ~[pos[t] >= n] -> pos[t] - pos[s] >= 1.
-            model.add_labelled_constraint(id, pi + "pr", "ValuePrecede", "precede", WPBSum{} + 1_i * pos.at(t) + -1_i * pos.at(s) >= 1_i,
-                HalfReifyOnConjunctionOf{{! pge.at(t)[n - 1]}});
+            model.add_labelled_constraint(
+                _constraint_id, pi + "pr", WPBSum{} + 1_i * pos.at(t) + -1_i * pos.at(s) >= 1_i, HalfReifyOnConjunctionOf{{! pge.at(t)[n - 1]}});
         }
     }
 }

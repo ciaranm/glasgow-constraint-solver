@@ -242,17 +242,15 @@ namespace gcs::innards
          * \brief Define a variable's lower or upper bound as part of a Constraint's
          * proof model.
          *
-         * Emits a labelled OPB constraint (\c constraint_name + \c sub_rule),
-         * and installs a SimpleDefinition-priority initialiser that RUPs the
-         * bound into the State at search start. If the bound is already
-         * implied by the variable's existing domain, no OPB constraint is
-         * emitted and no initialiser is installed. If the bound would make
-         * the variable's domain empty, the initialiser raises a
-         * contradiction at search start — the labelled OPB constraint
+         * Emits an OPB constraint, and installs a SimpleDefinition-priority
+         * initialiser that RUPs the bound into the State at search start. If
+         * the bound is already implied by the variable's existing domain, no
+         * OPB constraint is emitted and no initialiser is installed. If the
+         * bound would make the variable's domain empty, the initialiser
+         * raises a contradiction at search start — the OPB constraint
          * remains, so the proof reader sees a self-describing reason.
          */
-        auto define_bound(const State &, innards::ProofModel * const, IntegerVariableID var, Bound which, Integer val,
-            const innards::StringLiteral & constraint_name, const innards::StringLiteral & sub_rule) -> void;
+        auto define_bound(const State &, innards::ProofModel * const, IntegerVariableID var, Bound which, Integer val) -> void;
 
         ///@}
 

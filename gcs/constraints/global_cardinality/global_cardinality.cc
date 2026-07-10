@@ -98,8 +98,8 @@ auto GlobalCardinality::define_proof_model(ProofModel & model) -> void
         // cake_pb_cp labels the per-value count equality @c[<id>][<j>_le]/[<j>_ge]:
         // the value index lives in the annotation tag, not the constraint name (a
         // name-embedded index could collide with a sibling constraint's name).
-        _count_lines.push_back(model.add_labelled_constraint(
-            as_string(constraint_id()), std::to_string(j) + "_le", std::to_string(j) + "_ge", "GCC", "count for value", sum == 1_i * _counts[j]));
+        _count_lines.push_back(
+            model.add_labelled_constraint(constraint_id(), std::to_string(j) + "_le", std::to_string(j) + "_ge", sum == 1_i * _counts[j]));
     }
 }
 

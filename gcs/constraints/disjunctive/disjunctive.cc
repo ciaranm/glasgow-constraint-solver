@@ -225,7 +225,7 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
         auto flag = model.create_proof_flag(_constraint_id, vector<long long>{static_cast<long long>(i), static_cast<long long>(j)}, "bf");
         auto ineq = is_constant_variable(_lengths[i]) ? (WPBSum{} + 1_i * _starts[i] + -1_i * _starts[j] <= -_length_vals[i])
                                                       : (WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] + -1_i * _starts[j] <= 0_i);
-        auto [fwd, rev] = model.add_two_way_reified_constraint("Disjunctive", "first task finishes before second starts", ineq, flag);
+        auto [fwd, rev] = model.add_two_way_reified_constraint(ineq, flag);
         return BeforeFlagData{flag, fwd, rev};
     };
     for (size_t a = 0; a < _active_tasks.size(); ++a) {
@@ -240,8 +240,8 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
                 if (_zero[r])
                     clause_sum += 1_i * *_zero[r];
             // cake_pb_cp labels the separation clause @c[id][<i>_<j>sepal1].
-            auto clause = model.add_labelled_constraint(as_string(_constraint_id), std::to_string(i) + "_" + std::to_string(j) + "sepal1",
-                "Disjunctive", "one task must finish first", move(clause_sum) >= 1_i);
+            auto clause =
+                model.add_labelled_constraint(_constraint_id, std::to_string(i) + "_" + std::to_string(j) + "sepal1", move(clause_sum) >= 1_i);
             _before_flags.emplace(std::make_pair(i, j), data_ij);
             _before_flags.emplace(std::make_pair(j, i), data_ji);
             _clause_lines.emplace(std::make_pair(i, j), clause);

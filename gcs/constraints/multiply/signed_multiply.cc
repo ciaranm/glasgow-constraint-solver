@@ -26,7 +26,7 @@ using std::vector;
 namespace pj = gcs::innards::product_justify;
 
 auto gcs::innards::signed_multiply::make_data(ProofModel * const optional_model, const State & initial_state, const ConstraintID & constraint_id,
-    const string & label, IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, optional<long long> link) -> Data
+    IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, optional<long long> link) -> Data
 {
     Data data;
     data.x = x;
@@ -43,11 +43,11 @@ auto gcs::innards::signed_multiply::make_data(ProofModel * const optional_model,
         // clauses (all entailed for non-negative operands, but cake always
         // emits them, so the labels resolve in the chain).
         product_enc::LinkNaming naming{link};
-        data.chan_x = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id, label, "MultiplyBC", x, 0, "X", naming);
-        data.chan_y = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id, label, "MultiplyBC", y, 1, "Y", naming);
-        data.grid = product_enc::emit_bit_product_grid(*optional_model, constraint_id, label, data.chan_x->mag, data.chan_y->mag, naming);
-        data.zchan = product_enc::emit_result_channel(*optional_model, label, "MultiplyBC", z, data.grid, naming);
-        data.sign_lines = product_enc::emit_sign_clauses(*optional_model, label, "MultiplyBC", x, y, z, naming);
+        data.chan_x = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id, x, 0, "X", naming);
+        data.chan_y = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id, y, 1, "Y", naming);
+        data.grid = product_enc::emit_bit_product_grid(*optional_model, constraint_id, data.chan_x->mag, data.chan_y->mag, naming);
+        data.zchan = product_enc::emit_result_channel(*optional_model, constraint_id, z, data.grid, naming);
+        data.sign_lines = product_enc::emit_sign_clauses(*optional_model, constraint_id, x, y, z, naming);
     }
 
     return data;

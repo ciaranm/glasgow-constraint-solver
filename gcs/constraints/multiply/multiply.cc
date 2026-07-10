@@ -135,8 +135,8 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
     // exact square and square-root hull filtering (issue #232).
     auto u1 = *a1.var, u2 = *a2.var;
 
-    auto product_data = make_shared<signed_multiply::Data>(
-        signed_multiply::make_data(optional_model, initial_state, constraint_id(), as_string(constraint_id()), _v1, _v2, _result));
+    auto product_data =
+        make_shared<signed_multiply::Data>(signed_multiply::make_data(optional_model, initial_state, constraint_id(), _v1, _v2, _result));
 
     Triggers triggers;
     for (const auto & v : {_v1, _v2, _result})

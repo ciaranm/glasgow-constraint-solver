@@ -511,13 +511,12 @@ inequality holds", encode it as a full equivalence — both
 
 ```cpp
 auto gt = optional_model->create_proof_flag_fully_reifying(
-    "gt", "Foo", "var greater than",
-    WPBSum{} + 1_i * v1 + -1_i * v2 >= 1_i);
+    "gt", WPBSum{} + 1_i * v1 + -1_i * v2 >= 1_i);
 ```
 
 This creates `gt` and emits both halves of `gt ⇔ (v1 > v2)`. The
 equivalent two-step form is
-`add_two_way_reified_constraint(name, rule, ineq, flag)` if you've
+`add_two_way_reified_constraint(ineq, flag)` if you've
 already created the flag elsewhere. Both compute the reverse direction
 by integer-negating the supplied inequality.
 

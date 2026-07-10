@@ -207,8 +207,7 @@ auto Minus::define_proof_model(ProofModel & model) -> void
     // Match those so the encoding byte-matches cake. The {LE, GE} return order is
     // unchanged from the unlabelled add_constraint, so _sum_line still feeds the
     // propagator's Conclude::LE/GE paths correctly.
-    _sum_line =
-        model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "Minus", "sum", WPBSum{} + 1_i * _a + -1_i * _b == 1_i * _result);
+    _sum_line = model.add_labelled_constraint(_constraint_id, "le", "ge", WPBSum{} + 1_i * _a + -1_i * _b == 1_i * _result);
 }
 
 auto Minus::install_propagators(Propagators & propagators) -> void

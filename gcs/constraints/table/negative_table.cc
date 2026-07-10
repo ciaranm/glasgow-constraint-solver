@@ -156,7 +156,7 @@ auto NegativeTable::define_proof_model(ProofModel & model) -> void
                 Literals lits;
                 for (const auto & [idx, v] : enumerate(_vars))
                     add_literal(lits, v, t[idx]);
-                model.add_constraint("NegativeTable", "forbidden", move(lits));
+                model.add_constraint(move(lits));
             }
         },
         _tuples);

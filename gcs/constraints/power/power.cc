@@ -90,14 +90,13 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
     }
 
     auto k = a2.offset;
-    auto label = as_string(constraint_id());
 
     vector<LinearStage> stages;
     auto add_equality = [&](const WeightedSum & sum, Integer value, const string & role) {
-        add_equality_stage(stages, optional_model, label, sum, value, role);
+        add_equality_stage(stages, optional_model, constraint_id(), sum, value, role);
     };
     auto add_le = [&](const WeightedSum & sum, Integer value, const string & role, const optional<IntegerVariableCondition> & gate) {
-        add_le_stage(stages, optional_model, label, sum, value, role, gate);
+        add_le_stage(stages, optional_model, constraint_id(), sum, value, role, gate);
     };
     auto add_gated_equality = [&](const IntegerVariableCondition & gate, Integer value, const string & role) {
         // an equality under a gate, as its two half-reified halves
@@ -112,7 +111,7 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         // Each chain link is a signed multiplication encoded with cake's magnitude scheme, the
         // same one Multiply uses; `link` disambiguates the per-link flags. (cake has no power
         // encoder, so this self-verifies rather than chain-verifying.)
-        links->emplace_back(signed_multiply::make_data(optional_model, initial_state, constraint_id(), label, a, b, product, link));
+        links->emplace_back(signed_multiply::make_data(optional_model, initial_state, constraint_id(), a, b, product, link));
     };
 
     bool prune_zero_base = false;
@@ -127,7 +126,7 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
             // zero to a negative power), so the constraint itself is the
             // empty relation, like a Table with no tuples.
             if (optional_model)
-                optional_model->add_constraint("Power", "no representable result", WPBSum{} >= 1_i);
+                optional_model->add_constraint(WPBSum{} >= 1_i);
             propagators.install_initial_contradiction("no representable power result", JustifyUsingRUP{hints::Power{constraint_id()}});
             return;
         }
@@ -148,8 +147,7 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         auto parity = ((k.raw_value % 2) == 0) ? 1_i : -1_i;
         if (k < 0_i) {
             if (optional_model)
-                optional_model->add_labelled_constraint(
-                    label, "nonzero", "Power", "base is not zero", WPBSum{} + 1_i * (_base >= 1_i) + 1_i * (_base < 0_i) >= 1_i);
+                optional_model->add_labelled_constraint(constraint_id(), "nonzero", WPBSum{} + 1_i * (_base >= 1_i) + 1_i * (_base < 0_i) >= 1_i);
             prune_zero_base = true;
 
             add_gated_equality(_base >= 2_i, 0_i, "bigpos");

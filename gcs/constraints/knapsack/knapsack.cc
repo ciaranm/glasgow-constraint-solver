@@ -617,8 +617,8 @@ auto Knapsack::define_proof_model(ProofModel & model) -> void
         // name-embedded row could collide with a sibling constraint's name). Match
         // that so the propagator's pol steps, which cite these lines by label,
         // resolve against cake's OPB. The bodies are identical.
-        auto [eq1, eq2] = model.add_labelled_constraint(as_string(constraint_id()), std::to_string(cc_idx) + "_le", std::to_string(cc_idx) + "_ge",
-            "Knapsack", "totals", sum_eq == 1_i * _totals.at(cc_idx));
+        auto [eq1, eq2] = model.add_labelled_constraint(
+            constraint_id(), std::to_string(cc_idx) + "_le", std::to_string(cc_idx) + "_ge", sum_eq == 1_i * _totals.at(cc_idx));
         _eqns_lines.emplace_back(eq1, eq2);
     }
 }

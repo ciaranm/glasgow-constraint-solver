@@ -72,7 +72,7 @@ auto IncreasingChain::define_proof_model(ProofModel & model) -> void
 {
     auto offset = _strict ? -1_i : 0_i;
     for (size_t i = 0; i + 1 < _ordered_vars.size(); ++i)
-        model.add_constraint("IncreasingChain", "chain step", WPBSum{} + 1_i * _ordered_vars[i] + -1_i * _ordered_vars[i + 1] <= offset);
+        model.add_constraint(WPBSum{} + 1_i * _ordered_vars[i] + -1_i * _ordered_vars[i + 1] <= offset);
 }
 
 auto IncreasingChain::install_propagators(Propagators & propagators) -> void

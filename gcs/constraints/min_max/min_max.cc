@@ -60,8 +60,7 @@ auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
 {
     // (for min) each var >= result, i.e. var - result >= 0
     for (const auto & v : _vars) {
-        model.add_constraint(
-            "ArrayMinMax", "result compared to value", WPBSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
+        model.add_constraint(WPBSum{} + (_min ? 1_i : -1_i) * v + (_min ? -1_i : 1_i) * _result >= 0_i, nullopt);
     }
 
     WPBSum al1_selector;
@@ -73,15 +72,13 @@ auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
     for (const auto & [id, var] : enumerate(_vars)) {
         auto selector = model.create_proof_flag(_constraint_id, std::vector<long long>{static_cast<long long>(id)});
         _selectors.push_back(selector);
-        model.add_constraint(
-            "ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
-        model.add_constraint(
-            "ArrayMinMax", "result is this value", WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
+        model.add_constraint(WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result <= 0_i, {{selector}});
+        model.add_constraint(WPBSum{} + (_min ? 1_i : -1_i) * var + (_min ? -1_i : 1_i) * _result >= 1_i, {{! selector}});
         al1_selector += 1_i * selector;
     }
 
     // sum f_i >= 1
-    model.add_constraint("ArrayMinMax", "result is one of the values", al1_selector >= 1_i);
+    model.add_constraint(al1_selector >= 1_i);
 }
 
 auto ArrayMinMax::install_propagators(Propagators & propagators) -> void

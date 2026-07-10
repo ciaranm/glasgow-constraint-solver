@@ -196,9 +196,8 @@ auto NDimensionalElement<EntryType_, dimensions_>::prepare(Propagators & propaga
 
     for (const auto & [i, var] : enumerate(_index_vars)) {
         auto s = Integer(get_dimension_size<dimensions_>(i, *_array));
-        propagators.define_bound(initial_state, optional_model, var, Bound::Lower, _index_starts.at(i), "NDimensionalElement", "index range");
-        propagators.define_bound(
-            initial_state, optional_model, var, Bound::Upper, _index_starts.at(i) + s - 1_i, "NDimensionalElement", "index range");
+        propagators.define_bound(initial_state, optional_model, var, Bound::Lower, _index_starts.at(i));
+        propagators.define_bound(initial_state, optional_model, var, Bound::Upper, _index_starts.at(i) + s - 1_i);
     }
 
     _array_has_nonconstants = any_array_variable_is_nonconstant(initial_state, *_array);
@@ -213,7 +212,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
         // file remains self-describing. The encoding's recursion over the
         // empty dimension would have produced no constraints at all, which
         // wouldn't capture the unsatisfiability.
-        model.add_constraint("NDimensionalElement", "zero-sized dimension", WPBSum{} >= 1_i);
+        model.add_constraint(WPBSum{} >= 1_i);
         return;
     }
 
@@ -228,7 +227,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel
             if (elem.size() == dimensions_) {
                 // this still works out fine if the variable is actually a constant
                 auto array_var = get_array_var<dimensions_>(elem, *_array);
-                model.add_constraint("NDimensionalElement", "equality", WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
+                model.add_constraint(WPBSum{} + (1_i * _result_var) + (-1_i * array_var) == 0_i, reif);
             }
             else {
                 build_implication_constraints(d + 1);

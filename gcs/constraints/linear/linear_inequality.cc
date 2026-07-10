@@ -129,24 +129,18 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
         [&](const reif::If & cond) {
             // cake_pb_cp labels the half-reified inequality @c[<id>], with no role
             // suffix, exactly like the unconditional form.
-            _proof_lines = pair{model.add_labelled_constraint(as_string(constraint_id()), "", "ReifiedLinearInequality", "less than option",
-                                    terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
-                nullopt};
+            _proof_lines = pair{model.add_labelled_constraint(constraint_id(), "", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         }, //
         [&](const reif::NotIf & cond) {
             // s_expr throws on NotIf, so this form never reaches the cake chain and
             // the invented role is fine.
-            _proof_lines = pair{model.add_labelled_constraint(as_string(constraint_id()), "ltn", "ReifiedLinearInequality", "less than option",
-                                    terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
-                nullopt};
+            _proof_lines = pair{model.add_labelled_constraint(constraint_id(), "ltn", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         }, //
         [&](const reif::Iff & cond) {
             // cake_pb_cp labels the iff halves r (cond -> ineq) and f (~cond -> its
             // integer negation).
-            _proof_lines = pair{model.add_labelled_constraint(as_string(constraint_id()), "r", "ReifiedLinearInequality", "less than option",
-                                    terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
-                model.add_labelled_constraint(as_string(constraint_id()), "f", "ReifiedLinearInequality", "greater than option",
-                    terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
+            _proof_lines = pair{model.add_labelled_constraint(constraint_id(), "r", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}),
+                model.add_labelled_constraint(constraint_id(), "f", terms >= _value + 1_i, HalfReifyOnConjunctionOf{! cond.cond})};
         } //
     }
         .visit(_reif_cond);

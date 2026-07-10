@@ -122,15 +122,12 @@ namespace
         {
             auto encoding = make_shared<optional<FragmentEncoding>>(nullopt);
             if (optional_model) {
-                auto label = as_string(constraint_id());
                 auto naming = product_enc::LinkNaming{};
-                auto chan1 =
-                    product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id(), label, "MultiplyBC", _v1, 0, "X", naming);
-                auto chan2 =
-                    product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id(), label, "MultiplyBC", _v2, 1, "Y", naming);
-                auto grid = product_enc::emit_bit_product_grid(*optional_model, constraint_id(), label, chan1.mag, chan2.mag, naming);
-                auto zchan = product_enc::emit_result_channel(*optional_model, label, "MultiplyBC", _v3, grid, naming);
-                auto signs = product_enc::emit_sign_clauses(*optional_model, label, "MultiplyBC", _v1, _v2, _v3, naming);
+                auto chan1 = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id(), _v1, 0, "X", naming);
+                auto chan2 = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id(), _v2, 1, "Y", naming);
+                auto grid = product_enc::emit_bit_product_grid(*optional_model, constraint_id(), chan1.mag, chan2.mag, naming);
+                auto zchan = product_enc::emit_result_channel(*optional_model, constraint_id(), _v3, grid, naming);
+                auto signs = product_enc::emit_sign_clauses(*optional_model, constraint_id(), _v1, _v2, _v3, naming);
                 *encoding = FragmentEncoding{chan1, chan2, grid, zchan, signs};
             }
 

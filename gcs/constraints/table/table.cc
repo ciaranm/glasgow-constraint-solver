@@ -147,7 +147,7 @@ auto Table::define_proof_model(ProofModel & model) -> void
 {
     if (_has_no_tuples) {
         // Morally equivalent to a selector with empty domain (`0 ≥ 1`).
-        model.add_constraint("Table", "no allowed tuples", WPBSum{} >= 1_i);
+        model.add_constraint(WPBSum{} >= 1_i);
         return;
     }
 

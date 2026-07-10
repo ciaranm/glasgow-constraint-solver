@@ -90,8 +90,8 @@ auto SymmetricAllDifferent::prepare(Propagators & propagators, State & initial_s
     }
 
     for (const auto & v : _vars) {
-        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, _start, "SymmetricAllDifferent", "value range");
-        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, _start + Integer(n) - 1_i, "SymmetricAllDifferent", "value range");
+        propagators.define_bound(initial_state, optional_model, v, Bound::Lower, _start);
+        propagators.define_bound(initial_state, optional_model, v, Bound::Upper, _start + Integer(n) - 1_i);
     }
 
     return true;
@@ -107,10 +107,8 @@ auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
     // for general x and y.)
     for (size_t i = 0; i < n; ++i)
         for (size_t j = i + 1; j < n; ++j) {
-            model.add_constraint("SymmetricAllDifferent", "x_i = j -> x_j = i",
-                WPBSum{} + 1_i * (_vars[i] != Integer(j) + _start) + 1_i * (_vars[j] == Integer(i) + _start) >= 1_i);
-            model.add_constraint("SymmetricAllDifferent", "x_j = i -> x_i = j",
-                WPBSum{} + 1_i * (_vars[j] != Integer(i) + _start) + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
+            model.add_constraint(WPBSum{} + 1_i * (_vars[i] != Integer(j) + _start) + 1_i * (_vars[j] == Integer(i) + _start) >= 1_i);
+            model.add_constraint(WPBSum{} + 1_i * (_vars[j] != Integer(i) + _start) + 1_i * (_vars[i] == Integer(j) + _start) >= 1_i);
         }
 
     define_clique_not_equals_encoding(model, _constraint_id, _vars);

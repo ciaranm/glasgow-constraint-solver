@@ -214,8 +214,8 @@ namespace
             pos += 1_i * PseudoBooleanTerm{l};
             neg += 1_i * PseudoBooleanTerm{! l};
         }
-        model.add_labelled_constraint(as_string(id), "pos", "Logical", "reif implies", move(pos) >= 0_i);
-        model.add_labelled_constraint(as_string(id), "neg", "Logical", "negated reif implies", move(neg) >= 0_i);
+        model.add_labelled_constraint(id, "pos", move(pos) >= 0_i);
+        model.add_labelled_constraint(id, "neg", move(neg) >= 0_i);
     }
 
     // The bare-operand `and` / `or` scp term when every literal conforms
@@ -255,7 +255,7 @@ namespace
 
         if (reif_state == DefinitelyTrue) {
             for (auto & l : lits)
-                model.add_constraint("Logical", "cnf", Literals{l});
+                model.add_constraint(Literals{l});
             return;
         }
 
@@ -268,7 +268,7 @@ namespace
                 .visit(l);
 
         if (saw_false) {
-            model.add_constraint("Logical", "saw reif false", Literals{! full_reif});
+            model.add_constraint(Literals{! full_reif});
             return;
         }
 
@@ -276,14 +276,14 @@ namespace
             WPBSum forward;
             for (auto & l : lits)
                 forward += 1_i * PseudoBooleanTerm{l};
-            model.add_constraint("Logical", "if condition", forward >= Integer(lits.size()), HalfReifyOnConjunctionOf{full_reif});
+            model.add_constraint(forward >= Integer(lits.size()), HalfReifyOnConjunctionOf{full_reif});
         }
 
         Literals reverse;
         for (auto & l : lits)
             reverse.push_back(! l);
         reverse.push_back(full_reif);
-        model.add_constraint("Logical", "if not condition", move(reverse));
+        model.add_constraint(move(reverse));
     }
 }
 

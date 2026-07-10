@@ -85,7 +85,7 @@ auto NValue::define_proof_model(ProofModel & model) -> void
         occurrence_sum += 1_i * flag;
     }
     occurrence_sum += -1_i * _n_values;
-    model.add_labelled_constraint(as_string(_constraint_id), "le", "ge", "NValue", "sum of occurrence flags", occurrence_sum == 0_i);
+    model.add_labelled_constraint(_constraint_id, "le", "ge", occurrence_sum == 0_i);
 }
 
 auto NValue::install_propagators(Propagators & propagators) -> void
