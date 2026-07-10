@@ -12,6 +12,10 @@ namespace gcs
     /**
      * \defgroup SearchHeuristics Common search heuristics for gcs::solve_with
      *
+     * \warning The CurrentState and Propagators references passed to a
+     * heuristic are into live solver internals, and are valid only for the
+     * duration of that call: they must not be stored for later use.
+     *
      * \sa SolveCallbacks
      */
 

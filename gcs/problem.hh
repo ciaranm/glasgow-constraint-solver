@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
+#include <gcs/lifetime.hh>
 #include <gcs/presolver.hh>
 #include <gcs/proof.hh>
 #include <gcs/stats.hh>
@@ -130,17 +131,23 @@ namespace gcs
          * \brief Create a new integer variable, whose domain goes from lower to
          * upper (inclusive). The final argument gives an optional name that
          * will appear in some output; it does not have to be unique.
+         *
+         * The returned handle is only meaningful for as long as this Problem
+         * (or a search state created from it) is alive.
          */
         [[nodiscard]] auto create_integer_variable(Integer lower, Integer upper, const std::optional<std::string> & name = std::nullopt)
-            -> SimpleIntegerVariableID;
+            GCS_LIFETIME_BOUND -> SimpleIntegerVariableID;
 
         /**
          * \brief Create a new integer variable, whose domain is selected from
          * among the chosen values. The final argument gives an optional name that
          * will appear in some output; it does not have to be unique.
+         *
+         * The returned handle is only meaningful for as long as this Problem
+         * (or a search state created from it) is alive.
          */
         [[nodiscard]] auto create_integer_variable(const std::vector<Integer> & domain, const std::optional<std::string> & name = std::nullopt)
-            -> SimpleIntegerVariableID;
+            GCS_LIFETIME_BOUND -> SimpleIntegerVariableID;
 
         /**
          * \brief Create a vector of how_many integer variables, each of
@@ -149,7 +156,7 @@ namespace gcs
          * have to be unique.
          */
         [[nodiscard]] auto create_integer_variable_vector(std::size_t how_many, Integer lower, Integer upper,
-            const std::optional<std::string> & name = std::nullopt) -> std::vector<IntegerVariableID>;
+            const std::optional<std::string> & name = std::nullopt) GCS_LIFETIME_BOUND -> std::vector<IntegerVariableID>;
 
         /**
          * \brief Create n integer variables, each of whose domain goes
@@ -164,7 +171,7 @@ namespace gcs
          */
         template <std::size_t n_>
         [[nodiscard]] auto create_n_integer_variables(Integer lower, Integer upper, const std::optional<std::string> & name = std::nullopt)
-            -> std::array<SimpleIntegerVariableID, n_>;
+            GCS_LIFETIME_BOUND -> std::array<SimpleIntegerVariableID, n_>;
 
         auto minimise(IntegerVariableID) -> void;
         auto maximise(IntegerVariableID) -> void;
@@ -180,10 +187,22 @@ namespace gcs
 
         [[nodiscard]] auto create_propagators(innards::State &, innards::ProofModel * const) const -> innards::Propagators;
 
+        /**
+         * \warning The yielded references alias objects owned by this Problem,
+         * and are valid only while the Problem is alive.
+         */
         [[nodiscard]] auto each_presolver() const -> std::generator<Presolver &>;
 
-        [[nodiscard]] auto all_normal_variables() const -> const std::vector<IntegerVariableID> &;
+        /**
+         * \warning The returned reference is into this Problem, and is valid
+         * only for as long as the Problem is alive.
+         */
+        [[nodiscard]] auto all_normal_variables() const GCS_LIFETIME_BOUND -> const std::vector<IntegerVariableID> &;
 
+        /**
+         * \warning The yielded references alias objects owned by this Problem,
+         * and are valid only while the Problem is alive.
+         */
         [[nodiscard]] auto each_constraint() const -> std::generator<const Constraint &>;
 
         [[nodiscard]] auto each_variable_with_bounds_and_name() const -> std::generator<std::tuple<IntegerVariableID, Integer, Integer, std::string>>;

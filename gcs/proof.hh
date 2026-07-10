@@ -3,6 +3,7 @@
 
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
+#include <gcs/lifetime.hh>
 
 #include <memory>
 #include <optional>
@@ -107,8 +108,21 @@ namespace gcs
         auto operator=(const Proof &) -> Proof & = delete;
         Proof(const Proof &) = delete;
 
-        [[nodiscard]] auto logger() -> innards::ProofLogger *;
-        [[nodiscard]] auto model() -> innards::ProofModel *;
+        /**
+         * \brief The proof logger, for writing proof steps.
+         *
+         * \warning This is a pointer into this Proof, and is valid only for as
+         * long as the Proof is alive.
+         */
+        [[nodiscard]] auto logger() GCS_LIFETIME_BOUND -> innards::ProofLogger *;
+
+        /**
+         * \brief The proof model, for writing OPB-level definitions.
+         *
+         * \warning This is a pointer into this Proof, and is valid only for as
+         * long as the Proof is alive.
+         */
+        [[nodiscard]] auto model() GCS_LIFETIME_BOUND -> innards::ProofModel *;
     };
 }
 

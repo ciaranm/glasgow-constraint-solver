@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_VARIABLE_ID_HH
 
 #include <gcs/integer.hh>
+#include <gcs/lifetime.hh>
 #include <gcs/variable_id-fwd.hh>
 
 #include <functional>
@@ -15,10 +16,13 @@ namespace gcs
      * Usually you can work with IntegerVariableID instead, but some operations
      * specifically require a genuine variable.
      *
+     * This is a lightweight handle, only meaningful for as long as the Problem
+     * (or a search state created from it) that created it is alive.
+     *
      * \sa IntegerVariableID
      * \ingroup Core
      */
-    struct SimpleIntegerVariableID final
+    struct GCS_GSL_POINTER SimpleIntegerVariableID final
     {
         unsigned long long index;
 
@@ -35,10 +39,14 @@ namespace gcs
      *
      * Usually this will be constructed using `var + 42_i` or `-var`.
      *
+     * Like SimpleIntegerVariableID, this is a lightweight handle, only
+     * meaningful for as long as the Problem (or a search state created from
+     * it) that created the underlying variable is alive.
+     *
      * \sa IntegerVariableID
      * \ingroup Core
      */
-    struct ViewOfIntegerVariableID final
+    struct GCS_GSL_POINTER ViewOfIntegerVariableID final
     {
         SimpleIntegerVariableID actual_variable;
         bool negate_first;
@@ -78,6 +86,12 @@ namespace gcs
     /**
      * An IntegerVariableID can be a SimpleIntegerVariableID, a
      * ViewOfIntegerVariableID, or a ConstantIntegerVariableID.
+     *
+     * Unless it holds a ConstantIntegerVariableID, this is a lightweight
+     * handle, only meaningful for as long as the Problem (or a search state
+     * created from it) that created the underlying variable is alive. (Being
+     * a `std::variant` alias, it cannot itself carry the lifetime annotations
+     * that SimpleIntegerVariableID and ViewOfIntegerVariableID have.)
      *
      * \ingroup Core
      */

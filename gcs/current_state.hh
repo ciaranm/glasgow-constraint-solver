@@ -5,6 +5,7 @@
 #include <gcs/innards/interval_set-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
+#include <gcs/lifetime.hh>
 #include <gcs/variable_id.hh>
 
 #include <functional>
@@ -44,7 +45,7 @@ namespace gcs
      *
      * \ingroup Core
      */
-    class CurrentState
+    class GCS_GSL_POINTER CurrentState
     {
     private:
         std::unique_ptr<innards::State> _state_copy;
@@ -57,7 +58,7 @@ namespace gcs
          * \name Constructors, destructors, etc.
          * @{
          */
-        explicit CurrentState(innards::State & state);
+        explicit CurrentState(innards::State & state GCS_LIFETIME_BOUND);
         ~CurrentState();
 
         CurrentState(CurrentState &&);

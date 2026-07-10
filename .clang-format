@@ -6,7 +6,11 @@ AllowShortCaseLabelsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLambdasOnASingleLine: All
+AttributeMacros: [GCS_LIFETIME_BOUND, GCS_GSL_POINTER]
 BinPackArguments: true
+Macros:
+  - GCS_LIFETIME_BOUND=[[clang::lifetimebound]]
+  - GCS_GSL_POINTER=[[gsl::Pointer]]
 BinPackParameters: true
 BreakBeforeBraces: Custom
 BreakBeforeInheritanceComma: true

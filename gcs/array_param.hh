@@ -1,6 +1,8 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_ARRAY_PARAM_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_ARRAY_PARAM_HH
 
+#include <gcs/lifetime.hh>
+
 #include <initializer_list>
 #include <memory>
 #include <utility>
@@ -47,16 +49,16 @@ namespace gcs
         {
         }
 
-        ArrayParam(const C_ * borrowed) : _data(std::shared_ptr<const C_>{}, borrowed)
+        ArrayParam(const C_ * borrowed GCS_LIFETIME_BOUND) : _data(std::shared_ptr<const C_>{}, borrowed)
         {
         }
 
-        [[nodiscard]] auto operator*() const -> const C_ &
+        [[nodiscard]] auto operator*() const GCS_LIFETIME_BOUND -> const C_ &
         {
             return *_data;
         }
 
-        [[nodiscard]] auto operator->() const -> const C_ *
+        [[nodiscard]] auto operator->() const GCS_LIFETIME_BOUND -> const C_ *
         {
             return _data.get();
         }

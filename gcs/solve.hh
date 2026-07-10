@@ -22,6 +22,10 @@ namespace gcs
     /**
      * \defgroup SolveCallbacks Callbacks for solving
      *
+     * \warning The references passed to a callback are valid only for the
+     * duration of that call, and must not be stored for later use. Use
+     * CurrentState::clone() if you need to save a state.
+     *
      * \sa SearchHeuristics
      */
 
@@ -47,6 +51,9 @@ namespace gcs
      * instances (which may be range conditions, for interval accept/reject
      * branching) that corresponds to a complete branching choice, or that
      * yields nothing if every variable is instantiated.
+     *
+     * \warning The CurrentState and Propagators references are into live
+     * solver internals, and are valid only for the duration of the call.
      *
      * \ingroup SolveCallbacks
      * \sa SearchHeuristics
