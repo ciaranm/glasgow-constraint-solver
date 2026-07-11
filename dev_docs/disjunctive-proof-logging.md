@@ -1,15 +1,17 @@
 # Proof logging for `Disjunctive`
 
 This document explains how the `Disjunctive` propagator's proofs are
-backed by VeriPB, focusing on the *bridge* pattern that lets us keep a
-declarative OPB encoding while still using time-table reasoning in the
-propagator. Read [`cumulative-proof-logging.md`](cumulative-proof-logging.md)
-first — `Disjunctive`'s time-table machinery (mandatory profile,
-contradiction proof, chain-step bound pushes) is a specialisation of
-cumulative's at `h_i = 1`, `capacity = 1`, and most of the difficult
-ideas are documented there. This document covers what's new: the
-bridge between encoding and propagation, and the third reusable
-proof-logging idea that comes out of it.
+backed by VeriPB. The propagator is time-table consistency specialised
+to `h_i = 1`, `capacity = 1`
+(see [`cumulative-proof-logging.md`](cumulative-proof-logging.md) for
+the general time-table proof machinery), but the *proofs* do not use
+the time-indexed vocabulary at all: at unit heights and capacity,
+every inference the propagator makes is a statement about one **pair**
+of tasks, and is justified directly against the declarative pairwise
+OPB encoding. There is no per-(task, time) scaffolding anywhere — no
+flags, no proof-only variables, no prefix emitted before search (a
+previous design bridged to cumulative-style time-indexed flags at
+`O(n × horizon)` cost; #495 has the measurements from removing it).
 
 For the constraint itself — semantics, propagator, the strict / non-strict
 flag — read `gcs/constraints/disjunctive/disjunctive.{hh,cc}`.
@@ -25,124 +27,138 @@ before_{j,i}  <->  s_j + l_j <= s_i
 before_{i,j}  v   before_{j,i}          (one of them must finish first)
 ```
 
-That's the whole OPB contribution. It directly mirrors the constraint's
-spec: "for every pair, one task finishes before the other starts". A
-human reading the OPB recognises the disjunctive constraint without
-knowing how Glasgow's propagator works.
+That's the whole OPB contribution, and it is also all the proof
+scaffolding there is. It directly mirrors the constraint's spec: "for
+every pair, one task finishes before the other starts". A human
+reading the OPB recognises the disjunctive constraint without knowing
+how Glasgow's propagator works, and the encoding matches `cake_pb_cp`
+(flags `x[id][i_j][bf]`, halves `[r]`/`[f]`, clauses
+`@c[id][i_jsepal1]`), so the proofs chain-verify.
 
-Notably absent: any time-indexed `before_{i,t}` / `after_{i,t}` /
-`active_{i,t}` flags. Cumulative emits those into the OPB; for
-disjunctive they belong to the propagator, not the model definition,
-and we keep that separation.
+For a constant duration the flag's inequality folds to
+`s_i − s_j ≤ −l_i`; for a variable duration the `l_i` term stays on
+the left-hand side. Non-strict mode adds a reified `l_i ≤ 0` escape
+flag (`x[id][i][zw]`) per variable-duration task to the separation
+clause — a zero-length task does not constrain.
 
-## The bridge
+## The pairwise justification vocabulary
 
-The TT propagator wants to reason "task `i` is active at time `t`",
-which means using `before_{i,t}` / `after_{i,t}` / `active_{i,t}` flags
-identical in shape to cumulative's. The OPB doesn't define them, so we
-introduce them in the proof instead — as one-shot scaffolding emitted
-by an `install_initialiser` that runs once before search:
-
-```cpp
-propagators.install_initialiser(
-    [/* captures */](State &, auto &, ProofLogger * const logger) -> void {
-        if (! logger) return;
-        for (auto i : active_tasks)
-            for (Integer t = per_task_t_lo[i]; t <= per_task_t_hi[i]; ++t) {
-                auto [B, B_fwd, B_rev] = logger->create_proof_flag_reifying(
-                    WPBSum{} + 1_i * starts[i] <= t, "djbef", ProofLevel::Top);
-                auto [F, F_fwd, F_rev] = logger->create_proof_flag_reifying(
-                    WPBSum{} + 1_i * starts[i] >= t - lengths[i] + 1_i,
-                    "djaft", ProofLevel::Top);
-                auto [A, A_fwd, A_rev] = logger->create_proof_flag_reifying(
-                    WPBSum{} + 1_i * B + 1_i * F >= 2_i, "djact", ProofLevel::Top);
-                bridge->emplace({i, t}, BridgeFlags{B, B_fwd, B_rev, F, F_fwd, F_rev, A, A_fwd, A_rev});
-            }
-    });
-```
-
-A few things to note about this:
-
-- **Why an initialiser, not `define_proof_model`?** Putting the
-  bridge in `define_proof_model` would put it in the OPB — defeating
-  the declarative-encoding split. The initialiser writes to the `.pbp`
-  prefix instead, which is *proof* not *model*.
-- **Why `ProofLevel::Top`?** Glasgow has no flag-deletion API: every
-  call to `create_proof_flag` records a name in
-  `NamesAndIDsTracker` that lives forever. If the bridge created
-  flags lazily during justification, the per-flag footprint would
-  grow with the search-tree depth (potentially exponential).
-  Creating them once at root, at `Top`, bounds the total to
-  `O(n × horizon)` per `Disjunctive` instance.
-- **Sharing with the propagator.** The propagator captures a copy of
-  the same `shared_ptr<BridgeMap>` and looks up flag handles by
-  `(task_idx, t)` from inside its justification callbacks. The
-  initialiser writes; the propagator reads.
-
-## Recovering the at-most-one lemma
-
-Time-table reasoning at `h = 1`, `c = 1` needs the analogue of
-cumulative's `C_t` constraint — the per-time-point sum
-`Σ_i active_{i,t} ≤ 1`. Cumulative has this as an axiomatic OPB
-constraint; we don't, so we derive it.
-
-For the cases the propagator actually uses (mandatory-overflow
-contradiction with two contributing tasks; a chain step with one
-blocker and the pushed task), the **pairwise at-most-one**
-`active_{i,t} + active_{j,t} ≤ 1` is enough — we never need the global
-sum over all tasks possibly active at `t`. The
-[`recover_am1`](../gcs/constraints/innards/recover_am1.hh) helper,
-applied to two atoms, becomes a thin wrapper around a single
-`pair_ne` callback, and that callback emits a three-step `pol` from
-the encoded pairwise clause and the bridge flag forward reifs:
+Every justification is built from one pol shape over a before flag's
+`[r]` half (`flag → s_a + l_a ≤ s_b`, i.e. in normalised form
+`M·¬flag + s_b − s_a − l_a ≥ 0`): add one **bound-literal definition
+row** per integer operand, and the integer terms cancel exactly,
+leaving a clause over the flag's negation and the residual order
+literals. `emit_before_pol(a, b, cond_a, cond_b)` in
+`disjunctive.cc` packages this:
 
 ```
-L1 = pol (E_{i,j}_fwd) (after_{i,t}_fwd) + (before_{j,t}_fwd) + s
-     -> ¬E_{i,j} + ¬after_{i,t} + ¬before_{j,t} >= 1
-L2 = pol (E_{j,i}_fwd) (after_{j,t}_fwd) + (before_{i,t}_fwd) + s
-     -> ¬E_{j,i} + ¬after_{j,t} + ¬before_{i,t} >= 1
-AM1 = pol L1 L2 + (clause) + (active_{i,t}_fwd) + (active_{j,t}_fwd) + s
-      -> ¬active_{i,t} + ¬active_{j,t} >= 1
+pol  @x[id][a_b][bf][r]        M·¬bf + s_b − s_a − l_a ≥ 0
+  +  rowa of [s_a ≥ lo]        s_a + lo·¬[s_a ≥ lo] ≥ lo
+  +  rowa of [l_a ≥ llo]       l_a + llo·¬[l_a ≥ llo] ≥ llo    (variable duration)
+  +  rowb of [s_b < hi+1]      −s_b + c·[s_b ≥ hi+1] ≥ −hi
+  s
+  =  ¬bf ∨ ¬[s_a ≥ lo] ∨ ¬[l_a ≥ llo] ∨ [s_b ≥ hi+1]   (degree lo + llo − hi)
 ```
 
-The arithmetic that makes this go through: in `L1` the integer
-variables cancel exactly — `(s_j - s_i)` from the encoded forward reif
-plus `(s_i)` from after's forward plus `(-s_j)` from before's forward
-sums to zero, leaving `M · (¬E_{i,j} + ¬after_{i,t} + ¬before_{j,t}) ≥ 1`
-which saturates to a flag-only constraint. `L2` is symmetric.
-Combining `L1 + L2` with the clause picks one side of the encoded
-disjunction; the active flag's forward reif then folds before/after
-contributions into the active flag.
+The rows are obtained through
+`NamesAndIDsTracker::need_pol_item_defining_literal`, which mints the
+order-literal atoms on demand (the reason materialisation uses the
+same atoms, so the residuals are exactly the literals the closing
+reason-wrapped RUP assumes). Three details matter:
 
-The result line is recorded at `Top`, and the per-call pol expression
-(L1, L2, the AM1 itself, and the closing combination with the two
-active=1-under-reason lines) is at `Temporary`.
+- **The pol is load-bearing.** Bare RUP is *not* sufficient in
+  general: when the ordering margin is smaller than the residual
+  bit-encoding range above a bound, unit propagation cannot transfer
+  a bound row's cap into the reification row's slack (VeriPB's
+  cross-variable linear-deduction limit). The pol does the linear
+  combination explicitly; the closing RUP then only has to
+  unit-propagate single-literal steps.
+- **Bit-mapped literals add nothing.** When a bound literal maps
+  directly onto a single encoding bit (a one-bit domain, or a
+  threshold aligned with the top bit), the tracker returns the
+  literal itself rather than a definition row. There is nothing to
+  add in that case: the operand's raw term in the `[r]` row already
+  normalises to exactly that residual literal (and the bit alignment
+  bounds the remaining low-bit residual by the bound's slack).
+  Adding the literal *axiom* instead would cancel the term outright
+  and lose the bound — this is why `emit_before_pol` dispatches on
+  the `variant<ProofLine, XLiteral>` and skips the `XLiteral` arm,
+  rather than calling `PolBuilder::add_for_literal`.
+- **The pushed variable's bounds are captured, not re-read.** By the
+  time a `JustifyExplicitly` callback runs, the inference has already
+  landed in the state, so `state.bounds()` on the pushed variable
+  would return the *post-push* bound, which the reason does not
+  support. Bounds of the other operands (blockers, durations) are
+  unchanged by the inference and may be read at justification time.
 
-`recover_am1` had to be taught how to isolate its inner workings from
-a `JustifyExplicitly{…, ThenRUP::Yes}` context to avoid wiping the
-framework's own scope on exit — see the comment in `recover_am1.cc`.
+Statically-true bound literals (a root bound, or a threshold past the
+encoding maximum) degrade gracefully: `need_gevar` emits trivial
+halves and pins the boundary atom at `ProofLevel::Top`, so the same
+uniform pol works at domain edges and on domain-wiping pushes.
 
-## The three time-table inferences
+## The three inferences
 
-With the bridge in place, the time-table inferences specialise
-cumulative's exactly, with `h_i = 1` and `capacity = 1`:
+- **Mandatory-overflow contradiction.** Two tasks `i`, `j` whose
+  mandatory parts overlap at some time. Then neither can finish
+  before the other starts: `lb(s_i) + lb(l_i) > ub(s_j)` and
+  vice versa, so two pols (one per direction) force both before
+  flags false under the reason, and the separation clause unit-fails
+  in the framework's closing reason-wrapped RUP. Two pols, no `t`.
 
-- **Mandatory-overflow contradiction.** Two tasks with mandatory
-  parts covering the same `t` collide. Pin both their `active_{·,t}`
-  lines under reason (via before / after / active chain), derive the
-  pairwise at-most-one via the helper above, pol with the active=1
-  lines, contradiction. See `cumulative-proof-logging.md`'s
-  inference 1 for the same shape with general heights.
+- **lb-push.** The propagator scans for the smallest fitting start
+  `new_lb` for task `j`; the justification is a chain with **one
+  dichotomy step per blocker** (not per blocked time — a step
+  advances past a blocker's whole mandatory part, however long).
+  At running bound `B` (established by the reason for the first
+  step, by the previous step's deposit after), the window
+  `[B, B + lb(l_j))` reaches into blocker `k`'s mandatory part
+  `[lst_k, eet_k)`:
 
-- **`lb`-push and `ub`-push.** The chain-step machinery from
-  cumulative applies verbatim with the bridge supplying the
-  per-step at-most-one. The shared `emit_chain_step` helper takes the
-  push direction's `ext_lit` and `emit_intermediate` parameters; the
-  per-step proof emits the at-most-one via `recover_am1`, pols it
-  with the two active=1 lines (one under reason, the other under
-  extended reason `{reason ∪ ¬ext_lit}`), and saturates to derive
-  `ext_lit + ¬reason ≥ 1`. Intermediate steps deposit `ext_lit`
-  explicitly as a unit fact for the next step's preconditions to UP.
+  - *left branch*: `before_{j,k}` would need
+    `s_j ≤ ub(s_k) − lb(l_j) < B` — refuted by a pol citing the
+    running bound, `lb(l_j)`, and `ub(s_k)`;
+  - *right branch*: `before_{k,j}` gives
+    `s_j ≥ lb(s_k) + lb(l_k) = eet_k` — folded onto the target order
+    literal's definition row (`bf_{k,j} → [s_j ≥ target]`).
+
+  Intermediate steps deposit `[s_j ≥ target]` under the reason (one
+  RUP line) so the next step's left branch can unit-propagate from
+  it. Targets are clipped to `new_lb`: the chain reads current
+  bounds, which may be tighter than the profile the propagator
+  scanned (mandatory parts only grow within a pass), and the final
+  step must land exactly on the inferred literal, which the
+  framework's closing RUP concludes. Cost: two pols plus at most one
+  deposit per blocker.
+
+- **ub-push.** The mirror image: at running bound `U`,
+  `before_{k,j}` would put `s_j ≥ eet_k > U` (refuted), and
+  `before_{j,k}` caps `s_j ≤ lst_k − lb(l_j)` (folded onto the
+  target). Steps drop the bound to
+  `max(lst_k − lb(l_j), new_ub)` per blocker.
+
+Blocker selection is greedy (deepest mandatory end for an lb-push,
+leftmost mandatory start for a ub-push); every non-fitting start is
+blocked, so a blocker always exists while the chain has ground to
+cover, and each step strictly advances.
+
+### Variable durations
+
+No extra machinery at all: the duration term stays on the before
+flag's left-hand side and cancels against the duration's lower-bound
+definition row *in the same pol* (see the shape above). Mandatory
+parts and footprints use `lb(l_i)`, and every variable duration joins
+the reason. In particular there is **no** proof-only `end = s + l`
+variable — the in-proof end introduction
+(`ProofLogger::introduce_bits_of`) exists for Cumulative's
+time-indexed `after` flags, which Disjunctive's proofs no longer use.
+
+### Non-strict zero-length escapes
+
+Whenever an inference fires, every involved task has a positive
+guaranteed duration, so its `zw` escape flag is false. The
+justification pins the involved escapes false first (one RUP under
+reason each, from `lb(l) ≥ 1`), and the separation clauses reduce to
+their before-flag disjunctions for the rest of the derivation.
 
 ## Strict-mode zero-length tasks
 
@@ -158,119 +174,68 @@ assignments and the encoded clause `before_{z,k} + before_{k,z} ≥ 1`
 unit-fails. So this contradiction is pure RUP — `JustifyUsingRUP{hints::Disjunctive{owner}}`
 (the typed hint is inert in proofs-off mode; the justification is still a bare RUP).
 
-## The third reusable idea
-
-[`cumulative-proof-logging.md`](cumulative-proof-logging.md) ends with
-two reusable patterns:
-
-1. `pol` over `active = 1` reified flags.
-2. Extended-reason pinning for hypothetical literals.
-
-The disjunctive scaffolding adds a third:
-
-3. **Declarative OPB encoding with a propagator-introduced bridge.**
-   When a constraint has a clean declarative encoding but the
-   propagator wants a different vocabulary (typically time-indexed
-   reifications) for its reasoning, don't pollute the OPB with the
-   propagator's vocabulary. Instead, emit the propagator's flags as
-   *proof scaffolding* via `install_initialiser`, at `ProofLevel::Top`
-   so they survive the entire search without leaking into
-   `NamesAndIDsTracker` per node. Share them with the propagator via
-   a `shared_ptr<BridgeMap>` captured by both the initialiser and the
-   propagator. The propagator's justifications then derive any
-   propagator-specific lemmas on demand (here: per-pair at-most-one
-   via `recover_am1`).
-
-   This pattern lets the same OPB serve as the spec-faithful
-   constraint definition and the proof's axiomatic foundation, while
-   still allowing the propagator to do non-spec-shaped reasoning. The
-   declarative encoding is what a human (referee, future-us) reads to
-   verify the constraint; the bridge is what the propagator pols
-   against to back its inferences.
-
-   Expected to apply to: `BinPacking` (#148) when its propagator
-   wants per-bin / per-item flags but its declarative encoding is the
-   per-bin capacity sum; future `Disjunctive2D` with per-axis bridge
-   flags; possibly future stronger `Cumulative` propagators whose
-   reasoning vocabulary outgrows the time-table flags currently in
-   the OPB.
-
 ## 2D non-overlap (`Disjunctive2D` / `diffn`)
 
 The same recipe lifts one dimension up to non-overlapping rectangles
-(`gcs/constraints/disjunctive_2d/disjunctive_2d.{hh,cc}`), with constant sizes. The
+(`gcs/constraints/disjunctive_2d/disjunctive_2d.{hh,cc}`). The
 declarative OPB is the `diffn` definition: for each pair and axis `d`,
 `before_{i,j,d} ⇔ pos_{i,d} + size_{i,d} ≤ pos_{j,d}`, plus a single
 **4-way separation clause** per pair
 `before_{i,j,x} + before_{j,i,x} + before_{i,j,y} + before_{j,i,y} ≥ 1`.
-The bridge is per *axis*: per-`(rect, coordinate)` single-variable
-`before`/`after`/`active` flags (`active` = the rect spans that coordinate
-on that axis), emitted once at `Top` for each axis.
+Again this is all the scaffolding there is; the justifications are the
+same `emit_before_pol` shape per axis:
 
-- **Contradiction** (mandatory-box overlap). Two rectangles whose
-  mandatory boxes overlap on *both* axes is infeasible. At an overlap
-  cell `(p, q)`, pin `active_x` and `active_y` for both rectangles, then
-  derive each of the four `before` flags false with the 1D `pair_ne`
-  pol *per axis/direction* (the integer terms cancel exactly as in 1D),
-  contradicting the 4-way clause. Only two rectangles meet at a cell
-  (capacity 1), so no `recover_am1` is needed.
-- **Bound push** (a forced overlap on one axis pushes the other). When a
-  pair's mandatory parts overlap on the *forced* axis, the x-elimination
-  above — run only for that axis and combined with the 4-way clause —
-  yields a real **reduced clause** `before_{i,j,free} +
-  before_{j,i,free} ≥ 1`. That is a 1D disjunctive in the free axis, so a
-  1D-style chain against it pushes the rectangle clear of the blocker's
-  mandatory part. Because the bridge flags are single-variable, the
-  cross-variable terms cancel in the pol — no explicit materialisation is
-  needed. Two edge cases: the push target is capped to the rectangle's
-  own domain (a blocker reaching past it would otherwise reference an
-  unspannable free cell), and zero-size rectangles are skipped on the
-  axis where they span no cells (strict-mode zero-area conflicts are
-  caught by an all-fixed RUP leaf check instead).
+- **Contradiction** (mandatory-box overlap on both axes): four pols —
+  one per axis and direction — force all four flags false under the
+  reason; the 4-way clause unit-fails in the closing RUP.
+- **Bound push** (a forced overlap on one axis pushes the other):
+  the pair overlaps on the *forced* axis, so two pols refute both
+  forced-axis flags exactly as in the contradiction; the *free* axis
+  is then a single-blocker 1D dichotomy — one pol refutes the
+  impossible free direction from the pushed rectangle's captured
+  bound, one folds the surviving direction onto the target order
+  literal. Six pols per push, one step regardless of the blocker's
+  size (per-pair pushing means there is never a multi-blocker
+  chain). The push target is capped to the rectangle's own domain
+  (`cur_hi + 1` / `cur_lo − 1`), and zero-size rectangles are
+  skipped on the axis where they span no cells.
 
-### Variable rectangle sizes
+Variable sizes work exactly like 1D variable durations (the size term
+cancels in the pol; no proof-only `end = pos + size`), non-strict
+zero-area escapes (`zw`/`zh`) are pinned false under reason before
+the clause is used, and strict-mode zero-area conflicts are caught by
+an all-fixed pure-RUP leaf check.
 
-`Disjunctive2D` also supports variable widths/heights (rotation,
-strip-packing), reusing the Cumulative `end = pos + size` proxy. With a
-variable size the `before` flag stays linear (`pos_i + size_i ≤ pos_j`),
-but the bridge "after" flag `pos_i + size_i ≥ p+1` is two-variable, so it
-is reified instead on a proof-only `end = pos + size`, single-variable. The
-contradiction and push proofs gain two `end` steps wherever a size varies:
-pinning an "after" first materialises `end ≥ s_lo + lb(size)` with a `pol`
-over the captured `end ≥ pos + size` line and the operand order-literal
-defs (`s_lo` is `lb(pos)` for a mandatory span, the chain running bound /
-`¬ext_lit` for the pushed rectangle); and the `before`-flag pol adds the
-`end ≤ pos + size` line so `end` cancels back to `pos + size`. A constant
-size folds into the OPB and keeps the single-variable "after" with no
-`end`. In **non-strict mode**, a rectangle that can be zero-area carries a
-reified `size ≤ 0` escape flag added to its separation clauses (so a
-zero-area rectangle never constrains, matching `fzn_diffn_nonstrict`).
-Whenever an inference fires, the relevant sizes are `≥ 1`, so the
-contradiction / reduced-clause pol pins those escape flags false (RUP from
-`size ≥ 1`) before using the clause.
+## Reusable ideas
 
-## Variable durations
+[`cumulative-proof-logging.md`](cumulative-proof-logging.md) ends with
+reusable patterns for time-indexed proofs. The disjunctive rewrite
+adds a complementary one:
 
-1D `Disjunctive` supports variable durations too, with the same machinery
-one dimension down from `Disjunctive2D`'s variable sizes. For a variable
-`l_i` the encoded `before` flag keeps the duration term on the left
-(`s_i + l_i ≤ s_j`), and the bridge "after" flag `s_i + l_i ≥ t+1` is
-two-variable, so it is reified on a proof-only `end_i = s_i + l_i`
-(single-variable `end_i ≥ t+1`). Two definition lines are kept:
-`end_i ≥ s_i + l_i` to materialise `end`'s bound when pinning `after = 1`
-(`end_i ≥ s_lo + lb(l_i)` for the relevant start lower bound — the running
-bound for an lb-push, `t − lb(l_i) + 1` for an ub-push, `lb(s_i)` for a
-mandatory task), and `end_i ≤ s_i + l_i` to cancel `end` back to
-`s_i + l_i` in the at-most-one pol so the duration term cancels exactly. A
-constant start folds into `end_ge`'s RHS and contributes no order-literal.
-Mandatory parts and footprints use `lb(l_i)`, and the variable durations
-join the reason. In non-strict mode a variable duration that can be 0 gets
-the same `duration ≤ 0` escape flag as a zero-area rectangle.
+**Justify directly against the declarative encoding.** When the
+propagator's inference is expressible as a statement about the
+encoding's own reified constraints (here: every `h = 1`, `c = 1`
+time-table inference is a two-task ordering statement), skip the
+propagator-vocabulary scaffolding entirely: pol the encoding's
+reification halves with the operands' bound-literal definition rows so
+the integer terms cancel, and let the closing reason-wrapped RUP
+unit-propagate over flags and order literals only. The justifications
+become search-state-local (all `ProofLevel::Temporary`; nothing
+accumulates at `Top` beyond the order-literal atoms every proof mints
+anyway), duration-magnitude invariant, and — because hint-free RUP
+costs `O(live database)` — everything *else* in the proof verifies
+faster too, since no scaffolding sits in the live database.
+
+Cumulative proper genuinely needs its time-indexed `C_t` occupancy
+sums — heights make the profile argument irreducibly time-indexed —
+which is why this document no longer shares machinery with it: the
+right framing is that `Disjunctive` stops inheriting cumulative's
+proof *strategy* along with its parameters.
 
 ## Open follow-ups
 
 - **Optional tasks (`*_opt`).** A presence flag per task gates the
-  encoded pairwise clauses; the bridge gets a per-(task, t) flag
-  that's only meaningful when the task is present.
+  encoded pairwise clauses; the pairwise pols would carry the
+  presence literals as extra residuals.
 
 <!-- vim: set tw=72 spell spelllang=en : -->

@@ -256,22 +256,15 @@ Two reusable ideas crystallise out of the above:
    treats it as "given the reason and `¬ext_lit`, the flag holds";
    the closing RUP supplies `¬ext_lit` from its negated goal.
 
-Both ideas are likely to apply to `Disjunctive` (#146) and
-`BinPacking` (#148) when those land — see
-[`frontend-support-matrix.md`](frontend-support-matrix.md).
-
-`Disjunctive` has landed and added a third:
-
-3. **Declarative OPB encoding with a propagator-introduced bridge.**
-   The OPB carries only the constraint's spec-faithful definition;
-   the time-indexed reifications the propagator needs for time-table
-   reasoning are emitted as proof scaffolding by an
-   `install_initialiser` and shared with the propagator via a
-   `shared_ptr` map.
-
-See [`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)
-for the bridge mechanics, the at-most-one derivation, and how the
-three patterns compose in the `h = 1`, `c = 1` specialisation.
+Both ideas are likely to apply to `BinPacking` (#148) when it lands —
+see [`frontend-support-matrix.md`](frontend-support-matrix.md).
+`Disjunctive` is the instructive counter-example: at `h = 1`,
+`capacity = 1` every time-table inference is a two-task ordering
+statement, so its proofs skip the time-indexed vocabulary entirely and
+justify pairwise against the declarative encoding instead (#495) — see
+[`disjunctive-proof-logging.md`](disjunctive-proof-logging.md). The
+patterns above are for constraints whose profile argument is
+irreducibly time-indexed, which heights make cumulative's.
 
 ## Variable durations, heights, and capacity
 
@@ -312,7 +305,8 @@ and the pol differently:
   variable). To recover a single-variable pin when **both** `s_i` and
   `l_i` vary, a proof-only `end_i = s_i + l_i` is introduced **inside the
   proof** as a conservative extension (`ProofLogger::introduce_bits_of`,
-  no OPB encoding — see [`disjunctive-proof-logging.md`]) by the install
+  no OPB encoding: `cake_pb_cp` has no such variable, so keeping it out
+  of the OPB is what makes the proof chain-portable) by the install
   initialiser, which also emits, per `(i,t)`, the **bridge lemma**
   `end_i ≥ t+1 → after_{i,t}`:
 

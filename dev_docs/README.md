@@ -58,13 +58,14 @@ library. For an introduction to *using* the solver, start with the top-level
   and flags the bits that should carry across to `Disjunctive` and
   `BinPacking`.
 - [Proof logging for `Disjunctive`](disjunctive-proof-logging.md) — companion
-  to the cumulative writeup, focused on the new bridge pattern:
-  keeping the OPB encoding declarative (pairwise non-overlap clauses
-  only) and emitting the time-indexed `before` / `after` / `active`
-  flags as proof scaffolding via `install_initialiser`. Covers the
-  `recover_am1`-based pairwise at-most-one derivation that replaces
-  cumulative's encoded `C_t`, and the third reusable proof-logging
-  idea that comes out of the design.
+  to the cumulative writeup, focused on justifying directly against
+  the declarative OPB encoding (pairwise non-overlap clauses only):
+  every `h = 1`, `c = 1` time-table inference is a two-task ordering
+  statement, backed by pols over the before-flag reification halves
+  and the operands' bound-literal definition rows — no time-indexed
+  scaffolding at all. Covers the per-blocker push chains, variable
+  durations without in-proof end variables, and the same recipe one
+  dimension up for `Disjunctive2D`.
 - [Range ("in") literals](range_literals_spec.md) — the design specification
   for the interval-literal proof layer: reifying `[X∈[a,b]]` to its
   order-chain cuts, the always-covered partition invariant, interval-tree
