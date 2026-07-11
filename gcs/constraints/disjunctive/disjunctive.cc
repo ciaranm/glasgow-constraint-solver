@@ -344,6 +344,61 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             auto min_len = [&](size_t i) -> Integer { return is_var_len(i) ? state.lower_bound(length_vars[i]) : lengths[i]; };
             auto max_len = [&](size_t i) -> Integer { return is_var_len(i) ? state.upper_bound(length_vars[i]) : lengths[i]; };
 
+            // The pairwise proof vocabulary. Everything the propagator infers
+            // is justified through the encoded before-flags: a pol over a
+            // flag's [r] row (flag -> s_a + l_a <= s_b) plus one bound-literal
+            // definition row per operand cancels the integer terms exactly,
+            // leaving a clause over the flag's negation and the residual
+            // order literals, which the closing reason-wrapped RUPs then
+            // unit-propagate. The pol is load-bearing: bare RUP cannot
+            // transfer a bound row's cap into the reification row's slack
+            // when the overlap margin is smaller than the residual
+            // bit-encoding range. See dev_docs/disjunctive-proof-logging.md.
+            //
+            // cond_a / cond_b are the bound literals cited for s_a and s_b
+            // (nullopt for a constant start, whose value is already folded
+            // into the flag's row); a variable duration l_a additionally
+            // cites its current lower bound (the reason covers it).
+            auto emit_before_pol = [&](size_t a, size_t b, const optional<IntegerVariableCondition> & cond_a,
+                                       const optional<IntegerVariableCondition> & cond_b) -> void {
+                auto & tracker = logger->names_and_ids_tracker();
+                PolBuilder pol;
+                pol.add(before_flags.at(make_pair(a, b)).forward_line);
+                if (cond_a)
+                    pol.add_for_literal(tracker, *cond_a);
+                if (is_var_len(a))
+                    pol.add_for_literal(tracker, length_vars[a] >= state.lower_bound(length_vars[a]));
+                if (cond_b)
+                    pol.add_for_literal(tracker, *cond_b);
+                pol.saturate().emit(*logger, ProofLevel::Temporary);
+            };
+
+            // The current-bound literals on a task's start, or nullopt for a
+            // constant start (a constant has no defining literal to cite).
+            auto start_lb_lit = [&](size_t i) -> optional<IntegerVariableCondition> {
+                if (is_constant_variable(starts[i]))
+                    return nullopt;
+                return starts[i] >= state.lower_bound(starts[i]);
+            };
+            auto start_ub_lit = [&](size_t i) -> optional<IntegerVariableCondition> {
+                if (is_constant_variable(starts[i]))
+                    return nullopt;
+                return starts[i] < state.upper_bound(starts[i]) + 1_i;
+            };
+
+            // Non-strict mode: every task involved in an inference has a
+            // positive guaranteed duration (it contributes a mandatory part
+            // or footprint), so its zero-length escape flag is false. Pin
+            // those flags false (RUP under reason, from the duration's lower
+            // bound) so the separation clauses reduce to their before-flag
+            // disjunctions. No-op in strict mode / for always-positive
+            // durations.
+            auto pin_escapes = [&](const ReasonLiterals & reason, const vector<size_t> & tasks) -> void {
+                for (auto r : tasks)
+                    if (zero[r])
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * *zero[r] <= 0_i, ProofLevel::Temporary);
+            };
+
             // The end_i = s_i + l_i definitions ({end_ge, end_le}) were introduced
             // in-proof by the initialiser; read them here. Only ever asked for on a
             // variable-duration task (so the entry is always present).
@@ -456,90 +511,22 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         if (! got_second)
                             throw UnexpectedException{"Disjunctive: mand_load > 1 without two contributing tasks"};
 
-                        auto justify = [&, violating_t, pi, pj](const ReasonLiterals & reason) -> void {
-                            auto & bf_i = bridge->at(make_pair(pi, violating_t));
-                            auto & bf_j = bridge->at(make_pair(pj, violating_t));
-
-                            // Pin active_{r,vt} = 1 under the bounds reason.
-                            // Cumulative-style chain: before, then after, then
-                            // active — VeriPB UP can't chase the AND-gate of
-                            // active's reverse half in one step. For a variable
-                            // duration the after flag reifies on end = s + l, so
-                            // materialise end >= lb(s) + lb(l) first (the
-                            // end-proxy technique) so the after RUP closes
-                            // single-variable in end.
-                            auto pin = [&](const BridgeFlags & bf, size_t r) -> ProofLine {
-                                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf.before >= 1_i, ProofLevel::Temporary);
-                                // A mandatory task has s_r + l_r >= lb(s_r) + lb(l_r) > vt.
-                                materialise_end(r, state.lower_bound(starts[r]));
-                                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf.after >= 1_i, ProofLevel::Temporary);
-                                return logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf.active >= 1_i, ProofLevel::Temporary);
-                            };
-                            auto A_i_line = pin(bf_i, pi);
-                            auto A_j_line = pin(bf_j, pj);
-
-                            // Pairwise atmost-one over {A_i, A_j} via
-                            // recover_am1. The pair_ne callback derives one
-                            // such line via a three-step pol that lifts the
-                            // encoded pairwise clause + before-flag forward
-                            // reifs into a constraint over the bridge flags.
-                            // Each step's integer-variable terms cancel
-                            // exactly: s_i and s_j contributions sum to 0
-                            // (e.g. (s_j - s_i) from E_ij_fwd, +s_i from
-                            // F_i_fwd, -s_j from B_j_fwd), leaving a clean
-                            // flag-only constraint after saturation.
-                            map<ProofFlag, size_t> flag_to_task;
-                            flag_to_task.emplace(bf_i.active, pi);
-                            flag_to_task.emplace(bf_j.active, pj);
-
-                            auto pair_ne = [&](const ProofFlag & a, const ProofFlag & b) -> ProofLine {
-                                auto ti = flag_to_task.at(a);
-                                auto tj = flag_to_task.at(b);
-                                auto & bfi = bridge->at(make_pair(ti, violating_t));
-                                auto & bfj = bridge->at(make_pair(tj, violating_t));
-                                auto & e_ij = before_flags.at(make_pair(ti, tj));
-                                auto & e_ji = before_flags.at(make_pair(tj, ti));
-                                auto clause_line = clause_lines.at(make_pair(min(ti, tj), max(ti, tj)));
-
-                                // L1: E_ij_fwd + F_i_fwd + B_j_fwd, plus end_le[i]
-                                // for a variable duration (cancels end back to
-                                // s_i + l_i), then saturate. The integer terms
-                                // cancel to 0, RHS = 1, giving ¬E_ij + ¬F_i +
-                                // ¬B_j >= 1. L2 is symmetric, swapping i and j.
-                                auto Lpol = [&](ProofLine before_line, const BridgeFlags & aft, const BridgeFlags & bef,
-                                                const optional<ProofLine> & aft_end_le) -> ProofLine {
-                                    PolBuilder pol;
-                                    pol.add(before_line).add(aft.after_fwd).add(bef.before_fwd);
-                                    if (aft_end_le)
-                                        pol.add(*aft_end_le);
-                                    return pol.saturate().emit(*logger, ProofLevel::Temporary);
-                                };
-                                auto L1 = Lpol(e_ij.forward_line, bfi, bfj, end_le_for(ti));
-                                auto L2 = Lpol(e_ji.forward_line, bfj, bfi, end_le_for(tj));
-
-                                // AM1: L1 + L2 + clause + A_i_fwd + A_j_fwd +
-                                // saturate. The B/F terms cancel against the
-                                // active flags' AND-gate forward reifs, and
-                                // the clause supplies the E_ij + E_ji >= 1
-                                // that closes the case split.
-                                PolBuilder am1;
-                                am1.add(L1).add(L2).add(clause_line).add(bfi.active_fwd).add(bfj.active_fwd);
-                                add_escape_pins(am1, reason, ti, tj);
-                                return am1.saturate().emit(*logger, ProofLevel::Temporary);
-                            };
-
-                            auto atmost1_line = innards::recover_am1<ProofFlag>(*logger, ProofLevel::Top, vector<ProofFlag>{bf_i.active, bf_j.active},
-                                function<ProofLine(const ProofFlag &, const ProofFlag &)>{pair_ne});
-
-                            // Pol atmost1 with the two active=1 lines: the
-                            // resulting constraint is infeasible under the
-                            // bounds reason, and the framework's wrapping RUP
-                            // step closes the contradiction.
-                            PolBuilder{}.add(atmost1_line).add(A_i_line).add(A_j_line).emit(*logger, ProofLevel::Temporary);
+                        auto justify = [&, pi, pj](const ReasonLiterals & reason) -> void {
+                            pin_escapes(reason, {pi, pj});
+                            // The mandatory parts overlap at violating_t, so
+                            // neither task can finish before the other starts:
+                            // each before flag's [r] row plus the mandatory
+                            // bounds (lb of the finisher's start and duration,
+                            // ub of the other's start) is infeasible, so one
+                            // pol per flag forces it false under the reason,
+                            // and the separation clause unit-fails in the
+                            // framework's closing reason-wrapped RUP.
+                            emit_before_pol(pi, pj, start_lb_lit(pi), start_ub_lit(pj));
+                            emit_before_pol(pj, pi, start_lb_lit(pj), start_ub_lit(pi));
                         };
 
-                        // The end-proxy pins use lb(l) for variable-length
-                        // tasks, so those durations must be part of the reason.
+                        // The pols cite lb(l) for variable-length tasks, so
+                        // those durations must be part of the reason.
                         auto reason_vars = starts;
                         if (is_var_len(pi))
                             reason_vars.push_back(length_vars[pi]);
