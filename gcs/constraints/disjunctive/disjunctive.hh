@@ -3,7 +3,6 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
-#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -58,24 +57,14 @@ namespace gcs
 
         // Length snapshots resolved in prepare(). _length_vals holds the
         // constant value for a constant duration (0 placeholder for a variable
-        // one, where _lengths[i] is read from the state instead); _length_ub
-        // holds the initial upper bound, used to size the possible-active window.
+        // one, where _lengths[i] is read from the state instead).
         std::vector<Integer> _length_vals;
-        std::vector<Integer> _length_ub;
-
-        // Per-task possible-active window computed from initial bounds in
-        // prepare(). Only populated for positive-length active tasks; indexed
-        // by task index into _starts. Used both for sizing the bridge in
-        // install_propagators's initialiser and for indexing into per-(task, t)
-        // bridge flags from the propagator.
-        std::vector<Integer> _per_task_t_lo;
-        std::vector<Integer> _per_task_t_hi;
 
         // Encoded pairwise reified before-flags. The OPB stays purely
         // declarative: for each ordered pair (i, j) of active tasks,
         // before_{i,j} <-> s_i + l_i <= s_j, plus one clause per unordered
-        // pair. Line numbers are stored so the propagator's bridge
-        // derivations can pol them.
+        // pair. Line numbers are stored so the propagator's justifications
+        // can pol against them.
         struct BeforeFlagData
         {
             innards::ProofFlag flag;
@@ -84,14 +73,6 @@ namespace gcs
         };
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_flags;
         std::map<std::pair<std::size_t, std::size_t>, innards::ProofLine> _clause_lines;
-
-        // For a task whose duration varies, a proof-only end = s + l on which that
-        // task's "after" bridge flag is reified (a single variable keeps the after
-        // pin RUP-friendly). The variable has no OPB encoding; its definition (and
-        // the end_ge / end_le lines materialise_end and the before-flag pol use) is
-        // introduced in-proof, lazily on first use, by the propagator. nullopt for a
-        // task whose duration is constant (those reify after on s directly).
-        std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end;
 
         // Non-strict mode: whether each task gets a zero-length escape in the
         // separation clause -- every variable-duration task does, matching

@@ -1,6 +1,5 @@
 #include <gcs/constraints/disjunctive/disjunctive.hh>
 #include <gcs/constraints/disjunctive/hints.hh>
-#include <gcs/constraints/innards/recover_am1.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -12,47 +11,26 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
-#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <utility>
 #include <vector>
-#include <version>
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-#include <print>
-#else
-#include <fmt/ostream.h>
-#endif
 
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::function;
 using std::make_pair;
-using std::make_shared;
 using std::make_unique;
-using std::map;
 using std::max;
 using std::min;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::shared_ptr;
 using std::size_t;
-using std::string;
-using std::stringstream;
 using std::unique_ptr;
 using std::vector;
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-using std::print;
-#else
-using fmt::print;
-#endif
 
 namespace
 {
@@ -115,20 +93,13 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
     auto n = _starts.size();
 
     // Resolve length snapshots. _length_vals is the constant value (0
-    // placeholder for a variable, where _lengths[i] is read from the state);
-    // _length_ub is the initial upper bound used to size the window.
+    // placeholder for a variable, where _lengths[i] is read from the state).
     _length_vals.assign(n, 0_i);
-    _length_ub.assign(n, 0_i);
     for (size_t i = 0; i < n; ++i) {
-        if (is_constant_variable(_lengths[i])) {
+        if (is_constant_variable(_lengths[i]))
             _length_vals[i] = const_value_of(_lengths[i]);
-            _length_ub[i] = const_value_of(_lengths[i]);
-        }
-        else {
-            if (initial_state.lower_bound(_lengths[i]) < 0_i)
-                throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
-            _length_ub[i] = initial_state.upper_bound(_lengths[i]);
-        }
+        else if (initial_state.lower_bound(_lengths[i]) < 0_i)
+            throw InvalidProblemDefinitionException{"Disjunctive: lengths must be non-negative"};
     }
 
     // In non-strict mode, a task that is definitely zero-length cannot constrain
@@ -146,18 +117,6 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
 
     if (_active_tasks.size() < 2)
         return false;
-
-    // Per-task possible-active window from root bounds. Only meaningful for
-    // positive-length tasks; consumers gate on length_ub[i] > 0_i.
-    _per_task_t_lo.assign(n, 0_i);
-    _per_task_t_hi.assign(n, 0_i);
-    for (auto i : _active_tasks) {
-        if (_length_ub[i] == 0_i)
-            continue;
-        auto [s_lo, s_hi] = initial_state.bounds(_starts[i]);
-        _per_task_t_lo[i] = s_lo;
-        _per_task_t_hi[i] = s_hi + _length_ub[i] - 1_i;
-    }
 
     // Non-strict mode: every variable-duration task gets a zero-length escape
     // in the separation clause, matching cake_pb_cp, which adds the zw
@@ -186,25 +145,13 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
     //
     // This is the only thing that goes into the OPB: the constraint's
     // declarative meaning, free of time-table or other propagator-specific
-    // scaffolding. The bridge to active/before/after-at-time flags is
-    // introduced in install_propagators's initialiser, scoped to the proof.
-    //
-    // Line numbers of both reification halves of each before flag, and of
-    // each pairwise clause, are stored so the propagator can pol them into
-    // bridge-derived at-most-one lemmas during justifications.
-    // For a task with a variable duration, the "after" bridge flag reifies on a
-    // proof-only end = s + l (a single variable keeps the pin RUP-friendly).
-    // The end proxy end_i = start_i + length_i (only for variable durations) is a
-    // proof-only variable with NO OPB encoding: cake has no such variable (it folds
-    // start + length directly into the before-link), so there is nothing to match.
-    // Its definition is introduced INSIDE the proof, by the install_initialiser
-    // below, via ProofLogger::introduce_bits_of --- a conservative extension rather
-    // than a model axiom, which is what makes the variable-duration proof
-    // chain-portable. end_ge / end_le are captured there, not here.
-    _end.assign(_starts.size(), nullopt);
-    for (auto i : _active_tasks)
-        if (! is_constant_variable(_lengths[i]))
-            _end[i] = model.create_proof_only_integer_variable_in_proof(0_i, _per_task_t_hi[i] + 1_i, "disjend");
+    // scaffolding. It is also all the proof scaffolding there is: every
+    // justification is a pol over these rows and order-literal definition
+    // rows, so the line numbers of both reification halves of each before
+    // flag, and of each pairwise clause, are stored for the propagator.
+    // For a task with a variable duration the duration term stays on the
+    // flag's left-hand side and cancels against the duration's bound row in
+    // the same pol, so no proof-only end = s + l variable is needed.
 
     // Non-strict mode: a "duration <= 0" escape flag per variable-duration
     // task, added as a disjunct to the separation clause below (a zero-length
@@ -249,80 +196,8 @@ auto Disjunctive::define_proof_model(ProofModel & model) -> void
     }
 }
 
-namespace
-{
-    // Per-(task, t) bridge flags introduced by install_propagators's
-    // initialiser at search root. These connect the declarative pairwise
-    // OPB encoding to the time-table reasoning the propagator uses, but
-    // live entirely in the proof database (not in the OPB) so the OPB
-    // stays the declarative truth.
-    struct BridgeFlags
-    {
-        ProofFlag before; // before_{i,t} <-> starts[i] <= t
-        ProofLine before_fwd;
-        ProofLine before_rev;
-        ProofFlag after; // after_{i,t} <-> starts[i] + lengths[i] >= t + 1
-        ProofLine after_fwd;
-        ProofLine after_rev;
-        ProofFlag active; // active_{i,t} <-> before_{i,t} ^ after_{i,t}
-        ProofLine active_fwd;
-        ProofLine active_rev;
-    };
-    using BridgeMap = map<pair<size_t, Integer>, BridgeFlags>;
-}
-
 auto Disjunctive::install_propagators(Propagators & propagators) -> void
 {
-    // The OPB stays declarative (just the pairwise clauses emitted in
-    // define_proof_model). The bridge to time-indexed before/after/active
-    // flags is propagator scaffolding, created here in the proof. An
-    // initialiser runs once at search root and pre-emits all bridge flags
-    // for every (task, t) in each task's possible-active window, at
-    // ProofLevel::Top so the flags survive across the entire search. The
-    // propagator looks them up by (task, t) during justifications.
-    //
-    // Creating flags only at Top + once per (task, t) avoids the
-    // exponential-memory pitfall of lazy mid-proof flag creation: Glasgow
-    // currently has no flag-deletion API, so every fresh flag accumulates
-    // in NamesAndIDsTracker. Eager root-time emission bounds the total to
-    // O(n * horizon) flags per Disjunctive instance.
-    auto bridge = make_shared<BridgeMap>();
-
-    // Lazily-introduced end_i = s_i + l_i definitions: {end_ge, end_le} per task,
-    // filled the first time a variable-duration task's after reasoning fires (see
-    // ensure_end in the propagator). Shared so the cache survives across calls.
-    auto end_lines = make_shared<vector<optional<pair<ProofLine, ProofLine>>>>(_starts.size());
-
-    propagators.install_initialiser([starts = _starts, lengths = _length_vals, length_vars = _lengths, length_ub = _length_ub, ends = _end, end_lines,
-                                        active_tasks = _active_tasks, per_task_t_lo = _per_task_t_lo, per_task_t_hi = _per_task_t_hi,
-                                        bridge](State &, auto &, ProofLogger * const logger) -> void {
-        if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
-            return;
-        // Introduce each variable-duration end_i = s_i + l_i as a conservative
-        // extension FIRST --- before the after-flag definitions below reify on
-        // end_i (which references its bits), so that the bits are still fresh
-        // for introduce_bits_of's redundancy witnesses. Captured for the
-        // propagator's materialise_end / before-flag pol.
-        for (auto i : active_tasks)
-            if (ends[i].has_value())
-                (*end_lines)[i] = logger->introduce_bits_of(WPBSum{} + 1_i * starts[i] + 1_i * length_vars[i], *ends[i], ProofLevel::Top);
-        for (auto i : active_tasks) {
-            if (length_ub[i] == 0_i)
-                continue;
-            for (Integer t = per_task_t_lo[i]; t <= per_task_t_hi[i]; ++t) {
-                auto [B, B_fwd, B_rev] = logger->create_proof_flag_reifying(WPBSum{} + 1_i * starts[i] <= t, "djbef", ProofLevel::Top);
-                // after_{i,t} <-> s_i + l_i >= t+1. Constant duration: the
-                // single-variable s_i >= t-l+1. Variable duration: the
-                // single-variable end_i >= t+1 (end_i = s_i + l_i).
-                auto [F, F_fwd, F_rev] = ends[i].has_value()
-                    ? logger->create_proof_flag_reifying(WPBSum{} + 1_i * *ends[i] >= t + 1_i, "djaft", ProofLevel::Top)
-                    : logger->create_proof_flag_reifying(WPBSum{} + 1_i * starts[i] >= t - lengths[i] + 1_i, "djaft", ProofLevel::Top);
-                auto [A, A_fwd, A_rev] = logger->create_proof_flag_reifying(WPBSum{} + 1_i * B + 1_i * F >= 2_i, "djact", ProofLevel::Top);
-                bridge->emplace(make_pair(i, t), BridgeFlags{B, B_fwd, B_rev, F, F_fwd, F_rev, A, A_fwd, A_rev});
-            }
-        }
-    });
-
     Triggers triggers;
     for (auto i : _active_tasks) {
         triggers.on_bounds.emplace_back(_starts[i]);
@@ -334,9 +209,9 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths), ends = move(_end), end_lines, zero = move(_zero),
-            strict = _strict, active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines),
-            owner = constraint_id(), bridge](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [starts = move(_starts), lengths = move(_length_vals), length_vars = move(_lengths), zero = move(_zero), strict = _strict,
+            active_tasks = move(_active_tasks), before_flags = move(_before_flags), clause_lines = move(_clause_lines),
+            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // Current guaranteed (min) and possible (max) duration of task i:
             // for a constant duration both are the value; for a variable
             // duration they are the live lower / upper bounds.
