@@ -399,44 +399,6 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * *zero[r] <= 0_i, ProofLevel::Temporary);
             };
 
-            // The end_i = s_i + l_i definitions ({end_ge, end_le}) were introduced
-            // in-proof by the initialiser; read them here. Only ever asked for on a
-            // variable-duration task (so the entry is always present).
-            auto ensure_end = [&](size_t i) -> pair<ProofLine, ProofLine> { return *(*end_lines)[i]; };
-            // end <= s + l for the before-flag pol, or nullopt for a constant duration.
-            auto end_le_for = [&](size_t i) -> optional<ProofLine> {
-                return ends[i].has_value() ? optional<ProofLine>{ensure_end(i).second} : nullopt;
-            };
-
-            // For a variable-duration task, materialise end_i >= s_lo + lb(l_i)
-            // via a pol over the end >= s+l line plus the start and length
-            // order-literals, so the after-flag RUP closes single-variable in end.
-            // A constant start is folded into end_ge's RHS and so contributes no
-            // literal (a constant has no pol-defining literal). No-op for a constant
-            // duration (after is already single-variable).
-            auto materialise_end = [&](size_t i, Integer s_lo) -> void {
-                if (! is_var_len(i))
-                    return;
-                PolBuilder pb;
-                pb.add(ensure_end(i).first);
-                if (! is_constant_variable(starts[i]))
-                    pb.add_for_literal(logger->names_and_ids_tracker(), starts[i] >= s_lo);
-                pb.add_for_literal(logger->names_and_ids_tracker(), length_vars[i] >= state.lower_bound(length_vars[i]));
-                pb.emit(*logger, ProofLevel::Temporary);
-            };
-
-            // Non-strict mode: every task involved in a contradiction / push has
-            // a positive guaranteed duration (it contributes a mandatory part or
-            // footprint), so its zero-length escape flag is false. Pin those
-            // flags false (RUP under reason) and add them to a clause pol so the
-            // separation clause reduces to its before-flag disjunction. No-op in
-            // strict mode / for always-positive durations.
-            auto add_escape_pins = [&](PolBuilder & pol, const ReasonLiterals & reason, size_t i, size_t j) {
-                for (auto r : {i, j})
-                    if (zero[r])
-                        pol.add(logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * *zero[r] <= 0_i, ProofLevel::Temporary));
-            };
-
             // Time-table consistency, specialised to heights = 1 and
             // capacity = 1. Mandatory part of task i is [lst_i, eet_i)
             // where lst_i = ub(s_i) and eet_i = lb(s_i) + l_i: the slice it
@@ -450,10 +412,6 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
             // active interval. The TT pass misses that case; we catch it
             // below with an all-fixed pairwise check.
             //
-            // Contradiction justifications are proof-logged via the bridge.
-            // lb/ub-push justifications are still stubbed with
-            // AssertRatherThanJustifying; they get the chain-step treatment
-            // in stage 3b/3c.
             bool any = false;
             Integer t_lo = 0_i, t_hi = -1_i;
             for (auto i : active_tasks) {
@@ -538,113 +496,61 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     }
 
                 // Variable durations join the reason for the push proofs (the
-                // end-proxy materialisations and mandatory parts read lb(l)).
-                // For a constant-only instance this is just the starts, leaving
-                // the proof byte-identical.
+                // pols and mandatory parts read lb(l)). For a constant-only
+                // instance this is just the starts, leaving the proof
+                // byte-identical.
                 auto push_reason_vars = starts;
                 for (auto i : active_tasks)
                     if (is_var_len(i))
                         push_reason_vars.push_back(length_vars[i]);
 
-                // One step of an lb/ub-push chain: a blocked time t, the single
-                // blocking task k (whose mandatory part covers t), and the start
-                // lower bound that, with lb(l_j), forces after_{j,t} = 1 (the
-                // running bound for lb-push, t - lb(l_j) + 1 for ub-push). For
-                // h = 1, c = 1, one blocker is enough to overflow with j.
+                // One step of an lb/ub-push chain: a single blocking task and
+                // the start bound the pair dichotomy advances to (the
+                // blocker's mandatory end for an lb-push, its latest start
+                // minus lb(l_j) for a ub-push). One step per BLOCKER, however
+                // long the blocker: with the running bound established, j's
+                // next lb(l_j) slots reach into the blocker's mandatory part,
+                // so "j finishes before k starts" is impossible and the
+                // encoded pairwise clause forces "k finishes before j starts",
+                // which advances the bound in one dichotomy.
                 struct ChainStep
                 {
-                    Integer t;
-                    size_t k;
-                    Integer s_lo_after;
+                    size_t blocker;
+                    Integer target;
                 };
 
-                // Per-step proof emitter, used for the lb-push chain. Mirrors
-                // cumulative.cc's emit_chain_step, specialised to h = 1 and
-                // c = 1, with the at-most-one supplied by the bridge instead
-                // of an encoded C_t line. `ext_lit` is the running-bound
-                // advance the step is meant to derive; `emit_intermediate`
-                // controls whether ext_lit is then explicitly RUPped under
-                // reason for the next step's preconditions to close.
-                auto emit_chain_step = [&](size_t j, Integer t, size_t k, IntegerVariableCondition ext_lit, Integer s_lo_after,
-                                           bool emit_intermediate, const ReasonLiterals & reason) -> void {
-                    auto & bf_k = bridge->at(make_pair(k, t));
-                    auto & bf_j = bridge->at(make_pair(j, t));
-
-                    // (a) Pin A_{k,t} = 1 under reason via before / after /
-                    // active. The mandatory blocker k has s_k + l_k >= lb(s_k) +
-                    // lb(l_k) > t, so materialise its end before the after RUP.
-                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf_k.before >= 1_i, ProofLevel::Temporary);
-                    materialise_end(k, state.lower_bound(starts[k]));
-                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf_k.after >= 1_i, ProofLevel::Temporary);
-                    auto A_k_line = logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf_k.active >= 1_i, ProofLevel::Temporary);
-
-                    // (b) Pin A_{j,t} = 1 under extended reason {reason ∪
-                    // ¬ext_lit}. Each line carries ext_lit as an extra
-                    // disjunct, so VeriPB checks the RUP under
-                    // "reason ∧ ¬ext_lit" which is exactly where j is also
-                    // active at t. For a variable duration, s_lo_after + lb(l_j)
-                    // >= t+1 materialises end_j so after_{j,t} = 1.
-                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf_j.before + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-                    materialise_end(j, s_lo_after);
-                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf_j.after + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-                    auto A_j_line =
-                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * bf_j.active + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-
-                    // (c) Pairwise at-most-one between A_{j,t} and A_{k,t} via
-                    // recover_am1 + the same pair_ne pol as the contradiction
-                    // proof (end_le threaded for variable durations).
-                    map<ProofFlag, size_t> flag_to_task;
-                    flag_to_task.emplace(bf_j.active, j);
-                    flag_to_task.emplace(bf_k.active, k);
-                    auto pair_ne = [&](const ProofFlag & a, const ProofFlag & b) -> ProofLine {
-                        auto ti = flag_to_task.at(a);
-                        auto tj = flag_to_task.at(b);
-                        auto & bfi = bridge->at(make_pair(ti, t));
-                        auto & bfj = bridge->at(make_pair(tj, t));
-                        auto & e_ij = before_flags.at(make_pair(ti, tj));
-                        auto & e_ji = before_flags.at(make_pair(tj, ti));
-                        auto clause_line = clause_lines.at(make_pair(min(ti, tj), max(ti, tj)));
-
-                        auto Lpol = [&](ProofLine before_line, const BridgeFlags & aft, const BridgeFlags & bef,
-                                        const optional<ProofLine> & aft_end_le) -> ProofLine {
-                            PolBuilder pol;
-                            pol.add(before_line).add(aft.after_fwd).add(bef.before_fwd);
-                            if (aft_end_le)
-                                pol.add(*aft_end_le);
-                            return pol.saturate().emit(*logger, ProofLevel::Temporary);
-                        };
-                        auto L1 = Lpol(e_ij.forward_line, bfi, bfj, end_le_for(ti));
-                        auto L2 = Lpol(e_ji.forward_line, bfj, bfi, end_le_for(tj));
-
-                        PolBuilder am1;
-                        am1.add(L1).add(L2).add(clause_line).add(bfi.active_fwd).add(bfj.active_fwd);
-                        add_escape_pins(am1, reason, ti, tj);
-                        return am1.saturate().emit(*logger, ProofLevel::Temporary);
-                    };
-                    auto atmost1_line = innards::recover_am1<ProofFlag>(*logger, ProofLevel::Top, vector<ProofFlag>{bf_j.active, bf_k.active},
-                        function<ProofLine(const ProofFlag &, const ProofFlag &)>{pair_ne});
-
-                    // (d) Pol atmost1 + A_k_line + A_j_line + saturate.
-                    //   AM1:     ¬A_j + ¬A_k >= 1
-                    //   A_k_line: A_k + ¬reason >= 1
-                    //   A_j_line: A_j + ext_lit + ¬reason >= 1
-                    //   Sum:     2 + ext_lit + 2·¬reason >= 3
-                    //          = ext_lit + 2·¬reason >= 1
-                    //   Saturated (RHS = 1):  ext_lit + ¬reason >= 1
-                    // Under reason (¬reason = 0) this gives ext_lit = 1,
-                    // which is the running-bound advance.
-                    PolBuilder{}.add(atmost1_line).add(A_k_line).add(A_j_line).saturate().emit(*logger, ProofLevel::Temporary);
-
-                    // (e) Intermediate chain steps deposit ext_lit as an
-                    // explicit RUP under reason so the next step's
-                    // before/after RUPs can close: each of those needs
-                    // s_j ≥ running_bound as a UP-derivable fact, and the
-                    // pol's residual ¬reason disjuncts don't expose that
-                    // cleanly enough for the next step. The final step
-                    // doesn't need it — the framework's wrapping RUP
-                    // (s_j ≥ new_lb) closes against the last pol directly.
-                    if (emit_intermediate)
-                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+                // Per-step proof emitter. `bound` is the running bound the
+                // step starts from (established by the reason for the first
+                // step, by the previous step's deposit after), `final` says
+                // whether the framework's closing RUP concludes the target
+                // instead of an explicit intermediate deposit.
+                auto emit_lb_chain_step = [&](size_t j, size_t k, Integer bound, Integer target, bool final, const ReasonLiterals & reason) -> void {
+                    // Left branch: j finishing before k contradicts the
+                    // running bound -- s_j >= bound plus lb(l_j) reaches past
+                    // ub(s_k), forcing bf_{j,k} false.
+                    emit_before_pol(j, k, starts[j] >= bound, start_ub_lit(k));
+                    // Right branch: k finishing before j puts s_j at k's
+                    // mandatory end or later, folded onto the target order
+                    // literal's definition row: bf_{k,j} -> s_j >= target.
+                    emit_before_pol(k, j, start_lb_lit(k), starts[j] < target);
+                    // Intermediate steps deposit the advanced bound under the
+                    // reason so the next step's left branch unit-propagates
+                    // from it; the final target is exactly the inferred
+                    // bound, which the framework's closing RUP concludes.
+                    if (! final)
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] >= target) >= 1_i, ProofLevel::Temporary);
+                };
+                auto emit_ub_chain_step = [&](size_t j, size_t k, Integer bound, Integer target, bool final, const ReasonLiterals & reason) -> void {
+                    // Mirror of the lb step. Left branch: k finishing before j
+                    // is impossible under the running bound -- s_j would be at
+                    // k's mandatory end or later, past bound.
+                    emit_before_pol(k, j, start_lb_lit(k), starts[j] < bound + 1_i);
+                    // Right branch: j finishing before k caps s_j at k's
+                    // latest start minus lb(l_j), folded onto the target order
+                    // literal's definition row: bf_{j,k} -> s_j <= target.
+                    emit_before_pol(j, k, starts[j] >= target + 1_i, start_ub_lit(k));
+                    if (! final)
+                        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (starts[j] < target + 1_i) >= 1_i, ProofLevel::Temporary);
                 };
 
                 for (auto j : active_tasks) {
@@ -666,96 +572,100 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                         return true;
                     };
 
-                    auto is_blocked_at = [&](Integer t) -> bool {
-                        auto load = mand_load[(t - t_lo).raw_value];
-                        if (lst_j < eet_j && t >= lst_j && t < eet_j)
-                            --load;
-                        return load >= 1;
-                    };
-
-                    auto blocker_at = [&](Integer t) -> size_t {
-                        // First task (≠ j) whose mandatory part covers t.
-                        // One is enough for the h = 1, c = 1 chain step.
-                        for (auto i : active_tasks) {
-                            if (i == j || min_len(i) == 0_i)
+                    // A blocker for a chain step at running bound `bound`: a
+                    // task (other than j) whose mandatory part intersects the
+                    // window [bound, bound + lb(l_j)). Every non-fitting start
+                    // is blocked, so while the chain has ground to cover one
+                    // exists; `better` picks the most useful of two candidate
+                    // mandatory parts (deepest end for an lb-push, leftmost
+                    // start for a ub-push). Reads current bounds, which may be
+                    // tighter than the profile (mandatory parts only grow
+                    // within a pass), hence the clipping in the chain loops
+                    // below.
+                    auto find_blocker = [&](size_t j, Integer bound, const auto & better) -> pair<size_t, pair<Integer, Integer>> {
+                        optional<size_t> blocker;
+                        pair<Integer, Integer> best_mand{0_i, 0_i};
+                        for (auto k : active_tasks) {
+                            if (k == j || min_len(k) == 0_i)
                                 continue;
-                            auto lst_i = state.upper_bound(starts[i]);
-                            auto eet_i = state.lower_bound(starts[i]) + min_len(i);
-                            if (lst_i < eet_i && t >= lst_i && t < eet_i)
-                                return i;
+                            auto lst_k = state.upper_bound(starts[k]);
+                            auto eet_k = state.lower_bound(starts[k]) + min_len(k);
+                            if (lst_k < eet_k && lst_k < bound + min_len(j) && eet_k > bound &&
+                                (! blocker || better(pair{lst_k, eet_k}, best_mand))) {
+                                blocker = k;
+                                best_mand = pair{lst_k, eet_k};
+                            }
                         }
-                        throw UnexpectedException{"Disjunctive: is_blocked_at(t) true but no blocker found"};
+                        if (! blocker)
+                            throw UnexpectedException{"Disjunctive: no blocker for a push chain step"};
+                        return {*blocker, best_mand};
                     };
 
-                    // lb-push: scan upward to find the smallest fitting
-                    // start, then chain through blocked times picking the
-                    // LARGEST blocked t per step so the running lower bound
-                    // advances as far as possible.
+                    // lb-push: scan upward to find the smallest fitting start,
+                    // then justify with one dichotomy step per blocker, each
+                    // advancing the running bound to the blocker's mandatory
+                    // end -- clipped to new_lb, both because the profile may
+                    // be staler than the bounds the steps cite and so the
+                    // final step lands exactly on the inferred bound.
                     auto new_lb = cur_lb;
                     while (new_lb <= cur_ub && ! fits_at(new_lb))
                         ++new_lb;
                     if (new_lb > cur_lb) {
                         vector<ChainStep> chain;
-                        Integer running_bound = cur_lb;
-                        while (running_bound < new_lb) {
-                            bool found = false;
-                            for (Integer t = running_bound + min_len(j) - 1_i; t >= running_bound; --t)
-                                if (is_blocked_at(t)) {
-                                    chain.push_back(ChainStep{t, blocker_at(t), running_bound});
-                                    running_bound = t + 1_i;
-                                    found = true;
-                                    break;
-                                }
-                            if (! found)
-                                break;
+                        if (logger) {
+                            Integer bound = cur_lb;
+                            while (bound < new_lb) {
+                                auto [k, mand] = find_blocker(j, bound, [](const auto & a, const auto & b) { return a.second > b.second; });
+                                chain.push_back(ChainStep{k, min(mand.second, new_lb)});
+                                bound = chain.back().target;
+                            }
                         }
 
-                        auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
-                            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
-                                return;
-                            for (size_t step = 0; step < chain.size(); ++step)
-                                emit_chain_step(j, chain[step].t, chain[step].k, starts[j] > chain[step].t, chain[step].s_lo_after,
-                                    step + 1 < chain.size(), reason);
+                        auto justify = [&, j, cur_lb, chain](const ReasonLiterals & reason) -> void {
+                            vector<size_t> involved{j};
+                            for (const auto & step : chain)
+                                involved.push_back(step.blocker);
+                            pin_escapes(reason, involved);
+                            Integer bound = cur_lb;
+                            for (size_t step = 0; step < chain.size(); ++step) {
+                                emit_lb_chain_step(j, chain[step].blocker, bound, chain[step].target, step + 1 == chain.size(), reason);
+                                bound = chain[step].target;
+                            }
                         };
 
                         inference.infer_greater_than_or_equal(logger, starts[j], new_lb,
                             JustifyExplicitly{justify, ThenRUP::Yes, hints::Disjunctive{owner}}, generic_reason(push_reason_vars));
                     }
 
-                    // ub-push: mirror of lb-push, scanning downward. At each
-                    // chain step pick the SMALLEST blocked t in the window
-                    // [running_bound, running_bound + l_j - 1] so the
-                    // running upper bound drops as far as possible. Each
-                    // step turns a blocked t into the fact s_j < t - l_j + 1
-                    // (equivalently s_j <= t - l_j); emit_chain_step's
-                    // structure handles either push direction once given the
-                    // right ext_lit.
+                    // ub-push: mirror of lb-push, scanning downward, each step
+                    // dropping the running bound to the blocker's latest start
+                    // minus lb(l_j) (the last start from which j finishes by
+                    // the time the blocker must have started), clipped to
+                    // new_ub.
                     auto new_ub = cur_ub;
                     while (new_ub >= cur_lb && ! fits_at(new_ub))
                         --new_ub;
                     if (new_ub < cur_ub) {
                         vector<ChainStep> chain;
-                        Integer running_bound = cur_ub;
-                        while (running_bound > new_ub) {
-                            bool found = false;
-                            for (Integer t = running_bound; t <= running_bound + min_len(j) - 1_i; ++t)
-                                if (is_blocked_at(t)) {
-                                    chain.push_back(ChainStep{t, blocker_at(t), t - min_len(j) + 1_i});
-                                    running_bound = t - min_len(j);
-                                    found = true;
-                                    break;
-                                }
-                            if (! found)
-                                break;
+                        if (logger) {
+                            Integer bound = cur_ub;
+                            while (bound > new_ub) {
+                                auto [k, mand] = find_blocker(j, bound, [](const auto & a, const auto & b) { return a.first < b.first; });
+                                chain.push_back(ChainStep{k, max(mand.first - min_len(j), new_ub)});
+                                bound = chain.back().target;
+                            }
                         }
 
-                        auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
-                            if (! logger || logger->get_assertion_level() > AssertionLevel::Off)
-                                return;
-                            // ext_lit (s_j <= t - l_j) == (s_j < s_lo_after).
-                            for (size_t step = 0; step < chain.size(); ++step)
-                                emit_chain_step(j, chain[step].t, chain[step].k, starts[j] < chain[step].s_lo_after, chain[step].s_lo_after,
-                                    step + 1 < chain.size(), reason);
+                        auto justify = [&, j, cur_ub, chain](const ReasonLiterals & reason) -> void {
+                            vector<size_t> involved{j};
+                            for (const auto & step : chain)
+                                involved.push_back(step.blocker);
+                            pin_escapes(reason, involved);
+                            Integer bound = cur_ub;
+                            for (size_t step = 0; step < chain.size(); ++step) {
+                                emit_ub_chain_step(j, chain[step].blocker, bound, chain[step].target, step + 1 == chain.size(), reason);
+                                bound = chain[step].target;
+                            }
                         };
 
                         inference.infer_less_than(logger, starts[j], new_ub + 1_i,
