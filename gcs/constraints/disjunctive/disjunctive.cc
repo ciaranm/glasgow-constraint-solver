@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace gcs;
@@ -239,12 +240,26 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                 auto & tracker = logger->names_and_ids_tracker();
                 PolBuilder pol;
                 pol.add(before_flags.at(make_pair(a, b)).forward_line);
+                // Add cond's order-literal definition row, which swaps the
+                // operand's bit terms for a single residual literal. When the
+                // literal maps directly onto one encoding bit (a one-bit
+                // domain, or a top-bit threshold) there is no definition row
+                // and nothing to add: the operand's term already normalises
+                // to that residual, and the threshold's bit alignment bounds
+                // the remaining low-bit residual by the bound's slack.
+                // (Adding the literal axiom via add_for_literal would instead
+                // cancel the term outright and lose the bound.)
+                auto add_defining_row = [&](const IntegerVariableCondition & cond) -> void {
+                    auto item = tracker.need_pol_item_defining_literal(cond);
+                    if (auto * line = std::get_if<ProofLine>(&item))
+                        pol.add(*line);
+                };
                 if (cond_a)
-                    pol.add_for_literal(tracker, *cond_a);
+                    add_defining_row(*cond_a);
                 if (is_var_len(a))
-                    pol.add_for_literal(tracker, length_vars[a] >= state.lower_bound(length_vars[a]));
+                    add_defining_row(length_vars[a] >= state.lower_bound(length_vars[a]));
                 if (cond_b)
-                    pol.add_for_literal(tracker, *cond_b);
+                    add_defining_row(*cond_b);
                 pol.saturate().emit(*logger, ProofLevel::Temporary);
             };
 
