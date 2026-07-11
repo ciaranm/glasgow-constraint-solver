@@ -334,9 +334,8 @@ auto Disjunctive::install_propagators(Propagators & propagators) -> void
                     if (mand_load[idx] > 1) {
                         auto violating_t = t_lo + Integer{idx};
                         // Find the first two tasks whose mandatory parts cover
-                        // violating_t. With h=1, c=1, two is enough: any one
-                        // pairwise atmost-one + their active=1 lines pol to a
-                        // contradiction.
+                        // violating_t. With h=1, c=1, two is enough: their
+                        // pairwise separation clause is already violated.
                         size_t pi = 0, pj = 0;
                         bool got_first = false, got_second = false;
                         for (auto i : active_tasks) {
