@@ -263,6 +263,35 @@ namespace gcs::innards
             -> ProofLine;
 
         /**
+         * Like `emit_rup_proof_line_under_reason`, but carries an explicit,
+         * ordered list of propagation hint constraint lines. VeriPB restricts
+         * the RUP unit-propagation to the cited lines (plus the automatically
+         * added negation of the goal), so a hinted RUP is checked in
+         * O(#cited) rather than O(live DB). The caller is responsible for
+         * passing a COMPLETE, non-empty hint list: a hinted RUP that fails to
+         * close is a hard VeriPB error with no full-DB fallback. Pass an empty
+         * (unset) list only via the non-hinted overload above.
+         */
+        auto emit_rup_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level,
+            std::vector<ProofLine> hints) -> ProofLine;
+
+        /**
+         * Append, to \p lines, the constraint line that defines each
+         * variable-condition literal in \p reason in terms of the variable's
+         * encoding (its order-cut or eq/range reification). Literals whose
+         * definition is a raw axiom (a direct 0/1 atom), as well as proof
+         * flags and bit atoms, contribute nothing --- they need no bridging.
+         *
+         * This assembles the "reason bridge" portion of a RUP hint list. When a
+         * hinted dead-state RUP is emitted under a reason, VeriPB places the
+         * reason atoms on the trail as assumptions; if the cited scaffolding
+         * refers to the same variables in a different encoding (e.g. eq atoms
+         * in a chain vs an order-form range reason), unit propagation needs the
+         * bridging definition line to connect them.
+         */
+        auto append_reason_defining_lines(const ReasonLiterals & reason, std::vector<ProofLine> & lines) -> void;
+
+        /**
          * Like `emit_rup_proof_line_under_reason`, but returns the deview-form
          * line of the just-emitted RUP rather than the V-form line itself.
          *

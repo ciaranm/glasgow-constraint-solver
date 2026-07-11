@@ -97,6 +97,11 @@ namespace
         vector<vector<unordered_map<long long, CoordFlags>>> per_coord_flags;
         // state_flags[i] maps full state vector -> S flag.
         vector<map<vector<Integer>, ProofFlag>> state_flags;
+        // RUP-hint capture: forward reification line of each S flag
+        // (S -> all g_up /\ g_dn), so a per-call dead-state RUP that first
+        // derives ~g_up / ~g_dn via a pol step can then RUP-close ~S in
+        // O(#cited) rather than over the whole standing diagram.
+        vector<map<vector<Integer>, ProofLine>> state_s_fwd;
     };
 
     // Per-coordinate cap on partial sums: sum of max item contributions.
@@ -177,6 +182,7 @@ namespace
         auto n = vars.size();
         flags.per_coord_flags.assign(n + 1, vector<unordered_map<long long, CoordFlags>>(k));
         flags.state_flags.assign(n + 1, {});
+        flags.state_s_fwd.assign(n + 1, {});
 
         vector<vector<WPBSum>> running(n + 1, vector<WPBSum>(k));
         for (size_t i = 0; i <= n; ++i)
@@ -215,7 +221,7 @@ namespace
                     }(),
                     ProofLevel::Top);
                 flags.state_flags[i].emplace(w, s_flag);
-                (void)s_fwd;
+                flags.state_s_fwd[i].emplace(w, s_fwd);
                 (void)s_rev;
             }
         }
@@ -301,7 +307,7 @@ namespace
                     }(),
                     ProofLevel::Top);
                 flags.state_flags[i].emplace(p, s_flag);
-                (void)s_fwd;
+                flags.state_s_fwd[i].emplace(p, s_fwd);
                 (void)s_rev;
             }
         }
@@ -536,11 +542,14 @@ namespace
     // per state across the proof.
     struct DeadCache
     {
-        // dead_states[i] = layer-i state vectors already emitted as dead.
+        // dead_states[i] = layer-i state vectors already emitted as dead (used
+        // only for gating; the lower-bound ~S hint reaches its ~g_dn line
+        // through dead_g_dn instead).
         vector<set<vector<Integer>>> dead_states;
-        // dead_g_dn[i][x] = (layer, coord) values whose g_dn flag is known
-        // to be false (only populated for layer n at the lower-bound filter).
-        vector<vector<set<long long>>> dead_g_dn;
+        // dead_g_dn[i][x] maps each coord value whose g_dn is known false to
+        // the ProofLine of its ~g_dn RUP (only populated for layer n at the
+        // lower-bound filter), so the paired ~S hint can cite it.
+        vector<vector<map<long long, ProofLine>>> dead_g_dn;
     };
 
     // Per-call full GAC propagation, with proof emission when proofs are
@@ -570,8 +579,24 @@ namespace
         const bool emitting = logger && logger->get_assertion_level() == AssertionLevel::Off;
 
         int temporary_proof_level = 0;
-        if (emitting)
+        ReasonLiterals er;
+        if (emitting) {
             temporary_proof_level = logger->temporary_proof_level();
+            er = eager_reason(reason, state);
+        }
+
+        // Emit a dead-state RUP restricted to an explicit, deterministic
+        // propagation hint (O(#cited) rather than O(live DB)), appending the
+        // reason-atom defining lines so UP can bridge the reason assumptions.
+        // Used only for the pol-based flavours (cap-exceeded and layer-n
+        // bound/hole filters), whose closure is a fixed pol step + the S
+        // forward reification; the combinatorial forward-unreachable and
+        // backward-pass dead states stay hint-free (their closure is
+        // search-state-dependent and not assemblable solver-side).
+        auto emit_hinted = [&](vector<ProofLine> hints, const auto & ineq, ProofLevel lvl) -> ProofLine {
+            logger->append_reason_defining_lines(er, hints);
+            return logger->emit_rup_proof_line_under_reason(er, ineq, lvl, move(hints));
+        };
 
         // Per-layer map of currently-reachable states. completed_layers[0]
         // holds the zero vector; completed_layers[i+1] is populated as we
@@ -652,17 +677,27 @@ namespace
                             break;
                         }
 
+                    ProofFlag s_flag = flags.state_flags[i + 1].at(w);
                     if (cap_coord) {
+                        // Cap-exceeded: pol derives ~g_up from the OPB equation
+                        // + current bound; ~S follows from S's forward
+                        // reification. Deterministic -> hinted.
                         auto x = *cap_coord;
                         const auto & cf = flags.per_coord_flags[i + 1][x].at(w[x].raw_value);
                         PolBuilder b;
                         b.add(cf.g_up_fwd).add(opb_lines[x].first);
                         add_bound_p_term(b, state, logger, totals[x], true);
-                        b.emit(*logger, ProofLevel::Temporary);
+                        vector<ProofLine> hints{b.emit(*logger, ProofLevel::Temporary), flags.state_s_fwd[i + 1].at(w)};
+                        emit_hinted(move(hints), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
                     }
-
-                    ProofFlag s_flag = flags.state_flags[i + 1].at(w);
-                    logger->emit_rup_proof_line_under_reason(eager_reason(reason, state), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                    else {
+                        // Forward-unreachable: combinatorial, search-state-
+                        // dependent closure (Top backward chains + which
+                        // predecessors are currently dead + order-atom ladder
+                        // bridging to the reason). Not assemblable solver-side;
+                        // left hint-free (sound). See PR notes.
+                        logger->emit_rup_proof_line_under_reason(er, WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                    }
                     cache.dead_states[i + 1].insert(w);
                 }
             }
@@ -691,20 +726,23 @@ namespace
                         bool need_s = ! cache.dead_states[n].contains(it->first);
                         bool need_g_dn = ! cache.dead_g_dn[n][x].contains(it->first[x].raw_value);
                         if (need_s || need_g_dn) {
+                            // Lower-bound filter: pol derives ~g_dn from the OPB
+                            // equation + current lower bound; ~S then follows
+                            // from S's forward reification. Deterministic ->
+                            // hinted.
                             const auto & cf = flags.per_coord_flags[n][x].at(it->first[x].raw_value);
                             PolBuilder b;
                             b.add(cf.g_dn_fwd).add(opb_lines[x].second);
                             add_bound_p_term(b, state, logger, totals[x], false);
-                            b.emit(*logger, ProofLevel::Temporary);
+                            auto pol_line = b.emit(*logger, ProofLevel::Temporary);
                             if (need_g_dn) {
-                                logger->emit_rup_proof_line_under_reason(
-                                    eager_reason(reason, state), WPBSum{} + 1_i * ! cf.g_dn >= 1_i, ProofLevel::Current);
-                                cache.dead_g_dn[n][x].insert(it->first[x].raw_value);
+                                auto gdn_line = emit_hinted({pol_line}, WPBSum{} + 1_i * ! cf.g_dn >= 1_i, ProofLevel::Current);
+                                cache.dead_g_dn[n][x].emplace(it->first[x].raw_value, gdn_line);
                             }
                             if (need_s) {
                                 ProofFlag s_flag = flags.state_flags[n].at(it->first);
-                                logger->emit_rup_proof_line_under_reason(
-                                    eager_reason(reason, state), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                                vector<ProofLine> hints{cache.dead_g_dn[n][x].at(it->first[x].raw_value), flags.state_s_fwd[n].at(it->first)};
+                                emit_hinted(move(hints), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
                                 cache.dead_states[n].insert(it->first);
                             }
                         }
@@ -726,13 +764,17 @@ namespace
             for (size_t x = 0; x < k; ++x) {
                 if (! state.in_domain(totals[x], it->first[x])) {
                     if (emitting && ! cache.dead_states[n].contains(it->first)) {
+                        // Interior totals-hole: closure routes through an eq
+                        // literal (totals[x] == w) that needs its own order/eq
+                        // bridge; kept hint-free (a minority flavour). See PR
+                        // notes.
                         ProofFlag s_flag = flags.state_flags[n].at(it->first);
                         const auto & cf = flags.per_coord_flags[n][x].at(it->first[x].raw_value);
                         PolBuilder{}.add(cf.g_dn_fwd).add(opb_lines[x].second).emit(*logger, ProofLevel::Temporary);
                         PolBuilder{}.add(cf.g_up_fwd).add(opb_lines[x].first).emit(*logger, ProofLevel::Temporary);
                         logger->emit_rup_proof_line_under_reason(
-                            eager_reason(reason, state), WPBSum{} + 1_i * ! s_flag + 1_i * (totals[x] == it->first[x]) >= 1_i, ProofLevel::Temporary);
-                        logger->emit_rup_proof_line_under_reason(eager_reason(reason, state), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                            er, WPBSum{} + 1_i * ! s_flag + 1_i * (totals[x] == it->first[x]) >= 1_i, ProofLevel::Temporary);
+                        logger->emit_rup_proof_line_under_reason(er, WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
                         cache.dead_states[n].insert(it->first);
                     }
                     completed_layers.back().erase(it++);
@@ -812,8 +854,10 @@ namespace
                     ++it;
                 else {
                     if (emitting && ! cache.dead_states[var_number].contains(it->first)) {
+                        // Backward-pass dead intermediate: combinatorial closure,
+                        // left hint-free (sound). See PR notes.
                         ProofFlag s_flag = flags.state_flags[var_number].at(it->first);
-                        logger->emit_rup_proof_line_under_reason(eager_reason(reason, state), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                        logger->emit_rup_proof_line_under_reason(er, WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
                         cache.dead_states[var_number].insert(it->first);
                     }
                     next(layer)->erase(it++);
@@ -899,8 +943,8 @@ auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const)
     // already emitted at or above the current search depth, so the
     // per-call propagator can skip the entire pol+RUP scaffolding for
     // a state that's already been proven dead in this subtree.
-    DeadCache initial_cache{
-        vector<set<vector<Integer>>>(_vars.size() + 1), vector<vector<set<long long>>>(_vars.size() + 1, vector<set<long long>>(_totals.size()))};
+    DeadCache initial_cache{vector<set<vector<Integer>>>(_vars.size() + 1),
+        vector<vector<map<long long, ProofLine>>>(_vars.size() + 1, vector<map<long long, ProofLine>>(_totals.size()))};
     _dead_cache_handle = initial_state.add_constraint_state(move(initial_cache));
 
     return true;
