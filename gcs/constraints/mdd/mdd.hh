@@ -31,13 +31,28 @@ namespace gcs
      * This is a strict generalisation of `Regular`: a DFA is an MDD whose
      * layers all share the same node set and transition function.
      *
-     * Proof scaffolding mirrors the upfront pattern used by Knapsack and
+     * Proof scaffolding uses the upfront pattern shared with Knapsack and
      * BinPacking Stage 3: the OPB encoding is the natural per-(node, val)
      * forward chains plus per-layer exactly-one, and a one-shot Top-level
      * initialiser derives per-val backward chains and statically-dead-node
      * lines. The per-call propagator's `~state[i][q]` derivations then
      * RUP-close through that scaffolding instead of re-emitting the
-     * intermediate aggregations on every propagation call.
+     * per-(parent, val) intermediate aggregations on every propagation
+     * call.
+     *
+     * This upfront strategy is the sole proof-emission path, chosen on the
+     * evidence: it wins on both proof size (7–9× smaller) and VeriPB verify
+     * time (4–5× faster) over the earlier per-call strategy that emitted the
+     * per-(parent, val) aggregations on every call. A per-call opt-in toggle
+     * (the counterpart to `BinPacking`'s `upfront_proof = false`) is
+     * therefore deliberately *not* offered here: unlike BinPacking, whose
+     * per-call sweep is a self-contained bare-RUP prune, MDD's per-call
+     * emission is the substantial `decrement_outdeg` / `decrement_indeg`
+     * aggregation machinery, so resurrecting it behind a toggle would
+     * reintroduce ~150 lines of divergent proof-emission code for a strategy
+     * that loses on every measured axis. The full per-call implementation
+     * remains available on the `mdd-propagator` (#205) base branch for
+     * benchmarking should the trade-off ever need re-measuring.
      *
      * \ingroup Constraints
      */
