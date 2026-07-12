@@ -285,6 +285,19 @@ namespace gcs::innards
         [[nodiscard]] auto need_pol_item_defining_literal(const IntegerVariableCondition &) -> std::variant<ProofLine, XLiteral>;
 
         /**
+         * Append, to \p out, the ProofLines of the order-chain ("ladder") rung
+         * clauses `[id>=u] -> [id>=u']` for every existing gevar threshold `u`
+         * in the half-open range `(lo, hi]`. Chained, these carry unit
+         * propagation from `[id>=hi]` down to `[id>=lo]` across non-adjacent
+         * order atoms (which a hinted RUP cannot bridge through the bit
+         * definitions alone). Only rungs whose ProofLine has been recorded (the
+         * normal full-proof path) are appended; assertion-mode links contribute
+         * nothing. Ensure the two endpoint gevars exist first (e.g. via
+         * need_pol_item_defining_literal) so the chain between them is present.
+         */
+        auto chain_lines_between(const SimpleOrProofOnlyIntegerVariableID & id, Integer lo, Integer hi, std::vector<ProofLine> & out) const -> void;
+
+        /**
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_name() etc will work with it.
          */

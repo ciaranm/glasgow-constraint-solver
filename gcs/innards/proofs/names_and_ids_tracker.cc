@@ -99,6 +99,13 @@ struct NamesAndIDsTracker::Imp
     std::set<SimpleOrProofOnlyIntegerVariableID> vars_recover_labels;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
     map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
+    // Order-chain ("ladder") rung lines: gechain_lines[id][u] is the ProofLine of
+    // the clause [id>=u] -> [id>=l], where l is u's immediate-lower existing
+    // gevar. Keyed by the upper threshold u, so chain_lines_between(id, lo, hi)
+    // can hand a caller every rung on the path from [id>=hi] down to [id>=lo] --
+    // the standing ladder clauses UP needs to cross non-adjacent order atoms,
+    // which are otherwise emitted (in need_gevar) with their ProofLine discarded.
+    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, ProofLine>> gechain_lines;
     // Range ("in") literals [lo, hi], keyed by (lo, hi): the forward and reverse
     // lines of the reification against the variable's two order cuts. The literal
     // itself lives in variable_conditions_to_x, keyed by the InRange / NotInRange
@@ -342,6 +349,15 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
         } //
     }
         .visit(cond.var);
+}
+
+auto NamesAndIDsTracker::chain_lines_between(const SimpleOrProofOnlyIntegerVariableID & id, Integer lo, Integer hi, vector<ProofLine> & out) const
+    -> void
+{
+    if (auto it = _imp->gechain_lines.find(id); it != _imp->gechain_lines.end())
+        for (const auto & [u, line] : it->second)
+            if (u > lo && u <= hi)
+                out.push_back(line);
 }
 
 auto NamesAndIDsTracker::create_literals_for_introduced_variable_value(SimpleIntegerVariableID id, Integer val, const string & name) -> void
@@ -829,7 +845,9 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 }
                 else {
                     auto pol = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
-                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                    emit_proof_line_now_or_at_start([pol, id, chain_key = higher_gevar->first, this](ProofLogger * const logger) {
+                        _imp->gechain_lines[id][chain_key] = pol->emit(*logger, ProofLevel::Top);
+                    });
                 }
             } //
         }
@@ -861,7 +879,9 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 }
                 else {
                     auto pol = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
-                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                    emit_proof_line_now_or_at_start([pol, id, chain_key = v, this](ProofLogger * const logger) {
+                        _imp->gechain_lines[id][chain_key] = pol->emit(*logger, ProofLevel::Top);
+                    });
                 }
             } //
         }
