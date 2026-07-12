@@ -5,6 +5,8 @@
 // CLI:
 //   --instance N         Pick an instance from the curated set (1..6)
 //   --bounds-only        Force bounds-only (skip Stage 3 DAG sweep)
+//   --upfront            Use the opt-in upfront Stage 3 proof scaffolding
+//                        (default is the per-call strategy)
 //   --prove              Generate a proof
 //   --proof-files-basename PATH  (default: "bin_packing_bench")
 //   --root-only          Abort after first complete propagation (init + first prop)
@@ -104,6 +106,7 @@ auto main(int argc, char * argv[]) -> int
             ("help", "Display help information")                                  //
             ("instance", "Curated instance number (1..6)", cxxopts::value<int>()) //
             ("bounds-only", "Force bounds-only (skip Stage 3 DAG sweep)")         //
+            ("upfront", "Use the opt-in upfront Stage 3 proof scaffolding")       //
             ("prove", "Generate a proof")                                         //
             ("proof-files-basename", "Basename for .opb and .pbp files",          //
                 cxxopts::value<string>()->default_value("bin_packing_bench"))     //
@@ -122,6 +125,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto inst = curated_instance(vars["instance"].as<int>());
     bool bounds_only = vars.contains("bounds-only");
+    bool upfront = vars.contains("upfront");
 
     Problem p;
     vector<IntegerVariableID> items;
@@ -135,11 +139,11 @@ auto main(int argc, char * argv[]) -> int
         loads.reserve(loads_bounds.size());
         for (size_t b = 0; b < loads_bounds.size(); ++b)
             loads.push_back(p.create_integer_variable(loads_bounds[b].first, loads_bounds[b].second, "load" + std::to_string(b)));
-        p.post(BinPacking{items, inst.sizes, loads, bounds_only});
+        p.post(BinPacking{items, inst.sizes, loads, bounds_only, upfront});
     }
     else {
         const auto & caps = std::get<vector<Integer>>(inst.bins);
-        p.post(BinPacking{items, inst.sizes, caps, bounds_only});
+        p.post(BinPacking{items, inst.sizes, caps, bounds_only, upfront});
     }
 
     bool root_only = vars.contains("root-only");

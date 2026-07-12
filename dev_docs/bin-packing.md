@@ -26,6 +26,22 @@ propagation strategy: when set, only the Stage 2 bounds pass runs;
 when clear (the default), Stage 2 is followed by the Stage 3
 per-bin DAG sweep.
 
+An `upfront_proof` flag (default `false`) selects the Stage 3
+*proof-emission* strategy. It changes only the proof, never the set of
+inferences drawn or the solutions found:
+
+- **`upfront_proof = false` (default) — per-call.** Only the reified
+  per-node state flags are defined at `ProofLevel::Top`; every
+  aggregation is left to the per-call sweep's `JustifyUsingRUP` prunes,
+  which RUP-close through those flags plus the natural per-bin OPB
+  equations. This wins on both proof size and VeriPB verify time (see
+  the benchmark table below), so it is the default.
+- **`upfront_proof = true` — upfront (opt-in).** The initialiser
+  additionally derives the full forward/backward chain scaffolding once
+  at `ProofLevel::Top`, so the per-call sweep only has to reference it.
+  Larger, slower-to-verify proofs with no measured benefit on the
+  in-tree benchmarks; kept for robustness and A/B measurement.
+
 ## OPB encoding: spec-faithful, propagator-agnostic
 
 `define_proof_model` emits exactly the natural definition: per bin `b`,
@@ -117,9 +133,9 @@ matching Knapsack, no intersection with `loads[b]`'s initial upper or
 per-call cap-exceeded path needs a Top flag for the over-bound
 successor to chain against).
 
-**Scaffolding shape (paper-style inequality reifications + conjunction
-main state).** For each forward-reachable `(b, i, w)`, three reified
-flags at `ProofLevel::Top` via `create_proof_flag_reifying`:
+**Reified per-node state flags (both proof strategies).** For each
+forward-reachable `(b, i, w)`, three reified flags at `ProofLevel::Top`
+via `create_proof_flag_reifying`:
 
 - `g_up_{b,i,w}` ⇔ `Σ_{j<i} sizes[j]·(items[j]==b) ≥ w`
 - `g_dn_{b,i,w}` ⇔ `Σ_{j<i} sizes[j]·(items[j]==b) ≤ w`
@@ -129,9 +145,28 @@ The conjunction-of-sub-states pattern is from Demirović et al., CP
 2024 §4 ("Knapsack as a Constraint"; PDF at
 `ciaranm.github.io/papers/cp2024-dp.pdf`), specialised to one
 partial-sum dimension. For Knapsack the conjunction adds further
-sub-states (`P_↑/↓` over profit) — same shape, more legs.
+sub-states (`P_↑/↓` over profit) — same shape, more legs. Both proof
+strategies (below) define exactly these flags at Top; they differ only
+in how much aggregation is pre-derived versus left to VeriPB's unit
+propagation per call. The strategy is picked by the `upfront_proof`
+constructor flag.
 
-On top of these reifications the initialiser emits (all at `Top`):
+**Default strategy — per-call (`upfront_proof = false`).** The
+initialiser emits nothing beyond the flag definitions above. The
+per-call sweep (`run_stage3_for_bin`) recomputes the alive `(i, w)`
+nodes under the current item domains (forward ∩ backward reachability
+restricted to the static DAG) and, for each item whose "in bin `b`"
+edge has no support in the alive DAG, prunes `items[i] ≠ b` with a bare
+`JustifyUsingRUP`. VeriPB closes each prune by unit propagation through
+the reified flags plus the natural per-bin OPB equation — no chain,
+dead-node, or per-`(parent, val)` lines are written per call. Load
+bounds are left to the Stage 2 bounds pass (`run_stage3_for_bin` prunes
+item variables only). This is the smaller, faster-verifying proof
+(benchmark below), so it is the default.
+
+**Opt-in strategy — upfront (`upfront_proof = true`).** On top of the
+flag definitions the initialiser derives the full chain scaffolding
+(all at `Top`):
 
 1. **Phantom flags** for non-DAG backward parents that backward chains
    reference. For `k = 1` every phantom is per-coord-phantom and
@@ -153,48 +188,45 @@ This is the k=1 specialisation of Knapsack's `emit_scaffolding`; the
 two implementations duplicate substantially. Folding both into a shared
 layered-DAG scaffolder is tracked under #200.
 
-**Per-call sweep.** Structural port of Knapsack's `propagate` to
-`k = 1`. Forward walk under current item domains restricted to the
-static DAG (with `LiveNode` predecessor tracking); for each
-`w ∈ DAG[i+1] \ growing` either a cap-exceeded `pol` step against the
-LE half of the per-bin OPB line (plus current load upper for
-variable-load) followed by `~S` RUP at `Current`, or a pure
-forward-unreachable `~S` RUP. Variable-load form additionally filters
-layer `n` by current `loads[b]` lower bound (`~g_dn` + `~S` cached) and
-interior holes; terminal `loads[b] ≥ lo` / `≤ hi` inferences emit
-per-state `pol` chains and aggregating RUPs. Backward pass over the
-predecessor map emits `~S` for dead intermediates and infers
-`items[i] ≠ b` for unsupported bin candidates. Empty layer-`n` →
-empty RUP + `inference.contradiction`.
+The upfront per-call sweep (`propagate_bin`) is a structural port of
+Knapsack's `propagate` to `k = 1`. Forward walk under current item
+domains restricted to the static DAG (with `LiveNode` predecessor
+tracking); for each `w ∈ DAG[i+1] \ growing` either a cap-exceeded
+`pol` step against the LE half of the per-bin OPB line (plus current
+load upper for variable-load) followed by `~S` RUP at `Current`, or a
+pure forward-unreachable `~S` RUP. Variable-load form additionally
+filters layer `n` by current `loads[b]` lower bound (`~g_dn` + `~S`
+cached) and interior holes; terminal `loads[b] ≥ lo` / `≤ hi`
+inferences emit per-state `pol` chains and aggregating RUPs. Backward
+pass over the predecessor map emits `~S` for dead intermediates and
+infers `items[i] ≠ b` for unsupported bin candidates. Empty layer-`n` →
+empty RUP + `inference.contradiction`. All per-call dead-state lines
+are gated on a backtrack-restored `DeadCache` so they're emitted at
+most once per `(b, i, w)` per subtree. Statically-dead `~S` lines are
+NOT pre-emitted at Top because the natural pol-based derivations for the
+wider load-bound cases (single-valued loads, interior holes) need the
+same per-call pol+RUP machinery and the cache prevents redundant
+emission anyway.
 
-All per-call dead-state lines are gated on a backtrack-restored
-`DeadCache` so they're emitted at most once per `(b, i, w)` per
-subtree. Statically-dead `~S` lines are NOT pre-emitted at Top because
-the natural pol-based derivations for the wider load-bound cases
-(single-valued loads, interior holes) need the same per-call pol+RUP
-machinery and the cache prevents redundant emission anyway.
+**Benchmark — why per-call is the default.** `examples/bin_packing_bench`,
+per-call (default) versus upfront (`--upfront`):
 
-**Benchmarks vs the pre-#200 BinPacking (which emitted nothing per
-call, relying on VeriPB's UP through the reifications + natural OPB).**
-`examples/bin_packing_bench` instances:
-
-| inst | layout | old proof | new proof | old veripb | new veripb | old solve | new solve |
-|------|--------|----------:|----------:|-----------:|-----------:|----------:|----------:|
+| inst | layout | per-call proof | upfront proof | per-call veripb | upfront veripb | per-call solve | upfront solve |
+|------|--------|---------------:|--------------:|----------------:|---------------:|---------------:|--------------:|
 | 1 | 10it 3bin capa | 2.6 MB | 22 MB | 1.8s | 14.6s | 0.25s | 0.31s |
 | 2 | 10it 3bin load | 14 MB | 296 MB | 10.3s | 102s | 2.34s | 2.54s |
 | 5 | 8it 2bin tight capa | 155 KB | 1.1 MB | <0.01s | 0.10s | 0.006s | 0.01s |
 | 6 | 8it 2bin wide-sizes | 177 KB | 1.2 MB | <0.01s | 0.14s | 0.008s | 0.01s |
 
-Proof size grows 7–21×, VeriPB verify time grows 8–14×, solver wall
-time grows 1.1–1.5×. This is a **regression** on every measured axis,
-the opposite of the Knapsack result (3× solve, 3–6× proof shrink).
-Reason: pre-#200 BinPacking emitted essentially nothing per call and
-leaned on VeriPB UP to do the lookup against the reified flags. The
-new design replaces that implicit work with explicit chains —
-principled and aligned with the #200 unified framework path, but on
-these benchmarks strictly more verbose. The trade-off is robustness
-(no more "if RUP can't close, copy the MDD template" fragility) for
-size. Worth revisiting if any of these axes becomes a measured pain
+Upfront proofs are 7–21× larger and 8–14× slower to verify than
+per-call, while solver wall time stays within 1.1–1.5× (the extra
+inferences `propagate_bin` draws barely move the search on these
+instances). Per-call wins decisively on both proof axes, so it is the
+default; upfront is an off-by-default opt-in (`upfront_proof = true`, or
+`--upfront` in the bench) kept for robustness and A/B measurement. The
+upfront design is the one that generalises to the #200 unified
+path-DAG framework, which is why it is retained rather than deleted.
+Worth revisiting if a future model makes either axis a measured pain
 point.
 
 **Per-bin GAC, not joint GAC.** Each bin's DAG sees only its own

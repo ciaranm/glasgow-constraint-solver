@@ -256,7 +256,7 @@ namespace
     // the statically-dead ~S lines. Reordering any of these breaks the proof.
     auto emit_bin_scaffolding(ProofLogger * const logger, size_t b, const vector<IntegerVariableID> & items, const vector<Integer> & sizes,
         bool have_loads, const vector<IntegerVariableID> & loads, const vector<Integer> & capacities, const State & initial_state,
-        const PerBinDag & dag, PerBinFlags & flags, const pair<optional<ProofLine>, optional<ProofLine>> & opb_lines) -> void
+        const PerBinDag & dag, PerBinFlags & flags, const pair<optional<ProofLine>, optional<ProofLine>> & opb_lines, bool full_scaffolding) -> void
     {
         auto n = items.size();
         auto bin_idx = Integer{static_cast<long long>(b)};
@@ -282,6 +282,14 @@ namespace
                 (void)s_rev;
             }
         }
+
+        // Per-call (default) strategy: only the reified per-node state
+        // flags are defined at Top; the per-call sweep (run_stage3_for_bin)
+        // does every aggregation via JustifyUsingRUP, RUP-closing through
+        // these flags plus the natural per-bin OPB equations. Skip the
+        // upfront phantom flags and forward/backward chain scaffolding.
+        if (! full_scaffolding)
+            return;
 
         // 2. Phantom flags. Same shape, just at the phantom's w value.
         for (size_t i = 0; i <= n; ++i) {
@@ -730,6 +738,92 @@ namespace
             logger->forget_proof_level(temporary_proof_level);
     }
 
+    // Per-call (default) Stage 3 per-bin DAG sweep. For each bin, recompute
+    // alive (i, w) nodes under the current item domains (forward + backward
+    // reachability restricted to the static DAG), then for each candidate
+    // items[i] == b that has no support at any alive (i, w) with
+    // (i+1, w + sizes[i]) also alive, prune items[i] != b.
+    //
+    // Proof: a plain JustifyUsingRUP at the prune site suffices — VeriPB's
+    // unit propagation closes the contradiction through the per-node reified
+    // state flags (defined at Top by emit_bin_scaffolding with
+    // full_scaffolding=false) plus the natural per-bin OPB equation. No
+    // explicit chain or dead-node lines are emitted per call; the
+    // inequality reifications carry that reach implicitly. This is the
+    // strategy that wins on both proof size and verify time (see
+    // dev_docs/bin-packing.md); the upfront alternative (propagate_bin) is
+    // the opt-in enabled by upfront_proof=true.
+    auto run_stage3_for_bin(const State & state, auto & inference, ProofLogger * logger, const vector<IntegerVariableID> & items,
+        const vector<Integer> & sizes, const PerBinDag & dag, size_t b, const Reason & reason, const ConstraintID & owner) -> void
+    {
+        auto n = items.size();
+        auto bin_idx = Integer{static_cast<long long>(b)};
+
+        vector<bool> can_be_b(n), can_be_notb(n);
+        for (size_t i = 0; i < n; ++i) {
+            can_be_b[i] = state.in_domain(items[i], bin_idx);
+            auto v = state.optional_single_value(items[i]);
+            can_be_notb[i] = ! (v && *v == bin_idx);
+        }
+
+        // Forward reachability under current domains, restricted to static DAG.
+        vector<unordered_set<long long>> fwd(n + 1);
+        if (dag.node_set[0].contains(0))
+            fwd[0].insert(0);
+        for (size_t i = 0; i < n; ++i) {
+            for (auto w : fwd[i]) {
+                if (can_be_notb[i] && dag.node_set[i + 1].contains(w))
+                    fwd[i + 1].insert(w);
+                if (can_be_b[i]) {
+                    auto w2 = w + sizes[i].raw_value;
+                    if (dag.node_set[i + 1].contains(w2))
+                        fwd[i + 1].insert(w2);
+                }
+            }
+        }
+
+        // Backward reachability from accepting terminals (the layer-n nodes
+        // already encode the acceptance predicate via static reduction).
+        vector<unordered_set<long long>> bwd(n + 1);
+        for (auto w : dag.nodes_at[n])
+            if (fwd[n].contains(w))
+                bwd[n].insert(w);
+        for (long long i = static_cast<long long>(n) - 1; i >= 0; --i) {
+            for (auto w : bwd[i + 1]) {
+                if (can_be_notb[i] && dag.node_set[i].contains(w))
+                    bwd[i].insert(w);
+                if (can_be_b[i]) {
+                    auto w_prev = w - sizes[i].raw_value;
+                    if (dag.node_set[i].contains(w_prev))
+                        bwd[i].insert(w_prev);
+                }
+            }
+        }
+
+        // Alive = forward ∩ backward.
+        vector<unordered_set<long long>> alive(n + 1);
+        for (size_t i = 0; i <= n; ++i)
+            for (auto w : fwd[i])
+                if (bwd[i].contains(w))
+                    alive[i].insert(w);
+
+        // Prune items[i] != b when no support exists in the alive DAG.
+        for (size_t i = 0; i < n; ++i) {
+            if (! can_be_b[i])
+                continue;
+            bool supported = false;
+            for (auto w : alive[i]) {
+                auto w2 = w + sizes[i].raw_value;
+                if (alive[i + 1].contains(w2)) {
+                    supported = true;
+                    break;
+                }
+            }
+            if (! supported)
+                inference.infer_not_equal(logger, items[i], bin_idx, JustifyUsingRUP{hints::BinPacking{owner}}, reason);
+        }
+    }
+
     auto run_stage2(const State & state, auto & inference, ProofLogger * logger, const vector<IntegerVariableID> & items,
         const vector<Integer> & sizes, const vector<IntegerVariableID> & loads, const vector<Integer> & capacities, bool have_loads,
         const ConstraintID & owner) -> void
@@ -807,21 +901,24 @@ struct BinPacking::DagBridge
     vector<pair<optional<ProofLine>, optional<ProofLine>>> opb_lines;
 };
 
-BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<IntegerVariableID> loads, bool bounds_only) :
-    _items(move(items)), _sizes(move(sizes)), _loads(move(loads)), _capacities(), _have_loads(true), _bounds_only(bounds_only)
+BinPacking::BinPacking(
+    vector<IntegerVariableID> items, vector<Integer> sizes, vector<IntegerVariableID> loads, bool bounds_only, bool upfront_proof) :
+    _items(move(items)), _sizes(move(sizes)), _loads(move(loads)), _capacities(), _have_loads(true), _bounds_only(bounds_only),
+    _upfront_proof(upfront_proof)
 {
 }
 
-BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<Integer> capacities, bool bounds_only) :
-    _items(move(items)), _sizes(move(sizes)), _loads(), _capacities(move(capacities)), _have_loads(false), _bounds_only(bounds_only)
+BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<Integer> capacities, bool bounds_only, bool upfront_proof) :
+    _items(move(items)), _sizes(move(sizes)), _loads(), _capacities(move(capacities)), _have_loads(false), _bounds_only(bounds_only),
+    _upfront_proof(upfront_proof)
 {
 }
 
 auto BinPacking::clone() const -> unique_ptr<Constraint>
 {
     if (_have_loads)
-        return make_unique<BinPacking>(_items, _sizes, _loads, _bounds_only);
-    return make_unique<BinPacking>(_items, _sizes, _capacities, _bounds_only);
+        return make_unique<BinPacking>(_items, _sizes, _loads, _bounds_only, _upfront_proof);
+    return make_unique<BinPacking>(_items, _sizes, _capacities, _bounds_only, _upfront_proof);
 }
 
 auto BinPacking::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -936,58 +1033,69 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
         triggers.on_bounds.insert(triggers.on_bounds.end(), _loads.begin(), _loads.end());
 
     if (! _bounds_only) {
-        // Per-bin Stage 3 Top-level scaffolding: reified g_up/g_dn/S flags
-        // for every DAG node and every phantom; per-coord+joint forward
-        // chains; layer-0 ALO; per-state implications and per-layer ALOs;
-        // per-(succ, branch) backward chains; phantom closures. Mirrors the
-        // upfront scaffolding pattern from Knapsack §3 — see
-        // dev_docs/knapsack.md and dev_docs/bin-packing.md. Statically-dead
-        // ~S lines are left to the per-call sweep (see emit_bin_scaffolding).
-        // In assertion mode the propagator's inferences are asserted under the
-        // typed hint instead of RUP-derived, so the scaffolding would be
-        // wasted output and is skipped.
+        // Per-bin Stage 3 Top-level scaffolding. In both strategies the
+        // reified g_up/g_dn/S flags for every DAG node are defined at
+        // ProofLevel::Top. When upfront_proof is set the initialiser
+        // additionally derives the full chain scaffolding (phantom flags;
+        // per-coord+joint forward chains; layer-0 ALO; per-state
+        // implications and per-layer ALOs; per-(succ, branch) backward
+        // chains; phantom closures — the upfront pattern from Knapsack §3,
+        // see dev_docs/knapsack.md and dev_docs/bin-packing.md). When it is
+        // clear (the default) only the flag definitions are emitted and the
+        // per-call sweep does every aggregation via RUP — smaller and faster
+        // to verify. In assertion mode the propagator's inferences are
+        // asserted under the typed hint instead of RUP-derived, so the
+        // scaffolding would be wasted output and is skipped.
         propagators.install_initialiser([items = _items, sizes = _sizes, have_loads = _have_loads, loads = _loads, capacities = _capacities,
-                                            bridge = _bridge](State & state, auto &, ProofLogger * const logger) -> void {
+                                            bridge = _bridge, upfront = _upfront_proof](State & state, auto &, ProofLogger * const logger) -> void {
             if (! logger || logger->get_assertion_level() != AssertionLevel::Off)
                 return;
             for (size_t b = 0; b < bridge->dags.size(); ++b) {
                 emit_bin_scaffolding(
-                    logger, b, items, sizes, have_loads, loads, capacities, state, bridge->dags[b], bridge->flags[b], bridge->opb_lines[b]);
+                    logger, b, items, sizes, have_loads, loads, capacities, state, bridge->dags[b], bridge->flags[b], bridge->opb_lines[b], upfront);
             }
-            // No DeadCache pre-population: per-call propagator emits each
-            // statically-dead ~S line on the first sweep at ProofLevel::Current
-            // via pol+RUP and caches it; subsequent sweeps in the same subtree
-            // skip. Cost: one set of static-dead lines per backtrack to a fresh
-            // depth. Matches the simpler Knapsack pattern.
         });
     }
 
     // Stage 2 (per-bin bounds) always runs. Stage 3 (per-bin DAG sweep) only
     // runs when ! bounds_only. Both share state through `state`; Stage 3 sees
-    // the bounds Stage 2 derived.
+    // the bounds Stage 2 derived. The Stage 3 proof strategy is chosen by
+    // upfront_proof: run_stage3_for_bin (default, bare per-call RUP prunes)
+    // or propagate_bin (opt-in, references the upfront chain scaffolding).
     propagators.install(
         constraint_id(),
         [items = _items, sizes = _sizes, loads = _loads, capacities = _capacities, have_loads = _have_loads, bounds_only = _bounds_only,
-            bridge = _bridge, dead_cache_handle = _dead_cache_idx,
+            bridge = _bridge, dead_cache_handle = _dead_cache_idx, upfront = _upfront_proof,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             run_stage2(state, inference, logger, items, sizes, loads, capacities, have_loads, owner);
 
             if (! bounds_only && bridge) {
                 auto num_bins = have_loads ? loads.size() : capacities.size();
-                // Reason has to include the load variables when variable-load
-                // form is in use, otherwise the cap-exceeded / load-bound /
-                // interior-hole ~S lines aren't sound under their reasons.
-                // For constant-cap, items alone suffice (the cap is static).
-                vector<IntegerVariableID> reason_vars;
-                reason_vars.reserve(items.size() + (have_loads ? loads.size() : 0));
-                reason_vars.insert(reason_vars.end(), items.begin(), items.end());
-                if (have_loads)
-                    reason_vars.insert(reason_vars.end(), loads.begin(), loads.end());
-                auto reason = generic_reason(reason_vars);
-                auto & cache = any_cast<DeadCache &>(state.get_constraint_state(*dead_cache_handle));
-                for (size_t b = 0; b < num_bins; ++b)
-                    propagate_bin(state, inference, logger, items, sizes, have_loads, loads, capacities, b, bridge->dags[b], bridge->flags[b],
-                        bridge->opb_lines[b], cache, reason, owner);
+                if (upfront) {
+                    // Reason has to include the load variables when variable-load
+                    // form is in use, otherwise the cap-exceeded / load-bound /
+                    // interior-hole ~S lines aren't sound under their reasons.
+                    // For constant-cap, items alone suffice (the cap is static).
+                    vector<IntegerVariableID> reason_vars;
+                    reason_vars.reserve(items.size() + (have_loads ? loads.size() : 0));
+                    reason_vars.insert(reason_vars.end(), items.begin(), items.end());
+                    if (have_loads)
+                        reason_vars.insert(reason_vars.end(), loads.begin(), loads.end());
+                    auto reason = generic_reason(reason_vars);
+                    auto & cache = any_cast<DeadCache &>(state.get_constraint_state(*dead_cache_handle));
+                    for (size_t b = 0; b < num_bins; ++b)
+                        propagate_bin(state, inference, logger, items, sizes, have_loads, loads, capacities, b, bridge->dags[b], bridge->flags[b],
+                            bridge->opb_lines[b], cache, reason, owner);
+                }
+                else {
+                    // Default per-call strategy: item-var pruning only; the
+                    // load bounds are handled by Stage 2. Reason is the item
+                    // variables (the bare RUP prune closes through the Top
+                    // flag definitions + the per-bin OPB equation).
+                    auto reason = generic_reason(items);
+                    for (size_t b = 0; b < num_bins; ++b)
+                        run_stage3_for_bin(state, inference, logger, items, sizes, bridge->dags[b], b, reason, owner);
+                }
             }
 
             return PropagatorState::Enable;

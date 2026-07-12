@@ -42,10 +42,11 @@ using namespace gcs::test_innards;
 
 namespace
 {
-    auto run_bin_packing_capa_test(bool proofs, const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<int> & capacities)
-        -> void
+    auto run_bin_packing_capa_test(
+        bool proofs, bool upfront, const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<int> & capacities) -> void
     {
-        print(cerr, "bin_packing capa {} sizes={} caps={}{}", item_ranges, sizes, capacities, proofs ? " with proofs:" : ":");
+        print(cerr, "bin_packing capa {} sizes={} caps={}{}{}", item_ranges, sizes, capacities, upfront ? " upfront" : "",
+            proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = item_ranges.size();
@@ -79,7 +80,7 @@ namespace
         for (auto c : capacities)
             caps_i.push_back(Integer{c});
 
-        p.post(BinPacking{items, sizes_i, caps_i});
+        p.post(BinPacking{items, sizes_i, caps_i, false, upfront});
 
         auto proof_name = proofs ? make_optional("bin_packing_test") : nullopt;
         // Enumeration only — Stage 3 achieves per-bin GAC, not joint GAC
@@ -93,10 +94,11 @@ namespace
         check_results(proof_name, expected, actual);
     }
 
-    auto run_bin_packing_load_test(
-        bool proofs, const vector<pair<int, int>> & item_ranges, const vector<int> & sizes, const vector<pair<int, int>> & load_ranges) -> void
+    auto run_bin_packing_load_test(bool proofs, bool upfront, const vector<pair<int, int>> & item_ranges, const vector<int> & sizes,
+        const vector<pair<int, int>> & load_ranges) -> void
     {
-        print(cerr, "bin_packing load {} sizes={} loads={}{}", item_ranges, sizes, load_ranges, proofs ? " with proofs:" : ":");
+        print(cerr, "bin_packing load {} sizes={} loads={}{}{}", item_ranges, sizes, load_ranges, upfront ? " upfront" : "",
+            proofs ? " with proofs:" : ":");
         cerr << flush;
 
         auto n = item_ranges.size();
@@ -130,7 +132,7 @@ namespace
         for (auto s : sizes)
             sizes_i.push_back(Integer{s});
 
-        p.post(BinPacking{items, sizes_i, loads});
+        p.post(BinPacking{items, sizes_i, loads, false, upfront});
 
         auto proof_name = proofs ? make_optional("bin_packing_test") : nullopt;
         // Enumeration only; see capa runner for why per-bin GAC isn't
@@ -205,10 +207,17 @@ auto main(int, char *[]) -> int
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        for (auto & [items, sizes, caps] : capa_data)
-            run_bin_packing_capa_test(proofs, items, sizes, caps);
-        for (auto & [items, sizes, loads] : load_data)
-            run_bin_packing_load_test(proofs, items, sizes, loads);
+        // upfront_proof only changes the proof output, so there is nothing
+        // extra to check on a no-proof run — exercise both strategies only
+        // when proofs are on (default per-call first, then upfront opt-in).
+        for (bool upfront : {false, true}) {
+            if (upfront && ! proofs)
+                continue;
+            for (auto & [items, sizes, caps] : capa_data)
+                run_bin_packing_capa_test(proofs, upfront, items, sizes, caps);
+            for (auto & [items, sizes, loads] : load_data)
+                run_bin_packing_load_test(proofs, upfront, items, sizes, loads);
+        }
     }
 
     return EXIT_SUCCESS;
