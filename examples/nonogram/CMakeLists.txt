@@ -1,0 +1,10 @@
+add_executable(nonogram nonogram.cc)
+target_link_libraries(nonogram PRIVATE glasgow_constraint_solver)
+target_link_libraries(nonogram PRIVATE cxxopts)
+
+add_test(NAME nonogram COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:nonogram>)
+add_test(NAME nonogram-all COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:nonogram> --all)
+add_test(NAME nonogram-bacchus COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:nonogram> --bacchus)
+add_test(NAME nonogram-legacy COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:nonogram> --legacy)
+add_test(NAME nonogram-heart COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash $<TARGET_FILE:nonogram> --puzzle heart)
+set_tests_properties(nonogram nonogram-all nonogram-bacchus nonogram-legacy nonogram-heart PROPERTIES RESOURCE_LOCK nonogram)

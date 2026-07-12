@@ -202,6 +202,28 @@ per-call shape difference between variants is the dominant signal but
 small enough that VeriPB finishes verifying both proofs in reasonable
 time.
 
+### A structured `Regular` instance: nonogram
+
+`regular_random` is the stress test; `examples/nonogram` is the
+structured counterpart, and a better proxy for how `Regular` behaves on
+real problems. It posts one automaton per row and per column of a
+nonogram, so the search tree has genuine cross-line interaction rather
+than a single automaton's near-linear sweep. It takes the same
+`--legacy` / `--bacchus` / `--all` knobs, so all three implementations
+can be compared on one instance:
+
+```shell
+./build/nonogram --dzn 2013/nonogram/dom_10.dzn --all --stats            # default Regular
+./build/nonogram --dzn 2013/nonogram/dom_10.dzn --all --stats --bacchus  # RegularBacchus
+./build/nonogram --random 20 --seed 1 --all --stats                      # scalable, no data file
+```
+
+The MiniZinc Challenge `dom_06`..`dom_14` data files are fixed
+instances of increasing size; `--random N` scales continuously without
+needing a data file. Enumerating all solutions (`--all`) of an
+under-clued or random instance is the proof-shape regime here, exactly
+as for `regular_random --all`.
+
 ### Cross-variant invariants
 
 When comparing two implementations of the same constraint that should
