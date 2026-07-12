@@ -3,7 +3,6 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
-#include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -57,28 +56,20 @@ namespace gcs
 
         // Size snapshots resolved in prepare(). _*_vals holds the constant
         // value for a constant size (0 for a variable one, where the variable
-        // is used instead); _*_ub holds the initial upper bound (used for the
-        // possible-active window and the active-rect filter).
-        std::vector<Integer> _width_vals, _width_ub;
-        std::vector<Integer> _height_vals, _height_ub;
+        // is used instead).
+        std::vector<Integer> _width_vals;
+        std::vector<Integer> _height_vals;
         // Non-strict mode: whether each rectangle's width/height gets a
         // zero-size escape in the separation clause -- every variable size
         // does, matching cake_pb_cp (std::uint8_t rather than the
         // vector<bool> bitset specialisation).
         std::vector<std::uint8_t> _zero_escape_w, _zero_escape_h;
 
-        // Per-rectangle possible-active windows in each dimension, from root
-        // bounds in prepare(). Used to size the proof bridge and to index the
-        // per-(rect, coordinate) bridge flags. Only meaningful for positive-size
-        // rectangles in the relevant dimension.
-        std::vector<Integer> _x_lo, _x_hi;
-        std::vector<Integer> _y_lo, _y_hi;
-
         // Encoded pairwise reified before-flags, one per (ordered pair, axis).
         // The OPB stays declarative: for each axis d and ordered pair (i, j),
         // before_{i,j,d} <-> pos_{i,d} + size_{i,d} <= pos_{j,d}, plus one 4-way
         // separation clause per unordered pair. Reification line numbers are
-        // stored so the propagator's bridge derivations can pol them.
+        // stored so the propagator's justifications can pol against them.
         struct BeforeFlagData
         {
             innards::ProofFlag flag;
@@ -89,14 +80,6 @@ namespace gcs
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_x;
         std::map<std::pair<std::size_t, std::size_t>, BeforeFlagData> _before_y;
         std::map<std::pair<std::size_t, std::size_t>, innards::ProofLine> _clause_lines;
-
-        // For a rectangle with a variable size on an axis, a proof-only
-        // end = pos + size on which that axis's "after" bridge flag is reified
-        // (single variable, keeping the after pin RUP-friendly). The variable has
-        // no OPB encoding; its definition and the end_*_ge / end_*_le lines are
-        // introduced in-proof by the propagator's initialiser. nullopt when that
-        // size is constant.
-        std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end_x, _end_y;
 
         // Non-strict mode only: for a rectangle whose width/height can be 0, a
         // reified "size <= 0" flag that escapes the separation clause (a
