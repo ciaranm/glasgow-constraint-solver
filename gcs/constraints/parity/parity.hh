@@ -20,12 +20,6 @@ namespace gcs
     private:
         const innards::Literals _lits;
 
-        // When every literal has a cake positive form (see cake_truthiness.hh),
-        // prepare() fills this with the state-equivalent `>= 1` literals; the
-        // encoding and the propagator then work in cake's terms, so the proof
-        // never touches atoms cake's OPB does not define. Empty otherwise.
-        innards::Literals _cake_lits;
-
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
@@ -36,7 +30,6 @@ namespace gcs
         explicit ParityOdd(innards::Literals);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
-        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;
