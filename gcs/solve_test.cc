@@ -178,6 +178,40 @@ TEST_CASE("Solve unsat with restarts and interval branching")
     CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
 }
 
+// As above but with reject-interval branching: value_order::reject_random_interval
+// yields genuine range-condition decisions --- x not_in [lo..hi] then x in [lo..hi],
+// the in/out interval-literal vocabulary the range-literal foundation added. Unlike
+// the equality, order and bound-split cases above, this drives the whole restart +
+// nogood pipeline (guess -> learned-nogood extraction -> reduced-nld -> RUP, plus the
+// refined per-literal 2WL watching the learned store) on InRange / NotInRange
+// literals, confirming the nogood machinery's test_literal-based watching is range-
+// operator-agnostic. The proof must still verify.
+TEST_CASE("Solve unsat with restarts and reject-interval branching")
+{
+    Problem p;
+    vector<IntegerVariableID> xs;
+    for (int i = 0; i < 5; ++i)
+        xs.push_back(p.create_integer_variable(0_i, 3_i));
+    for (unsigned i = 0; i < xs.size(); ++i)
+        for (unsigned j = i + 1; j < xs.size(); ++j)
+            p.post(NotEquals{xs[i], xs[j]});
+
+    bool found_solution = false;
+    auto stats = solve_with(p,
+        SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                           found_solution = true;
+                           return false;
+                       },
+            .branch = branch_with(variable_order::dom(p), value_order::reject_random_interval(1)),
+            .restarts = RestartSchedule::luby(4)},
+        ProofOptions{"solve_test"});
+
+    CHECK(! found_solution);
+    CHECK(stats.restarts > 0);
+    CHECK(stats.learned_nogoods > 0);
+    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+}
+
 // Optimisation with restarts: the incumbent bound persists across restarts, so
 // each pass only finds strictly better solutions and the final pass proves
 // optimality. Objective-bound dead-ends count as conflicts, so a luby(1)

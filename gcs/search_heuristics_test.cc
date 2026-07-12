@@ -50,15 +50,17 @@ TEST_CASE("dom_wdeg orders by dom/W, with a zero-weight variable last")
     propagators.install(NumberedConstraint{5}, a_propagator_that_does_nothing(), Triggers{.on_change = {c, x}});
     propagators.install(NumberedConstraint{6}, a_propagator_that_does_nothing(), Triggers{.on_change = {c, x}});
 
-    // dom/W: a=4/1=4, b=4/2=2, c=4/3 -> c is smallest.
-    auto selector = variable_order::dom_wdeg({a, b, c})(dummy, state, propagators);
+    // dom/W: a=4/1=4, b=4/2=2, c=4/3 -> c is smallest. Use Classic explicitly:
+    // it has uniform weights at the root, so this exercises the dom/W ratio
+    // rather than the default scheme's particular starting point.
+    auto selector = variable_order::dom_wdeg({a, b, c}, WeightingScheme::Classic)(dummy, state, propagators);
     auto picked = selector(state.current(), propagators);
     REQUIRE(picked.has_value());
     CHECK(*picked == IntegerVariableID{c});
 
     // d has weighted degree 0, so dom/W is infinite: it is least preferred and a
     // (finite ratio) wins.
-    auto with_isolated = variable_order::dom_wdeg({d, a})(dummy, state, propagators);
+    auto with_isolated = variable_order::dom_wdeg({d, a}, WeightingScheme::Classic)(dummy, state, propagators);
     auto picked_isolated = with_isolated(state.current(), propagators);
     REQUIRE(picked_isolated.has_value());
     CHECK(*picked_isolated == IntegerVariableID{a});
@@ -107,7 +109,9 @@ TEST_CASE("dom_wdeg tie-breaks on degree")
 
     REQUIRE(propagators.degree_of(a) > propagators.degree_of(b));
 
-    auto selector = variable_order::dom_wdeg({a, b})(dummy, state, propagators);
+    // Classic gives both the same weight, so the dom/W ratio ties and the
+    // degree tie-break decides --- which is what this test checks.
+    auto selector = variable_order::dom_wdeg({a, b}, WeightingScheme::Classic)(dummy, state, propagators);
     auto picked = selector(state.current(), propagators);
     REQUIRE(picked.has_value());
     CHECK(*picked == IntegerVariableID{a});

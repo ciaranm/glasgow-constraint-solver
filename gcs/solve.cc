@@ -373,7 +373,7 @@ auto gcs::solve_with(
 
             if (search_result == SearchResult::RestartCutoffHit) {
                 ++stats.restarts;
-                if (auto observer = propagators.conflict_observer())
+                for (auto & observer : propagators.conflict_observers())
                     observer->on_restart();
                 restart_schedule->advance();
                 restart.cutoff = restart_schedule->current_cutoff();

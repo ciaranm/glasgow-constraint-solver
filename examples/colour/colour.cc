@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <ranges>
 #include <vector>
 
@@ -30,6 +31,7 @@ using std::getline;
 using std::ifstream;
 using std::make_optional;
 using std::nullopt;
+using std::optional;
 using std::pair;
 using std::string;
 using std::vector;
@@ -44,6 +46,48 @@ using fmt::print;
 using fmt::println;
 #endif
 
+namespace
+{
+    // Map a dom-wdeg variant string to a weighting scheme, for the --branch flag.
+    auto scheme_from_string(const string & name) -> optional<WeightingScheme>
+    {
+        using enum WeightingScheme;
+        if (name == "classic")
+            return Classic;
+        if (name == "ia")
+            return InitialArity;
+        if (name == "ca")
+            return CurrentArity;
+        if (name == "id")
+            return InitialDomain;
+        if (name == "cd")
+            return CurrentDomain;
+        if (name == "ca.cd" || name == "cacd")
+            return CurrentArityCurrentDomain;
+        if (name == "chs")
+            return ConflictHistorySearch;
+        return nullopt;
+    }
+
+    // Build the brancher named by --branch over the given variables: "dom-then-deg",
+    // or "dom-wdeg" (the library default scheme) optionally suffixed with a scheme,
+    // e.g. "dom-wdeg:classic".
+    auto brancher_from_string(const string & spec, const vector<IntegerVariableID> & vars) -> optional<BranchHeuristic>
+    {
+        if (spec == "dom-then-deg")
+            return branch_with(variable_order::dom_then_deg(vars), value_order::smallest_first());
+        if (spec == "dom-wdeg")
+            return branch_with(variable_order::dom_wdeg(vars), value_order::smallest_first());
+        if (spec.starts_with("dom-wdeg:")) {
+            auto scheme = scheme_from_string(spec.substr(spec.find(':') + 1));
+            if (! scheme)
+                return nullopt;
+            return branch_with(variable_order::dom_wdeg(vars, *scheme), value_order::smallest_first());
+        }
+        return nullopt;
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("Program options");
@@ -56,6 +100,17 @@ auto main(int argc, char * argv[]) -> int
             ("proof-files-basename", "Basename for the .opb and .pbp files", //
                 cxxopts::value<string>()->default_value("colour"))           //
             ("stats", "Print solve statistics")                              //
+            ("branch",
+                "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] "          //
+                "(VARIANT one of classic, ia, ca, id, cd, ca.cd, chs)",              //
+                cxxopts::value<string>()->default_value("dom-then-deg"))             //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"))         //
+            ("colours",
+                "Decision variant: ask whether the graph is K-colourable "              //
+                "(rather than minimising the number of colours)",                       //
+                cxxopts::value<int>())                                                  //
+            ("first", "Stop at the first solution rather than enumerating all of them") //
             ;
 
         options.add_options()("file", "DIMACS format file to use for input", cxxopts::value<string>());
@@ -119,23 +174,45 @@ auto main(int argc, char * argv[]) -> int
 
     Problem p;
 
-    auto vertices = p.create_integer_variable_vector(size, 0_i, Integer{size - 1}, "vertex");
+    // In the decision variant we ask whether the graph is K-colourable: each
+    // vertex takes a colour in 0..K-1 and there is no objective. Otherwise we
+    // minimise the largest colour used.
+    auto k_colours = options_vars.contains("colours") ? make_optional(options_vars["colours"].as<int>()) : nullopt;
+    auto vertex_max = k_colours ? Integer{*k_colours - 1} : Integer{size - 1};
+
+    auto vertices = p.create_integer_variable_vector(size, 0_i, vertex_max, "vertex");
 
     for (auto & [f, t] : edges)
         p.post(NotEquals{vertices[f], vertices[t]});
 
-    IntegerVariableID colours = p.create_integer_variable(0_i, Integer{size - 1}, "colours");
-    p.post(ArrayMax{vertices, colours});
+    if (! k_colours) {
+        IntegerVariableID colours = p.create_integer_variable(0_i, Integer{size - 1}, "colours");
+        p.post(ArrayMax{vertices, colours});
+        p.minimise(colours);
+    }
 
-    p.minimise(colours);
+    auto brancher = brancher_from_string(options_vars["branch"].as<string>(), vertices);
+    if (! brancher) {
+        println(cerr, "Error: unknown --branch value {}", options_vars["branch"].as<string>());
+        return EXIT_FAILURE;
+    }
+
+    auto restarts =
+        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
+
+    auto stop_at_first = k_colours.has_value() || options_vars.contains("first");
 
     auto stats = solve_with(p, //
         SolveCallbacks{        //
             .solution = [&](const CurrentState & s) -> bool {
-                println("{} colours: {}", s(colours) + 1_i, vertices | transform(cref(s)));
-                return true;
+                if (k_colours)
+                    println("{}-colouring: {}", *k_colours, vertices | transform(cref(s)));
+                else
+                    println("{} colours: {}", s(*p.optional_minimise_variable()) + 1_i, vertices | transform(cref(s)));
+                return ! stop_at_first;
             },
-            .branch = branch_with(variable_order::dom_then_deg(vertices), value_order::smallest_first())},
+            .branch = *brancher,
+            .restarts = restarts},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))

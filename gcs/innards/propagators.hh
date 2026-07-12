@@ -563,22 +563,26 @@ namespace gcs::innards
         /**
          * Attach a borrowed conflict observer, notified by propagate() whenever
          * a propagator wipes out a domain. The observer is borrowed: the caller
-         * owns it and must keep it alive for the duration of the search. Pass
-         * nullptr to detach. A conflict is a Propagators event (it carries the
-         * failing constraint's index, scope, and reason, all from here), so the
-         * observer lives with the rest of the conflict-observation machinery
-         * rather than on State.
+         * owns it and must keep it alive for the duration of the search. A
+         * conflict is a Propagators event (it carries the failing constraint's
+         * index, scope, and reason, all from here), so the observer lives with
+         * the rest of the conflict-observation machinery rather than on State.
+         *
+         * Several observers may be attached: a seq_search can chain several
+         * stateful branchers, each carrying its own weighting, and every one
+         * must see every conflict. Each is notified, in the order attached.
          *
          * \sa ConflictObserver
          */
-        auto set_conflict_observer(ConflictObserver * observer) -> void;
+        auto add_conflict_observer(ConflictObserver * observer) -> void;
 
         /**
-         * The conflict observer currently attached, or nullptr if none.
+         * The conflict observers currently attached, in the order they were
+         * added; empty if there are none.
          *
-         * \sa Propagators::set_conflict_observer()
+         * \sa Propagators::add_conflict_observer()
          */
-        [[nodiscard]] auto conflict_observer() const -> ConflictObserver *;
+        [[nodiscard]] auto conflict_observers() const -> const std::vector<ConflictObserver *> &;
 
         ///@}
     };

@@ -156,17 +156,17 @@ namespace gcs
          * are broken on highest constraint degree, and a variable with W(x)=0 (in
          * no constraint with two or more unassigned variables) is least preferred.
          *
-         * \p scheme selects the weighting (default WeightingScheme::CurrentArityCurrentDomain, the
-         * strongest in Wattez et al.). An optional initial WeightingState seeds
-         * the weights --- for carrying weights across searches or injecting
-         * proof-mined weights. Value ordering is chosen separately, as usual via
-         * gcs::branch_with().
+         * \p scheme selects the weighting (default WeightingScheme::ConflictHistorySearch,
+         * the most robust in our experiments --- see issue #315). An optional initial
+         * WeightingState seeds the weights --- for carrying weights across searches or
+         * injecting proof-mined weights. Value ordering is chosen separately, as usual
+         * via gcs::branch_with().
          *
          * \ingroup SearchHeuristics
          * \sa WeightingState
          * \sa WeightingScheme
          */
-        [[nodiscard]] auto dom_wdeg(const Problem &, WeightingScheme scheme = WeightingScheme::CurrentArityCurrentDomain,
+        [[nodiscard]] auto dom_wdeg(const Problem &, WeightingScheme scheme = WeightingScheme::ConflictHistorySearch,
             std::optional<WeightingState> initial = std::nullopt) -> BranchVariableHeuristic;
 
         /**
@@ -175,7 +175,7 @@ namespace gcs
          * \ingroup SearchHeuristics
          * \sa gcs::variable_order::dom_wdeg(const Problem &, WeightingScheme, std::optional<WeightingState>)
          */
-        [[nodiscard]] auto dom_wdeg(std::vector<IntegerVariableID>, WeightingScheme scheme = WeightingScheme::CurrentArityCurrentDomain,
+        [[nodiscard]] auto dom_wdeg(std::vector<IntegerVariableID>, WeightingScheme scheme = WeightingScheme::ConflictHistorySearch,
             std::optional<WeightingState> initial = std::nullopt) -> BranchVariableHeuristic;
 
         /**

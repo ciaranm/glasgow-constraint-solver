@@ -228,7 +228,7 @@ auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, WeightingSche
         }
         if (initial)
             weighting->load(*initial, propagators);
-        propagators.set_conflict_observer(weighting.get());
+        propagators.add_conflict_observer(weighting.get());
 
         // Select the argmin of dom(x)/W(x). This is the same selection an
         // in_order_of_selector min-scan would make, but we compute each
