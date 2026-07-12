@@ -29,6 +29,11 @@ namespace gcs
      */
     class RegularLegacy : public Constraint
     {
+        // Regular is the public front-end; it constructs a RegularLegacy through
+        // the internal representation constructor below when its proof strategy
+        // is proof_strategy::PerCall.
+        friend class Regular;
+
     private:
         const std::vector<IntegerVariableID> _vars;
         long _num_states;

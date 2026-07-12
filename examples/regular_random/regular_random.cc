@@ -79,14 +79,12 @@ auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_r
         }
     }
 
-    if (legacy)
-        p.post(RegularLegacy{x, num_states, transitions, final_states} //
-                .with_short_reasons(short_reasons));
-    else if (bacchus)
-        p.post(RegularBacchus{x, num_states, transitions, final_states, short_reasons});
-    else
-        p.post(Regular{x, num_states, transitions, final_states} //
-                .with_short_reasons(short_reasons));
+    auto strategy = legacy ? RegularProofStrategy{proof_strategy::PerCall{}}
+        : bacchus          ? RegularProofStrategy{proof_strategy::Bacchus{}}
+                           : RegularProofStrategy{proof_strategy::Upfront{}};
+    p.post(Regular{x, num_states, transitions, final_states} //
+            .with_short_reasons(short_reasons)
+            .with_proof_strategy(strategy));
 }
 
 auto main(int argc, char * argv[]) -> int

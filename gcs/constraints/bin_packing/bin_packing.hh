@@ -1,18 +1,45 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_BIN_PACKING_BIN_PACKING_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_BIN_PACKING_BIN_PACKING_HH
 
+#include <gcs/consistency.hh>
 #include <gcs/constraint.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/integer.hh>
+#include <gcs/proof_strategy.hh>
 #include <gcs/variable_id.hh>
 
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace gcs
 {
+    /**
+     * \brief The consistency levels BinPacking supports: per-bin generalised
+     * arc consistency (the stronger default — the Stage 2 bounds pass followed
+     * by the Stage 3 partial-load DAG sweep), or bounds consistency (the
+     * cheaper Stage 2 pass alone). Joint GAC is NP-hard, so consistency::GAC
+     * here means per-bin GAC. The choice selects propagation strength only and
+     * never changes the OPB encoding.
+     *
+     * \ingroup Consistency
+     */
+    using BinPackingConsistency = std::variant<consistency::GAC, consistency::BC>;
+
+    /**
+     * \brief The proof-logging strategies BinPacking supports for its Stage 3
+     * sweep: proof_strategy::PerCall (the default — reified per-node state
+     * flags at Top, per-call RUP prunes) or proof_strategy::Upfront (also
+     * derive the full forward/backward chain scaffolding at Top). Both draw
+     * the same inferences; PerCall's proofs are smaller and verify faster on
+     * the in-tree benchmarks. No effect under consistency::BC (no Stage 3
+     * sweep) or with proof logging off.
+     *
+     * \ingroup ProofStrategy
+     */
+    using BinPackingProofStrategy = std::variant<proof_strategy::PerCall, proof_strategy::Upfront>;
     /**
      * \brief Bin packing constraint: each item is assigned to exactly one bin
      * (via `items[i]`), and each bin's total assigned size matches its load
@@ -69,8 +96,8 @@ namespace gcs
         std::vector<IntegerVariableID> _loads;
         std::vector<Integer> _capacities;
         const bool _have_loads;
-        const bool _bounds_only;
-        const bool _upfront_proof;
+        bool _bounds_only = false;
+        bool _upfront_proof = false;
 
         std::shared_ptr<DagBridge> _bridge;
         std::optional<innards::ConstraintStateHandle> _dead_cache_idx;
@@ -85,16 +112,26 @@ namespace gcs
          * items assigned to bin `b`. Items must take values in
          * `0..loads.size() - 1`.
          */
-        explicit BinPacking(std::vector<IntegerVariableID> items, std::vector<Integer> sizes, std::vector<IntegerVariableID> loads,
-            bool bounds_only = false, bool upfront_proof = false);
+        explicit BinPacking(std::vector<IntegerVariableID> items, std::vector<Integer> sizes, std::vector<IntegerVariableID> loads);
 
         /**
          * \brief Constant-capacity form: the sum of sizes of items assigned
          * to bin `b` must not exceed `capacities[b]`. Items must take values
          * in `0..capacities.size() - 1`.
          */
-        explicit BinPacking(std::vector<IntegerVariableID> items, std::vector<Integer> sizes, std::vector<Integer> capacities,
-            bool bounds_only = false, bool upfront_proof = false);
+        explicit BinPacking(std::vector<IntegerVariableID> items, std::vector<Integer> sizes, std::vector<Integer> capacities);
+
+        /// Select the consistency level: consistency::GAC (per-bin GAC, the
+        /// default) or consistency::BC (the cheaper bounds pass alone). The
+        /// choice selects propagation strength only and never changes the OPB
+        /// encoding.
+        auto with_consistency(BinPackingConsistency level) -> BinPacking &;
+
+        /// Select the Stage 3 proof-logging strategy: proof_strategy::PerCall
+        /// (the default) or proof_strategy::Upfront. Proof-only: it never
+        /// changes the inferences drawn or the solutions found, and has no
+        /// effect under consistency::BC or with proof logging off.
+        auto with_proof_strategy(BinPackingProofStrategy strategy) -> BinPacking &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

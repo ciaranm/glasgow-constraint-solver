@@ -21,24 +21,26 @@ Item sizes are non-negative. Frontends with non-zero-based bin indices
 ranges) shift to 0-based at the binding so the gcs class always sees
 items in `0..num_bins − 1`.
 
-A `bounds_only` flag on every constructor selects the cheaper
-propagation strategy: when set, only the Stage 2 bounds pass runs;
-when clear (the default), Stage 2 is followed by the Stage 3
-per-bin DAG sweep.
+The `with_consistency(...)` fluent setter selects the propagation
+strength: `consistency::GAC` (the default) runs the Stage 2 bounds pass
+followed by the Stage 3 per-bin DAG sweep (per-bin GAC); `consistency::BC`
+runs the Stage 2 bounds pass alone (the cheaper option, for when per-bin
+capacity is much larger than the number of items).
 
-An `upfront_proof` flag (default `false`) selects the Stage 3
-*proof-emission* strategy. It changes only the proof, never the set of
-inferences drawn or the solutions found:
+The `with_proof_strategy(...)` fluent setter selects the Stage 3
+*proof-emission* strategy (only meaningful under `consistency::GAC`). It
+changes only the proof, never the set of inferences drawn or the
+solutions found:
 
-- **`upfront_proof = false` (default) — per-call.** Only the reified
-  per-node state flags are defined at `ProofLevel::Top`; every
-  aggregation is left to the per-call sweep's `JustifyUsingRUP` prunes,
-  which RUP-close through those flags plus the natural per-bin OPB
-  equations. This wins on both proof size and VeriPB verify time (see
-  the benchmark table below), so it is the default.
-- **`upfront_proof = true` — upfront (opt-in).** The initialiser
-  additionally derives the full forward/backward chain scaffolding once
-  at `ProofLevel::Top`, so the per-call sweep only has to reference it.
+- **`proof_strategy::PerCall` (the default).** Only the reified per-node
+  state flags are defined at `ProofLevel::Top`; every aggregation is left
+  to the per-call sweep's `JustifyUsingRUP` prunes, which RUP-close
+  through those flags plus the natural per-bin OPB equations. This wins
+  on both proof size and VeriPB verify time (see the benchmark table
+  below), so it is the default.
+- **`proof_strategy::Upfront` (opt-in).** The initialiser additionally
+  derives the full forward/backward chain scaffolding once at
+  `ProofLevel::Top`, so the per-call sweep only has to reference it.
   Larger, slower-to-verify proofs with no measured benefit on the
   in-tree benchmarks; kept for robustness and A/B measurement.
 

@@ -68,7 +68,7 @@ auto run_regular_bacchus_test(bool proofs, const string & desc, vector<pair<int,
     vector<IntegerVariableID> vars;
     for (const auto & [lo, hi] : var_ranges)
         vars.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
-    p.post(RegularBacchus{vars, num_states, transitions, final_states});
+    p.post(Regular{vars, num_states, transitions, final_states}.with_proof_strategy(proof_strategy::Bacchus{}));
 
     auto proof_name = proofs ? make_optional("regular_bacchus_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});

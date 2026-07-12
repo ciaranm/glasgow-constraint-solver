@@ -1,6 +1,8 @@
 #include <gcs/constraints/regular/hints.hh>
 #include <gcs/constraints/regular/regex.hh>
 #include <gcs/constraints/regular/regular.hh>
+#include <gcs/constraints/regular/regular_bacchus.hh>
+#include <gcs/constraints/regular/regular_legacy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -9,6 +11,8 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/proof.hh>
+
+#include <util/overloaded.hh>
 
 #include <version>
 
@@ -498,20 +502,55 @@ auto Regular::with_short_reasons(std::optional<bool> short_reasons) -> Regular &
     return *this;
 }
 
+auto Regular::with_proof_strategy(RegularProofStrategy strategy) -> Regular &
+{
+    _proof_strategy = strategy;
+    return *this;
+}
+
 auto Regular::clone() const -> unique_ptr<Constraint>
 {
-    return unique_ptr<Constraint>(new Regular(_vars, _num_states, _transitions, _final_states, _symbols, _short_reasons, _regex));
+    auto cloned = unique_ptr<Regular>(new Regular(_vars, _num_states, _transitions, _final_states, _symbols, _short_reasons, _regex));
+    cloned->with_proof_strategy(_proof_strategy);
+    return cloned;
 }
 
 auto Regular::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model);
-
-    install_propagators(propagators);
+    // The three strategies share this constraint's OPB encoding and its
+    // inferences; they differ only in the proof scaffolding, so each is a
+    // distinct install path over the same automaton. Upfront is this class's
+    // own path; PerCall and Bacchus delegate to the sibling implementations,
+    // which are internal to this constraint (not part of the public API).
+    overloaded{[&](const proof_strategy::Upfront &) {
+                   if (! prepare(propagators, initial_state, optional_model))
+                       return;
+                   if (optional_model)
+                       define_proof_model(*optional_model);
+                   install_propagators(propagators);
+               },
+        [&](const proof_strategy::PerCall &) {
+            RegularLegacy legacy{_vars, _num_states, _transitions, _final_states, _symbols, _short_reasons, _regex};
+            legacy.set_constraint_id(constraint_id());
+            move(legacy).install(propagators, initial_state, optional_model);
+        },
+        [&](const proof_strategy::Bacchus &) {
+            if (_regex)
+                throw UnimplementedException{"the Bacchus proof strategy for Regular does not support regular-expression / NFA input"};
+            // Recover the deterministic transition map the Bacchus encoding
+            // needs from the shared (possibly non-deterministic) representation.
+            vector<unordered_map<Integer, long>> dfa(_transitions.size());
+            for (size_t q = 0; q < _transitions.size(); ++q)
+                for (const auto & [val, targets] : _transitions[q]) {
+                    if (targets.size() != 1)
+                        throw UnimplementedException{"the Bacchus proof strategy for Regular requires a deterministic automaton"};
+                    dfa[q][val] = *targets.begin();
+                }
+            RegularBacchus bacchus{_vars, _num_states, dfa, _final_states, _short_reasons};
+            bacchus.set_constraint_id(constraint_id());
+            move(bacchus).install(propagators, initial_state, optional_model);
+        }}
+        .visit(_proof_strategy);
 }
 
 auto Regular::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool

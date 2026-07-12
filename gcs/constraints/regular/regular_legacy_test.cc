@@ -1,6 +1,6 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/regular.hh>
 #include <gcs/constraints/regular/regex.hh>
-#include <gcs/constraints/regular/regular_legacy.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -71,7 +71,7 @@ auto run_regular_test(bool proofs, const ViewWrapConfig & view_cfg, const string
     vector<IntegerVariableID> vars;
     for (std::size_t i = 0; i < var_ranges.size(); ++i)
         vars.push_back(create_integer_variable_or_constant_with_view(p, var_ranges.at(i), wraps.at(i)));
-    p.post(RegularLegacy{vars, num_states, transitions, final_states});
+    p.post(Regular{vars, num_states, transitions, final_states}.with_proof_strategy(proof_strategy::PerCall{}));
 
     auto proof_name = proofs ? make_optional("regular_legacy_test_" + view_wrap_config_label(view_cfg)) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});
@@ -118,7 +118,7 @@ auto run_dup_regular_test(bool proofs, const string & label, const vector<pair<i
     vector<IntegerVariableID> vars;
     for (auto pos : positions)
         vars.push_back(unique_vars.at(pos));
-    p.post(RegularLegacy{vars, num_states, transitions, final_states});
+    p.post(Regular{vars, num_states, transitions, final_states}.with_proof_strategy(proof_strategy::PerCall{}));
 
     auto proof_name = proofs ? make_optional("regular_legacy_test_dup_" + label) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{unique_vars});
@@ -157,7 +157,7 @@ auto run_regular_regex_test(bool proofs, const string & label, const string & re
     vector<IntegerVariableID> vars;
     for (const auto & [a, b] : var_ranges)
         vars.push_back(p.create_integer_variable(Integer(a), Integer(b)));
-    p.post(RegularLegacy{vars, regex});
+    p.post(Regular{vars, regex}.with_proof_strategy(proof_strategy::PerCall{}));
 
     auto proof_name = proofs ? make_optional("regular_legacy_regex_test_" + label) : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vars});

@@ -126,6 +126,8 @@ auto main(int argc, char * argv[]) -> int
     auto inst = curated_instance(vars["instance"].as<int>());
     bool bounds_only = vars.contains("bounds-only");
     bool upfront = vars.contains("upfront");
+    auto level = bounds_only ? BinPackingConsistency{consistency::BC{}} : BinPackingConsistency{consistency::GAC{}};
+    auto strategy = upfront ? BinPackingProofStrategy{proof_strategy::Upfront{}} : BinPackingProofStrategy{proof_strategy::PerCall{}};
 
     Problem p;
     vector<IntegerVariableID> items;
@@ -139,11 +141,15 @@ auto main(int argc, char * argv[]) -> int
         loads.reserve(loads_bounds.size());
         for (size_t b = 0; b < loads_bounds.size(); ++b)
             loads.push_back(p.create_integer_variable(loads_bounds[b].first, loads_bounds[b].second, "load" + std::to_string(b)));
-        p.post(BinPacking{items, inst.sizes, loads, bounds_only, upfront});
+        p.post(BinPacking{items, inst.sizes, loads} //
+                .with_consistency(level)
+                .with_proof_strategy(strategy));
     }
     else {
         const auto & caps = std::get<vector<Integer>>(inst.bins);
-        p.post(BinPacking{items, inst.sizes, caps, bounds_only, upfront});
+        p.post(BinPacking{items, inst.sizes, caps} //
+                .with_consistency(level)
+                .with_proof_strategy(strategy));
     }
 
     bool root_only = vars.contains("root-only");

@@ -1,5 +1,5 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
-#include <gcs/constraints/knapsack/knapsack_upfront.hh>
+#include <gcs/constraints/knapsack/knapsack.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
@@ -106,7 +106,7 @@ auto run_knapsack_upfront_test(bool proofs, pair<int, int> valrange, const vecto
         for (const auto & w : coeffs[i])
             coeffs_integers[i].push_back(Integer(w));
 
-    p.post(KnapsackUpfront{coeffs_integers, vs, bs});
+    p.post(Knapsack{coeffs_integers, vs, bs}.with_proof_strategy(proof_strategy::Upfront{}));
 
     auto proof_name = proofs ? make_optional("knapsack_upfront_test") : nullopt;
     solve_for_tests_checking_gac(p, proof_name, expected, actual, tuple{vs, bs});
@@ -161,7 +161,7 @@ auto run_dup_knapsack_upfront_test(bool proofs, const string & label, pair<int, 
         for (auto c : row)
             coeffs_i.back().push_back(Integer(c));
     }
-    p.post(KnapsackUpfront{coeffs_i, vs, bs});
+    p.post(Knapsack{coeffs_i, vs, bs}.with_proof_strategy(proof_strategy::Upfront{}));
 
     auto proof_name = proofs ? make_optional("knapsack_upfront_test_dup_" + label) : nullopt;
     solve_for_tests(p, proof_name, actual, tuple{unique_vars, bs});
@@ -206,7 +206,7 @@ auto run_knapsack_upfront_regression(pair<int, int> valrange, const vector<vecto
         for (const auto & w : coeffs[i])
             coeffs_integers[i].push_back(Integer(w));
 
-    p.post(KnapsackUpfront{coeffs_integers, items, totals});
+    p.post(Knapsack{coeffs_integers, items, totals}.with_proof_strategy(proof_strategy::Upfront{}));
 
     set<tuple<vector<int>, vector<int>>> actual;
     auto record_solution = [&](const CurrentState & s) -> bool {
