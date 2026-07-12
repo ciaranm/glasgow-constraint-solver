@@ -73,6 +73,7 @@ add_library(glasgow_constraint_solver
         constraints/multiply/multiply.cc
         constraints/multiply/signed_multiply.cc
         constraints/n_value/n_value.cc
+        constraints/nogoods/nogoods.cc
         constraints/parity/parity.cc
         constraints/plus_minus/plus.cc
         constraints/power/power.cc
@@ -225,6 +226,7 @@ if(GCS_BUILD_TESTS)
     add_executable(min_max_test constraints/min_max/min_max_test.cc)
     add_executable(multiply_test constraints/multiply/multiply_test.cc)
     add_executable(n_value_test constraints/n_value/n_value_test.cc)
+    add_executable(nogoods_test constraints/nogoods/nogoods_test.cc)
     add_executable(parity_test constraints/parity/parity_test.cc)
     add_executable(plus_minus_test constraints/plus_minus/plus_minus_test.cc)
     add_executable(power_test constraints/power/power_test.cc)
@@ -249,7 +251,7 @@ if(GCS_BUILD_TESTS)
     foreach(test_target
             abs_test all_different_test all_different_except_test all_equal_test among_test at_most_one_test bin_packing_test comparison_test
             count_test cumulative_test disjunctive_test disjunctive_2d_test divide_modulus_test element_test equals_test bounds_global_cardinality_test gac_global_cardinality_test in_test increasing_test inverse_test knapsack_test knapsack_upfront_test lex_test linear_test linear_constant_test
-            logical_test mdd_test min_max_test multiply_test n_value_test parity_test
+            logical_test mdd_test min_max_test multiply_test n_value_test nogoods_test parity_test
             plus_minus_test power_test product_bounds_test product_justify_test regular_test regular_bacchus_test regular_legacy_test seq_precede_chain_test smart_table_test sort_test arg_sort_test symmetric_all_different_test
             negative_table_test table_test tabulation_test value_precede_test)
         target_link_libraries(${test_target} PRIVATE glasgow_constraint_solver)
@@ -396,6 +398,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME power_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:power_test>)
     add_test(NAME multiply_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:multiply_test>)
     add_test(NAME n_value_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:n_value_test>)
+    add_test(NAME nogoods_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:nogoods_test>)
     add_test(NAME parity_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:parity_test>)
     add_test(NAME plus_minus_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:plus_minus_test>)
     add_test(NAME regular_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:regular_test>)

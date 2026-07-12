@@ -26,9 +26,11 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options()                    //
-            ("help", "Display help information") //
-            ("prove", "Create a proof");
+        options.add_options()                                                        //
+            ("help", "Display help information")                                     //
+            ("prove", "Create a proof")                                              //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"));
 
         options.add_options()(
             "propagator", "Specify which circuit propagation algorithm to use (prevent/scc)", cxxopts::value<string>()->default_value("prevent"));
@@ -106,13 +108,17 @@ auto main(int argc, char * argv[]) -> int
     p.post(dist_sum == 1_i * obj);
     p.minimise(obj);
 
+    auto restarts =
+        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
+
     auto stats = solve_with(p, //
         SolveCallbacks{        //
             .solution = [&](const CurrentState & s) -> bool {
                 cout << "distance: " << s(obj) << endl;
                 return true;
             },
-            .branch = branch_with(variable_order::dom(succ), value_order::smallest_in())},
+            .branch = branch_with(variable_order::dom(succ), value_order::smallest_in()),
+            .restarts = restarts},
         options_vars.contains("prove") ? make_optional<ProofOptions>("tsp") : nullopt);
 
     cout << stats;

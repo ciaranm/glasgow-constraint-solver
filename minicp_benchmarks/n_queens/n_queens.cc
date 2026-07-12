@@ -26,9 +26,11 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof");
+        options.add_options("Program Options")                                       //
+            ("help", "Display help information")                                     //
+            ("prove", "Create a proof")                                              //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"));
 
         options.add_options()                                                                    //
             ("size", "Size of the problem to solve", cxxopts::value<int>()->default_value("88")) //
@@ -70,6 +72,9 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
+    auto restarts =
+        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
+
     auto stats = solve_with(p, //
         SolveCallbacks{        //
             .solution = [&](const CurrentState & s) -> bool {
@@ -80,7 +85,8 @@ auto main(int argc, char * argv[]) -> int
 
                 return options_vars.contains("all");
             },
-            .branch = branch_with(variable_order::dom(queens), value_order::smallest_in())},
+            .branch = branch_with(variable_order::dom(queens), value_order::smallest_in()),
+            .restarts = restarts},
         options_vars.contains("prove") ? make_optional<ProofOptions>("n_queens") : nullopt);
 
     cout << stats;

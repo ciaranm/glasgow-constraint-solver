@@ -87,7 +87,7 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
-    cxxopts::Options options("Knapsack");
+    cxxopts::Options options("Langford");
     cxxopts::ParseResult options_vars;
 
     try {
@@ -98,13 +98,11 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<string>()->default_value("langford"))         //
             ("stats", "Print solve statistics")                              //
             ("branch",
-                "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] " //
-                "(VARIANT = classic / ia / ca / id / cd / ca.cd / chs)",    //
-                cxxopts::value<string>()->default_value("dom-then-deg"))    //
-            ("restart",
-                "Restart on a Luby schedule with the given conflict scale "   //
-                "(finds one solution only, since restarts cannot enumerate)", //
-                cxxopts::value<unsigned long long>()->implicit_value("100"))  //
+                "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] "          //
+                "(VARIANT = classic / ia / ca / id / cd / ca.cd / chs)",             //
+                cxxopts::value<string>()->default_value("dom-then-deg"))             //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"))         //
             ;
 
         options.add_options()                                                                   //
@@ -156,11 +154,8 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    // Restarts re-explore, so without nogoods they can only find one solution;
-    // when restarting we stop at the first, otherwise we enumerate as before.
     auto restarts =
-        options_vars.contains("restart") ? make_optional(RestartSchedule::luby(options_vars["restart"].as<unsigned long long>())) : nullopt;
-    auto keep_searching_after_solution = ! restarts.has_value();
+        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
 
     auto stats = solve_with(p,
         SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
@@ -168,7 +163,7 @@ auto main(int argc, char * argv[]) -> int
                            println("position: {}", position | std::ranges::views::transform(cref(s)));
                            println("");
 
-                           return keep_searching_after_solution;
+                           return true;
                        },
             .branch = *brancher,
             .restarts = restarts},

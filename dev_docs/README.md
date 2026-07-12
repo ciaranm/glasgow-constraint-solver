@@ -115,6 +115,14 @@ library. For an introduction to *using* the solver, start with the top-level
   `BinPacking` Stage 3. Covers the `define_proof_model` /
   `install_initialiser` split, the paper-style reified scaffolding, the
   per-call proof chain, and the measured default-vs-opt-in trade-off.
+- [Restarts, nogoods, and dom/wdeg weighting](restarts-nogoods-weighting.md) —
+  the search-side machinery from issue #315: the restart loop and its
+  `SearchResult` unwind signal, `RestartSchedule`, the `ConflictObserver`
+  weighting seam and the dom/wdeg schemes, the `Nogoods` constraint
+  (entailment-based 2WL, the subscribe-to-all-vars trigger caveat), reduced-nld
+  extraction, and the proof lifecycle (root-keeps-level-1, deep-first-unwind RUP
+  for reduced clauses, `solx`-enabled enumeration). Read when touching restarts,
+  nogoods, or branching heuristics.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.

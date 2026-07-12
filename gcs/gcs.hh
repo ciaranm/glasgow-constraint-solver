@@ -47,6 +47,7 @@
 #include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/multiply.hh>
 #include <gcs/constraints/n_value.hh>
+#include <gcs/constraints/nogoods/nogoods.hh>
 #include <gcs/constraints/parity.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/constraints/power.hh>
