@@ -188,17 +188,17 @@ in the solver yet; documented here as a known sharp edge.
   so its state flags belong in the OPB. `BinPacking`'s natural
   definition is the sum equations, so its per-bin DAGs (when added in
   Stage 3) belong in the proof scaffolding, not the OPB.
-- **`Knapsack`** — currently builds and tears down its partial-sum DAG
-  *and* its proof scaffolding on every propagation call, at
-  `ProofLevel::Temporary`. The user goal flagged on issue #200 is to
-  retrofit `Knapsack` to the `install_initialiser` + Top-level
-  scaffolding pattern that `BinPacking` Stage 3 will introduce. Stage
-  3's code shape should make that retrofit straightforward.
+- **`Knapsack`** — the opt-in `KnapsackUpfront` variant is retrofitted
+  to the same `install_initialiser` + Top-level scaffolding pattern
+  Stage 3 uses here, generalised to *k* partial-sum coordinates. See
+  [`knapsack.md`](knapsack.md). The default `Knapsack` remains the
+  per-call DP implementation (it verifies faster); `KnapsackUpfront`
+  is the smaller-proof opt-in.
 - **#200 unified framework** — the layered-DAG abstraction (per-layer
   node counts, transitions, accepting terminals) is the dispatch point.
   `MDD` is one user-supplied DAG; `BinPacking` synthesises `num_bins`
-  DAGs from items + sizes + per-bin bound; `Knapsack` (after retrofit)
-  is one DAG per equation; future `CostMDD` adds edge weights against
-  a totalcost variable.
+  scalar DAGs from items + sizes + per-bin bound; `Knapsack`
+  synthesises one *k*-dim DAG per constraint; future `CostMDD` adds
+  edge weights against a totalcost variable.
 
 <!-- vim: set tw=72 spell spelllang=en : -->

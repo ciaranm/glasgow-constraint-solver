@@ -11,8 +11,22 @@
 namespace gcs
 {
     /**
-     * \brief Knapsack constraint, <code>sum(weights[i]*vars[i]) = weight</code> and
-     * <code>sum(profits[i]*vars[i]) = profit</code>.
+     * \brief Knapsack constraint:
+     * <code>sum(coefficients[x][i] * vars[i]) = totals[x]</code> for
+     * each <code>x</code>. Coefficients and item domains must be
+     * non-negative.
+     *
+     * This is the default implementation: it builds its DP table and
+     * proof scaffolding from scratch on every propagation call, at
+     * <code>ProofLevel::Temporary</code>. It is chosen as the default
+     * because its proofs verify substantially faster (3.6–18×) than the
+     * upfront-DAG alternative.
+     *
+     * For an opt-in variant that emits upfront paper-style proof
+     * scaffolding once at the search root — producing 3–6× smaller proofs
+     * at the cost of slower verification — see KnapsackUpfront. Prefer it
+     * only when proof size or distribution matters. See
+     * <code>dev_docs/knapsack.md</code> for the measured rationale.
      *
      * \ingroup Constraints
      */
