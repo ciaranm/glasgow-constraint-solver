@@ -100,18 +100,31 @@ namespace
         vector<unordered_map<long long, PerBinCoordFlags>> coord;
         // Per-layer w -> S flag; same coverage.
         vector<unordered_map<long long, ProofFlag>> s;
+        // RUP-hint capture. The per-call dead-state ~S RUPs are emitted with an
+        // explicit propagation hint (O(#cited)) rather than hint-free (O(live
+        // DB)); these maps hold the Top-scaffolding line IDs each closure cites:
+        //   s_fwd[i][w]      forward reif S_{i,w} -> g_up /\ g_dn (cap-exceeded)
+        //   bwd[i][succ]     joint backward chain lines into (i+1, succ)
+        //                    (forward-unreachable ~S at layer i+1)
+        //   impl[i][w]       per-state implication ~S_{i,w} + Sum_children S >= 1
+        //                    (backward-pass dead-intermediate ~S)
+        //   static_dead[i][w] Top ~S_{i,w} of a statically-dead PHANTOM node
+        //                    (a dead backward parent that is not a DAG node)
+        vector<unordered_map<long long, ProofLine>> s_fwd;
+        vector<unordered_map<long long, vector<ProofLine>>> bwd;
+        vector<unordered_map<long long, ProofLine>> impl;
+        vector<unordered_map<long long, ProofLine>> static_dead;
     };
 
     // Backtrack-restored per-bin dead-state cache. dead[b][i] gathers w values
     // for which ~S_{b,i,w} has been emitted at the current search depth (or
     // above); dead_g_dn[b][i] is the same for the variable-load lower-bound
-    // ~g_dn lines (only populated at layer n). Pre-populated by the
-    // initialiser with the statically dead set, so the per-call propagator
-    // never re-emits a line for a node already discharged at Top.
+    // ~g_dn lines (only populated at layer n). The per-call propagator never
+    // re-emits a line for a node already discharged in this subtree.
     struct DeadCache
     {
-        vector<vector<set<long long>>> dead;
-        vector<vector<set<long long>>> dead_g_dn;
+        vector<vector<map<long long, ProofLine>>> dead;
+        vector<vector<map<long long, ProofLine>>> dead_g_dn;
     };
 
     // Per-bin cap on partial sums: sum of all item sizes.
@@ -263,6 +276,10 @@ namespace
 
         flags.coord.assign(n + 1, {});
         flags.s.assign(n + 1, {});
+        flags.s_fwd.assign(n + 1, {});
+        flags.bwd.assign(n + 1, {});
+        flags.impl.assign(n + 1, {});
+        flags.static_dead.assign(n + 1, {});
 
         vector<WPBSum> running(n + 1);
         for (size_t i = 0; i <= n; ++i)
@@ -278,7 +295,7 @@ namespace
                 auto [s_flag, s_fwd, s_rev] =
                     logger->create_proof_flag_reifying(WPBSum{} + 1_i * g_up + 1_i * g_dn >= 2_i, format("bpat_{}_{}_{}", b, i, w), ProofLevel::Top);
                 flags.s[i].emplace(w, s_flag);
-                (void)s_fwd;
+                flags.s_fwd[i].emplace(w, s_fwd);
                 (void)s_rev;
             }
         }
@@ -293,7 +310,7 @@ namespace
                 auto [s_flag, s_fwd, s_rev] = logger->create_proof_flag_reifying(
                     WPBSum{} + 1_i * g_up + 1_i * g_dn >= 2_i, format("bpphantom_{}_{}_{}", b, i, w), ProofLevel::Top);
                 flags.s[i].emplace(w, s_flag);
-                (void)s_fwd;
+                flags.s_fwd[i].emplace(w, s_fwd);
                 (void)s_rev;
             }
         }
@@ -358,7 +375,7 @@ namespace
                 auto succ_w = parent_w + sz;
                 if (succ_w != parent_w && dag.node_set[i + 1].contains(succ_w))
                     impl += 1_i * flags.s[i + 1].at(succ_w);
-                logger->emit_rup_proof_line(move(impl) >= 1_i, ProofLevel::Top);
+                flags.impl[i].emplace(parent_w, logger->emit_rup_proof_line(move(impl) >= 1_i, ProofLevel::Top));
             }
 
             WPBSum alo;
@@ -393,19 +410,22 @@ namespace
                     logger->emit_rup_proof_line(
                         WPBSum{} + 1_i * ! succ_cf.g_dn + 1_i * (items[i] == bin_idx) + 1_i * parent_cf.g_dn >= 1_i, ProofLevel::Top);
                     const auto & parent_s = flags.s[i].at(succ_w);
-                    logger->emit_rup_proof_line(WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] == bin_idx) + 1_i * parent_s >= 1_i, ProofLevel::Top);
+                    flags.bwd[i][succ_w].push_back(logger->emit_rup_proof_line(
+                        WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] == bin_idx) + 1_i * parent_s >= 1_i, ProofLevel::Top));
                 }
                 else {
                     // No flag exists for succ_w at layer i (shouldn't happen
                     // post-phantom-closure; assert via the direct chain).
-                    logger->emit_rup_proof_line(WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] == bin_idx) >= 1_i, ProofLevel::Top);
+                    flags.bwd[i][succ_w].push_back(
+                        logger->emit_rup_proof_line(WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] == bin_idx) >= 1_i, ProofLevel::Top));
                 }
             }
             // include branch: parent_w = succ_w - sizes[i]
             {
                 auto parent_w = succ_w - sizes[i].raw_value;
                 if (parent_w < 0) {
-                    logger->emit_rup_proof_line(WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] != bin_idx) >= 1_i, ProofLevel::Top);
+                    flags.bwd[i][succ_w].push_back(
+                        logger->emit_rup_proof_line(WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] != bin_idx) >= 1_i, ProofLevel::Top));
                 }
                 else {
                     bool parent_is_dag = dag.node_set[i].contains(parent_w);
@@ -420,10 +440,12 @@ namespace
                         logger->emit_rup_proof_line(
                             WPBSum{} + 1_i * ! succ_cf.g_dn + 1_i * (items[i] != bin_idx) + 1_i * parent_cf.g_dn >= 1_i, ProofLevel::Top);
                         const auto & parent_s = flags.s[i].at(parent_w);
-                        logger->emit_rup_proof_line(WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] != bin_idx) + 1_i * parent_s >= 1_i, ProofLevel::Top);
+                        flags.bwd[i][succ_w].push_back(logger->emit_rup_proof_line(
+                            WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] != bin_idx) + 1_i * parent_s >= 1_i, ProofLevel::Top));
                     }
                     else {
-                        logger->emit_rup_proof_line(WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] != bin_idx) >= 1_i, ProofLevel::Top);
+                        flags.bwd[i][succ_w].push_back(
+                            logger->emit_rup_proof_line(WPBSum{} + 1_i * ! succ_s + 1_i * (items[i] != bin_idx) >= 1_i, ProofLevel::Top));
                     }
                 }
             }
@@ -457,7 +479,7 @@ namespace
                 }
 
                 const auto & s_flag = flags.s[i].at(p_w);
-                logger->emit_rup_proof_line(WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Top);
+                flags.static_dead[i].emplace(p_w, logger->emit_rup_proof_line(WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Top));
             }
         }
 
@@ -489,6 +511,17 @@ namespace
     // pol chains + aggregating RUPs. Backward pass over predecessor map
     // for dead-intermediate ~S and items[i] != b pruning for unsupported
     // bin candidates. Empty layer-n → contradiction.
+    // Prototype (measurement) switch. When GCS_BP_DOMINANT_HINTS is set, the
+    // dominant forward-unreachable / backward-unsupported ~S RUPs of the
+    // constant-cap DAG are emitted with a solver-assembled, guaranteed-complete
+    // neighbourhood hint (O(#cited)); otherwise they stay hint-free (the sound
+    // default). The hinted path is a research prototype for measuring how close
+    // solver-side hinting gets to the veripb --elaborate ceiling: its
+    // neighbourhood rule is complete on the benchmark instances but not proven
+    // complete for every constant-cap shape (a missing standing line is a hard
+    // veripb error), so it is off by default and gated to constant-cap.
+    const bool bp_dominant_hints = getenv("GCS_BP_DOMINANT_HINTS") != nullptr;
+
     auto propagate_bin(const State & state, auto & inference, ProofLogger * const logger, const vector<IntegerVariableID> & items,
         const vector<Integer> & sizes, bool have_loads, const vector<IntegerVariableID> & loads, const vector<Integer> & capacities, size_t b,
         const PerBinDag & dag, const PerBinFlags & flags, const pair<optional<ProofLine>, optional<ProofLine>> & opb_lines, DeadCache & cache,
@@ -507,8 +540,89 @@ namespace
         const bool emitting = logger && logger->get_assertion_level() == AssertionLevel::Off;
 
         int temporary_proof_level = 0;
-        if (emitting)
+        ReasonLiterals er;
+        if (emitting) {
             temporary_proof_level = logger->temporary_proof_level();
+            er = eager_reason(reason, state);
+        }
+
+        // Emit a dead-state RUP with an explicit propagation hint. `hints` are
+        // the Top-scaffolding / cached-~S / pol lines that close the RUP by
+        // unit propagation; the reason-atom defining lines are appended so UP
+        // can bridge the trail assumptions to the cited scaffolding. A hinted
+        // RUP is checked in O(#cited) rather than O(live DB).
+        auto emit_hinted = [&](vector<ProofLine> hints, const auto & ineq, ProofLevel lvl) -> ProofLine {
+            logger->append_reason_defining_lines(er, hints);
+            return logger->emit_rup_proof_line_under_reason(er, ineq, lvl, move(hints));
+        };
+
+        // Assemble the guaranteed-complete local-neighbourhood hint for a dead
+        // state S_{layer,w}, covering both closure directions so one hint works
+        // whether w died forward-unreachable (its DAG parents are all dead / the
+        // reason excludes the branch) or backward-unsupported (no live child), or
+        // arithmetically (the pinned items force the running sum away from w).
+        long long num_bins = have_loads ? static_cast<long long>(loads.size()) : static_cast<long long>(capacities.size());
+        // Only called from the dead-state hint assembly, which runs solely when
+        // emitting (logger non-null); the tracker is fetched lazily here so the
+        // proofs-off propagation path never touches it.
+        auto cite_item_bridge = [&](size_t item_idx, vector<ProofLine> & h) {
+            auto & tracker = logger->names_and_ids_tracker();
+            auto cite = [&](const auto & cond) {
+                if (auto d = tracker.need_pol_item_defining_literal(cond); auto l = std::get_if<ProofLine>(&d))
+                    h.push_back(*l);
+            };
+            cite(items[item_idx] == bin_idx);
+            for (long long k = 1; k < num_bins; ++k) {
+                cite(items[item_idx] >= Integer{k});
+                cite(items[item_idx] < Integer{k});
+            }
+            overloaded{[&](const SimpleIntegerVariableID & sv) { tracker.chain_lines_between(sv, 0_i, Integer{num_bins}, h); }, //
+                [&](const ConstantIntegerVariableID &) {},                                                                      //
+                [&](const ViewOfIntegerVariableID &) {}}
+                .visit(items[item_idx]);
+        };
+        auto dead_hints = [&](size_t layer, long long w) -> vector<ProofLine> {
+            vector<ProofLine> h;
+            auto push_dead = [&](size_t lyr, long long v) {
+                if (auto it = cache.dead[b][lyr].find(v); it != cache.dead[b][lyr].end())
+                    h.push_back(it->second);
+                else if (auto sd = flags.static_dead[lyr].find(v); sd != flags.static_dead[lyr].end())
+                    h.push_back(sd->second);
+            };
+            // Arithmetic closure: S_{layer,w} -> g_up /\ g_dn -> running sum
+            // (over items[0..layer-1]) both >= w and <= w. If the reason pins
+            // items so the running sum cannot equal w, UP over the g_up/g_dn
+            // reifications + the item defs derives ~g_up / ~g_dn -> ~S.
+            if (auto sf = flags.s_fwd[layer].find(w); sf != flags.s_fwd[layer].end())
+                h.push_back(sf->second);
+            if (auto cf = flags.coord[layer].find(w); cf != flags.coord[layer].end()) {
+                h.push_back(cf->second.g_up_fwd);
+                h.push_back(cf->second.g_up_rev);
+                h.push_back(cf->second.g_dn_fwd);
+                h.push_back(cf->second.g_dn_rev);
+            }
+            // The running sum in g_up/g_dn is over (items[j] == b); each item's
+            // reason atom must be bridged to that == atom (its def + ladder), so
+            // the arithmetic closure needs a bridge for every earlier item.
+            for (size_t j = 0; j < layer; ++j)
+                cite_item_bridge(j, h);
+            if (layer > 0) {
+                if (auto bw = flags.bwd[layer - 1].find(w); bw != flags.bwd[layer - 1].end())
+                    for (const auto & l : bw->second)
+                        h.push_back(l);
+                push_dead(layer - 1, w);
+                push_dead(layer - 1, w - sizes[layer - 1].raw_value);
+                cite_item_bridge(layer - 1, h);
+            }
+            if (layer < n) {
+                if (auto im = flags.impl[layer].find(w); im != flags.impl[layer].end())
+                    h.push_back(im->second);
+                push_dead(layer + 1, w);
+                push_dead(layer + 1, w + sizes[layer].raw_value);
+                cite_item_bridge(layer, h);
+            }
+            return h;
+        };
 
         // (parent_w, branch_is_include) edges that landed on each live node.
         struct LiveNode
@@ -568,18 +682,44 @@ namespace
                     if (cache.dead[b][i + 1].contains(w))
                         continue;
 
-                    if (w > load_upper_b && opb_lines.first.has_value()) {
+                    auto s_flag = flags.s[i + 1].at(w);
+                    ProofLine line;
+                    if (w > load_upper_b && ! have_loads && opb_lines.first.has_value()) {
+                        // Constant-cap cap-exceeded: pol derives ~g_up from the
+                        // OPB LE half (running sum <= cap < w) with the cap a
+                        // constant inside the line; ~S then follows from the
+                        // forward reification S -> g_up /\ g_dn. Deterministic
+                        // closure, so the RUP is hinted (O(#cited)). The
+                        // variable-load form adds a load-bound term whose bridge
+                        // isn't captured by [pol, s_fwd] alone, so it is left
+                        // hint-free below.
                         const auto & cf = flags.coord[i + 1].at(w);
                         PolBuilder bb;
                         bb.add(cf.g_up_fwd).add(*opb_lines.first);
-                        if (have_loads)
-                            add_bound_p_term(bb, state, logger, loads[b], true);
-                        bb.emit(*logger, ProofLevel::Temporary);
+                        vector<ProofLine> hints{bb.emit(*logger, ProofLevel::Temporary), flags.s_fwd[i + 1].at(w)};
+                        line = emit_hinted(move(hints), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
                     }
-
-                    auto s_flag = flags.s[i + 1].at(w);
-                    logger->emit_rup_proof_line_under_reason(eager_reason(reason, state), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
-                    cache.dead[b][i + 1].insert(w);
+                    else if (w > load_upper_b && have_loads && opb_lines.first.has_value()) {
+                        // Variable-load cap-exceed: keep the pol (for the DB) but
+                        // emit ~S hint-free (the load-bound bridge isn't captured
+                        // by [pol, s_fwd] alone).
+                        const auto & cf = flags.coord[i + 1].at(w);
+                        PolBuilder bb;
+                        bb.add(cf.g_up_fwd).add(*opb_lines.first);
+                        add_bound_p_term(bb, state, logger, loads[b], true);
+                        bb.emit(*logger, ProofLevel::Temporary);
+                        line = logger->emit_rup_proof_line_under_reason(er, WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                    }
+                    else if (bp_dominant_hints && ! have_loads) {
+                        // Forward-unreachable / backward-unsupported, constant cap:
+                        // the neighbourhood hint closes ~S_w in whichever
+                        // direction killed it (prototype; see bp_dominant_hints).
+                        line = emit_hinted(dead_hints(i + 1, w), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                    }
+                    else {
+                        line = logger->emit_rup_proof_line_under_reason(er, WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                    }
+                    cache.dead[b][i + 1].emplace(w, line);
                 }
             }
 
@@ -605,14 +745,13 @@ namespace
                                 bb.emit(*logger, ProofLevel::Temporary);
                             }
                             if (need_g_dn) {
-                                logger->emit_rup_proof_line_under_reason(
-                                    eager_reason(reason, state), WPBSum{} + 1_i * ! cf.g_dn >= 1_i, ProofLevel::Current);
-                                cache.dead_g_dn[b][n].insert(it->first);
+                                auto gdn = logger->emit_rup_proof_line_under_reason(er, WPBSum{} + 1_i * ! cf.g_dn >= 1_i, ProofLevel::Current);
+                                cache.dead_g_dn[b][n].emplace(it->first, gdn);
                             }
                             if (need_s) {
-                                logger->emit_rup_proof_line_under_reason(
-                                    eager_reason(reason, state), WPBSum{} + 1_i * ! flags.s[n].at(it->first) >= 1_i, ProofLevel::Current);
-                                cache.dead[b][n].insert(it->first);
+                                auto sl = logger->emit_rup_proof_line_under_reason(
+                                    er, WPBSum{} + 1_i * ! flags.s[n].at(it->first) >= 1_i, ProofLevel::Current);
+                                cache.dead[b][n].emplace(it->first, sl);
                             }
                         }
                     }
@@ -630,12 +769,12 @@ namespace
                         if (opb_lines.first.has_value() && opb_lines.second.has_value()) {
                             PolBuilder{}.add(cf.g_dn_fwd).add(*opb_lines.second).emit(*logger, ProofLevel::Temporary);
                             PolBuilder{}.add(cf.g_up_fwd).add(*opb_lines.first).emit(*logger, ProofLevel::Temporary);
-                            logger->emit_rup_proof_line_under_reason(eager_reason(reason, state),
+                            logger->emit_rup_proof_line_under_reason(er,
                                 WPBSum{} + 1_i * ! flags.s[n].at(it->first) + 1_i * (loads[b] == Integer{it->first}) >= 1_i, ProofLevel::Temporary);
                         }
-                        logger->emit_rup_proof_line_under_reason(
-                            eager_reason(reason, state), WPBSum{} + 1_i * ! flags.s[n].at(it->first) >= 1_i, ProofLevel::Current);
-                        cache.dead[b][n].insert(it->first);
+                        auto sl =
+                            logger->emit_rup_proof_line_under_reason(er, WPBSum{} + 1_i * ! flags.s[n].at(it->first) >= 1_i, ProofLevel::Current);
+                        cache.dead[b][n].emplace(it->first, sl);
                     }
                     completed_layers.back().erase(it++);
                 }
@@ -715,8 +854,17 @@ namespace
                 else {
                     if (emitting && ! cache.dead[b][var_number].contains(it->first)) {
                         auto s_flag = flags.s[var_number].at(it->first);
-                        logger->emit_rup_proof_line_under_reason(eager_reason(reason, state), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
-                        cache.dead[b][var_number].insert(it->first);
+                        // Backward-pass dead intermediate: the guaranteed-complete
+                        // neighbourhood hint (implication out of w + cached ~S of
+                        // its dead children, plus the backward/arithmetic
+                        // directions) closes ~S_w. Constant-cap only.
+                        ProofLine line;
+                        if (bp_dominant_hints && ! have_loads)
+                            line = emit_hinted(
+                                dead_hints(static_cast<size_t>(var_number), it->first), WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                        else
+                            line = logger->emit_rup_proof_line_under_reason(er, WPBSum{} + 1_i * ! s_flag >= 1_i, ProofLevel::Current);
+                        cache.dead[b][var_number].emplace(it->first, line);
                     }
                     next(layer)->erase(it++);
                 }
@@ -883,8 +1031,8 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
             _bridge->dags.push_back(move(dag));
         }
 
-        DeadCache initial_cache{vector<vector<set<long long>>>(num_bins, vector<set<long long>>(_items.size() + 1)),
-            vector<vector<set<long long>>>(num_bins, vector<set<long long>>(_items.size() + 1))};
+        DeadCache initial_cache{vector<vector<map<long long, ProofLine>>>(num_bins, vector<map<long long, ProofLine>>(_items.size() + 1)),
+            vector<vector<map<long long, ProofLine>>>(num_bins, vector<map<long long, ProofLine>>(_items.size() + 1))};
         _dead_cache_idx = initial_state.add_constraint_state(move(initial_cache));
     }
 

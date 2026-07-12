@@ -500,6 +500,36 @@ auto ProofLogger::emit_rup_proof_line_under_reason(
     return emit_under_reason(RUPProofRule{}, ineq, level, reason);
 }
 
+auto ProofLogger::emit_rup_proof_line_under_reason(
+    const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level, vector<ProofLine> hints) -> ProofLine
+{
+    return emit_under_reason(RUPProofRule{.lines = move(hints)}, ineq, level, reason);
+}
+
+auto ProofLogger::append_reason_defining_lines(const ReasonLiterals & reason, vector<ProofLine> & lines) -> void
+{
+    for (const auto & reason_lit : reason) {
+        overloaded{
+            [&](const ProofLiteral & lit) {
+                overloaded{
+                    [&](const VariableConditionFrom<SimpleIntegerVariableID> & cond) {
+                        auto def = names_and_ids_tracker().need_pol_item_defining_literal(cond);
+                        if (auto l = std::get_if<ProofLine>(&def))
+                            lines.push_back(*l);
+                    },                                      //
+                    [&](const ProofVariableCondition &) {}, //
+                    [&](const TrueLiteral &) {},            //
+                    [&](const FalseLiteral &) {}            //
+                }
+                    .visit(simplify_literal(names_and_ids_tracker(), lit));
+            },                               //
+            [&](const ProofFlag &) {},       //
+            [&](const ProofBitVariable &) {} //
+        }
+            .visit(reason_lit);
+    }
+}
+
 auto ProofLogger::emit_rup_proof_line_under_reason_then_deview(
     const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
