@@ -188,11 +188,12 @@ in the solver yet; documented here as a known sharp edge.
   so its state flags belong in the OPB. `BinPacking`'s natural
   definition is the sum equations, so its per-bin DAGs (when added in
   Stage 3) belong in the proof scaffolding, not the OPB.
-- **`Knapsack`** — retrofitted to the same `install_initialiser` +
-  Top-level scaffolding pattern Stage 3 uses here, generalised to *k*
-  partial-sum coordinates. See [`knapsack.md`](knapsack.md). The
-  legacy per-call-DAG implementation is preserved as `KnapsackLegacy`
-  for benchmarking.
+- **`Knapsack`** — the opt-in `KnapsackUpfront` variant is retrofitted
+  to the same `install_initialiser` + Top-level scaffolding pattern
+  Stage 3 uses here, generalised to *k* partial-sum coordinates. See
+  [`knapsack.md`](knapsack.md). The default `Knapsack` remains the
+  per-call DP implementation (it verifies faster); `KnapsackUpfront`
+  is the smaller-proof opt-in.
 - **#200 unified framework** — the layered-DAG abstraction (per-layer
   node counts, transitions, accepting terminals) is the dispatch point.
   `MDD` is one user-supplied DAG; `BinPacking` synthesises `num_bins`

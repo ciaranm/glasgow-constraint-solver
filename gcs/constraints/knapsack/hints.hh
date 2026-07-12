@@ -10,6 +10,8 @@ namespace gcs::innards::hints
     /**
      * \brief Knapsack's assertion hint: just the owning constraint.
      *
+     * Used by the default per-call Knapsack propagator.
+     *
      * \ingroup Innards
      */
     struct Knapsack
@@ -19,14 +21,16 @@ namespace gcs::innards::hints
     };
 
     /**
-     * \brief KnapsackLegacy's assertion hint: just the owning constraint.
+     * \brief KnapsackUpfront's assertion hint: just the owning constraint.
+     *
+     * Used by the opt-in upfront-DAG KnapsackUpfront propagator.
      *
      * \ingroup Innards
      */
-    struct KnapsackLegacy
+    struct KnapsackUpfront
     {
         ConstraintID originator;
-        static constexpr std::string_view hint_name = "knapsack_legacy";
+        static constexpr std::string_view hint_name = "knapsack_upfront";
     };
 }
 

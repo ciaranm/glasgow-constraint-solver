@@ -1,9 +1,35 @@
-# `Knapsack`: design and staging
+# `Knapsack`: default vs. `KnapsackUpfront`, and the upfront-DAG design
 
-This is a working-design note for the new `Knapsack` propagator (#200).
-The legacy `KnapsackLegacy` is preserved alongside for benchmarking and
-as a correctness reference; new code should post `Knapsack`. The
-high-level approach mirrors `BinPacking` Stage 3
+There are two `Knapsack` implementations in the tree, both fully
+proof-logging and both cake-conformant (#200):
+
+- **`Knapsack` (the default)** — the per-call DP implementation. It
+  rebuilds its DP table and proof scaffolding from scratch on every
+  propagation call, at `ProofLevel::Temporary`. This is what all
+  frontends, `scp_reader`, the `examples/knapsack` solver and the
+  primary `knapsack_test` post. **It is the default because its proofs
+  verify substantially faster** (3.6–18× faster VeriPB time than the
+  upfront variant — see "Benchmarking" below).
+- **`KnapsackUpfront` (opt-in)** — the upfront-DAG reimplementation. It
+  builds the statically-reduced layered DAG once in `prepare()` and
+  emits paper-style proof scaffolding once at `ProofLevel::Top`, leaving
+  only search-state-dependent `pol` steps for the per-call sweep. **It
+  produces 3–6× smaller proofs** (and ~3× faster solver wall time), at
+  the cost of the slower verification above. Prefer it only when proof
+  size or its distribution matters. It lives in
+  `gcs/constraints/knapsack/knapsack_upfront.{hh,cc}`, is exposed via
+  the aggregator `gcs/constraints/knapsack.hh`, and is exercised by
+  `knapsack_upfront_test`.
+
+The rest of this note is a working-design record of the **upfront-DAG**
+approach (`KnapsackUpfront`), retained because it is the more intricate
+of the two and because it is the candidate for the #200 unified
+layered-DAG framework. It is not a record of what currently exists in
+every stage — read
+`gcs/constraints/knapsack/knapsack_upfront.{hh,cc}` for that, and
+`gcs/constraints/knapsack/knapsack.{hh,cc}` for the default per-call DP.
+
+The high-level approach mirrors `BinPacking` Stage 3
 ([`bin-packing.md`](bin-packing.md)) but generalised to *k* partial-sum
 coordinates: build the layered DAG once in `prepare()`, emit the
 paper-style proof scaffolding *plus per-coordinate forward chains,
@@ -13,19 +39,16 @@ then run a slim per-call sweep that emits dead-state ~S lines at
 `ProofLevel::Current` (cached for the rest of the subtree) plus
 cap-exceeded and totals-bound `pol` steps at `ProofLevel::Temporary`.
 
-This is not a record of what currently exists in every stage — read
-`gcs/constraints/knapsack/knapsack.{hh,cc}` for that.
-
 ## Constraint definition
 
-For each `x ∈ 0..k−1`:
+Both classes share the same definition. For each `x ∈ 0..k−1`:
 
 ```
 Σ_i coefficients[x][i] · vars[i]  =  totals[x]
 ```
 
 Coefficients are non-negative; item variables and total variables have
-non-negative lower bounds. Two constructors:
+non-negative lower bounds. Two constructors (on each class):
 
 - `Knapsack(weights, profits, vars, weight, profit)` — the canonical
   `k = 2` shape used by MiniZinc and the `examples/knapsack` solver.
@@ -34,20 +57,21 @@ non-negative lower bounds. Two constructors:
   more than two summed quantities.
 
 Items can take arbitrary non-negative integer values (not just 0/1).
-The propagator is full GAC on both the item variables and every
+Both propagators are full GAC on both the item variables and every
 `totals[x]`.
 
 ## OPB encoding: spec-faithful, propagator-agnostic
 
-`define_proof_model` emits exactly one linear equality per total:
+Both classes' `define_proof_model` emit exactly one linear equality per
+total:
 
 ```
 Σ_i coefficients[x][i] · vars[i]  ==  totals[x]
 ```
 
 That's the entire model contribution. A human reading the OPB sees
-the textbook knapsack semantics with no propagator vocabulary. The
-DAG-shaped scaffolding lives in the proof body via
+the textbook knapsack semantics with no propagator vocabulary. For
+`KnapsackUpfront` the DAG-shaped scaffolding lives in the proof body via
 `install_initialiser` (see "Top-level scaffolding" below); this is the
 same encoding-vs-scaffolding split that
 [`bin-packing.md`](bin-packing.md) and
@@ -56,11 +80,14 @@ document.
 
 The two `add_labelled_constraint(eq)` line numbers — `sum ≤ total` and
 `sum ≥ total`, labelled `@c[<id>][<row>_le]` / `[<row>_ge]` to match
-cake_pb_cp's per-row labels — are captured into the bridge so the
-per-call `pol` steps for cap-exceeded and totals-bound filtering can
-use them as operands.
+cake_pb_cp's per-row labels — are captured so the per-call `pol` steps
+for cap-exceeded and totals-bound filtering can use them as operands.
+Both classes label rows identically, so both chain-verify against
+cake_pb_cp; the default per-call `Knapsack` is the one `scp_reader`'s
+`knapsack` keyword posts and the one the `knapsack_sat` / `knapsack_unsat`
+`scp_cases` chain tests exercise.
 
-## Staging
+## Staging (KnapsackUpfront)
 
 Stages 1 and 2 are shipped. Stage 1 is documented for completeness;
 Stage 2 strictly subsumes it.
@@ -278,12 +305,12 @@ time the state has been proven dead in this subtree.
 
 Moving the per-(parent, val, succ) chains and the joint state ALOs
 out of every per-call walk and into a single Top-level emission is
-the main proof-size win compared to the legacy code: chains are
-defined once per constraint instead of once per propagation call.
-The cost is the phantom-rule machinery — DAG forward-closure leaves
-backward edges that need explicit `~S_phantom` derivations to keep
-the per-call dead-state RUPs closable. The pair-wise pol approach for
-per-coord-phantoms and the recursive backward chain for
+the main proof-size win compared to the default per-call DP `Knapsack`:
+chains are defined once per constraint instead of once per propagation
+call. The cost is the phantom-rule machinery — DAG forward-closure
+leaves backward edges that need explicit `~S_phantom` derivations to
+keep the per-call dead-state RUPs closable. The pair-wise pol approach
+for per-coord-phantoms and the recursive backward chain for
 joint-only-phantoms together handle all phantom cases the
 forward-closed DAG can produce.
 
@@ -302,26 +329,26 @@ coordinates and per-coord cap `C`, a fully populated layer has up
 to `Π_x C` states; for `k = 4` and `C = 30` this is over 800k nodes
 per layer. In practice the partial-sum reachability is sparse — most
 combinations of partial sums aren't actually realised by any item
-assignment — but it is *possible* to construct a `Knapsack` instance
-that exhausts memory at root. The phantom set adds another
+assignment — but it is *possible* to construct a `KnapsackUpfront`
+instance that exhausts memory at root. The phantom set adds another
 multiplicative factor proportional to `|dom(vars[i])|` (each DAG node
 can spawn up to `|dom|` phantom backward parents per layer; the
 transitive closure can be larger again).
 
-There is no footprint guard in this stage. The same blowup affected
-`KnapsackLegacy` (just at a different time — per-call rather than
-once at root) and the same set of inputs would exhaust either. A
-future cross-cutting project (#200's unified framework) will need a
-size-aware strategy across `BinPacking`, `Knapsack`, and the
-prospective `CostMDD`. Until then, callers with wide-domain wide-cap
-instances should expect to use `KnapsackLegacy` (which is also exposed
-in `gcs/constraints/knapsack.hh`) or to provide tight initial bounds
-on `totals[x]`.
+There is no footprint guard on `KnapsackUpfront`. The same blowup
+affects the default per-call `Knapsack` (just at a different time —
+per-call rather than once at root) and the same set of inputs would
+exhaust either. A future cross-cutting project (#200's unified
+framework) will need a size-aware strategy across `BinPacking`,
+`Knapsack`, and the prospective `CostMDD`. Until then, callers with
+wide-domain wide-cap instances should stick to the default per-call
+`Knapsack` (whose blowup is at least deferred and shared across the
+subtree) or provide tight initial bounds on `totals[x]`.
 
 ## Frontends
 
-`Knapsack` is the user-facing class. Frontends bind to it directly and
-silently picked up the new implementation when this work landed:
+`Knapsack` (the default per-call class) is the user-facing class.
+Frontends bind to it directly:
 
 - **MiniZinc** — `fzn_glasgow.cc`'s `glasgow_knapsack` branch posts
   `Knapsack{weights, profits, vars, weight, profit}` (the 2-total
@@ -330,10 +357,16 @@ silently picked up the new implementation when this work landed:
   constructor (XCSP3's `knapsack` element can carry an arbitrary
   number of weight/profit pairs).
 
+`KnapsackUpfront` has no frontend keyword of its own; it is posted
+directly in C++ (and by `knapsack_bench --upfront`). Its `s_expr`
+keyword is `knapsack_upfront`, which has no `scp_reader` case — only the
+default `Knapsack` (keyword `knapsack`) round-trips through scp and is
+the class the `scp_reader` `knapsack` keyword posts.
+
 ## Relation to other constraints
 
 - **`BinPacking` Stage 3** — `k = 1` version of the same idea, with
-  the per-bin DAG factored over a single load axis. `Knapsack`'s
+  the per-bin DAG factored over a single load axis. `KnapsackUpfront`'s
   per-coord flag sharing across same-`w_x` states matches what
   `BinPacking` gets for free with a scalar `w`. `BinPacking` doesn't
   have a phantom problem because its per-bin DAG is scalar — backward
@@ -341,53 +374,60 @@ silently picked up the new implementation when this work landed:
   out of bounds, or get clipped by the cap.
 - **`MDD`** — `MDD`'s natural definition *is* the layered DAG, so its
   state flags live in the OPB. `Knapsack`'s natural definition is the
-  sum equations, so its DAG belongs in the proof body — the same
-  encoding/scaffolding split as `BinPacking`.
+  sum equations, so `KnapsackUpfront`'s DAG belongs in the proof body —
+  the same encoding/scaffolding split as `BinPacking`.
 - **#200 unified framework** — the layered-DAG abstraction (per-layer
   node counts, transitions, accepting terminals) is the dispatch
   point. `MDD` is one user-supplied DAG; `BinPacking` synthesises one
-  scalar DAG per bin; `Knapsack` synthesises one *k*-dim DAG per
+  scalar DAG per bin; `KnapsackUpfront` synthesises one *k*-dim DAG per
   constraint; future `CostMDD` adds edge weights against a totalcost
-  variable. The legacy implementation (`KnapsackLegacy`) is kept in
-  the tree until the unified framework is ready to absorb both ideas.
+  variable. The default per-call `Knapsack` is kept as the correctness
+  reference and the shipping default until the unified framework is
+  ready to absorb both ideas.
 
 ## Benchmarking
 
-`KnapsackLegacy` is preserved as `class KnapsackLegacy` in
-`gcs/constraints/knapsack/knapsack_legacy.{hh,cc}` and exercised by
-`knapsack_legacy_test`. To benchmark the two implementations, the
-`knapsack_bench` example posts the same problem with either class and
-times the difference; the test pair is intentionally aligned (same
-data, same expected solutions, same GAC check) so a divergence in
-either correctness or runtime is easy to spot.
+The default per-call `Knapsack` lives in
+`gcs/constraints/knapsack/knapsack.{hh,cc}` and is exercised by
+`knapsack_test`; the opt-in `KnapsackUpfront` lives in
+`gcs/constraints/knapsack/knapsack_upfront.{hh,cc}` and is exercised by
+`knapsack_upfront_test`. To benchmark the two, the `knapsack_bench`
+example posts the same problem with either class (`--upfront` selects
+`KnapsackUpfront`, default is `Knapsack`) and times the difference; the
+test pair is intentionally aligned (same data, same expected solutions,
+same GAC check) so a divergence in either correctness or runtime is
+easy to spot.
 
 Measured on the four curated bench instances (10–9 items 0/1, k=2–3,
 deterministic `dom_then_deg + smallest_first` enumeration):
 
-| inst | legacy solve | new solve | legacy pbp | new pbp |
-|------|-------------:|----------:|-----------:|--------:|
-| 1    | 1.11s        | 0.30s     | 124 MB     | 21 MB   |
-| 2    | 1.21s        | 0.31s     | 142 MB     | 27 MB   |
-| 3    | 0.71s        | 0.30s     | 82 MB      | 19 MB   |
-| 4    | 0.91s        | 0.31s     | 104 MB     | 33 MB   |
+| inst | per-call solve | upfront solve | per-call pbp | upfront pbp |
+|------|---------------:|--------------:|-------------:|------------:|
+| 1    | 1.11s          | 0.30s         | 124 MB       | 21 MB       |
+| 2    | 1.21s          | 0.31s         | 142 MB       | 27 MB       |
+| 3    | 0.71s          | 0.30s         | 82 MB        | 19 MB       |
+| 4    | 0.91s          | 0.31s         | 104 MB       | 33 MB       |
 
-Solver wall time drops ~3×, proof size drops ~3–6×. VeriPB verify
-time on the new proofs is *longer* (8–30s vs 1–2s) despite the
-smaller file: the line-type mix has shifted out of `red` (~24 % →
+`KnapsackUpfront` drops solver wall time ~3× and proof size ~3–6×. But
+VeriPB verify time on the upfront proofs is *longer* (8–30s vs 1–2s,
+i.e. the default per-call `Knapsack` verifies 3.6–18× faster) despite
+the smaller file: the line-type mix has shifted out of `red` (~24 % →
 ~7 %) and into `pol` (~19 % → ~43 %), and each Top-level pol step
-touches the long-running per-coord / joint flag families which
-linearly grows VeriPB's per-line work. Net trade: solver and disk
-both win; checker time goes the wrong way but is still a few tens
-of seconds and not on a user-facing critical path. Trimming the
-phantom-rule scaffolding (especially the layer-by-layer recursive
-backward chains for joint-only-phantoms) is the obvious next lead
-if the checker-time regression becomes a problem.
+touches the long-running per-coord / joint flag families, which
+linearly grows VeriPB's per-line work. This verify-time gap is exactly
+why `Knapsack` (per-call) is the default and `KnapsackUpfront` is the
+opt-in: the checker is on the critical path for the CI proof suite and
+for anyone who verifies proofs routinely, whereas the smaller-proof win
+only matters when proof size or distribution is the binding constraint.
+Trimming the phantom-rule scaffolding (especially the layer-by-layer
+recursive backward chains for joint-only-phantoms) is the obvious next
+lead if the upfront checker-time regression becomes a problem.
 
-A deterministic regression case for the per-call dead-state path
-(`run_knapsack_regression` at the top of `knapsack_test`) catches
-joint-only-phantom proof failures that the random branching used by
-`solve_for_tests_checking_gac` reliably masks; keep it at the head
-of the test main so a future regression of the phantom-rule logic
-shows up before the random tests even start.
+A deterministic regression case for `KnapsackUpfront`'s per-call
+dead-state path (`run_knapsack_upfront_regression` at the top of
+`knapsack_upfront_test`) catches joint-only-phantom proof failures that
+the random branching used by `solve_for_tests_checking_gac` reliably
+masks; keep it at the head of the test main so a future regression of
+the phantom-rule logic shows up before the random tests even start.
 
 <!-- vim: set tw=72 spell spelllang=en : -->

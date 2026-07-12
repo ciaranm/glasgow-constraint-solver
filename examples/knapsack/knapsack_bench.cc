@@ -1,10 +1,11 @@
-// Benchmark harness for comparing the new Knapsack against KnapsackLegacy.
-// Posts the same problem with one or the other and prints solver stats.
-// Branching is fully deterministic so that recursions / propagations
-// should match exactly between the two propagators on a given instance.
+// Benchmark harness for comparing the default per-call Knapsack against
+// the opt-in upfront-DAG KnapsackUpfront. Posts the same problem with one
+// or the other and prints solver stats. Branching is fully deterministic
+// so that recursions / propagations should match exactly between the two
+// propagators on a given instance.
 //
 // CLI:
-//   --legacy             Post KnapsackLegacy (default: Knapsack)
+//   --upfront            Post KnapsackUpfront (default: Knapsack)
 //   --instance N         Pick an instance from the curated set (1..4)
 //   --prove              Generate a proof
 //   --proof-files-basename PATH  (default: "knapsack_bench")
@@ -121,7 +122,7 @@ auto main(int argc, char * argv[]) -> int
     try {
         options.add_options("Program options")                                    //
             ("help", "Display help information")                                  //
-            ("legacy", "Post KnapsackLegacy instead of Knapsack")                 //
+            ("upfront", "Post KnapsackUpfront instead of Knapsack")               //
             ("instance", "Curated instance number (1..4)", cxxopts::value<int>()) //
             ("prove", "Generate a proof")                                         //
             ("proof-files-basename", "Basename for .opb and .pbp files",          //
@@ -141,7 +142,7 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto inst = curated_instance(vars["instance"].as<int>());
-    bool legacy = vars.contains("legacy");
+    bool upfront = vars.contains("upfront");
 
     Problem p;
     auto items = p.create_integer_variable_vector(inst.n_items, inst.item_lo, inst.item_hi, "item");
@@ -150,8 +151,8 @@ auto main(int argc, char * argv[]) -> int
     for (size_t x = 0; x < inst.total_bounds.size(); ++x)
         totals.push_back(p.create_integer_variable(inst.total_bounds[x].first, inst.total_bounds[x].second, "t" + std::to_string(x)));
 
-    if (legacy)
-        p.post(KnapsackLegacy{inst.coeffs, items, totals});
+    if (upfront)
+        p.post(KnapsackUpfront{inst.coeffs, items, totals});
     else
         p.post(Knapsack{inst.coeffs, items, totals});
 

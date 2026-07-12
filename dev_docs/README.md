@@ -101,12 +101,12 @@ library. For an introduction to *using* the solver, start with the top-level
   `glasgow_scp_solver` binary and the SCP chain test harness
   (`run_scp_chain.bash`, `scp_cases/`) for verifying constraint encodings
   against an external checker.
-- [`Knapsack`](knapsack.md) — design and staging note for the
-  upfront-DAG `Knapsack` propagator (#200), the *k*-coordinate
-  generalisation of `BinPacking` Stage 3. Covers the
-  `define_proof_model` / `install_initialiser` split, the paper-style
-  reified scaffolding, the per-call proof chain, and why the legacy
-  per-call-DAG implementation (`KnapsackLegacy`) is kept alongside.
+- [`Knapsack`](knapsack.md) — the default per-call DP `Knapsack` (chosen
+  for fastest proof verification) and the opt-in upfront-DAG
+  `KnapsackUpfront` (#200), the *k*-coordinate generalisation of
+  `BinPacking` Stage 3. Covers the `define_proof_model` /
+  `install_initialiser` split, the paper-style reified scaffolding, the
+  per-call proof chain, and the measured default-vs-opt-in trade-off.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.

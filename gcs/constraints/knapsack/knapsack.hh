@@ -3,11 +3,8 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
-#include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
 
-#include <memory>
-#include <optional>
 #include <utility>
 #include <vector>
 
@@ -19,38 +16,27 @@ namespace gcs
      * each <code>x</code>. Coefficients and item domains must be
      * non-negative.
      *
-     * Follows the same upfront-DAG pattern as BinPacking and MDD:
-     * <code>prepare()</code> builds the statically-reduced layered DAG
-     * once from the initial domains (forward reach from
-     * <code>(0,...,0)</code> intersected with backward reach from
-     * layer-n states whose every coordinate lies in
-     * <code>initial dom(totals[x])</code>);
-     * <code>install_initialiser</code> emits one-shot proof scaffolding
-     * — per-coordinate <code>g_up</code> / <code>g_dn</code> reified
-     * inequality flags and per-state conjunction flags — at
-     * <code>ProofLevel::Top</code>; the per-call propagator does
-     * forward+backward reachability against the current item and total
-     * domains restricted to the static DAG and prunes items / total
-     * bounds via <code>JustifyUsingRUP</code>. RUP closes through the
-     * bridge reifications plus the natural per-equation OPB constraints.
+     * This is the default implementation: it builds its DP table and
+     * proof scaffolding from scratch on every propagation call, at
+     * <code>ProofLevel::Temporary</code>. It is chosen as the default
+     * because its proofs verify substantially faster (3.6–18×) than the
+     * upfront-DAG alternative.
      *
-     * See <code>dev_docs/knapsack.md</code> for the staged design.
-     *
-     * For benchmarking against the original (per-call DP) implementation,
-     * see KnapsackLegacy.
+     * For an opt-in variant that emits upfront paper-style proof
+     * scaffolding once at the search root — producing 3–6× smaller proofs
+     * at the cost of slower verification — see KnapsackUpfront. Prefer it
+     * only when proof size or distribution matters. See
+     * <code>dev_docs/knapsack.md</code> for the measured rationale.
      *
      * \ingroup Constraints
      */
     class Knapsack : public Constraint
     {
     private:
-        struct DagBridge;
-
-        std::vector<std::vector<Integer>> _coeffs;
-        std::vector<IntegerVariableID> _vars;
-        std::vector<IntegerVariableID> _totals;
-        std::shared_ptr<DagBridge> _bridge;
-        std::optional<innards::ConstraintStateHandle> _dead_cache_handle;
+        const std::vector<std::vector<Integer>> _coeffs;
+        const std::vector<IntegerVariableID> _vars;
+        const std::vector<IntegerVariableID> _totals;
+        std::vector<std::pair<innards::ProofLine, innards::ProofLine>> _eqns_lines;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
