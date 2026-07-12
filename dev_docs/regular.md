@@ -1,15 +1,50 @@
 # `Regular`: design and proof scaffolding
 
-Working-design note for the `Regular` propagator. The legacy
-`RegularLegacy` is preserved alongside for side-by-side benchmarking
-and as a correctness reference; new code should post `Regular`. The
-high-level approach mirrors [`mdd.md`](mdd.md) (when written) and
+Working-design note for the `Regular` propagator. The high-level
+approach mirrors [`mdd.md`](mdd.md) (when written) and
 [`knapsack.md`](knapsack.md) (when written) — build the layered graph
 once in `prepare()`, emit the proof scaffolding (per-val backward
 chains, statically-dead-state lines) once at `ProofLevel::Top` via
 `install_initialiser`, and run a slim per-call sweep that emits at
 most one cache-gated `~state[i][q]` line at `ProofLevel::Current`
 per state-death.
+
+## Default: the upfront `Regular`
+
+**`Regular` (this upfront-scaffolding propagator) is the default.**
+Everything posts it — both frontends
+(`xcsp_glasgow_constraint_solver`, `fzn_glasgow`), the constraint
+tests, and the `regular_random` example. `RegularLegacy` — the older
+per-call propagator that re-emits per-`(parent state, val)`
+intermediate aggregations on every propagation call — is preserved
+only as the `--legacy` opt-in twin, for side-by-side benchmarking and
+as a correctness reference.
+
+The reason for defaulting to upfront is that it **wins on both axes
+that matter for proof logging**, measured within-branch (same search
+tree to the digit — only the propagator is toggled):
+
+- **Proof size: 13–55× smaller.** At the largest sampled instance the
+  upfront `Regular` produced a 9 MB proof against `RegularLegacy`'s
+  496 MB (7660 solutions).
+- **VeriPB verification time: 2.3–7× faster** (1.66 s vs 11.69 s on
+  that instance).
+
+Both effects grow with search size: the fixed root scaffold amortises,
+and the displaced per-call volume compounds. (At trivially small search
+— tens of solutions — the fixed root scaffold is not yet amortised, so
+upfront can be marginally bigger/slower; the crossover is well below
+any real instance.)
+
+This is the *narrow-diagram* case of the general decision-diagram
+proof-strategy analysis: because a `Regular` automaton is narrow, the
+permanent Top-level scaffold is tiny, so it adds almost no per-line
+"DB-tax" to the rest of the proof, while the per-call `RegularLegacy`
+baseline is very verbose (large displacement). Displacement far
+exceeds the tax, so upfront wins size *and* time. See
+[`decision-diagram-proof-strategies.md`](decision-diagram-proof-strategies.md)
+for the cost model, the predictive rule, and how the same analysis
+lands MDD, Knapsack and BinPacking on different defaults.
 
 For the broader unification goal across `MDD`, `Regular`, `Knapsack`
 and `BinPacking`, see issue #200.
