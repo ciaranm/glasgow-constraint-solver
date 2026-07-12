@@ -5,6 +5,8 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
+
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -29,17 +31,43 @@ namespace gcs
      * This is a strict generalisation of `Regular`: a DFA is an MDD whose
      * layers all share the same node set and transition function.
      *
+     * Proof scaffolding uses the upfront pattern shared with Knapsack and
+     * BinPacking Stage 3: the OPB encoding is the natural per-(node, val)
+     * forward chains plus per-layer exactly-one, and a one-shot Top-level
+     * initialiser derives per-val backward chains and statically-dead-node
+     * lines. The per-call propagator's `~state[i][q]` derivations then
+     * RUP-close through that scaffolding instead of re-emitting the
+     * per-(parent, val) intermediate aggregations on every propagation
+     * call.
+     *
+     * This upfront strategy is the sole proof-emission path, chosen on the
+     * evidence: it wins on both proof size (7–9× smaller) and VeriPB verify
+     * time (4–5× faster) over the earlier per-call strategy that emitted the
+     * per-(parent, val) aggregations on every call. A per-call opt-in toggle
+     * (the counterpart to `BinPacking`'s `upfront_proof = false`) is
+     * therefore deliberately *not* offered here: unlike BinPacking, whose
+     * per-call sweep is a self-contained bare-RUP prune, MDD's per-call
+     * emission is the substantial `decrement_outdeg` / `decrement_indeg`
+     * aggregation machinery, so resurrecting it behind a toggle would
+     * reintroduce ~150 lines of divergent proof-emission code for a strategy
+     * that loses on every measured axis. The full per-call implementation
+     * remains available on the `mdd-propagator` (#205) base branch for
+     * benchmarking should the trade-off ever need re-measuring.
+     *
      * \ingroup Constraints
      */
     class MDD : public Constraint
     {
     private:
+        struct Bridge;
+
         const std::vector<IntegerVariableID> _vars;
         const std::vector<std::vector<std::unordered_map<Integer, long>>> _layer_transitions;
         const std::vector<long> _nodes_per_layer;
         const std::vector<long> _accepting_terminals;
-        std::vector<std::vector<innards::ProofFlag>> _state_at_pos_flags;
+        std::shared_ptr<Bridge> _bridge;
         innards::ConstraintStateHandle _graph_idx;
+        innards::ConstraintStateHandle _dead_cache_idx;
         std::vector<std::set<Integer>> _opb_alphabet;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
