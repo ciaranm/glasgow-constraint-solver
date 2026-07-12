@@ -34,7 +34,7 @@ equivalent for that frontend's vocabulary).
 | intension (algebraic exprs) | various via tree walk | ✓ | ✓ (tree walker) | ? |
 | extension (table) | `Table` / `NegativeTable` | ✓ | ✓ | ? |
 | regular | `Regular` | ✓ | ✓ (DFA with named states + transitions) | ? |
-| mdd | solver gap (#149) | ? | solver gap (#149) | ? |
+| mdd | `MDD` | ✓ (deterministic only)[^mdd] | ✓ | ? |
 | allDifferent | `AllDifferent` | ✓ | ✓ | ? |
 | allDifferent-list / -matrix | various decompositions | ? | matrix ✓ (rows + columns `AllDifferent`); list `s UNSUPPORTED` | ? |
 | allEqual | `AllEqual` | ✓ | ✓ | ? |
@@ -80,11 +80,12 @@ addressed.
 - [#146](https://github.com/ciaranm/glasgow-constraint-solver/issues/146) — `Disjunctive`: 1D shipped (variable starts, constant *or* variable durations, strict and non-strict incl. zero-length escape; variable durations via the Cumulative end-proxy technique, fully VeriPB-certified — see #384). `Disjunctive2D` (2D `noOverlap` / `diffn`) shipped: variable origins, constant *or* variable sizes (rotation), strict and non-strict (incl. zero-area sizes via a reified zero-size escape clause), pairwise time-table strength, fully VeriPB-certified. k-D, optional tasks, and a sweep / cumulative-relaxation propagator are open follow-ups under the same issue.
 - [#147](https://github.com/ciaranm/glasgow-constraint-solver/issues/147) — `Cumulative`: full `cumulative(var s, var d, var r, var b)` shipped with time-table propagation and VeriPB proofs (the `(le, int)` and `(le, var)` XCSP3 conditions). Edge-finding and energetic (stronger-than-time-table) propagation are open follow-ups under the same issue.
 - [#148](https://github.com/ciaranm/glasgow-constraint-solver/issues/148) — `BinPacking`
-- [#149](https://github.com/ciaranm/glasgow-constraint-solver/issues/149) — `MDD`
 
 [^cum]: Time-table propagation (mandatory-part load profile with bound pushes), now over variable origins, durations, demands, and capacity; every inference is VeriPB-certified — see [`cumulative-proof-logging.md`](cumulative-proof-logging.md). MiniZinc forwards `s`/`d`/`r`/`b` straight to `glasgow_cumulative` (constants pass through as constant variables); XCSP3 handles all four constant/variable length×height overloads and a constant- or variable-capacity `le` condition. Edge-finding / energetic reasoning remain out of scope.
 
 [^disj]: 1D `Disjunctive`: variable starts, constant *or* variable durations, strict/non-strict; time-table specialised to heights=1, capacity=1 (variable durations fold into the pairwise ordering flags directly, with a reified zero-length escape clause in non-strict mode). 2D `Disjunctive2D` (non-overlapping rectangles, variable origins, constant or variable sizes): pairwise time-table — mandatory-box overlap is a contradiction, and a pair forced to overlap on one axis is pushed apart on the other. Both are fully proof-logged pairwise against the declarative OPB encoding ([`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)); 2D adds a 4-way separation clause per pair. Outside the envelope (k-D, optional tasks): XCSP3 raises an unsupported error.
+
+[^mdd]: MiniZinc's `fzn_mdd` is bound to the gcs `MDD` propagator; `mdd_nondet` (where multiple edges from a node may share label values) and `cost_mdd` (with totalcost) fall through to the MiniZinc stdlib's default decomposition. Tracked alongside the unified path-DAG framework (#200).
 
 ## Related documents
 
