@@ -8,6 +8,7 @@
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/lifetime.hh>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <variant>
@@ -104,5 +105,17 @@ namespace gcs
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr = 0;
     };
 }
+
+// Lets ConstraintID be used as a key in unordered containers (the weighting
+// state map). Equality on the variant is structural; hashing its string form
+// agrees with that.
+template <>
+struct std::hash<gcs::ConstraintID>
+{
+    [[nodiscard]] auto operator()(const gcs::ConstraintID & constraint_id) const -> std::size_t
+    {
+        return std::hash<std::string>{}(gcs::as_string(constraint_id));
+    }
+};
 
 #endif

@@ -954,12 +954,12 @@ auto main(int argc, char * argv[]) -> int
         else
             throw FlatZincInterfaceError{format("Unknown solve method {} in {}", string{solve_method}, fznname)};
 
-        BranchCallback brancher = branch_sequence(branch_with(variable_order::dom_then_deg(data.branch_variables), value_order::smallest_first()),
+        BranchHeuristic brancher = branch_sequence(branch_with(variable_order::dom_then_deg(data.branch_variables), value_order::smallest_first()),
             branch_with(variable_order::dom_then_deg(data.all_variables), value_order::smallest_first()));
 
         if ((! free_search) && fzn["solve"].contains("ann")) {
-            function<optional<BranchCallback>(const nlohmann::json &)> parse_search;
-            parse_search = [&data, &parse_search, &random_seed](const nlohmann::json & ann) -> optional<BranchCallback> {
+            function<optional<BranchHeuristic>(const nlohmann::json &)> parse_search;
+            parse_search = [&data, &parse_search, &random_seed](const nlohmann::json & ann) -> optional<BranchHeuristic> {
                 if (ann["id"] == "bool_search" || ann["id"] == "int_search") {
                     auto args = ann["args"];
                     vector<IntegerVariableID> vars = arg_as_array_of_var(data, args, 0);
@@ -967,7 +967,7 @@ auto main(int argc, char * argv[]) -> int
                     string val_heuristic = args[2];
                     string method = args[3];
 
-                    BranchVariableSelector var;
+                    BranchVariableHeuristic var;
                     if (var_heuristic == "first_fail")
                         var = variable_order::dom(vars);
                     else if (var_heuristic == "input_order")
@@ -1014,7 +1014,7 @@ auto main(int argc, char * argv[]) -> int
                     return branch_with(var, val);
                 }
                 else if (ann["id"] == "seq_search") {
-                    optional<BranchCallback> branch_seq;
+                    optional<BranchHeuristic> branch_seq;
                     for (const auto & sub_ann : ann["args"][0]) {
                         auto subsearch = parse_search(sub_ann);
                         if (subsearch) {

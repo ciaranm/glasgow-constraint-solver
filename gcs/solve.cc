@@ -30,8 +30,9 @@ using std::chrono::steady_clock;
 namespace
 {
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, Propagators & propagators, State & state,
-        const optional<Literal> & this_branch_guess, SolveCallbacks & callbacks, ProofLogger * const logger, bool & this_subtree_contains_solution,
-        Integer & number_of_solutions, optional<Integer> & objective_value, atomic<bool> * optional_abort_flag) -> bool
+        const optional<Literal> & this_branch_guess, SolveCallbacks & callbacks, const BranchCallback & branch_callback, ProofLogger * const logger,
+        bool & this_subtree_contains_solution, Integer & number_of_solutions, optional<Integer> & objective_value, atomic<bool> * optional_abort_flag)
+        -> bool
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -61,7 +62,7 @@ namespace
             if (optional_abort_flag && optional_abort_flag->load())
                 return false;
 
-            auto branch_generator = callbacks.branch(state.current(), propagators);
+            auto branch_generator = branch_callback(state.current(), propagators);
             auto branch_iter = branch_generator.begin();
 
             if (branch_iter == branch_generator.end()) {
@@ -97,8 +98,8 @@ namespace
                     auto timestamp = state.new_epoch();
                     state.guess(guess);
                     bool child_contains_solution = false;
-                    if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess, callbacks, logger, child_contains_solution,
-                            number_of_solutions, objective_value, optional_abort_flag))
+                    if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess, callbacks, branch_callback, logger,
+                            child_contains_solution, number_of_solutions, objective_value, optional_abort_flag))
                         result = false;
 
                     if (child_contains_solution)
@@ -160,13 +161,6 @@ auto gcs::solve_with(
             write_scp(*fn, problem, optional_proof->model());
     }
 
-    // solve_with_state invokes callbacks.branch unconditionally: an unset
-    // branch callback is filled in with the default heuristic here, once,
-    // rather than testing and copying the std::function (and every closure
-    // the composed heuristics capture) at every node of the recursion.
-    if (! callbacks.branch)
-        callbacks.branch = branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
-
     if (callbacks.after_proof_started)
         callbacks.after_proof_started(state.current());
 
@@ -190,8 +184,18 @@ auto gcs::solve_with(
         bool child_contains_solution = false;
         Integer number_of_solutions = 0_i;
         optional<Integer> objective_value = nullopt;
-        if (solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, optional_proof ? optional_proof->logger() : nullptr,
-                child_contains_solution, number_of_solutions, objective_value, optional_abort_flag)) {
+
+        // Run the branching heuristic's per-search setup once, now that
+        // propagators (and any presolver-added constraints) are final, so a
+        // stateful heuristic sizes and attaches itself correctly; the resulting
+        // per-node BranchCallback is reused throughout the search.
+        auto branch_heuristic =
+            callbacks.branch ? callbacks.branch : branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
+        auto branch_callback = branch_heuristic(problem, state, propagators);
+
+        if (solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, branch_callback,
+                optional_proof ? optional_proof->logger() : nullptr, child_contains_solution, number_of_solutions, objective_value,
+                optional_abort_flag)) {
             if (optional_proof) {
                 if (problem.optional_minimise_variable()) {
                     if (objective_value)

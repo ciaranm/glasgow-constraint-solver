@@ -2,10 +2,12 @@
 #include <gcs/constraints/element.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <ranges>
 #include <vector>
 
@@ -39,6 +41,49 @@ using fmt::print;
 using fmt::println;
 #endif
 
+using std::optional;
+
+namespace
+{
+    // Map a dom-wdeg variant string to a weighting scheme, for the --branch flag.
+    auto scheme_from_string(const string & name) -> optional<WeightingScheme>
+    {
+        using enum WeightingScheme;
+        if (name == "classic")
+            return Classic;
+        if (name == "ia")
+            return InitialArity;
+        if (name == "ca")
+            return CurrentArity;
+        if (name == "id")
+            return InitialDomain;
+        if (name == "cd")
+            return CurrentDomain;
+        if (name == "ca.cd" || name == "cacd")
+            return CurrentArityCurrentDomain;
+        if (name == "chs")
+            return ConflictHistorySearch;
+        return std::nullopt;
+    }
+
+    // Build the brancher named by --branch: "dom-then-deg", or "dom-wdeg"
+    // optionally suffixed with a scheme, e.g. "dom-wdeg:chs" (default ca.cd).
+    auto brancher_from_string(const string & spec, const Problem & problem) -> optional<BranchHeuristic>
+    {
+        if (spec == "dom-then-deg")
+            return branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
+        if (spec == "dom-wdeg" || spec.starts_with("dom-wdeg:")) {
+            auto colon = spec.find(':');
+            auto variant = (colon == string::npos) ? string{"ca.cd"} : spec.substr(colon + 1);
+            auto scheme = scheme_from_string(variant);
+            if (! scheme)
+                return std::nullopt;
+            return branch_with(variable_order::dom_wdeg(problem, *scheme), value_order::smallest_first());
+        }
+        return std::nullopt;
+    }
+}
+
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("Knapsack");
@@ -51,6 +96,10 @@ auto main(int argc, char * argv[]) -> int
             ("proof-files-basename", "Basename for the .opb and .pbp files", //
                 cxxopts::value<string>()->default_value("langford"))         //
             ("stats", "Print solve statistics")                              //
+            ("branch",
+                "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] " //
+                "(VARIANT = classic / ia / ca / id / cd / ca.cd / chs)",    //
+                cxxopts::value<string>()->default_value("dom-then-deg"))    //
             ;
 
         options.add_options()                                                                   //
@@ -96,15 +145,21 @@ auto main(int argc, char * argv[]) -> int
                 .with_consistency(consistency::Tabulated{}));
     }
 
-    auto stats = solve(
-        p,
-        [&](const CurrentState & s) -> bool {
-            println("solution: {}", solution | std::ranges::views::transform(cref(s)));
-            println("position: {}", position | std::ranges::views::transform(cref(s)));
-            println("");
+    auto brancher = brancher_from_string(options_vars["branch"].as<string>(), p);
+    if (! brancher) {
+        println(cerr, "Error: unknown --branch value {}", options_vars["branch"].as<string>());
+        return EXIT_FAILURE;
+    }
 
-            return true;
-        },
+    auto stats = solve_with(p,
+        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                           println("solution: {}", solution | std::ranges::views::transform(cref(s)));
+                           println("position: {}", position | std::ranges::views::transform(cref(s)));
+                           println("");
+
+                           return true;
+                       },
+            .branch = *brancher},
         options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt);
 
     if (options_vars.contains("stats"))

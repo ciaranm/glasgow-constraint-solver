@@ -41,37 +41,49 @@ namespace
 
 using namespace gcs;
 
-auto gcs::branch_with(BranchVariableSelector var, BranchValueGenerator val) -> BranchCallback
+auto gcs::branch_with(BranchVariableHeuristic var, BranchValueGenerator val) -> BranchHeuristic
 {
-    return [var = move(var), val = move(val)](const CurrentState & s, const innards::Propagators & p) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, const innards::Propagators & p, BranchVariableSelector select_var,
-                   BranchValueGenerator make_val_gen) -> generator<IntegerVariableCondition> {
-            auto branch_var = select_var(s, p);
-            if (branch_var)
-                return make_val_gen(s, p, *branch_var);
-            else
-                return []() -> generator<IntegerVariableCondition> { co_return; }();
-        }(s, p, move(var), move(val));
+    return [var = move(var), val = move(val)](const Problem & problem, innards::State & state, innards::Propagators & propagators) -> BranchCallback {
+        // Run the variable heuristic's per-search setup once, then reuse the
+        // resulting selector at every node.
+        auto select_var = var(problem, state, propagators);
+        return [select_var = move(select_var), val = val](
+                   const CurrentState & s, const innards::Propagators & p) -> generator<IntegerVariableCondition> {
+            return [](const CurrentState & s, const innards::Propagators & p, BranchVariableSelector select_var,
+                       BranchValueGenerator make_val_gen) -> generator<IntegerVariableCondition> {
+                auto branch_var = select_var(s, p);
+                if (branch_var)
+                    return make_val_gen(s, p, *branch_var);
+                else
+                    return []() -> generator<IntegerVariableCondition> { co_return; }();
+            }(s, p, select_var, val);
+        };
     };
 }
 
-auto gcs::branch_sequence(BranchCallback a, BranchCallback b) -> BranchCallback
+auto gcs::branch_sequence(BranchHeuristic a, BranchHeuristic b) -> BranchHeuristic
 {
-    return [a = move(a), b = move(b)](const CurrentState & s, const innards::Propagators & p) -> generator<IntegerVariableCondition> {
-        return [](const CurrentState & s, const innards::Propagators & p, BranchCallback a, BranchCallback b) -> generator<IntegerVariableCondition> {
-            auto gen_a = a(s, p);
-            auto iter_a = gen_a.begin();
-            if (iter_a != gen_a.end()) {
-                for (; iter_a != gen_a.end(); ++iter_a)
-                    co_yield *iter_a;
-            }
-            else {
-                auto gen_b = b(s, p);
-                auto iter_b = gen_b.begin();
-                for (; iter_b != gen_b.end(); ++iter_b)
-                    co_yield *iter_b;
-            }
-        }(s, p, move(a), move(b));
+    return [a = move(a), b = move(b)](const Problem & problem, innards::State & state, innards::Propagators & propagators) -> BranchCallback {
+        auto callback_a = a(problem, state, propagators);
+        auto callback_b = b(problem, state, propagators);
+        return [callback_a = move(callback_a), callback_b = move(callback_b)](
+                   const CurrentState & s, const innards::Propagators & p) -> generator<IntegerVariableCondition> {
+            return [](const CurrentState & s, const innards::Propagators & p, BranchCallback a,
+                       BranchCallback b) -> generator<IntegerVariableCondition> {
+                auto gen_a = a(s, p);
+                auto iter_a = gen_a.begin();
+                if (iter_a != gen_a.end()) {
+                    for (; iter_a != gen_a.end(); ++iter_a)
+                        co_yield *iter_a;
+                }
+                else {
+                    auto gen_b = b(s, p);
+                    auto iter_b = gen_b.begin();
+                    for (; iter_b != gen_b.end(); ++iter_b)
+                        co_yield *iter_b;
+                }
+            }(s, p, callback_a, callback_b);
+        };
     };
 }
 
@@ -92,37 +104,11 @@ namespace
             }
         };
     }
-}
 
-auto gcs::variable_order::random(const Problem & problem) -> BranchVariableSelector
-{
-    return variable_order::random(problem.all_normal_variables());
-}
-
-auto gcs::variable_order::random(vector<IntegerVariableID> vars) -> BranchVariableSelector
-{
-    return random_variable_selector(move(vars), make_shared_rng());
-}
-
-auto gcs::variable_order::random(const Problem & problem, uint_fast32_t seed) -> BranchVariableSelector
-{
-    return variable_order::random(problem.all_normal_variables(), seed);
-}
-
-auto gcs::variable_order::random(vector<IntegerVariableID> vars, uint_fast32_t seed) -> BranchVariableSelector
-{
-    return random_variable_selector(move(vars), make_shared_rng(seed));
-}
-
-auto gcs::variable_order::in_order_of(const Problem & problem, VariableComparator comp) -> BranchVariableSelector
-{
-    return variable_order::in_order_of(problem.all_normal_variables(), move(comp));
-}
-
-auto gcs::variable_order::in_order_of(vector<IntegerVariableID> vars, VariableComparator comp) -> BranchVariableSelector
-{
-    return
-        [vars = move(vars), comp = move(comp)](const CurrentState & state, const innards::Propagators & propagators) -> optional<IntegerVariableID> {
+    auto in_order_of_selector(vector<IntegerVariableID> vars, variable_order::VariableComparator comp) -> BranchVariableSelector
+    {
+        return [vars = move(vars), comp = move(comp)](
+                   const CurrentState & state, const innards::Propagators & propagators) -> optional<IntegerVariableID> {
             optional<IntegerVariableID> result;
             for (auto & v : vars) {
                 auto size = state.domain_size(v);
@@ -133,11 +119,50 @@ auto gcs::variable_order::in_order_of(vector<IntegerVariableID> vars, VariableCo
             }
             return result;
         };
+    }
+
+    // Wrap a stateless selector (one needing no per-search setup) as a
+    // BranchVariableHeuristic: the setup ignores its arguments and just returns
+    // the selector.
+    auto as_heuristic(BranchVariableSelector selector) -> BranchVariableHeuristic
+    {
+        return [selector = move(selector)](const Problem &, innards::State &, innards::Propagators &) -> BranchVariableSelector { return selector; };
+    }
 }
 
-auto gcs::variable_order::in_order(vector<IntegerVariableID> vars) -> BranchVariableSelector
+auto gcs::variable_order::random(const Problem & problem) -> BranchVariableHeuristic
 {
-    return [vars = move(vars)](const CurrentState & state, const innards::Propagators &) -> optional<IntegerVariableID> {
+    return variable_order::random(problem.all_normal_variables());
+}
+
+auto gcs::variable_order::random(vector<IntegerVariableID> vars) -> BranchVariableHeuristic
+{
+    return as_heuristic(random_variable_selector(move(vars), make_shared_rng()));
+}
+
+auto gcs::variable_order::random(const Problem & problem, uint_fast32_t seed) -> BranchVariableHeuristic
+{
+    return variable_order::random(problem.all_normal_variables(), seed);
+}
+
+auto gcs::variable_order::random(vector<IntegerVariableID> vars, uint_fast32_t seed) -> BranchVariableHeuristic
+{
+    return as_heuristic(random_variable_selector(move(vars), make_shared_rng(seed)));
+}
+
+auto gcs::variable_order::in_order_of(const Problem & problem, VariableComparator comp) -> BranchVariableHeuristic
+{
+    return variable_order::in_order_of(problem.all_normal_variables(), move(comp));
+}
+
+auto gcs::variable_order::in_order_of(vector<IntegerVariableID> vars, VariableComparator comp) -> BranchVariableHeuristic
+{
+    return as_heuristic(in_order_of_selector(move(vars), move(comp)));
+}
+
+auto gcs::variable_order::in_order(vector<IntegerVariableID> vars) -> BranchVariableHeuristic
+{
+    return as_heuristic([vars = move(vars)](const CurrentState & state, const innards::Propagators &) -> optional<IntegerVariableID> {
         for (auto & v : vars) {
             auto size = state.domain_size(v);
             if (size < 2_i)
@@ -145,15 +170,15 @@ auto gcs::variable_order::in_order(vector<IntegerVariableID> vars) -> BranchVari
             return v;
         }
         return nullopt;
-    };
+    });
 }
 
-auto gcs::variable_order::dom(const Problem & problem) -> BranchVariableSelector
+auto gcs::variable_order::dom(const Problem & problem) -> BranchVariableHeuristic
 {
     return dom(problem.all_normal_variables());
 }
 
-auto gcs::variable_order::dom(vector<IntegerVariableID> vars) -> BranchVariableSelector
+auto gcs::variable_order::dom(vector<IntegerVariableID> vars) -> BranchVariableHeuristic
 {
     return variable_order::in_order_of(
         vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
@@ -161,12 +186,12 @@ auto gcs::variable_order::dom(vector<IntegerVariableID> vars) -> BranchVariableS
         });
 }
 
-auto gcs::variable_order::dom_then_deg(const Problem & problem) -> BranchVariableSelector
+auto gcs::variable_order::dom_then_deg(const Problem & problem) -> BranchVariableHeuristic
 {
     return dom_then_deg(problem.all_normal_variables());
 }
 
-auto gcs::variable_order::dom_then_deg(vector<IntegerVariableID> vars) -> BranchVariableSelector
+auto gcs::variable_order::dom_then_deg(vector<IntegerVariableID> vars) -> BranchVariableHeuristic
 {
     return variable_order::in_order_of(
         vars, [](const CurrentState & state, const innards::Propagators & p, const IntegerVariableID & a, const IntegerVariableID & b) {
@@ -174,12 +199,84 @@ auto gcs::variable_order::dom_then_deg(vector<IntegerVariableID> vars) -> Branch
         });
 }
 
-auto gcs::variable_order::with_smallest_value(const Problem & problem) -> BranchVariableSelector
+auto gcs::variable_order::dom_wdeg(const Problem & problem, WeightingScheme scheme, optional<WeightingState> initial) -> BranchVariableHeuristic
+{
+    return dom_wdeg(problem.all_normal_variables(), scheme, move(initial));
+}
+
+auto gcs::variable_order::dom_wdeg(vector<IntegerVariableID> vars, WeightingScheme scheme, optional<WeightingState> initial)
+    -> BranchVariableHeuristic
+{
+    return [vars = move(vars), scheme, initial = move(initial)](
+               const Problem &, innards::State & state, innards::Propagators & propagators) -> BranchVariableSelector {
+        shared_ptr<VariableWeighting> weighting;
+        switch (scheme) {
+            using enum WeightingScheme;
+        case Classic: weighting = make_shared<ClassicDomWDeg>(propagators); break;
+        case InitialArity: weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::InitialArity); break;
+        case CurrentArity: weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::CurrentArity); break;
+        case InitialDomain: weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::InitialDomain); break;
+        case CurrentDomain: weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::CurrentDomain); break;
+        case CurrentArityCurrentDomain:
+            weighting = make_shared<RefinedWeighting>(propagators, state, RefinedWeighting::Variant::CurrentArityCurrentDomain);
+            break;
+        case ConflictHistorySearch:
+            // Qualified: the WeightingScheme::ConflictHistorySearch enumerator
+            // (via using enum) otherwise shadows the class of the same name.
+            weighting = make_shared<gcs::ConflictHistorySearch>(propagators);
+            break;
+        }
+        if (initial)
+            weighting->load(*initial, propagators);
+        propagators.set_conflict_observer(weighting.get());
+
+        // Select the argmin of dom(x)/W(x). This is the same selection an
+        // in_order_of_selector min-scan would make, but we compute each
+        // candidate's weighted degree exactly once per node and carry the
+        // incumbent's cached score, rather than recomputing weighted_degree_of
+        // for *both* arguments of every comparison. weighted_degree_of walks
+        // every constraint in a variable's scope, so on wide constraints (e.g.
+        // count / cardinality) the redundant per-comparison recompute of the
+        // incumbent's score dominates the entire solve.
+        return [vars, weighting](const CurrentState & state, const innards::Propagators & p) -> optional<IntegerVariableID> {
+            optional<IntegerVariableID> result;
+            double dom_result = 0.0, w_result = 0.0;
+            for (const auto & v : vars) {
+                auto size = state.domain_size(v);
+                if (size < 2_i)
+                    continue;
+                auto dom_v = static_cast<double>(size.raw_value);
+                auto w_v = weighting->weighted_degree_of(state, p, v);
+                if (! result) {
+                    result = v;
+                    dom_result = dom_v;
+                    w_result = w_v;
+                    continue;
+                }
+                // Cross-multiplied dom(x)/W(x) to avoid division: a variable
+                // with W(x)=0 (in no constraint with two or more unassigned
+                // variables) sorts last for free. Tie-break on highest degree,
+                // matching dom_then_deg.
+                auto lhs = dom_v * w_result;
+                auto rhs = dom_result * w_v;
+                bool v_better = (lhs != rhs) ? (lhs < rhs) : (p.degree_of(v) > p.degree_of(*result));
+                if (v_better) {
+                    result = v;
+                    dom_result = dom_v;
+                    w_result = w_v;
+                }
+            }
+            return result;
+        };
+    };
+}
+
+auto gcs::variable_order::with_smallest_value(const Problem & problem) -> BranchVariableHeuristic
 {
     return with_smallest_value(problem.all_normal_variables());
 }
 
-auto gcs::variable_order::with_smallest_value(vector<IntegerVariableID> vars) -> BranchVariableSelector
+auto gcs::variable_order::with_smallest_value(vector<IntegerVariableID> vars) -> BranchVariableHeuristic
 {
     return variable_order::in_order_of(
         vars, [](const CurrentState & state, const innards::Propagators &, const IntegerVariableID & a, const IntegerVariableID & b) {
