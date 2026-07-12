@@ -17,6 +17,17 @@ namespace gcs::innards::hints
         ConstraintID originator;
         static constexpr std::string_view hint_name = "regular";
     };
+
+    /**
+     * \brief RegularLegacy's assertion hint: just the owning constraint.
+     *
+     * \ingroup Innards
+     */
+    struct RegularLegacy
+    {
+        ConstraintID originator;
+        static constexpr std::string_view hint_name = "regular_legacy";
+    };
 }
 
 #endif

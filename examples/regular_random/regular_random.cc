@@ -36,7 +36,7 @@ auto index_of(const IntegerVariableID & val, const vector<IntegerVariableID> & v
     return (int)pos;
 }
 
-auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_reasons)
+auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_reasons, bool legacy)
 {
     stringstream string_rep;
 
@@ -79,8 +79,12 @@ auto post_random_regular(Problem & p, const int & n, mt19937 & rng, bool short_r
         }
     }
 
-    p.post(Regular{x, num_states, transitions, final_states} //
-            .with_short_reasons(short_reasons));
+    if (legacy)
+        p.post(RegularLegacy{x, num_states, transitions, final_states} //
+                .with_short_reasons(short_reasons));
+    else
+        p.post(Regular{x, num_states, transitions, final_states} //
+                .with_short_reasons(short_reasons));
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -96,7 +100,8 @@ auto main(int argc, char * argv[]) -> int
             ("n", "Number of variables in the sequence", cxxopts::value<int>()->default_value("6"))                                        //
             ("stats", "Print stats, including solve time")                                                                                 //
             ("proof-files-basename", "Alternative path and name for the proof", cxxopts::value<string>()->default_value("regular_random")) //
-            ("short-reasons", "Use short reasons method");
+            ("short-reasons", "Use short reasons method (RegularLegacy only)")                                                             //
+            ("legacy", "Post RegularLegacy instead of the new Regular");
 
         options_vars = options.parse(argc, argv);
     }
@@ -118,6 +123,7 @@ auto main(int argc, char * argv[]) -> int
     auto prove = options_vars.contains("prove");
     auto print_stats = options_vars.contains("stats");
     auto short_reasons = options_vars.contains("short-reasons");
+    auto legacy = options_vars.contains("legacy");
     auto proof_prefix = options_vars["proof-files-basename"].as<string>();
 
     if (seed == -1) {
@@ -127,7 +133,7 @@ auto main(int argc, char * argv[]) -> int
 
     std::mt19937 rng(seed);
     auto p = Problem{};
-    post_random_regular(p, n, rng, short_reasons);
+    post_random_regular(p, n, rng, short_reasons, legacy);
 
     auto stats = solve_with(p,                                                           //
         SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return false; }}, //

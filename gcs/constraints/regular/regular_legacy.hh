@@ -1,50 +1,35 @@
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_REGULAR_REGULAR_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_REGULAR_REGULAR_HH
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_REGULAR_REGULAR_LEGACY_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_REGULAR_REGULAR_LEGACY_HH
 
 #include <gcs/constraint.hh>
 #include <gcs/extensional.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/variable_id.hh>
-
-#include <memory>
 #include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
 namespace gcs
 {
     /**
      * \brief Constrain that the sequence of variables is a member of the
      * language recognised by the given finite automaton, equivalent to a regex
      * expression. The automaton may be non-deterministic: each (state, value)
-     * pair maps to a set of next states.
+     * pair maps to a set of next states. "short_reasons" uses aliases for
+     * reasons when proof logging is enabled, which can result in shorter
+     * proofs.
      *
      * The automaton may instead be given as a regular expression string, which
      * is compiled to an NFA over the constrained variables' domains. The syntax
      * matches MiniZinc/Gecode (see regular/regex.hh).
      *
-     * Proof scaffolding mirrors the upfront pattern used by MDD, Knapsack, and
-     * BinPacking Stage 3: the OPB encoding is the natural per-(state, val)
-     * forward chains plus per-layer exactly-one, and a one-shot Top-level
-     * initialiser derives per-val backward chains plus statically-dead-node
-     * lines. The per-call propagator's `~state[i][q]` derivations RUP-close
-     * through that scaffolding instead of re-emitting per-(parent, val)
-     * intermediates on every propagation call.
-     *
-     * The `short_reasons` flag is retained for API parity with RegularLegacy
-     * and benchmarking. The new propagator emits at most one proof line per
-     * state-death, so the effect of the flag is small or zero here.
-     *
      * \ingroup Constraints
      */
-    class Regular : public Constraint
+    class RegularLegacy : public Constraint
     {
     private:
-        struct Bridge;
-
         const std::vector<IntegerVariableID> _vars;
         long _num_states;
         std::vector<std::unordered_map<Integer, std::set<long>>> _transitions;
@@ -52,14 +37,13 @@ namespace gcs
         bool _short_reasons = true;
         const std::optional<std::string> _regex;
         std::vector<Integer> _symbols;
-        std::shared_ptr<Bridge> _bridge;
+        std::vector<std::vector<innards::ProofFlag>> _state_at_pos_flags;
         innards::ConstraintStateHandle _graph_idx;
-        innards::ConstraintStateHandle _dead_cache_idx;
         std::set<Integer> _opb_alphabet;
 
         // Copy-style constructor used by clone(): takes the internal multi-target
         // representation (and the regex, if any) directly.
-        Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, std::set<long>>> transitions,
+        RegularLegacy(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, std::set<long>>> transitions,
             std::vector<long> final_states, std::vector<Integer> symbols, bool short_reasons, std::optional<std::string> regex);
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
@@ -67,10 +51,10 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
-        explicit Regular(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, long>> transitions,
+        explicit RegularLegacy(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::unordered_map<Integer, long>> transitions,
             std::vector<long> final_states);
 
-        explicit Regular(
+        explicit RegularLegacy(
             std::vector<IntegerVariableID> vars, long num_states, std::vector<std::vector<long>> transitions, std::vector<long> final_states);
 
         /**
@@ -78,12 +62,12 @@ namespace gcs
          * regular expression. The expression is compiled to an NFA over the
          * contiguous min..max range of the variables' domains.
          */
-        explicit Regular(std::vector<IntegerVariableID> vars, std::string regex);
+        explicit RegularLegacy(std::vector<IntegerVariableID> vars, std::string regex);
 
         /// Whether to use short reasons in the proof log (default true). Takes a
         /// std::optional<bool> so a runtime flag can be passed directly; nullopt
         /// or no argument leaves it at true.
-        auto with_short_reasons(std::optional<bool> short_reasons = true) -> Regular &;
+        auto with_short_reasons(std::optional<bool> short_reasons = true) -> RegularLegacy &;
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
