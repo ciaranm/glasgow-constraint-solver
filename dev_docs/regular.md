@@ -286,6 +286,40 @@ intermediates, and AL1 derivations are useful primitives whose value
 shows up clearly in the all-solutions regime even if shallow-search
 benchmarks alone would not predict it.
 
+## Worked example: nonogram
+
+`regular_random` exercises the propagator on random automata, which is
+right for stress-testing but says nothing about a *structured* use of
+`Regular`. The `examples/nonogram` binary is the structured companion:
+a nonogram ("paint by numbers") is solved by giving each row and each
+column its own small DFA over the alphabet `{empty, filled}` and posting
+one `Regular` per line. It is the canonical application of the
+constraint and mirrors the MiniZinc Challenge 2013 `nonogram` model
+(`2013/nonogram/non.mzn`).
+
+Each clue — a list of run lengths like `[3, 1]` — is expanded to the
+same 0/1 "cons" run-with-gap string the MiniZinc model uses (a run of
+`k` becomes `k` ones; runs are separated by a single zero), and that
+string is read directly into the layer-uniform DFA. Cells take values
+`0 = empty` / `1 = filled` so the dense transition table is indexed by
+cell value.
+
+Run it with a built-in picture, a random instance, or a Challenge data
+file, and select the variant to benchmark:
+
+```shell
+./build/nonogram --puzzle heart            # built-in pictures: plus, heart, duck
+./build/nonogram --random 20 --seed 1      # random size-by-size instance
+./build/nonogram --dzn 2013/nonogram/dom_10.dzn --stats
+./build/nonogram --dzn dom_10.dzn --all --bacchus   # benchmark RegularBacchus
+```
+
+`--legacy` / `--bacchus` pick the other two implementations (default is
+the upfront `Regular`), and `--all` enumerates every solution — the same
+knobs `regular_random` exposes, so the three implementations can be
+compared on the same instance. See
+[`benchmarking.md`](benchmarking.md#benchmarking-proof-shape-changes).
+
 ## #200 follow-up
 
 `Regular`, `RegularBacchus` and `MDD` now share related Top-scaffolding
