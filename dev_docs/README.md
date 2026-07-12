@@ -81,6 +81,14 @@ library. For an introduction to *using* the solver, start with the top-level
   Read when touching range/interval reasons, branching, or `infer_not_in_range`.
 - [View proof logging](view-proof-logging.md) — how the proof layer handles
 - [arithmetic-proofs.md](arithmetic-proofs.md) — how Multiply/Divide/Modulus/Power propagate and justify against cake's encoding: the slot-keyed emitters, the ConditionalBound justification layer, the sign-case driver, and the hard-won RUP/pol rules.
+- [Decision-diagram proof strategies](decision-diagram-proof-strategies.md) — for
+  the layered/partial-sum propagators (`Regular`, `MDD`, `Knapsack`,
+  `BinPacking`), the choice between "upfront" Top-level scaffolding and "per-call"
+  RUP-driven proofs. The `veripb_time = displacement × DB-tax` cost model that
+  explains why proof size and verification time diverge, the per-propagator
+  measured verdicts and defaults, a predictive rule to apply before implementing,
+  and why scaffold deletion is unsafe while hinting the propagator's own RUPs is
+  the high-value lever. Read when adding or tuning a diagram-shaped constraint.
   views (`ViewOfIntegerVariableID`): the V↔X link constraints that tie a view's
   proof variable to its underlying variable, and how literals over views are
   deviewed for emission. Read when touching view handling in proofs.
