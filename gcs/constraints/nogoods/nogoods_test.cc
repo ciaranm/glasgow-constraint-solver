@@ -3,13 +3,16 @@
 #include <gcs/current_state.hh>
 #include <gcs/exception.hh>
 #include <gcs/problem.hh>
+#include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
+#include <gcs/stats.hh>
 #include <gcs/variable_condition.hh>
 
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <random>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -29,11 +32,14 @@ using namespace gcs::test_innards;
 using std::cerr;
 using std::flush;
 using std::make_optional;
+using std::mt19937;
 using std::nullopt;
 using std::pair;
+using std::random_device;
 using std::set;
 using std::size_t;
 using std::tuple;
+using std::uniform_int_distribution;
 using std::vector;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -113,9 +119,10 @@ namespace
         return Holds::Undecided;
     }
 
-    auto run_nogoods_test(bool proofs, const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods) -> void
+    auto run_nogoods_test(bool refined, bool proofs, const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods) -> void
     {
-        print(cerr, "nogoods {} vars, {} nogoods{}", domains.size(), nogoods.size(), proofs ? " with proofs:" : ":");
+        print(
+            cerr, "nogoods [{}] {} vars, {} nogoods{}", refined ? "refined" : "scan", domains.size(), nogoods.size(), proofs ? " with proofs:" : ":");
         cerr << flush;
 
         // Oracle: an assignment is a solution iff no nogood is fully satisfied.
@@ -150,7 +157,7 @@ namespace
                 n.push_back(make_condition(vars, l));
             posted.push_back(std::move(n));
         }
-        p.post(Nogoods{std::move(posted)});
+        p.post(Nogoods{std::move(posted), refined});
 
         auto proof_name = proofs ? make_optional<std::string>("nogoods_test") : nullopt;
 
@@ -183,41 +190,155 @@ namespace
         check_results(proof_name, expected, actual);
     }
 
-    auto run_all_tests(bool proofs) -> void
+    using Instance = pair<vector<pair<int, int>>, vector<TestNogood>>;
+
+    // The hand-picked instances, shared by the per-mode oracle/UP/proof tests and
+    // the scan-vs-refined differential.
+    auto hand_picked_instances() -> vector<Instance>
     {
         using enum VariableConditionOperator;
+        return {
+            // Pure equality nogoods (a NegativeTable in disguise).
+            {{{1, 3}, {1, 3}}, {{{0, Equal, 1}, {1, Equal, 1}}}},
+            // Exclude the diagonal.
+            {{{1, 3}, {1, 3}}, {{{0, Equal, 1}, {1, Equal, 1}}, {{0, Equal, 2}, {1, Equal, 2}}, {{0, Equal, 3}, {1, Equal, 3}}}},
+            // Cascade: (x=1, y=*) all forbidden forces x != 1.
+            {{{1, 3}, {1, 3}}, {{{0, Equal, 1}, {1, Equal, 1}}, {{0, Equal, 1}, {1, Equal, 2}}, {{0, Equal, 1}, {1, Equal, 3}}}},
+            // A unit nogood over an order literal: forbids x >= 4, i.e. forces x < 4.
+            {{{0, 6}}, {{{0, GreaterEqual, 4}}}},
+            // Order literals: forbid (x >= 3 and y < 3).
+            {{{0, 5}, {0, 5}}, {{{0, GreaterEqual, 3}, {1, Less, 3}}}},
+            // Entailment watching: x is in [11, 13] so x >= 10 always holds; the
+            // nogood (x >= 10 and y = 5) must therefore force y != 5. The oracle's
+            // bound-based entailment fires on the >= 11 bound, so a propagator that
+            // matched x >= 10 only exactly would be caught.
+            {{{11, 13}, {4, 6}}, {{{0, GreaterEqual, 10}, {1, Equal, 5}}}},
+            // Mixed literal kinds in one nogood.
+            {{{0, 3}, {0, 3}, {0, 3}}, {{{0, Equal, 1}, {1, GreaterEqual, 2}, {2, NotEqual, 2}}}},
+            // A not-equal literal: forbid (x != 2 and y != 2) over small domains.
+            {{{1, 3}, {1, 3}}, {{{0, NotEqual, 2}, {1, NotEqual, 2}}}},
+            // Unsatisfiable at the root: forbid both x <= 2 and x >= 3 over [0, 5].
+            {{{0, 5}}, {{{0, Less, 3}}, {{0, GreaterEqual, 3}}}},
+            // Several order nogoods that interact over three variables.
+            {{{0, 4}, {0, 4}, {0, 4}},
+                {{{0, GreaterEqual, 3}, {1, GreaterEqual, 3}}, {{1, Less, 2}, {2, Less, 2}}, {{0, Equal, 0}, {2, GreaterEqual, 4}}}},
+        };
+    }
 
-        // Pure equality nogoods (a NegativeTable in disguise).
-        run_nogoods_test(proofs, {{1, 3}, {1, 3}}, {{{0, Equal, 1}, {1, Equal, 1}}});
-        // Exclude the diagonal.
-        run_nogoods_test(proofs, {{1, 3}, {1, 3}}, {{{0, Equal, 1}, {1, Equal, 1}}, {{0, Equal, 2}, {1, Equal, 2}}, {{0, Equal, 3}, {1, Equal, 3}}});
-        // Cascade: (x=1, y=*) all forbidden forces x != 1.
-        run_nogoods_test(proofs, {{1, 3}, {1, 3}}, {{{0, Equal, 1}, {1, Equal, 1}}, {{0, Equal, 1}, {1, Equal, 2}}, {{0, Equal, 1}, {1, Equal, 3}}});
+    auto run_all_tests(bool refined, bool proofs) -> void
+    {
+        for (const auto & [domains, nogoods] : hand_picked_instances())
+            run_nogoods_test(refined, proofs, domains, nogoods);
+    }
 
-        // A unit nogood over an order literal: forbids x >= 4, i.e. forces x < 4.
-        run_nogoods_test(proofs, {{0, 6}}, {{{0, GreaterEqual, 4}}});
+    // Solve one instance in the chosen trigger mode with a deterministic,
+    // degree-independent brancher (in_order), returning the search statistics.
+    // Because in_order ignores degree, the scan path (which adds an on_change
+    // trigger per variable) and the refined path (which adds none) branch
+    // identically, so any difference in recursions or solutions is a difference
+    // in *propagation* -- a missed inference under-propagates and explores more
+    // nodes; an unsound inference prunes a real solution.
+    template <typename ValueGen_>
+    auto solve_for_differential(bool refined, const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods, ValueGen_ value_gen)
+        -> Stats
+    {
+        Problem p;
+        vector<IntegerVariableID> vars;
+        for (const auto & d : domains)
+            vars.push_back(p.create_integer_variable(Integer{d.first}, Integer{d.second}));
 
-        // Order literals: forbid (x >= 3 and y < 3).
-        run_nogoods_test(proofs, {{0, 5}, {0, 5}}, {{{0, GreaterEqual, 3}, {1, Less, 3}}});
+        vector<Nogood> posted;
+        for (const auto & nogood : nogoods) {
+            Nogood n;
+            for (const auto & l : nogood)
+                n.push_back(make_condition(vars, l));
+            posted.push_back(std::move(n));
+        }
+        p.post(Nogoods{std::move(posted), refined});
 
-        // Entailment watching: x is in [11, 13] so x >= 10 always holds; the
-        // nogood (x >= 10 and y = 5) must therefore force y != 5. The oracle's
-        // bound-based entailment fires on the >= 11 bound, so a propagator that
-        // matched x >= 10 only exactly would be caught.
-        run_nogoods_test(proofs, {{11, 13}, {4, 6}}, {{{0, GreaterEqual, 10}, {1, Equal, 5}}});
+        return solve_with(p,
+            SolveCallbacks{.solution = [](const CurrentState &) { return true; }, .branch = branch_with(variable_order::in_order(vars), value_gen)});
+    }
 
-        // Mixed literal kinds in one nogood.
-        run_nogoods_test(proofs, {{0, 3}, {0, 3}, {0, 3}}, {{{0, Equal, 1}, {1, GreaterEqual, 2}, {2, NotEqual, 2}}});
+    auto run_differential(const vector<pair<int, int>> & domains, const vector<TestNogood> & nogoods) -> void
+    {
+        auto check = [&](auto make_value_gen, const char * label) {
+            auto scan = solve_for_differential(false, domains, nogoods, make_value_gen());
+            auto refined = solve_for_differential(true, domains, nogoods, make_value_gen());
+            println(cerr, "nogoods differential [{}] {} vars {} nogoods: scan rec={} sol={} | refined rec={} sol={}", label, domains.size(),
+                nogoods.size(), scan.recursions, scan.solutions, refined.recursions, refined.solutions);
+            if (scan.recursions != refined.recursions || scan.solutions != refined.solutions) {
+                println(cerr, "DIVERGED. instance:");
+                for (size_t vi = 0; vi < domains.size(); ++vi)
+                    println(cerr, "  var {}: [{}, {}]", vi, domains[vi].first, domains[vi].second);
+                for (const auto & ng : nogoods) {
+                    print(cerr, "  nogood:");
+                    for (const auto & l : ng)
+                        print(cerr, " (v{} op{} {})", l.var, static_cast<int>(l.op), l.value);
+                    println(cerr, "");
+                }
+                throw UnexpectedException{"refined nogoods diverged from scan: different search tree or solution count"};
+            }
+        };
+        // Instantiation branching (each upper-/single-value decision) and bounds-
+        // splitting (gradual order-literal entailment, more backtracking): both
+        // must give scan and refined the identical tree.
+        check([] { return value_order::smallest_in(); }, "smallest");
+        check([] { return value_order::split_smallest_first(); }, "split");
+    }
 
-        // A not-equal literal: forbid (x != 2 and y != 2) over small domains.
-        run_nogoods_test(proofs, {{1, 3}, {1, 3}}, {{{0, NotEqual, 2}, {1, NotEqual, 2}}});
+    // Random, often backtrack-heavy instances for the differential: small domains,
+    // a handful of nogoods of mixed literal kinds, so clauses go unit and conflict
+    // and watches move and are restored across many backtracks.
+    auto run_random_differentials() -> void
+    {
+        using enum VariableConditionOperator;
+        mt19937 rng;
+        if (auto seed = get_seed())
+            rng.seed(*seed);
+        else
+            rng.seed(random_device{}());
 
-        // Unsatisfiable at the root: forbid both x <= 2 and x >= 3 over [0, 5].
-        run_nogoods_test(proofs, {{0, 5}}, {{{0, Less, 3}}, {{0, GreaterEqual, 3}}});
+        auto pick_op = [&]() {
+            switch (uniform_int_distribution{0, 3}(rng)) {
+            case 0: return Equal;
+            case 1: return NotEqual;
+            case 2: return GreaterEqual;
+            default: return Less;
+            }
+        };
 
-        // Several order nogoods that interact over three variables.
-        run_nogoods_test(proofs, {{0, 4}, {0, 4}, {0, 4}},
-            {{{0, GreaterEqual, 3}, {1, GreaterEqual, 3}}, {{1, Less, 2}, {2, Less, 2}}, {{0, Equal, 0}, {2, GreaterEqual, 4}}});
+        for (int iter = 0; iter < 300; ++iter) {
+            int nvars = uniform_int_distribution{2, 4}(rng);
+            vector<pair<int, int>> domains;
+            for (int v = 0; v < nvars; ++v) {
+                int lo = uniform_int_distribution{0, 3}(rng);
+                domains.emplace_back(lo, lo + uniform_int_distribution{0, 4}(rng));
+            }
+
+            int nng = uniform_int_distribution{1, 6}(rng);
+            vector<TestNogood> nogoods;
+            for (int n = 0; n < nng; ++n) {
+                TestNogood ng;
+                int len = uniform_int_distribution{1, 4}(rng);
+                for (int l = 0; l < len; ++l) {
+                    auto var = static_cast<size_t>(uniform_int_distribution{0, nvars - 1}(rng));
+                    // A value spanning just outside the domain, so literals are a
+                    // mix of always-/never-/sometimes-true.
+                    int value = uniform_int_distribution{domains[var].first - 1, domains[var].second + 1}(rng);
+                    ng.push_back(TestLit{var, pick_op(), value});
+                }
+                nogoods.push_back(std::move(ng));
+            }
+            run_differential(domains, nogoods);
+        }
+    }
+
+    auto run_all_differentials() -> void
+    {
+        for (const auto & [domains, nogoods] : hand_picked_instances())
+            run_differential(domains, nogoods);
+        run_random_differentials();
     }
 }
 
@@ -225,11 +346,19 @@ auto main(int argc, char * argv[]) -> int
 {
     set_seed_from_argv(argc, argv);
 
-    for (bool proofs : {false, true}) {
-        if (proofs && ! can_run_veripb())
-            continue;
-        run_all_tests(proofs);
-    }
+    // Scan vs refined must explore the identical tree and find the identical
+    // solutions on every instance: a pure same-tree differential (no proof needed).
+    run_all_differentials();
+
+    // Each mode independently checked against the brute-force oracle and the
+    // per-node unit-propagation reference, with its proof verified when veripb is
+    // available.
+    for (bool refined : {false, true})
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                continue;
+            run_all_tests(refined, proofs);
+        }
 
     return EXIT_SUCCESS;
 }

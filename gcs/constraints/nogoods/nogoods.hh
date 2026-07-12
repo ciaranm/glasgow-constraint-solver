@@ -71,6 +71,12 @@ namespace gcs
     private:
         std::shared_ptr<NogoodStore> _store;
         std::vector<IntegerVariableID> _trigger_vars;
+        // Whether to use refined per-literal watches (true) or the coarse
+        // wake-on-every-trigger-var-and-scan-the-whole-store path (false). The
+        // fixed-nogoods constructor defaults to refined; the growable-store
+        // constructor (used by the restart loop) stays coarse until the
+        // growable catch-up is converted (issue #335, stage C-2).
+        bool _refined;
 
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
@@ -79,15 +85,22 @@ namespace gcs
         /**
          * \brief A fixed set of nogoods; the propagator wakes on the variables
          * they mention.
+         *
+         * \param refined use refined per-literal watches (the default); pass
+         * false to force the coarse whole-store-scan path (used to compare the
+         * two in tests).
          */
-        explicit Nogoods(std::vector<Nogood> nogoods);
+        explicit Nogoods(std::vector<Nogood> nogoods, bool refined = true);
 
         /**
          * \brief An externally owned store, grown during search, with the
          * variables to wake on (the restart loop passes every problem variable,
          * since a later-learned nogood may mention any of them).
+         *
+         * \param refined use refined per-literal watches; defaults to false
+         * because the growable catch-up is not yet converted (stage C-2).
          */
-        Nogoods(std::shared_ptr<NogoodStore> store, std::vector<IntegerVariableID> trigger_vars);
+        Nogoods(std::shared_ptr<NogoodStore> store, std::vector<IntegerVariableID> trigger_vars, bool refined = false);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;

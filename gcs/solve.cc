@@ -14,6 +14,7 @@
 
 #include <util/enumerate.hh>
 
+#include <cstdlib>
 #include <limits>
 #include <string>
 #include <variant>
@@ -292,7 +293,14 @@ auto gcs::solve_with(
     shared_ptr<NogoodStore> nogood_store;
     if (callbacks.restarts) {
         nogood_store = make_shared<NogoodStore>();
-        auto nogoods_constraint = Nogoods{nogood_store, problem.all_normal_variables()};
+        // Use refined per-literal watches for the learned-nogood store (issue #335,
+        // stage C-2): the propagator wakes only when a learned clause loses a
+        // non-entailed literal and visits only the clauses that fired, rather than
+        // the coarse wake-on-every-variable-and-scan-the-whole-store path that was
+        // the ~13.1M-wasted-propagation cost. Setting GCS_LEARNED_NOGOODS_SCAN picks
+        // the legacy scan path, for the scan-vs-refined differential and perf check.
+        bool refined_nogoods = (std::getenv("GCS_LEARNED_NOGOODS_SCAN") == nullptr);
+        auto nogoods_constraint = Nogoods{nogood_store, problem.all_normal_variables(), refined_nogoods};
         nogoods_constraint.set_constraint_id(NamedConstraint{"learned_nogoods"});
         std::move(nogoods_constraint).install(propagators, state, optional_proof ? optional_proof->model() : nullptr);
     }

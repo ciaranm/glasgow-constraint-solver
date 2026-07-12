@@ -247,6 +247,13 @@ for (const auto & v : _vars)
     triggers.on_change.push_back(v);
 ```
 
+These wake the propagator on any change to a whole *variable*. A propagator that
+instead cares about specific *literals* (`x = v`, `x >= k`, ...) on many variables
+and is otherwise dormant can arm **refined per-literal watches** via
+`Triggers::refined` and the `RefinedWatchContext` — see [Refined
+triggers](refined-triggers.md). That is a specialised mechanism (its first client
+is the learned-nogood store); most constraints want the coarse triggers above.
+
 ### install_initialiser
 
 For one-shot setup that only runs once at the root (e.g., emitting

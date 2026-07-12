@@ -180,21 +180,26 @@ literals carries straight over to arbitrary `=`/`≠`/`≥`/`≤` literals.
   `solve_with` installs one empty `Nogoods` over the store before the model is
   finalised, holds the store, and threads a `NogoodStore*` into the recursion.
   It is not user-posted — for parallel each thread owns its own store, so exposing
-  it would be messy. The propagator's watches are **non-backtrackable** and grown
-  lazily (`init_watches_for` catches up any nogoods learned since the last fire).
+  it would be messy.
 
-### Triggers caveat (performance)
+### Triggers (performance)
 
-v1 subscribes the `Nogoods` propagator to **every** variable
-(`problem.all_normal_variables()`), and its propagator scans the whole store on
-each wake. This is correct but degenerate: measured on `tsp`/`qap` it is a pure
-*rec/s* slowdown (recursions unchanged) that scales with store size — the
-propagator is woken on every domain change and does O(store) non-effectful work
-per wake. The fix (per-variable/per-literal watch lists so a change visits only
-the nogoods watching it, and the trigger set shrinks to watched variables) is a
-**separate, larger planned stage**: "better propagation-queue triggers". It is
-**semantics-preserving** — it changes only wall-clock time, not which nodes are
-visited, which nogoods are learned, or the proof — so it is sequenced last.
+The original `Nogoods` subscribed the propagator to **every** variable
+(`problem.all_normal_variables()`) and rescanned the whole store on each wake.
+That was correct but degenerate: measured on `tsp`/`qap` it was a pure *rec/s*
+slowdown (recursions unchanged) scaling with store size — woken on every domain
+change, doing O(store) non-effectful work per wake.
+
+This has been fixed by the **refined per-literal trigger** redesign, which is its
+own subsystem — see [Refined triggers](refined-triggers.md). The learned-nogood
+store now defaults to a **two-watched-literal** scheme over refined watches: the
+propagator wakes only when a clause loses a non-entailed literal and visits only
+the clauses that fired. It is **semantics-preserving** (identical tree, nogoods
+and proof; validated by a scan-vs-refined differential), and on the worst case
+measured it takes the learned-nogood overhead from a 3.4× tax down to ~free
+(`tsp --restarts=10000`: 190.6s → 58.4s against a 55.6s no-nogoods floor). The
+original scan path is kept as the differential oracle, reachable via
+`GCS_LEARNED_NOGOODS_SCAN`.
 
 ## Reduced-nld extraction
 

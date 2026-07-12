@@ -13,8 +13,11 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -52,22 +55,100 @@ namespace
     // stays out of the propagation loop, whose per-run cost is measurable in
     // whole-program benchmarks.
     template <typename Tracker_>
-    [[gnu::noinline]] auto recheck_idempotence_claim_or_throw(
-        PropagationFunction & f, const State & state, Tracker_ & tracker, ProofLogger * const logger, const ConstraintID & id) -> void
+    [[gnu::noinline]] auto recheck_idempotence_claim_or_throw(PropagationFunction & f, const State & state, Tracker_ & tracker,
+        ProofLogger * const logger, const RefinedWatchContext & watches, const ConstraintID & id) -> void
     {
         const auto inferences_before_recheck = tracker.count_inferences();
         tracker.begin_propagator_run();
         try {
-            (void)f(state, tracker, logger);
+            (void)f(state, tracker, logger, watches);
         }
         catch (const TrackedPropagationFailed &) {
         }
         if (tracker.contradicted() || tracker.count_inferences() != inferences_before_recheck)
             throw UnexpectedException{"propagator for constraint " + as_string(id) + " claimed idempotence, but re-running it did more"};
     }
+
+    // A refined per-literal watch armed on a variable: when `literal` becomes
+    // entailed, `payload` is delivered to propagator `owner`. `id` is a stable
+    // identity used to find and undo the watch on backtrack. `trigger_mask` is the
+    // set of Inference granularities that could make `literal` newly entailed (see
+    // refined_watch_trigger_mask); a change outside it cannot fire this watch, so
+    // the firing loop skips the test_literal for it.
+    struct RefinedWatch
+    {
+        Literal literal;
+        std::uint32_t payload;
+        int owner;
+        std::uint64_t id;
+        unsigned trigger_mask;
+    };
+
+    enum class WatchEditOp
+    {
+        Added,
+        Removed
+    };
+
+    // One entry on the refined-watch backtrack trail: an Added/Removed edit to the
+    // watches armed on var_index, replayed in reverse to restore on backtrack.
+    struct RefinedWatchEdit
+    {
+        WatchEditOp op;
+        std::size_t var_index;
+        RefinedWatch watch;
+    };
+
+    // The underlying simple-variable index of a variable id, or nullopt for a
+    // constant (no variable change can fire on it).
+    auto underlying_var_index(const IntegerVariableID & var) -> std::optional<std::size_t>
+    {
+        return overloaded{[](const SimpleIntegerVariableID & v) -> std::optional<std::size_t> { return v.index; },
+            [](const ViewOfIntegerVariableID & v) -> std::optional<std::size_t> { return v.actual_variable.index; },
+            [](const ConstantIntegerVariableID &) -> std::optional<std::size_t> { return std::nullopt; }}
+            .visit(var);
+    }
+
+    // The underlying simple-variable index a literal's truth depends on, or nullopt
+    // for a constant/true/false literal that no variable change can fire.
+    auto underlying_var_index(const Literal & literal) -> std::optional<std::size_t>
+    {
+        return overloaded{[](const IntegerVariableCondition & cond) -> std::optional<std::size_t> { return underlying_var_index(cond.var); },
+            [](const TrueLiteral &) -> std::optional<std::size_t> { return std::nullopt; },
+            [](const FalseLiteral &) -> std::optional<std::size_t> { return std::nullopt; }}
+            .visit(literal);
+    }
+
+    // Which Inference granularities can make `literal` newly entailed, as a bitmask
+    // over Inference -- mirroring the coarse iv_triggers masks. `x == v` can only
+    // become true when x is instantiated; `x >= k` / `x < k` only when a bound
+    // moves (an interior removal never changes a bound); `x != v` on any value
+    // removal. So the firing loop can skip the (expensive) test_literal for a watch
+    // whose literal cannot have flipped under the current inference. The mask is
+    // derived from the literal alone -- the engine knows each operator's entailment
+    // semantics -- so every client benefits without passing anything extra.
+    auto refined_watch_trigger_mask(const Literal & literal) -> unsigned
+    {
+        using enum VariableConditionOperator;
+        auto bit = [](Inference i) { return 1u << to_underlying(i); };
+        const auto on_instantiated = bit(Inference::Instantiated);
+        const auto on_bounds = bit(Inference::BoundsChanged) | on_instantiated;
+        const auto on_change = bit(Inference::InteriorValuesChanged) | on_bounds;
+        return overloaded{[&](const IntegerVariableCondition & cond) -> unsigned {
+                              switch (cond.op) {
+                              case Equal: return on_instantiated;
+                              case NotEqual: return on_change;
+                              case GreaterEqual:
+                              case Less: return on_bounds;
+                              }
+                              return on_change; // unreachable; conservative default
+                          },
+            [&](const TrueLiteral &) -> unsigned { return on_change; }, [&](const FalseLiteral &) -> unsigned { return on_change; }}
+            .visit(literal);
+    }
 }
 
-struct Propagators::Imp
+struct Propagators::Imp : RefinedWatchSink
 {
     vector<PropagationFunction> propagation_functions;
     std::array<vector<InitialisationFunction>, number_of_initialiser_priorities> initialisation_functions_by_priority;
@@ -140,6 +221,85 @@ struct Propagators::Imp
     // domain (see propagate). Set once at search start via set_conflict_observer;
     // the caller owns it. nullptr when there is no observer.
     ConflictObserver * conflict_observer = nullptr;
+
+    // Refined per-literal watches, parallel to (and leaving untouched) iv_triggers.
+    // refined_watches_by_var[v] are the watches currently armed on variable v; on a
+    // change to v each is tested and, if its literal is now entailed, its payload is
+    // appended to inbox_by_propagator[owner], the owner is woken, and the watch is
+    // consumed. Edits made while propagating go on refined_watch_edit_trail and are
+    // undone on backtrack (one truncate callback per propagate(), replayed in
+    // reverse); install-time base watches are not trailed. inbox_by_propagator is
+    // transient within a propagate(): cleared after each propagator runs, with
+    // pending_inbox_owners cleaning up any left non-empty by a contradiction.
+    // next_refined_watch_id hands out a stable identity per watch for trail undo.
+    vector<vector<RefinedWatch>> refined_watches_by_var;
+    vector<vector<std::uint32_t>> inbox_by_propagator;
+    vector<int> pending_inbox_owners;
+    vector<RefinedWatchEdit> refined_watch_edit_trail;
+    std::uint64_t next_refined_watch_id = 0;
+
+    // Per-propagator backtrackable scratch (watch_state): watch_state_by_propagator[
+    // owner][key] is a uint64 the propagator chooses the meaning of (e.g. the two
+    // watched positions of a clause, packed). Writes are recorded on
+    // watch_state_trail and undone by the same per-propagate() backtrack callback as
+    // the watch edits, so the propagator's bookkeeping is restored in lockstep with
+    // its watches.
+    struct WatchStateEdit
+    {
+        int owner;
+        std::uint32_t key;
+        std::uint64_t old_value;
+    };
+    vector<vector<std::uint64_t>> watch_state_by_propagator;
+    vector<WatchStateEdit> watch_state_trail;
+
+    [[nodiscard]] auto watch_state_get(int owner, std::uint32_t key) const -> std::uint64_t override
+    {
+        if (owner < 0 || static_cast<std::size_t>(owner) >= watch_state_by_propagator.size())
+            return 0;
+        const auto & v = watch_state_by_propagator[owner];
+        return key < v.size() ? v[key] : 0;
+    }
+
+    auto watch_state_set(int owner, std::uint32_t key, std::uint64_t value) -> void override
+    {
+        if (watch_state_by_propagator.size() <= static_cast<std::size_t>(owner))
+            watch_state_by_propagator.resize(owner + 1);
+        auto & v = watch_state_by_propagator[owner];
+        if (v.size() <= key)
+            v.resize(key + 1, 0);
+        watch_state_trail.push_back({owner, key, v[key]});
+        v[key] = value;
+    }
+
+    auto register_refined_watch(int owner, const Literal & literal, std::uint32_t payload, bool trailed) -> void
+    {
+        auto var_index = underlying_var_index(literal);
+        if (! var_index)
+            return;
+        if (refined_watches_by_var.size() <= *var_index)
+            refined_watches_by_var.resize(*var_index + 1);
+        RefinedWatch w{literal, payload, owner, next_refined_watch_id++, refined_watch_trigger_mask(literal)};
+        refined_watches_by_var[*var_index].push_back(w);
+        if (trailed)
+            refined_watch_edit_trail.push_back({WatchEditOp::Added, *var_index, w});
+    }
+
+    auto add_refined_watch(int owner_propagator, const Literal & literal, std::uint32_t payload) -> void override
+    {
+        register_refined_watch(owner_propagator, literal, payload, true);
+    }
+
+    [[nodiscard]] auto is_watching(int owner_propagator, const IntegerVariableID & var) const -> bool override
+    {
+        auto var_index = underlying_var_index(var);
+        if (! var_index || refined_watches_by_var.size() <= *var_index)
+            return false;
+        for (const auto & w : refined_watches_by_var[*var_index])
+            if (w.owner == owner_propagator)
+                return true;
+        return false;
+    }
 };
 
 Propagators::Propagators() : _imp(make_unique<Imp>())
@@ -210,6 +370,9 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         add_to_scope(v);
     for (const auto & v : triggers.on_instantiated)
         add_to_scope(v);
+    for (const auto & refined : triggers.refined)
+        if (auto cond = std::get_if<IntegerVariableCondition>(&refined.first))
+            add_to_scope(cond->var);
 
     for (const auto & v : scope) {
         if (_imp->var_constraint_indices.size() <= v.index)
@@ -269,6 +432,12 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
 
     sort(underlying_trigger_vars);
     _imp->idempotence_claims_ignored.push_back(adjacent_find(underlying_trigger_vars) != underlying_trigger_vars.end() ? 1 : 0);
+
+    for (const auto & [literal, payload] : triggers.refined) {
+        if (auto cond = std::get_if<IntegerVariableCondition>(&literal))
+            increase_degree(cond->var);
+        _imp->register_refined_watch(id, literal, payload, false);
+    }
 }
 
 auto Propagators::install_initialiser(InitialisationFunction && f, InitialiserPriority priority) -> void
@@ -322,6 +491,32 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
             for (auto & [p, mask] : _imp->iv_triggers[v.index].ids_and_masks)
                 if (mask & (1 << to_underlying(inf)))
                     enqueue_if_idle(p);
+
+        // Refined watches: fire any whose literal is now entailed, delivering the
+        // payload to its owner and consuming the watch. A watch is only tested when
+        // the current inference granularity is in its trigger_mask -- e.g. an `x==v`
+        // watch is skipped on a mere bound move, since x==v can only become true when
+        // x is instantiated. This gates the expensive test_literal; the firing of a
+        // watch outside its mask would be a no-op anyway (the literal cannot have
+        // changed status), so this is semantics-preserving.
+        if (v.index < _imp->refined_watches_by_var.size()) {
+            const auto inf_bit = 1u << to_underlying(inf);
+            auto & watches = _imp->refined_watches_by_var[v.index];
+            for (std::size_t i = 0; i < watches.size();) {
+                if ((watches[i].trigger_mask & inf_bit) && state.test_literal(watches[i].literal) == LiteralIs::DefinitelyTrue) {
+                    const auto fired = watches[i];
+                    if (_imp->inbox_by_propagator[fired.owner].empty())
+                        _imp->pending_inbox_owners.push_back(fired.owner);
+                    _imp->inbox_by_propagator[fired.owner].push_back(fired.payload);
+                    enqueue_if_idle(fired.owner);
+                    _imp->refined_watch_edit_trail.push_back({WatchEditOp::Removed, v.index, fired});
+                    watches[i] = watches.back();
+                    watches.pop_back();
+                }
+                else
+                    ++i;
+            }
+        }
     };
 
     // A run that claimed idempotence must not be re-woken by any inference it
@@ -330,7 +525,8 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
     // claim_protected flagging the claimants whose runs ended after the
     // inference being replayed, when (and only when) the round produced
     // claims -- the plain requeue above keeps the claim-free hot path free of
-    // the extra load.
+    // the extra load. Refined watches are consumed on their first fire in the
+    // requeue above, so this coarse-only replay does not re-fire them.
     auto requeue_unless_already_seen = [&](const SimpleIntegerVariableID & v, const Inference inf) {
         if (v.index < _imp->iv_triggers.size())
             for (auto & [p, mask] : _imp->iv_triggers[v.index].ids_and_masks)
@@ -346,6 +542,44 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
     _imp->idempotent_run_claims.clear();
     if (_imp->claim_protected.size() < _imp->propagation_functions.size())
         _imp->claim_protected.resize(_imp->propagation_functions.size(), 0);
+
+    _imp->inbox_by_propagator.resize(_imp->propagation_functions.size());
+
+    // Snapshot the refined-watch edit trail BEFORE any firing this call. The guess
+    // first pass below can already fire and consume watches, so the snapshot must
+    // precede it; otherwise those consumes fall below the snapshot and are never
+    // undone, corrupting the watch state across sibling branches. On backtrack we
+    // replay our own trail in reverse here (State runs an epoch's callbacks in
+    // registration order, which would compose per-edit undos incorrectly), undoing
+    // exactly the edits made during this propagate(). Install-time base watches are
+    // registered before search and so sit below every snapshot and persist.
+    auto refined_trail_start = _imp->refined_watch_edit_trail.size();
+    auto watch_state_trail_start = _imp->watch_state_trail.size();
+    state.on_backtrack([&, refined_trail_start, watch_state_trail_start]() {
+        while (_imp->refined_watch_edit_trail.size() > refined_trail_start) {
+            const auto & e = _imp->refined_watch_edit_trail.back();
+            auto & watches = _imp->refined_watches_by_var[e.var_index];
+            if (e.op == WatchEditOp::Added) {
+                for (std::size_t i = 0; i < watches.size(); ++i)
+                    if (watches[i].id == e.watch.id) {
+                        watches[i] = watches.back();
+                        watches.pop_back();
+                        break;
+                    }
+            }
+            else
+                watches.push_back(e.watch);
+            _imp->refined_watch_edit_trail.pop_back();
+        }
+        // Restore the per-propagator backtrackable scratch in lockstep, so any
+        // bookkeeping a propagator kept in it (e.g. its watched positions) matches
+        // the watches just restored above.
+        while (_imp->watch_state_trail.size() > watch_state_trail_start) {
+            const auto & e = _imp->watch_state_trail.back();
+            _imp->watch_state_by_propagator[e.owner][e.key] = e.old_value;
+            _imp->watch_state_trail.pop_back();
+        }
+    });
 
     if (guesses.empty()) {
         // On the first pass, walk propagators in registration order. The queue runs
@@ -465,7 +699,12 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
             try {
                 ++_imp->total_propagations;
                 tracker.begin_propagator_run();
-                auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
+                RefinedWatchContext watches{*_imp, propagator_id, _imp->inbox_by_propagator[propagator_id]};
+                auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger, watches);
+                // The fired set has now been delivered; clear it so that, if this
+                // propagator is woken again later in this fixpoint, it sees only the
+                // payloads that fired since.
+                _imp->inbox_by_propagator[propagator_id].clear();
                 if (tracker.contradicted()) {
                     // A propagator that opted into the non-throwing failure path
                     // (infer_*_or_stop) signals contradiction with this flag rather
@@ -490,9 +729,11 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                         // boundary replay on its claim-free fast path in rounds
                         // where the claimants all came up empty early.
                         if (! _imp->idempotence_claims_ignored[propagator_id]) {
-                            if (check_idempotent_claims) [[unlikely]]
+                            if (check_idempotent_claims) [[unlikely]] {
+                                RefinedWatchContext recheck_watches{*_imp, propagator_id, {}};
                                 recheck_idempotence_claim_or_throw(_imp->propagation_functions[propagator_id], state, tracker, logger,
-                                    _imp->constraint_ids[_imp->propagator_constraint_index[propagator_id]]);
+                                    recheck_watches, _imp->constraint_ids[_imp->propagator_constraint_index[propagator_id]]);
+                            }
                             if (const auto seen = tracker.count_inferences(); 0 != seen)
                                 _imp->idempotent_run_claims.emplace_back(seen, propagator_id);
                         }
@@ -516,6 +757,13 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
             if (contradiction || (optional_abort_flag && optional_abort_flag->load()))
                 break;
         }
+
+        // Drop any fired payloads left undelivered (e.g. a propagator was woken but a
+        // contradiction ended the loop before it ran); they must not leak into the next
+        // propagate(). In the normal case each propagator already cleared its own.
+        for (auto owner : _imp->pending_inbox_owners)
+            _imp->inbox_by_propagator[owner].clear();
+        _imp->pending_inbox_owners.clear();
 
         return ! contradiction;
     };
