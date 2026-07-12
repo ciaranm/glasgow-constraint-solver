@@ -39,6 +39,24 @@ namespace gcs
      * — cheaper, recommended when the per-bin capacity is much larger
      * than the number of items. See `dev_docs/bin-packing.md`.
      *
+     * The Stage 3 DAG sweep supports two proof-emission strategies,
+     * selected by `upfront_proof`:
+     *
+     * - `upfront_proof = false` (the default): only the reified per-node
+     *   state flags are defined at `ProofLevel::Top`; every aggregation
+     *   is left to the per-call sweep's `JustifyUsingRUP` prunes, which
+     *   RUP-close through those flags plus the natural per-bin OPB
+     *   equations. This wins on both proof size (6–10× smaller) and
+     *   VeriPB verify time (8–16× faster) on the `bin_packing_bench`
+     *   instances, so it is the default.
+     * - `upfront_proof = true`: an off-by-default opt-in that additionally
+     *   derives the full forward/backward chain scaffolding (per-coord
+     *   and joint chains, phantom closures, statically-dead-node lines)
+     *   once at `ProofLevel::Top`. It produces larger, slower-to-verify
+     *   proofs with no measured benefit on the in-tree benchmarks; kept
+     *   for robustness and A/B measurement. See `dev_docs/bin-packing.md`
+     *   for the measured rationale.
+     *
      * \ingroup Constraints
      */
     class BinPacking : public Constraint
@@ -52,9 +70,10 @@ namespace gcs
         std::vector<Integer> _capacities;
         const bool _have_loads;
         const bool _bounds_only;
+        const bool _upfront_proof;
 
         std::shared_ptr<DagBridge> _bridge;
-        std::optional<innards::ConstraintStateHandle> _graph_idx;
+        std::optional<innards::ConstraintStateHandle> _dead_cache_idx;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
@@ -66,16 +85,16 @@ namespace gcs
          * items assigned to bin `b`. Items must take values in
          * `0..loads.size() - 1`.
          */
-        explicit BinPacking(
-            std::vector<IntegerVariableID> items, std::vector<Integer> sizes, std::vector<IntegerVariableID> loads, bool bounds_only = false);
+        explicit BinPacking(std::vector<IntegerVariableID> items, std::vector<Integer> sizes, std::vector<IntegerVariableID> loads,
+            bool bounds_only = false, bool upfront_proof = false);
 
         /**
          * \brief Constant-capacity form: the sum of sizes of items assigned
          * to bin `b` must not exceed `capacities[b]`. Items must take values
          * in `0..capacities.size() - 1`.
          */
-        explicit BinPacking(
-            std::vector<IntegerVariableID> items, std::vector<Integer> sizes, std::vector<Integer> capacities, bool bounds_only = false);
+        explicit BinPacking(std::vector<IntegerVariableID> items, std::vector<Integer> sizes, std::vector<Integer> capacities,
+            bool bounds_only = false, bool upfront_proof = false);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
