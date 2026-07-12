@@ -1,4 +1,5 @@
 #include <gcs/exception.hh>
+#include <gcs/innards/conflict_observer.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -12,6 +13,7 @@
 
 #include <util/enumerate.hh>
 
+#include <limits>
 #include <string>
 
 using namespace gcs;
@@ -20,6 +22,7 @@ using namespace gcs::innards;
 using std::atomic;
 using std::max;
 using std::nullopt;
+using std::numeric_limits;
 using std::optional;
 using std::pair;
 using std::vector;
@@ -29,10 +32,39 @@ using std::chrono::steady_clock;
 
 namespace
 {
+    /**
+     * How a (sub)tree exploration finished, so the caller knows how to unwind.
+     * Complete: the subtree was fully explored; carry on with siblings/parent.
+     * Stop: stop the whole search (abort flag, or a callback returned false) ---
+     * the proof is abandoned, so we return immediately without balancing levels.
+     * RestartCutoffHit is unused here and is produced once the restart loop lands;
+     * unlike Stop it must unwind through the normal backtrack/forget logging so
+     * the proof stays balanced for the restart that follows.
+     */
+    enum class SearchResult
+    {
+        Complete,
+        Stop,
+        RestartCutoffHit
+    };
+
+    /**
+     * The restart budget threaded through the recursion: how many conflicts
+     * (dead-end nodes) the current run has seen, and the cutoff at which it
+     * should abandon the tree and restart. When restarts are disabled the cutoff
+     * is "infinite", so the check never fires and search is a single pass.
+     */
+    struct RestartState
+    {
+        unsigned long long conflicts_since_restart;
+        unsigned long long cutoff;
+        bool enabled;
+    };
+
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, Propagators & propagators, State & state,
         const optional<Literal> & this_branch_guess, SolveCallbacks & callbacks, const BranchCallback & branch_callback, ProofLogger * const logger,
-        bool & this_subtree_contains_solution, Integer & number_of_solutions, optional<Integer> & objective_value, atomic<bool> * optional_abort_flag)
-        -> bool
+        bool & this_subtree_contains_solution, Integer & number_of_solutions, optional<Integer> & objective_value, RestartState & restart,
+        atomic<bool> * optional_abort_flag) -> SearchResult
     {
         stats.max_depth = max(stats.max_depth, depth);
         ++stats.recursions;
@@ -40,95 +72,140 @@ namespace
         if (logger)
             logger->enter_proof_level(depth + 1);
 
-        bool objective_failure = false;
-        Literals guesses;
-        if (this_branch_guess)
-            guesses.push_back(*this_branch_guess);
-        if (problem.optional_minimise_variable() && objective_value) {
-            auto objective_bound = *problem.optional_minimise_variable() < *objective_value;
-            switch (state.infer(objective_bound)) {
-            case Inference::Contradiction: objective_failure = true; break;
-            case Inference::NoChange: break;
-            // The branch-and-bound bound tightened the objective variable, so seed the queue with
-            // its propagators too. Without this only this_branch_guess seeds the queue, and a
-            // propagator that would react to the new objective bound is not re-run here (issue #418).
-            case Inference::BoundsChanged:
-            case Inference::InteriorValuesChanged:
-            case Inference::Instantiated: guesses.push_back(objective_bound); break;
-            }
+        auto result = SearchResult::Complete;
+
+        if (restart.conflicts_since_restart >= restart.cutoff) {
+            // This run has spent its conflict budget: abandon the tree and unwind
+            // to the root for a restart. Unlike Stop we fall through to the tail
+            // backtrack/forget logging below, at this and every ancestor frame, so
+            // the proof stays balanced and the restart can continue it.
+            result = SearchResult::RestartCutoffHit;
         }
-
-        if ((! objective_failure) && propagators.propagate(guesses, state, logger, optional_abort_flag)) {
-            if (optional_abort_flag && optional_abort_flag->load())
-                return false;
-
-            auto branch_generator = branch_callback(state.current(), propagators);
-            auto branch_iter = branch_generator.begin();
-
-            if (branch_iter == branch_generator.end()) {
-                if (logger) {
-                    vector<pair<IntegerVariableID, Integer>> vars_and_values;
-                    for (const auto & v : problem.all_normal_variables())
-                        vars_and_values.emplace_back(v, state(v));
-                    logger->solution(vars_and_values,
-                        problem.optional_minimise_variable().transform([&](const IntegerVariableID & var) { return pair{var, state(var)}; }));
+        else {
+            bool objective_failure = false;
+            Literals guesses;
+            if (this_branch_guess)
+                guesses.push_back(*this_branch_guess);
+            if (problem.optional_minimise_variable() && objective_value) {
+                auto objective_bound = *problem.optional_minimise_variable() < *objective_value;
+                switch (state.infer(objective_bound)) {
+                case Inference::Contradiction: objective_failure = true; break;
+                case Inference::NoChange: break;
+                // The branch-and-bound bound tightened the objective variable, so seed the queue with
+                // its propagators too. Without this only this_branch_guess seeds the queue, and a
+                // propagator that would react to the new objective bound is not re-run here (issue #418).
+                case Inference::BoundsChanged:
+                case Inference::InteriorValuesChanged:
+                case Inference::Instantiated: guesses.push_back(objective_bound); break;
                 }
+            }
 
-                if (problem.optional_minimise_variable())
-                    objective_value = state(*problem.optional_minimise_variable());
+            if ((! objective_failure) && propagators.propagate(guesses, state, logger, optional_abort_flag)) {
+                if (optional_abort_flag && optional_abort_flag->load())
+                    return SearchResult::Stop;
 
-                ++stats.solutions;
-                ++number_of_solutions;
-                this_subtree_contains_solution = true;
-                if (callbacks.solution && ! callbacks.solution(state.current()))
-                    return false;
+                auto branch_generator = branch_callback(state.current(), propagators);
+                auto branch_iter = branch_generator.begin();
+
+                if (branch_iter == branch_generator.end()) {
+                    if (logger) {
+                        vector<pair<IntegerVariableID, Integer>> vars_and_values;
+                        for (const auto & v : problem.all_normal_variables())
+                            vars_and_values.emplace_back(v, state(v));
+                        logger->solution(vars_and_values,
+                            problem.optional_minimise_variable().transform([&](const IntegerVariableID & var) { return pair{var, state(var)}; }));
+                    }
+
+                    if (problem.optional_minimise_variable())
+                        objective_value = state(*problem.optional_minimise_variable());
+
+                    ++stats.solutions;
+                    ++number_of_solutions;
+                    this_subtree_contains_solution = true;
+                    if (callbacks.solution && ! callbacks.solution(state.current()))
+                        return SearchResult::Stop;
+
+                    // We found a solution and were asked to keep searching. Without
+                    // recorded nogoods a restart re-explores the tree and so would
+                    // re-find (and re-count) this solution, so a restart schedule is
+                    // only sound for finding one solution or for optimising. Reject
+                    // the unsound combination rather than silently miscounting.
+                    if (restart.enabled && ! problem.optional_minimise_variable())
+                        throw UnimplementedException{"restarts without nogoods cannot enumerate all "
+                                                     "solutions; use a restart schedule only to find one "
+                                                     "solution or to optimise"};
+                }
+                else {
+                    if (callbacks.trace && ! callbacks.trace(state.current()))
+                        return SearchResult::Stop;
+
+                    if (optional_abort_flag && optional_abort_flag->load())
+                        return SearchResult::Stop;
+
+                    auto recurse = [&](const Literal & guess) -> SearchResult {
+                        if (optional_abort_flag && optional_abort_flag->load())
+                            return SearchResult::Stop;
+
+                        auto timestamp = state.new_epoch();
+                        state.guess(guess);
+                        bool child_contains_solution = false;
+                        auto child_result = solve_with_state(depth + 1, stats, problem, propagators, state, guess, callbacks, branch_callback, logger,
+                            child_contains_solution, number_of_solutions, objective_value, restart, optional_abort_flag);
+
+                        if (child_contains_solution)
+                            this_subtree_contains_solution = true;
+                        else
+                            ++stats.failures;
+
+                        state.backtrack(timestamp);
+                        return child_result;
+                    };
+
+                    for (; branch_iter != branch_generator.end(); ++branch_iter) {
+                        auto child_result = recurse(*branch_iter);
+                        if (child_result == SearchResult::Stop)
+                            return SearchResult::Stop;
+                        if (child_result == SearchResult::RestartCutoffHit) {
+                            result = SearchResult::RestartCutoffHit;
+                            break;
+                        }
+                    }
+                }
             }
             else {
-                if (callbacks.trace && ! callbacks.trace(state.current()))
-                    return false;
-
-                if (optional_abort_flag && optional_abort_flag->load())
-                    return false;
-
-                auto recurse = [&](const Literal & guess) -> bool {
-                    if (optional_abort_flag && optional_abort_flag->load())
-                        return false;
-
-                    auto result = true;
-                    auto timestamp = state.new_epoch();
-                    state.guess(guess);
-                    bool child_contains_solution = false;
-                    if (! solve_with_state(depth + 1, stats, problem, propagators, state, guess, callbacks, branch_callback, logger,
-                            child_contains_solution, number_of_solutions, objective_value, optional_abort_flag))
-                        result = false;
-
-                    if (child_contains_solution)
-                        this_subtree_contains_solution = true;
-                    else
-                        ++stats.failures;
-
-                    state.backtrack(timestamp);
-                    return result;
-                };
-
-                for (; branch_iter != branch_generator.end(); ++branch_iter) {
-                    auto guess = *branch_iter;
-                    if (! recurse(guess))
-                        return false;
-                }
+                // A dead end: either the objective bound or a propagator wiped out
+                // a domain. That is one conflict spent against the restart budget.
+                ++restart.conflicts_since_restart;
             }
         }
 
         if (logger) {
             logger->enter_proof_level(depth);
-            vector<Literal> guesses;
-            for (const auto & g : state.guesses())
-                guesses.push_back(g);
-            logger->backtrack(guesses);
-            logger->forget_proof_level(depth + 1);
+            if (result == SearchResult::RestartCutoffHit) {
+                // A restart abandons this subtree *unrefuted*, so it asserts no
+                // backtrack lemma --- it only deletes what this pass derived below,
+                // which is always sound. But we must NOT delete the root node's
+                // own guess-independent propagation (proof level 1): the next pass
+                // starts from the same root fixpoint, so propagate() re-emits
+                // nothing there, and that reasoning has to survive for the next
+                // pass's backtracks to remain RUP. So at the root (depth 0) we keep
+                // level 1; deeper guess-dependent levels are re-derived next pass.
+                if (depth > 0)
+                    logger->forget_proof_level(depth + 1);
+            }
+            else {
+                // A normal backtrack: the subtree under these guesses was refuted,
+                // so we may assert the negation of the guess set (RUP from the
+                // refutation that the forget below then discards).
+                vector<Literal> guesses;
+                for (const auto & g : state.guesses())
+                    guesses.push_back(g);
+                logger->backtrack(guesses);
+                logger->forget_proof_level(depth + 1);
+            }
         }
 
-        return true;
+        return result;
     }
 }
 
@@ -193,9 +270,35 @@ auto gcs::solve_with(
             callbacks.branch ? callbacks.branch : branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
         auto branch_callback = branch_heuristic(problem, state, propagators);
 
-        if (solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, branch_callback,
-                optional_proof ? optional_proof->logger() : nullptr, child_contains_solution, number_of_solutions, objective_value,
-                optional_abort_flag)) {
+        // A restart loop around the depth-first search: each pass explores until
+        // it has spent its conflict cutoff, then unwinds to the root (proof
+        // balanced) and the schedule grows the cutoff for the next pass. Weights
+        // and the incumbent objective bound persist across passes, so a later pass
+        // searches differently; the growing Luby cutoff eventually exceeds the
+        // whole tree, so a final pass completes. Without a schedule the cutoff is
+        // infinite and this is a single, exhaustive pass.
+        auto restart_schedule = callbacks.restarts;
+        RestartState restart{.conflicts_since_restart = 0,
+            .cutoff = restart_schedule ? restart_schedule->current_cutoff() : numeric_limits<unsigned long long>::max(),
+            .enabled = restart_schedule.has_value()};
+
+        SearchResult search_result;
+        do {
+            restart.conflicts_since_restart = 0;
+            search_result = solve_with_state(0, stats, problem, propagators, state, nullopt, callbacks, branch_callback,
+                optional_proof ? optional_proof->logger() : nullptr, child_contains_solution, number_of_solutions, objective_value, restart,
+                optional_abort_flag);
+
+            if (search_result == SearchResult::RestartCutoffHit) {
+                ++stats.restarts;
+                if (auto observer = propagators.conflict_observer())
+                    observer->on_restart();
+                restart_schedule->advance();
+                restart.cutoff = restart_schedule->current_cutoff();
+            }
+        } while (search_result == SearchResult::RestartCutoffHit);
+
+        if (search_result == SearchResult::Complete) {
             if (optional_proof) {
                 if (problem.optional_minimise_variable()) {
                     if (objective_value)
