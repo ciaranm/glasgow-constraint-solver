@@ -18,9 +18,11 @@
 #include <gcs/constraints/knapsack/knapsack.hh>
 #include <gcs/constraints/lex.hh>
 #include <gcs/constraints/linear.hh>
+#include <gcs/constraints/logical.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/modulus.hh>
 #include <gcs/constraints/multiply.hh>
+#include <gcs/constraints/parity.hh>
 #include <gcs/constraints/power.hh>
 #include <gcs/constraints/regular/regular.hh>
 #include <gcs/constraints/seq_precede_chain/seq_precede_chain.hh>
@@ -160,6 +162,29 @@ TEST_CASE("read_scp: array_min / array_max enumerate correctly")
         CHECK(s.at("R") == std::min({s.at("X"), s.at("Y"), s.at("Z")}));
     for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) (R 0 2) ) ( (_1 array_max (X Y Z) R) ) )"))
         CHECK(s.at("R") == std::max({s.at("X"), s.at("Y"), s.at("Z")}));
+}
+
+TEST_CASE("read_scp: logical and / or reification-tuple forms enumerate correctly")
+{
+    // Y >= 1  <->  (B1 >= 1) and (B2 >= 1)
+    for (const auto & s : enumerate("( ( (B1 0 1) (B2 0 1) (Y 0 1) ) ( (_1 and ((B1 >= 1) (B2 >= 1)) (Y >= 1)) ) )"))
+        CHECK((s.at("Y") == 1) == (s.at("B1") == 1 && s.at("B2") == 1));
+    // Y >= 1  <->  (B1 >= 1) or (B2 >= 1)
+    for (const auto & s : enumerate("( ( (B1 0 1) (B2 0 1) (Y 0 1) ) ( (_1 or ((B1 >= 1) (B2 >= 1)) (Y >= 1)) ) )"))
+        CHECK((s.at("Y") == 1) == (s.at("B1") == 1 || s.at("B2") == 1));
+    // bool_clause-style negated operands: D >= 1  <->  (A = 0) or (B = 0)
+    for (const auto & s : enumerate("( ( (A 0 1) (B 0 1) (D 0 1) ) ( (_1 or ((A = 0) (B = 0)) (D >= 1)) ) )"))
+        CHECK((s.at("D") == 1) == (s.at("A") == 0 || s.at("B") == 0));
+}
+
+TEST_CASE("read_scp: parity reification-tuple form enumerates correctly")
+{
+    // An odd number of (A >= 1), (B >= 1), (C >= 1) hold; the output tuple
+    // (1 >= 1) is statically true (bare odd parity).
+    for (const auto & s : enumerate("( ( (A 0 1) (B 0 1) (C 0 1) ) ( (_1 parity ((A >= 1) (B >= 1) (C >= 1)) (1 >= 1)) ) )"))
+        CHECK((s.at("A") + s.at("B") + s.at("C")) % 2 == 1);
+    // A non-static output tuple is rejected: only bare odd parity is supported.
+    CHECK_THROWS_AS(enumerate("( ( (A 0 1) (B 0 1) (Y 0 1) ) ( (_1 parity ((A >= 1) (B >= 1)) (Y >= 1)) ) )"), ScpReadError);
 }
 
 TEST_CASE("read_scp: lex comparisons enumerate correctly")
@@ -874,6 +899,28 @@ TEST_CASE("read_scp: a solver-written .scp survives write -> read -> write uncha
     Problem rebuilt;
     read_scp(rebuilt, scp_a);
     auto scp_b = prove_to_scp(rebuilt, "scp_reader_roundtrip_b");
+
+    CHECK(scp_a == scp_b);
+    CHECK_FALSE(scp_a.empty());
+}
+
+TEST_CASE("read_scp: logical constraints survive write -> read -> write unchanged")
+{
+    // The and / or / parity forms write each operand as a reification tuple;
+    // round-tripping them (incl. the != 0 operands the variable-list
+    // constructors build) must be byte-stable.
+    Problem original;
+    auto b1 = original.create_integer_variable(0_i, 1_i, "B1");
+    auto b2 = original.create_integer_variable(0_i, 1_i, "B2");
+    auto y = original.create_integer_variable(0_i, 1_i, "Y");
+    original.post(And{std::vector<IntegerVariableID>{b1, b2}, y});
+    original.post(Or{std::vector<IntegerVariableID>{b1, b2}, y});
+    original.post(ParityOdd{std::vector<IntegerVariableID>{b1, b2}});
+    auto scp_a = prove_to_scp(original, "scp_reader_logical_roundtrip_a");
+
+    Problem rebuilt;
+    read_scp(rebuilt, scp_a);
+    auto scp_b = prove_to_scp(rebuilt, "scp_reader_logical_roundtrip_b");
 
     CHECK(scp_a == scp_b);
     CHECK_FALSE(scp_a.empty());

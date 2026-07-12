@@ -37,6 +37,7 @@
 #include <gcs/constraints/table/table.hh>
 #include <gcs/constraints/value_precede/value_precede.hh>
 #include <gcs/expression.hh>
+#include <gcs/innards/literal.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/problem.hh>
 #include <gcs/reification.hh>
@@ -164,9 +165,11 @@ namespace
         throw ScpReadError{"unknown reification-condition operator '" + op + "'"};
     }
 
-    // A faithful literal term, as the logical constraints' `_lits` forms write
-    // them: the atoms 1 / 0 for the static literals, or a (variable op value)
-    // triple. See faithful_literal_term in cake_truthiness.
+    // A logical operand, as the and / or / parity forms write them: a
+    // reification tuple (variable op value), which cake reads as the reified
+    // test. Constants appear as a tuple over the constant (e.g. (1 >= 1)); the
+    // bare atoms 1 / 0 are also accepted for the static literals. See
+    // reify_tuple_term in cake_truthiness.
     auto resolve_literal(const map<string, IntegerVariableID> & variables, const SExpr & term) -> innards::Literal
     {
         if (term.is_atom()) {
@@ -800,51 +803,29 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
                     as_integer(a[1]), as_integer(b[1])},
                 label);
         }
-        else if (op == "and") {
-            // (label and (X1 ... Xn) Y): Y <-> all Xi nonzero.
-            if (terms.size() != 4)
-                throw ScpReadError{"and takes (label and (vars...) reif)"};
-            post_constraint(
-                problem, And{resolve_variable_list(variables, terms[2], "the and variable list"), resolve_variable(variables, terms[3])}, label);
-        }
-        else if (op == "or") {
-            // (label or (X1 ... Xn) Y): Y <-> some Xi nonzero.
-            if (terms.size() != 4)
-                throw ScpReadError{"or takes (label or (vars...) reif)"};
-            post_constraint(
-                problem, Or{resolve_variable_list(variables, terms[2], "the or variable list"), resolve_variable(variables, terms[3])}, label);
-        }
-        else if (op == "parity") {
-            // (label parity (X1 ... Xn) Y): cake encodes Y = XOR(Xi). The solver
-            // only has the bare odd-parity constraint (ParityOdd, XOR(Xi) = 1),
-            // which it writes with the constant Y = 1, so require that here.
-            if (terms.size() != 4)
-                throw ScpReadError{"parity takes (label parity (vars...) 1)"};
-            if (as_integer(terms[3]) != Integer{1})
-                throw ScpReadError{"parity Y must be the constant 1 (only bare odd parity is supported)"};
-            post_constraint(problem, ParityOdd{resolve_variable_list(variables, terms[2], "the parity variable list")}, label);
-        }
-        else if (op == "and_lits" || op == "or_lits" || op == "parity_lits") {
-            // The literal-shaped forms the solver writes when a logical
-            // constraint's literals have no cake positive form (negations,
-            // shifted comparisons, non-zero tests over negative-capable
-            // domains). cake_pb_cp has no such terms -- these exist for
-            // faithful round-trips, not for the verified-encoding chain.
+        else if (op == "and" || op == "or") {
+            // (label and/or ((Z op v) ...) (Y op v)): the reification (the final
+            // tuple) holds iff all / at least one of the operand literals hold.
             if (terms.size() != 4)
                 throw ScpReadError{op + " takes (label " + op + " (literals...) reif-literal)"};
             auto lits = resolve_literal_list(variables, terms[2], "the " + op + " literal list");
-            if (op == "parity_lits") {
-                if (as_integer(terms[3]) != Integer{1})
-                    throw ScpReadError{"parity_lits Y must be the constant 1 (only bare odd parity is supported)"};
-                post_constraint(problem, ParityOdd{move(lits)}, label);
-            }
-            else {
-                auto reif = resolve_literal(variables, terms[3]);
-                if (op == "and_lits")
-                    post_constraint(problem, And{move(lits), reif}, label);
-                else
-                    post_constraint(problem, Or{move(lits), reif}, label);
-            }
+            auto reif = resolve_literal(variables, terms[3]);
+            if (op == "and")
+                post_constraint(problem, And{move(lits), reif}, label);
+            else
+                post_constraint(problem, Or{move(lits), reif}, label);
+        }
+        else if (op == "parity") {
+            // (label parity ((Z op v) ...) (Y op v)): cake encodes Y =
+            // XOR(operands). The solver only has the bare odd-parity constraint
+            // (ParityOdd, XOR(operands) = 1), which it writes with a
+            // statically-true output tuple, so require that here.
+            if (terms.size() != 4)
+                throw ScpReadError{"parity takes (label parity (literals...) reif-literal)"};
+            auto lits = resolve_literal_list(variables, terms[2], "the parity literal list");
+            if (! is_literally_true(resolve_literal(variables, terms[3])))
+                throw ScpReadError{"parity output must be statically true (only bare odd parity is supported)"};
+            post_constraint(problem, ParityOdd{move(lits)}, label);
         }
         else if (op == "plus") {
             // (label plus a b result): a + b = result.
