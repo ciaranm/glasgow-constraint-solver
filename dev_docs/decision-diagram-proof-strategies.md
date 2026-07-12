@@ -80,10 +80,15 @@ not change). All proofs verified (`s VERIFIED`, zero failures).
 
 | Propagator | Proof size (upfront vs per-call) | Verify time (upfront vs per-call) | Default | Opt-in |
 |---|---|---|---|---|
-| **Regular** (#213) | upfront **13–55× smaller** (9 MB vs 496 MB @7660 sol) | upfront **2.3–7× faster** (1.66 s vs 11.69 s) | **upfront `Regular`** | per-call `RegularLegacy` via `--legacy` |
-| **MDD** (#211) | upfront **7–9× smaller** (1.8 MB vs 15.8 MB) | upfront **4–5× faster** (0.04 s vs 0.21 s) | **upfront (default)** | per-call **deferred** (see below) |
-| **Knapsack** (#210) | upfront **3–6× smaller** (20.7 MB vs 121 MB) | upfront **3.6–18× SLOWER** (6.68 s vs 1.85 s) | **per-call `Knapsack`** | upfront `KnapsackUpfront` |
-| **BinPacking** (#212) | upfront **6–10× BIGGER** (8 MB vs 1.3 MB) | upfront **8–16× SLOWER** (4.45 s vs 0.55 s) | **per-call (Stage 3)** | upfront via `upfront_proof=true` |
+| **Regular** (#213) | upfront **13–55× smaller** (9 MB vs 496 MB @7660 sol) | upfront **2.3–7× faster** (1.66 s vs 11.69 s) | **`proof_strategy::Upfront`** | `PerCall` (`--legacy`), `Bacchus` |
+| **MDD** (#211) | upfront **7–9× smaller** (1.8 MB vs 15.8 MB) | upfront **4–5× faster** (0.04 s vs 0.21 s) | **upfront (only)** | per-call **deferred** (see below) |
+| **Knapsack** (#210) | upfront **3–6× smaller** (20.7 MB vs 121 MB) | upfront **3.6–18× SLOWER** (6.68 s vs 1.85 s) | **`proof_strategy::PerCall`** | `proof_strategy::Upfront` |
+| **BinPacking** (#212) | upfront **6–10× BIGGER** (8 MB vs 1.3 MB) | upfront **8–16× SLOWER** (4.45 s vs 0.55 s) | **`proof_strategy::PerCall`** | `proof_strategy::Upfront` |
+
+All four expose the choice through the fluent `with_proof_strategy(...)`
+setter over the shared `gcs::proof_strategy` tags (`PerCall`, `Upfront`,
+and, for Regular, `Bacchus`); BinPacking additionally selects Stage 2-only
+bounds via `with_consistency(consistency::BC{})`.
 
 The per-line cost (`us/line`) is the DB-tax signature: Regular upfront 6.8–16 vs
 legacy 3.2–5; MDD upfront 2.5–2.8 vs 2.6–3.5; Knapsack upfront **38–68** vs
@@ -115,7 +120,7 @@ Why each lands where it does:
   *k-dimensional* partial-sum DAG with phantom nodes — huge and permanent (`red`
   ≈ 11k–33k at root; ≈ 60% of upfront's lines). DB-tax ≈ 10–15× ≫ displacement
   (2–3×) → the proof shrinks in bytes but verifies 3.6–18× slower. So the
-  default is **per-call**; `KnapsackUpfront` remains as the opt-in when byte size
+  default is **per-call**; `proof_strategy::Upfront` remains the opt-in when byte size
   is the priority.
 - **BinPacking — per-call wins both.** Stage 3 is *already* an upfront-flag
   design (`bpup/bpdn/bpat` reifications emitted once at Top, all pruning via
@@ -124,7 +129,7 @@ Why each lands where it does:
   *adds* 27 more Top lines (forward/backward chains, layer ALOs, per-state
   implications, phantoms) → a bigger permanent DB (`red` 2k–8k, DB-tax ≈ 2.5×)
   taxing every enumeration RUP. Both factors align against it → bigger *and*
-  slower. Default **per-call**, `upfront_proof=true` the opt-in.
+  slower. Default **per-call** (`proof_strategy::PerCall`), `proof_strategy::Upfront` the opt-in.
 
 ### Note on the MDD per-call opt-in
 

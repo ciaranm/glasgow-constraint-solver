@@ -151,10 +151,8 @@ auto main(int argc, char * argv[]) -> int
     for (size_t x = 0; x < inst.total_bounds.size(); ++x)
         totals.push_back(p.create_integer_variable(inst.total_bounds[x].first, inst.total_bounds[x].second, "t" + std::to_string(x)));
 
-    if (upfront)
-        p.post(KnapsackUpfront{inst.coeffs, items, totals});
-    else
-        p.post(Knapsack{inst.coeffs, items, totals});
+    p.post(Knapsack{inst.coeffs, items, totals} //
+            .with_proof_strategy(upfront ? KnapsackProofStrategy{proof_strategy::Upfront{}} : KnapsackProofStrategy{proof_strategy::PerCall{}}));
 
     if (inst.optimise_max_first_total)
         p.maximise(totals[0]);

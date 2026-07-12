@@ -9,37 +9,43 @@ chains, statically-dead-state lines) once at `ProofLevel::Top` via
 most one cache-gated `~state[i][q]` line at `ProofLevel::Current`
 per state-death.
 
-## The three implementations
+## The three proof strategies
 
-This file covers three implementations of the `Regular` constraint that
-coexist in the codebase:
+There is a single public `Regular` constraint. Its proof-logging
+strategy is selected with the fluent
+`with_proof_strategy(proof_strategy::…)` setter (see
+[`proof_strategy.hh`](../gcs/proof_strategy.hh)), defaulting to
+`Upfront`:
 
-| Class                | Strategy                                                                 | File                                  |
-|----------------------|--------------------------------------------------------------------------|---------------------------------------|
-| `RegularLegacy`      | Per-call propagator emits per-(parent, val) intermediates each call.     | `gcs/constraints/regular/regular_legacy.{cc,hh}` |
-| `Regular`            | Upfront per-val backward chains + statically-dead-state lines at Top, then per-call cache-gated `~state[i][q]` lines for dynamic state-deaths. | `gcs/constraints/regular/regular.{cc,hh}` |
-| `RegularBacchus`     | Upfront Bacchus encoding (per-(i, q, v) transition extension variables + AL1s) derived from the natural OPB at Top; per-call propagator emits no proof. | `gcs/constraints/regular/regular_bacchus.{cc,hh}` |
+| `proof_strategy::` | Strategy                                                                 | Implementation |
+|--------------------|--------------------------------------------------------------------------|----------------|
+| `PerCall`          | Per-call propagator emits per-(parent, val) intermediates each call.     | `gcs/constraints/regular/regular_legacy.{cc,hh}` |
+| `Upfront` (default) | Upfront per-val backward chains + statically-dead-state lines at Top, then per-call cache-gated `~state[i][q]` lines for dynamic state-deaths. | `gcs/constraints/regular/regular.{cc,hh}` |
+| `Bacchus`          | Upfront Bacchus encoding (per-(i, q, v) transition extension variables + AL1s) derived from the natural OPB at Top; per-call propagator emits no proof. Deterministic automata only (not regex/NFA input). | `gcs/constraints/regular/regular_bacchus.{cc,hh}` |
 
 The OPB is identical across all three — DFA semantics, no propagator
 internals (see [Constraint definition](#constraint-definition) and
-[OPB encoding](#opb-encoding) below). What differs is what each
-implementation derives in its initialiser at search root, and what its
-per-call propagator emits.
+[OPB encoding](#opb-encoding) below). What differs is what each strategy
+derives in its initialiser at search root, and what its per-call
+propagator emits; the choice never changes the inferences drawn or the
+solutions found.
 
-`gcs/constraints/regular.hh` is a top-level shim that includes all three.
-For new code, post `Regular` (the default — see below); `RegularLegacy`
-and `RegularBacchus` are retained primarily for benchmarking and for
-issue #200's unified layered-DAG follow-up.
+The public `Regular` front-end (`gcs/constraints/regular/regular.{cc,hh}`)
+*is* the `Upfront` implementation; for `PerCall` and `Bacchus` its
+`install()` constructs and delegates to the sibling implementations,
+which are internal to the constraint (not part of the public API — they
+are no longer named in `gcs/constraints/regular.hh`). Everything posts
+`Regular`; benchmarking picks a strategy with `with_proof_strategy(...)`.
 
-## Default: the upfront `Regular`
+## Default: `proof_strategy::Upfront`
 
-**`Regular` (this upfront-scaffolding propagator) is the default.**
-Everything posts it — both frontends
-(`xcsp_glasgow_constraint_solver`, `fzn_glasgow`), the constraint
-tests, and the `regular_random` example. `RegularLegacy` — the older
-per-call propagator that re-emits per-`(parent state, val)`
-intermediate aggregations on every propagation call — is preserved
-only as the `--legacy` opt-in twin, for side-by-side benchmarking and
+**The upfront-scaffolding strategy is the default.** Everything posts a
+plain `Regular` — both frontends (`xcsp_glasgow_constraint_solver`,
+`fzn_glasgow`), the constraint tests, and the `regular_random` example.
+The `PerCall` strategy — the older per-call implementation that re-emits
+per-`(parent state, val)` intermediate aggregations on every propagation
+call — is reachable via `with_proof_strategy(proof_strategy::PerCall{})`
+(the `regular_random --legacy` flag), for side-by-side benchmarking and
 as a correctness reference.
 
 The reason for defaulting to upfront is that it **wins on both axes
@@ -84,12 +90,12 @@ by a deterministic finite automaton:
 The sequence `vars[0..n-1]` is accepted iff feeding the symbols from
 left to right starting at state `0` ends in a state in `final_states`.
 
-Each of the three classes supports the same two constructors (sparse
-map / dense table form) plus a `short_reasons` boolean that is
-forwarded to the propagator but unused (or near-unused) by `Regular`
-and `RegularBacchus`. Keeping the flag as a dummy lets one
-`regular_random` binary benchmark all three variants from one call
-site.
+`Regular` supports two automaton constructors (sparse map / dense table
+form) plus a regex form, and a `short_reasons` boolean (via
+`with_short_reasons()`) forwarded to the propagator but unused (or
+near-unused) by the `Upfront` and `Bacchus` strategies. Keeping the flag
+as a dummy lets one `regular_random` binary benchmark all three
+strategies from one call site.
 
 ## Layered DAG view
 

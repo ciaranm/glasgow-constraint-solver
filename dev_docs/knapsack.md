@@ -1,31 +1,35 @@
-# `Knapsack`: default vs. `KnapsackUpfront`, and the upfront-DAG design
+# `Knapsack`: proof strategies, and the upfront-DAG design
 
-There are two `Knapsack` implementations in the tree, both fully
-proof-logging and both cake-conformant (#200):
+There is a single public `Knapsack` constraint with two proof-logging
+strategies, both fully proof-logging and both cake-conformant (#200),
+selected with `with_proof_strategy(proof_strategy::…)`:
 
-- **`Knapsack` (the default)** — the per-call DP implementation. It
-  rebuilds its DP table and proof scaffolding from scratch on every
-  propagation call, at `ProofLevel::Temporary`. This is what all
-  frontends, `scp_reader`, the `examples/knapsack` solver and the
-  primary `knapsack_test` post. **It is the default because its proofs
-  verify substantially faster** (3.6–18× faster VeriPB time than the
-  upfront variant — see "Benchmarking" below).
-- **`KnapsackUpfront` (opt-in)** — the upfront-DAG reimplementation. It
-  builds the statically-reduced layered DAG once in `prepare()` and
-  emits paper-style proof scaffolding once at `ProofLevel::Top`, leaving
-  only search-state-dependent `pol` steps for the per-call sweep. **It
-  produces 3–6× smaller proofs** (and ~3× faster solver wall time), at
-  the cost of the slower verification above. Prefer it only when proof
-  size or its distribution matters. It lives in
-  `gcs/constraints/knapsack/knapsack_upfront.{hh,cc}`, is exposed via
-  the aggregator `gcs/constraints/knapsack.hh`, and is exercised by
-  `knapsack_upfront_test`.
+- **`proof_strategy::PerCall` (the default)** — the per-call DP
+  implementation. It rebuilds its DP table and proof scaffolding from
+  scratch on every propagation call, at `ProofLevel::Temporary`. This is
+  what all frontends, `scp_reader`, the `examples/knapsack` solver and
+  the primary `knapsack_test` get. **It is the default because its
+  proofs verify substantially faster** (3.6–18× faster VeriPB time than
+  the upfront variant — see "Benchmarking" below). It lives in
+  `gcs/constraints/knapsack/knapsack.{hh,cc}`.
+- **`proof_strategy::Upfront` (opt-in)** — the upfront-DAG
+  reimplementation. It builds the statically-reduced layered DAG once in
+  `prepare()` and emits paper-style proof scaffolding once at
+  `ProofLevel::Top`, leaving only search-state-dependent `pol` steps for
+  the per-call sweep. **It produces 3–6× smaller proofs** (and ~3× faster
+  solver wall time), at the cost of the slower verification above. Prefer
+  it only when proof size or its distribution matters. Its install path
+  (`install_knapsack_upfront`) lives in
+  `gcs/constraints/knapsack/knapsack_upfront.{hh,cc}` and is exercised by
+  `knapsack_upfront_test` (which posts
+  `Knapsack{…}.with_proof_strategy(proof_strategy::Upfront{})`). Both
+  strategies draw the same inferences and share the same OPB; the choice
+  is proof-only.
 
 The rest of this note is a working-design record of the **upfront-DAG**
-approach (`KnapsackUpfront`), retained because it is the more intricate
-of the two and because it is the candidate for the #200 unified
-layered-DAG framework. It is not a record of what currently exists in
-every stage — read
+approach, retained because it is the more intricate of the two and
+because it is the candidate for the #200 unified layered-DAG framework.
+It is not a record of what currently exists in every stage — read
 `gcs/constraints/knapsack/knapsack_upfront.{hh,cc}` for that, and
 `gcs/constraints/knapsack/knapsack.{hh,cc}` for the default per-call DP.
 

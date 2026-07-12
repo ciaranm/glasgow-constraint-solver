@@ -37,6 +37,7 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::any_cast;
+using std::holds_alternative;
 using std::list;
 using std::make_shared;
 using std::make_unique;
@@ -901,24 +902,35 @@ struct BinPacking::DagBridge
     vector<pair<optional<ProofLine>, optional<ProofLine>>> opb_lines;
 };
 
-BinPacking::BinPacking(
-    vector<IntegerVariableID> items, vector<Integer> sizes, vector<IntegerVariableID> loads, bool bounds_only, bool upfront_proof) :
-    _items(move(items)), _sizes(move(sizes)), _loads(move(loads)), _capacities(), _have_loads(true), _bounds_only(bounds_only),
-    _upfront_proof(upfront_proof)
+BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<IntegerVariableID> loads) :
+    _items(move(items)), _sizes(move(sizes)), _loads(move(loads)), _capacities(), _have_loads(true)
 {
 }
 
-BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<Integer> capacities, bool bounds_only, bool upfront_proof) :
-    _items(move(items)), _sizes(move(sizes)), _loads(), _capacities(move(capacities)), _have_loads(false), _bounds_only(bounds_only),
-    _upfront_proof(upfront_proof)
+BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<Integer> capacities) :
+    _items(move(items)), _sizes(move(sizes)), _loads(), _capacities(move(capacities)), _have_loads(false)
 {
+}
+
+auto BinPacking::with_consistency(BinPackingConsistency level) -> BinPacking &
+{
+    _bounds_only = holds_alternative<consistency::BC>(level);
+    return *this;
+}
+
+auto BinPacking::with_proof_strategy(BinPackingProofStrategy strategy) -> BinPacking &
+{
+    _upfront_proof = holds_alternative<proof_strategy::Upfront>(strategy);
+    return *this;
 }
 
 auto BinPacking::clone() const -> unique_ptr<Constraint>
 {
-    if (_have_loads)
-        return make_unique<BinPacking>(_items, _sizes, _loads, _bounds_only, _upfront_proof);
-    return make_unique<BinPacking>(_items, _sizes, _capacities, _bounds_only, _upfront_proof);
+    auto cloned = _have_loads ? make_unique<BinPacking>(_items, _sizes, _loads) : make_unique<BinPacking>(_items, _sizes, _capacities);
+    cloned->with_consistency(_bounds_only ? BinPackingConsistency{consistency::BC{}} : BinPackingConsistency{consistency::GAC{}});
+    cloned->with_proof_strategy(
+        _upfront_proof ? BinPackingProofStrategy{proof_strategy::Upfront{}} : BinPackingProofStrategy{proof_strategy::PerCall{}});
+    return cloned;
 }
 
 auto BinPacking::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void

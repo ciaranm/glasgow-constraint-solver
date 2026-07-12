@@ -80,7 +80,9 @@ namespace
         for (auto c : capacities)
             caps_i.push_back(Integer{c});
 
-        p.post(BinPacking{items, sizes_i, caps_i, false, upfront});
+        p.post(BinPacking{items, sizes_i, caps_i} //
+                .with_proof_strategy(
+                    upfront ? BinPackingProofStrategy{proof_strategy::Upfront{}} : BinPackingProofStrategy{proof_strategy::PerCall{}}));
 
         auto proof_name = proofs ? make_optional("bin_packing_test") : nullopt;
         // Enumeration only — Stage 3 achieves per-bin GAC, not joint GAC
@@ -132,7 +134,9 @@ namespace
         for (auto s : sizes)
             sizes_i.push_back(Integer{s});
 
-        p.post(BinPacking{items, sizes_i, loads, false, upfront});
+        p.post(BinPacking{items, sizes_i, loads} //
+                .with_proof_strategy(
+                    upfront ? BinPackingProofStrategy{proof_strategy::Upfront{}} : BinPackingProofStrategy{proof_strategy::PerCall{}}));
 
         auto proof_name = proofs ? make_optional("bin_packing_test") : nullopt;
         // Enumeration only; see capa runner for why per-bin GAC isn't

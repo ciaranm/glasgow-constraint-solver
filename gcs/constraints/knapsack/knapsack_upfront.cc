@@ -831,103 +831,75 @@ namespace
     }
 }
 
-struct KnapsackUpfront::DagBridge
+namespace
 {
-    Dag dag;
-    Flags flags;
-    vector<pair<ProofLine, ProofLine>> opb_lines;
-};
-
-KnapsackUpfront::KnapsackUpfront(vector<Integer> weights, vector<Integer> profits, vector<IntegerVariableID> vars, IntegerVariableID weight,
-    IntegerVariableID profit) : _coeffs({move(weights), move(profits)}), _vars(move(vars)), _totals({weight, profit})
-{
+    struct KnapsackUpfrontBridge
+    {
+        Dag dag;
+        Flags flags;
+        vector<pair<ProofLine, ProofLine>> opb_lines;
+    };
 }
 
-KnapsackUpfront::KnapsackUpfront(vector<vector<Integer>> coefficients, vector<IntegerVariableID> vars, vector<IntegerVariableID> totals) :
-    _coeffs(move(coefficients)), _vars(move(vars)), _totals(move(totals))
+auto gcs::innards::install_knapsack_upfront(Propagators & propagators, State & initial_state, ProofModel * const optional_model,
+    const ConstraintID & owner, vector<vector<Integer>> coeffs, vector<IntegerVariableID> vars, vector<IntegerVariableID> totals) -> void
 {
-}
-
-auto KnapsackUpfront::clone() const -> unique_ptr<Constraint>
-{
-    return make_unique<KnapsackUpfront>(_coeffs, _vars, _totals);
-}
-
-auto KnapsackUpfront::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model);
-
-    install_propagators(propagators);
-}
-
-auto KnapsackUpfront::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
-{
-    if (_coeffs.size() != _totals.size())
+    if (coeffs.size() != totals.size())
         throw InvalidProblemDefinitionException{"KnapsackUpfront: coefficients and totals must have the same number of equations"};
-    if (_coeffs.empty())
+    if (coeffs.empty())
         throw InvalidProblemDefinitionException{"KnapsackUpfront: at least one equation is required"};
 
-    auto n_vars = _coeffs.front().size();
-    for (const auto & c : _coeffs)
+    auto n_vars = coeffs.front().size();
+    for (const auto & c : coeffs)
         if (c.size() != n_vars)
             throw InvalidProblemDefinitionException{"KnapsackUpfront: every coefficient row must have the same length"};
-    if (n_vars != _vars.size())
+    if (n_vars != vars.size())
         throw InvalidProblemDefinitionException{"KnapsackUpfront: coefficient row length must match number of variables"};
 
-    for (const auto & cc : _coeffs)
+    for (const auto & cc : coeffs)
         for (const auto & c : cc)
             if (c < 0_i)
                 throw InvalidProblemDefinitionException{"KnapsackUpfront: coefficients must be non-negative"};
 
-    for (const auto & v : _vars)
+    for (const auto & v : vars)
         if (initial_state.lower_bound(v) < 0_i)
             throw InvalidProblemDefinitionException{"KnapsackUpfront: item variables must be non-negative"};
 
-    for (const auto & t : _totals)
+    for (const auto & t : totals)
         if (initial_state.lower_bound(t) < 0_i)
             throw InvalidProblemDefinitionException{"KnapsackUpfront: total variables must be non-negative"};
 
-    auto caps = compute_caps(initial_state, _coeffs, _vars, _totals);
-    _bridge = make_shared<DagBridge>();
-    _bridge->dag = build_static_dag(initial_state, _vars, _coeffs, _totals, caps);
+    auto caps = compute_caps(initial_state, coeffs, vars, totals);
+    auto bridge = make_shared<KnapsackUpfrontBridge>();
+    bridge->dag = build_static_dag(initial_state, vars, coeffs, totals, caps);
 
     // Backtrack-restored cache of pure dead-state proof lines we've
     // already emitted at or above the current search depth, so the
     // per-call propagator can skip the entire pol+RUP scaffolding for
     // a state that's already been proven dead in this subtree.
     DeadCache initial_cache{
-        vector<set<vector<Integer>>>(_vars.size() + 1), vector<vector<set<long long>>>(_vars.size() + 1, vector<set<long long>>(_totals.size()))};
-    _dead_cache_handle = initial_state.add_constraint_state(move(initial_cache));
+        vector<set<vector<Integer>>>(vars.size() + 1), vector<vector<set<long long>>>(vars.size() + 1, vector<set<long long>>(totals.size()))};
+    auto dead_cache_handle = initial_state.add_constraint_state(move(initial_cache));
 
-    return true;
-}
-
-auto KnapsackUpfront::define_proof_model(ProofModel & model) -> void
-{
-    for (const auto & [cc_idx, cc] : enumerate(_coeffs)) {
-        WPBSum sum_eq;
-        for (const auto & [idx, v] : enumerate(_vars))
-            sum_eq += cc.at(idx) * v;
-        // cake_pb_cp labels each row's totals equality @c[<id>][<row>_le]/[<row>_ge]:
-        // the row index lives in the annotation tag, not the constraint name (a
-        // name-embedded row could collide with a sibling constraint's name). Match
-        // that so the propagator's pol steps, which cite these lines by label,
-        // resolve against cake's OPB. The bodies are identical.
-        auto [eq1, eq2] = model.add_labelled_constraint(
-            constraint_id(), std::to_string(cc_idx) + "_le", std::to_string(cc_idx) + "_ge", sum_eq == 1_i * _totals.at(cc_idx));
-        _bridge->opb_lines.emplace_back(eq1, eq2);
+    if (optional_model) {
+        for (const auto & [cc_idx, cc] : enumerate(coeffs)) {
+            WPBSum sum_eq;
+            for (const auto & [idx, v] : enumerate(vars))
+                sum_eq += cc.at(idx) * v;
+            // cake_pb_cp labels each row's totals equality @c[<id>][<row>_le]/[<row>_ge]:
+            // the row index lives in the annotation tag, not the constraint name (a
+            // name-embedded row could collide with a sibling constraint's name). Match
+            // that so the propagator's pol steps, which cite these lines by label,
+            // resolve against cake's OPB. The bodies are identical.
+            auto [eq1, eq2] = optional_model->add_labelled_constraint(
+                owner, std::to_string(cc_idx) + "_le", std::to_string(cc_idx) + "_ge", sum_eq == 1_i * totals.at(cc_idx));
+            bridge->opb_lines.emplace_back(eq1, eq2);
+        }
     }
-}
 
-auto KnapsackUpfront::install_propagators(Propagators & propagators) -> void
-{
     Triggers triggers;
-    triggers.on_change = {_vars.begin(), _vars.end()};
-    triggers.on_change.insert(triggers.on_change.end(), _totals.begin(), _totals.end());
+    triggers.on_change = {vars.begin(), vars.end()};
+    triggers.on_change.insert(triggers.on_change.end(), totals.begin(), totals.end());
 
     // Emit per-(i, w) Top-level scaffolding once at search root: for
     // every forward-reachable node in the static DAG, create reified flags
@@ -941,49 +913,19 @@ auto KnapsackUpfront::install_propagators(Propagators & propagators) -> void
     // ProofLevel::Temporary. In assertion mode the per-call inferences
     // are asserted under the typed hint instead, so the scaffolding is
     // skipped entirely.
-    propagators.install_initialiser(
-        [vars = _vars, coeffs = _coeffs, k = _totals.size(), bridge = _bridge](State & state, auto &, ProofLogger * const logger) -> void {
-            if (! logger || logger->get_assertion_level() != AssertionLevel::Off)
-                return;
-            emit_scaffolding(logger, state, vars, coeffs, k, bridge->dag, bridge->flags);
-        });
+    propagators.install_initialiser([vars, coeffs, k = totals.size(), bridge](State & state, auto &, ProofLogger * const logger) -> void {
+        if (! logger || logger->get_assertion_level() != AssertionLevel::Off)
+            return;
+        emit_scaffolding(logger, state, vars, coeffs, k, bridge->dag, bridge->flags);
+    });
 
     propagators.install(
-        constraint_id(),
-        [vars = _vars, coeffs = _coeffs, totals = _totals, bridge = _bridge, dead_cache_handle = *_dead_cache_handle, owner = constraint_id()](
+        owner,
+        [vars = move(vars), coeffs = move(coeffs), totals = move(totals), bridge, dead_cache_handle, owner](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto & cache = any_cast<DeadCache &>(state.get_constraint_state(dead_cache_handle));
             propagate(state, inference, logger, owner, vars, coeffs, totals, bridge->dag, bridge->flags, bridge->opb_lines, cache);
             return PropagatorState::Enable;
         },
         triggers);
-}
-
-auto KnapsackUpfront::constraint_type() const -> std::string
-{
-    return "knapsack_upfront";
-}
-
-auto KnapsackUpfront::s_expr(const innards::ProofModel * const model) const -> SExpr
-{
-    auto & tracker = model->names_and_ids_tracker();
-
-    vector<SExpr> coeff_rows;
-    for (const auto & cs : _coeffs) {
-        vector<SExpr> row;
-        for (const auto & c : cs)
-            row.push_back(SExpr::atom(c.to_string()));
-        coeff_rows.push_back(SExpr::list(move(row)));
-    }
-
-    vector<SExpr> vars;
-    for (const auto & v : _vars)
-        vars.push_back(tracker.s_expr_term_of(v));
-
-    vector<SExpr> totals;
-    for (const auto & t : _totals)
-        totals.push_back(tracker.s_expr_term_of(t));
-
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(coeff_rows)),
-        SExpr::list(move(vars)), SExpr::list(move(totals))});
 }
