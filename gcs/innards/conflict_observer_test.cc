@@ -132,6 +132,47 @@ TEST_CASE("Conflict observer fires for an inference-driven wipeout")
     CHECK_FALSE(call.reason_non_empty);
 }
 
+TEST_CASE("Conflict observer fires for a non-throwing (_or_stop) wipeout")
+{
+    // Regression guard. Constraints that contradict through the non-throwing
+    // infer_*_or_stop path (comparison, equals, all-different, ...) set the
+    // tracker's contradicted() flag and return rather than throwing
+    // TrackedPropagationFailed. If propagate() only attributed conflicts from its
+    // throwing catch block, a dom/wdeg weighting would never see these conflicts
+    // and its weights would never move (the feature would silently become a static
+    // heuristic). This checks the non-throwing path notifies observers too.
+    State state;
+    auto x = state.allocate_integer_variable_with_state(0_i, 1_i);
+
+    Propagators propagators;
+    propagators.install(
+        NumberedConstraint{9},
+        [x](const State &, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // x is in {0, 1}; asking for x >= 5 is impossible. The _or_stop form
+            // records the contradiction and returns false instead of throwing.
+            auto ok = inference.infer_greater_than_or_equal_or_stop(
+                logger, x, 5_i, JustifyExplicitly{[](const auto &) {}, ThenRUP::Yes}, generic_reason(vector<IntegerVariableID>{x}));
+            CHECK_FALSE(ok);
+            return PropagatorState::Enable;
+        },
+        Triggers{.on_change = {x}});
+
+    RecordingObserver observer;
+    propagators.add_conflict_observer(&observer);
+
+    auto no_contradiction = propagators.propagate(Literals{}, state, nullptr);
+
+    CHECK_FALSE(no_contradiction);
+    REQUIRE(observer.calls.size() == 1);
+
+    const auto & call = observer.calls.front();
+    CHECK(call.constraint_index == 0);
+    CHECK(propagators.constraint_id_for_index(call.constraint_index) == ConstraintID{NumberedConstraint{9}});
+    CHECK(call.scope == vector<SimpleIntegerVariableID>{x});
+    // (Reason plumbing for a wipeout is covered by the tests above; the point
+    // here is purely that the non-throwing path attributes the conflict at all.)
+}
+
 TEST_CASE("Propagation without a conflict observer still detects the wipeout")
 {
     State state;

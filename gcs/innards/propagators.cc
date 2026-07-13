@@ -713,6 +713,13 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                     // than by unwinding; throwing propagators are caught below.
                     contradiction = true;
                     ++_imp->contradicting_propagations;
+                    // Attribute the conflict to observers here too: many constraints
+                    // contradict via the non-throwing path, and if only the throwing
+                    // catch below notified, a weighting heuristic would never see
+                    // those conflicts and its weights would never update.
+                    for (auto & observer : _imp->conflict_observers)
+                        observer->note_conflict(_imp->propagator_constraint_index[propagator_id], _imp->propagator_scope[propagator_id],
+                            tracker.last_contradiction_reason(), state);
                 }
                 else {
                     if (tracker.did_anything_since_last_call_by_propagation_queue())
