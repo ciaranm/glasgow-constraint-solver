@@ -82,10 +82,45 @@ and why this is not on by default:
   percentage of the term count; default `15`.
 
 It ships off because the win is narrow (constraints with 128+ terms are rare) and
-a mis-engagement is catastrophic (the `O(n log n)` re-arm on a frequently-waking
-constraint). Making it default-worthy needs the genuinely hard part: **2WL-style
-incremental covering-set maintenance** — move one watch per fire in `O(1)`
-amortized instead of re-sorting — combined with the incremental folded sweep
-rather than the stateless one. With a cheap per-wake re-arm, a wrong engagement
-would no longer be catastrophic and the heuristic could be relaxed. That is the
-tracked follow-up for issue #507.
+a mis-engagement loses on a frequently-waking constraint.
+
+## Incremental covering-set maintenance — explored, does not help
+
+The obvious next step is to stop rebuilding the cover from scratch each wake.
+Down a branch the slack only falls and potentials only shrink, so the cover only
+ever needs to *grow*: re-arm the watches that fired and top the cover up along a
+term order fixed at install (by initial potential), reading the watched set back
+from the (backtrack-consistent) watch index — no sort, no clear, and nothing
+extra to trail. This was prototyped and measured (identical trees, proofs still
+verify). **It does not close the cliff, and makes the tight case worse:**
+
+| case (sumlen 200, vars 400) | rebuild | incremental | inc. propagator |
+|---|---:|---:|---:|
+| loose (budget 85%) | 0.023 s / 437 wakes | 0.023 s / 437 | 0.061 s |
+| tight (budget 55%) | 0.46 s / 97k wakes | **1.10 s / 309k** | 0.062 s |
+
+Two things this taught us:
+
+- **The cliff is driven by wake *count*, not the sort.** A tight constraint
+  genuinely needs a large cover, so it wakes often, and each wake pays the refined
+  watch machinery plus an `O(n)` sweep — already more than the incremental
+  propagator's cheap folded coarse wake. No cover bookkeeping changes that;
+  slack-waking is fundamentally a wake-*elimination* technique that only wins when
+  wakes are rare (loose constraints).
+- **A sort-free cover is a non-minimal cover.** The rebuild's per-wake sort by
+  *current* potential buys the *minimal* cover; a fixed initial-potential order
+  watches large-initial-but-now-small terms and misses small-initial-but-still-
+  large ones, so it covers with *more* watches → 3x the wakes here. Keeping the
+  cover minimal needs current-potential selection, i.e. the sort — there is no
+  sort-free minimal cover, and the refined-watch API offers only add and
+  clear-all, no remove-one, so even "un-watch the stale ones" reduces to a rebuild.
+
+So the rebuild (current implementation) is the better simple version, and the
+right mitigation for the cliff is the engagement heuristic *not* turning slack on
+for tight constraints — which the 15% cover cap already does. A folded per-wake
+sweep (`propagate_linear_incremental` instead of the stateless one) would cut the
+`O(n)` sweep cost, but only helps in *deep* search (where the active set is small)
+and does nothing for the refined-watch per-wake overhead, so it is unlikely to
+move slack-waking into the tight regime; it is not worth the two-backtrackable-
+structures integration on this evidence. Tracked as the open direction for #507,
+but de-prioritised by these measurements.
