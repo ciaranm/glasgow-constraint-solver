@@ -57,6 +57,13 @@ namespace gcs::innards
         [[nodiscard]] virtual auto is_watching(int owner_propagator, const IntegerVariableID & var) const -> bool = 0;
 
         /**
+         * \brief Remove every refined watch owned by the given propagator, trailed so
+         * backtrack restores them in lockstep with any watches re-armed afterwards.
+         * \sa RefinedWatchContext::clear_watches
+         */
+        virtual auto clear_refined_watches(int owner_propagator) -> void = 0;
+
+        /**
          * \brief Read this propagator's backtrackable scratch value for `key`, or 0
          * if never set. \sa RefinedWatchContext::watch_state
          */
@@ -133,6 +140,24 @@ namespace gcs::innards
         [[nodiscard]] auto is_watching(const IntegerVariableID & var) const -> bool
         {
             return _sink->is_watching(_owner, var);
+        }
+
+        /**
+         * \brief Drop every refined watch this propagator currently has armed.
+         *
+         * For a propagator whose natural pattern is to recompute its whole watched
+         * set each wake (rather than moving watches individually, like a
+         * two-watched-literal clause): clear, then re-arm the fresh set with watch().
+         * The removals are trailed like watch(), so backtrack restores exactly the
+         * pre-wake watch set. Only variables in the propagator's declared scope (its
+         * triggers and scope_only) are searched, so a propagator must watch only
+         * variables it has declared in scope -- the intended usage in any case, and
+         * what lets degree/adjacency see them. watch_state is independent and left
+         * untouched; reset any of it the new watch set no longer matches.
+         */
+        auto clear_watches() const -> void
+        {
+            _sink->clear_refined_watches(_owner);
         }
 
         /**
