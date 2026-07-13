@@ -1,0 +1,3 @@
+add_executable(linear_slack_bench linear_slack_bench.cc)
+target_link_libraries(linear_slack_bench PRIVATE glasgow_constraint_solver)
+target_link_libraries(linear_slack_bench PRIVATE cxxopts)
