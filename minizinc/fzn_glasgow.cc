@@ -1,5 +1,6 @@
 #include <gcs/gcs.hh>
 #include <gcs/interval_set.hh>
+#include <gcs/restarts.hh>
 
 #include <nlohmann/json.hpp>
 
@@ -241,7 +242,11 @@ auto main(int argc, char * argv[]) -> int
             ("n-solutions,n", "Stop after this many solutions", cxxopts::value<unsigned long long>())  //
             ("statistics,s", "Print statistics")                                                       //
             ("timeout,t", "Timeout in ms", cxxopts::value<unsigned long long>())                       //
-            ("prove", "Write proofs to this file (.opb and .pbp)", cxxopts::value<string>())           //
+            ("restarts",
+                "Restart on a Luby schedule with the given conflict scale (find-one / "      //
+                "optimisation only); learns nogoods across restarts",                        //
+                cxxopts::value<unsigned long long>())                                        //
+            ("prove", "Write proofs to this file (.opb and .pbp)", cxxopts::value<string>()) //
             ("file", "FlatZinc file used as input", cxxopts::value<string>());
 
         options.parse_positional({"file"});
@@ -1051,6 +1056,13 @@ auto main(int argc, char * argv[]) -> int
             proof_options.emplace(basename);
         }
 
+        optional<RestartSchedule> restart_schedule;
+        if (options_vars.contains("restarts")) {
+            auto scale = options_vars["restarts"].as<unsigned long long>();
+            if (scale > 0)
+                restart_schedule = RestartSchedule::luby(scale);
+        }
+
         bool completed = false, any_solution = false;
         auto stats = solve_with(problem, //
             SolveCallbacks{              //
@@ -1102,7 +1114,8 @@ auto main(int argc, char * argv[]) -> int
                     return true;
                 },
                 .branch = brancher,
-                .completed = [&] { completed = true; }},
+                .completed = [&] { completed = true; },
+                .restarts = restart_schedule},
             proof_options, &abort_flag);
 
         if (timeout_thread.joinable()) {
@@ -1137,6 +1150,7 @@ auto main(int argc, char * argv[]) -> int
             println(cout, "%%%mzn-stat: propagations={}", stats.propagations);
             println(cout, "%%%mzn-stat: effectfulPropagations={}", stats.effectful_propagations);
             println(cout, "%%%mzn-stat: peakDepth={}", stats.max_depth);
+            println(cout, "%%%mzn-stat: restarts={}", stats.restarts);
             println(cout, "%%%mzn-stat: solveTime={:.3f}", duration_cast<milliseconds>(stats.solve_time).count() / 1000.0);
             println(cout, "%%%mzn-stat-end");
             cout << flush;
