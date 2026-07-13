@@ -104,9 +104,15 @@ Two things this taught us:
 - **The cliff is driven by wake *count*, not the sort.** A tight constraint
   genuinely needs a large cover, so it wakes often, and each wake pays the refined
   watch machinery plus an `O(n)` sweep — already more than the incremental
-  propagator's cheap folded coarse wake. No cover bookkeeping changes that;
+  propagator's cheap folded coarse wake. A refined-watch wakeup is itself about
+  **8x** the cost of a coarse-trigger wakeup (≈38 ns vs ≈4.5 ns for equivalent
+  both-bounds coverage, measured by `examples/wake_cost`: identical tree, identical
+  wake count, trivial propagator body) — the extra going on `test_literal`
+  evaluation, the payload inbox, and the backtrackable watch-index edits that the
+  static coarse triggers do not need. No cover bookkeeping changes that;
   slack-waking is fundamentally a wake-*elimination* technique that only wins when
-  wakes are rare (loose constraints).
+  wakes are rare (loose constraints), where far fewer, dearer wakes still beat many
+  cheap ones.
 - **A sort-free cover is a non-minimal cover.** The rebuild's per-wake sort by
   *current* potential buys the *minimal* cover; a fixed initial-potential order
   watches large-initial-but-now-small terms and misses small-initial-but-still-
