@@ -354,16 +354,16 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
             // so a wake touches just the affected tuples rather than rescanning all.
             //
             // The variables are still declared as the propagator's scope, via
-            // on_instantiated triggers, so degree-based branchers (dom_then_deg,
-            // dom-wdeg) see this constraint on its variables exactly as the coarse
-            // version did -- a watch-only (empty-Triggers) propagator is otherwise
-            // invisible to those heuristics and perturbs the search. on_instantiated is
-            // the least-frequent coarse trigger, and after the one-off setup every such
-            // wake finds fired-payloads empty and the tuples already armed, so it is an
-            // O(1) no-op: the real work still happens only on watch fires.
+            // scope_only, so degree-based branchers (dom_then_deg, dom-wdeg) see this
+            // constraint on its variables exactly as the coarse version did -- a
+            // watch-only (empty-Triggers) propagator is otherwise invisible to those
+            // heuristics and perturbs the search. scope_only declares scope without
+            // arming any wake, so unlike an on_instantiated trigger it costs no coarse
+            // no-op wake: the propagator runs once at the root (the first pass enqueues
+            // every propagator) to arm its watches, then only on watch fires.
             Triggers scope_triggers;
             for (auto & v : _vars)
-                scope_triggers.on_instantiated.emplace_back(v);
+                scope_triggers.scope_only.emplace_back(v);
 
             propagators.install(
                 constraint_id(),
