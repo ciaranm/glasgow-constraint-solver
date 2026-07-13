@@ -109,10 +109,17 @@ Two things this taught us:
   both-bounds coverage, measured by `examples/wake_cost`: identical tree, identical
   wake count, trivial propagator body) — the extra going on `test_literal`
   evaluation, the payload inbox, and the backtrackable watch-index edits that the
-  static coarse triggers do not need. No cover bookkeeping changes that;
-  slack-waking is fundamentally a wake-*elimination* technique that only wins when
-  wakes are rare (loose constraints), where far fewer, dearer wakes still beat many
-  cheap ones.
+  static coarse triggers do not need. That ~33 ns surcharge is not a rounding error
+  against the body: a whole propagation of the folded incremental sweep is only
+  ~30 ns at 15 terms rising to ~60 ns at 200 (nearly flat — it folds out
+  instantiated terms), while the stateless sweep runs ~44 ns at 15 terms to ~460 ns
+  at 200 (~2 ns/term) (`examples/linear_prop_cost`). So per surviving wake,
+  slack-waking pays the dear refined mechanism *and* the unfolded stateless sweep —
+  roughly `38 + 280 ns` at 120 terms against the incremental propagator's
+  `4.5 + 43 ns`, about 6–7x — which is why it has to eliminate the vast majority of
+  wakes to break even. No cover bookkeeping changes that; slack-waking is
+  fundamentally a wake-*elimination* technique that only wins when wakes are rare
+  (loose constraints), where far fewer, dearer wakes still beat many cheap ones.
 - **A sort-free cover is a non-minimal cover.** The rebuild's per-wake sort by
   *current* potential buys the *minimal* cover; a fixed initial-potential order
   watches large-initial-but-now-small terms and misses small-initial-but-still-
