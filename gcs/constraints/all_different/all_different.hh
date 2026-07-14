@@ -40,7 +40,8 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
         std::vector<IntegerVariableID> _sanitised_vars;
         std::vector<Integer> _compressed_vals;             ///< consistency::GAC path
-        innards::ConstraintStateHandle _unassigned_handle; ///< consistency::VC path
+        innards::ConstraintStateHandle _unassigned_handle; ///< VC's whole propagator, staged GAC's cheap first stage
+        bool _gac_staged = false;                          ///< GAC path: big enough to stage? set in prepare()
         bool _has_duplicate_vars = false;
         AllDifferentConsistency _level = consistency::GAC{};
 
