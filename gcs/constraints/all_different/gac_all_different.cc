@@ -42,12 +42,14 @@ using std::cmp_not_equal;
 using std::count;
 using std::decay_t;
 using std::is_same_v;
+using std::lower_bound;
 using std::make_shared;
 using std::map;
 using std::min;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::tuple;
@@ -111,7 +113,7 @@ namespace gcs::innards
         std::vector<std::pair<Left, Right>> edges;
         std::vector<std::size_t> var_edges_begin;
         std::vector<std::size_t> phantom_plus_one_of_var;
-        std::vector<uint8_t> left_covered, right_covered;
+        std::vector<uint8_t> left_covered;
         std::vector<std::optional<Right>> matching;
 
         // value -> index-into-vals lookup (plus one, with zero meaning not a
@@ -129,6 +131,7 @@ namespace gcs::innards
         std::vector<uint8_t> reached_on_the_left, reached_on_the_right;
         std::vector<Left> how_we_got_to_on_the_right;
         std::vector<Right> how_we_got_to_on_the_left;
+        std::vector<Left> bfs_queue;
 
         // The directed matching graph is implicit in edges + the matching:
         // a variable's out-neighbours are its unmatched edges (walked via
@@ -232,106 +235,143 @@ namespace
             }
     }
 
-    auto build_matching(const vector<IntegerVariableID> & vars, size_t n_right, GacAllDifferentScratch & scratch) -> void
+    // Breadth-first search for an augmenting path from an uncovered variable,
+    // over the implicit graph: a variable's candidate edges are walked in
+    // place, and a covered value leads to its matched variable via
+    // inverse_matching. Returns whether it augmented (flipping the matching
+    // along the path); scratch.left_covered is updated for the start.
+    auto augment_from(size_t n_right, vector<IntegerVariableID>::size_type start, GacAllDifferentScratch & scratch) -> bool
     {
-        const auto & edges = scratch.edges;
-        auto & left_covered = scratch.left_covered;
-        auto & right_covered = scratch.right_covered;
         auto & matching = scratch.matching;
+        auto & inverse_matching = scratch.inverse_matching;
+        auto & reached_on_the_left = scratch.reached_on_the_left;
+        auto & reached_on_the_right = scratch.reached_on_the_right;
+        auto & how_we_got_to_on_the_right = scratch.how_we_got_to_on_the_right;
+        auto & how_we_got_to_on_the_left = scratch.how_we_got_to_on_the_left;
+        auto & queue = scratch.bfs_queue;
 
-        // start with a greedy matching
-        for (const auto & e : edges) {
-            if ((! left_covered[e.first.offset]) && (! right_covered[e.second.offset])) {
-                left_covered[e.first.offset] = 1;
-                right_covered[e.second.offset] = 1;
-                matching[e.first.offset] = e.second;
-            }
+        reached_on_the_left.assign(matching.size(), 0);
+        reached_on_the_right.assign(n_right, 0);
+        how_we_got_to_on_the_right.assign(n_right, Left{});
+        how_we_got_to_on_the_left.assign(matching.size(), Right{});
+
+        queue.clear();
+        queue.push_back(Left{start});
+        reached_on_the_left[start] = 1;
+
+        optional<Right> path_endpoint;
+        for (size_t head = 0; head != queue.size() && ! path_endpoint; ++head) {
+            const auto l = queue[head];
+            for_each_unmatched_edge_of_var(scratch, l.offset, [&](const Right & t) {
+                if (path_endpoint || reached_on_the_right[t.offset])
+                    return;
+                reached_on_the_right[t.offset] = 1;
+                how_we_got_to_on_the_right[t.offset] = l;
+                if (const auto & nl = inverse_matching[t.offset]) {
+                    if (! reached_on_the_left[nl->offset]) {
+                        reached_on_the_left[nl->offset] = 1;
+                        how_we_got_to_on_the_left[nl->offset] = t;
+                        queue.push_back(*nl);
+                    }
+                }
+                else
+                    path_endpoint = t;
+            });
         }
 
-        // now augment
+        if (! path_endpoint)
+            return false;
+
+        // flip the matching along the path, walking backwards
+        auto t = *path_endpoint;
         while (true) {
-            auto & reached_on_the_left = scratch.reached_on_the_left;
-            auto & reached_on_the_right = scratch.reached_on_the_right;
-            auto & how_we_got_to_on_the_right = scratch.how_we_got_to_on_the_right;
-            auto & how_we_got_to_on_the_left = scratch.how_we_got_to_on_the_left;
-            reached_on_the_left.assign(vars.size(), 0);
-            reached_on_the_right.assign(n_right, 0);
-            how_we_got_to_on_the_right.assign(n_right, Left{});
-            how_we_got_to_on_the_left.assign(vars.size(), Right{});
-
-            // start from exposed variables
-            for (Left v{0}; v.offset != vars.size(); ++v.offset)
-                if (! left_covered[v.offset])
-                    reached_on_the_left[v.offset] = 1;
-
-            bool still_searching = true, found_a_path = false;
-            Right path_endpoint{};
-            while (still_searching && ! found_a_path) {
-                still_searching = false;
-
-                // for each potential left-to-right edge that is not in the matching,
-                // that starts with something on the left...
-                for (const auto & [var, val] : edges) {
-                    if (reached_on_the_left[var.offset] && matching[var.offset] != val) {
-                        // we've found something we can reach on the right
-                        if (! reached_on_the_right[val.offset]) {
-                            reached_on_the_right[val.offset] = 1;
-                            how_we_got_to_on_the_right[val.offset] = var;
-                            // is it exposed?
-                            if (! right_covered[val.offset]) {
-                                found_a_path = true;
-                                path_endpoint = val;
-                                break;
-                            }
-                            else {
-                                still_searching = true;
-                            }
-                        }
-                    }
-                }
-
-                // if we've not grown our right set, or if we've already found a
-                // path, we're done
-                if (found_a_path || ! still_searching)
-                    break;
-                still_searching = false;
-
-                // now, for each potential right-to-left edge that is in the matching,
-                // that starts with something we've reached on the right...
-                for (const auto & [var, val] : edges) {
-                    if (reached_on_the_right[val.offset] && matching[var.offset] == val) {
-                        // we've found something we can reach on the left
-                        if (! reached_on_the_left[var.offset]) {
-                            reached_on_the_left[var.offset] = 1;
-                            how_we_got_to_on_the_left[var.offset] = val;
-                            still_searching = true;
-                        }
-                    }
-                }
-            }
-
-            if (found_a_path) {
-                // we've included another value
-                right_covered[path_endpoint.offset] = 1;
-
-                // reconstruct the augmenting path to figure out how we did it,
-                // going backwards
-                while (true) {
-                    // is the thing on the left exposed?
-                    if (! left_covered[how_we_got_to_on_the_right[path_endpoint.offset].offset]) {
-                        left_covered[how_we_got_to_on_the_right[path_endpoint.offset].offset] = 1;
-                        matching[how_we_got_to_on_the_right[path_endpoint.offset].offset] = path_endpoint;
-                        break;
-                    }
-                    else {
-                        // nope, we must have reached this from the right
-                        matching[how_we_got_to_on_the_right[path_endpoint.offset].offset] = path_endpoint;
-                        path_endpoint = how_we_got_to_on_the_left[how_we_got_to_on_the_right[path_endpoint.offset].offset];
-                    }
-                }
-            }
-            else
+            auto l = how_we_got_to_on_the_right[t.offset];
+            matching[l.offset] = t;
+            inverse_matching[t.offset] = l;
+            if (l.offset == start)
                 break;
+            t = how_we_got_to_on_the_left[l.offset];
+        }
+        scratch.left_covered[start] = 1;
+        return true;
+    }
+
+    // Complete scratch.matching into a maximum matching of the current edges,
+    // reusing whatever survives from the previous wake when the caller allows
+    // it. Any set of matched pairs whose edges still exist is a valid partial
+    // matching regardless of what search state it came from -- domains may
+    // have changed arbitrarily since, including by backtracking -- because
+    // validity only depends on the current graph, so a stale entry is either
+    // filtered out here or still usable. Repair is per uncovered variable, in
+    // variable order: greedy first (the first uncovered value, in value
+    // order, then the phantom), then a breadth-first augmenting-path search.
+    // Augmenting for a later variable never creates a path for an earlier one
+    // that had none (the standard augmenting-path lemma), so a single pass
+    // reaches maximum cardinality. The matching this produces can differ from
+    // what a from-scratch rebuild would have found, but the set of edges in
+    // no maximum matching -- the deletions -- is matching-independent, so
+    // what the propagator infers is unchanged; only proof shape and inference
+    // order within a wake can differ.
+    auto build_matching(const vector<IntegerVariableID> & vars, size_t n_right, bool reuse_previous, GacAllDifferentScratch & scratch) -> void
+    {
+        auto & matching = scratch.matching;
+        auto & inverse_matching = scratch.inverse_matching;
+        auto & left_covered = scratch.left_covered;
+
+        // revalidate the previous wake's matching against the current edges
+        if (reuse_previous && matching.size() == vars.size()) {
+            for (vector<IntegerVariableID>::size_type i = 0; i != vars.size(); ++i)
+                if (matching[i]) {
+                    // is (i, *matching[i]) still an edge? the variable's edges
+                    // are sorted by value offset
+                    const auto b = scratch.edges.begin() + static_cast<std::ptrdiff_t>(scratch.var_edges_begin[i]);
+                    const auto e = scratch.edges.begin() + static_cast<std::ptrdiff_t>(scratch.var_edges_begin[i + 1]);
+                    const auto it = lower_bound(b, e, matching[i]->offset,
+                        [](const pair<Left, Right> & edge, vector<Integer>::size_type off) { return edge.second.offset < off; });
+                    if (it == e || it->second.offset != matching[i]->offset)
+                        matching[i] = nullopt;
+                }
+        }
+        else
+            matching.assign(vars.size(), nullopt);
+
+        left_covered.assign(vars.size(), 0);
+        inverse_matching.assign(n_right, nullopt);
+        for (const auto & [i, m] : enumerate(matching))
+            if (m) {
+                left_covered[i] = 1;
+                inverse_matching[m->offset] = Left{i};
+            }
+
+        for (vector<IntegerVariableID>::size_type i = 0; i != vars.size(); ++i) {
+            if (left_covered[i])
+                continue;
+
+            // greedy: the first uncovered value, in value order, then the
+            // phantom. matching[i] is empty here, so every edge of i is a
+            // candidate.
+            for (auto e = scratch.var_edges_begin[i], e_end = scratch.var_edges_begin[i + 1]; e != e_end; ++e) {
+                const auto & t = scratch.edges[e].second;
+                if (! inverse_matching[t.offset]) {
+                    matching[i] = t;
+                    inverse_matching[t.offset] = Left{i};
+                    left_covered[i] = 1;
+                    break;
+                }
+            }
+            if (! left_covered[i] && ! scratch.phantom_plus_one_of_var.empty())
+                if (auto p = scratch.phantom_plus_one_of_var[i]; 0 != p && ! inverse_matching[p - 1]) {
+                    matching[i] = Right{p - 1};
+                    inverse_matching[p - 1] = Left{i};
+                    left_covered[i] = 1;
+                }
+            if (left_covered[i])
+                continue;
+
+            // no free value: search for an augmenting path (which may leave i
+            // uncovered, making the matching too small -- the caller detects
+            // that)
+            augment_from(n_right, i, scratch);
         }
     }
 
@@ -339,11 +379,9 @@ namespace
         const vector<Integer> & excluded, size_t n_right, map<Integer, ProofLine> & value_am1_constraint_numbers, const State &, ProofLogger * const,
         GacAllDifferentScratch & scratch) -> std::tuple<hints::AllDifferentHall, Reason>
     {
-        auto & inverse_matching = scratch.inverse_matching;
-        inverse_matching.assign(n_right, nullopt);
-        for (const auto & [l, r] : enumerate(scratch.matching))
-            if (r)
-                inverse_matching[r->offset] = Left{l};
+        // build_matching maintains inverse_matching alongside the matching,
+        // so it is already current here
+        const auto & inverse_matching = scratch.inverse_matching;
 
         auto & hall_variables = scratch.hall_left;
         auto & hall_values = scratch.hall_right;
@@ -744,11 +782,10 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     else
         scratch.phantom_plus_one_of_var.clear();
 
-    scratch.left_covered.assign(vars.size(), 0);
-    scratch.right_covered.assign(n_right, 0);
-    scratch.matching.assign(vars.size(), nullopt);
-
-    build_matching(vars, n_right, scratch);
+    // Reuse the previous wake's matching (after revalidation) except when
+    // there are excluded values: phantom right offsets are renumbered per
+    // wake, so a stale phantom match would be meaningless.
+    build_matching(vars, n_right, excluded.empty(), scratch);
 
     const auto & matching = scratch.matching;
 
@@ -772,12 +809,6 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     for (auto & [f, t] : edges)
         if (matching[f.offset] != t)
             edges_in_to_value[t.offset].push_back(f);
-
-    auto & inverse_matching = scratch.inverse_matching;
-    inverse_matching.assign(n_right, nullopt);
-    for (const auto & [l, r] : enumerate(matching))
-        if (r)
-            inverse_matching[r->offset] = Left{l};
 
     // now we need to find strongly connected components...
     const auto number_of_components = find_strongly_connected_components(vars.size(), vars.size() + n_right, scratch);
