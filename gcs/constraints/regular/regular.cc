@@ -278,7 +278,7 @@ namespace
     auto propagate_regular(const vector<IntegerVariableID> & vars, const long num_states,
         const vector<unordered_map<Integer, set<long>>> & transitions, const vector<long> & final_states,
         const vector<vector<ProofFlag>> & state_at_pos_flags, const ConstraintStateHandle & graph_handle, const ConstraintStateHandle & cache_handle,
-        const State & state, auto & inference, ProofLogger * const logger, const ConstraintID & owner) -> void
+        const State & state, auto & inference, ProofLogger * const logger, const ConstraintID & owner, const Reason & reason) -> void
     {
         // Degenerate empty sequence (issue #254): with no variables there is
         // nothing to propagate over, but the empty word is accepted only if the
@@ -293,13 +293,12 @@ namespace
                     break;
                 }
             if (! initial_is_final)
-                inference.contradiction(logger, JustifyUsingRUP{hints::Regular{owner}}, generic_reason(vars));
+                inference.contradiction(logger, JustifyUsingRUP{hints::Regular{owner}}, reason);
             return;
         }
 
         auto & graph = any_cast<RegularGraph &>(state.get_constraint_state(graph_handle));
         auto & cache = any_cast<DeadCache &>(state.get_constraint_state(cache_handle));
-        auto reason = generic_reason(vars);
         // All manual proof emission happens before any domain change below, so a
         // single materialised snapshot is sound (see MDD, PORTING-NOTES §13).
         auto eager = eager_reason(reason, state);
@@ -663,11 +662,16 @@ auto Regular::install_propagators(Propagators & propagators) -> void
             cache.dead[i].insert(bridge->static_dead[i].begin(), bridge->static_dead[i].end());
     });
 
+    // Whole-scope declarative reason built once and captured; only its per-wake
+    // eager materialisation stays in propagate_regular (see
+    // dev_docs/propagator-performance.md).
+    auto vars_reason = generic_reason(_vars);
     propagators.install(
         constraint_id(),
         [v = _vars, ns = _num_states, t = _transitions, fs = _final_states, g = _graph_idx, dc = _dead_cache_idx, bridge = _bridge,
-            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            propagate_regular(v, ns, t, fs, bridge->state_at_pos_flags, g, dc, state, inference, logger, owner);
+            owner = constraint_id(),
+            reason = std::move(vars_reason)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            propagate_regular(v, ns, t, fs, bridge->state_at_pos_flags, g, dc, state, inference, logger, owner, reason);
             return PropagatorState::Enable;
         },
         triggers);

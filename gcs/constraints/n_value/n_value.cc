@@ -97,9 +97,14 @@ auto NValue::install_propagators(Propagators & propagators) -> void
     vector<IntegerVariableID> all_vars = _vars;
     all_vars.push_back(_n_values);
 
+    // Build the whole-scope reason once and reuse it, rather than rebuilding it
+    // (copying the scope into a fresh shared_ptr) on every wake. See
+    // dev_docs/propagator-performance.md.
+    auto all_vars_reason = generic_reason(all_vars);
+
     propagators.install(
         constraint_id(),
-        [all_vars = move(all_vars), n_values = _n_values, vars = _vars, owner = constraint_id()](
+        [reason = std::move(all_vars_reason), n_values = _n_values, vars = _vars, owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             set<Integer> all_possible_values;
             for (const auto & var : vars) {
@@ -107,7 +112,7 @@ auto NValue::install_propagators(Propagators & propagators) -> void
                     all_possible_values.insert(v);
             }
 
-            inference.infer(logger, n_values <= Integer(all_possible_values.size()), JustifyUsingRUP{hints::NValue{owner}}, generic_reason(all_vars));
+            inference.infer(logger, n_values <= Integer(all_possible_values.size()), JustifyUsingRUP{hints::NValue{owner}}, reason);
 
             set<Integer> all_definite_values;
             for (const auto & var : vars) {
@@ -119,8 +124,8 @@ auto NValue::install_propagators(Propagators & propagators) -> void
             // The "at least 1" floor only applies when the array is non-empty;
             // an empty array contributes 0 distinct values.
             auto distinct_floor = vars.empty() ? 0_i : 1_i;
-            inference.infer(logger, n_values >= max(distinct_floor, Integer(all_definite_values.size())), JustifyUsingRUP{hints::NValue{owner}},
-                generic_reason(all_vars));
+            inference.infer(
+                logger, n_values >= max(distinct_floor, Integer(all_definite_values.size())), JustifyUsingRUP{hints::NValue{owner}}, reason);
 
             return PropagatorState::Enable;
         },

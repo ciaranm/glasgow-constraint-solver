@@ -95,9 +95,14 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
     vector<IntegerVariableID> all_vars = _vars;
     all_vars.push_back(_val);
 
+    // Build the whole-scope reason once and reuse it at every inference site,
+    // rather than rebuilding it (copying the scope into a fresh shared_ptr) on
+    // each inference. See dev_docs/propagator-performance.md.
+    auto all_vars_reason = generic_reason(all_vars);
+
     propagators.install(
         constraint_id(),
-        [vars = _vars, val = _val, all_vars = move(all_vars), owner = constraint_id()](
+        [vars = _vars, val = _val, reason = std::move(all_vars_reason), owner = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // For each candidate value v of `val`: if two or more vars
             // are fixed to v, infer val ≠ v. (RUP from the encoding's
@@ -111,7 +116,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
                     }
                 }
                 if (fixed_to_v >= 2)
-                    inference.infer(logger, val != v, JustifyUsingRUP{hints::AtMostOne{owner}}, generic_reason(all_vars));
+                    inference.infer(logger, val != v, JustifyUsingRUP{hints::AtMostOne{owner}}, reason);
             }
 
             // If val is now fixed to v and exactly one var is fixed to v,
@@ -131,7 +136,7 @@ auto AtMostOne::install_propagators(Propagators & propagators) -> void
                 if (fixed_count == 1) {
                     for (size_t i = 0; cmp_less(i, vars.size()); ++i) {
                         if (i != fixed_idx)
-                            inference.infer(logger, vars[i] != *val_fixed, JustifyUsingRUP{hints::AtMostOne{owner}}, generic_reason(all_vars));
+                            inference.infer(logger, vars[i] != *val_fixed, JustifyUsingRUP{hints::AtMostOne{owner}}, reason);
                     }
                 }
             }

@@ -71,8 +71,8 @@ namespace
     template <typename SanitisedCV_, typename Cond_, typename ProofLine_, typename AllVars_, typename Owner_, typename IncMustHold_,
         typename Inference_>
     auto propagate_reified_linear_equality_when_undecided(const SanitisedCV_ & sanitised_cv, Integer value, const Cond_ & cond,
-        const ProofLine_ & proof_line, const AllVars_ & all_vars, const Owner_ & owner, const IncMustHold_ & inc_must_hold, const State & state,
-        Inference_ & inference, ProofLogger * const logger) -> PropagatorState
+        const ProofLine_ & proof_line, const AllVars_ & all_vars, const Reason & reason, const Owner_ & owner, const IncMustHold_ & inc_must_hold,
+        const State & state, Inference_ & inference, ProofLogger * const logger) -> PropagatorState
     {
         return overloaded{
             [&](const evaluated_reif::MustHold & reif) {
@@ -111,12 +111,12 @@ namespace
                     // reified)
                     if (accum == value) {
                         if (auto lit = reif.cond_to_infer_if_constraint_must_hold())
-                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(all_vars));
+                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, reason);
                         return PropagatorState::DisableUntilBacktrack;
                     }
                     else {
                         if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(all_vars));
+                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, reason);
                         return PropagatorState::DisableUntilBacktrack;
                     }
                 }
@@ -130,7 +130,7 @@ namespace
                             // no way for the remaining variable to take that value, so the condition
                             // has to be false
                             if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                                inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(all_vars));
+                                inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, reason);
                             return PropagatorState::DisableUntilBacktrack;
                         }
                         else {
@@ -142,7 +142,7 @@ namespace
                         // the value that would make the equality work isn't an integer, so the condition
                         // has to be false
                         if (auto lit = reif.cond_to_infer_if_constraint_must_not_hold())
-                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, generic_reason(all_vars));
+                            inference.infer(logger, *lit, JustifyUsingRUP{hints::LinearEquality{owner}}, reason);
                         return PropagatorState::DisableUntilBacktrack;
                     }
                 }
@@ -408,14 +408,17 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
                             inc_must_hold = std::pair{active, handle};
                         }
 
+                        // Whole-scope reason built once here and captured, not
+                        // rebuilt per wake (see dev_docs/propagator-performance.md).
+                        auto all_vars_reason = generic_reason(all_vars);
                         propagators.install(
                             constraint_id(),
                             [sanitised_cv = sanitised_cv, value = _value + modifier, cond = _reif_cond, proof_line = _proof_line,
-                                all_vars = move(all_vars), owner = constraint_id(),
+                                all_vars = move(all_vars), reason = std::move(all_vars_reason), owner = constraint_id(),
                                 inc_must_hold = inc_must_hold](const State & state, auto & inference,
                                 ProofLogger * const logger) -> PropagatorState { // This comment is needed to stop clang-format exploding
                                 return propagate_reified_linear_equality_when_undecided(
-                                    sanitised_cv, value, cond, proof_line, all_vars, owner, inc_must_hold, state, inference, logger);
+                                    sanitised_cv, value, cond, proof_line, all_vars, reason, owner, inc_must_hold, state, inference, logger);
                             },
                             triggers);
                     },

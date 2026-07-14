@@ -228,8 +228,11 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
                 return propagate_linear(sanitised_neg_cv, -value + neg_modifier - 1_i, state, inference, logger, false, proof_lines_swapped, cond);
             };
 
+            // Whole-scope reason built once (capture-init) and reused, not
+            // rebuilt per verdict (see dev_docs/propagator-performance.md).
             auto infer_cond_when_undecided = [sanitised_cv, sanitised_neg_cv, value = _value, modifier = modifier, proof_lines, proof_lines_swapped,
-                                                 vars = vars, owner = constraint_id()](const State & state, auto &, ProofLogger * const,
+                                                 reason = generic_reason(vars),
+                                                 owner = constraint_id()](const State & state, auto &, ProofLogger * const,
                                                  const IntegerVariableCondition &) -> ReificationVerdictFor<LinearCondJustification> {
                 Integer min_possible = 0_i, max_possible = 0_i;
                 for (const auto & cv : sanitised_cv.terms) {
@@ -249,15 +252,15 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
                     return reification_verdict::MustNotHold<LinearCondJustification>{
                         .justification =
                             JustifyExplicitly{hints::LinearInequalityCond<CV>{{owner}, &state, sanitised_cv, proof_lines}, ThenRUP::Yes}, //
-                        .reason = generic_reason(vars)                                                                                    //
+                        .reason = reason                                                                                                  //
                     };
                 }
                 else if (max_possible <= value + modifier) {
                     // must definitely hold
                     return reification_verdict::MustHold<LinearCondJustification>{
                         .justification = JustifyExplicitly{hints::LinearInequalityCond<NegCV>{{owner}, &state, sanitised_neg_cv, proof_lines_swapped},
-                            ThenRUP::Yes},             //
-                        .reason = generic_reason(vars) //
+                            ThenRUP::Yes}, //
+                        .reason = reason   //
                     };
                 }
                 else

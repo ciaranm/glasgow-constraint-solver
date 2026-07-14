@@ -172,7 +172,7 @@ namespace
     // lambda inside a generic lambda makes MSVC emit an internal compiler error).
     template <typename Vars_, typename Tuples_, typename Watches_, typename Owner_, typename Inference_>
     auto initialise_negative_table_watches(const Vars_ & vars, const Tuples_ & tuples, const Watches_ & watches, const Owner_ & owner,
-        const State & state, Inference_ & inference, ProofLogger * const logger) -> void
+        const Reason & reason, const State & state, Inference_ & inference, ProofLogger * const logger) -> void
     {
         const auto & tuple_data = depointinate(tuples);
         watches->reserve(tuple_data.size());
@@ -192,14 +192,14 @@ namespace
 
             auto w1 = find_unbroken(no_watch);
             if (! w1) {
-                inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
             }
 
             auto w2 = find_unbroken(*w1);
             if (! w2) {
                 // Unit clause: vars[*w1] != t[*w1] is the only possibly-true
                 // disjunct, so it must hold.
-                inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                 // Mark the tuple as already handled — both watches at the same
                 // position will read as broken on every subsequent fire, and
                 // any rescue search will discover the inference is now redundant.
@@ -218,8 +218,8 @@ namespace
     // internal compiler error (C1001); a named function template compiles cleanly.
     // Capture types are deduced. See the same treatment in linear_equality.cc.
     template <typename Vars_, typename Tuples_, typename Watches_, typename Owner_, typename Inference_>
-    auto propagate_negative_table(const Vars_ & vars, const Tuples_ & tuples, const Watches_ & watches, const Owner_ & owner, const State & state,
-        Inference_ & inference, ProofLogger * const logger) -> PropagatorState
+    auto propagate_negative_table(const Vars_ & vars, const Tuples_ & tuples, const Watches_ & watches, const Owner_ & owner, const Reason & reason,
+        const State & state, Inference_ & inference, ProofLogger * const logger) -> PropagatorState
     {
         const auto & tuple_data = depointinate(tuples);
         using Tuple = std::remove_cvref_t<decltype(tuple_data[0])>;
@@ -249,11 +249,11 @@ namespace
             if (b1 && b2) {
                 auto new1 = find_unbroken(t, no_watch, no_watch);
                 if (! new1) {
-                    inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                    inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                 }
                 auto new2 = find_unbroken(t, *new1, no_watch);
                 if (! new2) {
-                    inference.infer(logger, vars[*new1] != t[*new1], JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                    inference.infer(logger, vars[*new1] != t[*new1], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                 }
                 else {
                     w.first = *new1;
@@ -263,7 +263,7 @@ namespace
             else if (b1) {
                 auto new1 = find_unbroken(t, w.second, no_watch);
                 if (! new1) {
-                    inference.infer(logger, vars[w.second] != t[w.second], JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                    inference.infer(logger, vars[w.second] != t[w.second], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                 }
                 else {
                     w.first = *new1;
@@ -272,7 +272,7 @@ namespace
             else {
                 auto new2 = find_unbroken(t, w.first, no_watch);
                 if (! new2) {
-                    inference.infer(logger, vars[w.first] != t[w.first], JustifyUsingRUP{hints::NegativeTable{owner}}, generic_reason(vars));
+                    inference.infer(logger, vars[w.first] != t[w.first], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                 }
                 else {
                     w.second = *new2;
@@ -295,6 +295,11 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
     // overhead. Using shared_ptr so the initialiser and main propagator share storage.
     auto watches = make_shared<vector<pair<size_t, size_t>>>();
 
+    // The reason ranges over the fixed variable scope, so build it once here and
+    // share it between the initialiser and the propagator rather than rebuilding
+    // it on every wake (see dev_docs/propagator-performance.md).
+    auto table_reason = generic_reason(_vars);
+
     visit(
         [&, this](auto && tuples) {
             // Init: walk every tuple, find two watch positions, propagate units, raise
@@ -302,16 +307,16 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
             // currently DefinitelyTrue — this captures both the "var is forced to t[pos]"
             // case and the "t[pos] is a wildcard" case (since `var == Wildcard` overloads
             // to TrueLiteral, which tests as DefinitelyTrue).
-            propagators.install_initialiser([vars = _vars, tuples = tuples, watches = watches, owner = constraint_id()](
+            propagators.install_initialiser([vars = _vars, tuples = tuples, watches = watches, owner = constraint_id(), reason = table_reason](
                                                 const State & state, auto & inference, ProofLogger * const logger) -> void {
-                initialise_negative_table_watches(vars, tuples, watches, owner, state, inference, logger);
+                initialise_negative_table_watches(vars, tuples, watches, owner, reason, state, inference, logger);
             });
 
             propagators.install(
                 constraint_id(),
-                [vars = move(_vars), tuples = move(tuples), watches = watches, owner = constraint_id()](
+                [vars = move(_vars), tuples = move(tuples), watches = watches, owner = constraint_id(), reason = std::move(table_reason)](
                     const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    return propagate_negative_table(vars, tuples, watches, owner, state, inference, logger);
+                    return propagate_negative_table(vars, tuples, watches, owner, reason, state, inference, logger);
                 },
                 triggers);
         },

@@ -200,7 +200,7 @@ namespace
     auto propagate_sortedness(const vector<IntegerVariableID> & x, const vector<IntegerVariableID> & y, const vector<vector<ProofFlag>> & before,
         const vector<ProofOnlySimpleIntegerVariableID> & pos, const vector<ProofLine> & rank_lines, const vector<ProofLine> & rank_le_lines,
         const vector<ProofLine> & inj_lines, const vector<ProofLine> & al1_lines, const vector<vector<ProofLine>> & anti_lines,
-        const ConstraintID & owner, const State & state, Inference_ & inference, ProofLogger * const logger) -> void
+        const ConstraintID & owner, const State & state, Inference_ & inference, ProofLogger * const logger, const Reason & reason) -> void
     {
         auto n = x.size();
 
@@ -217,10 +217,6 @@ namespace
             ly[j] = oly[j] = lo.raw_value;
             uy[j] = ouy[j] = hi.raw_value;
         }
-
-        vector<IntegerVariableID> all_vars = x;
-        all_vars.insert(all_vars.end(), y.begin(), y.end());
-        auto reason = bounds_reason(all_vars);
 
         // (1) Normalize the y-ranges: they index the sorted output, so the lower
         // bounds are non-decreasing and the upper bounds non-decreasing.
@@ -1110,11 +1106,19 @@ auto gcs::innards::install_sortedness_propagator(Propagators & propagators, cons
     triggers.on_bounds.insert(triggers.on_bounds.end(), x.begin(), x.end());
     triggers.on_bounds.insert(triggers.on_bounds.end(), y.begin(), y.end());
 
+    // Whole-scope bounds reason built once and captured, not rebuilt per wake
+    // (see dev_docs/propagator-performance.md).
+    vector<IntegerVariableID> all_vars = x;
+    all_vars.insert(all_vars.end(), y.begin(), y.end());
+    auto sort_reason = bounds_reason(all_vars);
+
     propagators.install(
         constraint_id,
         [x, y, before = witness.before, pos = witness.pos, rank_lines = witness.rank_ge, rank_le_lines = witness.rank_le, inj_lines, al1_lines,
-            anti_lines, owner = constraint_id](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            propagate_sortedness(x, y, before, pos, rank_lines, rank_le_lines, *inj_lines, *al1_lines, *anti_lines, owner, state, inference, logger);
+            anti_lines, owner = constraint_id,
+            reason = std::move(sort_reason)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            propagate_sortedness(
+                x, y, before, pos, rank_lines, rank_le_lines, *inj_lines, *al1_lines, *anti_lines, owner, state, inference, logger, reason);
             return PropagatorState::Enable;
         },
         triggers);
