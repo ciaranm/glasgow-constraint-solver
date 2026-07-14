@@ -103,12 +103,25 @@ namespace
     // to PerBinDag::nodes_at; can_be_b/can_be_notb hold the current per-item
     // admissibility. Each search gets its own constraint clone (and hence its
     // own bridge), so no synchronisation is needed even across threads.
+    //
+    // Incremental recompute: fwd/bwd are a pure function of the per-item flags,
+    // so we cache the flags they were last built from (prev_can_be_*). On the
+    // next wake we diff current-vs-cached flags to find the changed layer range
+    // and recompute only that. This is correct across backtrack without any
+    // trailing: a backtrack simply relaxes the flags, which the diff sees as a
+    // change and rebuilds from. warm gates the first (full) build; old_fwd_n
+    // snapshots the terminal layer to decide whether the backward pass can be
+    // partial.
     struct Stage3Scratch
     {
         vector<vector<uint8_t>> fwd;
         vector<vector<uint8_t>> bwd;
         vector<char> can_be_b;
         vector<char> can_be_notb;
+        vector<char> prev_can_be_b;
+        vector<char> prev_can_be_notb;
+        vector<uint8_t> old_fwd_n;
+        bool warm = false;
     };
 
     struct PerBinCoordFlags
@@ -811,55 +824,108 @@ namespace
 
         auto & can_be_b = scratch.can_be_b;
         auto & can_be_notb = scratch.can_be_notb;
-        for (size_t i = 0; i < n; ++i) {
-            can_be_b[i] = static_cast<char>(state.in_domain(items[i], bin_idx));
-            auto v = state.optional_single_value(items[i]);
-            can_be_notb[i] = static_cast<char>(! (v && *v == bin_idx));
-        }
-
         auto & fwd = scratch.fwd;
         auto & bwd = scratch.bwd;
 
-        // Forward reachability under current domains, restricted to the static
-        // DAG, over position-indexed bitmaps. fwd starts all-zero; layer 0 has
-        // exactly node 0 (build_fwd_dag seeds it), which is always reachable.
-        for (auto & layer : fwd)
-            std::fill(layer.begin(), layer.end(), uint8_t{0});
-        if (! dag.nodes_at[0].empty())
-            fwd[0][0] = 1;
+        // Read the current per-item admissibility and, against the flags the
+        // cached bitmaps were built from, find the changed layer range. Flags
+        // only ever relax on backtrack and tighten on descent, but the diff is
+        // direction-agnostic, so the same code is correct either way.
+        auto first_change = n;
+        size_t last_change = 0;
+        bool any_change = false;
         for (size_t i = 0; i < n; ++i) {
-            const auto & excl = dag.exclude_succ[i];
-            const auto & incl = dag.include_succ[i];
-            auto & next_layer = fwd[i + 1];
-            for (size_t p = 0; p < fwd[i].size(); ++p) {
-                if (! fwd[i][p])
-                    continue;
-                if (can_be_notb[i] && excl[p] >= 0)
-                    next_layer[excl[p]] = 1;
-                if (can_be_b[i] && incl[p] >= 0)
-                    next_layer[incl[p]] = 1;
+            auto nb = static_cast<char>(state.in_domain(items[i], bin_idx));
+            auto v = state.optional_single_value(items[i]);
+            auto nnb = static_cast<char>(! (v && *v == bin_idx));
+            can_be_b[i] = nb;
+            can_be_notb[i] = nnb;
+            if (nb != scratch.prev_can_be_b[i] || nnb != scratch.prev_can_be_notb[i]) {
+                if (! any_change)
+                    first_change = i;
+                last_change = i;
+                any_change = true;
             }
         }
 
-        // Backward reachability. Layer n's accepting terminals are the
-        // forward-reachable layer-n nodes (static reduction already encodes
-        // acceptance). A node at layer i is backward-reachable if some
-        // admissible branch lands on a backward-reachable successor. Every
-        // cell is overwritten, so no pre-zeroing is needed.
-        for (size_t p = 0; p < bwd[n].size(); ++p)
-            bwd[n][p] = fwd[n][p];
-        for (long long i = static_cast<long long>(n) - 1; i >= 0; --i) {
-            const auto & excl = dag.exclude_succ[i];
-            const auto & incl = dag.include_succ[i];
-            const auto & next_bwd = bwd[i + 1];
-            for (size_t p = 0; p < bwd[i].size(); ++p) {
-                uint8_t reachable = 0;
-                if (can_be_notb[i] && excl[p] >= 0 && next_bwd[excl[p]])
-                    reachable = 1;
-                else if (can_be_b[i] && incl[p] >= 0 && next_bwd[incl[p]])
-                    reachable = 1;
-                bwd[i][p] = reachable;
+        // Forward reachability, restricted to the static DAG, over
+        // position-indexed bitmaps: recompute fwd[from+1 .. n] from fwd[from]
+        // (which is left untouched and valid). Each rebuilt layer is zeroed
+        // before its reachable cells are set.
+        auto recompute_forward = [&](size_t from) {
+            for (size_t i = from; i < n; ++i) {
+                auto & next_layer = fwd[i + 1];
+                std::fill(next_layer.begin(), next_layer.end(), uint8_t{0});
+                const auto & excl = dag.exclude_succ[i];
+                const auto & incl = dag.include_succ[i];
+                for (size_t p = 0; p < fwd[i].size(); ++p) {
+                    if (! fwd[i][p])
+                        continue;
+                    if (can_be_notb[i] && excl[p] >= 0)
+                        next_layer[excl[p]] = 1;
+                    if (can_be_b[i] && incl[p] >= 0)
+                        next_layer[incl[p]] = 1;
+                }
             }
+        };
+
+        // Backward reachability: a node is backward-reachable if some admissible
+        // branch lands on a backward-reachable successor. Recompute bwd[hi .. 0]
+        // assuming bwd[hi+1 .. n] (and bwd[n] itself) are already valid.
+        auto recompute_backward = [&](long long hi) {
+            for (long long i = hi; i >= 0; --i) {
+                const auto & excl = dag.exclude_succ[i];
+                const auto & incl = dag.include_succ[i];
+                const auto & next_bwd = bwd[i + 1];
+                for (size_t p = 0; p < bwd[i].size(); ++p) {
+                    uint8_t reachable = 0;
+                    if (can_be_notb[i] && excl[p] >= 0 && next_bwd[excl[p]])
+                        reachable = 1;
+                    else if (can_be_b[i] && incl[p] >= 0 && next_bwd[incl[p]])
+                        reachable = 1;
+                    bwd[i][p] = reachable;
+                }
+            }
+        };
+
+        if (! scratch.warm) {
+            // First wake for this clone: full build. Layer 0 is exactly {0},
+            // always reachable; fwd was zero-initialised in prepare().
+            if (! dag.nodes_at[0].empty())
+                fwd[0][0] = 1;
+            recompute_forward(0);
+            for (size_t p = 0; p < bwd[n].size(); ++p)
+                bwd[n][p] = fwd[n][p];
+            recompute_backward(static_cast<long long>(n) - 1);
+            scratch.warm = true;
+        }
+        else if (any_change) {
+            // Forward is valid up to and including first_change; rebuild the
+            // rest. Snapshot the terminal layer first so we can tell whether
+            // the backward pass has to restart from n or only from last_change.
+            std::copy(fwd[n].begin(), fwd[n].end(), scratch.old_fwd_n.begin());
+            recompute_forward(first_change);
+            if (! std::equal(fwd[n].begin(), fwd[n].end(), scratch.old_fwd_n.begin())) {
+                for (size_t p = 0; p < bwd[n].size(); ++p)
+                    bwd[n][p] = fwd[n][p];
+                recompute_backward(static_cast<long long>(n) - 1);
+            }
+            else {
+                // Terminals unchanged, so bwd[last_change+1 .. n] is still
+                // valid (those layers' edges did not change either).
+                recompute_backward(static_cast<long long>(last_change));
+            }
+        }
+        else {
+            // Nothing this bin depends on changed since the last sweep: the
+            // cached alive DAG — and hence every prune decision — is identical,
+            // and those prunes were already drawn. Skip the bin entirely.
+            return;
+        }
+
+        for (size_t i = 0; i < n; ++i) {
+            scratch.prev_can_be_b[i] = can_be_b[i];
+            scratch.prev_can_be_notb[i] = can_be_notb[i];
         }
 
         // Prune items[i] != b when the "include" branch has no support: no
@@ -1077,6 +1143,10 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
             }
             sc.can_be_b.assign(_items.size(), char{0});
             sc.can_be_notb.assign(_items.size(), char{0});
+            sc.prev_can_be_b.assign(_items.size(), char{0});
+            sc.prev_can_be_notb.assign(_items.size(), char{0});
+            sc.old_fwd_n.assign(dag.nodes_at.back().size(), uint8_t{0});
+            sc.warm = false;
 
             _bridge->dags.push_back(move(dag));
         }
