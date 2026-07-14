@@ -343,11 +343,11 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                 array_has_nonconstants = array_has_nonconstants, scope_has_aliasing = scope_has_aliasing,
                 owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 // for each index variable, update it to only contain values where
-                // there's at least one supporting option. result_var's domain is
-                // not modified by anything inside the loop body (the only infer_*
-                // calls are on index_vars[fixed_dim]), so the looking_for set is
-                // constant across iterations and only needs computing once.
-                auto looking_for = state.copy_of_values(result_var);
+                // there's at least one supporting option. The support tests below
+                // only ask "is this value / this array var's domain within
+                // result_var's domain", which the non-copying State primitives
+                // (in_domain / domains_intersect) answer directly — so we avoid
+                // copying result_var's whole domain on every wake (issue #515).
                 // explored_vars only feeds the reason; building it is a per-test_val
                 // (no-SBO) allocation, so skip it when no reason will be read.
                 auto want_reason = inference.want_reasons();
@@ -367,7 +367,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                     // Constant array: test the value directly, skipping the
                                     // IntegerVariableID construction and the State round-trip.
                                     auto value = get_array_value<dimensions_>(elem, *array);
-                                    if (looking_for.contains(value))
+                                    if (state.in_domain(result_var, value))
                                         return true;
                                 }
                                 else {
@@ -375,7 +375,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                     if (want_reason && array_has_nonconstants)
                                         explored_vars.push_back(array_var);
 
-                                    if (state.domain_intersects_with(array_var, looking_for))
+                                    if (state.domains_intersect(array_var, result_var))
                                         return true;
                                 }
                             }
@@ -608,7 +608,18 @@ auto NDimensionalElement<EntryType_, dimensions_>::install_propagators_impl(Prop
                                 auto array_var = get_array_var<dimensions_>(elem, *array);
                                 if (array_has_nonconstants)
                                     considered_vars.push_back(array_var);
-                                state.for_each_value_immutable(array_var, [&](Integer v) { still_to_find_support_for.erase(v); });
+                                // Subtract array_var's domain from the still-unsupported
+                                // set. When that domain is a single contiguous run (the
+                                // common case) this is one erase_range rather than one
+                                // erase per value — the dominant cost of the GAC support
+                                // sweep (issue #515). A holey domain must still go value
+                                // by value: erase_range would also drop values in the
+                                // holes, which this array entry does not support.
+                                auto [lo, hi] = state.bounds(array_var);
+                                if (state.domain_size(array_var) == hi - lo + 1_i)
+                                    still_to_find_support_for.erase_range(lo, hi);
+                                else
+                                    state.for_each_value_immutable(array_var, [&](Integer v) { still_to_find_support_for.erase(v); });
                             }
                         }
                         else {
