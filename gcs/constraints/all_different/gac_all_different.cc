@@ -56,6 +56,7 @@ using std::variant;
 using std::vector;
 using std::visit;
 using std::ranges::adjacent_find;
+using std::ranges::minmax_element;
 using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
@@ -105,6 +106,17 @@ namespace gcs::innards
         std::vector<std::pair<Left, Right>> edges;
         std::vector<uint8_t> left_covered, right_covered;
         std::vector<std::optional<Right>> matching;
+
+        // value -> index-into-vals lookup (plus one, with zero meaning not a
+        // value of this constraint), dense over [val_lookup_min, val_lookup_min
+        // + size). Built on the first wake -- vals is fixed for an installed
+        // propagator -- and left empty when the value range is too sparse for
+        // a dense table, in which case edge building falls back to probing
+        // every (var, val) pair with in_domain.
+        bool val_lookup_initialised = false;
+        Integer val_lookup_min{0};
+        std::vector<uint32_t> val_to_idx_plus_one;
+        std::vector<uint8_t> vals_in_domain;
 
         // augmenting-path search inside build_matching
         std::vector<uint8_t> reached_on_the_left, reached_on_the_right;
@@ -558,10 +570,57 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     auto & edges = scratch.edges;
     edges.clear();
 
-    for (const auto & [var_idx, var] : enumerate(vars))
-        for (const auto & [val_idx, val] : enumerate(vals))
-            if (state.in_domain(var, val))
-                edges.emplace_back(Left{var_idx}, Right{val_idx});
+    if (! scratch.val_lookup_initialised) {
+        // vals is fixed for an installed propagator, so build the value ->
+        // index lookup once. The sweep pays a fixed per-variable cost (bitmap
+        // reset, domain iteration, bitmap scan) to avoid a vals.size()
+        // in_domain probe per variable, so it only wins when vals is wide
+        // enough: measured 2% whole-program faster at 33 values (langford 11)
+        // but 1% slower at 10 values (QWH quasigroup7), hence the 32 cutoff.
+        // A dense table also only makes sense if the values aren't too spread
+        // out; in either failure case we stay with the probe loop below.
+        scratch.val_lookup_initialised = true;
+        if (vals.size() >= 32) {
+            auto [min_it, max_it] = minmax_element(vals);
+            auto span = (*max_it - *min_it).as_index() + 1;
+            if (span <= 64 * vals.size() + 1024) {
+                scratch.val_lookup_min = *min_it;
+                scratch.val_to_idx_plus_one.assign(span, 0);
+                for (const auto & [val_idx, val] : enumerate(vals))
+                    scratch.val_to_idx_plus_one[(val - *min_it).as_index()] = val_idx + 1;
+            }
+        }
+    }
+
+    if (! scratch.val_to_idx_plus_one.empty()) {
+        // one sweep over each variable's actual domain marks which vals are
+        // present, then edges are emitted in val-index order: the same edges
+        // in the same order as the probe loop below, without paying a
+        // vals.size() in_domain probe per variable. Domain values that aren't
+        // in vals (all_different_except's excluded values) mark nothing.
+        const auto min_val = scratch.val_lookup_min;
+        const auto span = scratch.val_to_idx_plus_one.size();
+        auto & vals_in_domain = scratch.vals_in_domain;
+        for (const auto & [var_idx, var] : enumerate(vars)) {
+            vals_in_domain.assign(vals.size(), 0);
+            state.for_each_value_immutable(var, [&](Integer val) -> void {
+                if (val < min_val)
+                    return;
+                if (auto offset = (val - min_val).as_index(); offset < span)
+                    if (auto val_idx_plus_one = scratch.val_to_idx_plus_one[offset]; 0 != val_idx_plus_one)
+                        vals_in_domain[val_idx_plus_one - 1] = 1;
+            });
+            for (vector<Integer>::size_type val_idx = 0; val_idx != vals.size(); ++val_idx)
+                if (vals_in_domain[val_idx])
+                    edges.emplace_back(Left{var_idx}, Right{val_idx});
+        }
+    }
+    else {
+        for (const auto & [var_idx, var] : enumerate(vars))
+            for (const auto & [val_idx, val] : enumerate(vals))
+                if (state.in_domain(var, val))
+                    edges.emplace_back(Left{var_idx}, Right{val_idx});
+    }
 
     // Add a private phantom right-vertex per variable that has any excluded
     // value still in its current domain. The phantom edge represents "this
