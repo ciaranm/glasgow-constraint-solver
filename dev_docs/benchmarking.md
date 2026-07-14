@@ -18,19 +18,25 @@ release`; binaries land in `build/`.
 
 | Benchmark               | Command                                       | Approx wall time |
 |-------------------------|-----------------------------------------------|------------------|
-| `magic_series_300`      | `./build/magic_series --size=300`             | ~6 s             |
-| `qap_12`                | `./build/qap --size=12`                       | ~7 s             |
-| `langford_11`           | `./build/langford --size=11 --stats`          | ~12 s            |
-| `n_queens_14_all`       | `./build/n_queens --size=14 --all`            | ~18 s            |
-| `ortho_latin_6_all`     | `./build/ortho_latin --size=6 --all --stats`  | ~20 s            |
-| `magic_square_5`        | `./build/magic_square --size=5`               | ~32 s            |
-| `tsp_default`           | `./build/tsp`                                 | ~50 s            |
-| `n_queens_88`           | `./build/n_queens --size=88`                  | ~5 min           |
+| `qap_12`                | `./build/qap --size=12`                       | ~1.5 s           |
+| `magic_series_300`      | `./build/magic_series --size=300`             | ~5 s             |
+| `langford_11`           | `./build/langford --size=11 --stats`          | ~8 s             |
+| `tsp_default`           | `./build/tsp`                                 | ~10 s            |
+| `n_queens_14_all`       | `./build/n_queens --size=14 --all`            | ~12 s            |
+| `magic_square_5`        | `./build/magic_square --size=5`               | ~18 s            |
+| `ortho_latin_6_all`     | `./build/ortho_latin --size=6 --all --stats`  | ~23 s            |
+| `n_queens_88`           | `./build/n_queens --size=88`                  | ~3.5 min         |
 
-The first four cover under-30 s workloads that are quick to iterate on. The
-last four (`ortho_latin` onwards) push out further, with `n_queens_88` being
-the long pole — keep it in the set even though it dominates total runtime,
-because it is the only one that exercises a large search tree at scale.
+Wall times re-measured on the dev VM (2026-07); they are much lower than in
+earlier revisions of this doc thanks to accumulated propagation/search work
+(`qap` and `tsp` are ~4–5× faster than when the set was first curated).
+Absolute numbers are machine-dependent — see Reproducibility caveats — so
+treat them as rough ranges, not a fixed baseline.
+
+Every benchmark except `n_queens_88` now finishes in well under half a minute,
+so they are quick to iterate on. `n_queens_88` is the long pole — keep it in
+the set even though it dominates total runtime, because it is the only one
+that exercises a large search tree at scale.
 
 `magic_series` and `magic_square` are worth keeping for their
 linear-arithmetic-heavy propagation, which the others don't exercise.
@@ -125,8 +131,8 @@ bench n_queens_14_all    "n_queens --size=14 --all"
 bench ortho_latin_6_all  "ortho_latin --size=6 --all --stats"
 ```
 
-Total wall time for the full sweep at 3 trials per build is ~50 minutes,
-dominated by `n_queens_88` (~30 minutes alone).
+Total wall time for the full sweep at 3 trials per build is ~30 minutes,
+dominated by `n_queens_88` (~20 minutes alone).
 
 ## What to capture
 
