@@ -1228,6 +1228,18 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
         });
     }
 
+    // The Stage 3 reason ranges over a fixed variable scope, so build it once
+    // here rather than reconstructing it — and re-copying the scope vector into
+    // a fresh shared_ptr — on every wake. The default (per-call) strategy
+    // reasons over the item variables alone; the upfront strategy additionally
+    // needs the load variables in the variable-load form, otherwise the
+    // cap-exceeded / load-bound / interior-hole ~S lines aren't sound under
+    // their reasons (for constant-cap the cap is static, so items suffice).
+    vector<IntegerVariableID> stage3_reason_vars = _items;
+    if (_upfront_proof && _have_loads)
+        stage3_reason_vars.insert(stage3_reason_vars.end(), _loads.begin(), _loads.end());
+    auto stage3_reason = generic_reason(stage3_reason_vars);
+
     // Stage 2 (per-bin bounds) always runs. Stage 3 (per-bin DAG sweep) only
     // runs when ! bounds_only. Both share state through `state`; Stage 3 sees
     // the bounds Stage 2 derived. The Stage 3 proof strategy is chosen by
@@ -1236,34 +1248,19 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [items = _items, sizes = _sizes, loads = _loads, capacities = _capacities, have_loads = _have_loads, bounds_only = _bounds_only,
-            bridge = _bridge, dead_cache_handle = _dead_cache_idx, upfront = _upfront_proof,
+            bridge = _bridge, dead_cache_handle = _dead_cache_idx, upfront = _upfront_proof, reason = move(stage3_reason),
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             run_stage2(state, inference, logger, items, sizes, loads, capacities, have_loads, owner);
 
             if (! bounds_only && bridge) {
                 auto num_bins = have_loads ? loads.size() : capacities.size();
                 if (upfront) {
-                    // Reason has to include the load variables when variable-load
-                    // form is in use, otherwise the cap-exceeded / load-bound /
-                    // interior-hole ~S lines aren't sound under their reasons.
-                    // For constant-cap, items alone suffice (the cap is static).
-                    vector<IntegerVariableID> reason_vars;
-                    reason_vars.reserve(items.size() + (have_loads ? loads.size() : 0));
-                    reason_vars.insert(reason_vars.end(), items.begin(), items.end());
-                    if (have_loads)
-                        reason_vars.insert(reason_vars.end(), loads.begin(), loads.end());
-                    auto reason = generic_reason(reason_vars);
                     auto & cache = any_cast<DeadCache &>(state.get_constraint_state(*dead_cache_handle));
                     for (size_t b = 0; b < num_bins; ++b)
                         propagate_bin(state, inference, logger, items, sizes, have_loads, loads, capacities, b, bridge->dags[b], bridge->flags[b],
                             bridge->opb_lines[b], cache, reason, owner);
                 }
                 else {
-                    // Default per-call strategy: item-var pruning only; the
-                    // load bounds are handled by Stage 2. Reason is the item
-                    // variables (the bare RUP prune closes through the Top
-                    // flag definitions + the per-bin OPB equation).
-                    auto reason = generic_reason(items);
                     for (size_t b = 0; b < num_bins; ++b)
                         run_stage3_for_bin(state, inference, logger, items, bridge->dags[b], bridge->stage3_scratch[b], b, reason, owner);
                 }
