@@ -801,14 +801,7 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
 
     // we have a matching that uses every variable. however, some edges may
     // not occur in any maximum cardinality matching, and we can delete these.
-    // The directed matching graph is implicit in edges + the matching; only
-    // the unmatched value -> variables transpose is materialised, for the
-    // backwards used-edge sweep, along with value -> matched variable.
-    auto & edges_in_to_value = scratch.edges_in_to_value;
-    clear_inners_to_size(edges_in_to_value, n_right);
-    for (auto & [f, t] : edges)
-        if (matching[f.offset] != t)
-            edges_in_to_value[t.offset].push_back(f);
+    // The directed matching graph is implicit in edges + the matching.
 
     // now we need to find strongly connected components...
     const auto number_of_components = find_strongly_connected_components(vars.size(), vars.size() + n_right, scratch);
@@ -827,8 +820,19 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     // for each unmatched vertex, bring in everything that could be updated
     // to take it. Phantom rights participate too (when their owner is
     // matched to a real value, the phantom is unmatched and its presence
-    // here marks the owner's edges as redirectable).
-    {
+    // here marks the owner's edges as redirectable). Every variable is
+    // matched here, so unmatched vertices exist only when there are more
+    // right vertices than variables: a square constraint (a permutation --
+    // latin square rows, inverse, and the like) skips the whole sweep,
+    // including building the value -> unmatched-variables transpose it
+    // explores backwards over.
+    if (n_right != vars.size()) {
+        auto & edges_in_to_value = scratch.edges_in_to_value;
+        clear_inners_to_size(edges_in_to_value, n_right);
+        for (auto & [f, t] : edges)
+            if (matching[f.offset] != t)
+                edges_in_to_value[t.offset].push_back(f);
+
         auto & to_explore = scratch.to_explore;
         auto & in_to_explore = scratch.in_to_explore;
         auto & explored = scratch.explored;
@@ -892,15 +896,12 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         }
     }
 
-    // every edge that starts and ends in the same component is also used
-    // (skipping phantom edges, which never appear in used_edges)
-    for (auto & [f, t] : edges)
-        if (t.offset < vals.size() && components[vertex_to_offset(vars, vals, f)] == components[vertex_to_offset(vars, vals, t)])
-            used_edges[used_edge_idx(f.offset, t.offset)] = 1;
-
-    // anything left can be deleted. need to do all of these together if we're doing
-    // justifications, to avoid having to figure out an ordering for nested Hall sets.
-    // Phantom edges are skipped: they're never deletable.
+    // anything left can be deleted: an edge survives if it is in the matching,
+    // was marked by the unmatched sweep, or starts and ends in the same
+    // component (checked inline rather than via a separate marking pass over
+    // the edges). Deletions must be batched by SCC so the justifications
+    // don't have to order nested Hall sets; phantom edges are skipped, they
+    // are never deletable.
     auto & deletions_by_scc = scratch.deletions_by_scc;
     auto & representatives_for_scc = scratch.representatives_for_scc;
     clear_inners_to_size(deletions_by_scc, number_of_components);
@@ -911,6 +912,8 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         if (used_edges[used_edge_idx(delete_var_name.offset, delete_value.offset)])
             continue;
         auto scc = components[vertex_to_offset(vars, vals, delete_value)];
+        if (scc == components[vertex_to_offset(vars, vals, delete_var_name)])
+            continue;
         deletions_by_scc[scc].emplace_back(vars[delete_var_name.offset] != vals[delete_value.offset]);
         representatives_for_scc[scc] = delete_value;
     }
