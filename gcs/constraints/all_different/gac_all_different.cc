@@ -167,11 +167,14 @@ namespace
     // or sweep each variable's actual domain and map values through a dense
     // value -> index table. The sweep pays a fixed per-variable cost (bitmap
     // reset, domain iteration, bitmap scan) to avoid a vals.size() in_domain
-    // probe per variable, so it only wins when vals is wide enough:
-    // interleaved measurement showed it 2% faster whole-program at 33 values
-    // (langford --size=11) but 1% slower at 10 values (QWH quasigroup7),
-    // hence this cutoff between them.
-    constexpr std::size_t min_vals_for_domain_sweep = 32;
+    // probe per variable, so it only wins when vals is wide enough. Measured,
+    // interleaved, whole-program: 1% slower at 10 values (QWH quasigroup7 axiom
+    // instances), but 16% faster at 30 values (order-30 balanced latin square
+    // completion, where the edge build was 28% of the profile and the sweep
+    // cut its cycles by 37%) and 2% faster at 33 (langford --size=11) -- so
+    // the crossover is somewhere in 11..29, and this cutoff takes the widest
+    // slice of the win that the measurements support.
+    constexpr std::size_t min_vals_for_domain_sweep = 24;
 
     // The dense table has one slot per value in [min(vals), max(vals)], so it
     // only makes sense if the values aren't too spread out. Allow a fixed
