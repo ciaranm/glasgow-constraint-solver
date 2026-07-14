@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <any>
+#include <cstdint>
 #include <list>
 #include <map>
 #include <optional>
@@ -82,6 +83,32 @@ namespace
         vector<unordered_set<long long>> node_set;
         vector<vector<long long>> phantoms_at;
         vector<unordered_set<long long>> phantom_set;
+
+        // Precomputed static DAG edges for the per-call sweep, indexed by
+        // layer i in [0, n) and node position p within nodes_at[i]. The value
+        // is the position of the branch's successor within nodes_at[i+1], or
+        // -1 if that successor is not a DAG node. These are structural (the
+        // DAG never changes across the search); the per-wake sweep gates them
+        // by the current item domains. Computed once, so the hot path needs no
+        // hash lookups at all.
+        //   exclude_succ[i][p]: items[i] != b  (partial load unchanged)
+        //   include_succ[i][p]: items[i] == b  (partial load += sizes[i])
+        vector<vector<int>> exclude_succ;
+        vector<vector<int>> include_succ;
+    };
+
+    // Per-bin scratch for the per-call sweep (run_stage3_for_bin), owned by the
+    // DagBridge and reused across every wake so the hot path allocates nothing
+    // after warm-up. fwd/bwd are position-indexed reachability bitmaps parallel
+    // to PerBinDag::nodes_at; can_be_b/can_be_notb hold the current per-item
+    // admissibility. Each search gets its own constraint clone (and hence its
+    // own bridge), so no synchronisation is needed even across threads.
+    struct Stage3Scratch
+    {
+        vector<vector<uint8_t>> fwd;
+        vector<vector<uint8_t>> bwd;
+        vector<char> can_be_b;
+        vector<char> can_be_notb;
     };
 
     struct PerBinCoordFlags
@@ -175,6 +202,28 @@ namespace
         for (size_t i = 0; i <= n; ++i) {
             dag.nodes_at[i].assign(fwd[i].begin(), fwd[i].end());
             dag.node_set[i].insert(dag.nodes_at[i].begin(), dag.nodes_at[i].end());
+        }
+
+        // Precompute the static successor-position edges used by the per-call
+        // sweep. nodes_at is sorted, so a node's position in the next layer is
+        // a binary search; -1 marks "successor is not a DAG node".
+        auto pos_in = [](const vector<long long> & sorted, long long w) -> int {
+            auto it = std::lower_bound(sorted.begin(), sorted.end(), w);
+            if (it != sorted.end() && *it == w)
+                return static_cast<int>(it - sorted.begin());
+            return -1;
+        };
+        dag.exclude_succ.assign(n, {});
+        dag.include_succ.assign(n, {});
+        for (size_t i = 0; i < n; ++i) {
+            auto sz = sizes[i].raw_value;
+            dag.exclude_succ[i].resize(dag.nodes_at[i].size());
+            dag.include_succ[i].resize(dag.nodes_at[i].size());
+            for (size_t p = 0; p < dag.nodes_at[i].size(); ++p) {
+                auto w = dag.nodes_at[i][p];
+                dag.exclude_succ[i][p] = pos_in(dag.nodes_at[i + 1], w);
+                dag.include_succ[i][p] = pos_in(dag.nodes_at[i + 1], w + sz);
+            }
         }
         return dag;
     }
@@ -755,67 +804,79 @@ namespace
     // dev_docs/bin-packing.md); the upfront alternative (propagate_bin) is
     // the opt-in enabled by upfront_proof=true.
     auto run_stage3_for_bin(const State & state, auto & inference, ProofLogger * logger, const vector<IntegerVariableID> & items,
-        const vector<Integer> & sizes, const PerBinDag & dag, size_t b, const Reason & reason, const ConstraintID & owner) -> void
+        const PerBinDag & dag, Stage3Scratch & scratch, size_t b, const Reason & reason, const ConstraintID & owner) -> void
     {
         auto n = items.size();
         auto bin_idx = Integer{static_cast<long long>(b)};
 
-        vector<bool> can_be_b(n), can_be_notb(n);
+        auto & can_be_b = scratch.can_be_b;
+        auto & can_be_notb = scratch.can_be_notb;
         for (size_t i = 0; i < n; ++i) {
-            can_be_b[i] = state.in_domain(items[i], bin_idx);
+            can_be_b[i] = static_cast<char>(state.in_domain(items[i], bin_idx));
             auto v = state.optional_single_value(items[i]);
-            can_be_notb[i] = ! (v && *v == bin_idx);
+            can_be_notb[i] = static_cast<char>(! (v && *v == bin_idx));
         }
 
-        // Forward reachability under current domains, restricted to static DAG.
-        vector<unordered_set<long long>> fwd(n + 1);
-        if (dag.node_set[0].contains(0))
-            fwd[0].insert(0);
+        auto & fwd = scratch.fwd;
+        auto & bwd = scratch.bwd;
+
+        // Forward reachability under current domains, restricted to the static
+        // DAG, over position-indexed bitmaps. fwd starts all-zero; layer 0 has
+        // exactly node 0 (build_fwd_dag seeds it), which is always reachable.
+        for (auto & layer : fwd)
+            std::fill(layer.begin(), layer.end(), uint8_t{0});
+        if (! dag.nodes_at[0].empty())
+            fwd[0][0] = 1;
         for (size_t i = 0; i < n; ++i) {
-            for (auto w : fwd[i]) {
-                if (can_be_notb[i] && dag.node_set[i + 1].contains(w))
-                    fwd[i + 1].insert(w);
-                if (can_be_b[i]) {
-                    auto w2 = w + sizes[i].raw_value;
-                    if (dag.node_set[i + 1].contains(w2))
-                        fwd[i + 1].insert(w2);
-                }
+            const auto & excl = dag.exclude_succ[i];
+            const auto & incl = dag.include_succ[i];
+            auto & next_layer = fwd[i + 1];
+            for (size_t p = 0; p < fwd[i].size(); ++p) {
+                if (! fwd[i][p])
+                    continue;
+                if (can_be_notb[i] && excl[p] >= 0)
+                    next_layer[excl[p]] = 1;
+                if (can_be_b[i] && incl[p] >= 0)
+                    next_layer[incl[p]] = 1;
             }
         }
 
-        // Backward reachability from accepting terminals (the layer-n nodes
-        // already encode the acceptance predicate via static reduction).
-        vector<unordered_set<long long>> bwd(n + 1);
-        for (auto w : dag.nodes_at[n])
-            if (fwd[n].contains(w))
-                bwd[n].insert(w);
+        // Backward reachability. Layer n's accepting terminals are the
+        // forward-reachable layer-n nodes (static reduction already encodes
+        // acceptance). A node at layer i is backward-reachable if some
+        // admissible branch lands on a backward-reachable successor. Every
+        // cell is overwritten, so no pre-zeroing is needed.
+        for (size_t p = 0; p < bwd[n].size(); ++p)
+            bwd[n][p] = fwd[n][p];
         for (long long i = static_cast<long long>(n) - 1; i >= 0; --i) {
-            for (auto w : bwd[i + 1]) {
-                if (can_be_notb[i] && dag.node_set[i].contains(w))
-                    bwd[i].insert(w);
-                if (can_be_b[i]) {
-                    auto w_prev = w - sizes[i].raw_value;
-                    if (dag.node_set[i].contains(w_prev))
-                        bwd[i].insert(w_prev);
-                }
+            const auto & excl = dag.exclude_succ[i];
+            const auto & incl = dag.include_succ[i];
+            const auto & next_bwd = bwd[i + 1];
+            for (size_t p = 0; p < bwd[i].size(); ++p) {
+                uint8_t reachable = 0;
+                if (can_be_notb[i] && excl[p] >= 0 && next_bwd[excl[p]])
+                    reachable = 1;
+                else if (can_be_b[i] && incl[p] >= 0 && next_bwd[incl[p]])
+                    reachable = 1;
+                bwd[i][p] = reachable;
             }
         }
 
-        // Alive = forward ∩ backward.
-        vector<unordered_set<long long>> alive(n + 1);
-        for (size_t i = 0; i <= n; ++i)
-            for (auto w : fwd[i])
-                if (bwd[i].contains(w))
-                    alive[i].insert(w);
-
-        // Prune items[i] != b when no support exists in the alive DAG.
+        // Prune items[i] != b when the "include" branch has no support: no
+        // alive node (fwd ∩ bwd) at layer i whose include-successor is also
+        // alive at layer i+1.
         for (size_t i = 0; i < n; ++i) {
             if (! can_be_b[i])
                 continue;
+            const auto & incl = dag.include_succ[i];
+            const auto & next_fwd = fwd[i + 1];
+            const auto & next_bwd = bwd[i + 1];
             bool supported = false;
-            for (auto w : alive[i]) {
-                auto w2 = w + sizes[i].raw_value;
-                if (alive[i + 1].contains(w2)) {
+            for (size_t p = 0; p < fwd[i].size(); ++p) {
+                if (! (fwd[i][p] && bwd[i][p]))
+                    continue;
+                auto q = incl[p];
+                if (q >= 0 && next_fwd[q] && next_bwd[q]) {
                     supported = true;
                     break;
                 }
@@ -830,21 +891,31 @@ namespace
         const ConstraintID & owner) -> void
     {
         auto num_bins = have_loads ? loads.size() : capacities.size();
+        // The reason literal lists are only consumed by a reason-materialising
+        // (proof-logging) tracker; off that path skip building them entirely.
+        // still_possible drives the inference logic, so it is always built, but
+        // reused across bins to keep the per-wake allocation count down.
+        const bool need_reasons = inference.want_reasons();
+        ReasonLiterals forced_reason, excluded_reason;
+        vector<size_t> still_possible;
         for (size_t b = 0; b < num_bins; ++b) {
             auto bin_idx = Integer(static_cast<long long>(b));
 
-            ReasonLiterals forced_reason, excluded_reason;
+            forced_reason.clear();
+            excluded_reason.clear();
+            still_possible.clear();
             Integer floor = 0_i, ceiling = 0_i;
-            vector<size_t> still_possible;
             for (size_t i = 0; i < items.size(); ++i) {
                 auto v = state.optional_single_value(items[i]);
                 if (v && *v == bin_idx) {
                     floor += sizes[i];
                     ceiling += sizes[i];
-                    forced_reason.emplace_back(items[i] == bin_idx);
+                    if (need_reasons)
+                        forced_reason.emplace_back(items[i] == bin_idx);
                 }
                 else if (! state.in_domain(items[i], bin_idx)) {
-                    excluded_reason.emplace_back(items[i] != bin_idx);
+                    if (need_reasons)
+                        excluded_reason.emplace_back(items[i] != bin_idx);
                 }
                 else {
                     still_possible.push_back(i);
@@ -900,6 +971,10 @@ struct BinPacking::DagBridge
     //   variable-load: (sum <= load, sum >= load)
     //   constant-cap:  (sum <= cap,  nullopt)
     vector<pair<optional<ProofLine>, optional<ProofLine>>> opb_lines;
+    // Per-bin reusable scratch for the per-call sweep, sized once in prepare()
+    // to match each bin's DAG so the hot path never allocates. The bridge is
+    // per-constraint-clone, so a search owns its scratch exclusively.
+    vector<Stage3Scratch> stage3_scratch;
 };
 
 BinPacking::BinPacking(vector<IntegerVariableID> items, vector<Integer> sizes, vector<IntegerVariableID> loads) :
@@ -985,10 +1060,24 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
         _bridge->dags.reserve(num_bins);
         _bridge->flags.assign(num_bins, {});
         _bridge->opb_lines.assign(num_bins, {nullopt, nullopt});
+        _bridge->stage3_scratch.assign(num_bins, {});
         for (size_t b = 0; b < num_bins; ++b) {
             auto cap = per_bin_cap(initial_state, _sizes, _have_loads, _loads, _capacities, b);
             auto dag = build_fwd_dag(initial_state, _items, _sizes, b, cap);
             compute_phantoms(dag, initial_state, _items, _sizes, b);
+
+            // Size the per-call scratch to this bin's DAG so the hot path only
+            // fills existing buffers, never grows them.
+            auto & sc = _bridge->stage3_scratch[b];
+            sc.fwd.resize(dag.nodes_at.size());
+            sc.bwd.resize(dag.nodes_at.size());
+            for (size_t i = 0; i < dag.nodes_at.size(); ++i) {
+                sc.fwd[i].assign(dag.nodes_at[i].size(), uint8_t{0});
+                sc.bwd[i].assign(dag.nodes_at[i].size(), uint8_t{0});
+            }
+            sc.can_be_b.assign(_items.size(), char{0});
+            sc.can_be_notb.assign(_items.size(), char{0});
+
             _bridge->dags.push_back(move(dag));
         }
 
@@ -1106,7 +1195,7 @@ auto BinPacking::install_propagators(Propagators & propagators) -> void
                     // flag definitions + the per-bin OPB equation).
                     auto reason = generic_reason(items);
                     for (size_t b = 0; b < num_bins; ++b)
-                        run_stage3_for_bin(state, inference, logger, items, sizes, bridge->dags[b], b, reason, owner);
+                        run_stage3_for_bin(state, inference, logger, items, bridge->dags[b], bridge->stage3_scratch[b], b, reason, owner);
                 }
             }
 
