@@ -166,7 +166,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [x = _x, y = _y, x_start = _x_start, y_start = _y_start, x_values = move(x_values), x_value_am1s = _x_value_am1s,
-            constraint_id = constraint_id(),
+            scratch = make_gac_all_different_scratch(), constraint_id = constraint_id(),
             owner = constraint_id()](const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
             // Channel x<->y and GAC-alldifferent on x feed each other: a GAC
             // removal on x can leave a y value with no back-support (more
@@ -189,7 +189,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
                                 ExplicitReason{ReasonLiterals{x.at((y_i_value - x_start).as_index()) != Integer(i) + y_start}});
                 }
 
-                propagate_gac_all_different(constraint_id, x, x_values, vector<Integer>{}, *x_value_am1s.get(), state, inf, logger);
+                propagate_gac_all_different(constraint_id, x, x_values, vector<Integer>{}, *x_value_am1s.get(), *scratch, state, inf, logger);
             } while (inf.did_anything_since_last_call_inside_propagator());
 
             return PropagatorState::EnableButIdempotent;
