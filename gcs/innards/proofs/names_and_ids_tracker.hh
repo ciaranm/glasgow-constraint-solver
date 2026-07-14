@@ -125,6 +125,15 @@ namespace gcs::innards
         // emit the at-least-one clause over the top-level partition.
         auto init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void;
 
+        // Declare (first time, even if empty) or extend the @@v[...] group for a
+        // variable's encoding closure, emitting a grpa line for any members not
+        // yet announced, and return the @@v[...] group token. Group hints only.
+        auto flush_v_group(const SimpleOrProofOnlyIntegerVariableID &) -> ProofLine;
+
+        // Declare/extend the @@c[...] group for a constraint's recorded OPB
+        // rows and return its @@c[...] group token. Group hints only.
+        auto ensure_c_group(const ConstraintID &) -> ProofLine;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -397,6 +406,60 @@ namespace gcs::innards
          * Track that an at-least-one constraint exists for a given variable.
          */
         auto track_variable_takes_at_least_one_value(const SimpleOrProofOnlyIntegerVariableID &, ProofLine) -> void;
+
+        /**
+         * \name Constraint-group RUP hints (ProofOptions::emit_rup_group_hints)
+         * \{
+         */
+
+        /**
+         * Are we emitting constraint-group RUP hints?
+         */
+        [[nodiscard]] auto emitting_rup_group_hints() const -> bool;
+
+        /**
+         * Record a proof line as part of a variable's encoding closure (the
+         * @@v[...] group), so a hinted RUP step touching the variable can cite
+         * the whole closure. No-op unless group hints are on.
+         */
+        auto note_rup_hint_line_for(const SimpleOrProofOnlyIntegerVariableID &, const ProofLine &) -> void;
+
+        /**
+         * Note that the OPB rows emitted from now on (until the next call)
+         * belong to the given constraint's defining block (the @@c[...] group).
+         * Called by ProofModel::begin_constraint_block_comment.
+         */
+        auto begin_constraint_block(const ConstraintID &) -> void;
+
+        /**
+         * Record a model OPB row as a member of the current constraint block's
+         * @@c[...] group. Called by ProofModel::advance_constraint_counter.
+         */
+        auto note_constraint_line(const ProofLine &) -> void;
+
+        /**
+         * Record a top-level proof line emitted while the given constraint's
+         * propagator was firing as a member of its @@c[...] group (a cached
+         * lemma it may cite in a later bare-RUP step).
+         */
+        auto note_constraint_cache_line(const ConstraintID &, const ProofLine &) -> void;
+
+        /**
+         * Append a variable's whole recorded encoding closure (recursing into a
+         * view's underlying variable) to the given vector.
+         */
+        auto append_rup_hint_lines_for(const SimpleOrProofOnlyIntegerVariableID &, std::vector<ProofLine> &) -> void;
+
+        /**
+         * The @@cv[...] hint token for a bare-RUP step by constraint \p cid over
+         * the given scope variables (those in its reason and inferred literal).
+         * Declares/extends @@c[cid], @@v[...] for each variable, and @@cv[cid]
+         * (nesting them) as needed, then returns the single @@cv[cid] token to
+         * cite. Group hints must be on and the proof started.
+         */
+        auto cv_group_hint_token(const ConstraintID &, const std::vector<SimpleOrProofOnlyIntegerVariableID> &) -> ProofLine;
+
+        /** \} */
 
         /**
          * Track that a given proof flag exists with this name.

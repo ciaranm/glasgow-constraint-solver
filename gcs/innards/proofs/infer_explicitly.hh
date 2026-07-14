@@ -142,8 +142,16 @@ namespace gcs::innards
         }
         auto t = logger.temporary_proof_level();
         emit_explicit_steps(logger, emit, reason);
-        if (then_rup == ThenRUP::Yes)
+        if (then_rup == ThenRUP::Yes) {
+            // The concluding RUP depends on the temporary steps just emitted, so
+            // it must propagate over the whole database, not a constraint's
+            // @@cv[...] group. Suppress the group hint (constraint-group RUP
+            // hints treat an explicitly justified step as already better hinted).
+            auto saved_constraint = logger.current_constraint();
+            logger.set_current_constraint(std::nullopt);
             logger.infer(lit, JustifyUsingRUP{}, reason);
+            logger.set_current_constraint(saved_constraint);
+        }
         logger.forget_proof_level(t);
     }
 }

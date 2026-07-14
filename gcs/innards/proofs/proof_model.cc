@@ -97,7 +97,12 @@ ProofModel::~ProofModel()
 
 auto ProofModel::advance_constraint_counter() -> ProofLineNumber
 {
-    return ProofLineNumber{++_imp->number_of_constraints.number};
+    auto line = ProofLineNumber{++_imp->number_of_constraints.number};
+    // Attribute this OPB row to the constraint whose block is being written, so
+    // it becomes a member of that constraint's @@c[...] group (no-op unless
+    // constraint-group RUP hints are on).
+    names_and_ids_tracker().note_constraint_line(line);
+    return line;
 }
 
 auto ProofModel::emit_constraint_label(const string & constraint_id, const string & role) -> ProofLineLabel
@@ -109,6 +114,7 @@ auto ProofModel::emit_constraint_label(const string & constraint_id, const strin
 auto ProofModel::begin_constraint_block_comment(const string & constraint_type, const ConstraintID & constraint_id) -> void
 {
     _imp->opb << "* constraint " << constraint_type << ' ' << as_string(constraint_id) << '\n';
+    names_and_ids_tracker().begin_constraint_block(constraint_id);
 }
 
 auto ProofModel::add_constraint(const Literals & lits) -> void
@@ -428,7 +434,8 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
             _imp->opb << "-1 " << names_and_ids_tracker().pb_file_string_for(id == v) << " ";
         }
         _imp->opb << ">= -1 ;\n";
-        advance_constraint_counter();
+        // The at-most-one row is part of this variable's encoding closure.
+        names_and_ids_tracker().note_rup_hint_line_for(id, advance_constraint_counter());
     }
 }
 
@@ -541,7 +548,9 @@ auto ProofModel::set_up_bits_variable_encoding(
     for (auto & [coeff, var] : bits)
         _imp->opb << coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << lower << " ;\n";
-    advance_constraint_counter();
+    // The bit-vector lower/upper bound rows are part of this variable's encoding
+    // closure (they relate its bits to its numeric bounds).
+    names_and_ids_tracker().note_rup_hint_line_for(id, advance_constraint_counter());
 
     // upper bound
     if (labelled)
@@ -549,7 +558,7 @@ auto ProofModel::set_up_bits_variable_encoding(
     for (auto & [coeff, var] : bits)
         _imp->opb << -coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << -upper << " ;\n";
-    advance_constraint_counter();
+    names_and_ids_tracker().note_rup_hint_line_for(id, advance_constraint_counter());
 
     if (_imp->always_use_full_encoding)
         overloaded{

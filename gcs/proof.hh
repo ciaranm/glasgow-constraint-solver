@@ -62,6 +62,16 @@ namespace gcs
         AssertionLevel assertion_level = AssertionLevel::Off;
         bool assertion_level_set_explicitly = false; ///< Was assertion_level set in code (so it overrides the env var)?
 
+        /// Experimental: emit VeriPB constraint-group RUP hints. Each CP
+        /// variable's encoding closure becomes a group @@v[...], each
+        /// constraint's defining OPB rows a group @@c[...], and each
+        /// constraint gets a combined @@cv[...] = @@c[...] plus @@v[...] for
+        /// every variable in its scope. Every bare-RUP propagator step that
+        /// lacks better hinting cites its owning constraint's @@cv[...]. For
+        /// generating benchmark proofs for VeriPB's group/watch-table feature.
+        bool emit_rup_group_hints = false;
+        bool emit_rup_group_hints_set_explicitly = false; ///< Was emit_rup_group_hints set in code (so it overrides the env var)?
+
         /// Write annotated assertions instead of full justifications.
         ProofOptions & set_assertion_level(AssertionLevel a = AssertionLevel::Inferences)
         {
@@ -91,6 +101,14 @@ namespace gcs
         ProofOptions & set_verbose_names(bool v)
         {
             verbose_names = v;
+            return *this;
+        }
+        /// Experimental: emit VeriPB constraint-group RUP hints (see
+        /// emit_rup_group_hints).
+        ProofOptions & set_emit_rup_group_hints(bool g = true)
+        {
+            emit_rup_group_hints = g;
+            emit_rup_group_hints_set_explicitly = true;
             return *this;
         }
     };

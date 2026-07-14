@@ -412,6 +412,12 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                 break;
 
             int propagator_id = _imp->queue[_imp->enqueued_begin++];
+            // Tell the logger which constraint is firing, so a bare-RUP step it
+            // emits can cite that constraint's @@cv[...] group (constraint-group
+            // RUP hints). Cleared after the call so non-propagator lines
+            // (backtrack, solution exclusion) stay hint-free.
+            if (logger)
+                logger->set_current_constraint(_imp->constraint_ids[_imp->propagator_constraint_index[propagator_id]]);
             try {
                 ++_imp->total_propagations;
                 auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
@@ -454,6 +460,8 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                 contradiction = true;
                 ++_imp->contradicting_propagations;
             }
+            if (logger)
+                logger->set_current_constraint(std::nullopt);
 
             if (contradiction || (optional_abort_flag && optional_abort_flag->load()))
                 break;
