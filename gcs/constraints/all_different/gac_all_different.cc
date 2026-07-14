@@ -163,6 +163,25 @@ namespace
     using Left = GacAllDifferentScratch::Left;
     using Right = GacAllDifferentScratch::Right;
 
+    // The edges build can either probe every (var, val) pair with in_domain,
+    // or sweep each variable's actual domain and map values through a dense
+    // value -> index table. The sweep pays a fixed per-variable cost (bitmap
+    // reset, domain iteration, bitmap scan) to avoid a vals.size() in_domain
+    // probe per variable, so it only wins when vals is wide enough:
+    // interleaved measurement showed it 2% faster whole-program at 33 values
+    // (langford --size=11) but 1% slower at 10 values (QWH quasigroup7),
+    // hence this cutoff between them.
+    constexpr std::size_t min_vals_for_domain_sweep = 32;
+
+    // The dense table has one slot per value in [min(vals), max(vals)], so it
+    // only makes sense if the values aren't too spread out. Allow a fixed
+    // number of (mostly-empty) slots per distinct value, plus some slack so
+    // that a small value set spanning a modest range still qualifies. With 4
+    // bytes per slot this also bounds the table's memory at ~256 bytes per
+    // distinct value.
+    constexpr std::size_t dense_value_table_slots_per_value = 64;
+    constexpr std::size_t dense_value_table_slots_slack = 1024;
+
     // Clear (not deallocate) the first n inner vectors, growing the outer
     // vector with fresh empties if this wake needs more than any previous one.
     // Anything past n is stale from an earlier wake and is never read.
@@ -571,19 +590,16 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     edges.clear();
 
     if (! scratch.val_lookup_initialised) {
-        // vals is fixed for an installed propagator, so build the value ->
-        // index lookup once. The sweep pays a fixed per-variable cost (bitmap
-        // reset, domain iteration, bitmap scan) to avoid a vals.size()
-        // in_domain probe per variable, so it only wins when vals is wide
-        // enough: measured 2% whole-program faster at 33 values (langford 11)
-        // but 1% slower at 10 values (QWH quasigroup7), hence the 32 cutoff.
-        // A dense table also only makes sense if the values aren't too spread
-        // out; in either failure case we stay with the probe loop below.
+        // vals is fixed for an installed propagator, so decide once whether
+        // to build the value -> index lookup. If the value set is too narrow
+        // for the sweep to pay off, or too sparse for a dense table (see the
+        // constants for both trade-offs), the lookup stays empty and every
+        // wake takes the probe loop below instead.
         scratch.val_lookup_initialised = true;
-        if (vals.size() >= 32) {
+        if (vals.size() >= min_vals_for_domain_sweep) {
             auto [min_it, max_it] = minmax_element(vals);
             auto span = (*max_it - *min_it).as_index() + 1;
-            if (span <= 64 * vals.size() + 1024) {
+            if (span <= dense_value_table_slots_per_value * vals.size() + dense_value_table_slots_slack) {
                 scratch.val_lookup_min = *min_it;
                 scratch.val_to_idx_plus_one.assign(span, 0);
                 for (const auto & [val_idx, val] : enumerate(vals))
