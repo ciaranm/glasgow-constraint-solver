@@ -261,17 +261,20 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
-    if (argc != 2)
-        throw UnimplementedException{};
-
-    string mode{argv[1]};
-    bool strict;
-    if (mode == "strict")
-        strict = true;
-    else if (mode == "nonstrict")
-        strict = false;
-    else
-        throw UnimplementedException{};
+    // Mode is the first non-flag positional. With no mode given (a manual run
+    // rather than the ctest harness) run every mode.
+    string requested_mode;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (! a.starts_with("--")) {
+            requested_mode = a;
+            break;
+        }
+    }
+    // Keep in sync with the strict/nonstrict dispatch below and the matching
+    // foreach(mode ...) in gcs/CMakeLists.txt.
+    const vector<string> all_modes = {"strict", "nonstrict"};
+    const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     // Each test: { x_ranges, y_ranges, widths, heights }
     vector<tuple<vector<pair<int, int>>, vector<pair<int, int>>, vector<int>, vector<int>>> data = {
@@ -327,39 +330,49 @@ auto main(int argc, char * argv[]) -> int
     for (int k = 0; k < 10; ++k)
         data.push_back(random_instance(3, 3, 3));
 
-    for (bool proofs : {false, true}) {
-        if (proofs && ! can_run_veripb())
-            continue;
-        int idx = 0;
-        for (auto & [xr, yr, w, h] : data)
-            run_disjunctive_2d_test(proofs, mode, strict, "d" + std::to_string(idx++), xr, yr, w, h);
+    for (const auto & mode : modes) {
+        bool strict;
+        if (mode == "strict")
+            strict = true;
+        else if (mode == "nonstrict")
+            strict = false;
+        else
+            throw UnimplementedException{};
 
-        // Two rectangles share an x handle: they may still separate in y.
-        run_dup_disjunctive_2d_test(proofs, mode, strict, {{0, 2}}, {{0, 2}, {0, 2}}, {0, 0}, {2, 2}, {1, 1});
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                continue;
+            int idx = 0;
+            for (auto & [xr, yr, w, h] : data)
+                run_disjunctive_2d_test(proofs, mode, strict, "d" + std::to_string(idx++), xr, yr, w, h);
 
-        // Variable rectangle sizes (rotation-style). {lo, hi} with lo < hi is a
-        // variable size; lo == hi a constant.
-        // Two squares with variable side 1..2.
-        run_disjunctive_2d_var_test(proofs, mode, strict, "sq", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
-        // Rotation: a 1x2 / 2x1 rectangle whose orientation varies (width and
-        // height swap), alongside a fixed unit square.
-        run_disjunctive_2d_var_test(proofs, mode, strict, "rot", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{1, 2}, {1, 1}}, {{1, 2}, {1, 1}});
-        // Mixed: one fixed rectangle, one with variable width only.
-        run_disjunctive_2d_var_test(proofs, mode, strict, "mixed", {{0, 3}, {0, 3}}, {{0, 2}, {0, 2}}, {{2, 2}, {1, 3}}, {{1, 1}, {2, 2}});
-        // Forced overlap: two rectangles pinned to the origin with variable
-        // sizes >= 1 always overlap -> UNSAT, exercising the variable-size
-        // contradiction proof.
-        run_disjunctive_2d_var_test(proofs, mode, strict, "clash", {{0, 0}, {0, 0}}, {{0, 0}, {0, 0}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
-        // Near-clash: small position freedom with variable sizes, forcing both
-        // contradictions and pushes.
-        run_disjunctive_2d_var_test(proofs, mode, strict, "tight", {{0, 1}, {0, 1}}, {{0, 1}, {0, 1}}, {{2, 2}, {1, 2}}, {{2, 2}, {1, 2}});
-        // Wider value ranges so we exercise the end-proxy bit encoding.
-        run_disjunctive_2d_var_test(proofs, mode, strict, "wide", {{0, 4}, {0, 4}}, {{0, 3}, {0, 3}}, {{2, 4}, {1, 3}}, {{1, 3}, {2, 4}});
-        // A possibly-zero variable size (strict: the size==0 rect still respects
-        // the clause; non-strict: it escapes via the zero-size disjunct).
-        run_disjunctive_2d_var_test(proofs, mode, strict, "zero", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{0, 2}, {2, 2}}, {{2, 2}, {1, 2}});
-        // Both rectangles can be zero-area on either axis.
-        run_disjunctive_2d_var_test(proofs, mode, strict, "zero2", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}});
+            // Two rectangles share an x handle: they may still separate in y.
+            run_dup_disjunctive_2d_test(proofs, mode, strict, {{0, 2}}, {{0, 2}, {0, 2}}, {0, 0}, {2, 2}, {1, 1});
+
+            // Variable rectangle sizes (rotation-style). {lo, hi} with lo < hi is a
+            // variable size; lo == hi a constant.
+            // Two squares with variable side 1..2.
+            run_disjunctive_2d_var_test(proofs, mode, strict, "sq", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
+            // Rotation: a 1x2 / 2x1 rectangle whose orientation varies (width and
+            // height swap), alongside a fixed unit square.
+            run_disjunctive_2d_var_test(proofs, mode, strict, "rot", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{1, 2}, {1, 1}}, {{1, 2}, {1, 1}});
+            // Mixed: one fixed rectangle, one with variable width only.
+            run_disjunctive_2d_var_test(proofs, mode, strict, "mixed", {{0, 3}, {0, 3}}, {{0, 2}, {0, 2}}, {{2, 2}, {1, 3}}, {{1, 1}, {2, 2}});
+            // Forced overlap: two rectangles pinned to the origin with variable
+            // sizes >= 1 always overlap -> UNSAT, exercising the variable-size
+            // contradiction proof.
+            run_disjunctive_2d_var_test(proofs, mode, strict, "clash", {{0, 0}, {0, 0}}, {{0, 0}, {0, 0}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
+            // Near-clash: small position freedom with variable sizes, forcing both
+            // contradictions and pushes.
+            run_disjunctive_2d_var_test(proofs, mode, strict, "tight", {{0, 1}, {0, 1}}, {{0, 1}, {0, 1}}, {{2, 2}, {1, 2}}, {{2, 2}, {1, 2}});
+            // Wider value ranges so we exercise the end-proxy bit encoding.
+            run_disjunctive_2d_var_test(proofs, mode, strict, "wide", {{0, 4}, {0, 4}}, {{0, 3}, {0, 3}}, {{2, 4}, {1, 3}}, {{1, 3}, {2, 4}});
+            // A possibly-zero variable size (strict: the size==0 rect still respects
+            // the clause; non-strict: it escapes via the zero-size disjunct).
+            run_disjunctive_2d_var_test(proofs, mode, strict, "zero", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{0, 2}, {2, 2}}, {{2, 2}, {1, 2}});
+            // Both rectangles can be zero-area on either axis.
+            run_disjunctive_2d_var_test(proofs, mode, strict, "zero2", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}});
+        }
     }
 
     return EXIT_SUCCESS;

@@ -281,17 +281,20 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
-    if (argc < 2)
-        throw UnimplementedException{};
-
-    string mode{argv[1]};
-    bool strict;
-    if (mode == "strict")
-        strict = true;
-    else if (mode == "nonstrict")
-        strict = false;
-    else
-        throw UnimplementedException{};
+    // Mode is the first non-flag positional; --view-* flags may follow. With no
+    // mode given (a manual run rather than the ctest harness) run every mode.
+    string requested_mode;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (! a.starts_with("--")) {
+            requested_mode = a;
+            break;
+        }
+    }
+    // Keep in sync with the strict/nonstrict dispatch below and the matching
+    // foreach(mode ...) in gcs/CMakeLists.txt.
+    const vector<string> all_modes = {"strict", "nonstrict"};
+    const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
@@ -417,33 +420,43 @@ auto main(int argc, char * argv[]) -> int
         {{1, 0}, {{0, 2}, {2, 2}}},
     };
 
-    for (bool proofs : {false, true}) {
-        if (proofs && ! can_run_veripb())
-            continue;
-        for (auto & [sr, lens] : data)
-            run_disjunctive_test(proofs, mode, strict, view_cfg, sr, lens);
+    for (const auto & mode : modes) {
+        bool strict;
+        if (mode == "strict")
+            strict = true;
+        else if (mode == "nonstrict")
+            strict = false;
+        else
+            throw UnimplementedException{};
 
-        // Variable-duration cases run in both modes, only when not view-wrapping
-        // (these runners create bare variables), to avoid duplicating coverage
-        // under every wrap.
-        if (run_dup) {
-            for (auto & [sr, ls] : var_data)
-                run_var_disjunctive_test(proofs, mode, strict, sr, ls);
-            for (auto & [cs, ls] : cstart_data)
-                run_const_start_var_len_test(proofs, mode, strict, cs, ls);
-        }
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                continue;
+            for (auto & [sr, lens] : data)
+                run_disjunctive_test(proofs, mode, strict, view_cfg, sr, lens);
 
-        // Dup tests use bare variables (the harness duplicates a handle into
-        // several task positions); only run them when no wrapping is in
-        // effect, to avoid duplicating the bare coverage under every wrap.
-        if (run_dup) {
-            // Two tasks sharing a start var: positive lengths ⇒ UNSAT,
-            // zero lengths ⇒ depends on strict.
-            run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}}, {0, 0}, {2, 2});
-            // {x, x, y} — first two share, third independent.
-            run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}, {0, 3}}, {0, 0, 1}, {1, 1, 2});
-            // Zero-length dup pair — non-strict OK, strict edge case.
-            run_dup_disjunctive_test(proofs, mode, strict, {{0, 2}}, {0, 0}, {0, 0});
+            // Variable-duration cases run in both modes, only when not view-wrapping
+            // (these runners create bare variables), to avoid duplicating coverage
+            // under every wrap.
+            if (run_dup) {
+                for (auto & [sr, ls] : var_data)
+                    run_var_disjunctive_test(proofs, mode, strict, sr, ls);
+                for (auto & [cs, ls] : cstart_data)
+                    run_const_start_var_len_test(proofs, mode, strict, cs, ls);
+            }
+
+            // Dup tests use bare variables (the harness duplicates a handle into
+            // several task positions); only run them when no wrapping is in
+            // effect, to avoid duplicating the bare coverage under every wrap.
+            if (run_dup) {
+                // Two tasks sharing a start var: positive lengths ⇒ UNSAT,
+                // zero lengths ⇒ depends on strict.
+                run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}}, {0, 0}, {2, 2});
+                // {x, x, y} — first two share, third independent.
+                run_dup_disjunctive_test(proofs, mode, strict, {{0, 3}, {0, 3}}, {0, 0, 1}, {1, 1, 2});
+                // Zero-length dup pair — non-strict OK, strict edge case.
+                run_dup_disjunctive_test(proofs, mode, strict, {{0, 2}}, {0, 0}, {0, 0});
+            }
         }
     }
 

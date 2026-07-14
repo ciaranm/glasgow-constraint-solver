@@ -431,8 +431,21 @@ auto run_degenerate_test(bool proofs, const string & mode) -> void
 
 auto main(int argc, char * argv[]) -> int
 {
-    if (argc != 2)
-        throw UnimplementedException{};
+    // Mode is the first non-flag positional. With no mode given (a manual run
+    // rather than the ctest harness) run every mode.
+    string requested_mode;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (! a.starts_with("--")) {
+            requested_mode = a;
+            break;
+        }
+    }
+    // Keep in sync with the mode dispatch below and the matching foreach(mode ...)
+    // in gcs/CMakeLists.txt.
+    const vector<string> all_modes = {"lex_gt", "lex_ge", "lex_lt", "lex_le", "lex_gt_fixed", "lex_ge_fixed", "lex_lt_fixed", "lex_le_fixed",
+        "am1_eq", "am1_in_set", "al1_eq", "al1_in_set", "mixed_same_var", "stacked_unary", "wide_constants", "degenerate"};
+    const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     vector<pair<int, vector<pair<int, int>>>> data = {
         // Length    //Ranges
@@ -444,92 +457,92 @@ auto main(int argc, char * argv[]) -> int
         {5, {{1, 1}, {2, 2}, {3, 3}, {4, 4}, {1, 10}}}  //
     };
 
-    string mode{argv[1]};
+    for (const auto & mode : modes) {
+        // These modes carry their own instances rather than using the
+        // length/ranges table below.
+        if (mode == "mixed_same_var" || mode == "stacked_unary" || mode == "wide_constants" || mode == "degenerate") {
+            for (bool proofs : {false, true}) {
+                if (proofs && ! can_run_veripb())
+                    continue;
+                if (mode == "mixed_same_var")
+                    run_mixed_same_var_test(proofs, mode);
+                else if (mode == "stacked_unary")
+                    run_stacked_unary_test(proofs, mode);
+                else if (mode == "wide_constants")
+                    run_wide_constants_test(proofs, mode);
+                else
+                    run_degenerate_test(proofs, mode);
+            }
+            continue;
+        }
 
-    // These modes carry their own instances rather than using the
-    // length/ranges table below.
-    if (mode == "mixed_same_var" || mode == "stacked_unary" || mode == "wide_constants" || mode == "degenerate") {
         for (bool proofs : {false, true}) {
             if (proofs && ! can_run_veripb())
                 continue;
-            if (mode == "mixed_same_var")
-                run_mixed_same_var_test(proofs, mode);
-            else if (mode == "stacked_unary")
-                run_stacked_unary_test(proofs, mode);
-            else if (mode == "wide_constants")
-                run_wide_constants_test(proofs, mode);
-            else
-                run_degenerate_test(proofs, mode);
-        }
-        return EXIT_SUCCESS;
-    }
-
-    for (bool proofs : {false, true}) {
-        if (proofs && ! can_run_veripb())
-            continue;
-        for (auto & [length, ranges] : data) {
-            if (mode == "lex_gt") {
-                // x > y
-                if (! run_lex_test(proofs, mode, length, ranges, false, false, false))
-                    return EXIT_FAILURE;
+            for (auto & [length, ranges] : data) {
+                if (mode == "lex_gt") {
+                    // x > y
+                    if (! run_lex_test(proofs, mode, length, ranges, false, false, false))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "lex_ge") {
+                    // x >= y
+                    if (! run_lex_test(proofs, mode, length, ranges, false, true, false))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "lex_lt") {
+                    // x < y
+                    if (! run_lex_test(proofs, mode, length, ranges, true, false, false))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "lex_le") {
+                    // x <= y
+                    if (! run_lex_test(proofs, mode, length, ranges, true, true, false))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "lex_gt_fixed") {
+                    // x > [1,..,n]
+                    if (! run_lex_test(proofs, mode, length, ranges, false, false, true))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "lex_ge_fixed") {
+                    // x >= [1,..,n]
+                    if (! run_lex_test(proofs, mode, length, ranges, false, true, true))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "lex_lt_fixed") {
+                    // x < [1,..,n]
+                    if (! run_lex_test(proofs, mode, length, ranges, true, false, true))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "lex_le_fixed") {
+                    // x <= [1,..,n]
+                    if (! run_lex_test(proofs, mode, length, ranges, true, true, true))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "am1_eq") {
+                    // at most one var in x == length
+                    if (! run_at_most_1_test(proofs, mode, length, ranges, false, false))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "am1_in_set") {
+                    // at most one var in x one of {1, length}
+                    if (! run_at_most_1_test(proofs, mode, length, ranges, false, true))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "al1_eq") {
+                    // at least one var in x == length
+                    if (! run_at_most_1_test(proofs, mode, length, ranges, true, false))
+                        return EXIT_FAILURE;
+                }
+                else if (mode == "al1_in_set") {
+                    // at least one var in x one of {1, length}
+                    if (! run_at_most_1_test(proofs, mode, length, ranges, true, true))
+                        return EXIT_FAILURE;
+                }
+                else
+                    throw UnimplementedException{};
             }
-            else if (mode == "lex_ge") {
-                // x >= y
-                if (! run_lex_test(proofs, mode, length, ranges, false, true, false))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "lex_lt") {
-                // x < y
-                if (! run_lex_test(proofs, mode, length, ranges, true, false, false))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "lex_le") {
-                // x <= y
-                if (! run_lex_test(proofs, mode, length, ranges, true, true, false))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "lex_gt_fixed") {
-                // x > [1,..,n]
-                if (! run_lex_test(proofs, mode, length, ranges, false, false, true))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "lex_ge_fixed") {
-                // x >= [1,..,n]
-                if (! run_lex_test(proofs, mode, length, ranges, false, true, true))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "lex_lt_fixed") {
-                // x < [1,..,n]
-                if (! run_lex_test(proofs, mode, length, ranges, true, false, true))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "lex_le_fixed") {
-                // x <= [1,..,n]
-                if (! run_lex_test(proofs, mode, length, ranges, true, true, true))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "am1_eq") {
-                // at most one var in x == length
-                if (! run_at_most_1_test(proofs, mode, length, ranges, false, false))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "am1_in_set") {
-                // at most one var in x one of {1, length}
-                if (! run_at_most_1_test(proofs, mode, length, ranges, false, true))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "al1_eq") {
-                // at least one var in x == length
-                if (! run_at_most_1_test(proofs, mode, length, ranges, true, false))
-                    return EXIT_FAILURE;
-            }
-            else if (mode == "al1_in_set") {
-                // at least one var in x one of {1, length}
-                if (! run_at_most_1_test(proofs, mode, length, ranges, true, true))
-                    return EXIT_FAILURE;
-            }
-            else
-                throw UnimplementedException{};
         }
     }
 

@@ -227,17 +227,20 @@ auto run_dup_reif_binary_comparison_test(
 
 auto main(int argc, char * argv[]) -> int
 {
-    // Mode is the first non-flag positional; --view-* flags may follow.
-    string mode;
+    // Mode is the first non-flag positional; --view-* flags may follow. With no
+    // mode given (a manual run rather than the ctest harness) run every mode.
+    string requested_mode;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (! a.starts_with("--")) {
-            mode = a;
+            requested_mode = a;
             break;
         }
     }
-    if (mode.empty())
-        throw UnimplementedException{};
+    // Keep in sync with the if-chain below and the comparison_constraint_${mode}
+    // foreach in gcs/CMakeLists.txt.
+    const vector<string> all_modes = {"lt", "lt_if", "lt_iff", "le", "le_if", "le_iff", "gt", "gt_if", "gt_iff", "ge", "ge_if", "ge_iff"};
+    const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
@@ -279,96 +282,98 @@ auto main(int argc, char * argv[]) -> int
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_constant(-10, 10));
 
-    for (bool proofs : {false, true}) {
-        if (proofs && ! can_run_veripb())
-            continue;
-        for (auto & [r1, r2] : data) {
-            if (mode == "lt") {
-                run_binary_comparison_test<LessThan>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; });
-            }
-            else if (mode == "lt_if") {
-                run_reif_binary_comparison_test<LessThanIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; }, false);
-            }
-            else if (mode == "lt_iff") {
-                run_reif_binary_comparison_test<LessThanIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; }, true);
-            }
-            else if (mode == "le") {
-                run_binary_comparison_test<LessThanEqual>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; });
-            }
-            else if (mode == "le_if") {
-                run_reif_binary_comparison_test<LessThanEqualIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; }, false);
-            }
-            else if (mode == "le_iff") {
-                run_reif_binary_comparison_test<LessThanEqualIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; }, true);
-            }
-            else if (mode == "gt") {
-                run_binary_comparison_test<GreaterThan>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; });
-            }
-            else if (mode == "gt_if") {
-                run_reif_binary_comparison_test<GreaterThanIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; }, false);
-            }
-            else if (mode == "gt_iff") {
-                run_reif_binary_comparison_test<GreaterThanIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; }, true);
-            }
-            else if (mode == "ge") {
-                run_binary_comparison_test<GreaterThanEqual>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; });
-            }
-            else if (mode == "ge_if") {
-                run_reif_binary_comparison_test<GreaterThanEqualIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; }, false);
-            }
-            else if (mode == "ge_iff") {
-                run_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; }, true);
-            }
-            else
-                throw UnimplementedException{};
-        }
-
-        // Dup-variable cases. lt/gt themselves throw (Bucket A — covered
-        // separately); lt_if/gt_if were Bucket B (propagator weak on alias)
-        // and are now fixed via the alias check in
-        // ReifiedCompareLessThanOrMaybeEqual's infer_cond_when_undecided.
-        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
-            vector<pair<int, int>> dup_data = {{0, 0}, {0, 5}, {-3, 3}, {2, 5}};
-            for (auto & xr : dup_data) {
-                if (mode == "le")
-                    run_dup_binary_comparison_test<LessThanEqual>(proofs, mode, xr, [](int) { return true; });
-                else if (mode == "ge")
-                    run_dup_binary_comparison_test<GreaterThanEqual>(proofs, mode, xr, [](int) { return true; });
-                else if (mode == "le_if")
-                    run_dup_reif_binary_comparison_test<LessThanEqualIf>(proofs, mode, xr, [](int, int) { return true; });
-                else if (mode == "ge_if")
-                    run_dup_reif_binary_comparison_test<GreaterThanEqualIf>(proofs, mode, xr, [](int, int) { return true; });
-                else if (mode == "lt_if")
-                    // LessThanIf(x, x, c) ≡ c → x<x ≡ ¬c.
-                    run_dup_reif_binary_comparison_test<LessThanIf>(proofs, mode, xr, [](int, int c) { return c == 0; });
-                else if (mode == "gt_if")
-                    // GreaterThanIf(x, x, c) ≡ c → x>x ≡ ¬c.
-                    run_dup_reif_binary_comparison_test<GreaterThanIf>(proofs, mode, xr, [](int, int c) { return c == 0; });
-                else if (mode == "lt_iff")
-                    run_dup_reif_binary_comparison_test<LessThanIff>(proofs, mode, xr, [](int, int c) { return c == 0; });
-                else if (mode == "le_iff")
-                    run_dup_reif_binary_comparison_test<LessThanEqualIff>(proofs, mode, xr, [](int, int c) { return c == 1; });
-                else if (mode == "gt_iff")
-                    run_dup_reif_binary_comparison_test<GreaterThanIff>(proofs, mode, xr, [](int, int c) { return c == 0; });
-                else if (mode == "ge_iff")
-                    run_dup_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, xr, [](int, int c) { return c == 1; });
-                // else: lt, gt — Bucket A throw, no dup test
-            }
-
-            // lt, gt on aliased operands are trivially unsat: reject at
-            // construction. Only check once per binary, not per view-cfg.
-            if (mode == "lt" || mode == "gt") {
-                Problem ep;
-                auto x = ep.create_integer_variable(Integer{0}, Integer{3});
-                try {
-                    if (mode == "lt")
-                        ep.post(LessThan{x, x});
-                    else
-                        ep.post(GreaterThan{x, x});
-                    cerr << "expected " << mode << "(x,x) to throw InvalidProblemDefinitionException" << '\n';
-                    return EXIT_FAILURE;
+    for (const auto & mode : modes) {
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                continue;
+            for (auto & [r1, r2] : data) {
+                if (mode == "lt") {
+                    run_binary_comparison_test<LessThan>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; });
                 }
-                catch (const InvalidProblemDefinitionException &) {
+                else if (mode == "lt_if") {
+                    run_reif_binary_comparison_test<LessThanIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; }, false);
+                }
+                else if (mode == "lt_iff") {
+                    run_reif_binary_comparison_test<LessThanIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a < b; }, true);
+                }
+                else if (mode == "le") {
+                    run_binary_comparison_test<LessThanEqual>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; });
+                }
+                else if (mode == "le_if") {
+                    run_reif_binary_comparison_test<LessThanEqualIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; }, false);
+                }
+                else if (mode == "le_iff") {
+                    run_reif_binary_comparison_test<LessThanEqualIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a <= b; }, true);
+                }
+                else if (mode == "gt") {
+                    run_binary_comparison_test<GreaterThan>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; });
+                }
+                else if (mode == "gt_if") {
+                    run_reif_binary_comparison_test<GreaterThanIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; }, false);
+                }
+                else if (mode == "gt_iff") {
+                    run_reif_binary_comparison_test<GreaterThanIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a > b; }, true);
+                }
+                else if (mode == "ge") {
+                    run_binary_comparison_test<GreaterThanEqual>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; });
+                }
+                else if (mode == "ge_if") {
+                    run_reif_binary_comparison_test<GreaterThanEqualIf>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; }, false);
+                }
+                else if (mode == "ge_iff") {
+                    run_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, view_cfg, r1, r2, [](int a, int b) { return a >= b; }, true);
+                }
+                else
+                    throw UnimplementedException{};
+            }
+
+            // Dup-variable cases. lt/gt themselves throw (Bucket A — covered
+            // separately); lt_if/gt_if were Bucket B (propagator weak on alias)
+            // and are now fixed via the alias check in
+            // ReifiedCompareLessThanOrMaybeEqual's infer_cond_when_undecided.
+            if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+                vector<pair<int, int>> dup_data = {{0, 0}, {0, 5}, {-3, 3}, {2, 5}};
+                for (auto & xr : dup_data) {
+                    if (mode == "le")
+                        run_dup_binary_comparison_test<LessThanEqual>(proofs, mode, xr, [](int) { return true; });
+                    else if (mode == "ge")
+                        run_dup_binary_comparison_test<GreaterThanEqual>(proofs, mode, xr, [](int) { return true; });
+                    else if (mode == "le_if")
+                        run_dup_reif_binary_comparison_test<LessThanEqualIf>(proofs, mode, xr, [](int, int) { return true; });
+                    else if (mode == "ge_if")
+                        run_dup_reif_binary_comparison_test<GreaterThanEqualIf>(proofs, mode, xr, [](int, int) { return true; });
+                    else if (mode == "lt_if")
+                        // LessThanIf(x, x, c) ≡ c → x<x ≡ ¬c.
+                        run_dup_reif_binary_comparison_test<LessThanIf>(proofs, mode, xr, [](int, int c) { return c == 0; });
+                    else if (mode == "gt_if")
+                        // GreaterThanIf(x, x, c) ≡ c → x>x ≡ ¬c.
+                        run_dup_reif_binary_comparison_test<GreaterThanIf>(proofs, mode, xr, [](int, int c) { return c == 0; });
+                    else if (mode == "lt_iff")
+                        run_dup_reif_binary_comparison_test<LessThanIff>(proofs, mode, xr, [](int, int c) { return c == 0; });
+                    else if (mode == "le_iff")
+                        run_dup_reif_binary_comparison_test<LessThanEqualIff>(proofs, mode, xr, [](int, int c) { return c == 1; });
+                    else if (mode == "gt_iff")
+                        run_dup_reif_binary_comparison_test<GreaterThanIff>(proofs, mode, xr, [](int, int c) { return c == 0; });
+                    else if (mode == "ge_iff")
+                        run_dup_reif_binary_comparison_test<GreaterThanEqualIff>(proofs, mode, xr, [](int, int c) { return c == 1; });
+                    // else: lt, gt — Bucket A throw, no dup test
+                }
+
+                // lt, gt on aliased operands are trivially unsat: reject at
+                // construction. Only check once per binary, not per view-cfg.
+                if (mode == "lt" || mode == "gt") {
+                    Problem ep;
+                    auto x = ep.create_integer_variable(Integer{0}, Integer{3});
+                    try {
+                        if (mode == "lt")
+                            ep.post(LessThan{x, x});
+                        else
+                            ep.post(GreaterThan{x, x});
+                        cerr << "expected " << mode << "(x,x) to throw InvalidProblemDefinitionException" << '\n';
+                        return EXIT_FAILURE;
+                    }
+                    catch (const InvalidProblemDefinitionException &) {
+                    }
                 }
             }
         }

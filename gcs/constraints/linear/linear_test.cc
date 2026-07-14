@@ -298,16 +298,20 @@ auto run_dup_linear_test(bool proofs, const string & mode, pair<int, int> a_rang
 
 auto main(int argc, char * argv[]) -> int
 {
-    string mode;
+    // Mode is the first non-flag positional; --view-* flags may follow. With no
+    // mode given (a manual run rather than the ctest harness) run every mode.
+    string requested_mode;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (! a.starts_with("--")) {
-            mode = a;
+            requested_mode = a;
             break;
         }
     }
-    if (mode.empty())
-        throw UnimplementedException{};
+    // Keep in sync with the if-chain below and the matching foreach(mode ...) in
+    // gcs/CMakeLists.txt.
+    const vector<string> all_modes = {"eq", "eq_if", "eq_iff", "ne", "ne_if", "ne_iff", "le", "le_if", "le_iff", "ge", "ge_if", "ge_iff"};
+    const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
@@ -355,80 +359,86 @@ auto main(int argc, char * argv[]) -> int
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15),
             vector(nc_dist(rand), pair{vector(3, uniform_int_distribution(-10, 10)), uniform_int_distribution(-200, 200)}));
 
-    for (bool proofs : {false, true}) {
-        if (proofs && ! can_run_veripb())
-            continue;
-        for (auto & [r1, r2, r3, constraints] : data) {
-            if (mode == "eq") {
-                run_linear_test<LinearEquality>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-                run_linear_test_gac<LinearEquality>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+    for (const auto & mode : modes) {
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                continue;
+            for (auto & [r1, r2, r3, constraints] : data) {
+                if (mode == "eq") {
+                    run_linear_test<LinearEquality>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                    run_linear_test_gac<LinearEquality>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                }
+                else if (mode == "eq_if") {
+                    run_linear_reif_test<LinearEqualityIf>(
+                        false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                    run_linear_reif_test_gac<LinearEqualityIf>(
+                        false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                }
+                else if (mode == "eq_iff") {
+                    run_linear_reif_test<LinearEqualityIff>(
+                        true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                    run_linear_reif_test_gac<LinearEqualityIff>(
+                        true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
+                }
+                else if (mode == "ne") {
+                    run_linear_test<LinearNotEquals>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                    run_linear_test_gac<LinearNotEquals>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                }
+                else if (mode == "ne_if") {
+                    run_linear_reif_test<LinearNotEqualsIf>(
+                        false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                    run_linear_reif_test_gac<LinearNotEqualsIf>(
+                        false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                }
+                else if (mode == "ne_iff") {
+                    run_linear_reif_test<LinearNotEqualsIff>(
+                        true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                    run_linear_reif_test_gac<LinearNotEqualsIff>(
+                        true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
+                }
+                else if (mode == "le") {
+                    run_linear_test<LinearLessThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                }
+                else if (mode == "le_if") {
+                    run_linear_reif_test<LinearLessThanEqualIf>(
+                        false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                }
+                else if (mode == "le_iff") {
+                    run_linear_reif_test<LinearLessThanEqualIff>(
+                        true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                }
+                else if (mode == "ge") {
+                    run_linear_test<LinearGreaterThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                }
+                else if (mode == "ge_if") {
+                    run_linear_reif_test<LinearGreaterThanEqualIf>(
+                        false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                }
+                else if (mode == "ge_iff") {
+                    run_linear_reif_test<LinearGreaterThanEqualIff>(
+                        true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
+                }
+                else
+                    throw UnimplementedException{};
             }
-            else if (mode == "eq_if") {
-                run_linear_reif_test<LinearEqualityIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-                run_linear_reif_test_gac<LinearEqualityIf>(
-                    false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-            }
-            else if (mode == "eq_iff") {
-                run_linear_reif_test<LinearEqualityIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-                run_linear_reif_test_gac<LinearEqualityIff>(
-                    true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a == b; });
-            }
-            else if (mode == "ne") {
-                run_linear_test<LinearNotEquals>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-                run_linear_test_gac<LinearNotEquals>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-            }
-            else if (mode == "ne_if") {
-                run_linear_reif_test<LinearNotEqualsIf>(false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-                run_linear_reif_test_gac<LinearNotEqualsIf>(
-                    false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-            }
-            else if (mode == "ne_iff") {
-                run_linear_reif_test<LinearNotEqualsIff>(true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-                run_linear_reif_test_gac<LinearNotEqualsIff>(
-                    true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a != b; });
-            }
-            else if (mode == "le") {
-                run_linear_test<LinearLessThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-            }
-            else if (mode == "le_if") {
-                run_linear_reif_test<LinearLessThanEqualIf>(
-                    false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-            }
-            else if (mode == "le_iff") {
-                run_linear_reif_test<LinearLessThanEqualIff>(
-                    true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
-            }
-            else if (mode == "ge") {
-                run_linear_test<LinearGreaterThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-            }
-            else if (mode == "ge_if") {
-                run_linear_reif_test<LinearGreaterThanEqualIf>(
-                    false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-            }
-            else if (mode == "ge_iff") {
-                run_linear_reif_test<LinearGreaterThanEqualIff>(
-                    true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });
-            }
-            else
-                throw UnimplementedException{};
-        }
 
-        // Dup-variable cases. Cover the non-reified Linear variants;
-        // reified forms share the same coalescing infrastructure.
-        if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
-            // 2*a + 3*a + 1*b coalesces to 5*a + 1*b.
-            if (mode == "eq")
-                run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a == b; });
-            else if (mode == "ne")
-                run_dup_linear_test<LinearNotEquals>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a != b; });
-            else if (mode == "le")
-                run_dup_linear_test<LinearLessThanEqual>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a <= b; });
-            else if (mode == "ge")
-                run_dup_linear_test<LinearGreaterThanEqual>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a >= b; });
-            // 1*a + (-1)*a + 2*b coalesces to 0*a + 2*b = 2*b — exercises
-            // the zero-coefficient-after-coalescing path.
-            if (mode == "eq")
-                run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {0, 5}, {1, -1, 2}, 4, [](int a, int b) { return a == b; });
+            // Dup-variable cases. Cover the non-reified Linear variants;
+            // reified forms share the same coalescing infrastructure.
+            if (view_wrap_config_is_effectively_bare(view_cfg, n_positions)) {
+                // 2*a + 3*a + 1*b coalesces to 5*a + 1*b.
+                if (mode == "eq")
+                    run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a == b; });
+                else if (mode == "ne")
+                    run_dup_linear_test<LinearNotEquals>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a != b; });
+                else if (mode == "le")
+                    run_dup_linear_test<LinearLessThanEqual>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a <= b; });
+                else if (mode == "ge")
+                    run_dup_linear_test<LinearGreaterThanEqual>(proofs, mode, {0, 5}, {-5, 5}, {2, 3, 1}, 10, [](int a, int b) { return a >= b; });
+                // 1*a + (-1)*a + 2*b coalesces to 0*a + 2*b = 2*b — exercises
+                // the zero-coefficient-after-coalescing path.
+                if (mode == "eq")
+                    run_dup_linear_test<LinearEquality>(proofs, mode, {0, 5}, {0, 5}, {1, -1, 2}, 4, [](int a, int b) { return a == b; });
+            }
         }
     }
 
