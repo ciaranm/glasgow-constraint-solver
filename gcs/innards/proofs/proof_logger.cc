@@ -507,6 +507,12 @@ auto ProofLogger::emit_rup_proof_line_under_reason(
 auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reason_in, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
     const std::vector<ProofFlag> & case_flags, ProofLevel level) -> ProofLine
 {
+    // A case analysis over zero cases just asserts that the conclusion is
+    // autoprovable, which for our clause conclusions means RUP, so emit the
+    // plain RUP step (which VeriPB's cases elaboration currently can't).
+    if (case_flags.empty())
+        return emit_rup_proof_line_under_reason(reason_in, ineq, level);
+
     // De-duplicate the reason: a constraint over duplicate variables (e.g.
     // min(x, x, y)) yields repeated reason literals, which reify into repeated
     // terms; VeriPB sums their coefficients, turning what is logically a clause
