@@ -102,6 +102,20 @@ if(PROJECT_IS_TOP_LEVEL)
         add_compile_options(/Zc:preprocessor)  # standards-conformant preprocessor
         # We deliberately use getenv/std::system; silence the CRT "unsafe" deprecations.
         add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+
+        # Emit debug info in Release too, mirroring the -g1 the GCC/Clang side keeps,
+        # so std::stacktrace can resolve function names and source lines for the
+        # GCS_VERBOSE_LOGGING proof annotation (Debug already gets /Zi by default).
+        # /Z7 embeds CodeView in each .obj -- unlike /Zi it needs no shared compiler
+        # PDB, so Ninja's parallel compiles can't collide on one (fatal error C1041).
+        # The linker's /DEBUG then gathers it into a program PDB that DbgHelp reads at
+        # runtime; the debug info lives in that PDB, not the .exe, so Release binaries
+        # stay lean. /DEBUG disables /OPT:REF and /OPT:ICF, so re-enable them to keep
+        # Release free of unreferenced/duplicate functions.
+        add_compile_options($<$<CONFIG:Release>:/Z7>)
+        add_link_options($<$<CONFIG:Release>:/DEBUG>)
+        add_link_options($<$<CONFIG:Release>:/OPT:REF>)
+        add_link_options($<$<CONFIG:Release>:/OPT:ICF>)
     else()
         add_compile_options(-W)
         add_compile_options(-Wall)
@@ -116,10 +130,27 @@ if(PROJECT_IS_TOP_LEVEL)
             add_compile_options(-Wno-unqualified-std-cast-call)
         endif()
 
-        # Always include full debug info, even in release builds, so crash reports are useful.
-        add_compile_options(-g)
-        add_compile_options(-g3)
+        # Debug information, scaled to each configuration's purpose rather than
+        # emitting the very heavy -g3 everywhere (which alone inflated
+        # libglasgow_constraint_solver.a to ~340 MB, ~91% of it DWARF).
+        #
+        #   Release  -> -g1: function names + line-number tables only, no local
+        #               variables (-g2) or macros (-g3). This is the level GCC
+        #               documents as "enough for making backtraces", which is all
+        #               ProofLogger::log_stacktrace (the GCS_VERBOSE_LOGGING proof
+        #               annotation) needs: it filters frames on source_file() and
+        #               prints name + file:line. Keeping it in Release means crash
+        #               reports and verbose proofs stay useful in optimised builds.
+        #   Debug    -> -g3: full information, including macros, for interactive
+        #               debugging.
+        #   Sanitize -> -g3: fully-annotated ASan/UBSan stack traces.
+        #
+        # Anything other than Debug/Sanitize (Release, or an unset build type)
+        # gets -g1 so it always carries at least backtrace-quality debug info.
+        # stacktrace_logging_test guards the Release end of this: it fails if a
+        # build ever drops the debug info the verbose proof logging relies on.
         add_compile_options(-gdwarf-3)
+        add_compile_options($<IF:$<OR:$<CONFIG:Debug>,$<CONFIG:Sanitize>>,-g3,-g1>)
         add_compile_options(-pthread)
         add_link_options(-pthread)
 

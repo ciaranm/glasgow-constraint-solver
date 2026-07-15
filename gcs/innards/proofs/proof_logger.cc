@@ -139,7 +139,10 @@ auto ProofLogger::log_stacktrace() -> void
     using std::stacktrace;
     if (do_logging) [[unlikely]] {
         for (const auto & entry : stacktrace::current()) {
-            if (entry.source_file().contains("/gcs/"))
+            // source_file() uses the host path separator, so match either form:
+            // "/gcs/" on POSIX, "\gcs\" from MSVC's PDB paths.
+            const auto & file = entry.source_file();
+            if (file.contains("/gcs/") || file.contains("\\gcs\\"))
                 _imp->proof << "% " << to_string(entry) << '\n';
         }
     }

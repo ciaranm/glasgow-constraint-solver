@@ -5,7 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build Commands
 
 Three build types are supported: `Release` (default), `Debug`, and `Sanitize`.
-Use named presets from `CMakePresets.json` for convenience:
+All keep debug information, but scaled to purpose: `Release` uses `-g1` (`/Z7`
+on MSVC) — function names plus line tables, enough for backtraces and the
+`GCS_VERBOSE_LOGGING` stacktrace annotation — while `Debug` and `Sanitize` use
+`-g3` for full interactive debugging. Use named presets from
+`CMakePresets.json` for convenience:
 
 ```shell
 cmake --preset release  && cmake --build --preset release   # optimised (default)
