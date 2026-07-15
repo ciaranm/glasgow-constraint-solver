@@ -266,8 +266,9 @@ namespace gcs::innards
          * Emit a `cases` proof step deriving the specified expression by case
          * analysis over `case_flags`, subject to a given reason. VeriPB verifies
          * that, for every assignment to the case flags, the (reason-reified)
-         * conclusion follows by RUP, then expands this to plain RUP lines during
-         * elaboration. Each branch must be RUP, so this suits selector-style
+         * conclusion is trivial, in the database, RUP, or implied by a database
+         * constraint, then expands this to plain lines during elaboration. Each
+         * branch must be automatically provable, so this suits selector-style
          * "exactly one of these flags holds" reasoning, not cross-variable
          * cutting-planes case splits.
          */

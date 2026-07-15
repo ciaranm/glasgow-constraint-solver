@@ -510,9 +510,11 @@ auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reas
     // De-duplicate the reason: a constraint over duplicate variables (e.g.
     // min(x, x, y)) yields repeated reason literals, which reify into repeated
     // terms; VeriPB sums their coefficients, turning what is logically a clause
-    // into a coefficient->1 pseudo-Boolean constraint, and `cases` only accepts
-    // clause targets. The repeated literal is redundant, so dropping it is sound
-    // and keeps the emitted conclusion a clause.
+    // into a coefficient->2 pseudo-Boolean constraint. `cases` now accepts
+    // general PB targets, but the clause is the constraint we actually want to
+    // derive, and non-clausal targets exercise VeriPB's known-buggy elaboration
+    // path. The repeated literal is redundant, so dropping it is sound and
+    // keeps the emitted conclusion a clause.
     ReasonLiterals reason;
     for (const auto & lit : reason_in)
         if (std::find(reason.begin(), reason.end(), lit) == reason.end())
@@ -529,10 +531,11 @@ auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reas
         emit_inequality_to(names_and_ids_tracker(), reify(ineq, reason), rule_line);
     else
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
-    rule_line << ": ";
+    // the case list is bare variables, not literals: a case split over ~f is
+    // the same split as over f, and VeriPB's grammar rejects the negation
     for (const auto & flag : case_flags)
-        rule_line << names_and_ids_tracker().pb_file_string_for(flag) << " ";
-    rule_line << ";";
+        rule_line << " " << names_and_ids_tracker().pb_file_string_for(flag.positive ? flag : ! flag);
+    rule_line << " ;";
 
     return emit_proof_line(rule_line.str(), level);
 }

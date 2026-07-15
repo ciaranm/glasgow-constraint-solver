@@ -70,8 +70,10 @@ namespace gcs::innards
      * carrying a typed assertion hint exactly as JustifyUsingRUP does. In Off
      * proof mode nothing is emitted.
      *
-     * Each branch must be RUP — this suits "exactly one selector holds" reasoning,
-     * not cross-variable cutting-planes case splits (use JustifyExplicitly there).
+     * Each branch must be automatically provable (trivial, in-database, RUP, or
+     * implied by a database constraint) — this suits "exactly one selector holds"
+     * reasoning, not cross-variable cutting-planes case splits (use
+     * JustifyExplicitly there).
      *
      * \ingroup Innards
      * \sa JustifyUsingRUP
