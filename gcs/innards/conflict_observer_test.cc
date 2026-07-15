@@ -42,7 +42,8 @@ namespace
             // A declarative Reason is "non-empty" iff it is something other than
             // NoReason (the analogue of the old empty ReasonFunction).
             const auto non_empty = reason.has_value() &&
-                reason->visit(overloaded{[](const NoReason &) { return false; }, //
+                reason->visit(overloaded{                   //
+                    [](const NoReason &) { return false; }, //
                     [](const auto &) { return true; }});
             calls.push_back(Call{constraint_index, scope, reason.has_value(), non_empty});
         }

@@ -106,7 +106,8 @@ auto DenseConstraintWeighting::contribution_of(int constraint_index) const -> do
 
 auto DenseConstraintWeighting::weighted_degree_of(const CurrentState & state, const Propagators & propagators, IntegerVariableID var) const -> double
 {
-    auto simple = overloaded{[](const SimpleIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v; },
+    auto simple = overloaded{//
+        [](const SimpleIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v; },
         [](const ViewOfIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v.actual_variable; },
         [](const ConstantIntegerVariableID &) -> optional<SimpleIntegerVariableID> {
             return nullopt;
@@ -241,7 +242,8 @@ auto RefinedWeighting::note_conflict(
 
 auto RefinedWeighting::weighted_degree_of(const CurrentState & state, const Propagators & propagators, IntegerVariableID var) const -> double
 {
-    auto simple = overloaded{[](const SimpleIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v; },
+    auto simple = overloaded{//
+        [](const SimpleIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v; },
         [](const ViewOfIntegerVariableID & v) -> optional<SimpleIntegerVariableID> { return v.actual_variable; },
         [](const ConstantIntegerVariableID &) -> optional<SimpleIntegerVariableID> {
             return nullopt;

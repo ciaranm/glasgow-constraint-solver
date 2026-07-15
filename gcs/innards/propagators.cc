@@ -103,7 +103,8 @@ namespace
     // constant (no variable change can fire on it).
     auto underlying_var_index(const IntegerVariableID & var) -> std::optional<std::size_t>
     {
-        return overloaded{[](const SimpleIntegerVariableID & v) -> std::optional<std::size_t> { return v.index; },
+        return overloaded{//
+            [](const SimpleIntegerVariableID & v) -> std::optional<std::size_t> { return v.index; },
             [](const ViewOfIntegerVariableID & v) -> std::optional<std::size_t> { return v.actual_variable.index; },
             [](const ConstantIntegerVariableID &) -> std::optional<std::size_t> { return std::nullopt; }}
             .visit(var);
@@ -113,7 +114,8 @@ namespace
     // for a constant/true/false literal that no variable change can fire.
     auto underlying_var_index(const Literal & literal) -> std::optional<std::size_t>
     {
-        return overloaded{[](const IntegerVariableCondition & cond) -> std::optional<std::size_t> { return underlying_var_index(cond.var); },
+        return overloaded{//
+            [](const IntegerVariableCondition & cond) -> std::optional<std::size_t> { return underlying_var_index(cond.var); },
             [](const TrueLiteral &) -> std::optional<std::size_t> { return std::nullopt; },
             [](const FalseLiteral &) -> std::optional<std::size_t> { return std::nullopt; }}
             .visit(literal);
@@ -134,15 +136,16 @@ namespace
         const auto on_instantiated = bit(Inference::Instantiated);
         const auto on_bounds = bit(Inference::BoundsChanged) | on_instantiated;
         const auto on_change = bit(Inference::InteriorValuesChanged) | on_bounds;
-        return overloaded{[&](const IntegerVariableCondition & cond) -> unsigned {
-                              switch (cond.op) {
-                              case Equal: return on_instantiated;
-                              case NotEqual: return on_change;
-                              case GreaterEqual:
-                              case Less: return on_bounds;
-                              }
-                              return on_change; // unreachable; conservative default
-                          },
+        return overloaded{//
+            [&](const IntegerVariableCondition & cond) -> unsigned {
+                switch (cond.op) {
+                case Equal: return on_instantiated;
+                case NotEqual: return on_change;
+                case GreaterEqual:
+                case Less: return on_bounds;
+                }
+                return on_change; // unreachable; conservative default
+            },
             [&](const TrueLiteral &) -> unsigned { return on_change; }, [&](const FalseLiteral &) -> unsigned { return on_change; }}
             .visit(literal);
     }
@@ -355,10 +358,11 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
     auto & scope = _imp->propagator_scope.emplace_back();
     scope.reserve(triggers.on_change.size() + triggers.on_bounds.size() + triggers.on_instantiated.size());
     auto add_to_scope = [&](IntegerVariableID var) {
-        overloaded{[&](const SimpleIntegerVariableID & v) {
-                       if (! contains(scope, v))
-                           scope.push_back(v);
-                   },
+        overloaded{//
+            [&](const SimpleIntegerVariableID & v) {
+                if (! contains(scope, v))
+                    scope.push_back(v);
+            },
             [&](const ViewOfIntegerVariableID & v) {
                 if (! contains(scope, v.actual_variable))
                     scope.push_back(v.actual_variable);
