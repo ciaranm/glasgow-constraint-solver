@@ -588,6 +588,14 @@ auto State::domain_intersects_with(const VarType_ & var, const IntervalSet<Integ
 
 auto State::domains_intersect(const IntegerVariableID & var1, const IntegerVariableID & var2) const -> bool
 {
+    // Fast path for the common no-view case (cf. the SimpleIntegerVariableID
+    // fast paths above, #513): both plain SimpleIntegerVariableIDs walk the two
+    // stored interval sets directly, skipping deview and the nested visit_actual
+    // dispatch. This is a hot path for GAC element / count support checks.
+    if (const auto * s1 = get_if<SimpleIntegerVariableID>(&var1))
+        if (const auto * s2 = get_if<SimpleIntegerVariableID>(&var2))
+            return state_of(*s1).contains_any_of(state_of(*s2));
+
     auto [actual1, neg1, add1] = deview(var1);
     auto [actual2, neg2, add2] = deview(var2);
     if (neg1 || neg2) {
