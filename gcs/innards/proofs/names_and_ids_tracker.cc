@@ -60,6 +60,7 @@ using std::shared_ptr;
 using std::string;
 using std::stringstream;
 using std::to_string;
+using std::unordered_map;
 using std::variant;
 using std::vector;
 using std::visit;
@@ -73,13 +74,56 @@ using fmt::format;
 using fmt::print;
 #endif
 
+namespace
+{
+    // These three tables are read on every literal rendered into every proof
+    // line, so they are hashed rather than tree-ordered. Nothing iterates
+    // them. The hashes just have to spread structured small integers; the
+    // magic constant is the usual 64-bit golden-ratio mix.
+    constexpr auto hash_combine(std::size_t seed, std::size_t v) -> std::size_t
+    {
+        return seed ^ (v + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2));
+    }
+
+    struct HashVariableCondition
+    {
+        [[nodiscard]] auto operator()(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> std::size_t
+        {
+            auto h = visit(overloaded{//
+                               [&](const SimpleIntegerVariableID & v) { return hash_combine(1, v.index); },
+                               [&](const ProofOnlySimpleIntegerVariableID & v) { return hash_combine(2, v.index); }},
+                cond.var);
+            h = hash_combine(h, static_cast<std::size_t>(cond.op));
+            h = hash_combine(h, static_cast<std::size_t>(cond.value.raw_value));
+            return hash_combine(h, static_cast<std::size_t>(cond.upper_value.raw_value));
+        }
+    };
+
+    struct HashView
+    {
+        [[nodiscard]] auto operator()(const ViewOfIntegerVariableID & view) const -> std::size_t
+        {
+            auto h = hash_combine(view.negate_first ? 3 : 4, view.actual_variable.index);
+            return hash_combine(h, static_cast<std::size_t>(view.then_add.raw_value));
+        }
+    };
+
+    struct HashProofFlag
+    {
+        [[nodiscard]] auto operator()(const ProofFlag & flag) const -> std::size_t
+        {
+            return hash_combine(flag.positive ? 5 : 6, flag.index);
+        }
+    };
+}
+
 struct NamesAndIDsTracker::Imp
 {
     ProofModel * model = nullptr;
     ProofLogger * logger = nullptr;
 
     map<SimpleOrProofOnlyIntegerVariableID, ProofLine> variable_at_least_one_constraints;
-    map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, XLiteral> variable_conditions_to_x;
+    unordered_map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, XLiteral, HashVariableCondition> variable_conditions_to_x;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, XLiteral>>>> integer_variable_bits_to_size_and_proof_vars;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
     // Variables (e.g. ArgSort's cake-named free-bit-sum sorted values) whose [lo, hi]
@@ -118,7 +162,7 @@ struct NamesAndIDsTracker::Imp
     // adjacent cells. Absent until the first interval request.
     map<SimpleOrProofOnlyIntegerVariableID, std::set<Integer>> interval_partitions;
 
-    map<ViewOfIntegerVariableID, ProofOnlySimpleIntegerVariableID> view_proof_only_vars;
+    unordered_map<ViewOfIntegerVariableID, ProofOnlySimpleIntegerVariableID, HashView> view_proof_only_vars;
     map<ProofOnlySimpleIntegerVariableID, ViewOfIntegerVariableID> view_proof_only_to_view;
     // For each registered view, the (LE-half, GE-half) ProofLine IDs of the
     // bit-vector link constraint emitted in need_view. The LE half is
@@ -139,7 +183,7 @@ struct NamesAndIDsTracker::Imp
     // corresponding deview-form line. Lookup via deviewed_line_for.
     map<ProofLine, ProofLine> deviewed_line_by_v_form;
 
-    map<ProofFlag, XLiteral> flags;
+    unordered_map<ProofFlag, XLiteral, HashProofFlag> flags;
 
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
     // The PB-file rendering of every allocated XLiteral, indexed 2 * id +
