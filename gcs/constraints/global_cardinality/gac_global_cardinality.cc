@@ -23,8 +23,8 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <functional>
 #include <limits>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <string>
@@ -33,8 +33,8 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::fill;
-using std::function;
+using std::binary_search;
+using std::lower_bound;
 using std::make_unique;
 using std::min;
 using std::move;
@@ -54,120 +54,188 @@ using std::print;
 using fmt::print;
 #endif
 
-namespace
+namespace gcs::innards
 {
-    // A small max-flow (Dinic) used to find a feasible flow with lower bounds.
-    struct MaxFlow
+    namespace
     {
-        struct Edge
+        // A small max-flow (Dinic) used to find a feasible flow with lower
+        // bounds. Lives inside the per-propagator scratch: reset() clears
+        // rather than reallocates, so the adjacency, level, iteration and
+        // queue storage all persist across wakes.
+        struct MaxFlow
         {
-            int to;
-            long long cap;
-            int rev;
-        };
+            struct Edge
+            {
+                int to;
+                long long cap;
+                int rev;
+            };
 
-        vector<vector<Edge>> g;
-        vector<int> level, iter;
-
-        explicit MaxFlow(int n) : g(n), level(n), iter(n)
-        {
-        }
-
-        // Returns the index of the forward edge within g[u].
-        auto add_edge(int u, int v, long long cap) -> pair<int, int>
-        {
-            auto fwd = pair<int, int>{u, static_cast<int>(g[u].size())};
-            g[u].push_back(Edge{v, cap, static_cast<int>(g[v].size())});
-            g[v].push_back(Edge{u, 0, static_cast<int>(g[u].size()) - 1});
-            return fwd;
-        }
-
-        auto bfs(int s, int t) -> bool
-        {
-            fill(level.begin(), level.end(), -1);
+            vector<vector<Edge>> g;
+            vector<int> level, iter;
             vector<int> q;
-            q.push_back(s);
-            level[s] = 0;
-            for (std::size_t h = 0; h < q.size(); ++h) {
-                auto u = q[h];
-                for (auto & e : g[u])
-                    if (e.cap > 0 && level[e.to] < 0) {
-                        level[e.to] = level[u] + 1;
-                        q.push_back(e.to);
-                    }
-            }
-            return level[t] >= 0;
-        }
+            int n = 0;
 
-        auto dfs(int u, int t, long long f) -> long long
-        {
-            if (u == t)
-                return f;
-            for (auto & i = iter[u]; i < static_cast<int>(g[u].size()); ++i) {
-                auto & e = g[u][i];
-                if (e.cap > 0 && level[u] < level[e.to]) {
-                    auto d = dfs(e.to, t, min(f, e.cap));
-                    if (d > 0) {
-                        e.cap -= d;
-                        g[e.to][e.rev].cap += d;
-                        return d;
+            auto reset(int n_) -> void
+            {
+                n = n_;
+                if (g.size() < static_cast<std::size_t>(n))
+                    g.resize(n);
+                for (int i = 0; i != n; ++i)
+                    g[i].clear();
+            }
+
+            // Returns the index of the forward edge within g[u].
+            auto add_edge(int u, int v, long long cap) -> pair<int, int>
+            {
+                auto fwd = pair<int, int>{u, static_cast<int>(g[u].size())};
+                g[u].push_back(Edge{v, cap, static_cast<int>(g[v].size())});
+                g[v].push_back(Edge{u, 0, static_cast<int>(g[u].size()) - 1});
+                return fwd;
+            }
+
+            auto bfs(int s, int t) -> bool
+            {
+                level.assign(n, -1);
+                q.clear();
+                q.push_back(s);
+                level[s] = 0;
+                for (std::size_t h = 0; h < q.size(); ++h) {
+                    auto u = q[h];
+                    for (auto & e : g[u])
+                        if (e.cap > 0 && level[e.to] < 0) {
+                            level[e.to] = level[u] + 1;
+                            q.push_back(e.to);
+                        }
+                }
+                return level[t] >= 0;
+            }
+
+            auto dfs(int u, int t, long long f) -> long long
+            {
+                if (u == t)
+                    return f;
+                for (auto & i = iter[u]; i < static_cast<int>(g[u].size()); ++i) {
+                    auto & e = g[u][i];
+                    if (e.cap > 0 && level[u] < level[e.to]) {
+                        auto d = dfs(e.to, t, min(f, e.cap));
+                        if (d > 0) {
+                            e.cap -= d;
+                            g[e.to][e.rev].cap += d;
+                            return d;
+                        }
                     }
                 }
+                return 0;
             }
-            return 0;
-        }
 
-        auto max_flow(int s, int t) -> long long
-        {
-            long long flow = 0;
-            while (bfs(s, t)) {
-                fill(iter.begin(), iter.end(), 0);
-                while (auto f = dfs(s, t, numeric_limits<long long>::max()))
-                    flow += f;
+            auto max_flow(int s, int t) -> long long
+            {
+                long long flow = 0;
+                while (bfs(s, t)) {
+                    iter.assign(n, 0);
+                    while (auto f = dfs(s, t, numeric_limits<long long>::max()))
+                        flow += f;
+                }
+                return flow;
             }
-            return flow;
-        }
 
-        // The flow currently pushed along the forward edge g[u][k] equals the
-        // capacity that has accumulated on its reverse edge.
-        auto flow_on(int u, int k) const -> long long
+            // The flow currently pushed along the forward edge g[u][k] equals the
+            // capacity that has accumulated on its reverse edge.
+            auto flow_on(int u, int k) const -> long long
+            {
+                const auto & e = g[u][k];
+                return g[e.to][e.rev].cap;
+            }
+        };
+
+        // An original network edge with lower bounds, recorded so the
+        // feasible flow can be recovered and the residual built.
+        struct OrigEdge
         {
-            const auto & e = g[u][k];
-            return g[e.to][e.rev].cap;
-        }
+            int from, to;
+            long long lo, hi;
+            int u, k; // location of the reduced (hi - lo) edge in mf.g
+        };
+    }
+
+    // Working storage for propagate_gac_global_cardinality, hoisted out so a
+    // propagator can reuse the same buffers on every wake rather than paying
+    // dozens of allocations per call. Every buffer is assign()ed or
+    // clear()ed at its point of use, so capacity ratchets up to the biggest
+    // wake seen and stays there. One instance per installed propagator (per
+    // constraint clone), so a search owns its scratch exclusively -- see
+    // dev_docs/propagator-performance.md.
+    struct GacGlobalCardinalityScratch
+    {
+        MaxFlow mf;
+        vector<OrigEdge> orig;
+        vector<long long> excess, flow;
+        vector<int> assign_edge; // flat m * n, -1 = no edge
+        vector<int> dummy_edge;
+
+        // the residual graph and its strongly connected components
+        vector<vector<int>> radj;
+        vector<int> index, low, comp, stk;
+        vector<std::uint8_t> on_stack;
+        vector<pair<int, std::size_t>> tarjan_frames;
+
+        // residual reachability sweeps (one per pruning candidate)
+        vector<std::uint8_t> seen;
+        vector<int> rq;
+
+        // per-value reason literals, built only when an inference fires
+        ReasonLiterals reason_lits;
     };
+
+    auto make_gac_global_cardinality_scratch() -> std::shared_ptr<GacGlobalCardinalityScratch>
+    {
+        return std::make_shared<GacGlobalCardinalityScratch>();
+    }
 }
 
 auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariableID> & vars, const ConstraintID & owner,
     const vector<Integer> & values, const vector<IntegerVariableID> & counts, bool closed,
-    const vector<pair<optional<ProofLine>, optional<ProofLine>>> & count_lines, const vector<IntegerVariableID> & all_vars, const State & state,
-    auto & inference, ProofLogger * const logger) -> PropagatorState
+    const vector<pair<optional<ProofLine>, optional<ProofLine>>> & count_lines, const vector<IntegerVariableID> & all_vars,
+    GacGlobalCardinalityScratch & scratch, const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState
 {
     auto m = values.size();
     auto n = vars.size();
 
+    // values is sorted and distinct (GlobalCardinality::sort_cover_values),
+    // so cover membership is a binary search over it, with no per-wake set.
+    auto in_cover = [&](Integer val) -> bool { return binary_search(values.begin(), values.end(), val); };
+
     // Per-value count bounds: keep the count variables pinned to the
     // must-occur..can-occur range (so they are determined at a leaf).
     // These are the certified per-value RUP steps from the BC propagator.
+    // Counting comes first; the reason literals are only gathered -- in the
+    // same variable order, from the same state -- when an inference fires.
     for (const auto & [j, value] : enumerate(values)) {
-        ReasonLiterals fixed_eq, absent_ne;
         Integer must = 0_i, can = 0_i;
-        for (const auto & var : vars) {
+        for (const auto & var : vars)
             if (state.in_domain(var, value)) {
                 ++can;
-                if (state.has_single_value(var)) {
+                if (state.has_single_value(var))
                     ++must;
-                    fixed_eq.emplace_back(var == value);
-                }
             }
-            else
-                absent_ne.emplace_back(var != value);
-        }
         auto [lb_j, ub_j] = state.bounds(counts[j]);
-        if (must > lb_j)
+        if (must > lb_j) {
+            auto & fixed_eq = scratch.reason_lits;
+            fixed_eq.clear();
+            for (const auto & var : vars)
+                if (state.in_domain(var, value) && state.has_single_value(var))
+                    fixed_eq.emplace_back(var == value);
             inference.infer(logger, counts[j] >= must, JustifyUsingRUP{hints::GlobalCardinality{owner}}, ExplicitReason{fixed_eq});
-        if (can < ub_j)
+        }
+        if (can < ub_j) {
+            auto & absent_ne = scratch.reason_lits;
+            absent_ne.clear();
+            for (const auto & var : vars)
+                if (! state.in_domain(var, value))
+                    absent_ne.emplace_back(var != value);
             inference.infer(logger, counts[j] <= can, JustifyUsingRUP{hints::GlobalCardinality{owner}}, ExplicitReason{absent_ne});
+        }
     }
 
     // Build Régin's value graph as a flow network and find a feasible
@@ -182,21 +250,17 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
     auto var_node = [&](std::size_t i) { return 2 + static_cast<int>(m) + 1 + static_cast<int>(i); };
     auto base_nodes = 2 + static_cast<int>(m) + 1 + static_cast<int>(n);
     auto SS = base_nodes, TT = base_nodes + 1;
-    MaxFlow mf(base_nodes + 2);
+    auto & mf = scratch.mf;
+    mf.reset(base_nodes + 2);
 
-    set<Integer> cover(values.begin(), values.end());
     long long inf = static_cast<long long>(n) + 1;
 
     // Original edges with lower bounds, recorded so we can recover the
     // feasible flow and build the residual.
-    struct OrigEdge
-    {
-        int from, to;
-        long long lo, hi;
-        int u, k; // location of the reduced (hi - lo) edge in mf.g
-    };
-    vector<OrigEdge> orig;
-    vector<long long> excess(base_nodes + 2, 0);
+    auto & orig = scratch.orig;
+    orig.clear();
+    auto & excess = scratch.excess;
+    excess.assign(base_nodes + 2, 0);
 
     auto add_orig = [&](int u, int v, long long lo, long long hi) {
         auto [a, k] = mf.add_edge(u, v, hi - lo);
@@ -206,7 +270,9 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
     };
 
     // value->var assignment edges; remember which OrigEdge each is.
-    vector<vector<int>> assign_edge(m, vector<int>(n, -1));
+    auto & assign_edge_flat = scratch.assign_edge;
+    assign_edge_flat.assign(m * n, -1);
+    auto assign_edge = [&](std::size_t j, std::size_t i) -> int & { return assign_edge_flat[j * n + i]; };
     for (const auto & [j, value] : enumerate(values)) {
         auto [c_lo, c_hi] = state.bounds(counts[j]);
         if (c_lo < 0_i)
@@ -214,20 +280,23 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
         add_orig(S, value_node(j), c_lo.raw_value, c_hi.raw_value);
         for (std::size_t i = 0; i < n; ++i)
             if (state.in_domain(vars[i], value)) {
-                assign_edge[j][i] = static_cast<int>(orig.size());
+                assign_edge(j, i) = static_cast<int>(orig.size());
                 add_orig(value_node(j), var_node(i), 0, 1);
             }
     }
-    vector<int> dummy_edge(n, -1);
+    auto & dummy_edge = scratch.dummy_edge;
+    dummy_edge.assign(n, -1);
     if (! closed) {
         add_orig(S, dummy_node, 0, inf);
         for (std::size_t i = 0; i < n; ++i) {
             bool has_non_cover = false;
-            for (const auto & val : state.each_value_immutable(vars[i]))
-                if (! cover.contains(val)) {
+            state.for_each_value_immutable(vars[i], [&](Integer val) -> bool {
+                if (! in_cover(val)) {
                     has_non_cover = true;
-                    break;
+                    return false;
                 }
+                return true;
+            });
             if (has_non_cover) {
                 dummy_edge[i] = static_cast<int>(orig.size());
                 add_orig(dummy_node, var_node(i), 0, 1);
@@ -252,7 +321,8 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
     auto feasible = (mf.max_flow(SS, TT) == need);
 
     // Flow on each original edge (the partial flow when infeasible).
-    vector<long long> flow(orig.size());
+    auto & flow = scratch.flow;
+    flow.assign(orig.size(), 0);
     for (const auto & [idx, e] : enumerate(orig))
         flow[idx] = e.lo + mf.flow_on(e.u, e.k);
 
@@ -266,8 +336,8 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
         for (std::size_t i = 0; i < n && unmatched < 0; ++i) {
             long long in = 0;
             for (std::size_t j = 0; j < m; ++j)
-                if (assign_edge[j][i] >= 0)
-                    in += flow[assign_edge[j][i]];
+                if (assign_edge(j, i) >= 0)
+                    in += flow[assign_edge(j, i)];
             if (dummy_edge[i] >= 0)
                 in += flow[dummy_edge[i]];
             if (in == 0)
@@ -296,7 +366,7 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
                     hv_val[j] = 1;
                     grew = true;
                     for (std::size_t i = 0; i < n; ++i)
-                        if (assign_edge[j][i] >= 0 && flow[assign_edge[j][i]] == 1)
+                        if (assign_edge(j, i) >= 0 && flow[assign_edge(j, i)] == 1)
                             hv_var[i] = 1;
                 }
             }
@@ -312,11 +382,13 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
                 cap += state.bounds(counts[j]).second;
             for (std::size_t i = 0; i < n; ++i) {
                 bool subset = true;
-                for (const auto & val : state.each_value_immutable(vars[i]))
+                state.for_each_value_immutable(vars[i], [&](Integer val) -> bool {
                     if (! hall.contains(val)) {
                         subset = false;
-                        break;
+                        return false;
                     }
+                    return true;
+                });
                 if (subset)
                     confined.push_back(vars[i]);
             }
@@ -336,8 +408,8 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
             for (std::size_t j = 0; j < m && under < 0; ++j) {
                 long long assigned = 0;
                 for (std::size_t i = 0; i < n; ++i)
-                    if (assign_edge[j][i] >= 0)
-                        assigned += flow[assign_edge[j][i]];
+                    if (assign_edge(j, i) >= 0)
+                        assigned += flow[assign_edge(j, i)];
                 if (assigned < state.bounds(counts[j]).first.raw_value)
                     under = static_cast<int>(j);
             }
@@ -361,7 +433,7 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
                         hv_var[i] = 1;
                         grew = true;
                         for (std::size_t j = 0; j < m; ++j)
-                            if (! hv_val[j] && assign_edge[j][i] >= 0 && flow[assign_edge[j][i]] == 1)
+                            if (! hv_val[j] && assign_edge(j, i) >= 0 && flow[assign_edge(j, i)] == 1)
                                 hv_val[j] = 1;
                     }
                 }
@@ -415,7 +487,11 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
         return PropagatorState::Enable;
     }
 
-    vector<vector<int>> radj(base_nodes);
+    auto & radj = scratch.radj;
+    if (radj.size() < static_cast<std::size_t>(base_nodes))
+        radj.resize(base_nodes);
+    for (int v = 0; v < base_nodes; ++v)
+        radj[v].clear();
     for (const auto & [idx, e] : enumerate(orig)) {
         if (flow[idx] < e.hi)
             radj[e.from].push_back(e.to);
@@ -423,42 +499,77 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
             radj[e.to].push_back(e.from);
     }
 
-    // Tarjan strongly-connected components of the residual.
-    vector<int> index(base_nodes, 0), low(base_nodes, 0), comp(base_nodes, -1);
-    vector<std::uint8_t> on_stack(base_nodes, 0);
-    vector<int> stk;
+    // Tarjan strongly-connected components of the residual, on an explicit
+    // stack of (vertex, next edge index) frames rather than a recursive
+    // std::function: no closure allocation and no type-erased call per
+    // visit. Numbering matches the recursive formulation exactly (including
+    // taking min with the index, as the recursive version here did, for an
+    // on-stack target), so everything downstream is unchanged.
+    auto & index = scratch.index;
+    auto & low = scratch.low;
+    auto & comp = scratch.comp;
+    auto & on_stack = scratch.on_stack;
+    auto & stk = scratch.stk;
+    auto & frames = scratch.tarjan_frames;
+    index.assign(base_nodes, 0);
+    low.assign(base_nodes, 0);
+    comp.assign(base_nodes, -1);
+    on_stack.assign(base_nodes, 0);
+    stk.clear();
+    frames.clear();
     int next_index = 1, n_comp = 0;
-    function<void(int)> scc = [&](int v) {
-        index[v] = low[v] = next_index++;
-        stk.push_back(v);
-        on_stack[v] = 1;
-        for (auto w : radj[v]) {
-            if (index[w] == 0) {
-                scc(w);
-                low[v] = min(low[v], low[w]);
+    for (int root = 0; root < base_nodes; ++root) {
+        if (index[root] != 0)
+            continue;
+        frames.emplace_back(root, 0);
+        while (! frames.empty()) {
+            auto [v, next_edge] = frames.back();
+            if (0 == index[v]) {
+                index[v] = next_index;
+                low[v] = next_index;
+                ++next_index;
+                stk.push_back(v);
+                on_stack[v] = 1;
             }
-            else if (on_stack[w])
-                low[v] = min(low[v], index[w]);
+            bool descended = false;
+            while (next_edge != radj[v].size()) {
+                auto w = radj[v][next_edge];
+                ++next_edge;
+                if (index[w] == 0) {
+                    frames.back().second = next_edge;
+                    frames.emplace_back(w, 0);
+                    descended = true;
+                    break;
+                }
+                else if (on_stack[w])
+                    low[v] = min(low[v], index[w]);
+            }
+            if (descended)
+                continue;
+            frames.pop_back();
+            if (low[v] == index[v]) {
+                int w;
+                do {
+                    w = stk.back();
+                    stk.pop_back();
+                    on_stack[w] = 0;
+                    comp[w] = n_comp;
+                } while (w != v);
+                ++n_comp;
+            }
+            if (! frames.empty())
+                low[frames.back().first] = min(low[frames.back().first], low[v]);
         }
-        if (low[v] == index[v]) {
-            int w;
-            do {
-                w = stk.back();
-                stk.pop_back();
-                on_stack[w] = 0;
-                comp[w] = n_comp;
-            } while (w != v);
-            ++n_comp;
-        }
-    };
-    for (int v = 0; v < base_nodes; ++v)
-        if (index[v] == 0)
-            scc(v);
+    }
 
     // Residual reachability from a node (for extracting the proof cut).
-    auto reachable_from = [&](int start) {
-        vector<std::uint8_t> seen(base_nodes, 0);
-        vector<int> q{start};
+    // The result stays valid in scratch.seen until the next call.
+    auto reachable_from = [&](int start) -> const vector<std::uint8_t> & {
+        auto & seen = scratch.seen;
+        auto & q = scratch.rq;
+        seen.assign(base_nodes, 0);
+        q.clear();
+        q.push_back(start);
         seen[start] = 1;
         for (std::size_t h = 0; h < q.size(); ++h)
             for (auto w : radj[q[h]])
@@ -469,10 +580,11 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
         return seen;
     };
 
+    // values is sorted, so a value's cover index is a binary search away
     auto value_index = [&](Integer val) -> int {
-        for (std::size_t v = 0; v < m; ++v)
-            if (values[v] == val)
-                return static_cast<int>(v);
+        auto it = lower_bound(values.begin(), values.end(), val);
+        if (it != values.end() && *it == val)
+            return static_cast<int>(it - values.begin());
         return -1;
     };
 
@@ -484,13 +596,13 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
     // their lower bound).
     for (const auto & [j, value] : enumerate(values))
         for (std::size_t i = 0; i < n; ++i) {
-            auto ei = assign_edge[j][i];
+            auto ei = assign_edge(j, i);
             if (ei < 0)
                 continue;
             if (! (flow[ei] == 0 && comp[value_node(j)] != comp[var_node(i)]))
                 continue;
 
-            auto seen = reachable_from(var_node(i));
+            const auto & seen = reachable_from(var_node(i));
             if (seen[S]) {
                 // Capacity cut: full cover values are those not reachable.
                 vector<std::size_t> cut_values;
@@ -500,13 +612,14 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
                 vector<IntegerVariableID> confined;
                 for (std::size_t k = 0; k < n; ++k) {
                     bool subset = true;
-                    for (const auto & val : state.each_value_immutable(vars[k])) {
+                    state.for_each_value_immutable(vars[k], [&](Integer val) -> bool {
                         auto vi = value_index(val);
                         if (vi < 0 || seen[value_node(static_cast<std::size_t>(vi))]) {
                             subset = false;
-                            break;
+                            return false;
                         }
-                    }
+                        return true;
+                    });
                     if (subset)
                         confined.push_back(vars[k]);
                 }
@@ -558,7 +671,7 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
         auto ei = dummy_edge[i];
         if (! (ei >= 0 && flow[ei] == 0 && comp[dummy_node] != comp[var_node(i)]))
             continue;
-        auto seen = reachable_from(var_node(i));
+        const auto & seen = reachable_from(var_node(i));
         vector<std::size_t> cut_values;
         for (std::size_t v = 0; v < m; ++v)
             if (seen[value_node(v)])
@@ -575,7 +688,7 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
                 potential.push_back(vars[k]);
         }
         for (const auto & val : state.each_value_mutable(vars[i]))
-            if (! cover.contains(val))
+            if (! in_cover(val))
                 inference.infer(logger, vars[i] != val,
                     JustifyExplicitly{//
                         [&, cut_values, potential, val = val, i = i](const ReasonLiterals &) {
@@ -593,9 +706,10 @@ auto gcs::innards::propagate_gac_global_cardinality(const vector<IntegerVariable
 template auto gcs::innards::propagate_gac_global_cardinality(const std::vector<IntegerVariableID> & vars, const ConstraintID & owner,
     const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts, bool closed,
     const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines, const std::vector<IntegerVariableID> & all_vars,
-    const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
+    GacGlobalCardinalityScratch & scratch, const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
 
 template auto gcs::innards::propagate_gac_global_cardinality(const std::vector<IntegerVariableID> & vars, const ConstraintID & owner,
     const std::vector<Integer> & values, const std::vector<IntegerVariableID> & counts, bool closed,
     const std::vector<std::pair<std::optional<ProofLine>, std::optional<ProofLine>>> & count_lines, const std::vector<IntegerVariableID> & all_vars,
-    const State & state, EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger) -> PropagatorState;
+    GacGlobalCardinalityScratch & scratch, const State & state, EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger)
+    -> PropagatorState;

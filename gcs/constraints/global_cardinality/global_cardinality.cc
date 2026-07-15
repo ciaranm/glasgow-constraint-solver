@@ -125,8 +125,10 @@ auto GlobalCardinality::install_propagators(Propagators & propagators) -> void
             propagators.install(
                 constraint_id(),
                 [vars = _vars, owner = constraint_id(), values = _values, counts = _counts, closed = _closed, count_lines = _count_lines,
-                    all_vars = all_vars](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    return propagate_gac_global_cardinality(vars, owner, values, counts, closed, count_lines, all_vars, state, inference, logger);
+                    all_vars = all_vars, scratch = make_gac_global_cardinality_scratch()](
+                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                    return propagate_gac_global_cardinality(
+                        vars, owner, values, counts, closed, count_lines, all_vars, *scratch, state, inference, logger);
                 },
                 triggers);
         }}
