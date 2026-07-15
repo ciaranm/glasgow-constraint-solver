@@ -250,6 +250,71 @@ the three-way `Regular` / `RegularBacchus` / `RegularLegacy`
 comparison, plus a discussion of when each pattern wins. It's a useful
 template for similar three-variant proof-logging work.
 
+## Profiling with `perf`
+
+When a benchmark says a change is slower but not *why*, `perf` gives the
+per-function self-time.
+
+A Release build carries `-g1` debug info: function names and line-number
+tables, but no inline-expansion records (see the debug-info comment in
+the top-level `CMakeLists.txt`). `perf` handles that level comfortably,
+with one attribution caveat: with no inline records, every sample is
+credited to the outermost function that survived inlining, so a hot
+propagator absorbs the self-time of everything inlined into it. The
+line-number tables do still cover the inlined code, so `perf annotate`
+(or `perf script -F ip,sym,srcline`) can usually tell you *what* inside
+the big function is hot.
+
+If you genuinely need per-inlined-frame attribution, raise the Release
+debug level temporarily (edit the `$<IF:...>` debug-level generator
+expression in the top-level `CMakeLists.txt`) — and know the trap that
+comes with it, because it will waste an afternoon if you hit it
+unprepared. On a binary carrying full DWARF from heavy template inlining
+(`fzn-glasgow` was ~380 MB back when Release used `-g3`), `perf report` /
+`perf script` resolve every sample's *inlined* frames by default, and on
+that much `debug_info` the resolution is pathologically slow: it can take
+many minutes to process a few tens of thousands of samples, so
+`perf report` looks **hung** and `perf script` appears to emit only a few
+hundred startup samples before you give up. The symbols are all there;
+the inline expansion is the bottleneck. Skip it whenever you don't need
+it — one flag:
+
+```shell
+perf record -F 2000 --call-graph fp -o out.perf -- taskset -c 4 ./build/fzn-glasgow model.fzn
+perf report  -i out.perf --stdio --inline=no          # completes in seconds
+perf script  -i out.perf -F ip,sym --no-inline        # full, fast output
+```
+
+(On a `-g1` build those flags are harmless no-ops — there are no inline
+records to resolve — so the recipes above are safe defaults everywhere.)
+
+For a clean self-time (leaf) histogram from `perf script`, take the first
+line of each blank-separated sample block and aggregate:
+
+```shell
+perf script -i out.perf -F ip,sym --no-inline \
+  | awk 'BEGIN{want=1} /^[[:space:]]*$/{want=1;next} want{print;want=0}' \
+  | sed -E 's/^\s*[0-9a-f]+\s+//' | sort | uniq -c | sort -rn | head
+```
+
+Two more notes:
+
+- `fzn-glasgow` is launched by MiniZinc as a subprocess, which perf can't
+  easily follow. Flatten once (`minizinc --solver <glasgow.msc> -c --fzn
+  model.fzn model.mzn data.dzn`) and run `fzn-glasgow model.fzn` directly
+  under perf. It has a `-t <ms>` timeout, so an optimisation instance that
+  never finishes still gives a usable sample window.
+- Kernel-mode samples show up as `[unknown]` unless you can read
+  `/proc/kallsyms` (needs `kptr_restrict=0` or root). For a CPU-bound
+  solver these are a small minority and don't obscure the userspace hot
+  path.
+
+If perf is unavailable or a subprocess is genuinely unreachable, a couple
+of `getenv`-gated static counters around the suspected hot lines (printed
+from a destructor) will tell you a call-count distribution in one run —
+crude, but enough to distinguish "expensive once" from "cheap but called a
+billion times".
+
 ## Reproducibility caveats
 
 - Pin CPU governor to `performance` if available; thermal throttling on
