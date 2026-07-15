@@ -34,14 +34,30 @@ There are two completely different kinds of "the propagator got better":
   node). This is what a performance change should be.
 
 Keep them apart. A pure performance change **must not change the search**:
-`recursions` and the first integer of `propagations:` must be identical before
-and after, on every benchmark. The benchmark harness prints both precisely so
-you can diff them; treat any divergence as a correctness signal first and a
-performance signal second (benchmarking.md, "What to capture"). If you find
-yourself explaining a speedup by "well, it also prunes a bit differently now",
-stop — you have conflated the two, and you need to re-evaluate the change as a
-strength change (with its own soundness and proof review) rather than a free
-win.
+`recursions` must be identical before and after, on every benchmark. So must
+the first integer of `propagations:` — *unless* the change is to when the
+propagator runs at all (triggers and idempotence, the first lever below), in
+which case fewer executions is the whole point, and `propagations` should
+generally fall while `recursions` stays fixed. The benchmark harness prints
+both precisely so you can diff them; treat any divergence you didn't set out
+to cause as a correctness signal first and a performance signal second
+(benchmarking.md, "What to capture"). If you find yourself explaining a
+speedup by "well, it also prunes a bit differently now", stop — you have
+conflated the two, and you need to re-evaluate the change as a strength change
+(with its own soundness and proof review) rather than a free win.
+
+Two caveats on the trigger exception. First, don't expect the drop in
+`propagations` to be tidy: skipping a wake reorders the propagation queue, and
+with other constraints in the model the work can redistribute — another
+propagator may run more or fewer times, or pick up an inference the skipped
+wake would have made — so the count can move in perverse directions,
+occasionally even up. Second, what makes that reordering safe is
+monotonicity: when every propagator infers at least as much from a smaller
+domain, the queue reaches the same fixpoint in any order, and the search
+cannot tell the difference. A propagator whose inferences depend on
+scheduling order in a non-monotonic way loses that guarantee, so a trigger
+change interacting with one can, in principle, change `recursions` — at which
+point it must be re-evaluated as a strength change, exactly as above.
 
 ### Have good, varied benchmarks, and don't commit on a hunch
 
@@ -84,7 +100,9 @@ unnecessary calls:
   docs.
 
 Both are about not calling the propagator when there is nothing for it to do.
-Get these right before micro-optimising the body.
+They are the one legitimate way to lower the `propagations:` count — see the
+ground rule above for what must still hold, and its caveats. Get these right
+before micro-optimising the body.
 
 ### Reuse the reason instead of rebuilding it
 
