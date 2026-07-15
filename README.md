@@ -333,8 +333,11 @@ autotuner) without recompiling. Each is read once, on first use.
 
 * ``GCS_VERBOSE_LOGGING``: if set to anything, every proof log line is preceded by comment lines
   giving a C++ stacktrace of the solver code that emitted it, which is very useful for figuring
-  out where an unexpected line in a ``.pbp`` file came from. Only available when the compiler
-  provides ``<stacktrace>``.
+  out where an unexpected line in a ``.pbp`` file came from. Only the solver's own frames are
+  shown, and resolving their names and source locations needs debug information, so the build
+  keeps enough of it even in release builds (``-g1`` on GCC/Clang, ``/Z7`` plus linker ``/DEBUG``
+  on MSVC) to keep this useful. Only available when the compiler provides ``<stacktrace>`` (so not
+  on Apple's libc++, for example).
 
 * ``GCS_LINEAR_INCREMENTAL_THRESHOLD``: the number of terms at or above which a linear equality
   uses the incremental propagator, which folds instantiated terms out of the sum at the cost of

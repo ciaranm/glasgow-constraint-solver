@@ -442,7 +442,11 @@ environment before running a test. Every line written to the `.pbp`
 will be preceded by a C++ stacktrace as comment lines (`% ...`), so a
 VeriPB failure at `foo_test.pbp:N` can be traced back to the exact
 emit site. Cheap to use and often faster than narrowing the failure by
-inspection.
+inspection. Only frames in the solver's own source are shown, and
+resolving them relies on the debug info the build keeps even in release
+(`-g1` on GCC/Clang, `/Z7` on MSVC); `stacktrace_logging_test` guards
+against a build dropping it. Not available where the standard library
+lacks `<stacktrace>` (e.g. macOS libc++), where it silently does nothing.
 
 ## The OPB encoding
 
