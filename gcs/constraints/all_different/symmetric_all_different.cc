@@ -158,7 +158,7 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
 
     propagators.install(
         constraint_id(),
-        [vars, start, values = move(values), value_am1s = _value_am1s, constraint_id = constraint_id()](
+        [vars, start, values = move(values), value_am1s = _value_am1s, scratch = make_gac_all_different_scratch(), constraint_id = constraint_id()](
             const State & state, auto & inf, ProofLogger * const logger) -> PropagatorState {
             // Channeling: x_i = v  =>  x_v = i. If i is not in D(x_v), prune
             // v from D(x_i). Single pass — Inverse(x, y) runs this in both
@@ -170,7 +170,7 @@ auto SymmetricAllDifferent::install_propagators(Propagators & propagators) -> vo
                             ExplicitReason{ReasonLiterals{vars.at((v - start).as_index()) != Integer(i) + start}});
             }
 
-            propagate_gac_all_different(constraint_id, vars, values, vector<Integer>{}, *value_am1s.get(), state, inf, logger);
+            propagate_gac_all_different(constraint_id, vars, values, vector<Integer>{}, *value_am1s.get(), *scratch, state, inf, logger);
             return PropagatorState::Enable;
         },
         triggers);

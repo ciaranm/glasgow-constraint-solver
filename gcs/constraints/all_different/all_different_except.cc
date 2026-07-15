@@ -192,9 +192,9 @@ auto AllDifferentExcept::install_propagators(Propagators & propagators) -> void
     propagators.install(
         constraint_id(),
         [vars = move(_sanitised_vars), vals = move(_compressed_vals), excluded = move(_sanitised_excluded),
-            value_am1_constraint_numbers = _value_am1_constraint_numbers,
+            value_am1_constraint_numbers = _value_am1_constraint_numbers, scratch = make_gac_all_different_scratch(),
             constraint_id = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(constraint_id, vars, vals, excluded, *value_am1_constraint_numbers.get(), state, inference, logger);
+            propagate_gac_all_different(constraint_id, vars, vals, excluded, *value_am1_constraint_numbers.get(), *scratch, state, inference, logger);
             return PropagatorState::Enable;
         },
         triggers);

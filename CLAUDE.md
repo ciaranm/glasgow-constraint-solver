@@ -144,6 +144,31 @@ case Value1:
 
 This pattern is already used in the codebase; follow it consistently.
 
+### `overloaded{...}` visitor blocks
+
+Format `overloaded{...}` visitors like a `switch`: nothing after the opening brace, each
+lambda starting on its own line at one indent level, all lambdas indented equally. Pin the
+layout with an empty `//` comment straight after the opening brace:
+
+```cpp
+overloaded{//
+    [&](const consistency::GAC &) {
+        // ...
+    },
+    [&](const consistency::VC &) {
+        // ...
+    }}
+    .visit(_level);
+```
+
+The pin is load-bearing. clang-format's penalty optimiser will otherwise pull the first
+lambda up onto the `overloaded{` line whenever the content happens to make that layout
+score better, and it re-mangles a previously-clean block when the lambda bodies change —
+so an unpinned block that looks stable today is one edit away from being reflowed. When
+you meet an already-mangled block, add the `//` and re-run clang-format rather than
+re-indenting by hand. (Same trick as the trailing `//` that keeps cxxopts `add_options`
+blocks one option per line.)
+
 ### `std::format` / `fmt::format`
 
 Files that use `format()` for string building must use the conditional pattern:

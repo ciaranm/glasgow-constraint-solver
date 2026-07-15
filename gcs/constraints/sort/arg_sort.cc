@@ -516,9 +516,9 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
 
     propagators.install(
         constraint_id(),
-        [p = _p, vals = move(p_vals), am1_lines, constraint_id = constraint_id()](
+        [p = _p, vals = move(p_vals), am1_lines, scratch = make_gac_all_different_scratch(), constraint_id = constraint_id()](
             const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            propagate_gac_all_different(constraint_id, p, vals, vector<Integer>{}, *am1_lines, state, inference, logger);
+            propagate_gac_all_different(constraint_id, p, vals, vector<Integer>{}, *am1_lines, *scratch, state, inference, logger);
             // Idempotent for the same reason AllDifferent's GAC propagator is:
             // one call prunes to the closure, and the run is nothing but that
             // call. Triggers are 1:1 with p, so an aliased scope is caught by

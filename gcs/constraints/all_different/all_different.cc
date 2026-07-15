@@ -69,12 +69,13 @@ auto AllDifferent::prepare(Propagators &, State & initial_state, ProofModel * co
 
     // Set up only what the requested propagator needs: GAC wants the compressed
     // value set; VC wants the not-yet-assigned variables as backtrackable state.
-    overloaded{[&](const consistency::GAC &) {
-                   for (auto & var : _sanitised_vars)
-                       for (const auto & val : initial_state.each_value_immutable(var))
-                           if (_compressed_vals.end() == find(_compressed_vals, val))
-                               _compressed_vals.push_back(val);
-               },
+    overloaded{//
+        [&](const consistency::GAC &) {
+            for (auto & var : _sanitised_vars)
+                for (const auto & val : initial_state.each_value_immutable(var))
+                    if (_compressed_vals.end() == find(_compressed_vals, val))
+                        _compressed_vals.push_back(val);
+        },
         [&](const consistency::VC &) {
             NonGacAllDifferentUnassigned unassigned{};
             for (auto & var : _sanitised_vars)
@@ -104,15 +105,16 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
     Triggers triggers;
     triggers.on_change = {_sanitised_vars.begin(), _sanitised_vars.end()};
 
-    overloaded{
+    overloaded{//
         [&](const consistency::GAC &) {
             auto value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
             propagators.install(
                 constraint_id(),
                 [vars = move(_sanitised_vars), vals = move(_compressed_vals), value_am1_constraint_numbers = move(value_am1_constraint_numbers),
+                    scratch = make_gac_all_different_scratch(),
                     constraint_id = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                     propagate_gac_all_different(
-                        constraint_id, vars, vals, vector<Integer>{}, *value_am1_constraint_numbers.get(), state, inference, logger);
+                        constraint_id, vars, vals, vector<Integer>{}, *value_am1_constraint_numbers.get(), *scratch, state, inference, logger);
                     // Idempotent: one call prunes to the GAC closure. The
                     // matching and SCCs are built from an entry snapshot, and
                     // what survives is exactly the union of maximum matchings,
