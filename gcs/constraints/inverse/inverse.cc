@@ -190,7 +190,7 @@ auto Inverse::install_propagators(Propagators & propagators) -> void
                 }
 
                 propagate_gac_all_different(constraint_id, x, x_values, vector<Integer>{}, *x_value_am1s.get(), *scratch, state, inf, logger);
-            } while (inf.did_anything_since_last_call_inside_propagator());
+            } while (inf.made_progress_since_last_check());
 
             return PropagatorState::EnableButIdempotent;
         },

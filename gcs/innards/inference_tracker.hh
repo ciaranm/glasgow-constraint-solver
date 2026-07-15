@@ -34,7 +34,7 @@ namespace gcs::innards
     protected:
         State & _state;
         std::deque<std::pair<SimpleIntegerVariableID, Inference>> _inferences;
-        bool _did_anything_since_last_call_by_propagation_queue, _did_anything_since_last_call_inside_propagator;
+        bool _did_anything_since_last_call_by_propagation_queue, _made_progress_since_last_check;
         // Set when an inference yields a contradiction on the non-throwing
         // (infer_*_or_stop) path. The throwing infer* methods unwind instead, so
         // this is the signal the propagate loop checks for propagators that opt
@@ -106,7 +106,7 @@ namespace gcs::innards
                 .visit(lit);
 
             _did_anything_since_last_call_by_propagation_queue = true;
-            _did_anything_since_last_call_inside_propagator = true;
+            _made_progress_since_last_check = true;
         }
 
         // The JustifyExplicitly counterpart of track_impl. Lives in the base class
@@ -140,7 +140,7 @@ namespace gcs::innards
                     if (logger)
                         infer_explicitly(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
                 _did_anything_since_last_call_by_propagation_queue = true;
-                _did_anything_since_last_call_inside_propagator = true;
+                _made_progress_since_last_check = true;
                 _contradicted = true;
                 if (do_throw)
                     throw TrackedPropagationFailed{};
@@ -150,7 +150,7 @@ namespace gcs::innards
 
     public:
         explicit InferenceTrackerBase(State & s) :
-            _state(s), _did_anything_since_last_call_by_propagation_queue(false), _did_anything_since_last_call_inside_propagator(false)
+            _state(s), _did_anything_since_last_call_by_propagation_queue(false), _made_progress_since_last_check(false)
         {
         }
 
@@ -590,10 +590,11 @@ namespace gcs::innards
         }
 
         // How many firing inferences have been recorded since the last reset().
-        // Unlike the did_anything_since_last_call_* flags, this is a
+        // Unlike the destructive progress-flag reads below, this is a
         // non-destructive read: the propagation queue brackets each propagator
         // run with it to attribute the run's (contiguous) inference range back
-        // to that propagator.
+        // to that propagator, and nested helpers use it for change detection
+        // without stealing anyone else's flag (see propagate_linear).
         [[nodiscard]] auto count_inferences() const -> std::size_t
         {
             return _inferences.size();
@@ -602,7 +603,7 @@ namespace gcs::innards
         auto reset() -> void
         {
             _inferences.clear();
-            _did_anything_since_last_call_inside_propagator = false;
+            _made_progress_since_last_check = false;
             _did_anything_since_last_call_by_propagation_queue = false;
         }
 
@@ -611,9 +612,27 @@ namespace gcs::innards
             return std::exchange(_did_anything_since_last_call_by_propagation_queue, false);
         }
 
-        auto did_anything_since_last_call_inside_propagator() -> bool
+        // Has this propagator inferred anything (or hit a contradiction) since
+        // its current run began, or since it last asked? A destructive read:
+        // asking clears the flag, so consecutive checks partition the run into
+        // windows. The propagation queue clears the flag before every run (via
+        // begin_propagator_run), so the first check never reports another
+        // propagator's leftovers -- everything the flag says is the caller's
+        // own work. There is only one flag per run, though: a helper that
+        // consumes it steals the edge from a check loop further up the same
+        // call stack, so a helper that may run under someone else's loop must
+        // bracket with count_inferences() instead (see propagate_linear).
+        [[nodiscard]] auto made_progress_since_last_check() -> bool
         {
-            return std::exchange(_did_anything_since_last_call_inside_propagator, false);
+            return std::exchange(_made_progress_since_last_check, false);
+        }
+
+        // Called by the propagation queue before each propagator run (including
+        // an idempotence-recheck re-run), so made_progress_since_last_check()
+        // starts every run with a clean window.
+        auto begin_propagator_run() -> void
+        {
+            _made_progress_since_last_check = false;
         }
     };
 
@@ -650,12 +669,12 @@ namespace gcs::innards
                     .visit(lit);
 
                 _did_anything_since_last_call_by_propagation_queue = true;
-                _did_anything_since_last_call_inside_propagator = true;
+                _made_progress_since_last_check = true;
                 break;
 
             [[unlikely]] case Inference::Contradiction:
                 _did_anything_since_last_call_by_propagation_queue = true;
-                _did_anything_since_last_call_inside_propagator = true;
+                _made_progress_since_last_check = true;
                 _contradicted = true;
                 if (do_throw)
                     throw TrackedPropagationFailed{};
@@ -705,14 +724,14 @@ namespace gcs::innards
                     .visit(lit);
 
                 _did_anything_since_last_call_by_propagation_queue = true;
-                _did_anything_since_last_call_inside_propagator = true;
+                _made_progress_since_last_check = true;
                 break;
 
             [[unlikely]] case Inference::Contradiction:
                 if (logger)
                     logger->infer(lit, just, materialise(reason, _state), assertion_hints);
                 _did_anything_since_last_call_by_propagation_queue = true;
-                _did_anything_since_last_call_inside_propagator = true;
+                _made_progress_since_last_check = true;
                 _contradicted = true;
                 if (do_throw)
                     throw TrackedPropagationFailed{};

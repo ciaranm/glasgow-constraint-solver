@@ -66,6 +66,7 @@ namespace
         PropagationFunction & f, const State & state, Tracker_ & tracker, ProofLogger * const logger, const ConstraintID & id) -> void
     {
         const auto inferences_before_recheck = tracker.count_inferences();
+        tracker.begin_propagator_run();
         try {
             (void)f(state, tracker, logger);
         }
@@ -414,6 +415,7 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
             int propagator_id = _imp->queue[_imp->enqueued_begin++];
             try {
                 ++_imp->total_propagations;
+                tracker.begin_propagator_run();
                 auto propagator_state = _imp->propagation_functions[propagator_id](state, tracker, logger);
                 if (tracker.contradicted()) {
                     // A propagator that opted into the non-throwing failure path

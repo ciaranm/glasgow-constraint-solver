@@ -260,7 +260,7 @@ auto gcs::innards::propagate_linear(const auto & coeff_vars, Integer value, cons
     // from last time, and after a clean inverse the forward's inputs (the
     // inverse's lower bounds) are, so either clean sweep proves the fixpoint. We
     // detect change with the tracker's non-destructive inference count rather
-    // than did_anything_since_last_call_inside_propagator(), because that flag
+    // than made_progress_since_last_check(), because that flag
     // is shared with the propagate_stages callers (multiply/divide/power run
     // their own do-while on it across all stages), so clearing it here would
     // corrupt their loop.
@@ -429,7 +429,7 @@ auto gcs::innards::propagate_linear_incremental(const auto & coeff_vars, Integer
     // idempotence -- see propagate_linear for the read/write reasoning (the
     // inverse writes the lower bounds the forward reads, so it can feed a
     // further forward tightening) and the same non-destructive change detection
-    // (the shared did_anything flag belongs to the propagate_stages callers).
+    // (the shared progress flag belongs to the propagate_stages callers).
     // lower_sum / inv_lower_sum are invariant within a sweep, so each is
     // recomputed at the sweep top from the current active-term bounds plus the
     // folded fixed_lower. An inequality does a single forward sweep, as before.

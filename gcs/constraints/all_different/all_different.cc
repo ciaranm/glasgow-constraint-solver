@@ -173,20 +173,15 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
                     // for staging to pay; see min_var_val_pairs_for_staged_gac):
                     // push newly assigned values through the clique -- the same
                     // value-consistency pass, over the same backtrackable
-                    // unassigned list, as the VC propagator below. The first
-                    // flag read discards any stale value:
-                    // did_anything_since_last_call_inside_propagator is set by
-                    // every inference from every propagator and only cleared
-                    // when read, and acting on a leftover true after an
-                    // inference-free stage 1 would skip stage 2 with none of
-                    // our own triggers guaranteeing a re-wake.
+                    // unassigned list, as the VC propagator below.
                     if (staged) {
-                        inference.did_anything_since_last_call_inside_propagator();
                         if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, constraint_id,
                                 reasons.table.empty() ? nullptr : &reasons.table, reasons.base))
                             return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
 
-                        // If stage 1 inferred anything, defer the expensive
+                        // If stage 1 inferred anything (the progress flag is
+                        // clean at run start, so it reports exactly our own
+                        // stage 1), defer the expensive
                         // stage: return Enable *without* an idempotence claim,
                         // so the removals just made -- all on our own on_change
                         // trigger variables -- requeue us at the round
@@ -202,7 +197,7 @@ auto AllDifferent::install_propagators(Propagators & propagators) -> void
                         // not), so the search is unchanged, though propagation
                         // counts and proof shape differ from running GAC on
                         // every wake.
-                        if (inference.did_anything_since_last_call_inside_propagator())
+                        if (inference.made_progress_since_last_check())
                             return PropagatorState::Enable;
                     }
 
