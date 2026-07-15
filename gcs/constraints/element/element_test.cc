@@ -231,21 +231,22 @@ auto run_dup_element_test(bool proofs, const string & label, const vector<pair<i
 
 auto main(int argc, char * argv[]) -> int
 {
-    if (argc < 2)
-        throw UnimplementedException{};
-
-    string mode{argv[1]};
-    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
-
-    // Position layout per mode: var, then the index variable(s), then the
-    // array entries (only when the array is itself made of variables). The
-    // skip bound matches the registered n_positions for each mode.
-    int n_positions = (mode == "const") ? 2 : (mode == "const2d") ? 3 : (mode == "var2d") ? 5 : 6;
-    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
-        println(cerr, "element view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
-        return EXIT_SUCCESS;
+    // Mode is the first non-flag positional; --view-* flags may follow. With no
+    // mode given (a manual run rather than the ctest harness) run every mode.
+    string requested_mode;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (! a.starts_with("--")) {
+            requested_mode = a;
+            break;
+        }
     }
-    bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+    // Keep in sync with the mode dispatch below and the matching foreach(mode ...)
+    // in gcs/CMakeLists.txt.
+    const vector<string> all_modes = {"var", "const", "const2d", "var2d"};
+    const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
+
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     vector<tuple<pair<int, int>, pair<int, int>, vector<pair<int, int>>>> var_data = {{{1, 2}, {0, 1}, {{1, 2}, {1, 2}}}, //
         {{1, 2}, {-2, 2}, {{1, 2}, {1, 2}}},                                                                              //
@@ -324,40 +325,52 @@ auto main(int argc, char * argv[]) -> int
             vector{size_t(n_values_1), vector{size_t(n_values_2), random_bounds(-3, 3, 0, 3)}});
     }
 
-    for (bool proofs : {false, true}) {
-        if (proofs && ! can_run_veripb())
+    for (const auto & mode : modes) {
+        // Position layout per mode: var, then the index variable(s), then the
+        // array entries (only when the array is itself made of variables). The
+        // skip bound matches the registered n_positions for each mode.
+        int n_positions = (mode == "const") ? 2 : (mode == "const2d") ? 3 : (mode == "var2d") ? 5 : 6;
+        if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+            println(cerr, "element view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
             continue;
-        if (mode == "var") {
-            for (auto & [r1, r2, r3] : var_data)
-                run_element_test(proofs, mode, view_cfg, r1, r2, r3);
+        }
+        bool run_dup = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
 
-            if (run_dup) {
-                // Dup-variable cases.
-                // [x, y, x] — same handle at non-adjacent positions.
-                run_dup_element_test(proofs, "xyx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, -1);
-                // [x, x] — same handle at adjacent positions.
-                run_dup_element_test(proofs, "xx", {{1, 3}}, {0, 0}, {0, 1}, -1);
-                // [x, y, x] but result is x — forces idx-selected value = x.
-                run_dup_element_test(proofs, "xyx_resx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, 0);
-                // [x, y] with result = x — forces array[idx] = x, i.e. either
-                // idx=0 (trivial) or idx=1 and y = x.
-                run_dup_element_test(proofs, "xy_resx", {{1, 3}, {1, 3}}, {0, 1}, {0, 1}, 0);
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                continue;
+            if (mode == "var") {
+                for (auto & [r1, r2, r3] : var_data)
+                    run_element_test(proofs, mode, view_cfg, r1, r2, r3);
+
+                if (run_dup) {
+                    // Dup-variable cases.
+                    // [x, y, x] — same handle at non-adjacent positions.
+                    run_dup_element_test(proofs, "xyx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, -1);
+                    // [x, x] — same handle at adjacent positions.
+                    run_dup_element_test(proofs, "xx", {{1, 3}}, {0, 0}, {0, 1}, -1);
+                    // [x, y, x] but result is x — forces idx-selected value = x.
+                    run_dup_element_test(proofs, "xyx_resx", {{1, 3}, {1, 3}}, {0, 1, 0}, {0, 2}, 0);
+                    // [x, y] with result = x — forces array[idx] = x, i.e. either
+                    // idx=0 (trivial) or idx=1 and y = x.
+                    run_dup_element_test(proofs, "xy_resx", {{1, 3}, {1, 3}}, {0, 1}, {0, 1}, 0);
+                }
             }
+            else if (mode == "const") {
+                for (auto & [r1, r2, r3] : const_data)
+                    run_element_constant_test(proofs, mode, view_cfg, r1, r2, r3);
+            }
+            else if (mode == "const2d") {
+                for (auto & [r1, r2, r3, r4] : const2d_data)
+                    run_element2d_constant_test(proofs, mode, view_cfg, r1, r2, r3, r4);
+            }
+            else if (mode == "var2d") {
+                for (auto & [r1, r2, r3, r4] : var2d_data)
+                    run_element2d_test(proofs, mode, view_cfg, r1, r2, r3, r4);
+            }
+            else
+                throw UnimplementedException{};
         }
-        else if (mode == "const") {
-            for (auto & [r1, r2, r3] : const_data)
-                run_element_constant_test(proofs, mode, view_cfg, r1, r2, r3);
-        }
-        else if (mode == "const2d") {
-            for (auto & [r1, r2, r3, r4] : const2d_data)
-                run_element2d_constant_test(proofs, mode, view_cfg, r1, r2, r3, r4);
-        }
-        else if (mode == "var2d") {
-            for (auto & [r1, r2, r3, r4] : var2d_data)
-                run_element2d_test(proofs, mode, view_cfg, r1, r2, r3, r4);
-        }
-        else
-            throw UnimplementedException{};
     }
 
     return EXIT_SUCCESS;
