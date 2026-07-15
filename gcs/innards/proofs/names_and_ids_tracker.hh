@@ -74,6 +74,11 @@ namespace gcs::innards
 
         [[nodiscard]] auto allocate_flag_index() -> unsigned long long;
 
+        // Record the PB-file rendering of a freshly-allocated XLiteral (and its
+        // negation, as `~name`). Every allocate_* path calls this exactly once,
+        // in both naming modes, so pb_file_string_for is a plain index.
+        auto store_xlit_names(const XLiteral &, std::string name) -> void;
+
         // Allocate the XLiteral backing a flag, registering `verbose_name` (and
         // its negation) as the PB-file rendering. Shared by create_proof_flag
         // (which passes the `f[index][stem]` form) and make_proof_flag_named
@@ -313,7 +318,7 @@ namespace gcs::innards
         /**
          * Return the string used in PB files for a given XLiteral.
          */
-        [[nodiscard]] auto pb_file_string_for(const XLiteral &) const -> std::string;
+        [[nodiscard]] auto pb_file_string_for(const XLiteral &) const -> const std::string &;
 
         /**
          * Return the raw proof literal representing a variable condition, for writing to a model or log.
@@ -323,7 +328,7 @@ namespace gcs::innards
         /**
          * Return a string form of a raw proof literal, for writing to a model or log.
          */
-        [[nodiscard]] auto pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> std::string;
+        [[nodiscard]] auto pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const std::string &;
 
         /**
          * Return a string form of the exact literals specifying a bit assignment for var == val, an alternative way to witness solutions.
@@ -339,7 +344,7 @@ namespace gcs::innards
          * Return a string form of a proof flag, for writing to a model or log. Same as calling
          * raw_literal_as_string(raw_proof_literal(flag)).
          */
-        [[nodiscard]] auto pb_file_string_for(const ProofFlag &) const -> std::string;
+        [[nodiscard]] auto pb_file_string_for(const ProofFlag &) const -> const std::string &;
 
         /**
          * Call the supplied function for each bit making up the given variable, specifying

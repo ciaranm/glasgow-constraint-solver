@@ -142,7 +142,10 @@ struct NamesAndIDsTracker::Imp
     map<ProofFlag, XLiteral> flags;
 
     map<SimpleOrProofOnlyIntegerVariableID, string> id_names;
-    map<XLiteral, string> xlits_to_verbose_names;
+    // The PB-file rendering of every allocated XLiteral, indexed 2 * id +
+    // negated (ids are allocated sequentially from 1). Populated in both
+    // naming modes, so rendering a literal is an index, not a lookup.
+    vector<string> xlit_names;
     map<ProofFlag, string> flag_names;
 
     list<function<auto(ProofLogger * const)->void>> delayed_proof_steps;
@@ -1489,23 +1492,25 @@ auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> Proo
     return result;
 }
 
-auto NamesAndIDsTracker::pb_file_string_for(const XLiteral & lit) const -> string
+auto NamesAndIDsTracker::store_xlit_names(const XLiteral & lit, string name) -> void
 {
-    if (_imp->verbose_names) {
-        auto it = _imp->xlits_to_verbose_names.find(lit);
-        if (it == _imp->xlits_to_verbose_names.end())
-            throw ProofError("missing verbose name for xliteral " + to_string(lit.id) + " " + to_string(lit.negated));
-        return it->second;
-    }
-    else {
-        if (lit.negated)
-            return "~x" + to_string(lit.id);
-        else
-            return "x" + to_string(lit.id);
-    }
+    // `name` renders the positive polarity; the negation is always `~name`.
+    auto idx = static_cast<vector<string>::size_type>(lit.id) * 2;
+    if (_imp->xlit_names.size() < idx + 2)
+        _imp->xlit_names.resize(idx + 2);
+    _imp->xlit_names[idx + 1] = "~" + name;
+    _imp->xlit_names[idx] = move(name);
 }
 
-auto NamesAndIDsTracker::pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> string
+auto NamesAndIDsTracker::pb_file_string_for(const XLiteral & lit) const -> const string &
+{
+    auto idx = static_cast<vector<string>::size_type>(lit.id) * 2 + (lit.negated ? 1 : 0);
+    if (idx >= _imp->xlit_names.size() || _imp->xlit_names[idx].empty())
+        throw ProofError("missing name for xliteral " + to_string(lit.id) + " " + to_string(lit.negated));
+    return _imp->xlit_names[idx];
+}
+
+auto NamesAndIDsTracker::pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> const string &
 {
     return pb_file_string_for(xliteral_for(cond));
 }
@@ -1548,7 +1553,7 @@ auto NamesAndIDsTracker::xliteral_for(const VariableConditionFrom<SimpleOrProofO
     return f->second;
 }
 
-auto NamesAndIDsTracker::pb_file_string_for(const ProofFlag & flag) const -> string
+auto NamesAndIDsTracker::pb_file_string_for(const ProofFlag & flag) const -> const string &
 {
     return pb_file_string_for(xliteral_for(flag));
 }
@@ -1579,17 +1584,17 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
                 string name = format("i[{}][{}{}]", name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+                store_xlit_names(result, name);
             }, //
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
                 string name = format("p[{}_{}][{}{}]", id.index, name_of(id), (op == EqualsOrGreaterEqual::Equals ? "eq" : "ge"), value_name);
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+                store_xlit_names(result, name);
             } //
         }
             .visit(id);
     }
+    else
+        store_xlit_names(result, "x" + to_string(result.id));
 
     if (_imp->variables_map_file) {
         try {
@@ -1633,17 +1638,17 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning(SimpleOrProofOnlyIntegerVaria
         overloaded{
             [&](const SimpleIntegerVariableID & id) -> void {
                 string name = format("i[{}][in{}_{}]", name_of(id), value_name(lo), value_name(hi));
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+                store_xlit_names(result, name);
             }, //
             [&](const ProofOnlySimpleIntegerVariableID & id) -> void {
                 string name = format("p[{}_{}][in{}_{}]", id.index, name_of(id), value_name(lo), value_name(hi));
-                _imp->xlits_to_verbose_names.emplace(result, name);
-                _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+                store_xlit_names(result, name);
             } //
         }
             .visit(id);
     }
+    else
+        store_xlit_names(result, "x" + to_string(result.id));
 
     if (_imp->variables_map_file) {
         try {
@@ -1681,9 +1686,10 @@ auto NamesAndIDsTracker::allocate_flag_xliteral(ProofFlag flag, const string & v
     auto result = XLiteral{++_imp->next_xliteral_nr, false};
 
     if (_imp->verbose_names) {
-        _imp->xlits_to_verbose_names.emplace(result, verbose_name);
-        _imp->xlits_to_verbose_names.emplace(! result, "~" + verbose_name);
+        store_xlit_names(result, verbose_name);
     }
+    else
+        store_xlit_names(result, "x" + to_string(result.id));
 
     if (_imp->variables_map_file) {
         try {
@@ -1718,9 +1724,10 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_negative_bit_of(
                         [&](const SimpleIntegerVariableID & id) { return format("i[{}][sign]", name_of(id)); }, //
                         [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][sign]", id.index, name_of(id)); }},
                   id);
-        _imp->xlits_to_verbose_names.emplace(result, name);
-        _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+        store_xlit_names(result, name);
     }
+    else
+        store_xlit_names(result, "x" + to_string(result.id));
 
     if (_imp->variables_map_file) {
         try {
@@ -1765,9 +1772,10 @@ auto NamesAndIDsTracker::allocate_xliteral_meaning_bit_of(
                         [&](const SimpleIntegerVariableID & id) { return format("i[{}][b{}]", name_of(id), power); }, //
                         [&](const ProofOnlySimpleIntegerVariableID & id) { return format("p[{}_{}][b{}]", id.index, name_of(id), power); }},
                   id);
-        _imp->xlits_to_verbose_names.emplace(result, name);
-        _imp->xlits_to_verbose_names.emplace(! result, "~" + name);
+        store_xlit_names(result, name);
     }
+    else
+        store_xlit_names(result, "x" + to_string(result.id));
 
     if (_imp->variables_map_file) {
         try {
