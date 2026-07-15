@@ -148,7 +148,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
         [product_data = product_data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             do {
                 signed_multiply::propagate(*product_data, state, inference, logger, owner);
-            } while (inference.did_anything_since_last_call_inside_propagator());
+            } while (inference.made_progress_since_last_check());
             // Idempotent: the do-while ran signed_multiply::propagate to quiescence
             // (it exits only when a whole pass inferred nothing), so an immediate
             // re-run is a single no-op pass. This needs no 1:1-trigger / non-aliasing

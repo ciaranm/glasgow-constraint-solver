@@ -228,7 +228,7 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
 
                     for (auto & link : *links)
                         signed_multiply::propagate(link, state, inference, logger, owner);
-                } while (inference.did_anything_since_last_call_inside_propagator());
+                } while (inference.made_progress_since_last_check());
 
                 // Idempotent: the do-while ran the stages and multiply links to
                 // quiescence, so an immediate re-run is one no-op pass (see multiply.cc

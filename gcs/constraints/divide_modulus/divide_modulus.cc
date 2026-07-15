@@ -1174,7 +1174,7 @@ namespace
                         return PropagatorState::Enable;
 
                     propagate_default_product<Hint_>(*data, modulus_r, state, inference, logger, owner);
-                } while (inference.did_anything_since_last_call_inside_propagator());
+                } while (inference.made_progress_since_last_check());
 
                 // Idempotent: the do-while ran the stages (and the default product)
                 // to quiescence, so an immediate re-run is one no-op pass (see
