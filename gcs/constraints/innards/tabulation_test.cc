@@ -35,7 +35,6 @@ using std::mt19937;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::tuple;
 using std::unique_ptr;
@@ -153,8 +152,10 @@ auto run_tabulated_product_test(bool proofs, bool claim_determined, pair<int, in
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> data = {
         {{1, 3}, {1, 3}, {1, 9}},      //
         {{-3, 3}, {-3, 3}, {-9, 9}},   // negatives and zero throughout
@@ -167,8 +168,7 @@ auto main(int, char *[]) -> int
         {{2, 2}, {3, 3}, {7, 7}},      // all fixed, contradiction
     };
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     for (int x = 0; x < 3; ++x)
         generate_random_data(rand, data, random_bounds(-6, 6, 1, 5), random_bounds(-6, 6, 1, 5), random_bounds(-20, 20, 5, 20));
 

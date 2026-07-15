@@ -32,7 +32,6 @@ using std::max;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -227,8 +226,10 @@ auto run_knapsack_upfront_regression(pair<int, int> valrange, const vector<vecto
     test_innards::check_results(make_optional(proof_name), expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     // Deterministic regressions first, so we know fast if the worst-case
     // search paths are broken even though the random tests below would
     // sometimes mask it. Minimal repro for the per-call dead-state RUP
@@ -263,8 +264,7 @@ auto main(int, char *[]) -> int
         {{1, 1}, {{2, 3}}, {{5, 5}}},  // all taken 1: sum 5 == total (tautology)
         {{1, 1}, {{2, 3}}, {{4, 4}}}}; // all taken 1: sum 5 != total 4 (contradiction)
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_coeffs_dist(1, 4), size_dist(1, 4), item_dist(0, 8), bound_dist(0, 40), delta_dist(0, 30);
         auto size = size_dist(rand);

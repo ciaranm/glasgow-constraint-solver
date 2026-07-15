@@ -433,13 +433,16 @@ namespace gcs::test_innards
     }
 
     /**
-     * Singleton holding the --seed argv value, if one was passed.
+     * Singleton holding the run's seed.
      *
-     * Test main()s call set_seed_from_argv(argc, argv) once at startup; the
-     * seed then drives both the test's data RNG (callers read it via
-     * get_seed()) and the harness's branching heuristic
-     * (random_branch_with_optional_seed below). When unset, behaviour is
-     * the historical random_device-based randomness.
+     * Test main()s call establish_and_announce_seed(argc, argv) once at
+     * startup, which fills this from `--seed=N` or a fresh random_device
+     * draw; the seed then drives both the test's data RNG (callers read it
+     * via get_seed()) and the harness's branching heuristic
+     * (random_branch_with_optional_seed below). Unset only in binaries that
+     * never establish a seed (the Catch2-based tests and other
+     * non-randomised probes), where branching falls back to
+     * random_device-based randomness.
      */
     inline auto seed_storage() -> std::optional<std::uint_fast32_t> &
     {
@@ -470,6 +473,32 @@ namespace gcs::test_innards
             }
         }
         seed_storage() = std::nullopt;
+    }
+
+    /**
+     * Like set_seed_from_argv(), but when no `--seed=N` is given, draws a
+     * seed from random_device, stores it as if it had been passed, and
+     * announces it on stderr. Every source of randomness in the run (data
+     * generation via get_seed(), branching via
+     * random_branch_with_optional_seed()) then flows from the announced
+     * seed, so a pathologically slow or failing random instance can be
+     * reproduced by re-running the same command line with `--seed=N`
+     * appended. ctest echoes the output of failing tests, so the seed is in
+     * the CI log exactly when it is most needed.
+     */
+    inline auto establish_and_announce_seed(int argc, char * argv[]) -> void
+    {
+#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
+        using std::println;
+#else
+        using fmt::println;
+#endif
+        using std::cerr;
+
+        set_seed_from_argv(argc, argv);
+        if (! seed_storage())
+            seed_storage() = static_cast<std::uint_fast32_t>(std::random_device{}());
+        println(cerr, "{}: random seed is {} (reproduce with --seed={})", argv[0], *seed_storage(), *seed_storage());
     }
 
     /// Build the random branching pair, honouring --seed if set. Uses

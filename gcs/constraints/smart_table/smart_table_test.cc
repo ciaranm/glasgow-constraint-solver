@@ -431,6 +431,8 @@ auto run_degenerate_test(bool proofs, const string & mode) -> void
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     // Mode is the first non-flag positional. With no mode given (a manual run
     // rather than the ctest harness) run every mode.
     string requested_mode;

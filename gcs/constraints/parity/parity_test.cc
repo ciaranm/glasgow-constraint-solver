@@ -30,7 +30,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::tuple;
 using std::uniform_int_distribution;
@@ -112,6 +111,8 @@ auto run_dup_parity_test(bool proofs, const vector<pair<int, int>> & unique_doma
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     constexpr int n_positions = 4;
@@ -154,8 +155,7 @@ auto main(int argc, char * argv[]) -> int
         {1, 2, 0, -1} //
     };
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 4);
         auto n_values = n_values_dist(rand);

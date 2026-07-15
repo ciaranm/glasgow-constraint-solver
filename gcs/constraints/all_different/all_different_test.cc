@@ -28,7 +28,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -151,6 +150,8 @@ auto run_alldiff_collection_test(bool proofs, const string & label, const vector
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     constexpr int n_positions = 6;
@@ -175,8 +176,7 @@ auto main(int argc, char * argv[]) -> int
             {1, 1, 3, 4, 5, 6},  // two equal constants (contradiction)
             {7, 7, 7, 7, 7, 7}}; // all equal constants (contradiction)
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5),
             random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5), random_bounds(-10, 10, 2, 5));

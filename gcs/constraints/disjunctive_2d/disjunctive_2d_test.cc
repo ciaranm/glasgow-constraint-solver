@@ -30,7 +30,6 @@ using std::min;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -261,6 +260,8 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     // Mode is the first non-flag positional. With no mode given (a manual run
     // rather than the ctest harness) run every mode.
     string requested_mode;
@@ -303,8 +304,7 @@ auto main(int argc, char * argv[]) -> int
         {{{0, 0}, {0, 0}}, {{0, 0}, {0, 0}}, {1, 1}, {1, 1}},
     };
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
 
     auto random_instance = [&](int n, int max_pos, int max_size) -> tuple<vector<pair<int, int>>, vector<pair<int, int>>, vector<int>, vector<int>> {
         uniform_int_distribution<> lo_dist(0, max_pos), span_dist(0, max_pos), size_dist(0, max_size);

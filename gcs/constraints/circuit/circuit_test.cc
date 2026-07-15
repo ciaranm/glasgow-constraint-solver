@@ -94,6 +94,8 @@ auto run_circuit_test(bool proofs, const ViewWrapConfig & view_cfg, int n, Circu
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Instances run at n = 3, 4, 5; positions 0..4 cover the largest fully.

@@ -28,7 +28,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::tuple;
 using std::uniform_int_distribution;
@@ -127,7 +126,7 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
-    set_seed_from_argv(argc, argv);
+    establish_and_announce_seed(argc, argv);
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
@@ -229,8 +228,7 @@ auto main(int argc, char * argv[]) -> int
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        auto seed = get_seed();
-        mt19937 rng(seed ? *seed : random_device{}());
+        mt19937 rng(*get_seed());
         for (int t = 0; t < 8; ++t) {
             auto [xd, yd] = random_instance(rng);
             run_sort_test(proofs, xd, yd);

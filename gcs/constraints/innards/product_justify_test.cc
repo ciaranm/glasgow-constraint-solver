@@ -435,8 +435,10 @@ namespace
     }
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             break;

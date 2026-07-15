@@ -32,7 +32,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -164,6 +163,8 @@ auto run_self_ref_among_test(bool proofs, pair<int, int> shared_range, const vec
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     constexpr int n_positions = 5;
@@ -191,8 +192,7 @@ auto main(int argc, char * argv[]) -> int
         {3, vector{5, 6}, {5, 6, 7}},               // all-constant array: only 2 match (contradiction)
         {pair{0, 2}, vector{5}, {5, pair{1, 10}}}}; // mixed: one constant match + one variable
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 4);
         auto n_values_1 = n_values_dist(rand);

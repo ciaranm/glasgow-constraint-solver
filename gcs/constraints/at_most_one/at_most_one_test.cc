@@ -26,7 +26,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -169,6 +168,8 @@ auto run_all_tests(Variant variant, bool proofs, const ViewWrapConfig & view_cfg
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     constexpr int n_positions = 5;
@@ -177,8 +178,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
 
     bool effectively_bare = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
     bool run_dup = effectively_bare;

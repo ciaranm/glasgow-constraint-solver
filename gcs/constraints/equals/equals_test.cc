@@ -23,7 +23,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -190,7 +189,7 @@ auto run_no_overlap_equals_test(bool proofs) -> void
 
 auto main(int argc, char * argv[]) -> int
 {
-    set_seed_from_argv(argc, argv);
+    establish_and_announce_seed(argc, argv);
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Single-position config that names a position the constraint doesn't
@@ -221,8 +220,7 @@ auto main(int argc, char * argv[]) -> int
         {-3, -3} //
     };
 
-    random_device rand_dev;
-    mt19937 rand(get_seed().value_or(rand_dev()));
+    mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15));
     for (int x = 0; x < 10; ++x)

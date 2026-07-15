@@ -232,6 +232,8 @@ auto run_power_alias_test(bool proofs, pair<int, int> x_range) -> void
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     // The view-wrap sweep over (base, result): a focused constant-exponent
     // battery under wraps, proof files suffixed per config.
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);

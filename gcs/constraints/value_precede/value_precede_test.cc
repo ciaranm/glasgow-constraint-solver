@@ -31,7 +31,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::sample;
 using std::set;
 using std::tuple;
@@ -194,6 +193,8 @@ auto run_dup_value_precede_test(bool proofs, const vector<int> & chain, const ve
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     constexpr int n_positions = 5;
@@ -202,8 +203,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
