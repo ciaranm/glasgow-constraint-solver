@@ -42,12 +42,14 @@ using std::cmp_not_equal;
 using std::count;
 using std::decay_t;
 using std::is_same_v;
+using std::lower_bound;
 using std::make_shared;
 using std::map;
 using std::min;
 using std::move;
 using std::nullopt;
 using std::optional;
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::tuple;
@@ -102,9 +104,16 @@ namespace gcs::innards
 
         using Vertex = std::variant<Left, Right>;
 
-        // the bipartite variable-value graph and its matching
+        // the bipartite variable-value graph and its matching. edges is
+        // var-major (all real edges of variable i are contiguous, in value
+        // order, at [var_edges_begin[i], var_edges_begin[i + 1])); phantom
+        // edges (all_different_except) sit after the real section and are
+        // tracked per variable in phantom_plus_one_of_var (0 = none, else
+        // right offset + 1, only populated when there are excluded values).
         std::vector<std::pair<Left, Right>> edges;
-        std::vector<uint8_t> left_covered, right_covered;
+        std::vector<std::size_t> var_edges_begin;
+        std::vector<std::size_t> phantom_plus_one_of_var;
+        std::vector<uint8_t> left_covered;
         std::vector<std::optional<Right>> matching;
 
         // value -> index-into-vals lookup (plus one, with zero meaning not a
@@ -122,13 +131,15 @@ namespace gcs::innards
         std::vector<uint8_t> reached_on_the_left, reached_on_the_right;
         std::vector<Left> how_we_got_to_on_the_right;
         std::vector<Right> how_we_got_to_on_the_left;
+        std::vector<Left> bfs_queue;
 
-        // the directed matching graph: edges_out_from is offset-indexed
-        // (variables first, then values) and only feeds the SCC pass, so it
-        // stores offsets directly rather than typed vertices
-        std::vector<std::vector<std::size_t>> edges_out_from;
-        std::vector<std::vector<Right>> edges_out_from_variable, edges_in_to_variable;
-        std::vector<std::vector<Left>> edges_out_from_value, edges_in_to_value;
+        // The directed matching graph is implicit in edges + the matching:
+        // a variable's out-neighbours are its unmatched edges (walked via
+        // var_edges_begin and phantom_plus_one_of_var), a value's single
+        // out-neighbour is inverse_matching, and a variable's single
+        // in-neighbour is matching. Only the unmatched value -> variables
+        // transpose needs materialising, for the backwards used-edge sweep.
+        std::vector<std::vector<Left>> edges_in_to_value;
 
         // Tarjan's algorithm
         std::vector<int> indices, lowlinks, components;
@@ -136,12 +147,15 @@ namespace gcs::innards
         std::vector<std::pair<std::size_t, std::size_t>> tarjan_frames;
         std::vector<uint8_t> enstackinated;
 
+        // value -> its matched variable, rebuilt alongside the matching each
+        // wake; the implicit adjacency above depends on it
+        std::vector<std::optional<Left>> inverse_matching;
+
         // reachability sweeps: the used-edge marking pass, and Hall set
         // extraction in the prove_* helpers
         std::vector<Vertex> to_explore;
         std::vector<uint8_t> in_to_explore, explored;
         std::vector<uint8_t> hall_left, hall_right;
-        std::vector<std::optional<Left>> inverse_matching;
         std::vector<uint8_t> n_of_hall_variables;
 
         // flat vars.size() * vals.size() bitmap; phantom rights never appear
@@ -197,106 +211,167 @@ namespace
             vec[i].clear();
     }
 
-    auto build_matching(const vector<IntegerVariableID> & vars, size_t n_right, GacAllDifferentScratch & scratch) -> void
+    // The out-neighbours of a left (variable) vertex in the directed matching
+    // graph: its unmatched real edges in value order, then its phantom edge
+    // (if any, and unmatched). This is exactly the order the old materialised
+    // edges_out_from / edges_out_from_variable lists were built in -- real
+    // edges are var-major in edges, phantoms follow the real section -- so
+    // everything downstream (Tarjan numbering, Hall set exploration, and
+    // hence proof output) is unchanged.
+    template <typename F_>
+    auto for_each_unmatched_edge_of_var(const GacAllDifferentScratch & scratch, vector<IntegerVariableID>::size_type i, F_ && f) -> void
     {
-        const auto & edges = scratch.edges;
-        auto & left_covered = scratch.left_covered;
-        auto & right_covered = scratch.right_covered;
-        auto & matching = scratch.matching;
-
-        // start with a greedy matching
-        for (const auto & e : edges) {
-            if ((! left_covered[e.first.offset]) && (! right_covered[e.second.offset])) {
-                left_covered[e.first.offset] = 1;
-                right_covered[e.second.offset] = 1;
-                matching[e.first.offset] = e.second;
+        const auto & matched = scratch.matching[i];
+        for (auto e = scratch.var_edges_begin[i], e_end = scratch.var_edges_begin[i + 1]; e != e_end; ++e) {
+            const auto & t = scratch.edges[e].second;
+            if (matched != t)
+                f(t);
+        }
+        if (! scratch.phantom_plus_one_of_var.empty())
+            if (auto p = scratch.phantom_plus_one_of_var[i]; 0 != p) {
+                Right t{p - 1};
+                if (matched != t)
+                    f(t);
             }
+    }
+
+    // Breadth-first search for an augmenting path from an uncovered variable,
+    // over the implicit graph: a variable's candidate edges are walked in
+    // place, and a covered value leads to its matched variable via
+    // inverse_matching. Returns whether it augmented (flipping the matching
+    // along the path); scratch.left_covered is updated for the start.
+    auto augment_from(size_t n_right, vector<IntegerVariableID>::size_type start, GacAllDifferentScratch & scratch) -> bool
+    {
+        auto & matching = scratch.matching;
+        auto & inverse_matching = scratch.inverse_matching;
+        auto & reached_on_the_left = scratch.reached_on_the_left;
+        auto & reached_on_the_right = scratch.reached_on_the_right;
+        auto & how_we_got_to_on_the_right = scratch.how_we_got_to_on_the_right;
+        auto & how_we_got_to_on_the_left = scratch.how_we_got_to_on_the_left;
+        auto & queue = scratch.bfs_queue;
+
+        reached_on_the_left.assign(matching.size(), 0);
+        reached_on_the_right.assign(n_right, 0);
+        how_we_got_to_on_the_right.assign(n_right, Left{});
+        how_we_got_to_on_the_left.assign(matching.size(), Right{});
+
+        queue.clear();
+        queue.push_back(Left{start});
+        reached_on_the_left[start] = 1;
+
+        optional<Right> path_endpoint;
+        for (size_t head = 0; head != queue.size() && ! path_endpoint; ++head) {
+            const auto l = queue[head];
+            for_each_unmatched_edge_of_var(scratch, l.offset, [&](const Right & t) {
+                if (path_endpoint || reached_on_the_right[t.offset])
+                    return;
+                reached_on_the_right[t.offset] = 1;
+                how_we_got_to_on_the_right[t.offset] = l;
+                if (const auto & nl = inverse_matching[t.offset]) {
+                    if (! reached_on_the_left[nl->offset]) {
+                        reached_on_the_left[nl->offset] = 1;
+                        how_we_got_to_on_the_left[nl->offset] = t;
+                        queue.push_back(*nl);
+                    }
+                }
+                else
+                    path_endpoint = t;
+            });
         }
 
-        // now augment
+        if (! path_endpoint)
+            return false;
+
+        // flip the matching along the path, walking backwards
+        auto t = *path_endpoint;
         while (true) {
-            auto & reached_on_the_left = scratch.reached_on_the_left;
-            auto & reached_on_the_right = scratch.reached_on_the_right;
-            auto & how_we_got_to_on_the_right = scratch.how_we_got_to_on_the_right;
-            auto & how_we_got_to_on_the_left = scratch.how_we_got_to_on_the_left;
-            reached_on_the_left.assign(vars.size(), 0);
-            reached_on_the_right.assign(n_right, 0);
-            how_we_got_to_on_the_right.assign(n_right, Left{});
-            how_we_got_to_on_the_left.assign(vars.size(), Right{});
-
-            // start from exposed variables
-            for (Left v{0}; v.offset != vars.size(); ++v.offset)
-                if (! left_covered[v.offset])
-                    reached_on_the_left[v.offset] = 1;
-
-            bool still_searching = true, found_a_path = false;
-            Right path_endpoint{};
-            while (still_searching && ! found_a_path) {
-                still_searching = false;
-
-                // for each potential left-to-right edge that is not in the matching,
-                // that starts with something on the left...
-                for (const auto & [var, val] : edges) {
-                    if (reached_on_the_left[var.offset] && matching[var.offset] != val) {
-                        // we've found something we can reach on the right
-                        if (! reached_on_the_right[val.offset]) {
-                            reached_on_the_right[val.offset] = 1;
-                            how_we_got_to_on_the_right[val.offset] = var;
-                            // is it exposed?
-                            if (! right_covered[val.offset]) {
-                                found_a_path = true;
-                                path_endpoint = val;
-                                break;
-                            }
-                            else {
-                                still_searching = true;
-                            }
-                        }
-                    }
-                }
-
-                // if we've not grown our right set, or if we've already found a
-                // path, we're done
-                if (found_a_path || ! still_searching)
-                    break;
-                still_searching = false;
-
-                // now, for each potential right-to-left edge that is in the matching,
-                // that starts with something we've reached on the right...
-                for (const auto & [var, val] : edges) {
-                    if (reached_on_the_right[val.offset] && matching[var.offset] == val) {
-                        // we've found something we can reach on the left
-                        if (! reached_on_the_left[var.offset]) {
-                            reached_on_the_left[var.offset] = 1;
-                            how_we_got_to_on_the_left[var.offset] = val;
-                            still_searching = true;
-                        }
-                    }
-                }
-            }
-
-            if (found_a_path) {
-                // we've included another value
-                right_covered[path_endpoint.offset] = 1;
-
-                // reconstruct the augmenting path to figure out how we did it,
-                // going backwards
-                while (true) {
-                    // is the thing on the left exposed?
-                    if (! left_covered[how_we_got_to_on_the_right[path_endpoint.offset].offset]) {
-                        left_covered[how_we_got_to_on_the_right[path_endpoint.offset].offset] = 1;
-                        matching[how_we_got_to_on_the_right[path_endpoint.offset].offset] = path_endpoint;
-                        break;
-                    }
-                    else {
-                        // nope, we must have reached this from the right
-                        matching[how_we_got_to_on_the_right[path_endpoint.offset].offset] = path_endpoint;
-                        path_endpoint = how_we_got_to_on_the_left[how_we_got_to_on_the_right[path_endpoint.offset].offset];
-                    }
-                }
-            }
-            else
+            auto l = how_we_got_to_on_the_right[t.offset];
+            matching[l.offset] = t;
+            inverse_matching[t.offset] = l;
+            if (l.offset == start)
                 break;
+            t = how_we_got_to_on_the_left[l.offset];
+        }
+        scratch.left_covered[start] = 1;
+        return true;
+    }
+
+    // Complete scratch.matching into a maximum matching of the current edges,
+    // reusing whatever survives from the previous wake when the caller allows
+    // it. Any set of matched pairs whose edges still exist is a valid partial
+    // matching regardless of what search state it came from -- domains may
+    // have changed arbitrarily since, including by backtracking -- because
+    // validity only depends on the current graph, so a stale entry is either
+    // filtered out here or still usable. Repair is per uncovered variable, in
+    // variable order: greedy first (the first uncovered value, in value
+    // order, then the phantom), then a breadth-first augmenting-path search.
+    // Augmenting for a later variable never creates a path for an earlier one
+    // that had none (the standard augmenting-path lemma), so a single pass
+    // reaches maximum cardinality. The matching this produces can differ from
+    // what a from-scratch rebuild would have found, but the set of edges in
+    // no maximum matching -- the deletions -- is matching-independent, so
+    // what the propagator infers is unchanged; only proof shape and inference
+    // order within a wake can differ.
+    auto build_matching(const vector<IntegerVariableID> & vars, size_t n_right, bool reuse_previous, GacAllDifferentScratch & scratch) -> void
+    {
+        auto & matching = scratch.matching;
+        auto & inverse_matching = scratch.inverse_matching;
+        auto & left_covered = scratch.left_covered;
+
+        // revalidate the previous wake's matching against the current edges
+        if (reuse_previous && matching.size() == vars.size()) {
+            for (vector<IntegerVariableID>::size_type i = 0; i != vars.size(); ++i)
+                if (matching[i]) {
+                    // is (i, *matching[i]) still an edge? the variable's edges
+                    // are sorted by value offset
+                    const auto b = scratch.edges.begin() + static_cast<std::ptrdiff_t>(scratch.var_edges_begin[i]);
+                    const auto e = scratch.edges.begin() + static_cast<std::ptrdiff_t>(scratch.var_edges_begin[i + 1]);
+                    const auto it = lower_bound(b, e, matching[i]->offset,
+                        [](const pair<Left, Right> & edge, vector<Integer>::size_type off) { return edge.second.offset < off; });
+                    if (it == e || it->second.offset != matching[i]->offset)
+                        matching[i] = nullopt;
+                }
+        }
+        else
+            matching.assign(vars.size(), nullopt);
+
+        left_covered.assign(vars.size(), 0);
+        inverse_matching.assign(n_right, nullopt);
+        for (const auto & [i, m] : enumerate(matching))
+            if (m) {
+                left_covered[i] = 1;
+                inverse_matching[m->offset] = Left{i};
+            }
+
+        for (vector<IntegerVariableID>::size_type i = 0; i != vars.size(); ++i) {
+            if (left_covered[i])
+                continue;
+
+            // greedy: the first uncovered value, in value order, then the
+            // phantom. matching[i] is empty here, so every edge of i is a
+            // candidate.
+            for (auto e = scratch.var_edges_begin[i], e_end = scratch.var_edges_begin[i + 1]; e != e_end; ++e) {
+                const auto & t = scratch.edges[e].second;
+                if (! inverse_matching[t.offset]) {
+                    matching[i] = t;
+                    inverse_matching[t.offset] = Left{i};
+                    left_covered[i] = 1;
+                    break;
+                }
+            }
+            if (! left_covered[i] && ! scratch.phantom_plus_one_of_var.empty())
+                if (auto p = scratch.phantom_plus_one_of_var[i]; 0 != p && ! inverse_matching[p - 1]) {
+                    matching[i] = Right{p - 1};
+                    inverse_matching[p - 1] = Left{i};
+                    left_covered[i] = 1;
+                }
+            if (left_covered[i])
+                continue;
+
+            // no free value: search for an augmenting path (which may leave i
+            // uncovered, making the matching too small -- the caller detects
+            // that)
+            augment_from(n_right, i, scratch);
         }
     }
 
@@ -304,11 +379,9 @@ namespace
         const vector<Integer> & excluded, size_t n_right, map<Integer, ProofLine> & value_am1_constraint_numbers, const State &, ProofLogger * const,
         GacAllDifferentScratch & scratch) -> std::tuple<hints::AllDifferentHall, Reason>
     {
-        auto & inverse_matching = scratch.inverse_matching;
-        inverse_matching.assign(n_right, nullopt);
-        for (const auto & [l, r] : enumerate(scratch.matching))
-            if (r)
-                inverse_matching[r->offset] = Left{l};
+        // build_matching maintains inverse_matching alongside the matching,
+        // so it is already current here
+        const auto & inverse_matching = scratch.inverse_matching;
 
         auto & hall_variables = scratch.hall_left;
         auto & hall_values = scratch.hall_right;
@@ -408,8 +481,6 @@ namespace
         const vector<Integer> & excluded, size_t n_right, map<Integer, ProofLine> & value_am1_constraint_numbers, const State &, ProofLogger * const,
         const Right delete_value, GacAllDifferentScratch & scratch) -> tuple<DeletionJustification, Reason>
     {
-        const auto & edges_out_from_variable = scratch.edges_out_from_variable;
-        const auto & edges_out_from_value = scratch.edges_out_from_value;
         const auto & components = scratch.components;
 
         // we know a hall set exists, but we have to find it. starting
@@ -440,7 +511,7 @@ namespace
                 [&](const auto & x) -> void {
                     if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
                         hall_left[x.offset] = 1;
-                        for (const auto & t : edges_out_from_variable[x.offset]) {
+                        for_each_unmatched_edge_of_var(scratch, x.offset, [&](const Right & t) {
                             auto t_offset = vertex_to_offset(vars, vals, t);
                             if (care_about_scc == components[t_offset] && ! explored[t_offset]) {
                                 if (0 == in_to_explore[t_offset]) {
@@ -448,15 +519,16 @@ namespace
                                     in_to_explore[t_offset] = 1;
                                 }
                             }
-                        }
+                        });
                     }
                     else {
                         hall_right[x.offset] = 1;
-                        for (const auto & t : edges_out_from_value[x.offset]) {
-                            auto t_offset = vertex_to_offset(vars, vals, t);
+                        // a value's only out-edge is to its matched variable
+                        if (const auto & t = scratch.inverse_matching[x.offset]) {
+                            auto t_offset = vertex_to_offset(vars, vals, *t);
                             if (care_about_scc == components[t_offset] && ! explored[t_offset]) {
                                 if (0 == in_to_explore[t_offset]) {
-                                    to_explore.push_back(t);
+                                    to_explore.push_back(*t);
                                     in_to_explore[t_offset] = 1;
                                 }
                             }
@@ -475,12 +547,11 @@ namespace
 
         if (hall_variable_ids.empty()) {
             // some other variable has been given this value
-            if (edges_out_from_value[delete_value.offset].empty())
+            if (! scratch.inverse_matching[delete_value.offset])
                 throw UnexpectedException{"missing edge out from value in trivial scc"};
 
             return tuple{DeletionJustification{hints::AllDifferent{constraint_id}},
-                Reason{
-                    ExplicitReason{ReasonLiterals{{vars[edges_out_from_value[delete_value.offset].begin()->offset] == vals[delete_value.offset]}}}}};
+                Reason{ExplicitReason{ReasonLiterals{{vars[scratch.inverse_matching[delete_value.offset]->offset] == vals[delete_value.offset]}}}}};
         }
         else {
             // a hall set is at work
@@ -501,16 +572,20 @@ namespace
         }
     }
 
-    // Tarjan's algorithm over scratch.edges_out_from, with an explicit stack
-    // of (vertex, next edge index) frames instead of a recursive std::function:
-    // no closure allocation, no type-erased call per visit, and no deep native
-    // recursion on big graphs. This reproduces the recursive formulation's
-    // numbering exactly (including taking min with the lowlink, not the index,
-    // of an on-stack target, as the recursive version did), so component
-    // identifiers -- and hence everything downstream -- are unchanged.
-    auto find_strongly_connected_components(size_t n_vertices, GacAllDifferentScratch & scratch) -> int
+    // Tarjan's algorithm, with an explicit stack of (vertex, resume position)
+    // frames instead of a recursive std::function: no closure allocation, no
+    // type-erased call per visit, and no deep native recursion on big graphs.
+    // Successors are implicit: a left (variable) vertex walks its unmatched
+    // edges -- the resume position indexes into edges, with
+    // var_edges_begin[i + 1] standing for the phantom slot -- and a right
+    // (value) vertex has just its matched variable (position 0 or 1). The
+    // visit order matches what the old materialised adjacency produced, and
+    // the numbering reproduces the recursive formulation exactly (including
+    // taking min with the lowlink, not the index, of an on-stack target), so
+    // component identifiers -- and hence everything downstream -- are
+    // unchanged.
+    auto find_strongly_connected_components(size_t vars_count, size_t n_vertices, GacAllDifferentScratch & scratch) -> int
     {
-        const auto & edges_out_from = scratch.edges_out_from;
         auto & indices = scratch.indices;
         auto & lowlinks = scratch.lowlinks;
         auto & components = scratch.components;
@@ -525,17 +600,19 @@ namespace
         stack.clear();
         frames.clear();
 
+        const auto start_pos = [&](size_t o) -> size_t { return o < vars_count ? scratch.var_edges_begin[o] : 0; };
+
         int next_index = 1, number_of_components = 0;
 
         for (size_t root = 0; root != n_vertices; ++root) {
             if (0 != indices[root])
                 continue;
 
-            frames.emplace_back(root, 0);
+            frames.emplace_back(root, start_pos(root));
             while (! frames.empty()) {
-                auto [v, next_edge] = frames.back();
+                auto [v, pos] = frames.back();
 
-                if (0 == next_edge) {
+                if (0 == indices[v]) {
                     // first arrival at v
                     indices[v] = next_index;
                     lowlinks[v] = next_index;
@@ -545,19 +622,54 @@ namespace
                 }
 
                 bool descended = false;
-                while (next_edge != edges_out_from[v].size()) {
-                    auto w = edges_out_from[v][next_edge];
-                    ++next_edge;
-                    if (0 == indices[w]) {
-                        // descend into w; the min with w's lowlink happens
-                        // when w's frame is popped, below
-                        frames.back().second = next_edge;
-                        frames.emplace_back(w, 0);
-                        descended = true;
-                        break;
+                if (v < vars_count) {
+                    const auto & matched = scratch.matching[v];
+                    const auto real_end = scratch.var_edges_begin[v + 1];
+                    while (pos <= real_end) {
+                        Right t{};
+                        if (pos != real_end) {
+                            t = scratch.edges[pos].second;
+                            ++pos;
+                            if (matched == t)
+                                continue;
+                        }
+                        else {
+                            // the phantom slot
+                            ++pos;
+                            if (scratch.phantom_plus_one_of_var.empty())
+                                break;
+                            auto p = scratch.phantom_plus_one_of_var[v];
+                            if (0 == p)
+                                break;
+                            t = Right{p - 1};
+                            if (matched == t)
+                                break;
+                        }
+                        auto w = vars_count + t.offset;
+                        if (0 == indices[w]) {
+                            // descend into w; the min with w's lowlink happens
+                            // when w's frame is popped, below
+                            frames.back().second = pos;
+                            frames.emplace_back(w, 0);
+                            descended = true;
+                            break;
+                        }
+                        else if (enstackinated[w])
+                            lowlinks[v] = min(lowlinks[v], lowlinks[w]);
                     }
-                    else if (enstackinated[w])
-                        lowlinks[v] = min(lowlinks[v], lowlinks[w]);
+                }
+                else if (0 == pos) {
+                    ++pos;
+                    if (auto l = scratch.inverse_matching[v - vars_count]) {
+                        auto w = l->offset;
+                        if (0 == indices[w]) {
+                            frames.back().second = pos;
+                            frames.emplace_back(w, start_pos(w));
+                            descended = true;
+                        }
+                        else if (enstackinated[w])
+                            lowlinks[v] = min(lowlinks[v], lowlinks[w]);
+                    }
                 }
 
                 if (descended)
@@ -611,6 +723,9 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         }
     }
 
+    auto & var_edges_begin = scratch.var_edges_begin;
+    var_edges_begin.assign(vars.size() + 1, 0);
+
     if (! scratch.val_to_idx_plus_one.empty()) {
         // one sweep over each variable's actual domain marks which vals are
         // present, then edges are emitted in val-index order: the same edges
@@ -621,6 +736,7 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         const auto span = scratch.val_to_idx_plus_one.size();
         auto & vals_in_domain = scratch.vals_in_domain;
         for (const auto & [var_idx, var] : enumerate(vars)) {
+            var_edges_begin[var_idx] = edges.size();
             vals_in_domain.assign(vals.size(), 0);
             state.for_each_value_immutable(var, [&](Integer val) -> void {
                 if (val < min_val)
@@ -635,33 +751,41 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         }
     }
     else {
-        for (const auto & [var_idx, var] : enumerate(vars))
+        for (const auto & [var_idx, var] : enumerate(vars)) {
+            var_edges_begin[var_idx] = edges.size();
             for (const auto & [val_idx, val] : enumerate(vals))
                 if (state.in_domain(var, val))
                     edges.emplace_back(Left{var_idx}, Right{val_idx});
+        }
     }
+    var_edges_begin[vars.size()] = edges.size();
 
     // Add a private phantom right-vertex per variable that has any excluded
     // value still in its current domain. The phantom edge represents "this
     // variable opts out of the alldifferent by taking an excluded value", so
     // it can absorb any one variable freely. Phantom right offsets live past
-    // vals.size().
+    // vals.size(); they sit after the var-major real section of edges, so
+    // per-variable ownership is tracked separately for the implicit
+    // adjacency.
     auto n_right = vals.size();
     if (! excluded.empty()) {
+        scratch.phantom_plus_one_of_var.assign(vars.size(), 0);
         for (const auto & [var_idx, var] : enumerate(vars))
             for (const auto & s : excluded)
                 if (state.in_domain(var, s)) {
                     edges.emplace_back(Left{var_idx}, Right{n_right});
+                    scratch.phantom_plus_one_of_var[var_idx] = n_right + 1;
                     ++n_right;
                     break;
                 }
     }
+    else
+        scratch.phantom_plus_one_of_var.clear();
 
-    scratch.left_covered.assign(vars.size(), 0);
-    scratch.right_covered.assign(n_right, 0);
-    scratch.matching.assign(vars.size(), nullopt);
-
-    build_matching(vars, n_right, scratch);
+    // Reuse the previous wake's matching (after revalidation) except when
+    // there are excluded values: phantom right offsets are renumbered per
+    // wake, so a stale phantom match would be meaningless.
+    build_matching(vars, n_right, excluded.empty(), scratch);
 
     const auto & matching = scratch.matching;
 
@@ -676,33 +800,11 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     }
 
     // we have a matching that uses every variable. however, some edges may
-    // not occur in any maximum cardinality matching, and we can delete
-    // these. first we need to build the directed matching graph...
-    auto & edges_out_from = scratch.edges_out_from;
-    auto & edges_out_from_variable = scratch.edges_out_from_variable;
-    auto & edges_in_to_variable = scratch.edges_in_to_variable;
-    auto & edges_out_from_value = scratch.edges_out_from_value;
-    auto & edges_in_to_value = scratch.edges_in_to_value;
-    clear_inners_to_size(edges_out_from, vars.size() + n_right);
-    clear_inners_to_size(edges_out_from_variable, vars.size());
-    clear_inners_to_size(edges_in_to_variable, vars.size());
-    clear_inners_to_size(edges_out_from_value, n_right);
-    clear_inners_to_size(edges_in_to_value, n_right);
-
-    for (auto & [f, t] : edges)
-        if (matching[f.offset] == t) {
-            edges_out_from[vertex_to_offset(vars, vals, t)].push_back(vertex_to_offset(vars, vals, f));
-            edges_out_from_value[t.offset].push_back(f);
-            edges_in_to_variable[f.offset].push_back(t);
-        }
-        else {
-            edges_out_from[vertex_to_offset(vars, vals, f)].push_back(vertex_to_offset(vars, vals, t));
-            edges_out_from_variable[f.offset].push_back(t);
-            edges_in_to_value[t.offset].push_back(f);
-        }
+    // not occur in any maximum cardinality matching, and we can delete these.
+    // The directed matching graph is implicit in edges + the matching.
 
     // now we need to find strongly connected components...
-    const auto number_of_components = find_strongly_connected_components(vars.size() + n_right, scratch);
+    const auto number_of_components = find_strongly_connected_components(vars.size(), vars.size() + n_right, scratch);
     const auto & components = scratch.components;
 
     // every edge in the original matching is used, and so cannot be
@@ -718,8 +820,19 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
     // for each unmatched vertex, bring in everything that could be updated
     // to take it. Phantom rights participate too (when their owner is
     // matched to a real value, the phantom is unmatched and its presence
-    // here marks the owner's edges as redirectable).
-    {
+    // here marks the owner's edges as redirectable). Every variable is
+    // matched here, so unmatched vertices exist only when there are more
+    // right vertices than variables: a square constraint (a permutation --
+    // latin square rows, inverse, and the like) skips the whole sweep,
+    // including building the value -> unmatched-variables transpose it
+    // explores backwards over.
+    if (n_right != vars.size()) {
+        auto & edges_in_to_value = scratch.edges_in_to_value;
+        clear_inners_to_size(edges_in_to_value, n_right);
+        for (auto & [f, t] : edges)
+            if (matching[f.offset] != t)
+                edges_in_to_value[t.offset].push_back(f);
+
         auto & to_explore = scratch.to_explore;
         auto & in_to_explore = scratch.in_to_explore;
         auto & explored = scratch.explored;
@@ -752,13 +865,14 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
             visit(
                 [&](const auto & x) {
                     if constexpr (is_same_v<decay_t<decltype(x)>, Left>) {
-                        for (auto & t : edges_in_to_variable[x.offset]) {
-                            if (t.offset < vals.size())
-                                used_edges[used_edge_idx(x.offset, t.offset)] = 1;
-                            auto t_offset = vertex_to_offset(vars, vals, t);
+                        // a variable's only in-edge is from its matched value
+                        if (const auto & t = matching[x.offset]) {
+                            if (t->offset < vals.size())
+                                used_edges[used_edge_idx(x.offset, t->offset)] = 1;
+                            auto t_offset = vertex_to_offset(vars, vals, *t);
                             if (! explored[t_offset]) {
                                 if (! in_to_explore[t_offset]) {
-                                    to_explore.push_back(t);
+                                    to_explore.push_back(*t);
                                     in_to_explore[t_offset] = 1;
                                 }
                             }
@@ -782,15 +896,12 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         }
     }
 
-    // every edge that starts and ends in the same component is also used
-    // (skipping phantom edges, which never appear in used_edges)
-    for (auto & [f, t] : edges)
-        if (t.offset < vals.size() && components[vertex_to_offset(vars, vals, f)] == components[vertex_to_offset(vars, vals, t)])
-            used_edges[used_edge_idx(f.offset, t.offset)] = 1;
-
-    // anything left can be deleted. need to do all of these together if we're doing
-    // justifications, to avoid having to figure out an ordering for nested Hall sets.
-    // Phantom edges are skipped: they're never deletable.
+    // anything left can be deleted: an edge survives if it is in the matching,
+    // was marked by the unmatched sweep, or starts and ends in the same
+    // component (checked inline rather than via a separate marking pass over
+    // the edges). Deletions must be batched by SCC so the justifications
+    // don't have to order nested Hall sets; phantom edges are skipped, they
+    // are never deletable.
     auto & deletions_by_scc = scratch.deletions_by_scc;
     auto & representatives_for_scc = scratch.representatives_for_scc;
     clear_inners_to_size(deletions_by_scc, number_of_components);
@@ -801,6 +912,8 @@ auto gcs::innards::propagate_gac_all_different(const ConstraintID & constraint_i
         if (used_edges[used_edge_idx(delete_var_name.offset, delete_value.offset)])
             continue;
         auto scc = components[vertex_to_offset(vars, vals, delete_value)];
+        if (scc == components[vertex_to_offset(vars, vals, delete_var_name)])
+            continue;
         deletions_by_scc[scc].emplace_back(vars[delete_var_name.offset] != vals[delete_value.offset]);
         representatives_for_scc[scc] = delete_value;
     }
