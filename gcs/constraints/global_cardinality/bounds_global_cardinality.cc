@@ -23,7 +23,6 @@
 #endif
 
 #include <algorithm>
-#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -31,13 +30,13 @@
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::binary_search;
 using std::holds_alternative;
 using std::make_unique;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::pair;
-using std::set;
 using std::sort;
 using std::string;
 using std::stringstream;
@@ -63,54 +62,82 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
     // value whose upper capacity is saturated by the variables fixed to
     // it, and forces the variables into a value whose lower demand can
     // only just be met.
+    // Counting comes first; the reason literals are only gathered -- in the
+    // same variable order, from the same state (nothing this loop infers
+    // changes which variables are fixed to or excluded from `value`) -- when
+    // an inference actually fires.
     for (const auto & [j, value] : enumerate(values)) {
-        ReasonLiterals fixed_eq;  // var == value, for variables fixed to value
-        ReasonLiterals absent_ne; // var != value, for variables without value
         Integer must = 0_i, can = 0_i;
-        for (const auto & var : vars) {
+        for (const auto & var : vars)
             if (state.in_domain(var, value)) {
                 ++can;
-                if (state.has_single_value(var)) {
+                if (state.has_single_value(var))
                     ++must;
-                    fixed_eq.emplace_back(var == value);
-                }
             }
-            else
-                absent_ne.emplace_back(var != value);
-        }
+
+        auto gather_fixed_eq = [&](ReasonLiterals & out) {
+            out.clear();
+            for (const auto & var : vars)
+                if (state.in_domain(var, value) && state.has_single_value(var))
+                    out.emplace_back(var == value);
+        };
+        auto gather_absent_ne = [&](ReasonLiterals & out) {
+            out.clear();
+            for (const auto & var : vars)
+                if (! state.in_domain(var, value))
+                    out.emplace_back(var != value);
+        };
 
         auto [lb_j, ub_j] = state.bounds(counts[j]);
 
         // c_j >= must: the fixed variables alone force the count up.
-        if (must > lb_j)
+        if (must > lb_j) {
+            ReasonLiterals fixed_eq;
+            gather_fixed_eq(fixed_eq);
             inference.infer(logger, counts[j] >= must, JustifyUsingRUP{hints::GlobalCardinality{owner}}, ExplicitReason{fixed_eq});
+        }
 
         // c_j <= can: only the variables that can still take value may
         // contribute to the count.
-        if (can < ub_j)
+        if (can < ub_j) {
+            ReasonLiterals absent_ne;
+            gather_absent_ne(absent_ne);
             inference.infer(logger, counts[j] <= can, JustifyUsingRUP{hints::GlobalCardinality{owner}}, ExplicitReason{absent_ne});
+        }
 
         // Saturated capacity: if as many variables are already fixed to
         // value as the count's upper bound allows, no other variable may
         // take it.
         if (must == ub_j) {
-            ReasonLiterals sat = fixed_eq;
-            sat.emplace_back(counts[j] <= ub_j);
+            ReasonLiterals sat;
+            bool have_sat = false;
             for (const auto & var : vars)
-                if (state.in_domain(var, value) && ! state.has_single_value(var))
+                if (state.in_domain(var, value) && ! state.has_single_value(var)) {
+                    if (! have_sat) {
+                        have_sat = true;
+                        gather_fixed_eq(sat);
+                        sat.emplace_back(counts[j] <= ub_j);
+                    }
                     inference.infer(logger, var != value, JustifyUsingRUP{hints::GlobalCardinality{owner}}, ExplicitReason{sat});
+                }
         }
 
         // Just-met demand: if only `can` variables can take value and the
         // count's lower bound needs all of them, each is forced to value.
         if (can == lb_j && can > 0_i) {
-            ReasonLiterals force = absent_ne;
-            force.emplace_back(counts[j] >= lb_j);
+            ReasonLiterals force;
+            bool have_force = false;
             for (const auto & var : vars)
-                if (state.in_domain(var, value) && ! state.has_single_value(var))
+                if (state.in_domain(var, value) && ! state.has_single_value(var)) {
+                    if (! have_force) {
+                        have_force = true;
+                        gather_absent_ne(force);
+                        force.emplace_back(counts[j] >= lb_j);
+                    }
                     for (const auto & w : state.each_value_mutable(var))
                         if (w != value)
                             inference.infer(logger, var != w, JustifyUsingRUP{hints::GlobalCardinality{owner}}, ExplicitReason{force});
+                }
         }
     }
 
@@ -119,35 +146,49 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
     // strengthening beyond per-value reasoning: count-variable bound
     // tightening, variable-domain pruning in both Hall directions, and
     // infeasibility. All have real pol justifications.
+    // The hall set for a pair (a, b) is the contiguous slice values[a..b] of
+    // the sorted, distinct cover, so membership is a binary search over that
+    // slice and iteration is the slice itself, in the same ascending order
+    // the set gave -- no per-pair set, and the confined/potential vectors are
+    // hoisted out of the pair loops and reused.
+    vector<IntegerVariableID> confined, potential;
     for (std::size_t a = 0; a < m; ++a) {
-        set<Integer> hall;
         Integer cap = 0_i, demand = 0_i;
-        hall.insert(values[a]);
         {
             auto [c_lo, c_hi] = state.bounds(counts[a]);
             cap += c_hi;
             demand += c_lo;
         }
         for (std::size_t b = a + 1; b < m; ++b) {
-            hall.insert(values[b]);
-            auto [c_lo, c_hi] = state.bounds(counts[b]);
-            cap += c_hi;
-            demand += c_lo;
+            auto hall_contains = [&, a = a, b = b](Integer val) -> bool {
+                return binary_search(values.begin() + static_cast<std::ptrdiff_t>(a), values.begin() + static_cast<std::ptrdiff_t>(b) + 1, val);
+            };
+            {
+                auto [c_lo, c_hi] = state.bounds(counts[b]);
+                cap += c_hi;
+                demand += c_lo;
+            }
 
             auto domain_subset_of_hall = [&](const IntegerVariableID & var) -> bool {
-                for (const auto & val : state.each_value_immutable(var))
-                    if (! hall.contains(val))
+                bool subset = true;
+                state.for_each_value_immutable(var, [&](Integer val) -> bool {
+                    if (! hall_contains(val)) {
+                        subset = false;
                         return false;
-                return true;
+                    }
+                    return true;
+                });
+                return subset;
             };
             auto domain_meets_hall = [&](const IntegerVariableID & var) -> bool {
-                for (const auto & val : hall)
-                    if (state.in_domain(var, val))
+                for (std::size_t v = a; v <= b; ++v)
+                    if (state.in_domain(var, values[v]))
                         return true;
                 return false;
             };
 
-            vector<IntegerVariableID> confined, potential;
+            confined.clear();
+            potential.clear();
             for (const auto & var : vars) {
                 if (domain_subset_of_hall(var))
                     confined.push_back(var);
@@ -187,7 +228,7 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                 for (const auto & var : confined) {
                     auto [v_lo, v_hi] = state.bounds(var);
                     for (Integer s = v_lo; s <= v_hi; ++s)
-                        if (! hall.contains(s) && ! state.in_domain(var, s))
+                        if (! hall_contains(s) && ! state.in_domain(var, s))
                             r.emplace_back(var != s);
                     r.emplace_back(var >= v_lo);
                     r.emplace_back(var <= v_hi);
@@ -211,8 +252,8 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                 ReasonLiterals r;
                 for (const auto & var : vars)
                     if (! domain_meets_hall(var))
-                        for (const auto & val : hall)
-                            r.emplace_back(var != val);
+                        for (std::size_t v = a; v <= b; ++v)
+                            r.emplace_back(var != values[v]);
                 for (std::size_t v = a; v <= b; ++v)
                     if (exclude != optional<std::size_t>{v} && ! holds_alternative<ConstantIntegerVariableID>(counts[v]))
                         r.emplace_back(counts[v] >= state.bounds(counts[v]).first);
@@ -263,8 +304,8 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                                 PolBuilder pb;
                                 for (const auto & var : potential) {
                                     vector<IntegerVariableCondition> atoms;
-                                    for (const auto & val : hall)
-                                        atoms.push_back(var == val);
+                                    for (std::size_t v = a; v <= b; ++v)
+                                        atoms.push_back(var == values[v]);
                                     pb.add(recover_am1<IntegerVariableCondition>(*logger, ProofLevel::Temporary, atoms,
                                         [&](const IntegerVariableCondition & p, const IntegerVariableCondition & q) {
                                             return logger->emit(RUPProofRule{}, WPBSum{} + 1_i * ! p + 1_i * ! q >= 1_i, ProofLevel::Temporary);
@@ -292,8 +333,8 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                 for (const auto & var : vars) {
                     if (domain_subset_of_hall(var))
                         continue;
-                    for (const auto & val : hall)
-                        if (state.in_domain(var, val))
+                    for (std::size_t v = a; v <= b; ++v)
+                        if (Integer val = values[v]; state.in_domain(var, val))
                             inference.infer(logger, var != val,
                                 JustifyExplicitly{
                                     [&](const ReasonLiterals &) { emit_capacity_pol(nullopt); }, ThenRUP::Yes, hints::GlobalCardinality{owner}},
@@ -320,8 +361,8 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
                 }
                 for (const auto & var : potential) {
                     vector<IntegerVariableCondition> atoms;
-                    for (const auto & val : hall)
-                        atoms.push_back(var == val);
+                    for (std::size_t v = a; v <= b; ++v)
+                        atoms.push_back(var == values[v]);
                     if (kvar == optional<IntegerVariableID>{var})
                         atoms.push_back(var == kw);
                     pb.add(recover_am1<IntegerVariableCondition>(
@@ -340,7 +381,7 @@ auto gcs::innards::propagate_bounds_global_cardinality(const vector<IntegerVaria
             else if (potential_count == demand) {
                 for (const auto & var : potential)
                     for (const auto & val : state.each_value_mutable(var))
-                        if (! hall.contains(val))
+                        if (! hall_contains(val))
                             inference.infer(logger, var != val,
                                 JustifyExplicitly{[&, var = var, val = val](const ReasonLiterals &) { emit_demand_pol(var, val); }, ThenRUP::Yes,
                                     hints::GlobalCardinality{owner}},
