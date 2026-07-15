@@ -76,13 +76,13 @@ auto CurrentState::each_value(const IntegerVariableID v) const -> generator<Inte
 
 auto CurrentState::each_value_reversed(const IntegerVariableID v) const -> generator<Integer>
 {
-    return [](innards::IntervalSet<Integer> values) -> generator<Integer> {
+    return [](IntervalSet<Integer> values) -> generator<Integer> {
         for (auto i : values.each_reversed())
             co_yield i;
     }(_full_state.copy_of_values(v));
 }
 
-auto CurrentState::copy_of_values(const IntegerVariableID v) const -> innards::IntervalSet<Integer>
+auto CurrentState::copy_of_values(const IntegerVariableID v) const -> IntervalSet<Integer>
 {
     return _full_state.copy_of_values(v);
 }

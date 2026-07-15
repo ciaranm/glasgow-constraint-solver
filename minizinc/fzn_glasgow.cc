@@ -1,5 +1,5 @@
 #include <gcs/gcs.hh>
-#include <gcs/innards/interval_set.hh>
+#include <gcs/interval_set.hh>
 
 #include <nlohmann/json.hpp>
 
@@ -35,7 +35,6 @@
 
 using namespace gcs;
 
-using gcs::innards::IntervalSet;
 using gcs::innards::Literals;
 using gcs::innards::TrueLiteral;
 

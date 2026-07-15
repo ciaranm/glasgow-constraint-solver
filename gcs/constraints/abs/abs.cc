@@ -3,13 +3,13 @@
 #include <gcs/constraints/abs/justify.hh>
 #include <gcs/innards/assertion_hints.hh>
 #include <gcs/innards/inference_tracker.hh>
-#include <gcs/innards/interval_set.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/interval_set.hh>
 
 #include <algorithm>
 #include <optional>

@@ -132,8 +132,8 @@ endif()
 
 target_link_libraries(glasgow_constraint_solver PUBLIC gcs_fmt)
 
-# gch::small_vector is used in interval_set.hh which is transitively reached
-# through state.hh, so the include directories must propagate to consumers.
+# gch::small_vector is used in the public interval_set.hh, so the include
+# directories must propagate to consumers.
 target_link_libraries(glasgow_constraint_solver PUBLIC gch::small_vector)
 
 # nlohmann_json is header-only and used only in .cc files (not public headers), so we
@@ -488,7 +488,7 @@ if(GCS_BUILD_TESTS)
         add_test(NAME range_witness_${witness}_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_witness_${witness}_test>)
     endforeach()
 
-    add_executable(interval_set_test innards/interval_set_test.cc)
+    add_executable(interval_set_test interval_set_test.cc)
     target_link_libraries(interval_set_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME interval_set_test COMMAND $<TARGET_FILE:interval_set_test>)
 

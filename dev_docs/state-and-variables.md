@@ -123,7 +123,8 @@ short-circuiting in the entry points and never reach storage.
 
 ### `IntervalSet` representation
 
-`gcs/innards/interval_set.hh` defines `IntervalSet<Integer>` as a sorted
+`gcs/interval_set.hh` (public API, since it is returned by
+`CurrentState::copy_of_values()`) defines `IntervalSet<Integer>` as a sorted
 sequence of disjoint closed intervals. The set `{1, 2, 3, 4, 8, 9, 10}`
 is stored as the two intervals `[1..4]` and `[8..10]`. This is the only
 representation used for variable domains.

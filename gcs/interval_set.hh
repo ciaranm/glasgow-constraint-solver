@@ -1,7 +1,7 @@
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_INTERVAL_SET_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_INTERVAL_SET_HH
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTERVAL_SET_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INTERVAL_SET_HH
 
-#include <gcs/innards/interval_set-fwd.hh>
+#include <gcs/interval_set-fwd.hh>
 
 #include <gch/small_vector.hpp>
 
@@ -16,7 +16,7 @@
 #include <__generator.hpp>
 #endif
 
-namespace gcs::innards
+namespace gcs
 {
     /**
      * \brief A set of integers stored as a sorted sequence of disjoint closed intervals.
@@ -38,7 +38,7 @@ namespace gcs::innards
      * \tparam Int_ The integer type used for values and bounds. Must support arithmetic
      * and comparison operators, and construction from a literal zero or one.
      *
-     * \ingroup Innards
+     * \ingroup Core
      */
     template <typename Int_>
     class IntervalSet

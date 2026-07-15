@@ -1,11 +1,10 @@
-#include <gcs/innards/interval_set.hh>
+#include <gcs/interval_set.hh>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
 
 using namespace gcs;
-using namespace gcs::innards;
 
 using std::pair;
 using std::vector;
