@@ -166,7 +166,11 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
 
         propagators.install(
             constraint_id(),
-            [vars = _vars, s, t, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            // The reason ranges over the fixed variable scope, so build it once
+            // at install (capture-init) and reuse it rather than rebuilding it
+            // every wake. See dev_docs/propagator-performance.md.
+            [vars = _vars, s, t, reason = generic_reason(_vars), owner = constraint_id()](
+                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
                 auto n = vars.size();
 
                 size_t alpha = n;
@@ -176,8 +180,6 @@ auto ValuePrecede::install_propagators(Propagators & propagators) -> void
                         break;
                     }
                 }
-
-                auto reason = generic_reason(vars);
 
                 // Prune t from positions [0, min(alpha+1, n)). If alpha == n
                 // this is all positions; otherwise it's positions 0..alpha

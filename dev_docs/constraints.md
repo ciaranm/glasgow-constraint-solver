@@ -776,6 +776,13 @@ correctness work wants the full enumeration check.
 
 ## See also
 
+- [propagator-performance.md](propagator-performance.md) — making a
+  *correct* propagator faster: triggers/idempotence, reusing reasons and
+  scratch data structures, fast data structures, iteration order,
+  incrementality, backtrackable state, and removing variant-dispatch
+  overhead — plus the discipline that keeps a performance change from
+  becoming a strength or correctness change. Read this only once the
+  propagator works and its proofs verify.
 - [state-and-variables.md](state-and-variables.md) — the variable-ID
   family, the `State` class, `IntervalSet` domain storage, epoch-based
   backtracking, and the `change_state_for_*` inference paths your
