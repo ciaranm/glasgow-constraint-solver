@@ -1,7 +1,6 @@
 #include <cstdio>
 #include <gcs/expression.hh>
 #include <gcs/innards/assertion_hints.hh>
-#include <gcs/innards/interval_set.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/hints.hh>
@@ -13,6 +12,7 @@
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/interval_set.hh>
 #include <gcs/proof.hh>
 
 #include <cstddef>

@@ -1,4 +1,3 @@
-#include <gcs/innards/interval_set.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
@@ -8,6 +7,7 @@
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
+#include <gcs/interval_set.hh>
 
 #include <algorithm>
 #include <cstdlib>

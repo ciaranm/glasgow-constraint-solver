@@ -2,9 +2,9 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CURRENT_STATE_HH
 
 #include <gcs/exception.hh>
-#include <gcs/innards/interval_set-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
+#include <gcs/interval_set-fwd.hh>
 #include <gcs/lifetime.hh>
 #include <gcs/variable_id.hh>
 
@@ -141,12 +141,13 @@ namespace gcs
         [[nodiscard]] auto each_value_reversed(const IntegerVariableID) const -> std::generator<Integer>;
 
         /**
-         * \brief Returns the values in a variable's domain, in an interval set representation. Usually
+         * \brief Returns the values in a variable's domain, as an IntervalSet. Usually
          * you want CurrentState::each_value() instead for a friendlier API.
          *
          * \sa CurrentState::each_value()
+         * \sa IntervalSet
          */
-        [[nodiscard]] auto copy_of_values(const IntegerVariableID) const -> innards::IntervalSet<Integer>;
+        [[nodiscard]] auto copy_of_values(const IntegerVariableID) const -> IntervalSet<Integer>;
 
         ///@}
     };

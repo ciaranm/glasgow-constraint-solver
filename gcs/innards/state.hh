@@ -2,11 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_STATE_HH
 
 #include <gcs/current_state.hh>
-#include <gcs/innards/interval_set.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/state-fwd.hh>
 #include <gcs/innards/variable_id_utils.hh>
 #include <gcs/integer.hh>
+#include <gcs/interval_set.hh>
 #include <util/overloaded.hh>
 
 #include <any>

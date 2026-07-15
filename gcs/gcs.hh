@@ -9,6 +9,7 @@
 #include <gcs/expression.hh>
 #include <gcs/extensional.hh>
 #include <gcs/integer.hh>
+#include <gcs/interval_set.hh>
 #include <gcs/problem.hh>
 #include <gcs/proof.hh>
 #include <gcs/reification.hh>

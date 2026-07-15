@@ -176,10 +176,30 @@ namespace gcs
         auto minimise(IntegerVariableID) -> void;
         auto maximise(IntegerVariableID) -> void;
 
+        /**
+         * \brief Returns every integer variable created on this Problem, in
+         * creation order.
+         *
+         * This is the variables made by Problem::create_integer_variable() and
+         * friends; it does not include constants, views, or variables created
+         * internally by constraints. It is what the search heuristics that
+         * take a Problem, such as gcs::variable_order::dom(), branch over.
+         *
+         * \warning The returned reference is into this Problem, and is valid
+         * only for as long as the Problem is alive.
+         */
+        [[nodiscard]] auto all_normal_variables() const GCS_LIFETIME_BOUND -> const std::vector<IntegerVariableID> &;
+
         ///@}
 
         /**
          * \name For use by the innards.
+         *
+         * These members are public because the solving machinery, proof
+         * writers, and search heuristics live in other classes and namespaces,
+         * but they are not part of the stable end-user API: they may change or
+         * disappear without notice. See issue #289 for the policy.
+         *
          * @{
          */
 
@@ -199,12 +219,6 @@ namespace gcs
          * and are valid only while the Problem is alive.
          */
         [[nodiscard]] auto each_presolver() const -> std::generator<Presolver &>;
-
-        /**
-         * \warning The returned reference is into this Problem, and is valid
-         * only for as long as the Problem is alive.
-         */
-        [[nodiscard]] auto all_normal_variables() const GCS_LIFETIME_BOUND -> const std::vector<IntegerVariableID> &;
 
         /**
          * \warning The yielded references alias objects owned by this Problem,
