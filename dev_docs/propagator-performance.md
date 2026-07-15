@@ -166,6 +166,49 @@ position-indexed bitmaps held in per-clone scratch (reset with `fill`, never
 regrown) removed ~50% of its runtime that was pure hash-table allocation and
 rehashing. See [bin-packing.md](bin-packing.md).
 
+### Keep type-erased callables out of per-node and per-inference paths
+
+`std::function` costs in three places: construction heap-allocates whenever
+the callable's captures outgrow the small-buffer optimisation (two pointers,
+typically), copies are deep and silent, and invocation is an indirect call
+the compiler cannot inline through. None of that matters for a callback
+built once and invoked on a cold path; all of it matters per node or per
+inference. Concretely:
+
+- **Take hot callbacks as template parameters**, not `std::function`.
+  `State::for_each_value_immutable` and `JustifyExplicitly`'s `emit` are the
+  patterns to copy: the concrete closure type reaches the call site, so it
+  inlines and nothing allocates. (This also beats C++26 `std::function_ref`,
+  which still costs an indirect call — when the C++26 wrapper types
+  eventually arrive on all our toolchains they will improve the cold-path
+  vocabulary, not change this rule.)
+- **Watch for invisible copies.** Copying a `std::function` deep-copies
+  every capture. The archetype was `solve_with_state`: the expression
+  `callbacks.branch ? callbacks.branch : <default>` materialised a copy of
+  the branch callback — and of everything the composed heuristics captured,
+  including a vector of all the branch variables — at every search node, and
+  rebuilt the entire default heuristic per node when no callback was set.
+  The fix is the shape to reuse: resolve the callback once before search
+  starts, then invoke the lvalue in the recursion.
+- **Copy semantics are part of a closure's interface.** Because a
+  `std::function` may be copied at any time, mutable state captured into one
+  must sit behind a `shared_ptr` so every copy aliases it (the RNG sharing
+  in `search_heuristics.cc` is the documented example). Capturing an RNG or
+  a cache by value looks equivalent and is not: the first silent copy forks
+  its state.
+- An owning wrapper is still correct when the callable is **stored** and
+  outlives the call that created it: `SolveCallbacks`, tabulation's
+  `accept`, deferred proof lines, or a callable parameter a coroutine keeps
+  in its frame across suspensions. A non-owning reference (a raw callable
+  `&`, or an eventual `std::function_ref`) in any of those positions
+  dangles.
+
+`PropagationFunction` is bespoke erasure for a different reason: a
+propagator must be invocable with either inference-tracker type, which means
+two `operator()` signatures — beyond any `std::function`-family type. It is
+constructed once at install time, so per-wake it costs the same single
+virtual call either way.
+
 ### Fast data structures for small collections
 
 `std::set` / `std::map` (red-black trees) and `std::unordered_set` /

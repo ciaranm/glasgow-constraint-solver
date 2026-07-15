@@ -61,9 +61,7 @@ namespace
             if (optional_abort_flag && optional_abort_flag->load())
                 return false;
 
-            auto create_branch_generator =
-                callbacks.branch ? callbacks.branch : branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
-            auto branch_generator = create_branch_generator(state.current(), propagators);
+            auto branch_generator = callbacks.branch(state.current(), propagators);
             auto branch_iter = branch_generator.begin();
 
             if (branch_iter == branch_generator.end()) {
@@ -161,6 +159,13 @@ auto gcs::solve_with(
         if (auto & fn = optional_proof_options->proof_file_names.s_expr_file)
             write_scp(*fn, problem, optional_proof->model());
     }
+
+    // solve_with_state invokes callbacks.branch unconditionally: an unset
+    // branch callback is filled in with the default heuristic here, once,
+    // rather than testing and copying the std::function (and every closure
+    // the composed heuristics capture) at every node of the recursion.
+    if (! callbacks.branch)
+        callbacks.branch = branch_with(variable_order::dom_then_deg(problem), value_order::smallest_first());
 
     if (callbacks.after_proof_started)
         callbacks.after_proof_started(state.current());
