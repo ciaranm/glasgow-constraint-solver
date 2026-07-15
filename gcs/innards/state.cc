@@ -10,6 +10,7 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace gcs;
@@ -17,6 +18,7 @@ using namespace gcs::innards;
 
 using std::function;
 using std::generator;
+using std::get_if;
 using std::list;
 using std::make_optional;
 using std::make_unique;
@@ -141,17 +143,17 @@ auto State::what_variable_id_will_be_created_next() const -> SimpleIntegerVariab
 
 auto State::state_of(const SimpleIntegerVariableID & v) -> IntervalSet<Integer> &
 {
-    return _imp->integer_variable_states.back().at(v.index);
+    return _imp->integer_variable_states.back()[v.index];
 }
 
 auto State::state_of(const SimpleIntegerVariableID & v) const -> const IntervalSet<Integer> &
 {
-    return _imp->integer_variable_states.back().at(v.index);
+    return _imp->integer_variable_states.back()[v.index];
 }
 
 auto State::state_of_for_iteration(const SimpleIntegerVariableID & v) const -> const IntervalSet<Integer> &
 {
-    return _imp->integer_variable_states.back().at(v.index);
+    return _imp->integer_variable_states.back()[v.index];
 }
 
 auto State::change_state_for_equal(const SimpleIntegerVariableID & var, Integer value) -> Inference
@@ -404,6 +406,12 @@ auto State::add_extra_proof_condition(const Literal & lit) -> void
 
 auto State::lower_bound(const IntegerVariableID var) const -> Integer
 {
+    // Fast path: the overwhelmingly common case is a plain
+    // SimpleIntegerVariableID with no view, where we can read the stored
+    // bound directly. This skips two std::variant visits (deview then the
+    // overloaded visit), which profiling showed to dominate per-node time.
+    if (const auto * simple = get_if<SimpleIntegerVariableID>(&var))
+        return state_of(*simple).lower();
     auto [actual_var, negate_first, then_add] = deview(var);
     auto raw = overloaded{
         [&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).upper() : state_of(v).lower(); }, //
@@ -415,6 +423,8 @@ auto State::lower_bound(const IntegerVariableID var) const -> Integer
 
 auto State::upper_bound(const IntegerVariableID var) const -> Integer
 {
+    if (const auto * simple = get_if<SimpleIntegerVariableID>(&var))
+        return state_of(*simple).upper();
     auto [actual_var, negate_first, then_add] = deview(var);
     auto raw = overloaded{
         [&](const SimpleIntegerVariableID & v) { return negate_first ? state_of(v).lower() : state_of(v).upper(); }, //
@@ -427,6 +437,16 @@ auto State::upper_bound(const IntegerVariableID var) const -> Integer
 template <IntegerVariableIDLike VarType_>
 auto State::bounds(const VarType_ & var) const -> pair<Integer, Integer>
 {
+    // Fast path for a plain SimpleIntegerVariableID with no view, skipping the
+    // deview and visit_actual std::variant visits. Only the general
+    // IntegerVariableID caller can hold a view or constant; the concrete
+    // instantiations already avoid the variant machinery.
+    if constexpr (std::is_same_v<VarType_, IntegerVariableID>) {
+        if (const auto * simple = get_if<SimpleIntegerVariableID>(&var)) {
+            const auto & set = state_of(*simple);
+            return pair{set.lower(), set.upper()};
+        }
+    }
     auto [actual_var, negate_first, then_add] = deview(var);
     auto raw = visit_actual(
         actual_var, [&](const SimpleIntegerVariableID & v) { return pair{state_of(v).lower(), state_of(v).upper()}; },
@@ -440,6 +460,10 @@ auto State::bounds(const VarType_ & var) const -> pair<Integer, Integer>
 template <IntegerVariableIDLike VarType_>
 auto State::in_domain(const VarType_ & var, const Integer val) const -> bool
 {
+    if constexpr (std::is_same_v<VarType_, IntegerVariableID>) {
+        if (const auto * simple = get_if<SimpleIntegerVariableID>(&var))
+            return state_of(*simple).contains(val);
+    }
     auto [actual_var, negate_first, then_add] = deview(var);
     auto adjusted = (negate_first ? -val + then_add : val - then_add);
     return visit_actual(
@@ -460,6 +484,14 @@ auto State::domain_has_holes(const IntegerVariableID var) const -> bool
 template <IntegerVariableIDLike VarType_>
 auto State::optional_single_value(const VarType_ & var) const -> optional<Integer>
 {
+    if constexpr (std::is_same_v<VarType_, IntegerVariableID>) {
+        if (const auto * simple = get_if<SimpleIntegerVariableID>(&var)) {
+            const auto & set = state_of(*simple);
+            if (set.lower() == set.upper())
+                return make_optional(set.lower());
+            return nullopt;
+        }
+    }
     auto [actual_var, negate_first, then_add] = deview(var);
     auto raw = visit_actual(
         actual_var,
@@ -476,6 +508,10 @@ auto State::optional_single_value(const VarType_ & var) const -> optional<Intege
 
 auto State::has_single_value(const IntegerVariableID var) const -> bool
 {
+    if (const auto * simple = get_if<SimpleIntegerVariableID>(&var)) {
+        const auto & set = state_of(*simple);
+        return set.lower() == set.upper();
+    }
     auto [actual_var, _1, _2] = deview(var);
     return overloaded{
         [&](const SimpleIntegerVariableID & v) { return state_of(v).lower() == state_of(v).upper(); }, //
@@ -487,6 +523,10 @@ auto State::has_single_value(const IntegerVariableID var) const -> bool
 template <IntegerVariableIDLike VarType_>
 auto State::domain_size(const VarType_ & var) const -> Integer
 {
+    if constexpr (std::is_same_v<VarType_, IntegerVariableID>) {
+        if (const auto * simple = get_if<SimpleIntegerVariableID>(&var))
+            return Integer(state_of(*simple).size());
+    }
     auto [actual_var, _1, _2] = deview(var);
     return visit_actual(
         actual_var, [&](const SimpleIntegerVariableID & v) { return Integer(state_of(v).size()); }, //
