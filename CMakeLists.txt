@@ -102,6 +102,20 @@ if(PROJECT_IS_TOP_LEVEL)
         add_compile_options(/Zc:preprocessor)  # standards-conformant preprocessor
         # We deliberately use getenv/std::system; silence the CRT "unsafe" deprecations.
         add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+
+        # Emit debug info in Release too, mirroring the -g1 the GCC/Clang side keeps,
+        # so std::stacktrace can resolve function names and source lines for the
+        # GCS_VERBOSE_LOGGING proof annotation (Debug already gets /Zi by default).
+        # /Z7 embeds CodeView in each .obj -- unlike /Zi it needs no shared compiler
+        # PDB, so Ninja's parallel compiles can't collide on one (fatal error C1041).
+        # The linker's /DEBUG then gathers it into a program PDB that DbgHelp reads at
+        # runtime; the debug info lives in that PDB, not the .exe, so Release binaries
+        # stay lean. /DEBUG disables /OPT:REF and /OPT:ICF, so re-enable them to keep
+        # Release free of unreferenced/duplicate functions.
+        add_compile_options($<$<CONFIG:Release>:/Z7>)
+        add_link_options($<$<CONFIG:Release>:/DEBUG>)
+        add_link_options($<$<CONFIG:Release>:/OPT:REF>)
+        add_link_options($<$<CONFIG:Release>:/OPT:ICF>)
     else()
         add_compile_options(-W)
         add_compile_options(-Wall)

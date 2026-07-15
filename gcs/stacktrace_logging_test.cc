@@ -30,7 +30,11 @@ TEST_CASE("Verbose logging names gcs stack frames in the proof")
 {
     // do_logging inside log_stacktrace() is read once, on the first call, so the
     // environment has to be set before the first solve in this process.
+#ifdef _WIN32
+    _putenv_s("GCS_VERBOSE_LOGGING", "1");
+#else
     setenv("GCS_VERBOSE_LOGGING", "1", 1);
+#endif
 
     Problem p;
     auto v = p.create_integer_variable(0_i, 100_i);
@@ -45,7 +49,8 @@ TEST_CASE("Verbose logging names gcs stack frames in the proof")
     bool saw_gcs_frame = false;
     string line;
     while (getline(proof, line))
-        if (line.starts_with("% ") && line.find("/gcs/") != string::npos) {
+        // Match either separator: "/gcs/" on POSIX, "\gcs\" in MSVC's PDB paths.
+        if (line.starts_with("% ") && (line.find("/gcs/") != string::npos || line.find("\\gcs\\") != string::npos)) {
             saw_gcs_frame = true;
             break;
         }

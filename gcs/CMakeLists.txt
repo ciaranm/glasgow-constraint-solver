@@ -148,16 +148,13 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(solve_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME solve_test COMMAND $<TARGET_FILE:solve_test>)
 
-    # Checks that GCS_VERBOSE_LOGGING proof annotation resolves gcs source frames,
-    # which depends on the debug info the Release build keeps (see -g1 in the top
-    # CMakeLists.txt). It self-skips where <stacktrace> is unavailable (macOS
-    # libc++). Excluded on MSVC: setenv() is POSIX-only and MSVC's <stacktrace>
-    # resolves frames from a PDB, which this build does not ship (a separate task).
-    if(NOT MSVC)
-        add_executable(stacktrace_logging_test stacktrace_logging_test.cc)
-        target_link_libraries(stacktrace_logging_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
-        add_test(NAME stacktrace_logging_test COMMAND $<TARGET_FILE:stacktrace_logging_test>)
-    endif()
+    # Checks that the GCS_VERBOSE_LOGGING proof annotation resolves gcs source
+    # frames, which depends on the debug info the Release build keeps (-g1 on
+    # GCC/Clang, /Z7 + /DEBUG on MSVC; see the top-level CMakeLists.txt). It
+    # self-skips where <stacktrace> is unavailable (macOS libc++).
+    add_executable(stacktrace_logging_test stacktrace_logging_test.cc)
+    target_link_libraries(stacktrace_logging_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME stacktrace_logging_test COMMAND $<TARGET_FILE:stacktrace_logging_test>)
 
     add_executable(problem_test problem_test.cc)
     target_link_libraries(problem_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
