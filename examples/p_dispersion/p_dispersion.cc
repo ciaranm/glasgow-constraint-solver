@@ -17,6 +17,7 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/element.hh>
+#include <gcs/constraints/min_distance.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
@@ -94,6 +95,28 @@ namespace
         problem.post(ArrayMin{ys, z});
     }
 
+    // Post the dedicated MinDistance global constraint with the given propagation
+    // mode. The distance matrix is shared (no copy) with the tuple variant's
+    // Element arrays. File-provided r_ij thresholds map to the constraint's R via
+    // the R_ij = r_ij + 1 conversion (D >= r_ij + 1); reqs[i][j] < 0 means "no
+    // requirement for this pair" and leaves R_ij = 0 (vacuous). The access is
+    // bounds-guarded against a ragged/undersized reqs matrix.
+    auto post_min_distance_variant(Problem & problem, const vector<IntegerVariableID> & x, IntegerVariableID z,
+        const std::shared_ptr<const DistanceMatrix> & distance, const vector<vector<long>> & reqs, MinDistancePropagation mode) -> void
+    {
+        auto pp = static_cast<int>(x.size());
+        std::optional<ArrayParam<MinDistance::Matrix>> md_reqs;
+        if (! reqs.empty()) {
+            MinDistance::Matrix r(pp, vector<Integer>(pp, 0_i));
+            for (int i = 0; i < pp; ++i)
+                for (int j = i + 1; j < pp; ++j)
+                    if (i < static_cast<int>(reqs.size()) && j < static_cast<int>(reqs[i].size()) && reqs[i][j] >= 0)
+                        r[i][j] = Integer{reqs[i][j] + 1};
+            md_reqs = ArrayParam<MinDistance::Matrix>{std::move(r)};
+        }
+        problem.post(MinDistance{x, z, ArrayParam<MinDistance::Matrix>{distance}, std::move(md_reqs), mode});
+    }
+
     // Parse "WxH" (or a single "N" meaning N x N) into a (width, height) pair.
     auto parse_grid_spec(const string & spec) -> std::pair<int, int>
     {
@@ -124,10 +147,12 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<double>()->default_value("0"))                     //
             ;
 
-        options.add_options("Model")                                                                    //
-            ("variant", "Constraint variant to post (currently only: tuple)",                           //
-                cxxopts::value<string>()->default_value("tuple"))                                       //
-            ("p,points", "Number of sites to select (>= 2)", cxxopts::value<int>()->default_value("3")) //
+        options.add_options("Model") //
+            ("variant",
+                "Constraint variant to post: tuple (Element+ArrayMin decomposition), or the "                 //
+                "MinDistance global with min-distance-check / min-distance-fb / min-distance-ps propagation", //
+                cxxopts::value<string>()->default_value("tuple"))                                             //
+            ("p,points", "Number of sites to select (>= 2)", cxxopts::value<int>()->default_value("3"))       //
             ("initial-lb",
                 "Initial lower bound on z. Default 1 forbids coincident sites "                           //
                 "(positive separation); use 0 to allow duplicate sites (z can be 0).",                    //
@@ -170,8 +195,8 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto variant = options_vars["variant"].as<string>();
-    if (variant != "tuple") {
-        println(cerr, "Error: unknown --variant '{}'. Phase 1 supports only 'tuple'.", variant);
+    if (variant != "tuple" && variant != "min-distance-check" && variant != "min-distance-fb" && variant != "min-distance-ps") {
+        println(cerr, "Error: unknown --variant '{}'. Supported: tuple, min-distance-check, min-distance-fb, min-distance-ps.", variant);
         return EXIT_FAILURE;
     }
 
@@ -250,7 +275,14 @@ auto main(int argc, char * argv[]) -> int
     auto z = problem.create_integer_variable(initial_lb, max_dist, "z");
 
     auto distance = make_shared<const DistanceMatrix>(instance.distance);
-    post_tuple_variant(problem, x, z, distance, reqs, max_dist);
+    if (variant == "tuple")
+        post_tuple_variant(problem, x, z, distance, reqs, max_dist);
+    else if (variant == "min-distance-check")
+        post_min_distance_variant(problem, x, z, distance, reqs, MinDistancePropagation::CheckOnly);
+    else if (variant == "min-distance-fb")
+        post_min_distance_variant(problem, x, z, distance, reqs, MinDistancePropagation::ForwardBound);
+    else // min-distance-ps
+        post_min_distance_variant(problem, x, z, distance, reqs, MinDistancePropagation::PairSupport);
 
     if (options_vars.contains("all-different"))
         problem.post(AllDifferent{x});
