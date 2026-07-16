@@ -35,13 +35,33 @@ namespace gcs::innards
     }
 
     /**
+     * \brief Should rendering an inequality introduce proof names for
+     * conditions that do not have one yet?
+     *
+     * `Yes` fuses what would otherwise be a separate need_all_proof_names_in
+     * pass into rendering: an introduction emits its definition lines to the
+     * proof stream mid-render, which is safe precisely because the line being
+     * rendered is being assembled in a buffer and written afterwards. The
+     * model-writing path must use `No` (with an explicit pre-pass), since its
+     * introductions append to the same OPB buffer being rendered into.
+     *
+     * \ingroup Innards
+     */
+    enum class EnsureNames
+    {
+        Yes,
+        No
+    };
+
+    /**
      * \brief Append an inequality, rendered as OPB / proof text, to a string.
      *
      * Only used inside proof innards.
      *
      * \ingroup Innards
      */
-    auto emit_inequality_to(NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, std::string & out) -> void;
+    auto emit_inequality_to(
+        NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, std::string & out, EnsureNames ensure_names) -> void;
 
     /**
      * \brief Write an inequality out to an ostream.

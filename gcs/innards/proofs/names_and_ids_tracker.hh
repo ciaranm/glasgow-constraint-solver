@@ -331,6 +331,14 @@ namespace gcs::innards
         [[nodiscard]] auto pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const std::string &;
 
         /**
+         * As pb_file_string_for, but introduce the condition's proof name
+         * first if it does not exist yet (need_proof_name), in one lookup for
+         * the common already-known case. Only for use while assembling a
+         * proof line in a buffer: an introduction emits definition lines.
+         */
+        [[nodiscard]] auto pb_file_string_for_ensuring(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> const std::string &;
+
+        /**
          * Return a string form of the exact literals specifying a bit assignment for var == val, an alternative way to witness solutions.
          */
         [[nodiscard]] auto bit_assignment_string_for(const SimpleOrProofOnlyIntegerVariableID & var, const Integer & value) const -> std::string;

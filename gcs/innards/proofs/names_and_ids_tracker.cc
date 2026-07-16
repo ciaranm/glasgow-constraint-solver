@@ -1573,6 +1573,18 @@ auto NamesAndIDsTracker::pb_file_string_for(const VariableConditionFrom<SimpleOr
     return pb_file_string_for(xliteral_for(cond));
 }
 
+auto NamesAndIDsTracker::pb_file_string_for_ensuring(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) -> const string &
+{
+    auto f = _imp->variable_conditions_to_x.find(cond);
+    if (f == _imp->variable_conditions_to_x.end()) {
+        need_proof_name(cond);
+        f = _imp->variable_conditions_to_x.find(cond);
+        if (f == _imp->variable_conditions_to_x.end())
+            throw ProofError{"still can't find literals for cond after introducing it"};
+    }
+    return pb_file_string_for(f->second);
+}
+
 auto NamesAndIDsTracker::bit_assignment_string_for(const SimpleOrProofOnlyIntegerVariableID & var, const Integer & value) const -> string
 {
     auto it = _imp->integer_variable_bits_to_size_and_proof_vars.find(var);

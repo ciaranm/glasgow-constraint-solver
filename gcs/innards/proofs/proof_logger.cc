@@ -86,6 +86,43 @@ namespace
         throw NonExhaustiveSwitch{};
     }
 
+    // Scoped hold on one of the logger's line-assembly buffers: takes the
+    // buffer at the current nesting depth, cleared, and releases it on the
+    // way out. See the line_buffers member for why this is a stack.
+    class LineBufferLease
+    {
+    private:
+        std::size_t & _depth;
+        std::string & _buffer;
+
+        [[nodiscard]] static auto buffer_at_depth(deque<string> & buffers, std::size_t depth) -> string &
+        {
+            if (buffers.size() <= depth)
+                buffers.resize(depth + 1);
+            return buffers[depth];
+        }
+
+    public:
+        explicit LineBufferLease(deque<string> & buffers, std::size_t & depth) : _depth(depth), _buffer(buffer_at_depth(buffers, depth))
+        {
+            _buffer.clear();
+            ++_depth;
+        }
+
+        ~LineBufferLease()
+        {
+            --_depth;
+        }
+
+        LineBufferLease(const LineBufferLease &) = delete;
+        auto operator=(const LineBufferLease &) -> LineBufferLease & = delete;
+
+        [[nodiscard]] auto buffer() -> string &
+        {
+            return _buffer;
+        }
+    };
+
     // The string-append twin of AssertionAnnotation's ostream operator; keep
     // the two renderings in sync.
     auto append_annotation_to(string & out, const AssertionAnnotation & annotation) -> void
@@ -138,11 +175,14 @@ struct ProofLogger::Imp
     int current_indent = 0;
     AssertionLevel assertion_level;
 
-    // Scratch for assembling a single proof line before it is written out,
+    // Scratch buffers for assembling proof lines before they are written out,
     // reused across emissions to avoid a stringstream per logged inference.
-    // Only valid within one emit call: the name-introduction phase that runs
-    // before assembly starts may itself emit (and so clobber this).
-    string line_buffer;
+    // A stack, indexed by line_buffer_depth: rendering a line can introduce a
+    // proof name whose definitions are emitted (to the stream, ahead of the
+    // buffered line) through a nested emit, which needs its own buffer. A
+    // deque so nested growth never invalidates an outer buffer reference.
+    deque<string> line_buffers;
+    std::size_t line_buffer_depth = 0;
 
     // Scratch for the reified form of an inference under its reason, reused
     // across emissions for the same reason (a reified linear sum can run to
@@ -404,13 +444,10 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
 auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
     const std::optional<AssertionAnnotation> & assertion_hint, const std::optional<ProofLineLabel> & label) -> ProofLine
 {
-    // Any names introduced here can emit their own proof lines, so this must
-    // finish before line assembly starts in the shared buffer.
-    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     log_stacktrace();
 
-    auto & rule_line = _imp->line_buffer;
-    rule_line.clear();
+    LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
+    auto & rule_line = lease.buffer();
 
     overloaded{
         [&](const RUPProofRule &) { rule_line += "rup "; },    //
@@ -419,7 +456,10 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     }
         .visit(rule);
 
-    emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
+    // EnsureNames::Yes: a condition without a proof name yet gets introduced
+    // as it is rendered, and its definition lines go out to the proof stream
+    // ahead of this line, which is still sitting in the buffer.
+    emit_inequality_to(names_and_ids_tracker(), ineq, rule_line, EnsureNames::Yes);
 
     overloaded{
         [&](const RUPProofRule & rule) {
@@ -467,17 +507,10 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
     const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
-    // Names introduced here can emit their own proof lines, so both of these
-    // must finish before line assembly starts in the shared buffer.
-    if (! reason.empty())
-        names_and_ids_tracker().need_all_proof_names_in(reason);
-
-    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
-
     log_stacktrace();
 
-    auto & rule_line = _imp->line_buffer;
-    rule_line.clear();
+    LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
+    auto & rule_line = lease.buffer();
 
     overloaded{
         [&](const RUPProofRule &) { rule_line += "rup "; },    //
@@ -486,12 +519,15 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     }
         .visit(rule);
 
+    // EnsureNames::Yes: see emit() above. The nested emissions this can
+    // trigger never come back through here with a reason, so the single
+    // reify buffer is safe.
     if (! reason.empty()) {
         names_and_ids_tracker().reify_into(ineq, reason, _imp->reify_buffer);
-        emit_inequality_to(names_and_ids_tracker(), _imp->reify_buffer, rule_line);
+        emit_inequality_to(names_and_ids_tracker(), _imp->reify_buffer, rule_line, EnsureNames::Yes);
     }
     else {
-        emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
+        emit_inequality_to(names_and_ids_tracker(), ineq, rule_line, EnsureNames::Yes);
     }
 
     overloaded{
