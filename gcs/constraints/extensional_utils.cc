@@ -1,4 +1,6 @@
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <gcs/constraints/divide_modulus/hints.hh>
 #include <gcs/constraints/extensional_utils.hh>
 #include <gcs/constraints/linear/hints.hh>
@@ -96,15 +98,47 @@ auto gcs::innards::propagate_extensional(
         },
         table.tuples);
 
-    // check for supports in selectable tuples
+    // check for supports in selectable tuples, using residual supports: for each
+    // (variable position, value) we remember the last selectable tuple that
+    // supported it, and only re-scan the table when that residue has gone stale.
+    // The value is supported iff some still-selectable tuple matches it, so the
+    // set of removed values -- and hence the inferences and the proof -- is exactly
+    // the same as a full scan; only the search for a witness is incremental.
+    auto & residues = *table.residues;
+    if (! residues.initialised) {
+        residues.support.resize(table.vars.size());
+        residues.base.resize(table.vars.size());
+        for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
+            auto [lo, hi] = state.bounds(table.vars[idx]);
+            residues.base[idx] = lo.raw_value;
+            residues.support[idx].assign(static_cast<std::size_t>((hi - lo).raw_value + 1), ExtensionalResidues::none);
+        }
+        residues.initialised = true;
+    }
+
     visit(
         [&](const auto & tuples) {
             for (unsigned idx = 0; idx < table.vars.size(); ++idx) {
+                auto & residue_row = residues.support[idx];
+                auto base = residues.base[idx];
                 for (auto val : state.each_value_mutable(table.vars[idx])) {
+                    auto off = static_cast<std::size_t>(val.raw_value - base);
+                    bool have_row = off < residue_row.size();
+
+                    // O(1) fast path: last witness still selectable and still matching.
+                    if (have_row) {
+                        auto cached = residue_row[off];
+                        if (cached != ExtensionalResidues::none && state.in_domain(table.selector, Integer(static_cast<long long>(cached))) &&
+                            match(get_tuple_value(tuples, cached, idx), val))
+                            continue;
+                    }
+
                     bool supported = false;
                     for (auto tuple_idx : state.each_value_immutable(table.selector)) {
                         if (match(get_tuple_value(tuples, tuple_idx.as_index(), idx), val)) {
                             supported = true;
+                            if (have_row)
+                                residue_row[off] = static_cast<std::uint32_t>(tuple_idx.as_index());
                             break;
                         }
                     }

@@ -1,0 +1,3 @@
+add_executable(slack_watch slack_watch.cc)
+target_link_libraries(slack_watch PRIVATE glasgow_constraint_solver)
+target_link_libraries(slack_watch PRIVATE cxxopts)

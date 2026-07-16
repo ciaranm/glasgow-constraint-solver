@@ -10,12 +10,37 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <cstdint>
+#include <limits>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
 
 namespace gcs::innards
 {
+    /**
+     * \brief Cached "residual supports" for gcs::innards::propagate_extensional().
+     *
+     * For each (variable position, value) the last tuple found to support it. On
+     * the next call, if that tuple is still selectable and still matches, the value
+     * is known supported in O(1) without re-scanning the table. Non-backtrackable:
+     * a stale residue is simply re-sought, and a residue never becomes unsound
+     * across backtrack (a relaxed domain can only make more tuples selectable).
+     * Indexed [var position][value - base]; \c base and the sizes are captured from
+     * the first propagate() call, which happens at the root, so they cover every
+     * value the variable can hold during search.
+     *
+     * \ingroup Innards
+     */
+    struct ExtensionalResidues
+    {
+        static constexpr std::uint32_t none = std::numeric_limits<std::uint32_t>::max();
+        std::vector<std::vector<std::uint32_t>> support;
+        std::vector<long long> base;
+        bool initialised = false;
+    };
+
     /**
      * \brief Data for gcs::innards::propagate_extensional().
      *
@@ -26,6 +51,7 @@ namespace gcs::innards
         IntegerVariableID selector;
         std::vector<IntegerVariableID> vars;
         ExtensionalTuples tuples;
+        std::shared_ptr<ExtensionalResidues> residues = std::make_shared<ExtensionalResidues>();
     };
 
     /**
