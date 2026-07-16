@@ -184,11 +184,6 @@ struct ProofLogger::Imp
     deque<string> line_buffers;
     std::size_t line_buffer_depth = 0;
 
-    // Scratch for the reified form of an inference under its reason, reused
-    // across emissions for the same reason (a reified linear sum can run to
-    // hundreds of terms, and a fresh allocation per line is measurable).
-    WPBSumLE reify_buffer{{}, 0_i};
-
     Imp(NamesAndIDsTracker & t) : tracker(t)
     {
     }
@@ -519,12 +514,9 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     }
         .visit(rule);
 
-    // EnsureNames::Yes: see emit() above. The nested emissions this can
-    // trigger never come back through here with a reason, so the single
-    // reify buffer is safe.
+    // EnsureNames::Yes: see emit() above.
     if (! reason.empty()) {
-        names_and_ids_tracker().reify_into(ineq, reason, _imp->reify_buffer);
-        emit_inequality_to(names_and_ids_tracker(), _imp->reify_buffer, rule_line, EnsureNames::Yes);
+        emit_reified_inequality_to(names_and_ids_tracker(), ineq, reason, rule_line, EnsureNames::Yes);
     }
     else {
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line, EnsureNames::Yes);

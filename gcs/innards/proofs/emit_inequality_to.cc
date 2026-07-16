@@ -21,20 +21,16 @@ namespace
         out += name;
         out += ' ';
     }
-}
 
-auto gcs::innards::emit_inequality_to(NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
-    string & out, EnsureNames ensure_names) -> void
-{
-    // build up the inequality, adjusting as we go for constant terms,
-    // and converting from <= to >=.
-    Integer rhs = -ineq.rhs;
-    for (auto & [w, v] : ineq.lhs.terms) {
-        if (0_i == w)
-            continue;
-
+    // Render one weighted term of a PB inequality being emitted in >= form:
+    // append its literal rendering(s) to `out` with negated weight, or fold a
+    // constant term into `rhs`. Shared by the plain and reified renderers so
+    // there is exactly one spelling of every term.
+    auto append_or_fold_term_to(NamesAndIDsTracker & names_and_ids_tracker, Integer w, const PseudoBooleanTerm & v, string & out, Integer & rhs,
+        EnsureNames ensure_names) -> void
+    {
         overloaded{
-            [&, w = w](const ProofLiteral & lit) {
+            [&](const ProofLiteral & lit) {
                 overloaded{
                     [&](const TrueLiteral &) { rhs += w; }, //
                     [&](const FalseLiteral &) {},           //
@@ -45,9 +41,9 @@ auto gcs::innards::emit_inequality_to(NamesAndIDsTracker & names_and_ids_tracker
                     } //
                 }
                     .visit(simplify_literal(names_and_ids_tracker, lit));
-            },                                                                                                               //
-            [&, w = w](const ProofFlag & flag) { append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(flag)); }, //
-            [&, w = w](const IntegerVariableID & var) {
+            },                                                                                                        //
+            [&](const ProofFlag & flag) { append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(flag)); }, //
+            [&](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
                         for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
@@ -79,17 +75,62 @@ auto gcs::innards::emit_inequality_to(NamesAndIDsTracker & names_and_ids_tracker
                 }
                     .visit(var);
             }, //
-            [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
+            [&](const ProofOnlySimpleIntegerVariableID & var) {
                 for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
                     append_term_to(out, -w * bit_value, names_and_ids_tracker.pb_file_string_for(bit_lit));
             }, //
-            [&, w = w](const ProofBitVariable & bit) {
+            [&](const ProofBitVariable & bit) {
                 auto [_, bit_name] = names_and_ids_tracker.get_bit(bit);
                 append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(bit_name));
             }, //
         }
             .visit(v);
     }
+}
+
+auto gcs::innards::emit_inequality_to(NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    string & out, EnsureNames ensure_names) -> void
+{
+    // build up the inequality, adjusting as we go for constant terms,
+    // and converting from <= to >=.
+    Integer rhs = -ineq.rhs;
+    for (auto & [w, v] : ineq.lhs.terms) {
+        if (0_i == w)
+            continue;
+        append_or_fold_term_to(names_and_ids_tracker, w, v, out, rhs, ensure_names);
+    }
+
+    out += ">= ";
+    append_number_to(out, rhs);
+}
+
+auto gcs::innards::emit_reified_inequality_to(NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const HalfReifyOnConjunctionOf & half_reif, string & out, EnsureNames ensure_names) -> void
+{
+    // Renders exactly what emit_inequality_to would produce for
+    // reify(ineq, half_reif), without materialising the reified sum: the
+    // base terms, then each negated reifying term with the reification
+    // coefficient, converted from <= to >= as usual.
+    auto shape = names_and_ids_tracker.reification_shape(ineq, half_reif);
+
+    Integer rhs = -shape.effective_rhs;
+    for (auto & [w, v] : ineq.lhs.terms) {
+        if (0_i == w)
+            continue;
+        append_or_fold_term_to(names_and_ids_tracker, w, v, out, rhs, ensure_names);
+    }
+
+    for (auto & r : half_reif)
+        overloaded{
+            [&](const ProofFlag & f) { append_or_fold_term_to(names_and_ids_tracker, shape.reif_coefficient, ! f, out, rhs, ensure_names); }, //
+            [&](const ProofLiteral & lit) {
+                append_or_fold_term_to(names_and_ids_tracker, shape.reif_coefficient, ! lit, out, rhs, ensure_names);
+            }, //
+            [&](const ProofBitVariable & bit) {
+                append_or_fold_term_to(names_and_ids_tracker, shape.reif_coefficient, ! bit, out, rhs, ensure_names);
+            } //
+        }
+            .visit(r);
 
     out += ">= ";
     append_number_to(out, rhs);

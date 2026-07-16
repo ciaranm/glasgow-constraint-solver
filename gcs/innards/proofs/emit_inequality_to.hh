@@ -64,6 +64,21 @@ namespace gcs::innards
         NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, std::string & out, EnsureNames ensure_names) -> void;
 
     /**
+     * \brief Append the half-reified form of an inequality, rendered as proof
+     * text, to a string: byte-for-byte what emit_inequality_to produces for
+     * reify(ineq, half_reif), but without materialising the reified sum.
+     * The per-inference emission path, where the materialisation is
+     * measurable, uses this; anything that wants the reified sum as a value
+     * still goes through NamesAndIDsTracker::reify.
+     *
+     * Only used inside proof innards.
+     *
+     * \ingroup Innards
+     */
+    auto emit_reified_inequality_to(NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+        const HalfReifyOnConjunctionOf & half_reif, std::string & out, EnsureNames ensure_names) -> void;
+
+    /**
      * \brief Write an inequality out to an ostream.
      *
      * Only used inside proof innards.

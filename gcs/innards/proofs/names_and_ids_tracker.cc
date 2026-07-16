@@ -1994,14 +1994,7 @@ auto NamesAndIDsTracker::s_expr_term_of(ReificationCondition cond) const -> opti
     return parse_s_expr(name);
 }
 
-auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE
-{
-    WPBSumLE result{{}, 0_i};
-    reify_into(ineq, half_reif, result);
-    return result;
-}
-
-auto NamesAndIDsTracker::reify_into(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif, WPBSumLE & out) -> void
+auto NamesAndIDsTracker::reification_shape(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> ReificationShape
 {
     // so what happens if there's a false literal in the left hand term? conceptually,
     // this means the constraint will always hold, but it's probably useful to have
@@ -2084,22 +2077,27 @@ auto NamesAndIDsTracker::reify_into(const WPBSumLE & ineq, const HalfReifyOnConj
     // to always be there.
     auto clamped_reif_const = min(-max_contribution_from_positive_terms + ineq.rhs, -1_i);
 
-    auto & new_lhs = out.lhs;
-    new_lhs.terms.clear();
+    // if we have a false literal on the left hand side, adjusting the degree of falsity
+    // up by the sum of positive terms is enough that it will be trivially true.
+    auto effective_rhs = contains_false_literal ? ineq.rhs + max_contribution_from_positive_terms : ineq.rhs;
+
+    return ReificationShape{.reif_coefficient = clamped_reif_const, .effective_rhs = effective_rhs};
+}
+
+auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE
+{
+    auto shape = reification_shape(ineq, half_reif);
+
+    WPBSum new_lhs;
     new_lhs.terms.reserve(ineq.lhs.terms.size() + half_reif.size());
     new_lhs.terms.insert(new_lhs.terms.end(), ineq.lhs.terms.begin(), ineq.lhs.terms.end());
     for (auto & r : half_reif)
         overloaded{
-            [&](const ProofFlag & f) { new_lhs += clamped_reif_const * ! f; },           //
-            [&](const ProofLiteral & lit) { new_lhs += clamped_reif_const * ! lit; },    //
-            [&](const ProofBitVariable & bit) { new_lhs += clamped_reif_const * ! bit; } //
+            [&](const ProofFlag & f) { new_lhs += shape.reif_coefficient * ! f; },           //
+            [&](const ProofLiteral & lit) { new_lhs += shape.reif_coefficient * ! lit; },    //
+            [&](const ProofBitVariable & bit) { new_lhs += shape.reif_coefficient * ! bit; } //
         }
             .visit(r);
 
-    // if we have a false literal on the left hand side, adjusting the degree of falsity
-    // up by the sum of positive terms is enough that it will be trivially true.
-    if (contains_false_literal)
-        out.rhs = ineq.rhs + max_contribution_from_positive_terms;
-    else
-        out.rhs = ineq.rhs;
+    return move(new_lhs) <= shape.effective_rhs;
 }

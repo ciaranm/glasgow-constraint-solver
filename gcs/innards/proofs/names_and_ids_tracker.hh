@@ -519,17 +519,26 @@ namespace gcs::innards
         [[nodiscard]] auto create_proof_flag_for_constant(Integer k, const std::string & atom) -> ProofFlag;
 
         /**
+         * The numbers that determine a half-reification of a PB constraint:
+         * the (negative) coefficient each negated reifying term is given, and
+         * the constraint's effective right-hand side (adjusted if the
+         * conjunction contains a statically-false literal). The reified
+         * constraint is `lhs + reif_coefficient * (each ~term) <=
+         * effective_rhs`; reify() materialises exactly that, and
+         * emit_reified_inequality_to renders it directly.
+         */
+        struct ReificationShape
+        {
+            Integer reif_coefficient;
+            Integer effective_rhs;
+        };
+
+        [[nodiscard]] auto reification_shape(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> ReificationShape;
+
+        /**
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals
          */
         [[nodiscard]] auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;
-
-        /**
-         * As reify(), but writing the result into `out`, reusing its term
-         * storage. For per-inference emission, where a freshly allocated
-         * reified sum per proof line is measurable; `out` must not alias the
-         * input.
-         */
-        auto reify_into(const WPBSumLE &, const HalfReifyOnConjunctionOf &, WPBSumLE & out) -> void;
 
         /*
          * Allocate an XLiteral with the given semantic meaning.
