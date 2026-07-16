@@ -1,4 +1,5 @@
 #include <gcs/exception.hh>
+#include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -29,13 +30,14 @@ auto PolBuilder::enable_deview_mode(const NamesAndIDsTracker & tracker) -> PolBu
 auto PolBuilder::separator_if_not_first() -> void
 {
     if (! _empty)
-        _tokens.emplace_back(string{" +"});
+        _text += " +";
 }
 
 auto PolBuilder::add(ProofLine line) -> PolBuilder &
 {
     ProofLine resolved = _deview_tracker ? _deview_tracker->deviewed_line_for(line) : line;
-    _tokens.emplace_back(resolved);
+    _text += ' ';
+    _refs.emplace_back(_text.size(), move(resolved));
     separator_if_not_first();
     _empty = false;
     return *this;
@@ -46,9 +48,13 @@ auto PolBuilder::add(ProofLine line, Integer coeff) -> PolBuilder &
     if (coeff == 0_i)
         throw UnexpectedException{"PolBuilder::add called with zero coefficient"};
     ProofLine resolved = _deview_tracker ? _deview_tracker->deviewed_line_for(line) : line;
-    _tokens.emplace_back(resolved);
-    if (coeff != 1_i)
-        _tokens.emplace_back(" " + std::to_string(coeff.raw_value) + " *");
+    _text += ' ';
+    _refs.emplace_back(_text.size(), move(resolved));
+    if (coeff != 1_i) {
+        _text += ' ';
+        append_number_to(_text, coeff);
+        _text += " *";
+    }
     separator_if_not_first();
     _empty = false;
     return *this;
@@ -56,7 +62,8 @@ auto PolBuilder::add(ProofLine line, Integer coeff) -> PolBuilder &
 
 auto PolBuilder::add(const XLiteral & lit, const NamesAndIDsTracker & tracker) -> PolBuilder &
 {
-    _tokens.emplace_back(" " + tracker.pb_file_string_for(lit));
+    _text += ' ';
+    _text += tracker.pb_file_string_for(lit);
     separator_if_not_first();
     _empty = false;
     return *this;
@@ -66,9 +73,13 @@ auto PolBuilder::add(const XLiteral & lit, Integer coeff, const NamesAndIDsTrack
 {
     if (coeff == 0_i)
         throw UnexpectedException{"PolBuilder::add called with zero coefficient"};
-    _tokens.emplace_back(" " + tracker.pb_file_string_for(lit));
-    if (coeff != 1_i)
-        _tokens.emplace_back(" " + std::to_string(coeff.raw_value) + " *");
+    _text += ' ';
+    _text += tracker.pb_file_string_for(lit);
+    if (coeff != 1_i) {
+        _text += ' ';
+        append_number_to(_text, coeff);
+        _text += " *";
+    }
     separator_if_not_first();
     _empty = false;
     return *this;
@@ -96,25 +107,31 @@ auto PolBuilder::add_for_literal(NamesAndIDsTracker & tracker, const IntegerVari
 
 auto PolBuilder::saturate() -> PolBuilder &
 {
-    _tokens.emplace_back(string{" s"});
+    _text += " s";
     return *this;
 }
 
 auto PolBuilder::multiply_by(Integer n) -> PolBuilder &
 {
-    _tokens.emplace_back(" " + std::to_string(n.raw_value) + " *");
+    _text += ' ';
+    append_number_to(_text, n);
+    _text += " *";
     return *this;
 }
 
 auto PolBuilder::divide_by(Integer n) -> PolBuilder &
 {
-    _tokens.emplace_back(" " + std::to_string(n.raw_value) + " d");
+    _text += ' ';
+    append_number_to(_text, n);
+    _text += " d";
     return *this;
 }
 
 auto PolBuilder::weaken(const ProofFlag & flag, const NamesAndIDsTracker & tracker) -> PolBuilder &
 {
-    _tokens.emplace_back(" " + tracker.pb_file_string_for(flag) + " w");
+    _text += ' ';
+    _text += tracker.pb_file_string_for(flag);
+    _text += " w";
     return *this;
 }
 
@@ -126,19 +143,20 @@ auto PolBuilder::empty() const -> bool
 auto PolBuilder::render(optional<long long> current_max) const -> string
 {
     string out = "pol";
-    for (const auto & t : _tokens)
-        out += visit(overloaded{
-                         [&](const string & s) -> string { return s; }, //
-                         [&](const ProofLine & l) -> string {
-                             if (current_max)
-                                 return " " + relative_proof_line(l, *current_max);
-                             else if (auto n = std::get_if<ProofLineNumber>(&l))
-                                 return " " + std::to_string(n->number);
-                             else
-                                 return " @" + std::get<ProofLineLabel>(l).label;
-                         } //
-                     },
-            t);
+    std::size_t done = 0;
+    for (const auto & [offset, line] : _refs) {
+        out.append(_text, done, offset - done);
+        done = offset;
+        if (current_max)
+            out += relative_proof_line(line, *current_max);
+        else if (const auto * n = std::get_if<ProofLineNumber>(&line))
+            append_number_to(out, n->number);
+        else {
+            out += '@';
+            out += std::get<ProofLineLabel>(line).label;
+        }
+    }
+    out.append(_text, done, string::npos);
     return out + " ;";
 }
 
@@ -156,6 +174,7 @@ auto PolBuilder::emit(ProofLogger & logger, ProofLevel level) -> ProofLine
 
 auto PolBuilder::clear() -> void
 {
-    _tokens.clear();
+    _text.clear();
+    _refs.clear();
     _empty = true;
 }

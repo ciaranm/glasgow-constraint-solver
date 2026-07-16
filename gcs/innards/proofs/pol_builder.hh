@@ -67,15 +67,16 @@ namespace gcs::innards
     class PolBuilder
     {
     private:
-        // A pol line is built as a sequence of tokens: verbatim string fragments
-        // (coefficients, operators, literal names) interleaved with constraint
-        // references (ProofLine). The references are only resolved to text at
-        // render time, because emitting them as VeriPB *relative* (negative)
-        // indices needs the current proof-line counter, which is known at emit
-        // (not at add). str() renders them absolutely (for tests/debugging);
-        // emit() renders them relatively against the logger's current line.
-        using Token = std::variant<std::string, ProofLine>;
-        std::vector<Token> _tokens;
+        // A pol line is verbatim text (coefficients, operators, literal names)
+        // interleaved with constraint references (ProofLine). The text
+        // accumulates in one buffer; each reference records the offset it
+        // splices in at, because emitting it as a VeriPB *relative* (negative)
+        // index needs the current proof-line counter, which is known at emit
+        // (not at add). str() renders references absolutely (for
+        // tests/debugging); emit() renders them relatively against the
+        // logger's current line.
+        std::string _text;
+        std::vector<std::pair<std::size_t, ProofLine>> _refs;
         bool _empty = true;
         const NamesAndIDsTracker * _deview_tracker = nullptr;
 
