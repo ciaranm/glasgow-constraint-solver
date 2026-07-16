@@ -1,3 +1,4 @@
+#include <gcs/exception.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/emit_inequality_to.hh>
@@ -13,10 +14,8 @@
 #include <cstdlib>
 #include <exception>
 #include <fstream>
-#include <iterator>
 #include <map>
 #include <set>
-#include <sstream>
 
 #include <version>
 
@@ -32,19 +31,15 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-using std::fstream;
 using std::ios;
 using std::ios_base;
-using std::istreambuf_iterator;
 using std::make_unique;
 using std::map;
 using std::nullopt;
 using std::ofstream;
 using std::optional;
-using std::ostreambuf_iterator;
 using std::pair;
 using std::string;
-using std::stringstream;
 using std::variant;
 using std::vector;
 using std::ranges::sort;
@@ -57,11 +52,22 @@ using std::print;
 using fmt::print;
 #endif
 
+namespace
+{
+    // The string-append twin of ProofLineLabel's ostream operator (a leading
+    // `@`, then the label), plus the trailing space the OPB sites all want.
+    auto append_label_to(string & out, const ProofLineLabel & label) -> void
+    {
+        out += '@';
+        out += label.label;
+        out += ' ';
+    }
+}
+
 struct ProofModel::Imp
 {
     NamesAndIDsTracker & tracker;
 
-    unsigned long long model_variables = 0;
     ProofLineNumber number_of_constraints{0};
 
     optional<IntegerVariableID> optional_minimise_variable;
@@ -71,7 +77,12 @@ struct ProofModel::Imp
     map<Integer, ProofModel::CakeConstantAtoms> cake_constant_atoms;
 
     string opb_file;
-    stringstream opb;
+    // Text not yet written out. Until write_preamble() runs this holds
+    // everything emitted so far (the variable set-up rows); afterwards each
+    // emitting method sends it straight on to the file.
+    string opb;
+    ofstream opb_stream;
+    bool streaming = false;
 
     bool always_use_full_encoding = false;
     bool finalised = false;
@@ -108,7 +119,12 @@ auto ProofModel::emit_constraint_label(const string & constraint_id, const strin
 
 auto ProofModel::begin_constraint_block_comment(const string & constraint_type, const ConstraintID & constraint_id) -> void
 {
-    _imp->opb << "* constraint " << constraint_type << ' ' << as_string(constraint_id) << '\n';
+    _imp->opb += "* constraint ";
+    _imp->opb += constraint_type;
+    _imp->opb += ' ';
+    _imp->opb += as_string(constraint_id);
+    _imp->opb += '\n';
+    write_out_pending();
 }
 
 auto ProofModel::add_constraint(const Literals & lits) -> void
@@ -143,8 +159,9 @@ auto ProofModel::add_constraint(const WPBSumLE & ineq, const optional<HalfReifyO
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
-    _imp->opb << ";\n";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb, EnsureNames::No);
+    _imp->opb += ";\n";
+    write_out_pending();
     auto line = advance_constraint_counter();
     // emit_inequality_to negates the LE inequality to land in PB >= form.
     names_and_ids_tracker().derive_deviewed_form_for(line, ineq.lhs, /*le_half=*/true);
@@ -156,16 +173,17 @@ auto ProofModel::add_constraint(const WPBSumEq & eq, const optional<HalfReifyOnC
     if (half_reif)
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
-    emit_inequality_to(
-        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
-    _imp->opb << ";\n";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb,
+        EnsureNames::No);
+    _imp->opb += ";\n";
     auto first = advance_constraint_counter();
     // LE half: emit_inequality_to negates coefficients on emit.
     names_and_ids_tracker().derive_deviewed_form_for(first, eq.lhs, /*le_half=*/true);
 
-    emit_inequality_to(
-        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
-    _imp->opb << ";\n";
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb,
+        EnsureNames::No);
+    _imp->opb += ";\n";
+    write_out_pending();
     auto second = advance_constraint_counter();
     // GE half: the >= operator in expression.hh negates the sum once before
     // emit_inequality_to negates it again, so OPB-form coefficients match
@@ -188,19 +206,20 @@ auto ProofModel::add_labelled_constraint(const string & label_le, const string &
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
     ProofLineLabel le{label_le};
-    _imp->opb << le << " ";
-    emit_inequality_to(
-        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb);
-    _imp->opb << ";\n";
+    append_label_to(_imp->opb, le);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs <= eq.rhs, *half_reif) : eq.lhs <= eq.rhs, _imp->opb,
+        EnsureNames::No);
+    _imp->opb += ";\n";
     advance_constraint_counter();
     // LE half: emit_inequality_to negates coefficients on emit.
     names_and_ids_tracker().derive_deviewed_form_for(le, eq.lhs, /*le_half=*/true);
 
     ProofLineLabel ge{label_ge};
-    _imp->opb << ge << " ";
-    emit_inequality_to(
-        names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb);
-    _imp->opb << ";\n";
+    append_label_to(_imp->opb, ge);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(eq.lhs >= eq.rhs, *half_reif) : eq.lhs >= eq.rhs, _imp->opb,
+        EnsureNames::No);
+    _imp->opb += ";\n";
+    write_out_pending();
     advance_constraint_counter();
     // GE half: see the unlabelled add_constraint above for the double-negation note.
     names_and_ids_tracker().derive_deviewed_form_for(ge, eq.lhs, /*le_half=*/false);
@@ -216,9 +235,10 @@ auto ProofModel::add_labelled_constraint(const string & label, const WPBSumLE & 
         names_and_ids_tracker().need_all_proof_names_in(*half_reif);
 
     ProofLineLabel l{label};
-    _imp->opb << l << " ";
-    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb);
-    _imp->opb << ";\n";
+    append_label_to(_imp->opb, l);
+    emit_inequality_to(names_and_ids_tracker(), half_reif ? names_and_ids_tracker().reify(ineq, *half_reif) : ineq, _imp->opb, EnsureNames::No);
+    _imp->opb += ";\n";
+    write_out_pending();
     advance_constraint_counter();
     // As the (constraint_id, role) overload: a labelled constraint over a view
     // still needs its deviewed form, so a proof-only view variable's encoding
@@ -372,8 +392,10 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
         // (tautological) line -- cake additionally emits an upper-bound line, but
         // VeriPB no longer pins the constraint count, and references are relative.
         auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, 0_i);
-        _imp->opb << "1 " << names_and_ids_tracker().pb_file_string_for(eqvar) << " >= 0 ;\n";
-        ++_imp->model_variables;
+        _imp->opb += "1 ";
+        _imp->opb += names_and_ids_tracker().pb_file_string_for(eqvar);
+        _imp->opb += " >= 0 ;\n";
+        write_out_pending();
         advance_constraint_counter();
 
         overloaded{
@@ -411,8 +433,9 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
         for (auto v = lower; v <= upper; ++v) {
             names_and_ids_tracker().track_variable_name(id, name);
             auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, v);
-            _imp->opb << "1 " << names_and_ids_tracker().pb_file_string_for(eqvar) << " ";
-            ++_imp->model_variables;
+            _imp->opb += "1 ";
+            _imp->opb += names_and_ids_tracker().pb_file_string_for(eqvar);
+            _imp->opb += ' ';
 
             visit(
                 [&](const auto & id) {
@@ -421,13 +444,16 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
                 },
                 id);
         }
-        _imp->opb << ">= 1 ;\n";
+        _imp->opb += ">= 1 ;\n";
         names_and_ids_tracker().track_variable_takes_at_least_one_value(id, advance_constraint_counter());
 
         for (auto v = lower; v <= upper; ++v) {
-            _imp->opb << "-1 " << names_and_ids_tracker().pb_file_string_for(id == v) << " ";
+            _imp->opb += "-1 ";
+            _imp->opb += names_and_ids_tracker().pb_file_string_for(id == v);
+            _imp->opb += ' ';
         }
-        _imp->opb << ">= -1 ;\n";
+        _imp->opb += ">= -1 ;\n";
+        write_out_pending();
         advance_constraint_counter();
     }
 }
@@ -527,7 +553,6 @@ auto ProofModel::set_up_bits_variable_encoding(
     vector<pair<Integer, XLiteral>> bits;
     for (auto b : names_and_ids_tracker().each_bit(id))
         bits.push_back(b);
-    _imp->model_variables += bits.size();
 
     // @i[name][lb]/[ub] labels match cake_pb_cp, for a real variable; a vector
     // name like box[0] is fine (veripb's @label parser accepts the nested
@@ -537,18 +562,31 @@ auto ProofModel::set_up_bits_variable_encoding(
 
     // lower bound
     if (labelled)
-        _imp->opb << ProofLineLabel{"i[" + name + "][lb]"} << " ";
-    for (auto & [coeff, var] : bits)
-        _imp->opb << coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
-    _imp->opb << ">= " << lower << " ;\n";
+        append_label_to(_imp->opb, ProofLineLabel{"i[" + name + "][lb]"});
+    for (auto & [coeff, var] : bits) {
+        append_number_to(_imp->opb, coeff);
+        _imp->opb += ' ';
+        _imp->opb += names_and_ids_tracker().pb_file_string_for(var);
+        _imp->opb += ' ';
+    }
+    _imp->opb += ">= ";
+    append_number_to(_imp->opb, lower);
+    _imp->opb += " ;\n";
     advance_constraint_counter();
 
     // upper bound
     if (labelled)
-        _imp->opb << ProofLineLabel{"i[" + name + "][ub]"} << " ";
-    for (auto & [coeff, var] : bits)
-        _imp->opb << -coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
-    _imp->opb << ">= " << -upper << " ;\n";
+        append_label_to(_imp->opb, ProofLineLabel{"i[" + name + "][ub]"});
+    for (auto & [coeff, var] : bits) {
+        append_number_to(_imp->opb, -coeff);
+        _imp->opb += ' ';
+        _imp->opb += names_and_ids_tracker().pb_file_string_for(var);
+        _imp->opb += ' ';
+    }
+    _imp->opb += ">= ";
+    append_number_to(_imp->opb, -upper);
+    _imp->opb += " ;\n";
+    write_out_pending();
     advance_constraint_counter();
 
     if (_imp->always_use_full_encoding)
@@ -610,43 +648,58 @@ auto ProofModel::cake_constant_atoms(Integer k) -> CakeConstantAtoms
     return result;
 }
 
-auto ProofModel::finalise() -> void
+auto ProofModel::write_out_pending() -> void
 {
-    _imp->finalised = true;
+    if (! _imp->streaming)
+        return;
     try {
-        ofstream full_opb;
-        full_opb.exceptions(ios::failbit | ios::badbit);
-        full_opb.open(_imp->opb_file);
-        full_opb << "* #variable= " << _imp->model_variables << " #constraint= " << _imp->number_of_constraints.number << '\n';
+        _imp->opb_stream << _imp->opb;
+    }
+    catch (const ios_base::failure &) {
+        throw ProofError{"Error writing opb file to '" + _imp->opb_file + "'"};
+    }
+    _imp->opb.clear();
+}
+
+auto ProofModel::write_preamble() -> void
+{
+    if (_imp->streaming)
+        throw UnexpectedException{"proof model preamble has already been written"};
+
+    // A view objective is rendered over its own proof-only bit vector, so
+    // register it now (this appends BinEnc(V)'s set-up rows to the pending
+    // text, where they land just after the variable rows). This also
+    // guarantees find_view succeeds for the objective later, e.g. in the
+    // solution-logging soli path.
+    if (_imp->optional_minimise_variable)
+        if (auto * view = std::get_if<ViewOfIntegerVariableID>(&*_imp->optional_minimise_variable))
+            static_cast<void>(names_and_ids_tracker().need_view(*view));
+
+    try {
+        _imp->opb_stream.exceptions(ios::failbit | ios::badbit);
+        _imp->opb_stream.open(_imp->opb_file, ios::out);
+        // No `* #variable= .. #constraint= ..` counts comment: VeriPB 3 does
+        // not need it, and not writing it is what lets everything stream out
+        // as it is produced instead of being buffered until the counts are
+        // known.
 
         if (_imp->optional_minimise_variable) {
-            full_opb << "min: ";
+            _imp->opb_stream << "min: ";
             overloaded{
                 [&](const SimpleIntegerVariableID & v) {
                     for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
-                        full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                        _imp->opb_stream << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
                 },                                                                          //
                 [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; }, //
                 [&](const ViewOfIntegerVariableID & v) {
-                    // If the view's been registered (used in a constraint
-                    // body during model writing), emit V's own bits.
-                    // Otherwise fall back to deviewing through the underlying
-                    // (objective constant offset still doesn't matter for
-                    // optimisation order).
-                    if (auto v_id = names_and_ids_tracker().find_view(v)) {
-                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(*v_id))
-                            full_opb << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
-                    }
-                    else {
-                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
-                            full_opb << (v.negate_first ? -bit_value : bit_value) << " " << names_and_ids_tracker().pb_file_string_for(bit_name)
-                                     << " ";
-                    }
+                    // Registered just above, so this always renders V's own bits.
+                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(*names_and_ids_tracker().find_view(v)))
+                        _imp->opb_stream << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
                 } //
             }
                 .visit(*_imp->optional_minimise_variable);
 
-            full_opb << ";\n";
+            _imp->opb_stream << ";\n";
         }
 
         if (_imp->preserved_variables) {
@@ -658,12 +711,12 @@ auto ProofModel::finalise() -> void
             // side fixed to the other). Dedup so that X and a view of X (or
             // two views of the same X) in the preserve list don't emit X's
             // bits twice.
-            full_opb << "preserved: ";
+            _imp->opb_stream << "preserved: ";
             std::set<SimpleIntegerVariableID> already_emitted;
             auto emit_underlying = [&](const SimpleIntegerVariableID & v) {
                 if (already_emitted.insert(v).second)
                     for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v))
-                        full_opb << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                        _imp->opb_stream << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
             };
             for (const auto & var : *_imp->preserved_variables) {
                 overloaded{
@@ -674,11 +727,31 @@ auto ProofModel::finalise() -> void
                     .visit(var);
             }
 
-            full_opb << ";\n";
+            _imp->opb_stream << ";\n";
         }
+    }
+    catch (const ios_base::failure &) {
+        throw ProofError{"Error writing opb file to '" + _imp->opb_file + "'"};
+    }
 
-        copy(istreambuf_iterator<char>{_imp->opb}, istreambuf_iterator<char>{}, ostreambuf_iterator<char>{full_opb});
-        _imp->opb = stringstream{};
+    _imp->streaming = true;
+    write_out_pending();
+}
+
+auto ProofModel::finalise() -> void
+{
+    _imp->finalised = true;
+    // Anything built without going through write_preamble (tests that drive a
+    // ProofModel directly) has everything still pending; writing the preamble
+    // now flushes it too, giving the old write-everything-at-the-end
+    // behaviour.
+    if (! _imp->streaming)
+        write_preamble();
+    else
+        write_out_pending();
+    try {
+        _imp->opb_stream << std::flush;
+        _imp->opb_stream.close();
     }
     catch (const ios_base::failure &) {
         throw ProofError{"Error writing opb file to '" + _imp->opb_file + "'"};
@@ -692,10 +765,14 @@ auto ProofModel::number_of_constraints() const -> ProofLineNumber
 
 auto ProofModel::minimise(const IntegerVariableID & var) -> void
 {
+    if (_imp->streaming)
+        throw UnexpectedException{"objective must be set before the OPB preamble is written"};
     _imp->optional_minimise_variable = var;
 }
 
 auto ProofModel::preserve(vector<IntegerVariableID> vars) -> void
 {
+    if (_imp->streaming)
+        throw UnexpectedException{"preserved variables must be set before the OPB preamble is written"};
     _imp->preserved_variables = move(vars);
 }

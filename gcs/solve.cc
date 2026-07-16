@@ -143,7 +143,6 @@ auto gcs::solve_with(
     }
 
     auto state = problem.create_state_for_new_search(optional_proof ? optional_proof->model() : nullptr);
-    auto propagators = problem.create_propagators(state, optional_proof ? optional_proof->model() : nullptr);
 
     if (optional_proof) {
         if (problem.optional_minimise_variable())
@@ -151,6 +150,15 @@ auto gcs::solve_with(
 
         optional_proof->model()->preserve(problem.all_normal_variables());
 
+        // Every variable the objective and preserve list mention now exists,
+        // so the OPB front matter can go out; the constraint definitions that
+        // follow stream straight to the file.
+        optional_proof->model()->write_preamble();
+    }
+
+    auto propagators = problem.create_propagators(state, optional_proof ? optional_proof->model() : nullptr);
+
+    if (optional_proof) {
         optional_proof->model()->finalise();
         optional_proof->model()->names_and_ids_tracker().switch_from_model_to_proof(optional_proof->logger());
         optional_proof->logger()->start_proof(*optional_proof->model());
