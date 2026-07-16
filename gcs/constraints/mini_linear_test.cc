@@ -55,7 +55,6 @@ using std::move;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -318,8 +317,10 @@ namespace
     }
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     using enum MiniLinearGreaterEqual::Mode;
 
     // Run the refined-all (B1) and watched-set (B2) modes through identical
@@ -334,8 +335,7 @@ auto main(int, char *[]) -> int
         run_mini_linear_ge_test(mode, {0, 2}, {0, 2}, {0, 2}, {1, 1, 1}, 7);
         run_mini_linear_ge_test(mode, {1, 4}, {2, 5}, {0, 6}, {3, 1, 4}, 20);
 
-        random_device rand_dev;
-        mt19937 rand(rand_dev());
+        mt19937 rand(*get_seed());
         uniform_int_distribution coeff_dist(1, 8);
         uniform_int_distribution hi_dist(2, 7);
         uniform_int_distribution val_dist(0, 60);

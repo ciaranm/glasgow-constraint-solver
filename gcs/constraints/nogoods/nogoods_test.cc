@@ -35,7 +35,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::size_t;
 using std::tuple;
@@ -293,11 +292,7 @@ namespace
     auto run_random_differentials() -> void
     {
         using enum VariableConditionOperator;
-        mt19937 rng;
-        if (auto seed = get_seed())
-            rng.seed(*seed);
-        else
-            rng.seed(random_device{}());
+        mt19937 rng(*get_seed());
 
         auto pick_op = [&]() {
             switch (uniform_int_distribution{0, 3}(rng)) {
@@ -344,7 +339,7 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
-    set_seed_from_argv(argc, argv);
+    establish_and_announce_seed(argc, argv);
 
     // Scan vs refined must explore the identical tree and find the identical
     // solutions on every instance: a pure same-tree differential (no proof needed).
