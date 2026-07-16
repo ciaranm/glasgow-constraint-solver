@@ -353,11 +353,30 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
     int constraint_index = it->second;
     _imp->propagator_constraint_index.push_back(constraint_index);
 
-    // Record this propagator's scope (its trigger variables, views resolved and
-    // deduplicated) and add it to each variable's constraint adjacency.
+    // A propagator's SCOPE -- the variables it constrains -- is a first-class
+    // notion, distinct from how the propagator is WOKEN. Three things read the
+    // scope: each variable's degree (for the dom_then_deg / dom-wdeg branchers),
+    // the variable->constraint adjacency, and the idempotence-aliasing check.
+    // Waking is a separate concern, wired at the end via trigger_on_* and
+    // register_refined_watch. For an ordinary propagator the two coincide -- a
+    // coarse trigger both wakes it and marks scope -- but a propagator woken only
+    // by refined watches declares its scope via triggers.scope_only, arming no
+    // wake. So derive scope once here, then the wake wiring afterwards.
+    //
+    // The algorithmic positions -- the coarse triggers and scope_only -- carry
+    // multiplicity, which the aliasing check needs: two positions aliasing the
+    // same underlying variable break most propagators' idempotence, and views
+    // hide the repeat from the author (x and -x + 3 alias; a lone +-x + c view is
+    // harmless, being a bijection on Z -- if a non-bijective view kind is ever
+    // added, a multiplier say, any occurrence must flag the scope as risky, not
+    // just a repeat). Refined-watch literals also put their variable in scope (so
+    // it counts for degree and adjacency), but a watch is a wake mechanism that
+    // may legitimately arm many watches on one variable, so it is not an
+    // algorithmic position and does not feed the aliasing multiset.
     auto & scope = _imp->propagator_scope.emplace_back();
-    scope.reserve(triggers.on_change.size() + triggers.on_bounds.size() + triggers.on_instantiated.size());
-    auto add_to_scope = [&](IntegerVariableID var) {
+    scope.reserve(triggers.on_change.size() + triggers.on_bounds.size() + triggers.on_instantiated.size() + triggers.scope_only.size());
+
+    auto add_scope_var = [&](const IntegerVariableID & var) {
         overloaded{//
             [&](const SimpleIntegerVariableID & v) {
                 if (! contains(scope, v))
@@ -370,16 +389,33 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
             [&](const ConstantIntegerVariableID &) {}}
             .visit(var);
     };
+
+    // The underlying-variable indices of the algorithmic positions, WITH
+    // multiplicity, for the aliasing check.
+    vector<unsigned long long> position_underlying;
+    auto add_position = [&](const IntegerVariableID & var) {
+        add_scope_var(var);
+        overloaded{
+            [&](const SimpleIntegerVariableID & sv) { position_underlying.push_back(sv.index); },                 //
+            [&](const ViewOfIntegerVariableID & vv) { position_underlying.push_back(vv.actual_variable.index); }, //
+            [&](const ConstantIntegerVariableID &) {}                                                             //
+        }
+            .visit(var);
+    };
+
     for (const auto & v : triggers.on_change)
-        add_to_scope(v);
+        add_position(v);
     for (const auto & v : triggers.on_bounds)
-        add_to_scope(v);
+        add_position(v);
     for (const auto & v : triggers.on_instantiated)
-        add_to_scope(v);
+        add_position(v);
+    for (const auto & v : triggers.scope_only)
+        add_position(v);
     for (const auto & refined : triggers.refined)
         if (auto cond = std::get_if<IntegerVariableCondition>(&refined.first))
-            add_to_scope(cond->var);
+            add_scope_var(cond->var);
 
+    // Adjacency: each scope variable participates in this constraint.
     for (const auto & v : scope) {
         if (_imp->var_constraint_indices.size() <= v.index)
             _imp->var_constraint_indices.resize(v.index + 1);
@@ -398,52 +434,29 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         if (! contains(cscope, v))
             cscope.push_back(v);
 
-    // Most propagation algorithms are only idempotent when no two scope
-    // positions alias the same underlying variable, and only the posted scope
-    // (visible here, as the triggers) tells us whether they do: views hide
-    // repeats from the author (x and -x + 3 alias), though a single +-x + c
-    // view on its own is harmless, being a bijection on Z. (If a view kind
-    // that is not a bijection is ever added -- a multiplier, say -- any
-    // occurrence of it must flag the scope as risky, not just a repeat.) So
-    // canonicalise every trigger variable and, on a repeat, ignore any
-    // EnableButIdempotent claims this propagator makes: a false positive
-    // merely restores the always-requeue behaviour.
-    vector<unsigned long long> underlying_trigger_vars;
-    auto add_underlying = [&](const IntegerVariableID & v) {
-        overloaded{
-            [&](const SimpleIntegerVariableID & sv) { underlying_trigger_vars.push_back(sv.index); },                 //
-            [&](const ViewOfIntegerVariableID & vv) { underlying_trigger_vars.push_back(vv.actual_variable.index); }, //
-            [&](const ConstantIntegerVariableID &) {}                                                                 //
-        }
-            .visit(v);
-    };
+    // Degree: once per distinct scope variable. A variable the propagator
+    // constrains raises its degree by one, no matter how many trigger slots or
+    // watches mention it.
+    for (const auto & v : scope)
+        increase_degree(v);
 
-    for (const auto & v : triggers.on_change) {
+    // Aliasing: if two algorithmic positions resolve to the same underlying
+    // variable, ignore any EnableButIdempotent this propagator claims (a false
+    // positive merely restores the always-requeue behaviour).
+    sort(position_underlying);
+    _imp->idempotence_claims_ignored.push_back(adjacent_find(position_underlying) != position_underlying.end() ? 1 : 0);
+
+    // Wake wiring, separate from scope: coarse triggers enqueue the propagator on
+    // the matching event; refined watches are armed in the index. scope_only
+    // arms nothing -- it is scope, not a wake.
+    for (const auto & v : triggers.on_change)
         trigger_on_change(v, id);
-        increase_degree(v);
-        add_underlying(v);
-    }
-
-    for (const auto & v : triggers.on_bounds) {
+    for (const auto & v : triggers.on_bounds)
         trigger_on_bounds(v, id);
-        increase_degree(v);
-        add_underlying(v);
-    }
-
-    for (const auto & v : triggers.on_instantiated) {
+    for (const auto & v : triggers.on_instantiated)
         trigger_on_instantiated(v, id);
-        increase_degree(v);
-        add_underlying(v);
-    }
-
-    sort(underlying_trigger_vars);
-    _imp->idempotence_claims_ignored.push_back(adjacent_find(underlying_trigger_vars) != underlying_trigger_vars.end() ? 1 : 0);
-
-    for (const auto & [literal, payload] : triggers.refined) {
-        if (auto cond = std::get_if<IntegerVariableCondition>(&literal))
-            increase_degree(cond->var);
+    for (const auto & [literal, payload] : triggers.refined)
         _imp->register_refined_watch(id, literal, payload, false);
-    }
 }
 
 auto Propagators::install_initialiser(InitialisationFunction && f, InitialiserPriority priority) -> void

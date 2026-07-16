@@ -350,6 +350,25 @@ namespace gcs::innards
          * backtrack. \sa RefinedWatchContext
          */
         std::vector<std::pair<Literal, std::uint32_t>> refined = {};
+
+        /**
+         * \brief Variables that are in the propagator's scope but arm no wake.
+         *
+         * A propagator's *scope* — the variables it constrains — is a distinct
+         * notion from how it is *woken*. Scope drives each variable's degree (for
+         * the dom_then_deg / dom-wdeg branchers), the variable→constraint
+         * adjacency, and the idempotence-aliasing check; waking is what the coarse
+         * triggers and \ref refined watches do. For an ordinary propagator the two
+         * coincide, so listing a variable in on_change/on_bounds/on_instantiated
+         * serves both. A propagator woken *only* by refined watches it arms
+         * dynamically (its install-time \ref refined and coarse triggers being
+         * empty) would otherwise have an empty scope and so be invisible to
+         * degree-based heuristics and the aliasing check. List its variables here
+         * to declare them in scope without arming a coarse trigger: they raise
+         * degree and count as algorithmic positions for aliasing, but generate no
+         * wake of their own. \sa RefinedWatchContext
+         */
+        std::vector<IntegerVariableID> scope_only = {};
     };
 
     /**

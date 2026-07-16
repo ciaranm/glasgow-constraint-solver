@@ -102,10 +102,12 @@ TEST_CASE("dom_wdeg tie-breaks on degree")
     auto b = state.allocate_integer_variable_with_state(0_i, 3_i);
 
     Propagators propagators;
-    // Both share the single constraint, so W(a)=W(b)=1 and dom/W ties. But a is
-    // registered on an extra trigger, giving it the higher degree, so the
-    // tie-break prefers it.
-    propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, b}, .on_bounds = {a}});
+    // Both share the one binary constraint, so W(a)=W(b)=1 and dom/W ties. a is
+    // also in a second, unary constraint: a unary constraint never has two
+    // unassigned variables, so weighted_degree_of filters it out (W(a) stays 1),
+    // but it still raises a's plain degree, so the degree tie-break prefers a.
+    propagators.install(NumberedConstraint{1}, a_propagator_that_does_nothing(), Triggers{.on_change = {a, b}});
+    propagators.install(NumberedConstraint{2}, a_propagator_that_does_nothing(), Triggers{.on_change = {a}});
 
     REQUIRE(propagators.degree_of(a) > propagators.degree_of(b));
 
