@@ -184,6 +184,19 @@ struct ProofLogger::Imp
     deque<string> line_buffers;
     std::size_t line_buffer_depth = 0;
 
+    // Scratch for the ubiquitous `1 * lit >= 1` inference shape, in its
+    // rendered LE form (one -1 term, rhs -1), so infer() does not allocate a
+    // one-term sum per logged inference. Safe to reuse because nothing
+    // reachable from an emission re-enters infer().
+    WPBSumLE unit_buffer{{}, -1_i};
+
+    [[nodiscard]] auto unit_holds(const Literal & lit) -> const WPBSumLE &
+    {
+        unit_buffer.lhs.terms.clear();
+        unit_buffer.lhs.terms.emplace_back(-1_i, ProofLiteral{lit});
+        return unit_buffer;
+    }
+
     Imp(NamesAndIDsTracker & t) : tracker(t)
     {
     }
@@ -294,12 +307,17 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
 {
     _imp->proof << "% backtracking\n";
-    WPBSum backtrack;
-    backtrack.terms.reserve(guesses.size());
+    // The backtrack clause is `at least one guess is false': exactly a
+    // reason-only reified line over the guesses, so route it through the
+    // reified renderer, which negates each guess at the XLiteral level
+    // rather than as a condition object.
+    ReasonLiterals guesses_as_reason;
+    guesses_as_reason.reserve(guesses.size());
     for (const auto & guess : guesses)
-        backtrack += 1_i * ! guess;
+        guesses_as_reason.emplace_back(ProofLiteral{guess});
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-    emit(assert_or_rup, move(backtrack) >= 1_i, ProofLevel::Current, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
+    emit_under_reason(
+        assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Current, guesses_as_reason, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
 }
 
 auto ProofLogger::end_proof() -> void
@@ -394,7 +412,7 @@ auto ProofLogger::infer(
         // infer_explicitly(); this variant only carries the plain ones, so the
         // annotation is just the one passed in.
         if (! is_literally_true(lit) && ! std::holds_alternative<NoJustificationNeeded>(why)) {
-            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
+            emit_under_reason(AssertProofRule{}, _imp->unit_holds(lit), ProofLevel::Current, reason, annotation);
         }
         return;
     }
@@ -402,12 +420,12 @@ auto ProofLogger::infer(
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP<NoHint> & j) {
             if (! is_literally_true(lit)) {
-                emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
+                emit_rup_proof_line_under_reason(reason, _imp->unit_holds(lit), ProofLevel::Current);
             }
         }, //
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
             if (! is_literally_true(lit)) {
-                emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
+                emit_under_reason(AssertProofRule{}, _imp->unit_holds(lit), ProofLevel::Current, reason);
             }
         },                                    //
         [&](const NoJustificationNeeded &) {} //
