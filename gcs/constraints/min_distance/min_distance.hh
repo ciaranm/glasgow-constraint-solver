@@ -28,6 +28,15 @@ namespace gcs
      * - \c PairSupport: the paper's global-pair-support. ForwardBound plus a full
      *   per-pair support scan that can delete unsupported values from either
      *   endpoint before it is assigned.
+     * - \c ForwardBoundMatch / \c PairSupportMatch: ForwardBound / PairSupport
+     *   plus a separate conflict-matching upper-bound propagator (paper Section
+     *   4.4, Algorithm 1). For a candidate distance level \c t it builds the
+     *   conflict graph on the active site set (two sites adjacent when their
+     *   distance is below \c t), takes a greedy maximal matching \c M, and — since
+     *   an independent set contains at most one endpoint of each matched edge —
+     *   refutes level \c t when \f$|A| - |M| < p\f$, tightening \c z below \c t
+     *   with a certified counting derivation. It only ever lowers \c z's upper
+     *   bound; the base propagator still does all lower-bound support work.
      *
      * \ingroup Constraints
      */
@@ -35,7 +44,9 @@ namespace gcs
     {
         CheckOnly,
         ForwardBound,
-        PairSupport
+        PairSupport,
+        ForwardBoundMatch,
+        PairSupportMatch
     };
 
     /**
@@ -95,6 +106,7 @@ namespace gcs
         virtual auto install_propagators(innards::Propagators &) -> void override;
         auto install_check_only_propagator(innards::Propagators &) -> void;
         auto install_forward_propagator(innards::Propagators &, bool pair_support) -> void;
+        auto install_matching_propagator(innards::Propagators &) -> void;
 
     public:
         explicit MinDistance(std::vector<IntegerVariableID> x, IntegerVariableID z, ArrayParam<Matrix> distances,
