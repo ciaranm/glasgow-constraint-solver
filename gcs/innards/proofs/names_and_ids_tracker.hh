@@ -206,6 +206,15 @@ namespace gcs::innards
         [[nodiscard]] auto find_view(const ViewOfIntegerVariableID & view) const -> std::optional<ProofOnlySimpleIntegerVariableID>;
 
         /**
+         * The [lo, hi] a view's visible values span, from the underlying
+         * variable's registered definition bounds. What need_view sizes a
+         * view's proof-only bit vector by; exposed so the objective path can
+         * first ask whether that bit vector is representable at all
+         * (bits_encoding_fits) before registering the view.
+         */
+        [[nodiscard]] auto view_bounds(const ViewOfIntegerVariableID & view) const -> std::pair<Integer, Integer>;
+
+        /**
          * Record that `deviewed_line` is the deview-form of `v_form_line`.
          * Lookup is via `deviewed_line_for`.
          */
