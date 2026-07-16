@@ -86,6 +86,23 @@ namespace
         throw NonExhaustiveSwitch{};
     }
 
+    // The string-append twin of AssertionAnnotation's ostream operator; keep
+    // the two renderings in sync.
+    auto append_annotation_to(string & out, const AssertionAnnotation & annotation) -> void
+    {
+        out += ':';
+        for (const auto & id_or_label : annotation.derivable_from) {
+            out += '@';
+            out += id_or_label.label;
+            out += ' ';
+        }
+        out += ':';
+        out += annotation.hint_name;
+        out += ':';
+        if (annotation.hint_fields)
+            out += format("{}", *annotation.hint_fields);
+    }
+
     [[nodiscard]] auto witness_literal(NamesAndIDsTracker & names_and_ids_tracker, const ProofLiteralOrFlag & lit) -> string
     {
         return overloaded{
@@ -116,6 +133,12 @@ struct ProofLogger::Imp
     fstream proof;
     int current_indent = 0;
     AssertionLevel assertion_level;
+
+    // Scratch for assembling a single proof line before it is written out,
+    // reused across emissions to avoid a stringstream per logged inference.
+    // Only valid within one emit call: the name-introduction phase that runs
+    // before assembly starts may itself emit (and so clobber this).
+    string line_buffer;
 
     Imp(NamesAndIDsTracker & t) : tracker(t)
     {
@@ -371,54 +394,57 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
 auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
     const std::optional<AssertionAnnotation> & assertion_hint, const std::optional<ProofLineLabel> & label) -> ProofLine
 {
+    // Any names introduced here can emit their own proof lines, so this must
+    // finish before line assembly starts in the shared buffer.
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     log_stacktrace();
 
-    stringstream rule_line;
+    auto & rule_line = _imp->line_buffer;
+    rule_line.clear();
 
-    rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return "rup"; },    //
-                     [&](const ImpliesProofRule &) -> string { return "ia"; }, //
-                     [&](const AssertProofRule &) -> string { return "a"; }    //
-                 }
-                     .visit(rule)
-              << " ";
+    overloaded{
+        [&](const RUPProofRule &) { rule_line += "rup "; },    //
+        [&](const ImpliesProofRule &) { rule_line += "ia "; }, //
+        [&](const AssertProofRule &) { rule_line += "a "; }    //
+    }
+        .visit(rule);
 
     emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
 
     overloaded{
         [&](const RUPProofRule & rule) {
             if (rule.lines) {
-                rule_line << ": ";
+                rule_line += ": ";
                 for (auto & line : *rule.lines) {
-                    rule_line << relative_proof_line(line, _imp->proof_line.number) << ' ';
+                    rule_line += relative_proof_line(line, _imp->proof_line.number);
+                    rule_line += ' ';
                 }
-                rule_line << " ;";
+                rule_line += " ;";
             }
             else {
-                rule_line << ";";
+                rule_line += ";";
             }
         }, //
         [&](const ImpliesProofRule & rule) {
             if (rule.line) {
-                rule_line << ": ";
-                rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << ' ';
-                rule_line << " ;";
+                rule_line += ": ";
+                rule_line += relative_proof_line(*rule.line, _imp->proof_line.number);
+                rule_line += "  ;";
             }
             else {
-                rule_line << ";";
+                rule_line += ";";
             }
         }, //
         [&](const AssertProofRule &) {
             if (assertion_hint) {
-                rule_line << *assertion_hint;
+                append_annotation_to(rule_line, *assertion_hint);
             }
-            rule_line << ";";
+            rule_line += ";";
         } //
     }
         .visit(rule);
 
-    auto line = emit_proof_line(rule_line.str(), level, label);
+    auto line = emit_proof_line(rule_line, level, label);
     // Note: no automatic deview-derivation here. Runtime RUP/red emissions
     // happen many times per propagator inference and per-call deview
     // derivation explodes proof size on tests with many view-using
@@ -431,21 +457,24 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
     const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
+    // Names introduced here can emit their own proof lines, so both of these
+    // must finish before line assembly starts in the shared buffer.
     if (! reason.empty())
         names_and_ids_tracker().need_all_proof_names_in(reason);
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
     log_stacktrace();
-    stringstream rule_line;
 
-    rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return "rup"; },    //
-                     [&](const ImpliesProofRule &) -> string { return "ia"; }, //
-                     [&](const AssertProofRule &) -> string { return "a"; }    //
-                 }
-                     .visit(rule)
-              << " ";
+    auto & rule_line = _imp->line_buffer;
+    rule_line.clear();
+
+    overloaded{
+        [&](const RUPProofRule &) { rule_line += "rup "; },    //
+        [&](const ImpliesProofRule &) { rule_line += "ia "; }, //
+        [&](const AssertProofRule &) { rule_line += "a "; }    //
+    }
+        .visit(rule);
 
     if (! reason.empty()) {
         emit_inequality_to(names_and_ids_tracker(), reify(ineq, reason), rule_line);
@@ -457,37 +486,38 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     overloaded{
         [&](const RUPProofRule & rule) {
             if (rule.lines) {
-                rule_line << ": ";
+                rule_line += ": ";
                 for (const auto & line : *rule.lines) {
-                    rule_line << relative_proof_line(line, _imp->proof_line.number) << " ";
+                    rule_line += relative_proof_line(line, _imp->proof_line.number);
+                    rule_line += ' ';
                 }
-                rule_line << " ;";
+                rule_line += " ;";
             }
             else {
-                rule_line << ";";
+                rule_line += ";";
             }
         }, //
         [&](const ImpliesProofRule & rule) {
             if (rule.line) {
-                rule_line << ": ";
-                rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << " ";
-                rule_line << " ;";
+                rule_line += ": ";
+                rule_line += relative_proof_line(*rule.line, _imp->proof_line.number);
+                rule_line += "  ;";
             }
             else {
-                rule_line << ";";
+                rule_line += ";";
             }
         }, //
         [&](const AssertProofRule &) {
             if (assertion_hint) {
-                rule_line << *assertion_hint;
+                append_annotation_to(rule_line, *assertion_hint);
             }
 
-            rule_line << ";";
+            rule_line += ";";
         } //
     }
         .visit(rule);
 
-    auto line = emit_proof_line(rule_line.str(), level);
+    auto line = emit_proof_line(rule_line, level);
     // Note: see comment in `emit()` about why no auto-deview-derivation.
     return line;
 }

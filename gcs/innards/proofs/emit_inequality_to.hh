@@ -7,10 +7,42 @@
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/proofs/reification.hh>
 
+#include <charconv>
 #include <iosfwd>
+#include <string>
 
 namespace gcs::innards
 {
+    /**
+     * \brief Append a number to a string being built up as proof text,
+     * without the locale machinery or allocation that streams and
+     * to_string bring. Proof lines are assembled with this rather than
+     * ostream insertion because it is on the hot path of every logged
+     * inference.
+     *
+     * \ingroup Innards
+     */
+    inline auto append_number_to(std::string & out, long long v) -> void
+    {
+        char buf[24];
+        auto r = std::to_chars(buf, buf + sizeof(buf), v);
+        out.append(buf, r.ptr);
+    }
+
+    inline auto append_number_to(std::string & out, Integer v) -> void
+    {
+        append_number_to(out, v.raw_value);
+    }
+
+    /**
+     * \brief Append an inequality, rendered as OPB / proof text, to a string.
+     *
+     * Only used inside proof innards.
+     *
+     * \ingroup Innards
+     */
+    auto emit_inequality_to(NamesAndIDsTracker &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, std::string & out) -> void;
+
     /**
      * \brief Write an inequality out to an ostream.
      *
