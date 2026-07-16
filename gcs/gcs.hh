@@ -13,11 +13,13 @@
 #include <gcs/problem.hh>
 #include <gcs/proof.hh>
 #include <gcs/reification.hh>
+#include <gcs/restarts.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 #include <gcs/stats.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
+#include <gcs/variable_weighting.hh>
 
 #include <gcs/constraints/abs.hh>
 #include <gcs/constraints/all_different.hh>
