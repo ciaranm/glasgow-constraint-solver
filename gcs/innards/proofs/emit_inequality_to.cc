@@ -23,8 +23,8 @@ namespace
     }
 }
 
-auto gcs::innards::emit_inequality_to(
-    NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, string & out) -> void
+auto gcs::innards::emit_inequality_to(NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    string & out, EnsureNames ensure_names) -> void
 {
     // build up the inequality, adjusting as we go for constant terms,
     // and converting from <= to >=.
@@ -38,8 +38,11 @@ auto gcs::innards::emit_inequality_to(
                 overloaded{
                     [&](const TrueLiteral &) { rhs += w; }, //
                     [&](const FalseLiteral &) {},           //
-                    [&]<typename T_>(
-                        const VariableConditionFrom<T_> & cond) { append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(cond)); } //
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        append_term_to(out, -w,
+                            EnsureNames::Yes == ensure_names ? names_and_ids_tracker.pb_file_string_for_ensuring(cond)
+                                                             : names_and_ids_tracker.pb_file_string_for(cond));
+                    } //
                 }
                     .visit(simplify_literal(names_and_ids_tracker, lit));
             },                                                                                                               //
@@ -96,6 +99,6 @@ auto gcs::innards::emit_inequality_to(
     NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ostream & stream) -> void
 {
     string out;
-    emit_inequality_to(names_and_ids_tracker, ineq, out);
+    emit_inequality_to(names_and_ids_tracker, ineq, out, EnsureNames::No);
     stream << out;
 }
