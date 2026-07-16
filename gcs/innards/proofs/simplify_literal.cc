@@ -45,6 +45,15 @@ namespace
 
 auto gcs::innards::simplify_literal(const NamesAndIDsTracker & tracker, const ProofLiteral & lit) -> SimpleLiteral
 {
+    // Fast path for by far the most common shape: a non-range condition on a
+    // plain variable, which passes through unchanged. This is just a shortcut
+    // for what the general visit below produces; keep the two in agreement.
+    if (const auto * inner = std::get_if<Literal>(&lit))
+        if (const auto * cond = std::get_if<IntegerVariableCondition>(inner))
+            if (const auto * simple = std::get_if<SimpleIntegerVariableID>(&cond->var))
+                if (! is_range_op(cond->op))
+                    return VariableConditionFrom<SimpleIntegerVariableID>{*simple, cond->op, cond->value, cond->upper_value};
+
     return overloaded{
         [&](const TrueLiteral & t) -> SimpleLiteral { return t; },  //
         [&](const FalseLiteral & f) -> SimpleLiteral { return f; }, //

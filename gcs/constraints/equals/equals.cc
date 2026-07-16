@@ -286,30 +286,29 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         return visit([&](auto & v1, auto & v2) { return enforce_equality(logger, v1, v2, state, inference, ReasonLiterals{cond}, owner); }, v1, v2);
     };
 
-    auto v1_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v1});
-    auto v2_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v2});
-    auto v1v2_scope = std::make_shared<const std::vector<IntegerVariableID>>(std::vector<IntegerVariableID>{_v1, _v2});
-    auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, v1_scope, v2_scope, owner = constraint_id()](const State & state, auto & inference,
+    auto enforce_constraint_must_not_hold = [v1 = _v1, v2 = _v2, owner = constraint_id()](const State & state, auto & inference,
                                                 ProofLogger * const logger, const Literal & cond) -> PropagatorState {
         auto value1 = state.optional_single_value(v1);
         if (value1) {
+            // The reason is stated outright -- the value is already in hand, so
+            // deferring through ExactSingleValue would only re-read the domain
+            // at materialise time, and both literals sit inline.
             if (! inference.infer_not_equal_or_stop(logger, v2, *value1, JustifyUsingRUP{hints::Equals{owner}},
-                    inference.want_reasons() ? concat(singleton_reason(cond), ExactSingleValue{ReasonVars{v1_scope.get()}}) : Reason{}))
+                    inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{cond, v1 == *value1}}} : Reason{}))
                 return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
             return PropagatorState::DisableUntilBacktrack;
         }
         auto value2 = state.optional_single_value(v2);
         if (value2) {
             if (! inference.infer_not_equal_or_stop(logger, v1, *value2, JustifyUsingRUP{hints::Equals{owner}},
-                    inference.want_reasons() ? concat(singleton_reason(cond), ExactSingleValue{ReasonVars{v2_scope.get()}}) : Reason{}))
+                    inference.want_reasons() ? Reason{ExplicitReason{ReasonLiterals{cond, v2 == *value2}}} : Reason{}))
                 return PropagatorState::Enable; // contradiction: loop sees tracker.contradicted()
             return PropagatorState::DisableUntilBacktrack;
         }
         return PropagatorState::Enable;
     };
 
-    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, v1v2_scope, owner = constraint_id()](const State & state, auto &,
-                                         ProofLogger * const logger,
+    auto infer_cond_when_undecided = [v1 = _v1, v2 = _v2, owner = constraint_id()](const State & state, auto &, ProofLogger * const logger,
                                          const IntegerVariableCondition & cond) -> ReificationVerdictFor<EqualsJustification> {
         // Aliased non-constant operands: equality definitely holds regardless of
         // domain. Returning MustHold here lets the dispatcher pin the cond
@@ -323,7 +322,7 @@ auto ReifiedEquals::install_propagators(Propagators & propagators) -> void
         auto value1 = state.optional_single_value(v1);
         auto value2 = state.optional_single_value(v2);
         if (value1 && value2) {
-            auto reason = Reason{ExactSingleValue{ReasonVars{v1v2_scope.get()}}};
+            auto reason = Reason{ExplicitReason{ReasonLiterals{v1 == *value1, v2 == *value2}}};
             if (*value1 == *value2)
                 return reification_verdict::MustHold<EqualsJustification>{
                     .justification = JustifyUsingRUP{hints::Equals{owner}}, //

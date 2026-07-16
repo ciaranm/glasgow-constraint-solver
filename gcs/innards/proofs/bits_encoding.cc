@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <limits>
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -36,4 +37,18 @@ auto gcs::innards::get_bits_encoding_coeffs(Integer lower, Integer upper) -> tup
     Integer highest_bit_coeff = highest_bit_shift >= 0_i ? power2(highest_bit_shift) : 0_i;
     auto negative_bit_coeff = lower < 0_i ? -power2(highest_bit_shift + 1_i) : 0_i;
     return tuple{highest_bit_shift, highest_bit_coeff, negative_bit_coeff};
+}
+
+auto gcs::innards::bits_encoding_fits(Integer lower, Integer upper) -> bool
+{
+    // Mirrors the arithmetic above, which materialises power2(highest_bit_shift)
+    // and, for a negative lower bound, power2(highest_bit_shift + 1); power2
+    // refuses anything that would overflow an Integer. Kept adjacent to
+    // get_bits_encoding_coeffs so the two stay in agreement.
+    if (lower == Integer::min_value())
+        return false;
+    Integer highest_abs_value = lower < 0_i ? max(abs(lower) - 1_i, upper) : upper;
+    Integer highest_bit_shift = Integer{bit_width(static_cast<unsigned long long>(highest_abs_value.raw_value))} - 1_i;
+    Integer highest_needed_power = lower < 0_i ? highest_bit_shift + 1_i : highest_bit_shift;
+    return highest_needed_power < Integer{std::numeric_limits<long long>::digits};
 }

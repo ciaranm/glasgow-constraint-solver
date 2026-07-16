@@ -28,6 +28,30 @@ namespace gcs::innards
     {
     };
 
+    // A reason with its materialisation timing pinned by snapshot_reason: for
+    // the Lazy kinds, a pointer to the still-declarative reason (materialised
+    // against the post-inference state each time it is asked for, exactly as
+    // before); for everything else, the literals themselves, snapshotted
+    // pre-inference. track/track_explicit consume this directly, so the eager
+    // literals reach the logger without being wrapped back up in an
+    // ExplicitReason and re-materialised (a copy) per inference.
+    struct SnapshottedReason
+    {
+        const Reason * materialise_later = nullptr;
+        ReasonLiterals literals{};
+
+        // The literals to log, against `state` as it is now; `scratch` backs
+        // the lazy case, so a multi-literal inference materialises per
+        // literal, as the old re-entrant path did.
+        [[nodiscard]] auto materialised(const State & state, ReasonLiterals & scratch) const -> const ReasonLiterals &
+        {
+            if (! materialise_later)
+                return literals;
+            scratch = materialise(*materialise_later, state);
+            return scratch;
+        }
+    };
+
     template <typename Actual_>
     class InferenceTrackerBase
     {
@@ -45,7 +69,7 @@ namespace gcs::innards
         // do_throw is forwarded to track_impl: true (the default) keeps the throwing
         // failure path the legacy infer* methods rely on; false is the non-throwing
         // infer_*_or_stop path, which sets _contradicted and returns instead.
-        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason,
+        auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const SnapshottedReason & reason,
             const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt, bool do_throw = true) -> void
         {
             return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason, assertion_hints, do_throw);
@@ -65,22 +89,22 @@ namespace gcs::innards
         //   - the Lazy variants: these used to be evaluated by the logger, after
         //     the inference. Carry the declarative reason unchanged so it
         //     materialises against the (post-inference) state later.
-        [[nodiscard]] static auto snapshot_reason(ProofLogger * const logger, const Reason & reason, State & state) -> Reason
+        [[nodiscard]] static auto snapshot_reason(ProofLogger * const logger, const Reason & reason, State & state) -> SnapshottedReason
         {
             // The proofs-off (non-materialising) tracker never reads the reason, so
-            // this collapses to a constant NoReason there and the whole call — and
-            // the snapshotted Reason it would have produced — is dead-code eliminated.
+            // this collapses to a constant there and the whole call — and the
+            // snapshot it would have produced — is dead-code eliminated.
             if constexpr (! Actual_::materialises_reasons)
-                return NoReason{};
+                return SnapshottedReason{};
             else {
                 if (! logger)
-                    return NoReason{};
+                    return SnapshottedReason{};
 
                 return reason.visit(overloaded{
-                    [&](const NoReason &) -> Reason { return NoReason{}; },                            //
-                    [&](const LazyReasonOver &) -> Reason { return reason; },                          //
-                    [&](const NarrowableLazyReasonOver &) -> Reason { return reason; },                //
-                    [&](const auto &) -> Reason { return ExplicitReason{materialise(reason, state)}; } //
+                    [&](const NoReason &) -> SnapshottedReason { return SnapshottedReason{}; },                                             //
+                    [&](const LazyReasonOver &) -> SnapshottedReason { return SnapshottedReason{.materialise_later = &reason}; },           //
+                    [&](const NarrowableLazyReasonOver &) -> SnapshottedReason { return SnapshottedReason{.materialise_later = &reason}; }, //
+                    [&](const auto &) -> SnapshottedReason { return SnapshottedReason{.literals = materialise(reason, state)}; }            //
                 });
             }
         }
@@ -121,7 +145,7 @@ namespace gcs::innards
         // _contradicted and returns normally, and the propagate loop detects it.
         template <typename Emit_, typename Hint_>
         auto track_explicit(ProofLogger * const logger, const Inference inf, const Literal & lit, const JustifyExplicitly<Emit_, Hint_> & why,
-            const Reason & reason, const std::optional<AssertionAnnotation> & fallback, bool do_throw = true) -> void
+            const SnapshottedReason & reason, const std::optional<AssertionAnnotation> & fallback, bool do_throw = true) -> void
         {
             switch (inf) {
             case Inference::NoChange: break;
@@ -130,15 +154,19 @@ namespace gcs::innards
             case Inference::BoundsChanged:
             case Inference::Instantiated:
                 if constexpr (Actual_::materialises_reasons)
-                    if (logger)
-                        infer_explicitly(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
+                    if (logger) {
+                        ReasonLiterals scratch;
+                        infer_explicitly(*logger, lit, why.emit, why.then_rup, reason.materialised(_state, scratch), why.hint, fallback);
+                    }
                 record_firing_inference(inf, lit);
                 break;
 
             [[unlikely]] case Inference::Contradiction:
                 if constexpr (Actual_::materialises_reasons)
-                    if (logger)
-                        infer_explicitly(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
+                    if (logger) {
+                        ReasonLiterals scratch;
+                        infer_explicitly(*logger, lit, why.emit, why.then_rup, reason.materialised(_state, scratch), why.hint, fallback);
+                    }
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _made_progress_since_last_check = true;
                 _contradicted = true;
@@ -536,7 +564,7 @@ namespace gcs::innards
             // JustifyExplicitly infer_all overload below.
             auto snapshotted = snapshot_reason(logger, reason, _state);
             for (const auto & lit : lits)
-                infer(logger, lit, why, snapshotted, assertion_hints);
+                track(logger, _state.infer(lit), lit, why, snapshotted, assertion_hints);
         }
 
         // The JustifyExplicitly counterpart of infer_all. When the steps end in a
@@ -561,11 +589,11 @@ namespace gcs::innards
                         return;
 
                     auto snapshotted = snapshot_reason(logger, reason, _state);
-                    ReasonLiterals reason_lits = materialise(snapshotted, _state);
+                    ReasonLiterals scratch;
                     auto t = logger->temporary_proof_level();
-                    emit_explicit_steps(*logger, why.emit, reason_lits);
+                    emit_explicit_steps(*logger, why.emit, snapshotted.materialised(_state, scratch));
                     for (const auto & lit : lits)
-                        infer(logger, lit, JustifyUsingRUP{}, snapshotted);
+                        track(logger, _state.infer(lit), lit, JustifyUsingRUP{}, snapshotted);
                     logger->forget_proof_level(t);
                     return;
                 }
@@ -573,7 +601,7 @@ namespace gcs::innards
 
             auto snapshotted = snapshot_reason(logger, reason, _state);
             for (const auto & lit : lits)
-                infer(logger, lit, why, snapshotted, fallback);
+                track_explicit(logger, _state.infer(lit), lit, why, snapshotted, fallback);
         }
 
         // Yields this round's inferences in the order they were made (oldest first). The
@@ -645,7 +673,7 @@ namespace gcs::innards
         // path skips snapshot_reason and every proof-only block compiles out.
         static constexpr bool materialises_reasons = false;
 
-        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const Reason &,
+        auto track_impl(ProofLogger * const, const Inference inf, const Literal & lit, const Justification &, const SnapshottedReason &,
             const std::optional<AssertionAnnotation> &, bool do_throw = true) -> void
         {
             switch (inf) {
@@ -690,8 +718,8 @@ namespace gcs::innards
 
         static constexpr bool materialises_reasons = true;
 
-        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason,
-            const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt, bool do_throw = true) -> void
+        auto track_impl(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just,
+            const SnapshottedReason & reason, const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt, bool do_throw = true) -> void
         {
             switch (inf) {
             case Inference::NoChange: break;
@@ -700,13 +728,11 @@ namespace gcs::innards
             case Inference::BoundsChanged:
             case Inference::Instantiated:
                 if (logger) {
-                    // Materialise the reason here, post-inference: snapshot_reason
-                    // already pinned the timing (eager kinds are a fixed
-                    // ExplicitReason snapshot taken pre-inference, Lazy kinds stay
-                    // declarative and materialise against the now-current state),
-                    // so materialising now gives both kinds the literals the logger
-                    // used to compute internally.
-                    logger->infer(lit, just, materialise(reason, _state), assertion_hints);
+                    // The snapshot pinned the timing: eager kinds carry literals
+                    // taken pre-inference, Lazy kinds stay declarative and
+                    // materialise here against the now-current state.
+                    ReasonLiterals scratch;
+                    logger->infer(lit, just, reason.materialised(_state, scratch), assertion_hints);
                 }
 
                 overloaded{
@@ -728,8 +754,10 @@ namespace gcs::innards
                 break;
 
             [[unlikely]] case Inference::Contradiction:
-                if (logger)
-                    logger->infer(lit, just, materialise(reason, _state), assertion_hints);
+                if (logger) {
+                    ReasonLiterals scratch;
+                    logger->infer(lit, just, reason.materialised(_state, scratch), assertion_hints);
+                }
                 _did_anything_since_last_call_by_propagation_queue = true;
                 _made_progress_since_last_check = true;
                 _contradicted = true;

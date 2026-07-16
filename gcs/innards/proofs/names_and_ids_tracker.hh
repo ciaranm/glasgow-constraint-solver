@@ -74,6 +74,11 @@ namespace gcs::innards
 
         [[nodiscard]] auto allocate_flag_index() -> unsigned long long;
 
+        // Record the PB-file rendering of a freshly-allocated XLiteral (and its
+        // negation, as `~name`). Every allocate_* path calls this exactly once,
+        // in both naming modes, so pb_file_string_for is a plain index.
+        auto store_xlit_names(const XLiteral &, std::string name) -> void;
+
         // Allocate the XLiteral backing a flag, registering `verbose_name` (and
         // its negation) as the PB-file rendering. Shared by create_proof_flag
         // (which passes the `f[index][stem]` form) and make_proof_flag_named
@@ -201,6 +206,15 @@ namespace gcs::innards
         [[nodiscard]] auto find_view(const ViewOfIntegerVariableID & view) const -> std::optional<ProofOnlySimpleIntegerVariableID>;
 
         /**
+         * The [lo, hi] a view's visible values span, from the underlying
+         * variable's registered definition bounds. What need_view sizes a
+         * view's proof-only bit vector by; exposed so the objective path can
+         * first ask whether that bit vector is representable at all
+         * (bits_encoding_fits) before registering the view.
+         */
+        [[nodiscard]] auto view_bounds(const ViewOfIntegerVariableID & view) const -> std::pair<Integer, Integer>;
+
+        /**
          * Record that `deviewed_line` is the deview-form of `v_form_line`.
          * Lookup is via `deviewed_line_for`.
          */
@@ -313,7 +327,7 @@ namespace gcs::innards
         /**
          * Return the string used in PB files for a given XLiteral.
          */
-        [[nodiscard]] auto pb_file_string_for(const XLiteral &) const -> std::string;
+        [[nodiscard]] auto pb_file_string_for(const XLiteral &) const -> const std::string &;
 
         /**
          * Return the raw proof literal representing a variable condition, for writing to a model or log.
@@ -323,7 +337,24 @@ namespace gcs::innards
         /**
          * Return a string form of a raw proof literal, for writing to a model or log.
          */
-        [[nodiscard]] auto pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> std::string;
+        [[nodiscard]] auto pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const std::string &;
+
+        /**
+         * As pb_file_string_for, but introduce the condition's proof name
+         * first if it does not exist yet (need_proof_name), in one lookup for
+         * the common already-known case. Only for use while assembling a
+         * proof line in a buffer: an introduction emits definition lines.
+         */
+        [[nodiscard]] auto pb_file_string_for_ensuring(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> const std::string &;
+
+        /**
+         * As xliteral_for, but introduce the condition's proof name first if
+         * it does not exist yet, like pb_file_string_for_ensuring. Both
+         * polarities are always introduced together, so negating the result
+         * is the negated condition's literal; the reified-line renderer uses
+         * this to avoid negating whole condition objects.
+         */
+        [[nodiscard]] auto xliteral_for_ensuring(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> XLiteral;
 
         /**
          * Return a string form of the exact literals specifying a bit assignment for var == val, an alternative way to witness solutions.
@@ -339,7 +370,7 @@ namespace gcs::innards
          * Return a string form of a proof flag, for writing to a model or log. Same as calling
          * raw_literal_as_string(raw_proof_literal(flag)).
          */
-        [[nodiscard]] auto pb_file_string_for(const ProofFlag &) const -> std::string;
+        [[nodiscard]] auto pb_file_string_for(const ProofFlag &) const -> const std::string &;
 
         /**
          * Call the supplied function for each bit making up the given variable, specifying
@@ -504,6 +535,23 @@ namespace gcs::innards
          * ProofModel's job (cake_constant_atoms). See issue #483.
          */
         [[nodiscard]] auto create_proof_flag_for_constant(Integer k, const std::string & atom) -> ProofFlag;
+
+        /**
+         * The numbers that determine a half-reification of a PB constraint:
+         * the (negative) coefficient each negated reifying term is given, and
+         * the constraint's effective right-hand side (adjusted if the
+         * conjunction contains a statically-false literal). The reified
+         * constraint is `lhs + reif_coefficient * (each ~term) <=
+         * effective_rhs`; reify() materialises exactly that, and
+         * emit_reified_inequality_to renders it directly.
+         */
+        struct ReificationShape
+        {
+            Integer reif_coefficient;
+            Integer effective_rhs;
+        };
+
+        [[nodiscard]] auto reification_shape(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> ReificationShape;
 
         /**
          * Reify a PB constraint on a conjunction of ProofFlags or ProofLiterals

@@ -4,38 +4,50 @@
 
 #include <util/overloaded.hh>
 
+#include <ostream>
+
 using std::ostream;
 using std::string;
 
 using namespace gcs;
 using namespace gcs::innards;
 
-auto gcs::innards::emit_inequality_to(
-    NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ostream & stream) -> void
+namespace
 {
-    // build up the inequality, adjusting as we go for constant terms,
-    // and converting from <= to >=.
-    Integer rhs = -ineq.rhs;
-    for (auto & [w, v] : ineq.lhs.terms) {
-        if (0_i == w)
-            continue;
+    auto append_term_to(string & out, Integer w, const string & name) -> void
+    {
+        append_number_to(out, w);
+        out += ' ';
+        out += name;
+        out += ' ';
+    }
 
+    // Render one weighted term of a PB inequality being emitted in >= form:
+    // append its literal rendering(s) to `out` with negated weight, or fold a
+    // constant term into `rhs`. Shared by the plain and reified renderers so
+    // there is exactly one spelling of every term.
+    auto append_or_fold_term_to(NamesAndIDsTracker & names_and_ids_tracker, Integer w, const PseudoBooleanTerm & v, string & out, Integer & rhs,
+        EnsureNames ensure_names) -> void
+    {
         overloaded{
-            [&, w = w](const ProofLiteral & lit) {
+            [&](const ProofLiteral & lit) {
                 overloaded{
                     [&](const TrueLiteral &) { rhs += w; }, //
                     [&](const FalseLiteral &) {},           //
-                    [&]<typename T_>(
-                        const VariableConditionFrom<T_> & cond) { stream << -w << " " << names_and_ids_tracker.pb_file_string_for(cond) << " "; } //
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        append_term_to(out, -w,
+                            EnsureNames::Yes == ensure_names ? names_and_ids_tracker.pb_file_string_for_ensuring(cond)
+                                                             : names_and_ids_tracker.pb_file_string_for(cond));
+                    } //
                 }
                     .visit(simplify_literal(names_and_ids_tracker, lit));
-            },                                                                                                                    //
-            [&, w = w](const ProofFlag & flag) { stream << -w << " " << names_and_ids_tracker.pb_file_string_for(flag) << " "; }, //
-            [&, w = w](const IntegerVariableID & var) {
+            },                                                                                                        //
+            [&](const ProofFlag & flag) { append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(flag)); }, //
+            [&](const IntegerVariableID & var) {
                 overloaded{
                     [&](const SimpleIntegerVariableID & var) {
                         for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
-                            stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
+                            append_term_to(out, -w * bit_value, names_and_ids_tracker.pb_file_string_for(bit_lit));
                     },
                     [&](const ViewOfIntegerVariableID & view) {
                         // Emit V's own bits when the view is registered (the
@@ -46,16 +58,16 @@ auto gcs::innards::emit_inequality_to(
                         // proof logging, which the registry doesn't support.
                         if (auto v_id = names_and_ids_tracker.find_view(view)) {
                             for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(*v_id))
-                                stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
+                                append_term_to(out, -w * bit_value, names_and_ids_tracker.pb_file_string_for(bit_lit));
                         }
                         else if (! view.negate_first) {
                             for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(view.actual_variable))
-                                stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
+                                append_term_to(out, -w * bit_value, names_and_ids_tracker.pb_file_string_for(bit_lit));
                             rhs += w * view.then_add;
                         }
                         else {
                             for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(view.actual_variable))
-                                stream << w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
+                                append_term_to(out, w * bit_value, names_and_ids_tracker.pb_file_string_for(bit_lit));
                             rhs += w * view.then_add;
                         }
                     },
@@ -63,17 +75,85 @@ auto gcs::innards::emit_inequality_to(
                 }
                     .visit(var);
             }, //
-            [&, w = w](const ProofOnlySimpleIntegerVariableID & var) {
+            [&](const ProofOnlySimpleIntegerVariableID & var) {
                 for (const auto & [bit_value, bit_lit] : names_and_ids_tracker.each_bit(var))
-                    stream << -w * bit_value << " " << names_and_ids_tracker.pb_file_string_for(bit_lit) << " ";
+                    append_term_to(out, -w * bit_value, names_and_ids_tracker.pb_file_string_for(bit_lit));
             }, //
-            [&, w = w](const ProofBitVariable & bit) {
+            [&](const ProofBitVariable & bit) {
                 auto [_, bit_name] = names_and_ids_tracker.get_bit(bit);
-                stream << -w << " " << names_and_ids_tracker.pb_file_string_for(bit_name) << " ";
+                append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(bit_name));
             }, //
         }
             .visit(v);
     }
+}
 
-    stream << ">= " << rhs;
+auto gcs::innards::emit_inequality_to(NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    string & out, EnsureNames ensure_names) -> void
+{
+    // build up the inequality, adjusting as we go for constant terms,
+    // and converting from <= to >=.
+    Integer rhs = -ineq.rhs;
+    for (auto & [w, v] : ineq.lhs.terms) {
+        if (0_i == w)
+            continue;
+        append_or_fold_term_to(names_and_ids_tracker, w, v, out, rhs, ensure_names);
+    }
+
+    out += ">= ";
+    append_number_to(out, rhs);
+}
+
+auto gcs::innards::emit_reified_inequality_to(NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const HalfReifyOnConjunctionOf & half_reif, string & out, EnsureNames ensure_names) -> void
+{
+    // Renders exactly what emit_inequality_to would produce for
+    // reify(ineq, half_reif), without materialising the reified sum: the
+    // base terms, then each negated reifying term with the reification
+    // coefficient, converted from <= to >= as usual.
+    auto shape = names_and_ids_tracker.reification_shape(ineq, half_reif);
+
+    Integer rhs = -shape.effective_rhs;
+    for (auto & [w, v] : ineq.lhs.terms) {
+        if (0_i == w)
+            continue;
+        append_or_fold_term_to(names_and_ids_tracker, w, v, out, rhs, ensure_names);
+    }
+
+    // Each reifying term appears negated. A flag or bit negation is a cheap
+    // struct copy, but negating a condition literal builds a whole new
+    // variant chain just to name it -- and both polarities of a condition are
+    // always introduced together, so the negated condition's literal IS the
+    // negation of the condition's literal. Look up the condition as given and
+    // flip the XLiteral instead.
+    auto w = shape.reif_coefficient;
+    for (auto & r : half_reif)
+        overloaded{
+            [&](const ProofFlag & f) { append_or_fold_term_to(names_and_ids_tracker, w, ! f, out, rhs, ensure_names); }, //
+            [&](const ProofLiteral & lit) {
+                overloaded{
+                    [&](const TrueLiteral &) { /* negated: contributes nothing */ }, //
+                    [&](const FalseLiteral &) { rhs += w; },                         //
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        auto xlit = EnsureNames::Yes == ensure_names ? names_and_ids_tracker.xliteral_for_ensuring(cond)
+                                                                     : names_and_ids_tracker.xliteral_for(cond);
+                        append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(! xlit));
+                    } //
+                }
+                    .visit(simplify_literal(names_and_ids_tracker, lit));
+            },                                                                                                                     //
+            [&](const ProofBitVariable & bit) { append_or_fold_term_to(names_and_ids_tracker, w, ! bit, out, rhs, ensure_names); } //
+        }
+            .visit(r);
+
+    out += ">= ";
+    append_number_to(out, rhs);
+}
+
+auto gcs::innards::emit_inequality_to(
+    NamesAndIDsTracker & names_and_ids_tracker, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ostream & stream) -> void
+{
+    string out;
+    emit_inequality_to(names_and_ids_tracker, ineq, out, EnsureNames::No);
+    stream << out;
 }

@@ -86,6 +86,60 @@ namespace
         throw NonExhaustiveSwitch{};
     }
 
+    // Scoped hold on one of the logger's line-assembly buffers: takes the
+    // buffer at the current nesting depth, cleared, and releases it on the
+    // way out. See the line_buffers member for why this is a stack.
+    class LineBufferLease
+    {
+    private:
+        std::size_t & _depth;
+        std::string & _buffer;
+
+        [[nodiscard]] static auto buffer_at_depth(deque<string> & buffers, std::size_t depth) -> string &
+        {
+            if (buffers.size() <= depth)
+                buffers.resize(depth + 1);
+            return buffers[depth];
+        }
+
+    public:
+        explicit LineBufferLease(deque<string> & buffers, std::size_t & depth) : _depth(depth), _buffer(buffer_at_depth(buffers, depth))
+        {
+            _buffer.clear();
+            ++_depth;
+        }
+
+        ~LineBufferLease()
+        {
+            --_depth;
+        }
+
+        LineBufferLease(const LineBufferLease &) = delete;
+        auto operator=(const LineBufferLease &) -> LineBufferLease & = delete;
+
+        [[nodiscard]] auto buffer() -> string &
+        {
+            return _buffer;
+        }
+    };
+
+    // The string-append twin of AssertionAnnotation's ostream operator; keep
+    // the two renderings in sync.
+    auto append_annotation_to(string & out, const AssertionAnnotation & annotation) -> void
+    {
+        out += ':';
+        for (const auto & id_or_label : annotation.derivable_from) {
+            out += '@';
+            out += id_or_label.label;
+            out += ' ';
+        }
+        out += ':';
+        out += annotation.hint_name;
+        out += ':';
+        if (annotation.hint_fields)
+            out += format("{}", *annotation.hint_fields);
+    }
+
     [[nodiscard]] auto witness_literal(NamesAndIDsTracker & names_and_ids_tracker, const ProofLiteralOrFlag & lit) -> string
     {
         return overloaded{
@@ -114,8 +168,34 @@ struct ProofLogger::Imp
 
     string proof_file;
     fstream proof;
+    // A proof is many short lines; the default stream buffer makes for a
+    // write syscall every few KB, which shows up at this volume. Installed
+    // via pubsetbuf before open in start_proof.
+    vector<char> proof_stream_buffer;
     int current_indent = 0;
     AssertionLevel assertion_level;
+
+    // Scratch buffers for assembling proof lines before they are written out,
+    // reused across emissions to avoid a stringstream per logged inference.
+    // A stack, indexed by line_buffer_depth: rendering a line can introduce a
+    // proof name whose definitions are emitted (to the stream, ahead of the
+    // buffered line) through a nested emit, which needs its own buffer. A
+    // deque so nested growth never invalidates an outer buffer reference.
+    deque<string> line_buffers;
+    std::size_t line_buffer_depth = 0;
+
+    // Scratch for the ubiquitous `1 * lit >= 1` inference shape, in its
+    // rendered LE form (one -1 term, rhs -1), so infer() does not allocate a
+    // one-term sum per logged inference. Safe to reuse because nothing
+    // reachable from an emission re-enters infer().
+    WPBSumLE unit_buffer{{}, -1_i};
+
+    [[nodiscard]] auto unit_holds(const Literal & lit) -> const WPBSumLE &
+    {
+        unit_buffer.lhs.terms.clear();
+        unit_buffer.lhs.terms.emplace_back(-1_i, ProofLiteral{lit});
+        return unit_buffer;
+    }
 
     Imp(NamesAndIDsTracker & t) : tracker(t)
     {
@@ -186,7 +266,15 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             }, //
             [&](const ViewOfIntegerVariableID & var) {
                 if (_imp->assertion_level > AssertionLevel::Definitions) {
-                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*names_and_ids_tracker().find_view(var), val);
+                    // An unregistered view (e.g. an objective too wide to
+                    // host its own bit vector) is witnessed through the
+                    // underlying's bits at the deviewed value instead.
+                    if (auto v_id = names_and_ids_tracker().find_view(var))
+                        _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*v_id, val);
+                    else
+                        _imp->proof << " "
+                                    << names_and_ids_tracker().bit_assignment_string_for(
+                                           var.actual_variable, var.negate_first ? var.then_add - val : val - var.then_add);
                 }
                 else
                     _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
@@ -227,11 +315,17 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
 {
     _imp->proof << "% backtracking\n";
-    WPBSum backtrack;
+    // The backtrack clause is `at least one guess is false': exactly a
+    // reason-only reified line over the guesses, so route it through the
+    // reified renderer, which negates each guess at the XLiteral level
+    // rather than as a condition object.
+    ReasonLiterals guesses_as_reason;
+    guesses_as_reason.reserve(guesses.size());
     for (const auto & guess : guesses)
-        backtrack += 1_i * ! guess;
+        guesses_as_reason.emplace_back(ProofLiteral{guess});
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-    emit(assert_or_rup, move(backtrack) >= 1_i, ProofLevel::Current, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
+    emit_under_reason(
+        assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Current, guesses_as_reason, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
 }
 
 auto ProofLogger::end_proof() -> void
@@ -326,7 +420,7 @@ auto ProofLogger::infer(
         // infer_explicitly(); this variant only carries the plain ones, so the
         // annotation is just the one passed in.
         if (! is_literally_true(lit) && ! std::holds_alternative<NoJustificationNeeded>(why)) {
-            emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason, annotation);
+            emit_under_reason(AssertProofRule{}, _imp->unit_holds(lit), ProofLevel::Current, reason, annotation);
         }
         return;
     }
@@ -334,12 +428,12 @@ auto ProofLogger::infer(
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP<NoHint> & j) {
             if (! is_literally_true(lit)) {
-                emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
+                emit_rup_proof_line_under_reason(reason, _imp->unit_holds(lit), ProofLevel::Current);
             }
         }, //
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
             if (! is_literally_true(lit)) {
-                emit_under_reason(AssertProofRule{}, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current, reason);
+                emit_under_reason(AssertProofRule{}, _imp->unit_holds(lit), ProofLevel::Current, reason);
             }
         },                                    //
         [&](const NoJustificationNeeded &) {} //
@@ -371,54 +465,57 @@ auto ProofLogger::emit_proof_comment(const string & s) -> void
 auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
     const std::optional<AssertionAnnotation> & assertion_hint, const std::optional<ProofLineLabel> & label) -> ProofLine
 {
-    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     log_stacktrace();
 
-    stringstream rule_line;
+    LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
+    auto & rule_line = lease.buffer();
 
-    rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return "rup"; },    //
-                     [&](const ImpliesProofRule &) -> string { return "ia"; }, //
-                     [&](const AssertProofRule &) -> string { return "a"; }    //
-                 }
-                     .visit(rule)
-              << " ";
+    overloaded{
+        [&](const RUPProofRule &) { rule_line += "rup "; },    //
+        [&](const ImpliesProofRule &) { rule_line += "ia "; }, //
+        [&](const AssertProofRule &) { rule_line += "a "; }    //
+    }
+        .visit(rule);
 
-    emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
+    // EnsureNames::Yes: a condition without a proof name yet gets introduced
+    // as it is rendered, and its definition lines go out to the proof stream
+    // ahead of this line, which is still sitting in the buffer.
+    emit_inequality_to(names_and_ids_tracker(), ineq, rule_line, EnsureNames::Yes);
 
     overloaded{
         [&](const RUPProofRule & rule) {
             if (rule.lines) {
-                rule_line << ": ";
+                rule_line += ": ";
                 for (auto & line : *rule.lines) {
-                    rule_line << relative_proof_line(line, _imp->proof_line.number) << ' ';
+                    rule_line += relative_proof_line(line, _imp->proof_line.number);
+                    rule_line += ' ';
                 }
-                rule_line << " ;";
+                rule_line += " ;";
             }
             else {
-                rule_line << ";";
+                rule_line += ";";
             }
         }, //
         [&](const ImpliesProofRule & rule) {
             if (rule.line) {
-                rule_line << ": ";
-                rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << ' ';
-                rule_line << " ;";
+                rule_line += ": ";
+                rule_line += relative_proof_line(*rule.line, _imp->proof_line.number);
+                rule_line += "  ;";
             }
             else {
-                rule_line << ";";
+                rule_line += ";";
             }
         }, //
         [&](const AssertProofRule &) {
             if (assertion_hint) {
-                rule_line << *assertion_hint;
+                append_annotation_to(rule_line, *assertion_hint);
             }
-            rule_line << ";";
+            rule_line += ";";
         } //
     }
         .visit(rule);
 
-    auto line = emit_proof_line(rule_line.str(), level, label);
+    auto line = emit_proof_line(rule_line, level, label);
     // Note: no automatic deview-derivation here. Runtime RUP/red emissions
     // happen many times per propagator inference and per-call deview
     // derivation explodes proof size on tests with many view-using
@@ -431,63 +528,61 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
 auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level,
     const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
-    if (! reason.empty())
-        names_and_ids_tracker().need_all_proof_names_in(reason);
-
-    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
-
     log_stacktrace();
-    stringstream rule_line;
 
-    rule_line << overloaded{
-                     [&](const RUPProofRule &) -> string { return "rup"; },    //
-                     [&](const ImpliesProofRule &) -> string { return "ia"; }, //
-                     [&](const AssertProofRule &) -> string { return "a"; }    //
-                 }
-                     .visit(rule)
-              << " ";
+    LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
+    auto & rule_line = lease.buffer();
 
+    overloaded{
+        [&](const RUPProofRule &) { rule_line += "rup "; },    //
+        [&](const ImpliesProofRule &) { rule_line += "ia "; }, //
+        [&](const AssertProofRule &) { rule_line += "a "; }    //
+    }
+        .visit(rule);
+
+    // EnsureNames::Yes: see emit() above.
     if (! reason.empty()) {
-        emit_inequality_to(names_and_ids_tracker(), reify(ineq, reason), rule_line);
+        emit_reified_inequality_to(names_and_ids_tracker(), ineq, reason, rule_line, EnsureNames::Yes);
     }
     else {
-        emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
+        emit_inequality_to(names_and_ids_tracker(), ineq, rule_line, EnsureNames::Yes);
     }
 
     overloaded{
         [&](const RUPProofRule & rule) {
             if (rule.lines) {
-                rule_line << ": ";
+                rule_line += ": ";
                 for (const auto & line : *rule.lines) {
-                    rule_line << relative_proof_line(line, _imp->proof_line.number) << " ";
+                    rule_line += relative_proof_line(line, _imp->proof_line.number);
+                    rule_line += ' ';
                 }
-                rule_line << " ;";
+                rule_line += " ;";
             }
             else {
-                rule_line << ";";
+                rule_line += ";";
             }
         }, //
         [&](const ImpliesProofRule & rule) {
             if (rule.line) {
-                rule_line << ": ";
-                rule_line << relative_proof_line(*rule.line, _imp->proof_line.number) << " ";
-                rule_line << " ;";
+                rule_line += ": ";
+                rule_line += relative_proof_line(*rule.line, _imp->proof_line.number);
+                rule_line += "  ;";
             }
             else {
-                rule_line << ";";
+                rule_line += ";";
             }
         }, //
         [&](const AssertProofRule &) {
             if (assertion_hint) {
-                rule_line << *assertion_hint;
+                append_annotation_to(rule_line, *assertion_hint);
             }
 
-            rule_line << ";";
+            rule_line += ";";
         } //
     }
         .visit(rule);
 
-    auto line = emit_proof_line(rule_line.str(), level);
+    auto line = emit_proof_line(rule_line, level);
     // Note: see comment in `emit()` about why no auto-deview-derivation.
     return line;
 }
@@ -568,6 +663,8 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
 {
     try {
         _imp->proof.exceptions(ios::failbit | ios::badbit);
+        _imp->proof_stream_buffer.resize(1024 * 1024);
+        _imp->proof.rdbuf()->pubsetbuf(_imp->proof_stream_buffer.data(), _imp->proof_stream_buffer.size());
         _imp->proof.open(_imp->proof_file, ios::out);
         _imp->proof << "pseudo-Boolean proof version 3.0\n";
         // No `f` rule: VeriPB 3.0 loads the formula implicitly, and omitting the
