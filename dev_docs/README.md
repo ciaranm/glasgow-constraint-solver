@@ -115,6 +115,21 @@ library. For an introduction to *using* the solver, start with the top-level
   `BinPacking` Stage 3. Covers the `define_proof_model` /
   `install_initialiser` split, the paper-style reified scaffolding, the
   per-call proof chain, and the measured default-vs-opt-in trade-off.
+- [Restarts, nogoods, and dom/wdeg weighting](restarts-nogoods-weighting.md) —
+  the search-side machinery from issue #315: the restart loop and its
+  `SearchResult` unwind signal, `RestartSchedule`, the `ConflictObserver`
+  weighting seam and the dom/wdeg schemes, the `Nogoods` constraint
+  (entailment-based 2WL), reduced-nld extraction, and the proof lifecycle
+  (root-keeps-level-1, deep-first-unwind RUP for reduced clauses, `solx`-enabled
+  enumeration). Read when touching restarts, nogoods, or branching heuristics.
+- [Refined triggers](refined-triggers.md) — the per-literal watch mechanism that
+  lets a propagator wake only when specific literals (`x = v`, `x >= k`, ...)
+  become entailed, instead of on every change to a whole variable: the
+  `RefinedWatchContext`, the watch index with fire/consume/restore-on-backtrack,
+  the per-literal trigger masks, the backtrackable `watch_state` scratch (and why
+  it is not `add_constraint_state`), and the two-watched-literal `Nogoods` client
+  that motivated it. Read when touching the propagation-queue/watch internals or
+  nogood propagation performance.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.

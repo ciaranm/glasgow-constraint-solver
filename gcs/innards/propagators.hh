@@ -14,13 +14,146 @@
 #include <gcs/problem.hh>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace gcs::innards
 {
+    class ConflictObserver;
+
+    /**
+     * \brief Back-channel through which a RefinedWatchContext registers refined
+     * watches with the engine.
+     *
+     * Implemented by the Propagators internals. It exists so that
+     * RefinedWatchContext — which appears in propagator function signatures, above
+     * the Propagators class — can edit the watch index without depending on it.
+     *
+     * \ingroup Innards
+     */
+    class RefinedWatchSink
+    {
+    public:
+        virtual ~RefinedWatchSink() = default;
+
+        /**
+         * \brief Arm a refined watch owned by the given propagator: when `literal`
+         * next becomes entailed, append `payload` to that propagator's fired set and
+         * wake it. Watches armed while propagating are restored on backtrack.
+         */
+        virtual auto add_refined_watch(int owner_propagator, const Literal & literal, std::uint32_t payload) -> void = 0;
+
+        /**
+         * \brief Whether the given propagator currently has any refined watch armed
+         * on the given variable. Reads the (backtrack-consistent) watch index, so a
+         * propagator can use it to recompute its watched set without keeping its own
+         * state. \sa RefinedWatchContext::is_watching
+         */
+        [[nodiscard]] virtual auto is_watching(int owner_propagator, const IntegerVariableID & var) const -> bool = 0;
+
+        /**
+         * \brief Read this propagator's backtrackable scratch value for `key`, or 0
+         * if never set. \sa RefinedWatchContext::watch_state
+         */
+        [[nodiscard]] virtual auto watch_state_get(int owner_propagator, std::uint32_t key) const -> std::uint64_t = 0;
+
+        /**
+         * \brief Set this propagator's backtrackable scratch value for `key`. The
+         * write is trailed on the same per-propagate() trail as the watch edits and
+         * undone on backtrack, so a propagator's own bookkeeping stays in lockstep
+         * with its restored watches. \sa RefinedWatchContext::set_watch_state
+         */
+        virtual auto watch_state_set(int owner_propagator, std::uint32_t key, std::uint64_t value) -> void = 0;
+    };
+
+    /**
+     * \brief The refined-watch context handed to a propagator each time it runs.
+     *
+     * A propagator that registers refined per-literal watches (rather than, or in
+     * addition to, the coarse \ref Triggers) is told which of its watches fired
+     * since it last ran, via the opaque payloads it chose at registration time, so
+     * it can do work proportional to what changed instead of rescanning its state.
+     * A watch is consumed when it fires; the propagator re-arms a replacement via
+     * watch() if it still wants to hear about that literal.
+     *
+     * The context is forwarded only to propagators whose function accepts it (see
+     * PropagationFunctionImpl), so propagators that use only the coarse \ref
+     * Triggers are unaffected and see no overhead.
+     *
+     * \ingroup Innards
+     */
+    class RefinedWatchContext
+    {
+    private:
+        RefinedWatchSink * _sink = nullptr;
+        int _owner = -1;
+        std::span<const std::uint32_t> _fired_payloads;
+
+    public:
+        RefinedWatchContext() = default;
+
+        RefinedWatchContext(RefinedWatchSink & sink, int owner_propagator, std::span<const std::uint32_t> fired_payloads) :
+            _sink(&sink), _owner(owner_propagator), _fired_payloads(fired_payloads)
+        {
+        }
+
+        /**
+         * \brief The payloads of this propagator's refined watches that fired
+         * since it last ran, in no particular order.
+         *
+         * Empty for a propagator that uses only coarse triggers.
+         */
+        [[nodiscard]] auto fired_payloads() const -> std::span<const std::uint32_t>
+        {
+            return _fired_payloads;
+        }
+
+        /**
+         * \brief Arm a refined watch: when `literal` next becomes entailed
+         * (test_literal == DefinitelyTrue), this propagator is woken and handed
+         * `payload` among its fired_payloads(). A watch registered while
+         * propagating is restored on backtrack.
+         */
+        auto watch(const Literal & literal, std::uint32_t payload) const -> void
+        {
+            _sink->add_refined_watch(_owner, literal, payload);
+        }
+
+        /**
+         * \brief Whether this propagator currently has any refined watch armed on
+         * `var`. Lets a propagator recompute which variables it should watch each
+         * time it runs, without tracking that set itself (which would have to be
+         * kept consistent with backtracking); the watch index already is.
+         */
+        [[nodiscard]] auto is_watching(const IntegerVariableID & var) const -> bool
+        {
+            return _sink->is_watching(_owner, var);
+        }
+
+        /**
+         * \brief Read this propagator's backtrackable scratch value for `key` (0 if
+         * never set). It is restored on backtrack in lockstep with the watches, so a
+         * propagator can keep per-watch bookkeeping in it -- e.g. which two positions
+         * of a clause it watches -- without having to make that bookkeeping
+         * backtrack-consistent itself.
+         */
+        [[nodiscard]] auto watch_state(std::uint32_t key) const -> std::uint64_t
+        {
+            return _sink->watch_state_get(_owner, key);
+        }
+
+        /// \brief Set this propagator's backtrackable scratch value for `key`.
+        auto set_watch_state(std::uint32_t key, std::uint64_t value) const -> void
+        {
+            _sink->watch_state_set(_owner, key, value);
+        }
+    };
+
     class PropagationFunctionImplBase
     {
     public:
@@ -33,10 +166,10 @@ namespace gcs::innards
         auto operator=(const PropagationFunctionImplBase &) -> PropagationFunctionImplBase & = delete;
         auto operator=(PropagationFunctionImplBase &&) -> PropagationFunctionImplBase & = default;
 
-        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger)
-            -> PropagatorState = 0;
-        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger)
-            -> PropagatorState = 0;
+        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger,
+            const RefinedWatchContext & watches) -> PropagatorState = 0;
+        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger,
+            const RefinedWatchContext & watches) -> PropagatorState = 0;
     };
 
     template <typename Func_>
@@ -50,16 +183,23 @@ namespace gcs::innards
         {
         }
 
-        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger)
-            -> PropagatorState override
+        [[nodiscard]] virtual auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger,
+            [[maybe_unused]] const RefinedWatchContext & watches) -> PropagatorState override
         {
-            return _f(state, tracker, logger);
+            if constexpr (std::is_invocable_v<Func_ &, const State &, SimpleInferenceTracker &, ProofLogger * const, const RefinedWatchContext &>)
+                return _f(state, tracker, logger, watches);
+            else
+                return _f(state, tracker, logger);
         }
 
-        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger)
-            -> PropagatorState override
+        [[nodiscard]] virtual auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger,
+            [[maybe_unused]] const RefinedWatchContext & watches) -> PropagatorState override
         {
-            return _f(state, tracker, logger);
+            if constexpr (std::is_invocable_v<Func_ &, const State &, EagerProofLoggingInferenceTracker &, ProofLogger * const,
+                              const RefinedWatchContext &>)
+                return _f(state, tracker, logger, watches);
+            else
+                return _f(state, tracker, logger);
         }
     };
 
@@ -74,14 +214,16 @@ namespace gcs::innards
         {
         }
 
-        [[nodiscard]] auto operator()(const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState
+        [[nodiscard]] auto operator()(
+            const State & state, SimpleInferenceTracker & tracker, ProofLogger * const logger, const RefinedWatchContext & watches) -> PropagatorState
         {
-            return _impl->operator()(state, tracker, logger);
+            return _impl->operator()(state, tracker, logger, watches);
         }
 
-        [[nodiscard]] auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger) -> PropagatorState
+        [[nodiscard]] auto operator()(const State & state, EagerProofLoggingInferenceTracker & tracker, ProofLogger * const logger,
+            const RefinedWatchContext & watches) -> PropagatorState
         {
-            return _impl->operator()(state, tracker, logger);
+            return _impl->operator()(state, tracker, logger, watches);
         }
     };
 
@@ -198,6 +340,16 @@ namespace gcs::innards
         std::vector<IntegerVariableID> on_change = {};
         std::vector<IntegerVariableID> on_bounds = {};
         std::vector<IntegerVariableID> on_instantiated = {};
+
+        /**
+         * \brief Refined per-literal watches to arm when the constraint is
+         * installed: each (literal, payload) wakes this propagator, handing it
+         * payload, when literal first becomes entailed. These install-time watches
+         * are the persistent baseline (not undone on backtrack); watches the
+         * propagator arms later via RefinedWatchContext::watch are restored on
+         * backtrack. \sa RefinedWatchContext
+         */
+        std::vector<std::pair<Literal, std::uint32_t>> refined = {};
     };
 
     /**
@@ -376,6 +528,61 @@ namespace gcs::innards
          * indexing.
          */
         [[nodiscard]] auto constraint_id_for_index(int constraint_index) const -> const ConstraintID &;
+
+        /**
+         * The scope of the propagator with the given id: its trigger variables
+         * (across all trigger kinds) with views resolved to their underlying
+         * simple variable and duplicates removed. Indexed by propagator id.
+         */
+        [[nodiscard]] auto scope_of_propagator(int propagator_id) const -> const std::vector<SimpleIntegerVariableID> &;
+
+        /**
+         * The dense constraint indices of every constraint the given variable
+         * participates in (it appears in the scope of one of that constraint's
+         * propagators), deduplicated. Empty for a variable that no propagator
+         * triggers on. This is scope_of_propagator transposed and aggregated by
+         * constraint — the adjacency a weighted-degree heuristic sums over.
+         */
+        [[nodiscard]] auto constraint_indices_of_variable(SimpleIntegerVariableID) const -> const std::vector<int> &;
+
+        /**
+         * The scope of the constraint with the given dense index: the union of
+         * its propagators' scopes (views resolved, deduplicated). Used to count
+         * how many of a constraint's variables are still unassigned (the
+         * |fut|>1 filter in a weighted-degree heuristic).
+         */
+        [[nodiscard]] auto scope_of_constraint(int constraint_index) const -> const std::vector<SimpleIntegerVariableID> &;
+
+        ///@}
+
+        /**
+         * \name Conflict observation
+         */
+        ///@{
+
+        /**
+         * Attach a borrowed conflict observer, notified by propagate() whenever
+         * a propagator wipes out a domain. The observer is borrowed: the caller
+         * owns it and must keep it alive for the duration of the search. A
+         * conflict is a Propagators event (it carries the failing constraint's
+         * index, scope, and reason, all from here), so the observer lives with
+         * the rest of the conflict-observation machinery rather than on State.
+         *
+         * Several observers may be attached: a seq_search can chain several
+         * stateful branchers, each carrying its own weighting, and every one
+         * must see every conflict. Each is notified, in the order attached.
+         *
+         * \sa ConflictObserver
+         */
+        auto add_conflict_observer(ConflictObserver * observer) -> void;
+
+        /**
+         * The conflict observers currently attached, in the order they were
+         * added; empty if there are none.
+         *
+         * \sa Propagators::add_conflict_observer()
+         */
+        [[nodiscard]] auto conflict_observers() const -> const std::vector<ConflictObserver *> &;
 
         ///@}
     };

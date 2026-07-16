@@ -169,6 +169,9 @@ set_tests_properties(minizinc-nurses PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-seqprecedechain COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ seqprecedechain true true)
 set_tests_properties(minizinc-seqprecedechain PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-seqwdeg COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ seqwdeg true true)
+set_tests_properties(minizinc-seqwdeg PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-setinreif COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ setinreif true true)
 set_tests_properties(minizinc-setinreif PROPERTIES SKIP_RETURN_CODE 66)
 

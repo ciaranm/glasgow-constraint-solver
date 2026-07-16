@@ -4,6 +4,8 @@
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
 
+#include <examples/benchmark_cli.hh>
+
 #include <cstdlib>
 #include <cxxopts.hpp>
 #include <iostream>
@@ -29,6 +31,14 @@ auto main(int argc, char * argv[]) -> int
         options.add_options("Program Options")   //
             ("help", "Display help information") //
             ("prove", "Create a proof")          //
+            ("branch",
+                "Branching heuristic: default, or dom-wdeg[:VARIANT] "               //
+                "(VARIANT = classic/ia/ca/id/cd/ca.cd/chs; bare = chs)",             //
+                cxxopts::value<std::string>()->default_value("default"))             //
+            ("timeout", "Abort the solve after this many seconds (0 = no limit)",    //
+                cxxopts::value<double>()->default_value("0"))                        //
+            ("restarts", "Restart on a Luby schedule with the given conflict scale", //
+                cxxopts::value<unsigned long long>()->implicit_value("100"))         //
             ("extra-constraints", "Use extra constraints described in the MiniCP paper");
 
         options.add_options() //
@@ -88,17 +98,38 @@ auto main(int argc, char * argv[]) -> int
         p.post(move(sum_mul_s) == Integer{size});
     }
 
-    auto stats = solve_with(p, //
-        SolveCallbacks{        //
-            .solution = [&](const CurrentState & s) -> bool {
-                cout << "solution:";
-                for (auto & v : series)
-                    cout << " " << s(v);
-                cout << endl;
+    auto restarts =
+        options_vars.contains("restarts") ? make_optional(RestartSchedule::luby(options_vars["restarts"].as<unsigned long long>())) : nullopt;
 
-                return true;
-            },
-            .branch = branch_with(variable_order::dom(series), value_order::smallest_in())},
+    auto branch_spec = options_vars["branch"].as<std::string>();
+    BranchHeuristic brancher;
+    if (branch_spec == "default")
+        brancher = branch_with(variable_order::dom(series), value_order::smallest_in());
+    else if (branch_spec == "dom-wdeg" || branch_spec.starts_with("dom-wdeg:")) {
+        auto colon = branch_spec.find(':');
+        auto scheme = bench::scheme_from_string(colon == std::string::npos ? "chs" : branch_spec.substr(colon + 1));
+        if (! scheme) {
+            cerr << "Error: unknown --branch scheme in " << branch_spec << endl;
+            return EXIT_FAILURE;
+        }
+        brancher = branch_with(variable_order::dom_wdeg(p, *scheme), value_order::smallest_in());
+    }
+    else {
+        cerr << "Error: unknown --branch value " << branch_spec << endl;
+        return EXIT_FAILURE;
+    }
+
+    auto stats = bench::solve_with_timeout(options_vars["timeout"].as<double>(), p,
+        SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                           cout << "solution:";
+                           for (auto & v : series)
+                               cout << " " << s(v);
+                           cout << endl;
+
+                           return true;
+                       },
+            .branch = brancher,
+            .restarts = restarts},
         options_vars.contains("prove") ? make_optional<ProofOptions>("magic_series") : nullopt);
 
     cout << stats;

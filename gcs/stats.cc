@@ -16,6 +16,8 @@ auto gcs::operator<<(ostream & o, const Stats & s) -> ostream &
     o << "failures: " << s.failures << '\n';
     o << "propagations: " << s.propagations << " " << s.effectful_propagations << " " << s.contradicting_propagations << '\n';
     o << "max depth:  " << s.max_depth << '\n';
+    o << "restarts: " << s.restarts << '\n';
+    o << "learned nogoods: " << s.learned_nogoods << '\n';
     o << "solutions: " << s.solutions << '\n';
     o << "solve time: " << (s.solve_time.count() / 1'000'000.0) << "s" << '\n';
     return o;

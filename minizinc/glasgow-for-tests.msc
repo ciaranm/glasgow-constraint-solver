@@ -7,6 +7,6 @@
     "executable": "fzn-glasgow",
     "tags": ["cp", "int"],
     "stdFlags": ["-a", "-f", "-i", "-n", "-p", "-r", "-s", "-t", "-v"],
-    "extraFlags": [["--prove", "Write a proof to this file (suffix .opb and .pbp will be added)", "string", ""]],
+    "extraFlags": [["--prove", "Write a proof to this file (suffix .opb and .pbp will be added)", "string", ""], ["--restarts", "Restart search on a Luby schedule with this conflict scale (find-one / optimisation only; 0 = off)", "int", "0"]],
     "inputType": "JSON"
 }

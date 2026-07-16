@@ -1,5 +1,6 @@
 #include <gcs/gcs.hh>
 #include <gcs/interval_set.hh>
+#include <gcs/restarts.hh>
 
 #include <nlohmann/json.hpp>
 
@@ -241,7 +242,11 @@ auto main(int argc, char * argv[]) -> int
             ("n-solutions,n", "Stop after this many solutions", cxxopts::value<unsigned long long>())  //
             ("statistics,s", "Print statistics")                                                       //
             ("timeout,t", "Timeout in ms", cxxopts::value<unsigned long long>())                       //
-            ("prove", "Write proofs to this file (.opb and .pbp)", cxxopts::value<string>())           //
+            ("restarts",
+                "Restart on a Luby schedule with the given conflict scale (find-one / "      //
+                "optimisation only); learns nogoods across restarts",                        //
+                cxxopts::value<unsigned long long>())                                        //
+            ("prove", "Write proofs to this file (.opb and .pbp)", cxxopts::value<string>()) //
             ("file", "FlatZinc file used as input", cxxopts::value<string>());
 
         options.parse_positional({"file"});
@@ -954,12 +959,12 @@ auto main(int argc, char * argv[]) -> int
         else
             throw FlatZincInterfaceError{format("Unknown solve method {} in {}", string{solve_method}, fznname)};
 
-        BranchCallback brancher = branch_sequence(branch_with(variable_order::dom_then_deg(data.branch_variables), value_order::smallest_first()),
+        BranchHeuristic brancher = branch_sequence(branch_with(variable_order::dom_then_deg(data.branch_variables), value_order::smallest_first()),
             branch_with(variable_order::dom_then_deg(data.all_variables), value_order::smallest_first()));
 
         if ((! free_search) && fzn["solve"].contains("ann")) {
-            function<optional<BranchCallback>(const nlohmann::json &)> parse_search;
-            parse_search = [&data, &parse_search, &random_seed](const nlohmann::json & ann) -> optional<BranchCallback> {
+            function<optional<BranchHeuristic>(const nlohmann::json &)> parse_search;
+            parse_search = [&data, &parse_search, &random_seed](const nlohmann::json & ann) -> optional<BranchHeuristic> {
                 if (ann["id"] == "bool_search" || ann["id"] == "int_search") {
                     auto args = ann["args"];
                     vector<IntegerVariableID> vars = arg_as_array_of_var(data, args, 0);
@@ -967,20 +972,18 @@ auto main(int argc, char * argv[]) -> int
                     string val_heuristic = args[2];
                     string method = args[3];
 
-                    BranchVariableSelector var;
+                    BranchVariableHeuristic var;
                     if (var_heuristic == "first_fail")
                         var = variable_order::dom(vars);
                     else if (var_heuristic == "input_order")
                         var = variable_order::in_order(vars);
-                    else if (var_heuristic == "dom_w_deg") {
-                        // not technically "w" but it'll do for now
-                        var = variable_order::dom_then_deg(vars);
-                    }
+                    else if (var_heuristic == "dom_w_deg")
+                        var = variable_order::dom_wdeg(vars);
                     else if (var_heuristic == "smallest")
                         var = variable_order::with_smallest_value(vars);
                     else {
                         println(cerr, "Warning: treating unknown int_search variable heuristic {} as dom_w_deg instead", var_heuristic);
-                        var = variable_order::dom_then_deg(vars);
+                        var = variable_order::dom_wdeg(vars);
                     }
 
                     BranchValueGenerator val;
@@ -1014,7 +1017,7 @@ auto main(int argc, char * argv[]) -> int
                     return branch_with(var, val);
                 }
                 else if (ann["id"] == "seq_search") {
-                    optional<BranchCallback> branch_seq;
+                    optional<BranchHeuristic> branch_seq;
                     for (const auto & sub_ann : ann["args"][0]) {
                         auto subsearch = parse_search(sub_ann);
                         if (subsearch) {
@@ -1051,6 +1054,13 @@ auto main(int argc, char * argv[]) -> int
         if (options_vars.contains("prove")) {
             string basename = options_vars["prove"].as<string>();
             proof_options.emplace(basename);
+        }
+
+        optional<RestartSchedule> restart_schedule;
+        if (options_vars.contains("restarts")) {
+            auto scale = options_vars["restarts"].as<unsigned long long>();
+            if (scale > 0)
+                restart_schedule = RestartSchedule::luby(scale);
         }
 
         bool completed = false, any_solution = false;
@@ -1104,7 +1114,8 @@ auto main(int argc, char * argv[]) -> int
                     return true;
                 },
                 .branch = brancher,
-                .completed = [&] { completed = true; }},
+                .completed = [&] { completed = true; },
+                .restarts = restart_schedule},
             proof_options, &abort_flag);
 
         if (timeout_thread.joinable()) {
@@ -1139,6 +1150,7 @@ auto main(int argc, char * argv[]) -> int
             println(cout, "%%%mzn-stat: propagations={}", stats.propagations);
             println(cout, "%%%mzn-stat: effectfulPropagations={}", stats.effectful_propagations);
             println(cout, "%%%mzn-stat: peakDepth={}", stats.max_depth);
+            println(cout, "%%%mzn-stat: restarts={}", stats.restarts);
             println(cout, "%%%mzn-stat: solveTime={:.3f}", duration_cast<milliseconds>(stats.solve_time).count() / 1000.0);
             println(cout, "%%%mzn-stat-end");
             cout << flush;

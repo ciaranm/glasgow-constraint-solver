@@ -42,12 +42,22 @@ namespace gcs::innards
         // is rebuilt each call), so it needs no separate reset.
         bool _contradicted = false;
 
+        // The reason handed to the contradiction that ended this tracker's life,
+        // stashed at the raising site so it is reachable at the propagate() catch
+        // (a conflict observer may want to know which variables were implicated).
+        // Like _contradicted, fresh per propagate() call (the tracker is rebuilt),
+        // so it needs no reset; the Reason it holds may itself be NoReason if the
+        // caller supplied none.
+        std::optional<Reason> _last_contradiction_reason;
+
         // do_throw is forwarded to track_impl: true (the default) keeps the throwing
         // failure path the legacy infer* methods rely on; false is the non-throwing
         // infer_*_or_stop path, which sets _contradicted and returns instead.
         auto track(ProofLogger * const logger, const Inference inf, const Literal & lit, const Justification & just, const Reason & reason,
             const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt, bool do_throw = true) -> void
         {
+            if (inf == Inference::Contradiction)
+                _last_contradiction_reason = reason;
             return static_cast<Actual_ *>(this)->track_impl(logger, inf, lit, just, reason, assertion_hints, do_throw);
         }
 
@@ -136,6 +146,7 @@ namespace gcs::innards
                 break;
 
             [[unlikely]] case Inference::Contradiction:
+                _last_contradiction_reason = reason;
                 if constexpr (Actual_::materialises_reasons)
                     if (logger)
                         infer_explicitly(*logger, lit, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
@@ -177,6 +188,14 @@ namespace gcs::innards
         [[nodiscard]] auto contradicted() const -> bool
         {
             return _contradicted;
+        }
+
+        // The reason of the contradiction that ended this propagate() call, if one
+        // was raised. Read at the propagate() catch site to attribute the conflict
+        // to the variables the reason implicates; nullopt when nothing contradicted.
+        [[nodiscard]] auto last_contradiction_reason() const -> const std::optional<Reason> &
+        {
+            return _last_contradiction_reason;
         }
 
         auto infer(ProofLogger * const logger, const Literal & lit, const Justification & why, const Reason & reason,
@@ -227,6 +246,7 @@ namespace gcs::innards
         [[noreturn]] auto contradiction(ProofLogger * const logger, const JustifyExplicitly<Emit_, Hint_> & why, const Reason & reason,
             const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
+            _last_contradiction_reason = reason;
             if constexpr (Actual_::materialises_reasons)
                 if (logger)
                     infer_explicitly(*logger, FalseLiteral{}, why.emit, why.then_rup, materialise(reason, _state), why.hint, fallback);
@@ -465,6 +485,7 @@ namespace gcs::innards
         [[noreturn]] auto contradiction(ProofLogger * const logger, const Justification & why, const Reason & reason,
             const std::optional<AssertionAnnotation> & assertion_hints = std::nullopt) -> void
         {
+            _last_contradiction_reason = reason;
             // No domain change happens here, so the reason materialises against
             // the current state directly (the eager/lazy timing distinction only
             // matters when there is an inference to straddle).
