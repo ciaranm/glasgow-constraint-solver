@@ -515,6 +515,14 @@ namespace gcs::innards
          */
         [[nodiscard]] auto reify(const WPBSumLE &, const HalfReifyOnConjunctionOf &) -> WPBSumLE;
 
+        /**
+         * As reify(), but writing the result into `out`, reusing its term
+         * storage. For per-inference emission, where a freshly allocated
+         * reified sum per proof line is measurable; `out` must not alias the
+         * input.
+         */
+        auto reify_into(const WPBSumLE &, const HalfReifyOnConjunctionOf &, WPBSumLE & out) -> void;
+
         /*
          * Allocate an XLiteral with the given semantic meaning.
          */

@@ -85,14 +85,22 @@ namespace
         return seed ^ (v + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2));
     }
 
+    struct HashSimpleOrProofOnlyVariable
+    {
+        [[nodiscard]] auto operator()(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::size_t
+        {
+            return visit(overloaded{//
+                             [&](const SimpleIntegerVariableID & v) { return hash_combine(1, v.index); },
+                             [&](const ProofOnlySimpleIntegerVariableID & v) { return hash_combine(2, v.index); }},
+                id);
+        }
+    };
+
     struct HashVariableCondition
     {
         [[nodiscard]] auto operator()(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> std::size_t
         {
-            auto h = visit(overloaded{//
-                               [&](const SimpleIntegerVariableID & v) { return hash_combine(1, v.index); },
-                               [&](const ProofOnlySimpleIntegerVariableID & v) { return hash_combine(2, v.index); }},
-                cond.var);
+            auto h = HashSimpleOrProofOnlyVariable{}(cond.var);
             h = hash_combine(h, static_cast<std::size_t>(cond.op));
             h = hash_combine(h, static_cast<std::size_t>(cond.value.raw_value));
             return hash_combine(h, static_cast<std::size_t>(cond.upper_value.raw_value));
@@ -122,10 +130,11 @@ struct NamesAndIDsTracker::Imp
     ProofModel * model = nullptr;
     ProofLogger * logger = nullptr;
 
-    map<SimpleOrProofOnlyIntegerVariableID, ProofLine> variable_at_least_one_constraints;
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     unordered_map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, XLiteral, HashVariableCondition> variable_conditions_to_x;
-    map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, XLiteral>>>> integer_variable_bits_to_size_and_proof_vars;
-    map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, XLiteral>>>, HashSimpleOrProofOnlyVariable>
+        integer_variable_bits_to_size_and_proof_vars;
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>, HashSimpleOrProofOnlyVariable> integer_variable_definition_bounds;
     // Variables (e.g. ArgSort's cake-named free-bit-sum sorted values) whose [lo, hi]
     // domain is NOT a trivial consequence of the OPB -- cake emits no bound line for
     // them and the bounds are only entailed through conditional channels -- so
@@ -141,14 +150,19 @@ struct NamesAndIDsTracker::Imp
     // permutation variables, whose eq atoms are OPB constraint terms/guards (matching
     // cake) and so are forced model-time under @i labels.
     std::set<SimpleOrProofOnlyIntegerVariableID> vars_recover_labels;
-    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> gevars_that_exist;
-    map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>> eqvars_that_exist;
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>,
+        HashSimpleOrProofOnlyVariable>
+        gevars_that_exist;
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>,
+        HashSimpleOrProofOnlyVariable>
+        eqvars_that_exist;
     // Range ("in") literals [lo, hi], keyed by (lo, hi): the forward and reverse
     // lines of the reification against the variable's two order cuts. The literal
     // itself lives in variable_conditions_to_x, keyed by the InRange / NotInRange
     // conditions, just like the eq and order atoms. A width-1 interval is its eq
     // atom and is never entered here.
-    map<SimpleOrProofOnlyIntegerVariableID, map<pair<Integer, Integer>, pair<ProofLine, ProofLine>>> invars_that_exist;
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, map<pair<Integer, Integer>, pair<ProofLine, ProofLine>>, HashSimpleOrProofOnlyVariable>
+        invars_that_exist;
 
     // Every range and eq literal on each variable, as intervals, for finding a new
     // literal's immediate neighbours in the containment order.
@@ -1970,6 +1984,13 @@ auto NamesAndIDsTracker::s_expr_term_of(ReificationCondition cond) const -> opti
 
 auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif) -> WPBSumLE
 {
+    WPBSumLE result{{}, 0_i};
+    reify_into(ineq, half_reif, result);
+    return result;
+}
+
+auto NamesAndIDsTracker::reify_into(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & half_reif, WPBSumLE & out) -> void
+{
     // so what happens if there's a false literal in the left hand term? conceptually,
     // this means the constraint will always hold, but it's probably useful to have
     // something that syntactically contains all the right variables. so, we can just
@@ -2051,7 +2072,8 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
     // to always be there.
     auto clamped_reif_const = min(-max_contribution_from_positive_terms + ineq.rhs, -1_i);
 
-    WPBSum new_lhs;
+    auto & new_lhs = out.lhs;
+    new_lhs.terms.clear();
     new_lhs.terms.reserve(ineq.lhs.terms.size() + half_reif.size());
     new_lhs.terms.insert(new_lhs.terms.end(), ineq.lhs.terms.begin(), ineq.lhs.terms.end());
     for (auto & r : half_reif)
@@ -2065,7 +2087,7 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
     // if we have a false literal on the left hand side, adjusting the degree of falsity
     // up by the sum of positive terms is enough that it will be trivially true.
     if (contains_false_literal)
-        return new_lhs <= ineq.rhs + max_contribution_from_positive_terms;
+        out.rhs = ineq.rhs + max_contribution_from_positive_terms;
     else
-        return new_lhs <= ineq.rhs;
+        out.rhs = ineq.rhs;
 }

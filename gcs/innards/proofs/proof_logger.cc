@@ -144,6 +144,11 @@ struct ProofLogger::Imp
     // before assembly starts may itself emit (and so clobber this).
     string line_buffer;
 
+    // Scratch for the reified form of an inference under its reason, reused
+    // across emissions for the same reason (a reified linear sum can run to
+    // hundreds of terms, and a fresh allocation per line is measurable).
+    WPBSumLE reify_buffer{{}, 0_i};
+
     Imp(NamesAndIDsTracker & t) : tracker(t)
     {
     }
@@ -482,7 +487,8 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
         .visit(rule);
 
     if (! reason.empty()) {
-        emit_inequality_to(names_and_ids_tracker(), reify(ineq, reason), rule_line);
+        names_and_ids_tracker().reify_into(ineq, reason, _imp->reify_buffer);
+        emit_inequality_to(names_and_ids_tracker(), _imp->reify_buffer, rule_line);
     }
     else {
         emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
