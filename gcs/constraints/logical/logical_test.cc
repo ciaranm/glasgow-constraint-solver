@@ -21,7 +21,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -154,6 +153,8 @@ auto run_alias_reif_logical_test(const string & which, bool proofs, const vector
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Operand positions wrapped by the sweep. The fixed data tops out at 4
@@ -187,8 +188,7 @@ auto main(int argc, char * argv[]) -> int
         {{{1, 1}, {1, 1}}, {0, 0}},  // all true but reif pinned false (contradiction for Or; And too)
         {{{0, 0}, {0, 0}}, {1, 1}}}; // all false but reif pinned true (contradiction)
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     uniform_int_distribution n_values_dist(1, 4);
     for (int x = 0; x < 10; ++x) {
         auto n_values = n_values_dist(rand);

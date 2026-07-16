@@ -22,7 +22,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -298,6 +297,8 @@ auto run_dup_linear_test(bool proofs, const string & mode, pair<int, int> a_rang
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     // Mode is the first non-flag positional; --view-* flags may follow. With no
     // mode given (a manual run rather than the ctest harness) run every mode.
     string requested_mode;
@@ -352,8 +353,7 @@ auto main(int argc, char * argv[]) -> int
 
     data.emplace_back(pair{8, 14}, pair{0, 8}, pair{4, 19}, vector{pair{vector{-7, 6, 7}, 69}});
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     uniform_int_distribution nc_dist(1, 5);
     for (int x = 0; x < 5; ++x)
         generate_random_data(rand, data, random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15), random_bounds(-10, 10, 5, 15),

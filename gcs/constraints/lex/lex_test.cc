@@ -551,6 +551,8 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Positions 0..5 cover the length-3 case fully (both 3-element arrays);

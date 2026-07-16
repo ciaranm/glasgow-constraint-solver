@@ -27,7 +27,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::tuple;
 using std::uniform_int_distribution;
@@ -314,6 +313,8 @@ auto run_random_tests(bool proofs, const ViewWrapConfig & view_cfg, mt19937 & ra
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Only the primary `var` of each In variant is wrapped; the inner
@@ -324,8 +325,7 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())

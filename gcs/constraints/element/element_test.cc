@@ -31,7 +31,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -231,6 +230,8 @@ auto run_dup_element_test(bool proofs, const string & label, const vector<pair<i
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     // Mode is the first non-flag positional; --view-* flags may follow. With no
     // mode given (a manual run rather than the ctest harness) run every mode.
     string requested_mode;
@@ -291,8 +292,7 @@ auto main(int argc, char * argv[]) -> int
         // All-fixed 2D.
         {{5, 5}, {0, 0}, {0, 0}, {{{5, 5}}}},  // a[0][0]==5==var (tautology)
         {{4, 4}, {0, 0}, {0, 0}, {{{5, 5}}}}}; // a[0][0]==5 != var 4 (contradiction)
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
 
     uniform_int_distribution n_values_dist(1, 4);
     uniform_int_distribution larger_n_values_dist(1, 8);

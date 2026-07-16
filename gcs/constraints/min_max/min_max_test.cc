@@ -30,7 +30,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -138,6 +137,8 @@ auto run_dup_min_max_test(bool proofs, bool min, const string & label, const vec
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Position 0 = result; positions 1..5 = up to 5 array entries.
@@ -175,8 +176,7 @@ auto main(int argc, char * argv[]) -> int
         {3, {4}},                          // single constant element: result 3 wrong (contradiction both)
         {pair{0, 9}, {3, 5, pair{0, 9}}}}; // mixed: two constants plus a variable
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 5);
         auto n_values = n_values_dist(rand);

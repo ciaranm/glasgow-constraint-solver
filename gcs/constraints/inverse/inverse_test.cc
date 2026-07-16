@@ -34,7 +34,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -107,6 +106,8 @@ auto run_inverse_test(bool proofs, const ViewWrapConfig & view_cfg, const vector
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Combined x|y operand positions wrapped by the single-position sweep.
@@ -145,8 +146,7 @@ auto main(int argc, char * argv[]) -> int
         {{1, 0}, {1, 0}},  // swap: x[0]=1<->y[1]=0, x[1]=0<->y[0]=1, consistent (tautology)
         {{1, 0}, {0, 1}}}; // x swapped but y identity: inconsistent (contradiction)
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
 
     // Random sweep: equal-length arrays of length 2..4 with domains over
     // {0..n-1} (occasionally const). Inverse forces a permutation matching,

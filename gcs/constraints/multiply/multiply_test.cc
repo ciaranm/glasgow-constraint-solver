@@ -26,7 +26,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -210,6 +209,8 @@ auto run_constant_test(
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     // The view-wrap sweep: wrap each operand position per the config and run
     // a focused deterministic subset, with the proof files suffixed so
     // parallel ctest entries never clobber each other.
@@ -250,8 +251,7 @@ auto main(int argc, char * argv[]) -> int
     // completeness are checked against a full enumeration; per-node bounds
     // consistency is deliberately not claimed (interval reasoning leaves
     // unsupported endpoints, as the product_bounds test pins).
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> random_bc_data;
     for (int x = 0; x < 4; ++x) {
         generate_random_data(rand, random_bc_data, random_bounds(-10, 10, 3, 12), random_bounds(-10, 10, 3, 12), random_bounds(-80, 80, 10, 60));

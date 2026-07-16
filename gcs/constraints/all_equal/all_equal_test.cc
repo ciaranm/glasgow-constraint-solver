@@ -28,7 +28,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -196,6 +195,8 @@ auto run_dup_all_equal_test(bool proofs, const vector<pair<int, int>> & unique_d
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Max vector length across the data is 4; CMake registers up through
@@ -222,8 +223,7 @@ auto main(int argc, char * argv[]) -> int
         {{4, 4}, {4, 4}, {4, 4}}, // three equal constants (tautology)
     };
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     auto random_run = [&](int n_vars) {
         vector<pair<int, int>> doms;
         std::uniform_int_distribution<int> lo_dist{-3, 5};

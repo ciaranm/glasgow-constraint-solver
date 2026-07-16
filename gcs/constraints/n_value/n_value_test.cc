@@ -19,7 +19,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -108,6 +107,8 @@ auto run_dup_n_value_test(bool proofs, const vector<pair<int, int>> & unique_dom
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     constexpr int n_positions = 6;
@@ -141,8 +142,7 @@ auto main(int argc, char * argv[]) -> int
         {2, {7}},                 // single constant element: result can't be 2 (contradiction)
         {2, {5, pair{5, 6}, 6}}}; // mixed: two constants plus a variable
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x) {
         uniform_int_distribution n_values_dist(1, 5);
         auto n_values = n_values_dist(rand);

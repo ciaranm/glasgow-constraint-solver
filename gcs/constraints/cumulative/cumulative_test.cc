@@ -31,7 +31,6 @@ using std::min;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::tuple;
 using std::uniform_int_distribution;
@@ -440,6 +439,8 @@ namespace
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     // Negative variable sizes must be rejected at install time (constants are
@@ -506,8 +507,7 @@ auto main(int argc, char * argv[]) -> int
     // and the constraint is enumerated via brute-force over the start
     // domains: a wider horizon multiplies the enumeration cost across all
     // tasks. Sized so total runtime stays under a second even unoptimised.
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
 
     auto random_instance = [&](int n, int max_start, int max_length, int max_height,
                                int max_cap) -> tuple<vector<pair<int, int>>, vector<int>, vector<int>, int> {

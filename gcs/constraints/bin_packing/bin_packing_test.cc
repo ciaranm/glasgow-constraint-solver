@@ -147,8 +147,10 @@ namespace
     }
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     // Each capa case: { item_ranges, sizes, capacities }.
     vector<tuple<vector<pair<int, int>>, vector<int>, vector<int>>> capa_data = {
         // Two items, two bins, capacity covers any single item but not both.

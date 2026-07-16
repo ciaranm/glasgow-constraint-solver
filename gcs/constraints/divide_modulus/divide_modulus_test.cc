@@ -27,7 +27,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -225,6 +224,8 @@ auto run_divmod_constant_test(bool proofs, bool is_div, const DivideConsistency 
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     // The view-wrap sweep: wrap each position per the config and run a
     // focused deterministic subset, proof files suffixed per config.
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -264,8 +265,7 @@ auto main(int argc, char * argv[]) -> int
     // weaker than bounds consistency on the division itself). The first
     // generator's divisor range spans zero, exercising the relational
     // divisor != 0 handling; the second keeps it strictly positive.
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     vector<tuple<pair<int, int>, pair<int, int>, pair<int, int>>> random_bc_data;
     for (int x = 0; x < 4; ++x) {
         generate_random_data(rand, random_bc_data, random_bounds(-12, 12, 3, 10), random_bounds(-5, 5, 2, 8), random_bounds(-12, 12, 3, 10));

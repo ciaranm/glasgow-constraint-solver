@@ -31,7 +31,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::tuple;
 using std::uniform_int_distribution;
@@ -101,8 +100,10 @@ auto run_gacgcc_test(bool proofs, const vector<Range> & vars_range, const vector
     check_results(proof_name, expected, actual);
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     vector<tuple<vector<Range>, vector<int>, vector<Range>, bool>> data = {
         // Upper-capacity: first three confined to {1,2}, value 2 capped at 1,
         // so value 1 must take two of them; the fourth is forced off 1 and 2.
@@ -130,8 +131,7 @@ auto main(int, char *[]) -> int
         {{pair{1, 2}}, {}, {}, false},                        // empty value set, open: any assignment allowed
     };
 
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     for (int iteration = 0; iteration < 24; ++iteration) {
         uniform_int_distribution n_vars_dist(2, 3);
         uniform_int_distribution n_values_dist(1, 2);

@@ -31,7 +31,6 @@ using std::make_optional;
 using std::mt19937;
 using std::nullopt;
 using std::pair;
-using std::random_device;
 using std::set;
 using std::string;
 using std::tuple;
@@ -193,6 +192,8 @@ auto run_tagged_test(bool proofs, const string & proof_suffix, const PlusConsist
 
 auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
 
     constexpr int n_positions = 3;
@@ -235,8 +236,7 @@ auto main(int argc, char * argv[]) -> int
     // return type (because hand-rolled cases include hole-y vector<int> domains
     // that the random sweep doesn't produce), so visit-widen at insertion.
     auto widen_v12 = [](variant<int, pair<int, int>> v) -> V12 { return visit([](auto x) -> V12 { return x; }, v); };
-    random_device rand_dev;
-    mt19937 rand(rand_dev());
+    mt19937 rand(*get_seed());
     for (int x = 0; x < 10; ++x) {
         auto r1 = generate_random_data_item(rand, random_bounds_or_constant(-10, 10, 5, 15));
         auto r2 = generate_random_data_item(rand, random_bounds_or_constant(-10, 10, 5, 15));

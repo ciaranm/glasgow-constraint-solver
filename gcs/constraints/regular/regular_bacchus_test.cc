@@ -95,8 +95,10 @@ auto run_all_tests(bool proofs) -> void
         {{{0_i, 0}, {1_i, 0}, {2_i, 1}}, {{0_i, 1}, {1_i, 1}, {2_i, 1}}}, {1});
 }
 
-auto main(int, char *[]) -> int
+auto main(int argc, char * argv[]) -> int
 {
+    establish_and_announce_seed(argc, argv);
+
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
