@@ -68,6 +68,7 @@ add_library(glasgow_constraint_solver
         constraints/linear/utils.cc
         constraints/logical/logical.cc
         constraints/mdd/mdd.cc
+        constraints/min_distance/min_distance.cc
         constraints/min_max/min_max.cc
         constraints/plus_minus/minus.cc
         constraints/multiply/multiply.cc
