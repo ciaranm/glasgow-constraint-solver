@@ -101,11 +101,20 @@ namespace
     // every allocation registers the pair together). Read on every condition
     // rendered into every proof line, hence value-keyed tables per variable
     // rather than one big map over whole condition objects.
+    // The two halves of an atom's defining reification: forward and reverse
+    // lines (or, for a direct-encoded 0/1 variable, the literal itself).
+    using AtomDefs = pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>;
+
     struct VariableAtoms
     {
         std::unordered_map<long long, XLiteral> eq; // Equal; NotEqual is the flip
         std::unordered_map<long long, XLiteral> ge; // GreaterEqual; Less is the flip
         map<pair<Integer, Integer>, XLiteral> in;   // InRange by (lo, hi); NotInRange is the flip
+        // The defining lines for the eq and ge atoms that have them (an atom
+        // can exist in eq/ge above without defs, e.g. an introduced
+        // variable's values). Value-keyed like the literal tables.
+        std::unordered_map<long long, AtomDefs> eq_defs;
+        std::unordered_map<long long, AtomDefs> ge_defs;
     };
 
     struct HashView
@@ -224,12 +233,11 @@ struct NamesAndIDsTracker::Imp
     // permutation variables, whose eq atoms are OPB constraint terms/guards (matching
     // cake) and so are forced model-time under @i labels.
     std::set<SimpleOrProofOnlyIntegerVariableID> vars_recover_labels;
-    unordered_map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>,
-        HashSimpleOrProofOnlyVariable>
-        gevars_that_exist;
-    unordered_map<SimpleOrProofOnlyIntegerVariableID, map<Integer, pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>>>,
-        HashSimpleOrProofOnlyVariable>
-        eqvars_that_exist;
+    // The values with ge atoms, per variable, in value order: need_gevar's
+    // order-encoding chain links join each new atom to its neighbours, which
+    // needs ordered iteration. The atoms' literals and defining lines live in
+    // the per-variable atom tables.
+    unordered_map<SimpleOrProofOnlyIntegerVariableID, std::set<Integer>, HashSimpleOrProofOnlyVariable> gevar_values;
     // Range ("in") literals [lo, hi], keyed by (lo, hi): the forward and reverse
     // lines of the reification against the variable's two order cuts. The literal
     // itself lives in the per-variable atom tables, keyed by the InRange / NotInRange
@@ -426,10 +434,10 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
         [&](const SimpleIntegerVariableID & var) -> variant<ProofLine, XLiteral> {
             switch (cond.op) {
                 using enum VariableConditionOperator;
-            case GreaterEqual: need_gevar(var, cond.value); return _imp->gevars_that_exist.at(var).at(cond.value).first;
-            case Less: need_gevar(var, cond.value); return _imp->gevars_that_exist.at(var).at(cond.value).second;
-            case Equal: need_direct_encoding_for(var, cond.value); return _imp->eqvars_that_exist.at(var).at(cond.value).first;
-            case NotEqual: need_direct_encoding_for(var, cond.value); return _imp->eqvars_that_exist.at(var).at(cond.value).second;
+            case GreaterEqual: need_gevar(var, cond.value); return _imp->atoms_for(var).ge_defs.at(cond.value.raw_value).first;
+            case Less: need_gevar(var, cond.value); return _imp->atoms_for(var).ge_defs.at(cond.value.raw_value).second;
+            case Equal: need_direct_encoding_for(var, cond.value); return _imp->atoms_for(var).eq_defs.at(cond.value.raw_value).first;
+            case NotEqual: need_direct_encoding_for(var, cond.value); return _imp->atoms_for(var).eq_defs.at(cond.value.raw_value).second;
             case InRange:
                 static_cast<void>(need_invar(var, cond.value, cond.upper_value));
                 return _imp->invars_that_exist.at(var).at(pair{cond.value, cond.upper_value}).first;
@@ -447,10 +455,10 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
             if (auto v_id = find_view(var)) {
                 switch (cond.op) {
                     using enum VariableConditionOperator;
-                case GreaterEqual: need_gevar(*v_id, cond.value); return _imp->gevars_that_exist.at(*v_id).at(cond.value).first;
-                case Less: need_gevar(*v_id, cond.value); return _imp->gevars_that_exist.at(*v_id).at(cond.value).second;
-                case Equal: need_direct_encoding_for(*v_id, cond.value); return _imp->eqvars_that_exist.at(*v_id).at(cond.value).first;
-                case NotEqual: need_direct_encoding_for(*v_id, cond.value); return _imp->eqvars_that_exist.at(*v_id).at(cond.value).second;
+                case GreaterEqual: need_gevar(*v_id, cond.value); return _imp->atoms_for(*v_id).ge_defs.at(cond.value.raw_value).first;
+                case Less: need_gevar(*v_id, cond.value); return _imp->atoms_for(*v_id).ge_defs.at(cond.value.raw_value).second;
+                case Equal: need_direct_encoding_for(*v_id, cond.value); return _imp->atoms_for(*v_id).eq_defs.at(cond.value.raw_value).first;
+                case NotEqual: need_direct_encoding_for(*v_id, cond.value); return _imp->atoms_for(*v_id).eq_defs.at(cond.value.raw_value).second;
                 case InRange:
                 case NotInRange: throw UnimplementedException{};
                 }
@@ -481,7 +489,7 @@ auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCon
 
 auto NamesAndIDsTracker::create_literals_for_introduced_variable_value(SimpleIntegerVariableID id, Integer val, const string & name) -> void
 {
-    // These literals bypass eqvars_that_exist and the containment structures, which
+    // These literals bypass the eq-atom defs table and the containment structures, which
     // is safe because an introduced variable has no bits encoding, so no range
     // literal can ever be defined over it.
     track_variable_name(id, to_string(id.index) + "intr_" + name); // hack!
@@ -625,13 +633,17 @@ auto NamesAndIDsTracker::allocate_flag_index() -> unsigned long long
 auto NamesAndIDsTracker::track_eqvar(
     SimpleIntegerVariableID id, Integer val, const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
 {
-    _imp->eqvars_that_exist[id].emplace(val, names);
+    _imp->atoms_for(id).eq_defs.try_emplace(val.raw_value, names);
 }
 
 auto NamesAndIDsTracker::track_gevar(
     SimpleIntegerVariableID id, Integer val, const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
 {
-    _imp->gevars_that_exist[id].emplace(val, names);
+    _imp->atoms_for(id).ge_defs.try_emplace(val.raw_value, names);
+    // The order-encoding chain walk in need_gevar links each new atom to its
+    // neighbours by value, so an atom recorded from outside need_gevar must
+    // appear in the value set too.
+    _imp->gevar_values[id].insert(val);
 }
 
 auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
@@ -728,7 +740,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         }
     }
 
-    _imp->eqvars_that_exist[id].emplace(v, pair{forwards_line, reverse_line});
+    _imp->atoms_for(id).eq_defs.try_emplace(v.raw_value, pair{forwards_line, reverse_line});
 
     // If `id` is a view's proof-only var, eagerly emit the
     // eq-atom-level link `V=v <=> X=k_x` as two RUP lines. The GE-atom
@@ -830,12 +842,13 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
 
     // gevar -> bits
     if (_imp->logger && _imp->assertion_level > AssertionLevel::Definitions) {
-        _imp->gevars_that_exist[id].emplace(v, make_pair(ProofLine{}, ProofLine{})); // Don't output geqvar definitions if using assertions
+        _imp->atoms_for(id).ge_defs.try_emplace(
+            v.raw_value, make_pair(ProofLine{}, ProofLine{})); // Don't output geqvar definitions if using assertions
     }
     else if (_imp->logger) {
         auto def_lines = visit(
             [&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top); }, id);
-        _imp->gevars_that_exist[id].emplace(v, def_lines);
+        _imp->atoms_for(id).ge_defs.try_emplace(v.raw_value, def_lines);
     }
     else {
         // Label the two halves @<base>[ge<v>][r]/[f]: the base is @i[name] for a
@@ -844,7 +857,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         // ~ge..) is cake's [r]; the second is [f]. v may be negative -- veripb
         // 3.0.2 allows `-` in @labels.
         string ge_label = definitional_label_base(id) + "[ge" + to_string(v.raw_value) + "]";
-        _imp->gevars_that_exist[id].emplace(v,
+        _imp->atoms_for(id).ge_defs.try_emplace(v.raw_value,
             visit(
                 [&](const auto & vid) -> pair<ProofLine, ProofLine> {
                     return pair{_imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
@@ -920,8 +933,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         fix_bound(true);
     }
 
-    auto & other_gevars = _imp->gevars_that_exist.at(id);
-    auto this_gevar = other_gevars.find(v);
+    auto & other_gevars = _imp->gevar_values[id];
+    auto this_gevar = other_gevars.insert(v).first;
     auto higher_gevar = next(this_gevar);
 
     // Returns a shared PolBuilder (rather than a rendered string) so the line
@@ -941,7 +954,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     if (higher_gevar != other_gevars.end()) {
         overloaded{
             [&](const ProofOnlySimpleIntegerVariableID & id) {
-                auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
+                auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= *higher_gevar)) >= 1_i;
                 emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) {
                     if (logger->get_assertion_level() > AssertionLevel::Links)
                         return;
@@ -955,12 +968,12 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                     return;
                 }
                 else if (_imp->assertion_level == AssertionLevel::Links) {
-                    auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
+                    auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= *higher_gevar)) >= 1_i;
                     emit_proof_line_now_or_at_start(
                         [c = chain_con, link_hint](ProofLogger * const logger) { logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint); });
                 }
                 else {
-                    auto pol = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
+                    auto pol = make_pol_chain_line(id >= v, ! (id >= *higher_gevar));
                     emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
                 }
             } //
@@ -972,7 +985,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     if (this_gevar != other_gevars.begin()) {
         overloaded{
             [&](const ProofOnlySimpleIntegerVariableID & id) {
-                auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
+                auto chain_con = WPBSum{} + (1_i * (id >= *prev(this_gevar))) + (1_i * ! (id >= v)) >= 1_i;
                 emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) {
                     if (logger->get_assertion_level() > AssertionLevel::Links)
                         return;
@@ -986,13 +999,13 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                     return;
                 }
                 else if (_imp->assertion_level == AssertionLevel::Links) {
-                    auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
+                    auto chain_con = WPBSum{} + (1_i * (id >= *prev(this_gevar))) + (1_i * ! (id >= v)) >= 1_i;
                     emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) {
                         logger->emit(AssertProofRule{}, c, ProofLevel::Top, link_hint);
                     });
                 }
                 else {
-                    auto pol = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
+                    auto pol = make_pol_chain_line(id >= *prev(this_gevar), ! (id >= v));
                     emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
                 }
             } //
@@ -1045,8 +1058,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 return;
             }
 
-            auto v_defs = _imp->gevars_that_exist[id].at(v);
-            auto x_defs = _imp->gevars_that_exist[SimpleOrProofOnlyIntegerVariableID{view.actual_variable}].at(x_threshold);
+            auto v_defs = _imp->atoms_for(id).ge_defs.at(v.raw_value);
+            auto x_defs = _imp->atoms_for(SimpleOrProofOnlyIntegerVariableID{view.actual_variable}).ge_defs.at(x_threshold.raw_value);
             auto link = _imp->view_link_ids.at(*pid_ptr);
             auto * v_fwd_line = std::get_if<ProofLine>(&v_defs.first);
             auto * v_rev_line = std::get_if<ProofLine>(&v_defs.second);
@@ -1184,9 +1197,9 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     // the eq atoms that already exist.
     if (! _imp->containment_trees.contains(id)) {
         auto & tree = _imp->containment_trees[id];
-        if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
-            for (const auto & [v, _] : eqit->second)
-                tree.insert(v, v);
+        if (const auto * atoms = _imp->find_atoms(id))
+            for (const auto & [v, _] : atoms->eq_defs)
+                tree.insert(Integer{v}, Integer{v});
     }
     link_immediate_containment(id, lo, hi);
     _imp->containment_trees[id].insert(lo, hi);
@@ -1253,9 +1266,9 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
 
     // Every pre-existing eq atom becomes a singleton cell, so that coverings can
     // reach conclusions already logged over those atoms.
-    if (auto eqit = _imp->eqvars_that_exist.find(id); eqit != _imp->eqvars_that_exist.end())
-        for (const auto & [v, _] : eqit->second)
-            if (lb <= v && v <= ub) {
+    if (const auto * atoms = _imp->find_atoms(id))
+        for (const auto & [raw_v, _] : atoms->eq_defs)
+            if (Integer v{raw_v}; lb <= v && v <= ub) {
                 boundaries.insert(v);
                 boundaries.insert(v + 1_i);
             }
@@ -1391,17 +1404,23 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     // recurse back through need_gevar(X, ...), which is a no-op for
     // already-existing atoms but would invalidate iterators if it weren't.
     SimpleOrProofOnlyIntegerVariableID x_key{view.actual_variable};
-    if (auto it = _imp->gevars_that_exist.find(x_key); it != _imp->gevars_that_exist.end()) {
+    if (auto it = _imp->gevar_values.find(x_key); it != _imp->gevar_values.end()) {
         auto x_atoms = it->second;
-        for (const auto & [k, _] : x_atoms) {
+        for (const auto & k : x_atoms) {
             Integer v_value = view.negate_first ? view.then_add - k + 1_i : k + view.then_add;
             need_gevar(v_id, v_value);
         }
     }
-    if (auto it = _imp->eqvars_that_exist.find(x_key); it != _imp->eqvars_that_exist.end()) {
-        auto x_atoms = it->second;
-        for (const auto & [k, _] : x_atoms) {
-            Integer v_value = view.negate_first ? view.then_add - k : k + view.then_add;
+    if (const auto * atoms = _imp->find_atoms(x_key); atoms && ! atoms->eq_defs.empty()) {
+        // Ascending, so the backfilled V atoms are emitted in the same
+        // order the ordered map this replaces produced.
+        vector<long long> x_atom_values;
+        x_atom_values.reserve(atoms->eq_defs.size());
+        for (const auto & [k, _] : atoms->eq_defs)
+            x_atom_values.push_back(k);
+        sort(x_atom_values);
+        for (const auto & k : x_atom_values) {
+            Integer v_value = view.negate_first ? view.then_add - Integer{k} : Integer{k} + view.then_add;
             need_direct_encoding_for(v_id, v_value);
         }
     }
