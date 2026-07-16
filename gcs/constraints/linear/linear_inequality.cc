@@ -267,6 +267,52 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
                     return reification_verdict::StillUndecided{};
             };
 
+            // Slack-based waking: for a direction that is decided at install time
+            // (an unconditional inequality, or a half-reified one already fixed) and
+            // is long enough and loose enough that most coarse wakes cannot propagate,
+            // wake via refined watches on a covering subset of the terms instead of on
+            // every bound of every term. Only the wake condition changes -- the sweep,
+            // its inferences, and its proof are exactly the coarse propagator's -- so
+            // bypass the dispatcher for that single direction and run the sweep
+            // directly, re-arming the covering set after each clean wake. The
+            // genuinely-undecided reified case (and equality) keep the coarse path.
+            const auto slack_threshold = default_linear_slack_watch_threshold();
+            const auto slack_cover_percent = default_linear_slack_watch_cover_percent();
+            auto want_slack = [&](const auto & cv, Integer val) -> bool {
+                const auto len = cv.terms.size();
+                if (len < slack_threshold)
+                    return false;
+                return linear_slack_cover_size(cv, val, initial_state) * 100 <= slack_cover_percent * len;
+            };
+            auto install_slack_watched = [&](const auto & cv, Integer val, const Literal & cond, const auto & dir_proof_lines) {
+                Triggers slack_triggers;
+                for (const auto & term : cv.terms)
+                    slack_triggers.scope_only.push_back(get_var(term));
+                propagators.install(
+                    constraint_id(),
+                    [cv, val, cond, dir_proof_lines](
+                        const State & state, auto & inference, ProofLogger * const logger, const RefinedWatchContext & ctx) -> PropagatorState {
+                        auto r = propagate_linear(cv, val, state, inference, logger, false, dir_proof_lines, cond);
+                        // Re-arm only after a clean sweep; on a contradiction the state
+                        // is not safe to read again. scope_only means no coarse re-wake,
+                        // so return Enable to stay wakeable by the watches.
+                        if (r == PropagatorState::EnableButIdempotent)
+                            rearm_linear_slack_watches(cv, val, state, ctx);
+                        return PropagatorState::Enable;
+                    },
+                    std::move(slack_triggers));
+            };
+
+            if (auto mh = std::get_if<evaluated_reif::MustHold>(&_evaluated_cond); mh && want_slack(sanitised_cv, _value + modifier)) {
+                install_slack_watched(sanitised_cv, _value + modifier, mh->cond, proof_lines);
+                return;
+            }
+            if (auto mnh = std::get_if<evaluated_reif::MustNotHold>(&_evaluated_cond);
+                mnh && want_slack(sanitised_neg_cv, -_value + neg_modifier - 1_i)) {
+                install_slack_watched(sanitised_neg_cv, -_value + neg_modifier - 1_i, mnh->cond, proof_lines_swapped);
+                return;
+            }
+
             install_reified_dispatcher(propagators, constraint_id(), _evaluated_cond, _reif_cond, triggers, std::move(enforce_constraint_must_hold),
                 std::move(enforce_constraint_must_not_hold), std::move(infer_cond_when_undecided));
         },

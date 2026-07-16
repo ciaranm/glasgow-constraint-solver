@@ -1,0 +1,3 @@
+add_executable(wake_cost wake_cost.cc)
+target_link_libraries(wake_cost PRIVATE glasgow_constraint_solver)
+target_link_libraries(wake_cost PRIVATE cxxopts)

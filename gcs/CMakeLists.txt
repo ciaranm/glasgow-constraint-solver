@@ -393,6 +393,16 @@ if(GCS_BUILD_TESTS)
                 COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
         endforeach()
     endforeach()
+    # Also exercise the slack-based-waking path (refined watches on a covering set)
+    # for the decided linear *inequality* directions; the env below forces it on
+    # regardless of the covering-fraction heuristic. Only ReifiedLinearInequality
+    # reads it, so this is meaningful for the le/ge modes and their install-decided
+    # reified forms. linear_test verifies each instance's proof internally, so the
+    # slack path is proof-checked here too.
+    foreach(mode ge ge_if ge_iff le le_if le_iff)
+        add_test(NAME linear_constraint_${mode}_slack
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
+    endforeach()
     add_test(NAME logical_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:logical_test>)
     add_test(NAME mdd_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:mdd_test>)
     add_test(NAME min_max_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:min_max_test>)
@@ -586,6 +596,12 @@ if(GCS_BUILD_TESTS)
     foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
         set_property(TEST linear_constraint_${mode}_incremental APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=0")
         set_property(TEST linear_constraint_${mode}_stateless APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=1000000")
+    endforeach()
+    # Force slack-based waking on (threshold 0, no covering-fraction cap) so the
+    # slack path is exercised for every decided inequality direction.
+    foreach(mode ge ge_if ge_iff le le_if le_iff)
+        set_property(TEST linear_constraint_${mode}_slack APPEND PROPERTY ENVIRONMENT
+            "GCS_LINEAR_SLACK_WATCH_THRESHOLD=0;GCS_LINEAR_SLACK_WATCH_COVER_PERCENT=100")
     endforeach()
     set_property(TEST linear_constant_constraint_incremental APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=0")
     set_property(TEST linear_constant_constraint_stateless APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=1000000")

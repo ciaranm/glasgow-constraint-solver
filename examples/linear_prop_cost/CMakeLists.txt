@@ -1,0 +1,3 @@
+add_executable(linear_prop_cost linear_prop_cost.cc)
+target_link_libraries(linear_prop_cost PRIVATE glasgow_constraint_solver)
+target_link_libraries(linear_prop_cost PRIVATE cxxopts)

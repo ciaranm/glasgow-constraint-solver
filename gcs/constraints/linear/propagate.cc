@@ -6,13 +6,17 @@
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/innards/variable_id_utils.hh>
 
 #include <util/enumerate.hh>
 
+#include <algorithm>
 #include <any>
 #include <cstdlib>
+#include <limits>
+#include <numeric>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -26,6 +30,7 @@ using std::string;
 using std::stringstream;
 using std::variant;
 using std::vector;
+using std::ranges::sort;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -371,6 +376,109 @@ auto gcs::innards::default_linear_incremental_threshold() -> std::size_t
         return 8; // default: use the incremental path for constraints with >= 8 terms
     }();
     return threshold;
+}
+
+namespace
+{
+    // The covering plan for Sum(coeff_i x_i) <= value at the current bounds: term
+    // indices to watch, largest potential first (potential_i = |coeff_i| *
+    // (ub_i - lb_i)). See rearm_linear_slack_watches for the invariant.
+    template <typename CoeffVars_>
+    auto linear_slack_cover(const CoeffVars_ & coeff_vars, Integer value, const State & state) -> vector<std::size_t>
+    {
+        const auto n = coeff_vars.terms.size();
+        vector<Integer> pot;
+        pot.reserve(n);
+        Integer lower_sum{0};
+        for (const auto & cv : coeff_vars.terms) {
+            auto c = get_coeff(cv);
+            auto b = state.bounds(get_var(cv));
+            lower_sum += (c >= 0_i) ? (c * b.first) : (c * b.second);
+            pot.push_back(abs(c) * (b.second - b.first));
+        }
+        auto slack = value - lower_sum;
+
+        vector<std::size_t> order(n);
+        std::iota(order.begin(), order.end(), std::size_t{0});
+        sort(order, [&](std::size_t a, std::size_t b) { return pot[a] > pot[b]; });
+
+        Integer max_pot = (n == 0) ? 0_i : pot[order.front()];
+        auto margin = slack - max_pot; // >= 0 at the sweep's fixpoint
+        Integer unwatched_sum{0};
+        for (const auto & p : pot)
+            unwatched_sum += p;
+
+        vector<std::size_t> watched;
+        for (auto i : order) {
+            if (unwatched_sum <= margin || pot[i] == 0_i)
+                break; // zero-potential (fixed) terms sort last and are never watched
+            unwatched_sum -= pot[i];
+            watched.push_back(i);
+        }
+        return watched;
+    }
+}
+
+template <typename CoeffVars_>
+auto gcs::innards::rearm_linear_slack_watches(const CoeffVars_ & coeff_vars, Integer value, const State & state, const RefinedWatchContext & ctx)
+    -> void
+{
+    ctx.clear_watches();
+    for (auto i : linear_slack_cover(coeff_vars, value, state)) {
+        const auto & cv = coeff_vars.terms[i];
+        auto c = get_coeff(cv);
+        auto v = get_var(cv);
+        auto b = state.bounds(v);
+        // Watch the min-contribution bound moving: the lower bound rising for a
+        // positive coefficient, the upper bound falling for a negative one. A cover
+        // term has potential > 0, hence lb < ub, so both literals are well formed --
+        // and the sweep only ever tightens the *other* bound, so it never fires its
+        // own watch.
+        if (c >= 0_i)
+            ctx.watch(v >= b.first + 1_i, static_cast<std::uint32_t>(i));
+        else
+            ctx.watch(v <= b.second - 1_i, static_cast<std::uint32_t>(i));
+    }
+}
+
+template <typename CoeffVars_>
+auto gcs::innards::linear_slack_cover_size(const CoeffVars_ & coeff_vars, Integer value, const State & state) -> std::size_t
+{
+    return linear_slack_cover(coeff_vars, value, state).size();
+}
+
+#define GCS_INSTANTIATE_LINEAR_SLACK(CoeffVars)                                                                                                      \
+    template auto gcs::innards::rearm_linear_slack_watches(const CoeffVars &, Integer, const State &, const RefinedWatchContext &) -> void;          \
+    template auto gcs::innards::linear_slack_cover_size(const CoeffVars &, Integer, const State &) -> std::size_t
+
+GCS_INSTANTIATE_LINEAR_SLACK(SumOf<Weighted<SimpleIntegerVariableID>>);
+GCS_INSTANTIATE_LINEAR_SLACK(SumOf<PositiveOrNegative<SimpleIntegerVariableID>>);
+GCS_INSTANTIATE_LINEAR_SLACK(SumOf<SimpleIntegerVariableID>);
+
+#undef GCS_INSTANTIATE_LINEAR_SLACK
+
+auto gcs::innards::default_linear_slack_watch_threshold() -> std::size_t
+{
+    static const std::size_t threshold = []() -> std::size_t {
+        if (const char * e = std::getenv("GCS_LINEAR_SLACK_WATCH_THRESHOLD"))
+            return std::strtoull(e, nullptr, 10);
+        return std::numeric_limits<std::size_t>::max(); // default: off, pending wall-clock calibration
+    }();
+    return threshold;
+}
+
+auto gcs::innards::default_linear_slack_watch_cover_percent() -> std::size_t
+{
+    static const std::size_t percent = []() -> std::size_t {
+        if (const char * e = std::getenv("GCS_LINEAR_SLACK_WATCH_COVER_PERCENT"))
+            return std::strtoull(e, nullptr, 10);
+        // Conservative: only a covering set well under a fifth of the terms is a
+        // clear enough win to risk the per-wake re-arm. A larger initial cover
+        // tends to a constraint that turns tight during search, where waking often
+        // and re-arming each time loses badly. See dev_docs/linear-slack-waking.md.
+        return 15;
+    }();
+    return percent;
 }
 
 template <typename Hint_>
