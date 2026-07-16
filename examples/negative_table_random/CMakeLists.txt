@@ -1,0 +1,3 @@
+add_executable(negative_table_random negative_table_random.cc)
+target_link_libraries(negative_table_random PRIVATE glasgow_constraint_solver)
+target_link_libraries(negative_table_random PRIVATE cxxopts)

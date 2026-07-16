@@ -11,7 +11,9 @@
 
 #include <util/enumerate.hh>
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -39,10 +41,12 @@ using std::shared_ptr;
 using std::size_t;
 using std::string;
 using std::stringstream;
+using std::unique;
 using std::unique_ptr;
 using std::variant;
 using std::vector;
 using std::visit;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -166,17 +170,17 @@ namespace
 {
     constexpr size_t no_watch = std::numeric_limits<size_t>::max();
 
-    // The negative-table initialiser body, hoisted out of the generic
-    // visit(auto && tuples) lambda for the same MSVC-C1001 reason as
-    // propagate_negative_table below (a nested lambda inside a generic-on-inference
-    // lambda inside a generic lambda makes MSVC emit an internal compiler error).
-    template <typename Vars_, typename Tuples_, typename Watches_, typename Owner_, typename Inference_>
-    auto initialise_negative_table_watches(const Vars_ & vars, const Tuples_ & tuples, const Watches_ & watches, const Owner_ & owner,
-        const Reason & reason, const State & state, Inference_ & inference, ProofLogger * const logger) -> void
+    // Root-level detection, run once in the initialiser: mirrors the coarse
+    // initialiser but keeps NO persistent bookkeeping (the two watches are armed
+    // later, in the propagator's first un-fired run). This catches a tuple already
+    // violated or unit against the initial domains before search starts, so the
+    // search tree matches the coarse path. Hoisted into a named template for the
+    // same MSVC-C1001 reason as the propagator body below.
+    template <typename Vars_, typename Tuples_, typename Owner_, typename Inference_>
+    auto detect_root_negative_table(const Vars_ & vars, const Tuples_ & tuples, const Owner_ & owner, const Reason & reason, const State & state,
+        Inference_ & inference, ProofLogger * const logger) -> void
     {
         const auto & tuple_data = depointinate(tuples);
-        watches->reserve(tuple_data.size());
-
         for (size_t ti = 0; ti < tuple_data.size(); ++ti) {
             const auto & t = tuple_data[ti];
 
@@ -191,42 +195,38 @@ namespace
             };
 
             auto w1 = find_unbroken(no_watch);
-            if (! w1) {
+            if (! w1)
                 inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
-            }
-
             auto w2 = find_unbroken(*w1);
-            if (! w2) {
-                // Unit clause: vars[*w1] != t[*w1] is the only possibly-true
-                // disjunct, so it must hold.
+            if (! w2)
                 inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
-                // Mark the tuple as already handled — both watches at the same
-                // position will read as broken on every subsequent fire, and
-                // any rescue search will discover the inference is now redundant.
-                watches->emplace_back(*w1, *w1);
-            }
-            else {
-                watches->emplace_back(*w1, *w2);
-            }
         }
     }
 
-    // The negative-table propagator body, hoisted out of the generic
-    // visit(auto && tuples) lambda in install_propagators. Keeping this much logic
-    // inside that generic lambda (which itself contains the generic-on-inference
-    // propagator lambda, which in turn nests further lambdas) makes MSVC emit an
-    // internal compiler error (C1001); a named function template compiles cleanly.
-    // Capture types are deduced. See the same treatment in linear_equality.cc.
-    template <typename Vars_, typename Tuples_, typename Watches_, typename Owner_, typename Inference_>
-    auto propagate_negative_table(const Vars_ & vars, const Tuples_ & tuples, const Watches_ & watches, const Owner_ & owner, const Reason & reason,
-        const State & state, Inference_ & inference, ProofLogger * const logger) -> PropagatorState
+    // The refined-watch negative-table propagator. A forbidden tuple t is the clause
+    // (vars[0] != t[0]) v ... v (vars[n-1] != t[n-1]); it is violated iff every
+    // vars[p] == t[p] holds ("broken" == that equality is DefinitelyTrue, which also
+    // captures a wildcard position, whose == overloads to TrueLiteral). We keep two
+    // watches per tuple on not-broken positions; when a watched vars[p] == t[p]
+    // becomes entailed the watch fires and we move it, and with only one not-broken
+    // position left we force its survivor's negation, or clash. This is exactly the
+    // two-watched-literal scheme of install_refined_nogoods (nogoods.cc): the two
+    // packed watch positions live in ctx.watch_state, restored in lockstep with the
+    // watches, and the unit case just infers and leaves the consumed watch to be
+    // restored on backtrack. Hoisted into a named template for the MSVC-C1001 reason
+    // noted above (a generic-on-inference lambda nesting further lambdas).
+    template <typename Vars_, typename Tuples_, typename SetUp_, typename Owner_, typename Inference_>
+    auto propagate_negative_table_refined(const Vars_ & vars, const Tuples_ & tuples, const SetUp_ & set_up, const Owner_ & owner,
+        const Reason & reason, const State & state, Inference_ & inference, ProofLogger * const logger, const RefinedWatchContext & ctx)
+        -> PropagatorState
     {
         const auto & tuple_data = depointinate(tuples);
-        using Tuple = std::remove_cvref_t<decltype(tuple_data[0])>;
+        auto pack = [](size_t a, size_t b) -> std::uint64_t { return (static_cast<std::uint64_t>(a) << 32) | static_cast<std::uint32_t>(b); };
 
-        auto is_broken = [&](const Tuple & t, size_t p) -> bool { return state.test_literal(vars[p] == t[p]) == LiteralIs::DefinitelyTrue; };
-
-        auto find_unbroken = [&](const Tuple & t, size_t skip1, size_t skip2) -> optional<size_t> {
+        // A not-broken position other than skip1/skip2 to place a watch on. A
+        // DefinitelyFalse position counts as not-broken -- a satisfied clause may
+        // rest a watch on it.
+        auto find_unbroken = [&](const auto & t, size_t skip1, size_t skip2) -> optional<size_t> {
             for (size_t p = 0; p < vars.size(); ++p) {
                 if (p == skip1 || p == skip2)
                     continue;
@@ -236,46 +236,87 @@ namespace
             return nullopt;
         };
 
-        for (size_t ti = 0; ti < tuple_data.size(); ++ti) {
-            auto & w = (*watches)[ti];
-            const auto & t = tuple_data[ti];
-
-            bool b1 = is_broken(t, w.first);
-            bool b2 = is_broken(t, w.second);
-
-            if (! b1 && ! b2)
-                continue;
-
-            if (b1 && b2) {
-                auto new1 = find_unbroken(t, no_watch, no_watch);
-                if (! new1) {
+        if (ctx.fired_payloads().empty()) {
+            // First (root) run -- the only time this propagator runs un-fired: arm two
+            // watches for every tuple not yet set up (all of them, once). This arming
+            // lives in the persistent root epoch, so the non-backtrackable set_up
+            // counter stays in step with the restored watches across restarts.
+            for (size_t ti = *set_up; ti < tuple_data.size(); ++ti) {
+                const auto & t = tuple_data[ti];
+                auto key = static_cast<std::uint32_t>(ti);
+                auto w1 = find_unbroken(t, no_watch, no_watch);
+                if (! w1)
                     inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
-                }
-                auto new2 = find_unbroken(t, *new1, no_watch);
-                if (! new2) {
-                    inference.infer(logger, vars[*new1] != t[*new1], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
+                auto w2 = find_unbroken(t, *w1, no_watch);
+                if (! w2) {
+                    inference.infer(logger, vars[*w1] != t[*w1], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
+                    ctx.watch(vars[*w1] == t[*w1], key);
+                    ctx.set_watch_state(key, pack(*w1, *w1));
                 }
                 else {
-                    w.first = *new1;
-                    w.second = *new2;
+                    ctx.watch(vars[*w1] == t[*w1], key);
+                    ctx.watch(vars[*w2] == t[*w2], key);
+                    ctx.set_watch_state(key, pack(*w1, *w2));
+                }
+            }
+            *set_up = tuple_data.size();
+            return PropagatorState::Enable;
+        }
+
+        // Visit each tuple that had a watch fire this wake, once.
+        vector<size_t> fired;
+        for (auto payload : ctx.fired_payloads())
+            fired.push_back(payload);
+        sort(fired);
+        fired.erase(unique(fired.begin(), fired.end()), fired.end());
+
+        auto is_broken = [&](const auto & t, size_t p) { return state.test_literal(vars[p] == t[p]) == LiteralIs::DefinitelyTrue; };
+
+        for (size_t ti : fired) {
+            const auto & t = tuple_data[ti];
+            auto key = static_cast<std::uint32_t>(ti);
+            auto packed = ctx.watch_state(key);
+            size_t p = static_cast<size_t>(packed >> 32), q = static_cast<size_t>(packed & 0xffffffffu);
+
+            bool b1 = is_broken(t, p), b2 = is_broken(t, q);
+            if (! b1 && ! b2)
+                continue; // a spurious re-fire on an already-handled tuple
+
+            if (b1 && b2) {
+                // Both watched literals entailed (both consumed). Find two fresh
+                // not-broken positions; one short means unit, none means clash.
+                auto new1 = find_unbroken(t, no_watch, no_watch);
+                if (! new1)
+                    inference.contradiction(logger, JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
+                auto new2 = find_unbroken(t, *new1, no_watch);
+                if (! new2)
+                    // Unit: infer; both consumed watches are restored on backtrack,
+                    // so leave watch_state at (p, q) to match them.
+                    inference.infer(logger, vars[*new1] != t[*new1], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
+                else {
+                    ctx.watch(vars[*new1] == t[*new1], key);
+                    ctx.watch(vars[*new2] == t[*new2], key);
+                    ctx.set_watch_state(key, pack(*new1, *new2));
                 }
             }
             else if (b1) {
-                auto new1 = find_unbroken(t, w.second, no_watch);
-                if (! new1) {
-                    inference.infer(logger, vars[w.second] != t[w.second], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
-                }
+                // Watch at p fired (consumed); q still armed. Move p, or unit on q.
+                auto new1 = find_unbroken(t, q, no_watch);
+                if (! new1)
+                    inference.infer(logger, vars[q] != t[q], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                 else {
-                    w.first = *new1;
+                    ctx.watch(vars[*new1] == t[*new1], key);
+                    ctx.set_watch_state(key, pack(*new1, q));
                 }
             }
             else {
-                auto new2 = find_unbroken(t, w.first, no_watch);
-                if (! new2) {
-                    inference.infer(logger, vars[w.first] != t[w.first], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
-                }
+                // Watch at q fired (consumed); p still armed. Move q, or unit on p.
+                auto new2 = find_unbroken(t, p, no_watch);
+                if (! new2)
+                    inference.infer(logger, vars[p] != t[p], JustifyUsingRUP{hints::NegativeTable{owner}}, reason);
                 else {
-                    w.second = *new2;
+                    ctx.watch(vars[*new2] == t[*new2], key);
+                    ctx.set_watch_state(key, pack(p, *new2));
                 }
             }
         }
@@ -285,15 +326,12 @@ namespace
 
 auto NegativeTable::install_propagators(Propagators & propagators) -> void
 {
-    Triggers triggers;
-    for (auto & v : _vars)
-        triggers.on_change.emplace_back(v);
-
-    // Watches are non-backtrackable: when a watch moves during search, leaving it moved
-    // after backtrack is sound (the new position is still a valid watch — its literal
-    // can only become "more not-false" as the state relaxes) and avoids restoration
-    // overhead. Using shared_ptr so the initialiser and main propagator share storage.
-    auto watches = make_shared<vector<pair<size_t, size_t>>>();
+    // High-water mark of tuples whose two watches have been armed. Advanced once, in
+    // the propagator's first (root) run; non-backtrackable, but the arming lives in
+    // the persistent root epoch, so it stays in step with the restored watches. (For
+    // this static tuple set it just goes 0 -> size once; the counter matters only so
+    // a restart-root re-propagation does not re-arm.)
+    auto set_up = make_shared<size_t>(0);
 
     // The reason ranges over the fixed variable scope, so build it once here and
     // share it between the initialiser and the propagator rather than rebuilding
@@ -302,23 +340,38 @@ auto NegativeTable::install_propagators(Propagators & propagators) -> void
 
     visit(
         [&, this](auto && tuples) {
-            // Init: walk every tuple, find two watch positions, propagate units, raise
-            // contradictions. A position is unusable as a watch iff `var == t[pos]` is
-            // currently DefinitelyTrue — this captures both the "var is forced to t[pos]"
-            // case and the "t[pos] is a wildcard" case (since `var == Wildcard` overloads
-            // to TrueLiteral, which tests as DefinitelyTrue).
-            propagators.install_initialiser([vars = _vars, tuples = tuples, watches = watches, owner = constraint_id(), reason = table_reason](
-                                                const State & state, auto & inference, ProofLogger * const logger) -> void {
-                initialise_negative_table_watches(vars, tuples, watches, owner, reason, state, inference, logger);
-            });
+            // Detect a root-level contradiction or unit before search starts (identical
+            // search tree), discarding bookkeeping. A position is unusable as a watch
+            // iff `var == t[pos]` is DefinitelyTrue — this captures both "var is forced
+            // to t[pos]" and "t[pos] is a wildcard" (`var == Wildcard` overloads to
+            // TrueLiteral, which tests DefinitelyTrue).
+            propagators.install_initialiser(
+                [vars = _vars, tuples = tuples, owner = constraint_id(), reason = table_reason](const State & state, auto & inference,
+                    ProofLogger * const logger) -> void { detect_root_negative_table(vars, tuples, owner, reason, state, inference, logger); });
+
+            // Refined per-literal watches instead of a coarse on_change over the whole
+            // scope: each tuple arms two watches and is revisited only when one fires,
+            // so a wake touches just the affected tuples rather than rescanning all.
+            //
+            // The variables are still declared as the propagator's scope, via
+            // on_instantiated triggers, so degree-based branchers (dom_then_deg,
+            // dom-wdeg) see this constraint on its variables exactly as the coarse
+            // version did -- a watch-only (empty-Triggers) propagator is otherwise
+            // invisible to those heuristics and perturbs the search. on_instantiated is
+            // the least-frequent coarse trigger, and after the one-off setup every such
+            // wake finds fired-payloads empty and the tuples already armed, so it is an
+            // O(1) no-op: the real work still happens only on watch fires.
+            Triggers scope_triggers;
+            for (auto & v : _vars)
+                scope_triggers.on_instantiated.emplace_back(v);
 
             propagators.install(
                 constraint_id(),
-                [vars = move(_vars), tuples = move(tuples), watches = watches, owner = constraint_id(), reason = std::move(table_reason)](
-                    const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                    return propagate_negative_table(vars, tuples, watches, owner, reason, state, inference, logger);
+                [vars = move(_vars), tuples = move(tuples), set_up = set_up, owner = constraint_id(), reason = std::move(table_reason)](
+                    const State & state, auto & inference, ProofLogger * const logger, const RefinedWatchContext & ctx) -> PropagatorState {
+                    return propagate_negative_table_refined(vars, tuples, set_up, owner, reason, state, inference, logger, ctx);
                 },
-                triggers);
+                std::move(scope_triggers));
         },
         _tuples);
 }
