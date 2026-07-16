@@ -670,10 +670,16 @@ auto ProofModel::write_preamble() -> void
     // register it now (this appends BinEnc(V)'s set-up rows to the pending
     // text, where they land just after the variable rows). This also
     // guarantees find_view succeeds for the objective later, e.g. in the
-    // solution-logging soli path.
+    // solution-logging soli path. The exception is a view whose bit vector
+    // cannot be represented at all -- negating a FlatZinc unbounded-int
+    // objective spans one more bit than an Integer holds -- which stays
+    // unregistered, and min: falls back to deviewing through the underlying.
     if (_imp->optional_minimise_variable)
-        if (auto * view = std::get_if<ViewOfIntegerVariableID>(&*_imp->optional_minimise_variable))
-            static_cast<void>(names_and_ids_tracker().need_view(*view));
+        if (auto * view = std::get_if<ViewOfIntegerVariableID>(&*_imp->optional_minimise_variable)) {
+            auto [v_lo, v_hi] = names_and_ids_tracker().view_bounds(*view);
+            if (bits_encoding_fits(v_lo, v_hi))
+                static_cast<void>(names_and_ids_tracker().need_view(*view));
+        }
 
     try {
         _imp->opb_stream.exceptions(ios::failbit | ios::badbit);
@@ -692,9 +698,19 @@ auto ProofModel::write_preamble() -> void
                 },                                                                          //
                 [&](const ConstantIntegerVariableID &) { throw UnimplementedException{}; }, //
                 [&](const ViewOfIntegerVariableID & v) {
-                    // Registered just above, so this always renders V's own bits.
-                    for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(*names_and_ids_tracker().find_view(v)))
-                        _imp->opb_stream << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    // Registered just above whenever its bit vector is
+                    // representable; otherwise fall back to deviewing through
+                    // the underlying (the objective's constant offset doesn't
+                    // matter for optimisation order).
+                    if (auto v_id = names_and_ids_tracker().find_view(v)) {
+                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(*v_id))
+                            _imp->opb_stream << bit_value << " " << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    }
+                    else {
+                        for (const auto & [bit_value, bit_name] : names_and_ids_tracker().each_bit(v.actual_variable))
+                            _imp->opb_stream << (v.negate_first ? -bit_value : bit_value) << " "
+                                             << names_and_ids_tracker().pb_file_string_for(bit_name) << " ";
+                    }
                 } //
             }
                 .visit(*_imp->optional_minimise_variable);

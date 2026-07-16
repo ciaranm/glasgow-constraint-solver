@@ -1357,6 +1357,15 @@ auto NamesAndIDsTracker::has_bit_representation(const SimpleOrProofOnlyIntegerVa
     return _imp->integer_variable_bits_to_size_and_proof_vars.contains(id);
 }
 
+auto NamesAndIDsTracker::view_bounds(const ViewOfIntegerVariableID & view) const -> pair<Integer, Integer>
+{
+    auto bounds_it = _imp->integer_variable_definition_bounds.find(view.actual_variable);
+    if (bounds_it == _imp->integer_variable_definition_bounds.end())
+        throw ProofError{"view_bounds: underlying variable's bounds are not registered"};
+    auto [x_lo, x_hi] = bounds_it->second;
+    return view.negate_first ? pair{-x_hi + view.then_add, -x_lo + view.then_add} : pair{x_lo + view.then_add, x_hi + view.then_add};
+}
+
 auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> ProofOnlySimpleIntegerVariableID
 {
     if (auto it = _imp->view_proof_only_vars.find(view); it != _imp->view_proof_only_vars.end())
@@ -1365,12 +1374,7 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     if (! _imp->model)
         throw UnimplementedException{"need_view: view introduction during proof-logging phase is not yet supported"};
 
-    auto bounds_it = _imp->integer_variable_definition_bounds.find(view.actual_variable);
-    if (bounds_it == _imp->integer_variable_definition_bounds.end())
-        throw ProofError{"need_view: underlying variable's bounds are not registered"};
-    auto [x_lo, x_hi] = bounds_it->second;
-
-    auto [v_lo, v_hi] = view.negate_first ? pair{-x_hi + view.then_add, -x_lo + view.then_add} : pair{x_lo + view.then_add, x_hi + view.then_add};
+    auto [v_lo, v_hi] = view_bounds(view);
 
     string name = "view_of_" + name_of(view.actual_variable);
     if (view.negate_first)

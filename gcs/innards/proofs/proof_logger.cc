@@ -266,7 +266,15 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             }, //
             [&](const ViewOfIntegerVariableID & var) {
                 if (_imp->assertion_level > AssertionLevel::Definitions) {
-                    _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*names_and_ids_tracker().find_view(var), val);
+                    // An unregistered view (e.g. an objective too wide to
+                    // host its own bit vector) is witnessed through the
+                    // underlying's bits at the deviewed value instead.
+                    if (auto v_id = names_and_ids_tracker().find_view(var))
+                        _imp->proof << " " << names_and_ids_tracker().bit_assignment_string_for(*v_id, val);
+                    else
+                        _imp->proof << " "
+                                    << names_and_ids_tracker().bit_assignment_string_for(
+                                           var.actual_variable, var.negate_first ? var.then_add - val : val - var.then_add);
                 }
                 else
                     _imp->proof << " " << names_and_ids_tracker().pb_file_string_for(deview(var == val));
