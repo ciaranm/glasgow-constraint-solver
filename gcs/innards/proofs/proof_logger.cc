@@ -131,6 +131,10 @@ struct ProofLogger::Imp
 
     string proof_file;
     fstream proof;
+    // A proof is many short lines; the default stream buffer makes for a
+    // write syscall every few KB, which shows up at this volume. Installed
+    // via pubsetbuf before open in start_proof.
+    vector<char> proof_stream_buffer;
     int current_indent = 0;
     AssertionLevel assertion_level;
 
@@ -251,6 +255,7 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
 {
     _imp->proof << "% backtracking\n";
     WPBSum backtrack;
+    backtrack.terms.reserve(guesses.size());
     for (const auto & guess : guesses)
         backtrack += 1_i * ! guess;
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
@@ -598,6 +603,8 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
 {
     try {
         _imp->proof.exceptions(ios::failbit | ios::badbit);
+        _imp->proof_stream_buffer.resize(1024 * 1024);
+        _imp->proof.rdbuf()->pubsetbuf(_imp->proof_stream_buffer.data(), _imp->proof_stream_buffer.size());
         _imp->proof.open(_imp->proof_file, ios::out);
         _imp->proof << "pseudo-Boolean proof version 3.0\n";
         // No `f` rule: VeriPB 3.0 loads the formula implicitly, and omitting the

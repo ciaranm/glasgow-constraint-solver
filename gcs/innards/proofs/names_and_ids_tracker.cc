@@ -2051,7 +2051,9 @@ auto NamesAndIDsTracker::reify(const WPBSumLE & ineq, const HalfReifyOnConjuncti
     // to always be there.
     auto clamped_reif_const = min(-max_contribution_from_positive_terms + ineq.rhs, -1_i);
 
-    WPBSum new_lhs = ineq.lhs;
+    WPBSum new_lhs;
+    new_lhs.terms.reserve(ineq.lhs.terms.size() + half_reif.size());
+    new_lhs.terms.insert(new_lhs.terms.end(), ineq.lhs.terms.begin(), ineq.lhs.terms.end());
     for (auto & r : half_reif)
         overloaded{
             [&](const ProofFlag & f) { new_lhs += clamped_reif_const * ! f; },           //
