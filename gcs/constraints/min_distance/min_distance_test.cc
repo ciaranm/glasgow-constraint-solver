@@ -10,6 +10,7 @@
 #include <optional>
 #include <random>
 #include <set>
+#include <stdexcept>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -131,18 +132,62 @@ namespace
         }
         return result;
     }
+
+    auto mode_label(MinDistancePropagation mode) -> const char *
+    {
+        switch (mode) {
+            using enum MinDistancePropagation;
+        case CheckOnly: return "check";
+        case ForwardBound: return "fb";
+        case PairSupport: return "ps";
+        }
+        return "?";
+    }
+
+    // The pair-support invariant (paper Section 4.2), checked at every search node
+    // once PairSupport propagation has reached fixpoint: for every ordered pair
+    // (i, j) and every site a still in dom(x_i), some site b in dom(x_j) has
+    // D[a,b] >= max(R_ij, z_min). This is deliberately weaker than joint GAC. The
+    // logical (post-view) values of the variables are the site indices, so reading
+    // them via the CurrentState is view-safe.
+    auto check_pair_support(
+        const CurrentState & s, const vector<IntegerVariableID> & xs, IntegerVariableID z, const IntMatrix & d, const optional<IntMatrix> & r) -> void
+    {
+        const int p = static_cast<int>(xs.size());
+        const int zmin = s.lower_bound(z).raw_value;
+        for (int i = 0; i < p; ++i)
+            for (int j = 0; j < p; ++j) {
+                if (i == j)
+                    continue;
+                const int rij = r ? (*r)[std::min(i, j)][std::max(i, j)] : 0;
+                const int t = std::max(rij, zmin);
+                for (auto a : s.each_value(xs[i])) {
+                    bool supported = false;
+                    for (auto b : s.each_value(xs[j]))
+                        if (d[a.raw_value][b.raw_value] >= t) {
+                            supported = true;
+                            break;
+                        }
+                    if (! supported) {
+                        println(cerr, "pair-support invariant violated: position {} value {} has no partner in position {} at threshold {}", i,
+                            a.raw_value, j, t);
+                        throw std::runtime_error{"pair-support invariant violated"};
+                    }
+                }
+            }
+    }
 }
 
-auto run_min_distance_test(bool proofs, const ViewWrapConfig & view_cfg, const vector<DomainSpec> & x_specs, const DomainSpec & z_spec,
-    const IntMatrix & d, const optional<IntMatrix> & r) -> void
+auto run_min_distance_test(bool proofs, MinDistancePropagation mode, const ViewWrapConfig & view_cfg, const vector<DomainSpec> & x_specs,
+    const DomainSpec & z_spec, const IntMatrix & d, const optional<IntMatrix> & r) -> void
 {
     const int n = static_cast<int>(d.size());
     const int p = static_cast<int>(x_specs.size());
     // Positions 0..p-1 are the selected-point variables; position p is z.
     auto wraps = wraps_for_positions(view_cfg, p + 1);
 
-    print(cerr, "min_distance [{}] p={} n={} x={} z={} r={}{}", view_wrap_config_label(view_cfg), p, n, x_specs, z_spec, r.has_value(),
-        proofs ? " with proofs:" : ":");
+    print(cerr, "min_distance [{}/{}] p={} n={} x={} z={} r={}{}", mode_label(mode), view_wrap_config_label(view_cfg), p, n, x_specs, z_spec,
+        r.has_value(), proofs ? " with proofs:" : ":");
     cerr << flush;
 
     // Brute-force the expected (x-assignment, z) solution set directly from the
@@ -181,17 +226,44 @@ auto run_min_distance_test(bool proofs, const ViewWrapConfig & view_cfg, const v
     auto z = visit([&](const auto & s) { return create_integer_variable_or_constant_with_view(problem, s, wraps.at(p)); }, z_spec);
 
     if (r)
-        problem.post(MinDistance{xs, z, to_integer_matrix(d), ArrayParam<MinDistance::Matrix>{to_integer_matrix(*r)}});
+        problem.post(MinDistance{xs, z, to_integer_matrix(d), ArrayParam<MinDistance::Matrix>{to_integer_matrix(*r)}, mode});
     else
-        problem.post(MinDistance{xs, z, to_integer_matrix(d)});
+        problem.post(MinDistance{xs, z, to_integer_matrix(d), nullopt, mode});
 
-    auto proof_name = proofs ? make_optional("min_distance_test_" + view_wrap_config_label(view_cfg)) : nullopt;
-    solve_for_tests(problem, proof_name, actual, tuple{xs, z});
+    auto proof_name = proofs ? make_optional("min_distance_test_" + std::string{mode_label(mode)} + "_" + view_wrap_config_label(view_cfg)) : nullopt;
+
+    if (mode == MinDistancePropagation::PairSupport) {
+        // Same solution collection as solve_for_tests, plus a per-node check that
+        // PairSupport really reaches pair-support fixpoint at every node.
+        solve_for_tests_with_callbacks(
+            problem, proof_name,
+            [&](const CurrentState & s) -> bool {
+                actual.emplace(extract_from_state(s, xs), extract_from_state(s, z));
+                return true;
+            },
+            [&](const CurrentState & s) -> bool {
+                check_pair_support(s, xs, z, d, r);
+                return true;
+            });
+    }
+    else
+        solve_for_tests(problem, proof_name, actual, tuple{xs, z});
     check_results(proof_name, expected, actual);
 }
 
+// The three propagation modes every data-driven spec is run under.
+constexpr MinDistancePropagation all_modes[] = {
+    MinDistancePropagation::CheckOnly, MinDistancePropagation::ForwardBound, MinDistancePropagation::PairSupport};
+
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
+    // Run each spec under all three propagation modes: identical solution sets,
+    // proofs verified for each.
+    auto go = [&](const vector<DomainSpec> & x_specs, const DomainSpec & z_spec, const IntMatrix & d, const optional<IntMatrix> & r) {
+        for (auto mode : all_modes)
+            run_min_distance_test(proofs, mode, view_cfg, x_specs, z_spec, d, r);
+    };
+
     // A handful of small symmetric distance matrices to draw on.
     const IntMatrix d2{{0, 3}, {3, 0}};
     const IntMatrix d3{{0, 2, 5}, {2, 0, 4}, {5, 4, 0}};
@@ -201,50 +273,50 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
     const IntMatrix d4_ties{{0, 4, 4, 7}, {4, 0, 7, 4}, {4, 7, 0, 4}, {7, 4, 4, 0}};
 
     // p = 2, basic.
-    run_min_distance_test(proofs, view_cfg, {pair{0, 1}, pair{0, 1}}, pair{0, 5}, d2, nullopt);
+    go({pair{0, 1}, pair{0, 1}}, pair{0, 5}, d2, nullopt);
     // p = 2, z domain excludes 0 (duplicates ruled out by z >= 1).
-    run_min_distance_test(proofs, view_cfg, {pair{0, 1}, pair{0, 1}}, pair{1, 5}, d2, nullopt);
+    go({pair{0, 1}, pair{0, 1}}, pair{1, 5}, d2, nullopt);
     // p = 2, z domain forces a small window (BC through a hole is exercised by the harness).
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, nullopt);
+    go({pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, nullopt);
 
     // p = 3, duplicates possible (z can be 0), full domains.
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, nullopt);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, nullopt);
     // p = 3, duplicates excluded (z >= 1), so this is effectively all-different sites.
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{1, 6}, d3, nullopt);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{1, 6}, d3, nullopt);
     // p = 3, all distances tied.
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 4}, d3_ties, nullopt);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 4}, d3_ties, nullopt);
     // p = 3, matrix with an off-diagonal zero (sites 0 and 1 are distance 0 apart).
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 5}, d3_zero, nullopt);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 5}, d3_zero, nullopt);
 
     // z domain with a hole: {0, 2, 4} (offset/holes tested together elsewhere).
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, vector<int>{0, 2, 4}, d3, nullopt);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, vector<int>{0, 2, 4}, d3, nullopt);
     // z domain offset above zero: [2, 6].
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{2, 6}, d3, nullopt);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{2, 6}, d3, nullopt);
     // z domain including negatives: forces z >= 0 via the ladder base clause.
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{-2, 6}, d3, nullopt);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{-2, 6}, d3, nullopt);
 
     // x domains with holes / not covering all sites.
-    run_min_distance_test(proofs, view_cfg, {vector<int>{0, 2}, pair{0, 2}, vector<int>{1, 2}}, pair{0, 6}, d3, nullopt);
-    run_min_distance_test(proofs, view_cfg, {pair{0, 1}, pair{1, 2}, pair{0, 2}}, pair{0, 6}, d3, nullopt);
+    go({vector<int>{0, 2}, pair{0, 2}, vector<int>{1, 2}}, pair{0, 6}, d3, nullopt);
+    go({pair{0, 1}, pair{1, 2}, pair{0, 2}}, pair{0, 6}, d3, nullopt);
     // One position pinned to a constant site.
-    run_min_distance_test(proofs, view_cfg, {0, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, nullopt);
+    go({0, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, nullopt);
 
     // p = 4.
-    run_min_distance_test(proofs, view_cfg, {pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, pair{0, 10}, d4, nullopt);
-    run_min_distance_test(proofs, view_cfg, {pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, pair{1, 10}, d4_ties, nullopt);
+    go({pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, pair{0, 10}, d4, nullopt);
+    go({pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, pair{1, 10}, d4_ties, nullopt);
 
     // With requirements R (only i<j entries read).
     // Feasible requirement: every selected pair at least distance 3 apart.
     const IntMatrix r3_feasible{{0, 3, 3}, {0, 0, 3}, {0, 0, 0}};
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, r3_feasible);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, r3_feasible);
     // Requirement forbids duplicates (R_ij > 0 rules out same-site pairs).
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3_ties, r3_feasible);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3_ties, r3_feasible);
     // Infeasible requirement: demand distance >= 6 where the max distance is 5.
     const IntMatrix r3_infeasible{{0, 6, 6}, {0, 0, 6}, {0, 0, 0}};
-    run_min_distance_test(proofs, view_cfg, {pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, r3_infeasible);
+    go({pair{0, 2}, pair{0, 2}, pair{0, 2}}, pair{0, 6}, d3, r3_infeasible);
     // Heterogeneous requirement per position pair.
     const IntMatrix r4_mixed{{0, 2, 4, 5}, {0, 0, 3, 4}, {0, 0, 0, 3}, {0, 0, 0, 0}};
-    run_min_distance_test(proofs, view_cfg, {pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, pair{0, 10}, d4, r4_mixed);
+    go({pair{0, 3}, pair{0, 3}, pair{0, 3}, pair{0, 3}}, pair{0, 10}, d4, r4_mixed);
 }
 
 // Random symmetric distance matrix: zero diagonal, non-negative, entries in
@@ -340,7 +412,9 @@ auto main(int argc, char * argv[]) -> int
                 r = rr;
             }
 
-            run_min_distance_test(proofs, view_cfg, x_specs, z_spec, d, r);
+            // Same random instance under all three propagation modes.
+            for (auto mode : all_modes)
+                run_min_distance_test(proofs, mode, view_cfg, x_specs, z_spec, d, r);
         }
     }
 

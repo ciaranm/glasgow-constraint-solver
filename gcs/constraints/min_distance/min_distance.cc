@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
+#include <gcs/innards/reason.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
@@ -29,14 +30,15 @@ using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
-MinDistance::MinDistance(vector<IntegerVariableID> x, IntegerVariableID z, ArrayParam<Matrix> distances, optional<ArrayParam<Matrix>> requirements) :
-    _x(move(x)), _z(z), _distances(move(distances)), _requirements(move(requirements))
+MinDistance::MinDistance(vector<IntegerVariableID> x, IntegerVariableID z, ArrayParam<Matrix> distances, optional<ArrayParam<Matrix>> requirements,
+    MinDistancePropagation propagation) :
+    _x(move(x)), _z(z), _distances(move(distances)), _requirements(move(requirements)), _propagation(propagation)
 {
 }
 
 auto MinDistance::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<MinDistance>(_x, _z, _distances, _requirements);
+    return make_unique<MinDistance>(_x, _z, _distances, _requirements, _propagation);
 }
 
 auto MinDistance::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
@@ -268,6 +270,15 @@ auto MinDistance::define_proof_model(ProofModel & model) -> void
 
 auto MinDistance::install_propagators(Propagators & propagators) -> void
 {
+    if (_propagation == MinDistancePropagation::CheckOnly) {
+        install_check_only_propagator(propagators);
+        return;
+    }
+    install_forward_propagator(propagators, _propagation == MinDistancePropagation::PairSupport);
+}
+
+auto MinDistance::install_check_only_propagator(Propagators & propagators) -> void
+{
     const auto n = static_cast<long long>((*_distances).size());
 
     Triggers triggers;
@@ -329,6 +340,191 @@ auto MinDistance::install_propagators(Propagators & propagators) -> void
                         if (b < 0 || b >= n)
                             return PropagatorState::Enable;
                         auto dab = D[a][b];
+                        mu = mu ? std::min(*mu, dab) : dab;
+                    }
+                }
+                if (mu) {
+                    inference.infer_greater_than_or_equal(logger, z, *mu, JustifyUsingRUP{}, all_reason);
+                    inference.infer_less_than(logger, z, *mu + 1_i, JustifyUsingRUP{}, all_reason);
+                }
+            }
+
+            return PropagatorState::Enable;
+        },
+        triggers);
+}
+
+auto MinDistance::install_forward_propagator(Propagators & propagators, bool pair_support) -> void
+{
+    const auto n = static_cast<long long>((*_distances).size());
+
+    // Real propagation reacts to any domain change of a selected point (a value
+    // removed from x_j can lose a support) and to a rise in z's lower bound
+    // (which raises the T_ij threshold and invalidates supports); on_bounds on z
+    // covers the lower-bound wake.
+    Triggers triggers;
+    for (const auto & x : _x)
+        triggers.on_change.emplace_back(x);
+    triggers.on_bounds.emplace_back(_z);
+
+    auto all_reason = generic_reason(_x);
+
+    propagators.install(
+        constraint_id(),
+        [x = _x, z = _z, distances = _distances, requirements = _requirements, n, pair_support, all_reason = std::move(all_reason)](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            const auto & D = *distances;
+            const auto p = x.size();
+            const bool has_reqs = requirements.has_value();
+
+            auto in_range = [&](Integer v) { return v.raw_value >= 0 && v.raw_value < n; };
+            auto r_at = [&](std::size_t i, std::size_t j) -> Integer { return has_reqs ? (**requirements)[i][j] : 0_i; };
+            auto d_at = [&](Integer a, Integer b) -> Integer { return D[a.raw_value][b.raw_value]; };
+
+            // z's lower bound at the top of this wake feeds every threshold. If a
+            // later inference here raises it (the full-assignment pin does), the
+            // on_bounds trigger re-queues us and we recompute with the new value.
+            const auto z_min = state.lower_bound(z);
+
+            for (std::size_t i = 0; i < p; ++i)
+                for (std::size_t j = i + 1; j < p; ++j) {
+                    const auto rij = r_at(i, j);
+                    const auto tij = std::max(rij, z_min);
+
+                    // (1) Assigned-endpoint forward prune (paper Section 4.1). When
+                    // one endpoint is fixed to a, remove every b from the other
+                    // endpoint's domain with D[a,b] < T_ij. Plain RUP: {x_i = a},
+                    // plus z >= z_min when the z part of the threshold binds (the R
+                    // forbidden-pair clause carries the R part on its own).
+                    auto forward_prune = [&](std::size_t assigned_pos, std::size_t other_pos) {
+                        auto av = state.optional_single_value(x[assigned_pos]);
+                        if (! av || ! in_range(*av))
+                            return;
+                        auto a = *av;
+                        vector<Integer> other_dom;
+                        state.for_each_value_immutable(x[other_pos], [&](Integer b) { other_dom.push_back(b); });
+                        for (auto b : other_dom) {
+                            if (! in_range(b) || d_at(a, b) >= tij)
+                                continue;
+                            ReasonLiterals rlits{x[assigned_pos] == a};
+                            if (! (has_reqs && d_at(a, b) < rij))
+                                rlits.push_back(z >= z_min);
+                            inference.infer_not_equal(logger, x[other_pos], b, JustifyUsingRUP{}, ExplicitReason{std::move(rlits)});
+                        }
+                    };
+                    forward_prune(i, j);
+                    forward_prune(j, i);
+
+                    // (2) Pairwise objective upper bound (paper Section 4.1):
+                    //   u_ij = max{ D[a,b] : a in dom(x_i), b in dom(x_j), D[a,b] >= R_ij }.
+                    // If the set is empty (or its max is below z_min) the pair cannot
+                    // be satisfied and the node fails; otherwise tighten z <= u_ij.
+                    optional<Integer> u;
+                    state.for_each_value_immutable(x[i], [&](Integer a) {
+                        if (! in_range(a))
+                            return;
+                        state.for_each_value_immutable(x[j], [&](Integer b) {
+                            if (! in_range(b))
+                                return;
+                            auto dab = d_at(a, b);
+                            if (dab >= rij)
+                                u = u ? std::max(*u, dab) : dab;
+                        });
+                    });
+
+                    // Loop the smaller endpoint domain in the explicit per-value
+                    // derivation (both work by symmetry; the smaller one is cheaper).
+                    auto loop_pos = state.domain_size(x[i]) <= state.domain_size(x[j]) ? i : j;
+
+                    if (! u || *u < z_min) {
+                        // Pair infeasible. For each a in dom(x_loop), every b in the
+                        // other domain dies (R clause when D[a,b] < R_ij; else the
+                        // pair clause with z >= z_min), so ~[x_loop = a]; then x_loop's
+                        // at-least-one closes the contradiction. Item 4 of the spec.
+                        const bool z_guards = u.has_value(); // empty set is pure-R, no z role
+                        auto emit_infeasible = [&, loop_pos](const ReasonLiterals & reason) {
+                            state.for_each_value_immutable(x[loop_pos], [&](Integer a) {
+                                if (! in_range(a))
+                                    return;
+                                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * (x[loop_pos] != a) >= 1_i, ProofLevel::Temporary);
+                            });
+                        };
+                        Reason reason = generic_reason(vector<IntegerVariableID>{x[i], x[j]});
+                        if (z_guards)
+                            reason = with_extra(std::move(reason), ReasonLiterals{z >= z_min});
+                        inference.contradiction(logger, JustifyExplicitly{emit_infeasible, ThenRUP::Yes}, reason);
+                    }
+                    else if (*u < state.upper_bound(z)) {
+                        auto uu = *u;
+                        // Item 3 of the spec: for each a in dom(x_loop) derive
+                        // ~[x_loop = a] \/ [z <= u_ij]; the z bound needed to kill each
+                        // partner b comes free from negating [z <= u_ij], so the reason
+                        // is just the two endpoint domains.
+                        auto emit_ub = [&, loop_pos, uu](const ReasonLiterals & reason) {
+                            state.for_each_value_immutable(x[loop_pos], [&](Integer a) {
+                                if (! in_range(a))
+                                    return;
+                                logger->emit_rup_proof_line_under_reason(
+                                    reason, WPBSum{} + 1_i * (x[loop_pos] != a) + 1_i * (z <= uu) >= 1_i, ProofLevel::Temporary);
+                            });
+                        };
+                        inference.infer_less_than(
+                            logger, z, uu + 1_i, JustifyExplicitly{emit_ub, ThenRUP::Yes}, generic_reason(vector<IntegerVariableID>{x[i], x[j]}));
+                    }
+
+                    // (3) Pair-support scan (paper Section 4.2), PairSupport only.
+                    // Remove a from an endpoint's domain when no value of the other
+                    // endpoint supports it (D[a,b] >= T_ij). Plain RUP: assuming
+                    // [x_from = a], every b in dom(x_to) dies, and x_to's
+                    // at-least-one closes it. Item 2 of the spec.
+                    if (pair_support) {
+                        const bool z_binds = z_min > rij;
+                        auto support_scan = [&](std::size_t from_pos, std::size_t to_pos) {
+                            vector<Integer> from_dom;
+                            state.for_each_value_immutable(x[from_pos], [&](Integer a) { from_dom.push_back(a); });
+                            for (auto a : from_dom) {
+                                if (! in_range(a) || ! state.in_domain(x[from_pos], a))
+                                    continue;
+                                bool supported = false;
+                                state.for_each_value_immutable(x[to_pos], [&](Integer b) {
+                                    if (in_range(b) && d_at(a, b) >= tij) {
+                                        supported = true;
+                                        return false;
+                                    }
+                                    return true;
+                                });
+                                if (! supported) {
+                                    Reason reason = generic_reason(vector<IntegerVariableID>{x[to_pos]});
+                                    if (z_binds)
+                                        reason = with_extra(std::move(reason), ReasonLiterals{z >= z_min});
+                                    inference.infer_not_equal(logger, x[from_pos], a, JustifyUsingRUP{}, reason);
+                                }
+                            }
+                        };
+                        support_scan(i, j);
+                        support_scan(j, i);
+                    }
+                }
+
+            // Once every endpoint is fixed, pin z to the exact minimum pairwise
+            // distance. The forward bounds above supply z <= mu; z >= mu is the
+            // min-attained ladder (plain RUP, reasoned over all of x). This is what
+            // makes a full assignment with z < mu unacceptable.
+            bool all_assigned = true;
+            for (std::size_t i = 0; i < p; ++i)
+                if (! state.optional_single_value(x[i]))
+                    all_assigned = false;
+            if (all_assigned) {
+                optional<Integer> mu;
+                for (std::size_t i = 0; i < p; ++i) {
+                    auto a = state.optional_single_value(x[i]).value();
+                    if (! in_range(a))
+                        return PropagatorState::Enable;
+                    for (std::size_t j = i + 1; j < p; ++j) {
+                        auto b = state.optional_single_value(x[j]).value();
+                        if (! in_range(b))
+                            return PropagatorState::Enable;
+                        auto dab = d_at(a, b);
                         mu = mu ? std::min(*mu, dab) : dab;
                     }
                 }
