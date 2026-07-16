@@ -120,15 +120,29 @@ auto gcs::innards::emit_reified_inequality_to(NamesAndIDsTracker & names_and_ids
         append_or_fold_term_to(names_and_ids_tracker, w, v, out, rhs, ensure_names);
     }
 
+    // Each reifying term appears negated. A flag or bit negation is a cheap
+    // struct copy, but negating a condition literal builds a whole new
+    // variant chain just to name it -- and both polarities of a condition are
+    // always introduced together, so the negated condition's literal IS the
+    // negation of the condition's literal. Look up the condition as given and
+    // flip the XLiteral instead.
+    auto w = shape.reif_coefficient;
     for (auto & r : half_reif)
         overloaded{
-            [&](const ProofFlag & f) { append_or_fold_term_to(names_and_ids_tracker, shape.reif_coefficient, ! f, out, rhs, ensure_names); }, //
+            [&](const ProofFlag & f) { append_or_fold_term_to(names_and_ids_tracker, w, ! f, out, rhs, ensure_names); }, //
             [&](const ProofLiteral & lit) {
-                append_or_fold_term_to(names_and_ids_tracker, shape.reif_coefficient, ! lit, out, rhs, ensure_names);
-            }, //
-            [&](const ProofBitVariable & bit) {
-                append_or_fold_term_to(names_and_ids_tracker, shape.reif_coefficient, ! bit, out, rhs, ensure_names);
-            } //
+                overloaded{
+                    [&](const TrueLiteral &) { /* negated: contributes nothing */ }, //
+                    [&](const FalseLiteral &) { rhs += w; },                         //
+                    [&]<typename T_>(const VariableConditionFrom<T_> & cond) {
+                        auto xlit = EnsureNames::Yes == ensure_names ? names_and_ids_tracker.xliteral_for_ensuring(cond)
+                                                                     : names_and_ids_tracker.xliteral_for(cond);
+                        append_term_to(out, -w, names_and_ids_tracker.pb_file_string_for(! xlit));
+                    } //
+                }
+                    .visit(simplify_literal(names_and_ids_tracker, lit));
+            },                                                                                                                     //
+            [&](const ProofBitVariable & bit) { append_or_fold_term_to(names_and_ids_tracker, w, ! bit, out, rhs, ensure_names); } //
         }
             .visit(r);
 

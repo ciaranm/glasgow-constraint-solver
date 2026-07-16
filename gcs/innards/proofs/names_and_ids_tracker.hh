@@ -339,6 +339,15 @@ namespace gcs::innards
         [[nodiscard]] auto pb_file_string_for_ensuring(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> const std::string &;
 
         /**
+         * As xliteral_for, but introduce the condition's proof name first if
+         * it does not exist yet, like pb_file_string_for_ensuring. Both
+         * polarities are always introduced together, so negating the result
+         * is the negated condition's literal; the reified-line renderer uses
+         * this to avoid negating whole condition objects.
+         */
+        [[nodiscard]] auto xliteral_for_ensuring(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) -> XLiteral;
+
+        /**
          * Return a string form of the exact literals specifying a bit assignment for var == val, an alternative way to witness solutions.
          */
         [[nodiscard]] auto bit_assignment_string_for(const SimpleOrProofOnlyIntegerVariableID & var, const Integer & value) const -> std::string;
