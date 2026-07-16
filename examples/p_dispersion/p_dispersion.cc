@@ -75,7 +75,9 @@ namespace
     //   y_ij >= r_ij + 1   when a requirement r_ij is given (PDDP)
     //   z = min_{i<j} y_ij                        (ArrayMin)
     // reqs, when non-empty, is the raw r_ij matrix (p x p, upper triangular
-    // used); reqs[i][j] < 0 means "no requirement for this pair".
+    // used); reqs[i][j] < 0 means "no requirement for this pair". The access is
+    // bounds-guarded so a ragged/undersized reqs matrix can never read out of
+    // range (the caller also rejects an undersized matrix up front).
     auto post_tuple_variant(Problem & problem, const vector<IntegerVariableID> & x, IntegerVariableID z,
         const std::shared_ptr<const DistanceMatrix> & distance, const vector<vector<long>> & reqs, Integer max_dist) -> void
     {
@@ -85,7 +87,7 @@ namespace
             for (int j = i + 1; j < pp; ++j) {
                 auto y = problem.create_integer_variable(0_i, max_dist, "y_" + to_string(i) + "_" + to_string(j));
                 problem.post(Element2DConstantArray{y, x[i], x[j], distance});
-                if (! reqs.empty() && reqs[i][j] >= 0)
+                if (i < static_cast<int>(reqs.size()) && j < static_cast<int>(reqs[i].size()) && reqs[i][j] >= 0)
                     problem.post(GreaterThanEqual{y, constant_variable(Integer{reqs[i][j] + 1})});
                 ys.push_back(y);
             }
@@ -233,8 +235,10 @@ auto main(int argc, char * argv[]) -> int
     // homogeneous value if requested; otherwise none (plain p-dispersion).
     vector<vector<long>> reqs;
     if (! instance.reqs.empty()) {
-        if (static_cast<int>(instance.reqs.size()) < pp)
-            println(cerr, "Warning: instance provides fewer requirement rows than p; missing pairs are unconstrained.");
+        if (static_cast<int>(instance.reqs.size()) < pp) {
+            println(cerr, "Error: instance provides {} requirement rows but p = {}.", instance.reqs.size(), pp);
+            return EXIT_FAILURE;
+        }
         reqs = instance.reqs;
     }
     else if (options_vars.contains("homogeneous-req")) {
