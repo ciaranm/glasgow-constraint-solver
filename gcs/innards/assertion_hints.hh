@@ -9,20 +9,10 @@
 #include <gcs/integer.hh>
 
 #include <optional>
-#include <ostream>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
-#include <version>
-
-#if defined(__cpp_lib_print) && defined(__cpp_lib_format)
-#include <format>
-using std::format;
-#else
-#include <fmt/core.h>
-using fmt::format;
-#endif
 
 namespace gcs::innards
 {
@@ -163,23 +153,6 @@ namespace gcs::innards
         std::string_view hint_name = "";
         std::optional<SExpr> hint_fields = std::nullopt;
     };
-
-    /**
-     * \brief An assertion annotation can be written to an ostream.
-     *
-     * \ingroup Innards
-     */
-    inline auto operator<<(std::ostream & s, const AssertionAnnotation & annotation) -> std::ostream &
-    {
-        s << ":";
-        for (const auto & id_or_label : annotation.derivable_from) {
-            s << id_or_label << " ";
-        }
-        s << ":" << annotation.hint_name << ":";
-        if (annotation.hint_fields)
-            s << format("{}", *annotation.hint_fields);
-        return s;
-    }
 
 } // namespace gcs::innards
 #endif
