@@ -48,6 +48,14 @@ The context offers:
 - `ctx.is_watching(var)` — whether this propagator currently watches any literal
   on `var`. Reads the (backtrack-consistent) index, so a propagator can recompute
   a watched set without tracking it itself.
+- `ctx.clear_watches()` — remove every watch this propagator owns, trailed like
+  `ctx.watch` so backtrack restores exactly the pre-wake set. For a
+  clear-and-recompute client that re-arms a fresh watched set each wake rather
+  than moving watches individually. Only variables in the propagator's declared
+  scope (its triggers and `scope_only`) are searched, so watch only variables
+  declared in scope — the intended usage in any case. `watch_state` is
+  independent and left untouched; reset any of it the new watch set no longer
+  matches.
 - `ctx.watch_state(key)` / `ctx.set_watch_state(key, value)` — a per-propagator
   **backtrackable scratch** `uint64`, keyed by a small integer. See *Backtrackable
   bookkeeping* below.
@@ -59,6 +67,7 @@ coarse triggers:
 struct Triggers {
     std::vector<IntegerVariableID> on_change, on_bounds, on_instantiated;
     std::vector<std::pair<Literal, std::uint32_t>> refined;   // (literal, payload)
+    std::vector<IntegerVariableID> scope_only;                // in scope, arms no wake
 };
 ```
 
@@ -66,6 +75,13 @@ struct Triggers {
 (not undone on backtrack); watches armed later via `ctx.watch` are restored on
 backtrack. (The `Nogoods` 2WL client arms everything at runtime via `ctx.watch`
 and leaves `Triggers` empty — see below.)
+
+`Triggers::scope_only` declares variables as part of the propagator's *scope* —
+they raise variable degree (for dom_then_deg / dom-wdeg), appear in the
+variable→constraint adjacency, and count for the idempotence-aliasing check —
+without arming any wake. A propagator woken only by refined watches it arms
+dynamically would otherwise have an empty scope and be invisible to degree-based
+heuristics; list its variables here (as `NegativeTable` does).
 
 ## The engine mechanism
 

@@ -153,7 +153,9 @@ To use the XCSP solver on an XCSP3 instance, run:
 Useful options:
 
 - `--all` — enumerate every solution (CSP only; ignored on COP).
+- `--branch <heuristic>` — branching heuristic: `dom-then-deg` (the default), or `dom-wdeg[:VARIANT]` with `VARIANT` one of `classic`, `ia`, `ca`, `id`, `cd`, `ca.cd`, `chs`.
 - `--prove` — emit OPB and VeriPB proof artefacts under `xcsp.{opb,pbp}` for external verification.
+- `--restarts [<scale>]` — restart on a Luby schedule with the given conflict scale (`100` if given bare), learning nogoods across restarts. Sound for finding one solution or optimising, not with `--all`.
 - `--timeout <seconds>` — abort search after the given wall-clock time and report `s UNKNOWN` (or `s SATISFIABLE` for a partial COP solution).
 
 For developer documentation on the XCSP3 frontend (the callbacks layer,
