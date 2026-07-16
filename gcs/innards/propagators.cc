@@ -305,6 +305,33 @@ struct Propagators::Imp : RefinedWatchSink
                 return true;
         return false;
     }
+
+    auto clear_refined_watches(int owner_propagator) -> void override
+    {
+        // Walk the propagator's declared scope (its trigger and scope_only
+        // variables) and drop every watch it owns, trailing each removal exactly as
+        // the firing loop does, so backtrack re-adds them. A propagator only ever
+        // watches variables it has declared in scope, so scope is the complete set
+        // of variables its watches can live on. If clear+re-arm run in the same
+        // wake, the Removed edits here sit below the Added edits of the re-arm, and
+        // reverse replay on backtrack undoes the re-arm then restores these.
+        if (owner_propagator < 0 || static_cast<std::size_t>(owner_propagator) >= propagator_scope.size())
+            return;
+        for (const auto & v : propagator_scope[owner_propagator]) {
+            if (v.index >= refined_watches_by_var.size())
+                continue;
+            auto & watches = refined_watches_by_var[v.index];
+            for (std::size_t i = 0; i < watches.size();) {
+                if (watches[i].owner == owner_propagator) {
+                    refined_watch_edit_trail.push_back({WatchEditOp::Removed, v.index, watches[i]});
+                    watches[i] = watches.back();
+                    watches.pop_back();
+                }
+                else
+                    ++i;
+            }
+        }
+    }
 };
 
 Propagators::Propagators() : _imp(make_unique<Imp>())

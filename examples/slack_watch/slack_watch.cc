@@ -133,6 +133,14 @@ namespace
 
         auto install_watched(Propagators & propagators) -> void
         {
+            // Declare every variable in scope via scope_only: the propagator is woken
+            // only by the refined watches it arms, but its variables must still count
+            // for degree/adjacency (so degree-based branchers behave as the coarse
+            // version would) and, crucially, clear_watches() searches the declared
+            // scope -- so an empty scope would make it a silent no-op.
+            Triggers triggers;
+            for (const auto & v : _vars)
+                triggers.scope_only.push_back(v);
             propagators.install(
                 constraint_id(),
                 [vars = _vars, value = _value, wakes = _wakes](
@@ -162,20 +170,23 @@ namespace
                     for (auto i : order)
                         unwatched_sum += pot[i];
 
-                    // Walk from largest potential: a variable is watched until the
-                    // remaining (smaller) potentials fit inside the margin.
+                    // Recompute the covering set from scratch each wake: drop every
+                    // current watch, then walk from the largest potential, arming a
+                    // variable until the remaining (smaller) potentials fit inside the
+                    // margin. clear_watches() means a variable that leaves the covering
+                    // set keeps no stale watch -- under the earlier is_watching
+                    // idempotent re-arm it would linger until it happened to fire, a
+                    // residual wake this eliminates.
+                    ctx.clear_watches();
                     for (auto i : order) {
                         if (unwatched_sum <= margin)
                             break;
                         unwatched_sum -= pot[i];
-                        // is_watching keeps this idempotent: at most one live watch per
-                        // variable, so re-arming every wake does not accumulate watches.
-                        if (! ctx.is_watching(vars[i]))
-                            ctx.watch(vars[i] >= state.lower_bound(vars[i]) + 1_i, static_cast<std::uint32_t>(i));
+                        ctx.watch(vars[i] >= state.lower_bound(vars[i]) + 1_i, static_cast<std::uint32_t>(i));
                     }
                     return PropagatorState::Enable;
                 },
-                Triggers{});
+                std::move(triggers));
         }
     };
 
