@@ -149,10 +149,11 @@ auto main(int argc, char * argv[]) -> int
 
         options.add_options("Model") //
             ("variant",
-                "Constraint variant to post: tuple (Element+ArrayMin decomposition), or the "                 //
-                "MinDistance global with min-distance-check / min-distance-fb / min-distance-ps propagation", //
-                cxxopts::value<string>()->default_value("tuple"))                                             //
-            ("p,points", "Number of sites to select (>= 2)", cxxopts::value<int>()->default_value("3"))       //
+                "Constraint variant to post: tuple (Element+ArrayMin decomposition), or the MinDistance global with "        //
+                "min-distance-check / min-distance-fb / min-distance-ps propagation, optionally with the conflict-matching " //
+                "upper-bound propagator (min-distance-fbm / min-distance-psm)",                                              //
+                cxxopts::value<string>()->default_value("tuple"))                                                            //
+            ("p,points", "Number of sites to select (>= 2)", cxxopts::value<int>()->default_value("3"))                      //
             ("initial-lb",
                 "Initial lower bound on z. Default 1 forbids coincident sites "                           //
                 "(positive separation); use 0 to allow duplicate sites (z can be 0).",                    //
@@ -195,8 +196,12 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto variant = options_vars["variant"].as<string>();
-    if (variant != "tuple" && variant != "min-distance-check" && variant != "min-distance-fb" && variant != "min-distance-ps") {
-        println(cerr, "Error: unknown --variant '{}'. Supported: tuple, min-distance-check, min-distance-fb, min-distance-ps.", variant);
+    if (variant != "tuple" && variant != "min-distance-check" && variant != "min-distance-fb" && variant != "min-distance-ps" &&
+        variant != "min-distance-fbm" && variant != "min-distance-psm") {
+        println(cerr,
+            "Error: unknown --variant '{}'. Supported: tuple, min-distance-check, min-distance-fb, min-distance-ps, "
+            "min-distance-fbm, min-distance-psm.",
+            variant);
         return EXIT_FAILURE;
     }
 
@@ -281,8 +286,12 @@ auto main(int argc, char * argv[]) -> int
         post_min_distance_variant(problem, x, z, distance, reqs, MinDistancePropagation::CheckOnly);
     else if (variant == "min-distance-fb")
         post_min_distance_variant(problem, x, z, distance, reqs, MinDistancePropagation::ForwardBound);
-    else // min-distance-ps
+    else if (variant == "min-distance-ps")
         post_min_distance_variant(problem, x, z, distance, reqs, MinDistancePropagation::PairSupport);
+    else if (variant == "min-distance-fbm")
+        post_min_distance_variant(problem, x, z, distance, reqs, MinDistancePropagation::ForwardBoundMatch);
+    else // min-distance-psm
+        post_min_distance_variant(problem, x, z, distance, reqs, MinDistancePropagation::PairSupportMatch);
 
     if (options_vars.contains("all-different"))
         problem.post(AllDifferent{x});

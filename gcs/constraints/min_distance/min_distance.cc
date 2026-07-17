@@ -2,6 +2,7 @@
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
@@ -10,6 +11,7 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
@@ -274,7 +276,13 @@ auto MinDistance::install_propagators(Propagators & propagators) -> void
         install_check_only_propagator(propagators);
         return;
     }
-    install_forward_propagator(propagators, _propagation == MinDistancePropagation::PairSupport);
+    const bool pair_support = _propagation == MinDistancePropagation::PairSupport || _propagation == MinDistancePropagation::PairSupportMatch;
+    install_forward_propagator(propagators, pair_support);
+    // The matching upper-bound pass (paper Section 4.4) is posted as a separate
+    // propagator alongside the base ForwardBound / PairSupport kernel; the base
+    // kernel still handles all lower-bound support work.
+    if (_propagation == MinDistancePropagation::ForwardBoundMatch || _propagation == MinDistancePropagation::PairSupportMatch)
+        install_matching_propagator(propagators);
 }
 
 auto MinDistance::install_check_only_propagator(Propagators & propagators) -> void
@@ -533,6 +541,229 @@ auto MinDistance::install_forward_propagator(Propagators & propagators, bool pai
                     inference.infer_less_than(logger, z, *mu + 1_i, JustifyUsingRUP{}, all_reason);
                 }
             }
+
+            return PropagatorState::Enable;
+        },
+        triggers);
+}
+
+auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
+{
+    const auto n = static_cast<long long>((*_distances).size());
+    const auto p = _x.size();
+
+    // Sorted distinct off-diagonal distances of D: the candidate levels for the
+    // conflict-matching test (paper Algorithm 1). Precomputed once here.
+    set<Integer> level_set;
+    {
+        const auto & D = *_distances;
+        for (long long a = 0; a < n; ++a)
+            for (long long b = a + 1; b < n; ++b)
+                level_set.insert(D[a][b]);
+    }
+    vector<Integer> levels(level_set.begin(), level_set.end());
+
+    // positions_at[a] = the positions whose *root* domain contains site a (from
+    // _position_sites, frozen at prepare()). The counting derivation ranges the
+    // literals over exactly these positions --- mirroring the encoding's u/count
+    // reifications and each variable's at-least-one --- so absent [x_i = a]
+    // literals (a not in x_i's root domain) never appear anywhere.
+    vector<vector<std::uint32_t>> positions_at(static_cast<std::size_t>(n));
+    for (std::size_t i = 0; i < p; ++i)
+        for (const auto & a : _position_sites[i])
+            positions_at[static_cast<std::size_t>(a.raw_value)].push_back(static_cast<std::uint32_t>(i));
+
+    // Wake on any selected-point domain change (the active site set shrinks) and
+    // on z-bound changes (they move the candidate-level window).
+    Triggers triggers;
+    for (const auto & x : _x)
+        triggers.on_change.emplace_back(x);
+    triggers.on_bounds.emplace_back(_z);
+
+    propagators.install(
+        constraint_id(),
+        [x = _x, z = _z, distances = _distances, n, p, levels = std::move(levels), positions_at = std::move(positions_at)](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            const auto & D = *distances;
+            auto d_at = [&](Integer a, Integer b) -> Integer { return D[a.raw_value][b.raw_value]; };
+
+            // Active site set A = union of the current selected-point domains
+            // (site values only, ascending).
+            vector<char> present(static_cast<std::size_t>(n), 0);
+            for (std::size_t i = 0; i < p; ++i)
+                state.for_each_value_immutable(x[i], [&](Integer v) {
+                    if (v.raw_value >= 0 && v.raw_value < n)
+                        present[static_cast<std::size_t>(v.raw_value)] = 1;
+                });
+            vector<Integer> A;
+            for (long long a = 0; a < n; ++a)
+                if (present[static_cast<std::size_t>(a)])
+                    A.push_back(Integer{a});
+            if (A.empty())
+                return PropagatorState::Enable;
+
+            const auto z_min = state.lower_bound(z);
+            const auto z_max = state.upper_bound(z);
+
+            // Candidate levels: distinct distances t with max(z_min, 1) <= t <= z_max.
+            // The level 0 is never worth testing (every placement has non-negative
+            // pairwise distance, so z >= 0 is not refutable); t = z_min (>= 1) is
+            // kept so an unachievable current lower bound fails the node.
+            const auto t_low = std::max(z_min, 1_i);
+            if (t_low > z_max)
+                return PropagatorState::Enable;
+            auto lo_it = std::lower_bound(levels.begin(), levels.end(), t_low);
+            auto hi_it = std::upper_bound(levels.begin(), levels.end(), z_max);
+            if (lo_it >= hi_it)
+                return PropagatorState::Enable;
+            const std::size_t lo = static_cast<std::size_t>(lo_it - levels.begin());
+            const std::size_t hi = static_cast<std::size_t>(hi_it - levels.begin()) - 1;
+
+            // Greedy maximal matching on the conflict graph G_t[A] (edge (a, b),
+            // a < b in A, iff D[a,b] < t). Deterministic edge order (A-order),
+            // scratch reused across the binary-search probes.
+            vector<char> matched(A.size(), 0);
+            vector<pair<std::size_t, std::size_t>> edges;
+            auto build_matching = [&](Integer t) {
+                std::fill(matched.begin(), matched.end(), static_cast<char>(0));
+                edges.clear();
+                for (std::size_t ia = 0; ia < A.size(); ++ia) {
+                    if (matched[ia])
+                        continue;
+                    for (std::size_t ib = ia + 1; ib < A.size(); ++ib)
+                        if (! matched[ib] && d_at(A[ia], A[ib]) < t) {
+                            matched[ia] = matched[ib] = 1;
+                            edges.emplace_back(ia, ib);
+                            break;
+                        }
+                }
+            };
+            auto refuted_at = [&](Integer t) {
+                build_matching(t);
+                return static_cast<long long>(A.size()) - static_cast<long long>(edges.size()) < static_cast<long long>(p);
+            };
+
+            // Binary-search the level window for the smallest refuted level. The
+            // greedy matching is only weakly monotone, so this is a heuristic for a
+            // good level, not a proof of monotonicity; every refutation is certified
+            // in its own right (paper Section 4.4).
+            std::optional<std::size_t> refuted_idx;
+            std::size_t left = lo, right = hi;
+            while (left <= right) {
+                std::size_t mid = left + (right - left) / 2;
+                if (refuted_at(levels[mid])) {
+                    refuted_idx = mid;
+                    if (mid == 0)
+                        break;
+                    right = mid - 1;
+                }
+                else
+                    left = mid + 1;
+            }
+            if (! refuted_idx)
+                return PropagatorState::Enable;
+
+            const auto t = levels[*refuted_idx];
+            // Rebuild the matching at the chosen level for the justification
+            // (deterministic, so identical to the probe that found it).
+            build_matching(t);
+            vector<Integer> unmatched;
+            for (std::size_t ia = 0; ia < A.size(); ++ia)
+                if (! matched[ia])
+                    unmatched.push_back(A[ia]);
+
+            // C = sum of guard coefficients across the per-edge and per-unmatched
+            // at-most-ones: |L_ab| - 1 per edge (2p - 1 when every position can take
+            // both sites), |P_c| - 1 per unmatched site. Dividing the final sum by C
+            // leaves the guard g = [z <= t-1] with coefficient exactly one.
+            auto lit_count = [&](Integer site) { return positions_at[static_cast<std::size_t>(site.raw_value)].size(); };
+            Integer sum_c = 0_i;
+            for (const auto & [ia, ib] : edges)
+                sum_c += Integer{static_cast<long long>(lit_count(A[ia]) + lit_count(A[ib])) - 1};
+            for (const auto & c : unmatched)
+                sum_c += Integer{static_cast<long long>(lit_count(c)) - 1};
+            if (sum_c < 1_i)
+                return PropagatorState::Enable; // no guard-bearing constraint (cannot happen on a refutation)
+
+            const auto t_minus_1 = t - 1_i;
+            const auto guard = (z <= t_minus_1); // g = ~[z >= t]
+
+            // Emit the guarded counting derivation (verified prototype shape). Runs
+            // synchronously inside the infer below, so the [&] captures of the local
+            // matching state are live throughout.
+            auto emit = [&](const ReasonLiterals &) {
+                auto & tracker = logger->names_and_ids_tracker();
+
+                // A guarded at-most-one over a literal set L = { [x_pos = site] }.
+                // Per unordered pair emit ~l_r \/ ~l_s \/ g by RUP (cross-site via
+                // the pair clause + z order; same-site via the per-site count
+                // constraint + z order; same-position via the variable's at-most-one),
+                // then combine with the all_different PolBuilder layer recurrence, so
+                // g rides through the ceil-divisions with an exact coefficient:
+                // Sum_{l in L} ~l + (|L|-1) g >= |L|-1.
+                auto emit_am1 = [&](const vector<pair<std::uint32_t, Integer>> & lits) -> std::optional<ProofLine> {
+                    if (lits.size() < 2) {
+                        // A single-literal site contributes nothing to the counting
+                        // beyond cancelling its own at-least-one term; the trivially
+                        // true ~[x_pos = site] >= 0 does exactly that.
+                        if (lits.size() == 1)
+                            return logger->emit_rup_proof_line(WPBSum{} + 1_i * (x[lits[0].first] != lits[0].second) >= 0_i, ProofLevel::Temporary);
+                        return std::nullopt;
+                    }
+                    PolBuilder am1;
+                    int layer = 0;
+                    for (std::size_t i = 1; i < lits.size(); ++i) {
+                        if (++layer >= 2)
+                            am1.multiply_by(Integer{layer});
+                        for (std::size_t j = 0; j < i; ++j) {
+                            auto ne = logger->emit_rup_proof_line(
+                                WPBSum{} + 1_i * (x[lits[i].first] != lits[i].second) + 1_i * (x[lits[j].first] != lits[j].second) + 1_i * guard >=
+                                    1_i,
+                                ProofLevel::Temporary);
+                            am1.add(ne);
+                        }
+                        am1.divide_by(Integer{layer + 1});
+                    }
+                    return am1.emit(*logger, ProofLevel::Temporary);
+                };
+
+                PolBuilder final_pol;
+                vector<pair<std::uint32_t, Integer>> lits;
+                for (const auto & [ia, ib] : edges) {
+                    lits.clear();
+                    for (auto pos : positions_at[static_cast<std::size_t>(A[ia].raw_value)])
+                        lits.emplace_back(pos, A[ia]);
+                    for (auto pos : positions_at[static_cast<std::size_t>(A[ib].raw_value)])
+                        lits.emplace_back(pos, A[ib]);
+                    if (auto line = emit_am1(lits))
+                        final_pol.add(*line);
+                }
+                for (const auto & c : unmatched) {
+                    lits.clear();
+                    for (auto pos : positions_at[static_cast<std::size_t>(c.raw_value)])
+                        lits.emplace_back(pos, c);
+                    if (auto line = emit_am1(lits))
+                        final_pol.add(*line);
+                }
+                for (std::size_t i = 0; i < p; ++i)
+                    if (! is_constant_variable(x[i]))
+                        // A constant position contributes a fixed selection whose
+                        // [x_i = c] literal folds to the constant 1 in the pol
+                        // arithmetic (and to 0 in the ~[x_i = c] at-most-one terms),
+                        // so it needs no at-least-one line: it cancels exactly.
+                        final_pol.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(x[i]));
+                final_pol.divide_by(sum_c);
+                final_pol.emit(*logger, ProofLevel::Temporary);
+            };
+
+            if (t <= z_min)
+                // The refuted level is at (or below) z's lower bound: z < t is
+                // incompatible with z >= z_min, so the node fails. The pol still
+                // derives g = [z <= t-1]; with z >= z_min in the reason it closes by
+                // RUP (g is domain-false there).
+                inference.contradiction(logger, JustifyExplicitly{emit, ThenRUP::Yes}, with_extra(generic_reason(x), ReasonLiterals{z >= z_min}));
+            else
+                inference.infer_less_than(logger, z, t, JustifyExplicitly{emit, ThenRUP::Yes}, generic_reason(x));
 
             return PropagatorState::Enable;
         },

@@ -140,6 +140,8 @@ namespace
         case CheckOnly: return "check";
         case ForwardBound: return "fb";
         case PairSupport: return "ps";
+        case ForwardBoundMatch: return "fbm";
+        case PairSupportMatch: return "psm";
         }
         return "?";
     }
@@ -232,9 +234,10 @@ auto run_min_distance_test(bool proofs, MinDistancePropagation mode, const ViewW
 
     auto proof_name = proofs ? make_optional("min_distance_test_" + std::string{mode_label(mode)} + "_" + view_wrap_config_label(view_cfg)) : nullopt;
 
-    if (mode == MinDistancePropagation::PairSupport) {
+    if (mode == MinDistancePropagation::PairSupport || mode == MinDistancePropagation::PairSupportMatch) {
         // Same solution collection as solve_for_tests, plus a per-node check that
-        // PairSupport really reaches pair-support fixpoint at every node.
+        // the pair-support kernel really reaches pair-support fixpoint at every node
+        // (the matching variant adds only the z upper-bound propagator on top).
         solve_for_tests_with_callbacks(
             problem, proof_name,
             [&](const CurrentState & s) -> bool {
@@ -251,13 +254,15 @@ auto run_min_distance_test(bool proofs, MinDistancePropagation mode, const ViewW
     check_results(proof_name, expected, actual);
 }
 
-// The three propagation modes every data-driven spec is run under.
-constexpr MinDistancePropagation all_modes[] = {
-    MinDistancePropagation::CheckOnly, MinDistancePropagation::ForwardBound, MinDistancePropagation::PairSupport};
+// The propagation modes every data-driven spec is run under: the three base
+// strengths plus the two conflict-matching variants (which add the separate
+// upper-bound propagator and must yield the identical solution set).
+constexpr MinDistancePropagation all_modes[] = {MinDistancePropagation::CheckOnly, MinDistancePropagation::ForwardBound,
+    MinDistancePropagation::PairSupport, MinDistancePropagation::ForwardBoundMatch, MinDistancePropagation::PairSupportMatch};
 
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
-    // Run each spec under all three propagation modes: identical solution sets,
+    // Run each spec under every propagation mode: identical solution sets,
     // proofs verified for each.
     auto go = [&](const vector<DomainSpec> & x_specs, const DomainSpec & z_spec, const IntMatrix & d, const optional<IntMatrix> & r) {
         for (auto mode : all_modes)
@@ -412,7 +417,7 @@ auto main(int argc, char * argv[]) -> int
                 r = rr;
             }
 
-            // Same random instance under all three propagation modes.
+            // Same random instance under every propagation mode.
             for (auto mode : all_modes)
                 run_min_distance_test(proofs, mode, view_cfg, x_specs, z_spec, d, r);
         }
