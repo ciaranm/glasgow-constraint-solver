@@ -1,0 +1,6 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_MIN_DISTANCE_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_MIN_DISTANCE_HH
+
+#include <gcs/constraints/min_distance/min_distance.hh>
+
+#endif
