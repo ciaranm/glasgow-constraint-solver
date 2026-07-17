@@ -135,6 +135,8 @@ namespace
         {"min-distance-check", MinDistancePropagation::CheckOnly},
         {"min-distance-fb", MinDistancePropagation::ForwardBound},
         {"min-distance-ps", MinDistancePropagation::PairSupport},
+        {"min-distance-fbm", MinDistancePropagation::ForwardBoundMatch},
+        {"min-distance-psm", MinDistancePropagation::PairSupportMatch},
     };
 
     auto find_variant(const string & name) -> optional<Variant>
