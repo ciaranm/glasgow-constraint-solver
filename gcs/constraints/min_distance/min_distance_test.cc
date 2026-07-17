@@ -262,7 +262,7 @@ constexpr MinDistancePropagation all_modes[] = {MinDistancePropagation::CheckOnl
 
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
-    // Run each spec under all three propagation modes: identical solution sets,
+    // Run each spec under every propagation mode: identical solution sets,
     // proofs verified for each.
     auto go = [&](const vector<DomainSpec> & x_specs, const DomainSpec & z_spec, const IntMatrix & d, const optional<IntMatrix> & r) {
         for (auto mode : all_modes)
@@ -417,7 +417,7 @@ auto main(int argc, char * argv[]) -> int
                 r = rr;
             }
 
-            // Same random instance under all three propagation modes.
+            // Same random instance under every propagation mode.
             for (auto mode : all_modes)
                 run_min_distance_test(proofs, mode, view_cfg, x_specs, z_spec, d, r);
         }

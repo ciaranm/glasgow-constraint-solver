@@ -13,6 +13,7 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -104,8 +105,16 @@ namespace
 
         probe.recursions = static_cast<long long>(stats.recursions);
 
-        if (proof_name && can_run_veripb())
-            probe.verified = run_veripb(*proof_name + ".opb", *proof_name + ".pbp");
+        if (proof_name && can_run_veripb()) {
+            auto opb = *proof_name + ".opb", pbp = *proof_name + ".pbp";
+            probe.verified = run_veripb(opb, pbp);
+            // as in the shared test utilities: delete the proofs on success,
+            // keep them around for debugging on failure
+            if (probe.verified) {
+                std::remove(opb.c_str());
+                std::remove(pbp.c_str());
+            }
+        }
 
         return probe;
     }
