@@ -746,7 +746,12 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
                         final_pol.add(*line);
                 }
                 for (std::size_t i = 0; i < p; ++i)
-                    final_pol.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(x[i]));
+                    if (! is_constant_variable(x[i]))
+                        // A constant position contributes a fixed selection whose
+                        // [x_i = c] literal folds to the constant 1 in the pol
+                        // arithmetic (and to 0 in the ~[x_i = c] at-most-one terms),
+                        // so it needs no at-least-one line: it cancels exactly.
+                        final_pol.add(tracker.need_constraint_saying_variable_takes_at_least_one_value(x[i]));
                 final_pol.divide_by(sum_c);
                 final_pol.emit(*logger, ProofLevel::Temporary);
             };
