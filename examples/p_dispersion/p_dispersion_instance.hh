@@ -16,6 +16,7 @@
 
 #include <gcs/integer.hh>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -76,7 +77,10 @@ namespace p_dispersion
     // fine for the objective. This choice is documented in the example README.
     [[nodiscard]] inline auto euclidean_rounded(long dx, long dy) -> gcs::Integer
     {
-        return gcs::Integer{static_cast<long long>(std::llround(std::sqrt(static_cast<double>(dx * dx + dy * dy))))};
+        // Square in double: on LLP64 platforms long is 32 bits, and dx * dx
+        // would overflow (undefined behaviour) for coordinate spans above ~46341.
+        auto sq = static_cast<double>(dx) * static_cast<double>(dx) + static_cast<double>(dy) * static_cast<double>(dy);
+        return gcs::Integer{static_cast<long long>(std::llround(std::sqrt(sq)))};
     }
 
     // Build an instance whose candidate sites are the W x H integer grid points
@@ -191,15 +195,24 @@ namespace p_dispersion
         std::vector<Edge> edges;
         edges.reserve(n_pairs);
         std::set<long> ids;
+        std::set<std::pair<long, long>> seen_pairs;
         for (long k = 0; k < n_pairs; ++k) {
             auto a = static_cast<long>(std::llround(tok[3 * k]));
             auto b = static_cast<long>(std::llround(tok[3 * k + 1]));
+            if (a == b)
+                throw std::runtime_error{"distance block contains a self-pair"};
             edges.push_back({a, b, tok[3 * k + 2]});
             ids.insert(a);
             ids.insert(b);
+            seen_pairs.emplace(std::min(a, b), std::max(a, b));
         }
         if (static_cast<long>(ids.size()) != n)
             throw std::runtime_error{"distance block does not mention exactly n distinct sites"};
+        // Exactly C(n,2) DISTINCT pairs, or the matrix is under-specified: a
+        // duplicated triple would silently shadow an unmentioned pair, whose
+        // distance would default to 0 and drag the objective down to 0.
+        if (static_cast<long>(seen_pairs.size()) != n_pairs)
+            throw std::runtime_error{"distance block does not cover every site pair exactly once"};
         std::map<long, int> remap;
         {
             int idx = 0;
