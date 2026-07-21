@@ -310,7 +310,24 @@ auto gcs::innards::signed_multiply::propagate(Data & d, const State & state, aut
     bool square = d.x == d.y;
     auto [prod_lo, prod_hi] = square ? square_bounds(x_lo, x_hi) : product_bounds(x_lo, x_hi, y_lo, y_hi);
 
-    auto justf = [&](const ReasonLiterals & reason) { justify_z_bounds(*logger, reason, d, x_lo, x_hi, y_lo, y_hi, prod_lo, prod_hi); };
+    // infer_all with ThenRUP::No takes the per-literal path, invoking this
+    // callback once per firing bound literal. But justify_z_bounds does not
+    // depend on which literal fired: it derives the whole Procedure 7.5 grid
+    // and emits *both* closing RUPs (for z <= prod_hi and z >= prod_lo) at
+    // ProofLevel::Current in a single call. Those Current lines outlive the
+    // per-literal temporary bracket, so after the first firing literal both
+    // bound atoms are already live units in the database and the second
+    // literal needs nothing further. Guarding the callback to run once keeps
+    // every closing RUP hinted (unlike a flip to ThenRUP::Yes, whose tracker
+    // RUPs would be hint-free) while emitting the expensive derivation just
+    // once instead of once per bound.
+    bool z_bounds_justified = false;
+    auto justf = [&](const ReasonLiterals & reason) {
+        if (z_bounds_justified)
+            return;
+        z_bounds_justified = true;
+        justify_z_bounds(*logger, reason, d, x_lo, x_hi, y_lo, y_hi, prod_lo, prod_hi);
+    };
     inference.infer_all(logger, {d.z <= prod_hi, d.z >= prod_lo}, JustifyExplicitly{justf, ThenRUP::No, hints::Multiply{owner}},
         ReasonLiterals{d.x >= x_lo, d.x <= x_hi, d.y >= y_lo, d.y <= y_hi});
 
