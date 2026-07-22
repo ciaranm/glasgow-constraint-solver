@@ -272,6 +272,19 @@ namespace gcs::innards
             -> ProofLine;
 
         /**
+         * Emit a `cases` proof step deriving the specified expression by case
+         * analysis over `case_flags`, subject to a given reason. VeriPB verifies
+         * that, for every assignment to the case flags, the (reason-reified)
+         * conclusion is trivial, in the database, RUP, or implied by a database
+         * constraint, then expands this to plain lines during elaboration. Each
+         * branch must be automatically provable, so this suits selector-style
+         * "exactly one of these flags holds" reasoning, not cross-variable
+         * cutting-planes case splits.
+         */
+        auto emit_cases_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &,
+            const std::vector<ProofFlag> & case_flags, ProofLevel level) -> ProofLine;
+
+        /**
          * Like `emit_rup_proof_line_under_reason`, but returns the deview-form
          * line of the just-emitted RUP rather than the V-form line itself.
          *

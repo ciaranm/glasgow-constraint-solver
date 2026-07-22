@@ -15,6 +15,7 @@
 #include <gcs/interval_set.hh>
 #include <gcs/proof.hh>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <deque>
@@ -510,6 +511,48 @@ auto ProofLogger::emit_rup_proof_line_under_reason(
     const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
     return emit_under_reason(RUPProofRule{}, ineq, level, reason);
+}
+
+auto ProofLogger::emit_cases_proof_line_under_reason(const ReasonLiterals & reason_in, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    const std::vector<ProofFlag> & case_flags, ProofLevel level) -> ProofLine
+{
+    // A case analysis over zero cases just asserts that the conclusion is
+    // autoprovable, which for our clause conclusions means RUP, so emit the
+    // plain RUP step (which VeriPB's cases elaboration currently can't).
+    if (case_flags.empty())
+        return emit_rup_proof_line_under_reason(reason_in, ineq, level);
+
+    // De-duplicate the reason: a constraint over duplicate variables (e.g.
+    // min(x, x, y)) yields repeated reason literals, which reify into repeated
+    // terms; VeriPB sums their coefficients, turning what is logically a clause
+    // into a coefficient->2 pseudo-Boolean constraint. `cases` now accepts
+    // general PB targets, but the clause is the constraint we actually want to
+    // derive, and non-clausal targets exercise VeriPB's known-buggy elaboration
+    // path. The repeated literal is redundant, so dropping it is sound and
+    // keeps the emitted conclusion a clause.
+    ReasonLiterals reason;
+    for (const auto & lit : reason_in)
+        if (std::find(reason.begin(), reason.end(), lit) == reason.end())
+            reason.push_back(lit);
+
+    if (! reason.empty())
+        names_and_ids_tracker().need_all_proof_names_in(reason);
+    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+
+    log_stacktrace();
+    stringstream rule_line;
+    rule_line << "cases ";
+    if (! reason.empty())
+        emit_inequality_to(names_and_ids_tracker(), reify(ineq, reason), rule_line);
+    else
+        emit_inequality_to(names_and_ids_tracker(), ineq, rule_line);
+    // the case list is bare variables, not literals: a case split over ~f is
+    // the same split as over f, and VeriPB's grammar rejects the negation
+    for (const auto & flag : case_flags)
+        rule_line << " " << names_and_ids_tracker().pb_file_string_for(flag.positive ? flag : ! flag);
+    rule_line << " ;";
+
+    return emit_proof_line(rule_line.str(), level);
 }
 
 auto ProofLogger::emit_rup_proof_line_under_reason_then_deview(
