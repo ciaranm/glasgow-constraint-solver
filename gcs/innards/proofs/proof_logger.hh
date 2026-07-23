@@ -222,6 +222,39 @@ namespace gcs::innards
         auto forget_proof_level(int depth) -> void;
 
         /**
+         * \brief Relocate a set of already-emitted proof lines from the
+         * \p from_level bucket to the \p target_level bucket, so a later
+         * \c forget_proof_level deletes them at the target depth instead of the
+         * original one.
+         *
+         * Pure bookkeeping: emits nothing to the proof. This is the line-move
+         * half of the hoist primitive (see
+         * NamesAndIDsTracker::hoist_order_literal_to_level) -- moving a literal's
+         * definition to a shallower level so a backtrack forgets it later, or, at
+         * level 0, never. Lines not present in the \p from_level bucket are
+         * ignored.
+         *
+         * The moved lines must all be newer (larger ids) than every line already
+         * in the target bucket, which the consolidate-then-delete discipline
+         * guarantees (a literal is hoisted when the frontier advances, before the
+         * levels it stepped over are forgotten, so its def lines postdate every
+         * shallower-level line). The lines are appended in ascending id order.
+         */
+        auto move_proof_lines_to_level(const std::vector<ProofLine> & lines, int from_level, int target_level) -> void;
+
+        /**
+         * Hoist a search-introduced order literal `id >= v` to \p target_level:
+         * a thin wrapper over NamesAndIDsTracker::hoist_order_literal_to_level.
+         */
+        auto hoist_literal_to_level(const SimpleIntegerVariableID & id, Integer v, int target_level) -> void;
+
+        /**
+         * Hoist a search-introduced order literal `id >= v` to Top (permanent):
+         * a thin wrapper over NamesAndIDsTracker::hoist_order_literal_to_top.
+         */
+        auto hoist_literal_to_top(const SimpleIntegerVariableID & id, Integer v) -> void;
+
+        /**
          * Emit the specified text as a comment.
          */
         auto emit_proof_comment(const std::string &) -> void;

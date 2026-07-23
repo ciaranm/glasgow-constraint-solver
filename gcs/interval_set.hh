@@ -379,6 +379,64 @@ namespace gcs
         }
 
         /**
+         * \brief Inserts a single value anywhere in the set, maintaining the
+         * sorted, disjoint, maximally-merged interval invariant.
+         *
+         * Unlike insert_at_end(Int_), \p value need not be at or beyond upper():
+         * it is placed at its correct sorted position, extending an adjacent
+         * interval (and merging two neighbouring intervals into one when the
+         * value bridges the gap between them) where possible. Inserting a value
+         * already in the set is a no-op.
+         *
+         * This is the general-position counterpart of insert_at_end(Int_), for
+         * callers that build a set out of order (for example relocating proof
+         * lines whose ids do not arrive in ascending order).
+         *
+         * \sa insert_at_end(Int_)
+         */
+        auto insert(Int_ value) -> void
+        {
+            // Find the first interval that value could touch or fall within,
+            // allowing a one-past adjacency (iter->second + 1 == value) so a value
+            // immediately above an interval extends it rather than starting a new
+            // one. Everything before iter ends at least two below value, so no
+            // leftward merge across iter is ever possible.
+            auto iter = intervals.begin();
+            while (iter != intervals.end() && iter->second + Int_(1) < value)
+                ++iter;
+
+            if (iter == intervals.end()) {
+                // Beyond every interval and not adjacent to the last: new singleton.
+                intervals.emplace_back(value, value);
+                return;
+            }
+
+            if (value + Int_(1) < iter->first) {
+                // Strictly before iter with a gap on both sides: new singleton here.
+                intervals.insert(iter, std::pair{value, value});
+                return;
+            }
+
+            if (value >= iter->first && value <= iter->second)
+                return; // already present
+
+            if (value == iter->first - Int_(1)) {
+                // Immediately below iter: extend its lower end. The scan guarantees
+                // the previous interval (if any) is not adjacent, so no merge.
+                iter->first = value;
+                return;
+            }
+
+            // Immediately above iter (value == iter->second + 1): extend its upper
+            // end, then merge with the next interval if the value bridges the gap.
+            iter->second = value;
+            if (auto nxt = next(iter); nxt != intervals.end() && nxt->first == iter->second + Int_(1)) {
+                iter->second = nxt->second;
+                intervals.erase(nxt);
+            }
+        }
+
+        /**
          * \brief Removes from this set every value not present in \p other.
          *
          * In-place set intersection: after the call, this set contains exactly

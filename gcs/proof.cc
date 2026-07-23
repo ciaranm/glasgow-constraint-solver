@@ -54,6 +54,46 @@ namespace
     }
 
     /**
+     * Recognise an explicit "off" word used by both order-encoding-deletion
+     * environment variables.
+     */
+    [[nodiscard]] auto is_off_word(const string & value) -> bool
+    {
+        return value == "0" || value == "off" || value == "Off" || value == "none" || value == "None";
+    }
+
+    /**
+     * Read an OrderEncodingDeletion from the environment, if set. The primary
+     * selector is GCS_DELETE_ORDER_ENCODING=literals|links|none (case-insensitive on
+     * the first letter); it picks the mode by name. The legacy GCS_DELETE_ORDER_LINKS
+     * variable is still honoured (any non-empty non-off value turns the old Links mode
+     * on), so existing tests keep working, but GCS_DELETE_ORDER_ENCODING takes
+     * precedence when both are set.
+     */
+    [[nodiscard]] auto order_encoding_deletion_from_env() -> optional<OrderEncodingDeletion>
+    {
+        if (const auto * const env = std::getenv("GCS_DELETE_ORDER_ENCODING"); env && *env) {
+            string value{env};
+            if (value == "literals" || value == "Literals")
+                return OrderEncodingDeletion::Literals;
+            if (value == "links" || value == "Links")
+                return OrderEncodingDeletion::Links;
+            if (is_off_word(value))
+                return OrderEncodingDeletion::None;
+            // Unrecognised value: fall through to the legacy variable / default.
+        }
+
+        if (const auto * const env = std::getenv("GCS_DELETE_ORDER_LINKS"); env && *env) {
+            string value{env};
+            if (is_off_word(value))
+                return OrderEncodingDeletion::None;
+            return OrderEncodingDeletion::Links;
+        }
+
+        return nullopt;
+    }
+
+    /**
      * Apply any environment-variable overrides to a copy of the given ProofOptions.
      * Environment variables act as defaults only: an option set explicitly in code
      * takes precedence.
@@ -63,6 +103,9 @@ namespace
         if (! options.assertion_level_set_explicitly)
             if (auto level = assertion_level_from_env())
                 options.assertion_level = *level;
+        if (! options.order_encoding_deletion_set_explicitly)
+            if (auto mode = order_encoding_deletion_from_env())
+                options.order_encoding_deletion = *mode;
         return options;
     }
 }

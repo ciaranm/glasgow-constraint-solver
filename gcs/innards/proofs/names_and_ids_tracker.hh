@@ -33,6 +33,8 @@
 
 namespace gcs::innards
 {
+    class PolBuilder;
+
     /**
      * Represents the lowest level of a raw PB literal that appears in an OPB file
      * or proof log.
@@ -125,11 +127,117 @@ namespace gcs::innards
         // exist and lb <= p <= ub+1.
         auto ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID id, Integer p) -> void;
 
+        // True iff the order literal `id >= v` is aliased directly to one of `id`'s
+        // preserved encoding bits -- the DirectOnly {0,1} case, where
+        // set_up_direct_only_variable_encoding registers `id >= 1` as the lone bit b0
+        // rather than a distinct `ge` atom. Such a ge has no proof-time reification of
+        // its own (its meaning is the model-time OPB bit), so under the Literals mode it
+        // must never be treated as a deletable/reintroducible order literal: re-emitting
+        // a reification would place the preserved bit in a `red` witness, which VeriPB
+        // rejects at a derived proof level. A distinct-atom ge (e.g. a Bits-encoded
+        // variable's `ge1`) is not aliased and returns false, staying reintroducible.
+        [[nodiscard]] auto order_literal_aliased_to_bit(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> bool;
+
         // First interval request for `id`: set up the always-covered partition, with a
         // singleton cell for every pre-existing eq atom (earlier per-value conclusions
         // must be reachable from later coverings), define a literal for every cell, and
         // emit the at-least-one clause over the top-level partition.
         auto init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void;
+
+        // Build the pol line deriving the order-encoding chain link clause
+        // (cond1 OR cond2) from the resident (Top) bit-definitions of ~cond1 and
+        // ~cond2. Shared by the initial chain-link emission in need_gevar and the
+        // on-demand re-emission used by the order-link deletion mode.
+        [[nodiscard]] auto make_pol_chain_line(IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> std::shared_ptr<PolBuilder>;
+
+        // Emit the adjacent-threshold (lo < hi) order-encoding chain link
+        // ge(hi) -> ge(lo) for a real variable. With order-link deletion on and the
+        // logger attached the link lands at ProofLevel::Current (so a backtrack
+        // deletes it) and is recorded as live tagged with the active proof level;
+        // otherwise it lands at Top exactly as before. Model-building emissions
+        // (logger not yet attached) always land at Top.
+        auto emit_and_maybe_track_order_link(const SimpleIntegerVariableID & id, Integer lo, Integer hi) -> void;
+
+        // Fast-path helper for need_gevar when a real variable's ge atom already
+        // exists: reconnect the variable's entire order chain by re-emitting every
+        // currently-missing adjacent-threshold link across its existing thresholds,
+        // so a RUP needing multi-hop order propagation has the full chain available
+        // (as the baseline keeps permanently resident). Emission fires only for
+        // genuinely-missing links. No-op unless the order-link deletion mode is on.
+        auto ensure_order_chain_connected(const SimpleIntegerVariableID & id) -> void;
+
+        // --- Literals mode (OrderEncodingDeletion::Literals) ---
+
+        // Record a real variable's ge threshold v as live. top => its def is resident
+        // at Top (a model-time atom or a boundary literal): tagged level 0, never
+        // forgotten, not indexed for deletion. Otherwise tagged with the active proof
+        // level and indexed under it, so a forget of that level deletes and stitches it.
+        auto record_live_order_literal(const SimpleIntegerVariableID & id, Integer v, bool top) -> void;
+
+        // Emit, at ProofLevel::Current, the two chain links joining a real variable's
+        // ge threshold v to its immediate *live* neighbours (below and above). Call
+        // with v not yet in the live set. Used both for a fresh proof-time literal and
+        // for a re-introduced one; linking to live (not gevars) neighbours keeps the
+        // chain valid across deleted thresholds.
+        auto link_order_literal_to_live_neighbours(const SimpleIntegerVariableID & id, Integer v) -> void;
+
+        // Fast-path helper for need_gevar when a real variable's ge atom already exists
+        // but its Current-level def was deleted on backtrack: re-emit the def at
+        // Current, re-link to live neighbours, and re-record as live.
+        auto reintroduce_order_literal(const SimpleIntegerVariableID & id, Integer v) -> void;
+
+        // Emit the stitch link ge(hi) -> ge(lo) skipping a deleted run of thresholds,
+        // recorded at at_level (= max(level(lo), level(hi))), restoring the logger's
+        // active proof level to restore_level afterwards.
+        auto emit_order_stitch(const SimpleIntegerVariableID & id, Integer lo, Integer hi, int at_level, int restore_level) -> void;
+
+        // Deletion + stitch pass for the Literals mode, driven from
+        // forget_order_links_at_level: for every threshold whose def was recorded at
+        // `level`, stitch the surviving neighbours around each deleted run and drop the
+        // thresholds from the live set.
+        auto forget_order_literals_at_level(int level) -> void;
+
+        // Part 2 of a hoist (the load-bearing caveat): re-link the just-hoisted ge
+        // threshold v of a real variable to its neighbours. The links are pol-derived
+        // from the two residents' defs (sound to re-emit; no witness). Assumes v is
+        // already retagged to target_level in live_order_literals.
+        //
+        // Two neighbour policies:
+        //  - !immediate_neighbours (the backtrack/nogood hoist): link to the nearest
+        //    live neighbours whose level is <= target_level -- the literals that survive
+        //    a forget of every deeper level -- landing each link at target_level. Right
+        //    when the caller is about to forget everything deeper than target_level.
+        //  - immediate_neighbours (the eq/interval-def hoist to Top): link to the
+        //    *immediate* live neighbours at ANY level, landing each link at
+        //    max(target_level, neighbour_level). Needed because here the deeper levels
+        //    are NOT being forgotten -- interior survivors between v and its nearest
+        //    Top neighbour remain live, and linking only to the Top neighbour would skip
+        //    them, fragmenting the chain (a deleted-but-not-restitched adjacent link
+        //    breaks the ~ge(lo) -> ~ge(hi) propagation a later backtrack-clause RUP
+        //    needs). Landing the link at the neighbour's level makes it deleted together
+        //    with the deletable endpoint and re-stitched by forget_order_literals_at_level.
+        auto stitch_hoisted_order_literal(const SimpleIntegerVariableID & id, Integer v, int target_level, bool immediate_neighbours) -> void;
+
+        // Hoist a real variable's ge threshold v to Top (level 0) *if* it is currently
+        // a live, deletable (level > 0) order literal; otherwise a no-op. Used when an
+        // eq atom's permanent (Top) definition names ge(v)/ge(v+1): those ge defs must
+        // stay resident for the eq def -- and any solx / backtrack clause over the eq
+        // atom -- to keep naming a live literal after a backtrack forget. Skips a
+        // literal that is not live for id (never referenced here, e.g. the ge not named
+        // by the compact-encoding form) or already permanent at Top.
+        auto hoist_order_literal_to_top_if_live(const SimpleIntegerVariableID & id, Integer v) -> void;
+
+        // Keep the two ge thresholds a permanent (Top) reifying atom names resident at
+        // Top. An eq atom eq(v) <=> ge(v) & ~ge(v+1) names (v, v+1); an interval atom
+        // in[lo,hi] <=> ge(lo) & ~ge(hi+1) names (lo, hi+1). Under Literals mode those
+        // atom definitions are emitted at Top and outlive any backtrack, so the ge defs
+        // they name must not be deleted underneath them (which would leave the Top atom
+        // -- and any solx / covering / backtrack clause over it -- naming a deleted
+        // literal, or force a pinned re-introduction that VeriPB rejects). A no-op
+        // unless the mode is Literals, the logger is attached, assertions are off, and
+        // id is a real SimpleIntegerVariableID; harmlessly skips a threshold that is a
+        // boundary/model-time literal (already Top) or not live.
+        auto hoist_ges_named_by_top_atom(SimpleOrProofOnlyIntegerVariableID id, Integer lower_ge, Integer upper_ge) -> void;
 
     public:
         /**
@@ -177,6 +285,73 @@ namespace gcs::innards
          * Say that we will need the greater-than-or-equal literal for a given variable.
          */
         auto need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void;
+
+        /**
+         * Drop from the live order-link structure every order-encoding chain link
+         * tagged with the given proof level. Emits nothing: the matching `del` lines
+         * are produced by ProofLogger::forget_proof_level's own deletion loop (the
+         * links were recorded at Current == that level). This just keeps the live
+         * structure in sync so a later need_gevar re-emits any that are needed again.
+         * A cheap no-op when the order-link deletion mode is off. Intended to be
+         * called from ProofLogger::forget_proof_level.
+         */
+        auto forget_order_links_at_level(int level) -> void;
+
+        /**
+         * Hoist a search-introduced ge threshold `v` of real variable `id`
+         * (Literals order-encoding-deletion mode) from its current, deep proof
+         * level to the shallower `target_level`, so a later `forget` deletes it
+         * later -- or, for `target_level == 0` (Top), never. Two parts, both
+         * required:
+         *
+         *  1. **Move the definition** -- a pure bookkeeping relocation, emitting
+         *     NOTHING. The literal's two reification proof lines are moved from
+         *     their current level bucket to `target_level`'s (via
+         *     ProofLogger::move_proof_lines_to_level), and the tracker's live/level
+         *     index for `v` is retagged. Re-emitting the `red` is exactly what
+         *     fails VeriPB (the falsify-witness collides with a pin), which is why
+         *     hoisting relocates rather than recreates.
+         *
+         *  2. **Re-stitch** -- emit fresh chain links joining `v` to its neighbours,
+         *     so it stays unit-propagating (the Ch.3 invariant); see
+         *     stitch_hoisted_order_literal for the neighbour policy selected by
+         *     \p immediate_neighbours. Chain links are pol-derived from the
+         *     residents' defs, so re-emitting them is sound.
+         *
+         * Requires the mode to be Literals, the logger attached, and `v` to be
+         * currently live for `id`. A no-op if `v` is already at `target_level`.
+         *
+         * \p immediate_neighbours (default false): pass false when the caller is about
+         * to forget every level deeper than \p target_level (backtrack / nogood hoist),
+         * true when it is not (the eq/interval-def hoist to Top, whose deeper interior
+         * survivors must stay chained). See stitch_hoisted_order_literal.
+         */
+        auto hoist_order_literal_to_level(const SimpleIntegerVariableID & id, Integer v, int target_level, bool immediate_neighbours = false) -> void;
+
+        /**
+         * Hoist a search-introduced ge threshold to Top (proof level 0), where its
+         * definition stays resident permanently and is never forgotten. Equivalent
+         * to hoist_order_literal_to_level(id, v, 0). This is the form restart
+         * nogoods and parallel-search shared nogoods want.
+         */
+        auto hoist_order_literal_to_top(const SimpleIntegerVariableID & id, Integer v) -> void;
+
+        /**
+         * Hoist every literal in \p lits that is a live, deletable real-variable
+         * order literal (a `ge`/`<` condition over a SimpleIntegerVariableID) up to
+         * \p target_level, using hoist_order_literal_to_level. Literals that are not
+         * such an order literal, are not currently live, or already sit at
+         * \p target_level or shallower are skipped -- hoisting only ever moves a
+         * definition to a shallower level, never deeper. A no-op unless the mode is
+         * Literals and the logger is attached.
+         *
+         * This is the backtrack/nogood entry point: on a normal backtrack the guess
+         * stack is hoisted to the backtrack level (so the backtrack clause never
+         * names a literal the following forget deletes), and a learned nogood hoists
+         * its decision literals to Top (so they survive the restart forget). Both
+         * replace the old delete-then-reintroduce path for the pinned case.
+         */
+        auto hoist_live_order_literals_toward_level(const std::vector<Literal> & lits, int target_level) -> void;
 
         /**
          * Ensure a proof-only binary-encoded variable exists for a given view.
@@ -484,6 +659,19 @@ namespace gcs::innards
          * sorted-value variables.
          */
         auto note_bounds_not_trivially_derivable(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
+
+        /**
+         * Note that this variable's order encoding must stay RESIDENT under
+         * OrderEncodingDeletion::Literals: every ge definition is emitted at Top (tagged
+         * level 0) and never deleted on backtrack, exactly as in the deletion-off mode.
+         * Called for the in-proof-bit auxiliary magnitude variables that
+         * ProofModel::register_state_variable_bits_in_proof creates (divide / modulus),
+         * whose ge order literals are named at ProofLevel::Top by the product-justification
+         * caches: a deleted definition would strand those permanent Top lines on a deleted
+         * literal, which VeriPB rejects. A pure model-build-time note; a no-op effect
+         * unless the Literals mode is later active.
+         */
+        auto note_order_encoding_stays_resident(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
 
         /**
          * Note that this variable's order-encoding (ge) atom definitions carry @i[..][ge]
