@@ -31,6 +31,18 @@ namespace gcs::innards
      * using division to renormalise coefficients to 1. The result is a PB
      * normal-form line whose literal coefficients are all 1.
      *
+     * If two atoms are a complementary literal pair (the same underlying proof
+     * literal with opposite polarity, e.g. <em>b</em> and <em>&not;b</em> from a
+     * bit-aliased two-value variable), the generic fold is not tight, so the
+     * helper switches to a dedicated derivation. Its result is then the PB
+     * normal form of the at-most-one after the pair folds to a constant:
+     * <em>&Sigma;<sub>k not in pair</sub> &not;a_k &ge; n - 2</em>, which is
+     * equivalent to <em>&Sigma; &not;a_k &ge; n - 1</em>. (See issue #557: the
+     * loose generic result left a residual literal that broke aggregating pols in
+     * <code>GlobalCardinality</code> — the only caller that passes several
+     * conditions on one variable and so the only one that can produce such a
+     * pair.)
+     *
      * The result line is emitted at the requested <code>ProofLevel</code>
      * (typically <code>Top</code> when the helper is called from an
      * initialiser and the result is cached for reuse, or

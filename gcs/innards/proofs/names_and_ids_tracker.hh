@@ -321,6 +321,15 @@ namespace gcs::innards
         [[nodiscard]] auto xliteral_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> const XLiteral;
 
         /**
+         * Like xliteral_for, but returns nullopt instead of throwing when the
+         * condition has no registered XLiteral. A condition is registered iff it
+         * (or its negation) has been introduced --- so "not found" means the
+         * literal is fresh/unaliased, which callers can use to reason about
+         * whether two atoms could be the same underlying bit.
+         */
+        [[nodiscard]] auto find_xliteral_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> std::optional<XLiteral>;
+
+        /**
          * Return a string form of a raw proof literal, for writing to a model or log.
          */
         [[nodiscard]] auto pb_file_string_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> &) const -> std::string;
@@ -334,6 +343,12 @@ namespace gcs::innards
          * Return the raw proof literal representing a proof flag, for writing to a model or log.
          */
         [[nodiscard]] auto xliteral_for(const ProofFlag &) const -> const XLiteral;
+
+        /**
+         * Like xliteral_for, but returns nullopt instead of throwing when the flag
+         * has no registered XLiteral.
+         */
+        [[nodiscard]] auto find_xliteral_for(const ProofFlag &) const -> std::optional<XLiteral>;
 
         /**
          * Return a string form of a proof flag, for writing to a model or log. Same as calling
