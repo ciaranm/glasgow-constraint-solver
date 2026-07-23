@@ -1540,11 +1540,27 @@ auto NamesAndIDsTracker::xliteral_for(const ProofFlag & flag) const -> const XLi
     return f->second;
 }
 
+auto NamesAndIDsTracker::find_xliteral_for(const ProofFlag & flag) const -> optional<XLiteral>
+{
+    auto f = _imp->flags.find(flag);
+    if (f == _imp->flags.end())
+        return nullopt;
+    return f->second;
+}
+
 auto NamesAndIDsTracker::xliteral_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> const XLiteral
 {
     auto f = _imp->variable_conditions_to_x.find(cond);
     if (f == _imp->variable_conditions_to_x.end())
         throw ProofError{"can't find literals for cond"};
+    return f->second;
+}
+
+auto NamesAndIDsTracker::find_xliteral_for(const VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID> & cond) const -> optional<XLiteral>
+{
+    auto f = _imp->variable_conditions_to_x.find(cond);
+    if (f == _imp->variable_conditions_to_x.end())
+        return nullopt;
     return f->second;
 }
 
