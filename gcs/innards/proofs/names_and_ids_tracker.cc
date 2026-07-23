@@ -494,12 +494,6 @@ auto NamesAndIDsTracker::track_eqvar(
     _imp->eqvars_that_exist[id].emplace(val, names);
 }
 
-auto NamesAndIDsTracker::track_gevar(
-    SimpleIntegerVariableID id, Integer val, const pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> & names) -> void
-{
-    _imp->gevars_that_exist[id].emplace(val, names);
-}
-
 auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 {
     if (_imp->variable_conditions_to_x.contains(id == v))
