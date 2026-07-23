@@ -320,9 +320,19 @@ namespace gcs::innards
          * normalized linear form, as a conservative extension --- Wietze Koops's
          * decomposition of the form into bits in 2m redundancy steps (top-down,
          * each bit `e_k <-> running-remainder >= 2^k` as a single-literal-witness
-         * red). \c target must have been created with
-         * ProofModel::create_proof_only_integer_variable_in_proof, be non-negative,
-         * and wide enough that `2^m` exceeds the form's maximum value.
+         * red), prefixed by two pol lines deriving the form's own bounds from
+         * its operands' OPB bound rows (which is what lets veripb discharge the
+         * two top-step redundancy goals for any operand shape). \c target must
+         * have been created with
+         * ProofModel::create_proof_only_integer_variable_in_proof, with a range
+         * covering the form's: its value bits must reach the form's maximum, and
+         * if the form's minimum is negative the target must be signed with
+         * `-2^S` at most that minimum (a signed target runs the same
+         * construction shifted by `2^S`, with `~sign` as the top bit). The
+         * form's terms should be integer variables and constants: terms without
+         * OPB bound rows (views, flags, literals) forfeit the derived bound
+         * lines, leaving the top goals to unit propagation, which stalls for
+         * some operand shapes.
          *
          * Returns `{BinEnc(target) >= form, BinEnc(target) <= form}` --- the last
          * two reds --- so the caller can reference the variable's bound-defining

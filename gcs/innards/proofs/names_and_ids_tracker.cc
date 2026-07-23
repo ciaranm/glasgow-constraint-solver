@@ -82,6 +82,7 @@ struct NamesAndIDsTracker::Imp
     map<VariableConditionFrom<SimpleOrProofOnlyIntegerVariableID>, XLiteral> variable_conditions_to_x;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, vector<pair<Integer, XLiteral>>>> integer_variable_bits_to_size_and_proof_vars;
     map<SimpleOrProofOnlyIntegerVariableID, pair<Integer, Integer>> integer_variable_definition_bounds;
+    map<SimpleOrProofOnlyIntegerVariableID, pair<ProofLine, ProofLine>> integer_variable_bound_rows;
     // Variables (e.g. ArgSort's cake-named free-bit-sum sorted values) whose [lo, hi]
     // domain is NOT a trivial consequence of the OPB -- cake emits no bound line for
     // them and the bounds are only entailed through conditional channels -- so
@@ -1394,6 +1395,19 @@ auto NamesAndIDsTracker::track_bounds(const SimpleOrProofOnlyIntegerVariableID &
 auto NamesAndIDsTracker::tracked_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> pair<Integer, Integer>
 {
     return _imp->integer_variable_definition_bounds.at(id);
+}
+
+auto NamesAndIDsTracker::track_bound_rows(const SimpleOrProofOnlyIntegerVariableID & id, ProofLine lower_row, ProofLine upper_row) -> void
+{
+    _imp->integer_variable_bound_rows.emplace(id, pair{lower_row, upper_row});
+}
+
+auto NamesAndIDsTracker::bound_rows(const SimpleOrProofOnlyIntegerVariableID & id) const -> optional<pair<ProofLine, ProofLine>>
+{
+    auto it = _imp->integer_variable_bound_rows.find(id);
+    if (it == _imp->integer_variable_bound_rows.end())
+        return nullopt;
+    return it->second;
 }
 
 auto NamesAndIDsTracker::note_bounds_not_trivially_derivable(const SimpleOrProofOnlyIntegerVariableID & id) -> void
