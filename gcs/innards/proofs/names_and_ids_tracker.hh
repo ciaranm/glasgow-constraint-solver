@@ -294,6 +294,11 @@ namespace gcs::innards
          * structure in sync so a later need_gevar re-emits any that are needed again.
          * A cheap no-op when the order-link deletion mode is off. Intended to be
          * called from ProofLogger::forget_proof_level.
+         *
+         * Note: in `Literals` mode this dispatches to forget_order_literals_at_level
+         * (which deletes literals and re-stitches the chain around each deleted run),
+         * not links. The `_links_` in this name predates the Literals mode; it is left
+         * unchanged until the planned Brancher refactor renames it.
          */
         auto forget_order_links_at_level(int level) -> void;
 

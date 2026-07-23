@@ -1385,12 +1385,16 @@ auto NamesAndIDsTracker::link_order_literal_to_live_neighbours(const SimpleInteg
 auto NamesAndIDsTracker::reintroduce_order_literal(const SimpleIntegerVariableID & id, Integer v) -> void
 {
     // The atom already exists but its Current-level definition was deleted on an
-    // earlier backtrack. Re-emit the reification def at Current (VeriPB accepts a fresh
-    // red for an existing atom only when no surviving constraint pins ge(v) against the
-    // witness -- interior literals in bound-only instances; eq-heavy instances reject
-    // here, which is the expected Stage-1 measurement signal), overwrite the stale def
-    // lines, re-record as live at Current, then re-link to live neighbours. Only
-    // interior literals reach here (level-0 literals never leave the live set).
+    // earlier backtrack, and the search has genuinely re-touched it. Re-emit the
+    // reification def at Current, overwrite the stale def lines, re-record as live at
+    // Current, then re-link to live neighbours. Only interior literals reach here
+    // (level-0 literals never leave the live set), and in practice only *unpinned*
+    // ones: a ge pinned by a surviving Top constraint -- in particular a ge named by an
+    // eq atom's permanent (Top) definition -- is hoisted to Top when that atom is
+    // created and is thereafter never deleted, so it never reaches reintroduction. That
+    // is why the fresh `red` VeriPB accepts here never collides with a pin against its
+    // falsify-witness: pinned literals are hoisted, not reintroduced. Only genuinely
+    // re-touched unpinned interior literals reintroduce, and they verify.
     SimpleOrProofOnlyIntegerVariableID key{id};
     // The re-emitted `red` reifies against `id >= v` itself, so rendering it resolves
     // that very condition through xliteral_for_ensuring -- which, under this mode, calls

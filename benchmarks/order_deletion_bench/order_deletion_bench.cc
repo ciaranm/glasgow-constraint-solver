@@ -27,8 +27,26 @@
 // Coupling is selectable:
 //   --problem linear     : a bank of budget (<=) and demand (>=) inequalities
 //                          over random overlapping subsets (mismatched coeffs).
+//   --problem pairwise   : every pairwise sum x_i + x_j >= ceil(lo*D) plus a
+//                          grand-total budget. UNSAT-needing-search by
+//                          construction: no single constraint is infeasible, so
+//                          bounds propagation cannot refute and the whole tree
+//                          must be searched. This is the mode that exercises the
+//                          deletion win on this build.
 //   --problem cumulative : a Cumulative resource over the tasks (starts = the
 //                          large-domain vars), plus release/deadline windows.
+//
+// Canonical win invocation (the reproducible order-encoding-deletion signal):
+//
+//   order_deletion_bench --problem pairwise --size 8 --domain D --window D \
+//       --tightness 90 --unsat
+//
+// with D swept over e.g. 250 / 500 / 1000 / 2000 for the domain curve. `--window
+// D` disables the per-variable windows (otherwise the instance root-refutes) and
+// `--tightness 90` sits just inside UNSAT so the tree must be searched rather than
+// bounds-refuted. Only `pairwise` searches deeply on this build: `linear` and
+// `cumulative` with their defaults root-refute in a few recursions (~0.01 s
+// verify, no signal), so they serve only as cheap controls, not win cases.
 //
 // A proof-only change: recursions / propagations / solutions MUST be identical
 // with the mode off vs on. This driver prints them via --stats so the harness
@@ -79,7 +97,7 @@ auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("order_deletion_bench", "Eq-free, long-ge-chain, search-heavy driver for the order-encoding-deletion proof change");
     options.add_options()                                                                                                                 //
-        ("problem", "Coupling: linear | cumulative", cxxopts::value<string>()->default_value("linear"))                                   //
+        ("problem", "Coupling: linear | pairwise | cumulative", cxxopts::value<string>()->default_value("linear"))                        //
         ("size", "Number of variables / tasks", cxxopts::value<int>()->default_value("16"))                                               //
         ("domain", "Domain is 0..D (large -> long ge chains)", cxxopts::value<int>()->default_value("1000"))                              //
         ("window", "Narrow-window width per variable (0 = full domain)", cxxopts::value<int>()->default_value("0"))                       //
@@ -256,7 +274,7 @@ auto main(int argc, char * argv[]) -> int
         objective = x[0];
     }
     else {
-        println(stderr, "Unknown --problem '{}' (want linear | cumulative)", problem);
+        println(stderr, "Unknown --problem '{}' (want linear | pairwise | cumulative)", problem);
         return EXIT_FAILURE;
     }
 

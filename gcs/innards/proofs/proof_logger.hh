@@ -234,11 +234,15 @@ namespace gcs::innards
          * level 0, never. Lines not present in the \p from_level bucket are
          * ignored.
          *
-         * The moved lines must all be newer (larger ids) than every line already
-         * in the target bucket, which the consolidate-then-delete discipline
-         * guarantees (a literal is hoisted when the frontier advances, before the
-         * levels it stepped over are forgotten, so its def lines postdate every
-         * shallower-level line). The lines are appended in ascending id order.
+         * Moved lines may arrive in any id order relative to the target bucket: a
+         * hoisted definition can carry a *smaller* id than lines already resident
+         * there. This genuinely happens -- several guess literals hoisted to one
+         * level need not arrive in id order, and a hoist-to-Top lands a mid-range
+         * def id into a bucket whose tail is a large learned-nogood clause. The
+         * bucket is therefore kept sorted, disjoint and merged with the
+         * general-position IntervalSet::insert, not insert_at_end. Do not "optimise"
+         * this back to an append: out-of-order arrivals are the normal case and an
+         * append would corrupt the bucket's ordering.
          */
         auto move_proof_lines_to_level(const std::vector<ProofLine> & lines, int from_level, int target_level) -> void;
 

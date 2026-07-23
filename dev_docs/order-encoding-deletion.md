@@ -1,29 +1,128 @@
 # Order-encoding deletion via consolidate-then-delete branching
 
-**Status: implemented behind a flag (`GCS_DELETE_ORDER_ENCODING=literals`) and
-measured; suite-safe; not committed; not default.** This note records the design
-for shrinking the integer order-encoding that VeriPB carries, plus the measured
-outcome and what is and isn't yet done. The full Brancher-API refactor (below) is
-still a proposal; the current implementation wires deletion into the existing
-branch/backtrack flow via hoisting.
+**Status: implemented behind a flag (`GCS_DELETE_ORDER_ENCODING=literals`),
+measured on synthetic AND real instances; suite-safe; committed on this branch;
+not default.** This note records the design for shrinking the integer
+order-encoding that VeriPB carries, plus the measured outcome and what is and
+isn't yet done. The full Brancher-API refactor (below) is still a proposal; the
+current implementation wires deletion into the existing branch/backtrack flow via
+hoisting.
 
 ## Results (measured)
 
-VeriPB verify time, mode OFF vs ON, eq-free linear UNSAT, split branching, on a
-tuned benchmark node (pinned, turbo off, hyperfine ≥5 runs; search identical, both
-VERIFIED):
+Data home for everything below:
+`/cluster/ciaran/claude/order-encoding-deletion-artifacts/real-instance-bench/`
+(`campaign-report.md`, `results.tsv`, `scoping-report.md`). All numbers are from
+the phase-2 campaign on the tuned node **fataepyc-10** (each timed run pinned to a
+single physical core with `numactl`/`taskset`/`setarch -R`, turbo boost OFF,
+governor `performance`, all timed proof I/O on tmpfs, `veripb` 3.0.2 verify time via
+`hyperfine`, peak RSS via `/usr/bin/time -v`). Every measured row cleared the gate:
+search statistics **IDENTICAL** OFF vs ON and both proofs VeriPB-**VERIFIED**.
 
-| domain | OFF | ON | speedup |
-|---:|---:|---:|---:|
-| 100 | 0.12 s | 0.055 s | 2.2× |
-| 500 | 2.56 s | 0.28 s | 9.1× |
-| 1000 | 10.96 s | 0.64 s | 17.2× |
-| 2000 | 48.8 s | 1.6 s | 30.6× |
-| 4000 | ~266 s | 4.4 s | ~60× |
+> **Superseded.** The earlier hand-written table that used to sit here (domain
+> 100…4000, "~+89 % larger", ~60× at d4000) came from a *pre-commit* iteration of
+> the `order_deletion_bench` driver and is **not reproducible with the committed
+> driver**: that driver's defaults and `--problem linear` root-refute in ≤3
+> recursions and produce no search signal (scoping report §7). Those numbers are
+> retired; use the campaign figures below.
 
-The speedup **grows monotonically with domain**. ON proofs are ~+89 % larger yet
-verify far faster: **resident chain length dominates VeriPB's cost far more than
-proof line count** — the core justification for the whole approach.
+### Synthetic win curve (committed driver)
+
+Exact invocation, `--domain` and `--window` swept together:
+
+    order_deletion_bench --problem pairwise --size 8 --domain D --window D \
+        --tightness 90 --unsat
+
+(`pairwise` is the only mode that searches deeply on this build; `--window D`
+disables the per-variable windows, `--tightness 90` sits just inside UNSAT so the
+tree must be searched.)
+
+| D    | verify OFF | verify ON | speedup    | pbp growth |
+|-----:|-----------:|----------:|-----------:|-----------:|
+| 250  | 0.939 s    | 0.199 s   | **4.73×**  | +101 %     |
+| 500  | 4.833 s    | 0.517 s   | **9.36×**  | +117 %     |
+| 1000 | 27.415 s   | 1.528 s   | **17.94×** | +135 %     |
+| 2000 | 194.76 s   | 5.692 s   | **34.22×** | +155 %     |
+
+The speedup **grows monotonically with domain** (roughly doubling per domain
+doubling). A depth point isolates search depth from domain: same domain 1000 but
+`--tightness 95`, **72 341 recursions** (~30× deeper than the 2 397 at tightness 90),
+gives **20.22×** — slightly *above* the tightness-90 d1000 point, so deeper search at
+the same domain also wins; the effect is not merely a domain artefact.
+
+ON proofs are **+101 %…+213 % larger** (the +213 % is the tightness-95 depth point)
+yet verify far faster — the design's central claim confirmed: **resident chain
+length, not proof line count, dominates VeriPB's cost.** The honest costs on the win
+rows: solver-side proof-*writing* overhead is **+55 %…+140 %** (largest exactly where
+the verify win is largest — a genuine trade, not free). Peak RSS is *smaller* for ON
+on the modest-growth wins (−22 % d250, −20 % d500, −13 % d1000), directly confirming
+the "resident DB is smaller" prediction; the sign **inverts once ON's proof grows
+several-fold** (d2000 is the transition at +2 %; the tightness-95 row's 360 MB ON
+proof vs 115 MB OFF pushes ON RSS well above OFF), because peak RSS = (proof veripb
+must hold) + (resident order DB) and the proof-size term swamps the resident-DB
+saving when growth is large.
+
+### Real instances — the win did NOT generalise
+
+On **no reachable real instance** did the synthetic win materialise.
+
+- **seat-moving 2018** — the one deep-yet-verifiable real split case (15 610-node
+  find-first, `indomain_split`, maxdom 901): **1.02× = neutral**. The del-count proxy
+  explains it precisely: ON emits only **+0.55 %** more `del` lines (936 818 vs
+  931 708) and the proof grows **+1.7 %** — deletion barely fires. Not because the
+  model lacks long chains (it has maxdom-901 split variables) but because it is
+  reif/element/view-heavy and its order encoding is **pinned resident by design**
+  (viewed variables held by the always-at-Top view bridges, product/aux magnitudes by
+  the product-justification caches — the "delete only when unreferenced" rule).
+
+- **mrcpsp 2023** (eq scheduling, `indomain_max/min`): **1.00×**, del delta **exactly
+  0** (1540→1540) — eq branching has no split frontier to advance, nothing is
+  deletable. Clean no-op; the `tour` circuit example is likewise 1.00×.
+
+- **Expected-bad, confirmed and bounded:** talent (eq enumeration) **0.98×**,
+  +22.6 % proof; crystal_maze (eq enum) **0.92×**, +48.5 % proof (the worst *relative*
+  growth, but tiny absolute times); sudoku_fixed (split but maxdom 16) **0.98×**, del
+  delta 0. The downside is a low-single-digit-percent verify slowdown plus +20–50 %
+  proof size on eq/small-domain models.
+
+- **scp divide_sat control** (`--all`, 21 solutions): **0.97×**, +1.2 % — the
+  divide/modulus in-proof aux magnitudes stay resident by design (product caches):
+  correct, no win, no harm. A small-scale isolation of the same resident-by-design
+  mechanism that makes seat-moving neutral.
+
+- **Hunt for a tractable real win — none exists in the reachable set.** Screened
+  radiation (2012/2013), on-call-rostering (2013/2018) and mspsp on top of the scoping
+  set. Real challenge instances are either **shallow find-first**
+  (static-encoding-dominated → neutral) or **intractably deep**: radiation *does*
+  search deeply on proven optimality, but the smallest case (m06) blew past **3.98 GB
+  of proof before completion**, far outside any verify budget. seat-moving stands as
+  the lone deep-yet-verifiable real case, and it is neutral.
+
+**Correctness gate (the whole point of a proof-only change):** all 12 measured rows
+were search-**identical** OFF vs ON, both modes **VERIFIED** with identical
+bounds/solution counts. No ON-only failure, no divergence anywhere.
+
+### What the del-count proxy can and cannot tell us (important nuance)
+
+The campaign shows deletion does not fire on real models — but the del-count proxy
+**cannot apportion** the pinning between (i) the **view/product resident-by-design
+classes** (which the bridge-lifetime redesign, step 3, *would* free) and (ii)
+**eq-atom hoisting from reification / value branching** (which step 3 would **not**
+free). Both suppress deletion and both surface only as "few `del` lines". Before
+investing in step 3, a cheap instrumentation pass — counters recording *why* each
+`ge` stayed resident (view-pin / aux-pin / eq-hoist / guess-hoist / boundary) —
+should apportion the pins on seat-moving-class instances. **Do not overclaim that
+step 3 is proven to be the unlock:** the campaign motivates it but does not yet
+isolate its share.
+
+### Baseline (non-feature) finding recorded in passing
+
+mzn-challenge `2023/unit-commitment` is **REJECTED by veripb at `pbp:882`** ("not
+implied by reverse unit propagation") — but in **both** OFF and ON modes
+identically. It is a **pre-existing frontend/model proof-logging bug, out of this
+feature's scope**, not a deletion regression, and was excluded from the campaign.
+Repro kept at `real-instance-bench/fzn/2023_unit-commitment.fzn`; flag it to whoever
+owns the MiniZinc frontend proofs.
 
 ## Implementation status
 
@@ -48,35 +147,54 @@ proof line count** — the core justification for the whole approach.
 
 ## Next steps (prioritised)
 
-**1. Real-instance benchmarking (do first).** The measured win is on the *synthetic*
-eq-free `order_deletion_bench` driver, which is favourable by construction (large
-domains, eq-free, split branching, UNSAT). Before any further implementation, confirm
-the win generalises — and characterise good/neutral/bad — on real problems:
-- MiniZinc-challenge / `minizinc-benchmarks/` instances and the `examples/`
-  models, ideally ones with large-domain variables and bound/split branching.
-- For each: `.pbp` size and VeriPB verify time, mode OFF vs ON, on the tuned node
-  (pinned, turbo off, hyperfine ≥5 runs), asserting recursions/props/solutions
-  identical off vs on and both VERIFIED.
-- Expect *less* than the synthetic 2–60× on eq/value-heavy models (their viewed and
-  eq-branched variables stay resident), and possibly neutral/worse where domains are
-  small or branching is value-based. Report the distribution honestly; that decides
-  whether the two redesigns below are worth it.
-- Verification-only drivers `order_jump_check.cc` / `order_hoist_check.cc` and the
-  raw hyperfine TSV are preserved (uncommitted) under
-  `/cluster/ciaran/claude/order-encoding-deletion-artifacts/`; promote them to proper
-  `gcs/` tests when convenient (they regression-check the two verified foundations).
+**1. Real-instance benchmarking — DONE.** Completed as the phase-2 campaign (see
+Results above; data under
+`.../order-encoding-deletion-artifacts/real-instance-bench/`). Verdict:
+- The **synthetic mechanism is validated**, **4.7×→34× across domain d250→d2000**
+  (and 20× at the depth point), driven by resident-chain shrinkage — the design's
+  central claim holds.
+- The **real-instance win is unproven**: no reachable real instance triggered it. The
+  one deep-yet-verifiable real case (seat-moving) is neutral because its chains are
+  pinned resident by view/reif bridges, and the tractable-real-win hunt found nothing
+  (real instances are either shallow-neutral or intractably deep).
+- The **downside is bounded**: a few-percent verify slowdown and +20–50 % proof size
+  on eq/small-domain models, +55–140 % solver-side proof-writing on the win rows.
+- **Correctness is clean** (every row search-identical OFF vs ON, both VERIFIED).
+- **Conclusion: keep the feature flag-gated; default-on is NOT justified by these
+  numbers** (real win unproven, measurable overhead on eq/value-heavy models) — but
+  the mechanism is sound and correctness is solid.
+- Verification-only drivers `order_jump_check.cc` / `order_hoist_check.cc` and the raw
+  hyperfine TSV are preserved (uncommitted) under the artifacts dir above; promote
+  them to proper `gcs/` tests when convenient (they regression-check the two verified
+  foundations).
+
+**1b. Pin-apportionment instrumentation (the cheap next step — do before choosing
+between 2 and 3).** The campaign shows deletion does not fire on real models but
+cannot say *why* per class: the del-count proxy conflates the view/product
+resident-by-design pins (which the bridge redesign, step 3, would free) with eq-atom
+hoists from reification/value branching (which it would not). Add cheap counters
+recording, for each `ge` left resident, the reason (view-pin / aux-pin / eq-hoist /
+guess-hoist / boundary) and run them on seat-moving-class instances to apportion the
+pinning. This is small and low-risk, and it is what decides whether the bridge
+redesign is actually the unlock. **Until it runs, do not claim step 3 is proven to be
+the unlock.**
 
 **2. Brancher-API refactor** (the abstraction below) to generalise
-consolidate-then-delete and tidy the current direct wiring — worth doing once the
-benchmarks justify productionising the feature.
+consolidate-then-delete and tidy the current direct wiring.
 
 **3. Bridge-lifetime redesign** so viewed variables and divide/modulus aux magnitudes
 become *deletable* rather than resident, recovering their share of the win for
-view/product-heavy models. This is the larger proof-logging change; scope it only if
-step 1 shows those models matter.
+view/product-heavy models. This is the larger proof-logging change.
 
-**Also:** decide productionisation (keep flag-gated vs default-on), and — cleanup —
-the superseded dormant `Links` mode can be removed.
+**Priority of step 2 vs step 3 is OPEN**, pending the step-1b apportionment data and
+user direction. The campaign's *read* is that the resident-by-design view/product
+classes — not any absence of long chains — block the real-instance win, which argues
+for prioritising the bridge redesign (3); but that inference rests on the del-count
+proxy that step 1b exists precisely to sharpen, so the decision is deliberately
+deferred rather than recorded here.
+
+**Also:** decide productionisation (keep flag-gated vs default-on — current verdict:
+flag-gated), and — cleanup — the superseded dormant `Links` mode can be removed.
 
 ## The problem
 

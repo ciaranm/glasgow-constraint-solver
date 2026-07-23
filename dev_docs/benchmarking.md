@@ -262,6 +262,34 @@ the three-way `Regular` / `RegularBacchus` / `RegularLegacy`
 comparison, plus a discussion of when each pattern wins. It's a useful
 template for similar three-variant proof-logging work.
 
+### veripb timing: memory-bandwidth caveat
+
+VeriPB verify time does not obey the usual "pin a core, disable turbo,
+run several in parallel" recipe once the proof is large. On
+`fataepyc-10`, a proof whose working set exceeds the per-CCX L3
+(~32 MB) is **DRAM-bandwidth-bound**, so its verify time depends on what
+*else* is streaming memory — it is **not** load-independent even with
+turbo off and a dedicated pinned core. A `d2000`-scale
+`order_deletion_bench` verify measured ~**195 s solo** but rose to
+~**560 s** under heavy concurrent load on other cores: a near-3× spread
+from memory contention alone, nothing to do with the proof.
+
+Cache-resident proofs behave normally: a proof of ≲ 6 MB (working set
+inside L3) is load-independent to ~**0.1 %** — the same verify read
+27.393 s under a sustained large-proof aggressor vs 27.415 s solo.
+
+Rules of thumb for veripb timing on this node:
+
+- **Time large-proof veripb runs SOLO — one at a time, machine otherwise
+  quiet.** Do not trust a large verify measured alongside other
+  memory-heavy work; re-measure it alone.
+- **Small (cache-resident, ≲ 6 MB) proofs may run concurrently**, pinned
+  to distinct physical cores, without contention error.
+- **`/cluster` is NFS.** Do all timed proof I/O on **local tmpfs**
+  (`/tmp`), so the numbers measure verify cost and not the network
+  filesystem: copy the inputs over first and write the `.opb`/`.pbp`
+  there.
+
 ## Profiling with `perf`
 
 When a benchmark says a change is slower but not *why*, `perf` gives the
