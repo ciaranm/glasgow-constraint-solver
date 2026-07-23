@@ -367,10 +367,21 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
         names_and_ids_tracker().track_variable_name(id, name);
         // Name the single PB variable as bit 0 (`i[name][b0]`), matching how
         // cake_pb_cp encodes a {0,1} variable. For a {0,1} variable the bit-0
-        // literal *is* the (== 1)/(>= 1) literal, so the condition associations
-        // below are unchanged; only the name differs. We still emit just the one
+        // literal *is* the (== 1)/(== 0) literal, so those eq associations below
+        // alias it directly; only the name differs. We still emit just the one
         // (tautological) line -- cake additionally emits an upper-bound line, but
         // VeriPB no longer pins the constraint count, and references are relative.
+        //
+        // The (>= 1)/(< 1) ORDER atom is deliberately NOT aliased to the bit
+        // here (issue #554). A weighted pol that substitutes a lower-bound atom
+        // needs a genuine reified line (`b0 + 1 ~g1 >= 1`, g1 a fresh reif
+        // literal), whose degree and gate term survive the combination; a bare
+        // bit-literal axiom pushed in its place has no degree and cancels the
+        // base constraint's own `~b0` term outright, silently weakening the
+        // derived bound. So leave the >= 1 gevar unset and let need_gevar build
+        // it lazily as the standard reified pair over the bit, exactly as for a
+        // bits-encoded variable. (The two `red` lines are created in-proof on
+        // first use, so the OPB is unchanged.)
         auto eqvar = names_and_ids_tracker().allocate_xliteral_meaning_bit_of(id, 0_i);
         _imp->opb << "1 " << names_and_ids_tracker().pb_file_string_for(eqvar) << " >= 0 ;\n";
         ++_imp->model_variables;
@@ -393,19 +404,6 @@ auto ProofModel::set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVa
             .visit(id);
 
         names_and_ids_tracker().track_bits(id, 0_i, {{1_i, eqvar}});
-
-        overloaded{
-            [&](const SimpleIntegerVariableID & id) {
-                names_and_ids_tracker().associate_condition_with_xliteral(id >= 1_i, eqvar);
-                names_and_ids_tracker().associate_condition_with_xliteral(id < 1_i, ! eqvar);
-                pair<variant<ProofLine, XLiteral>, variant<ProofLine, XLiteral>> names{eqvar, ! eqvar};
-                names_and_ids_tracker().track_gevar(id, 1_i, names);
-            }, //
-            [](const ProofOnlySimpleIntegerVariableID &) {
-                // currently there's no API for asking for literals for these
-            } //
-        }
-            .visit(id);
     }
     else {
         for (auto v = lower; v <= upper; ++v) {
