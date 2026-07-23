@@ -102,18 +102,48 @@ On **no reachable real instance** did the synthetic win materialise.
 were search-**identical** OFF vs ON, both modes **VERIFIED** with identical
 bounds/solution counts. No ON-only failure, no divergence anywhere.
 
-### What the del-count proxy can and cannot tell us (important nuance)
+### Pin apportionment (step 1b, measured) — the real reason the win does not generalise
 
-The campaign shows deletion does not fire on real models — but the del-count proxy
-**cannot apportion** the pinning between (i) the **view/product resident-by-design
-classes** (which the bridge-lifetime redesign, step 3, *would* free) and (ii)
-**eq-atom hoisting from reification / value branching** (which step 3 would **not**
-free). Both suppress deletion and both surface only as "few `del` lines". Before
-investing in step 3, a cheap instrumentation pass — counters recording *why* each
-`ge` stayed resident (view-pin / aux-pin / eq-hoist / guess-hoist / boundary) —
-should apportion the pins on seat-moving-class instances. **Do not overclaim that
-step 3 is proven to be the unlock:** the campaign motivates it but does not yet
-isolate its share.
+The campaign's provisional read — that the view/product resident-by-design classes
+block the real-instance win, motivating the bridge-lifetime redesign (step 3) — is
+**overturned by measurement**. The `GCS_ORDER_ENCODING_STATS` diagnostic (below)
+attributes every resident `ge` to the site that pinned it, first-cause-wins;
+attribution is exact (recorded at the deciding call site, never inferred). Dumps in
+`.../real-instance-bench/apportionment/`.
+
+On **seat-moving** (the lone deep-yet-verifiable real case), of 4 617 proof-time ge
+atoms, 4 442 end Top-resident:
+
+- **view_pin + aux_pin (what step 3 would free): 0 — 0.0 %.** No view-underlying or
+  aux-magnitude variable has *any* tracked ge. The same is true on mrcpsp and talent.
+  (The attribution mechanism itself is validated: a view-wrapped comparison test shows
+  view_pin up to 84.6 %, and scp divide_sat shows aux_pin > 0.)
+- eq_hoist: 1 962 (44.2 %); structural (model_time 1 858 + boundary 622): 55.8 %.
+- Churn: **22 857 deletions but 22 829 reintroductions — net 28**. Split branching
+  constantly re-touches deleted thresholds; deletion does enormous work for zero net
+  shrinkage. This churn *is* the +1.7 % proof and +5.6 % solver overhead.
+
+And the deeper cause, measured directly from the proof (distinct `ge` thresholds
+ever named, per variable): seat-moving's chains are **tiny** — median 12, p99 13,
+max 98 (the objective), across 497 variables — despite maxdom 901. Strong
+propagation means search never names more than ~a dozen thresholds per variable, so
+**the long resident chains that dominate synthetic VeriPB cost never form on
+propagation-strong real models at all**. Domain size is not chain length. No
+deletion scheme of any kind — step 3, eq-unpinning, anything — can win where there
+is nothing long to shorten; the win regime is characterised as *weak-propagation,
+large-domain, bound-split search* (the synthetic driver's regime).
+
+Consequences: **step 3 is deprioritised** (it frees 0 % on every real instance
+measured; its win-recovery motivation is gone). A cheap, attractive follow-up
+instead: a **chain-length gate** on deletion — only track/delete a variable's order
+literals once its live chain exceeds some threshold (~tens) — which would eliminate
+the real-model churn/overhead entirely (making the feature strictly-no-harm) while
+preserving the full large-domain win, and might eventually justify default-on.
+
+The diagnostic: set `GCS_ORDER_ENCODING_STATS` (any non-empty value) under
+`GCS_DELETE_ORDER_ENCODING=literals`; a `%% oed-stats:` summary is printed to
+stderr at proof end. Collection is gated on the mode + env var and emits no proof
+bytes (verified byte-identical in all mode × env combinations).
 
 ### Baseline (non-feature) finding recorded in passing
 
@@ -168,30 +198,34 @@ Results above; data under
   them to proper `gcs/` tests when convenient (they regression-check the two verified
   foundations).
 
-**1b. Pin-apportionment instrumentation (the cheap next step — do before choosing
-between 2 and 3).** The campaign shows deletion does not fire on real models but
-cannot say *why* per class: the del-count proxy conflates the view/product
-resident-by-design pins (which the bridge redesign, step 3, would free) with eq-atom
-hoists from reification/value branching (which it would not). Add cheap counters
-recording, for each `ge` left resident, the reason (view-pin / aux-pin / eq-hoist /
-guess-hoist / boundary) and run them on seat-moving-class instances to apportion the
-pinning. This is small and low-risk, and it is what decides whether the bridge
-redesign is actually the unlock. **Until it runs, do not claim step 3 is proven to be
-the unlock.**
+**1b. Pin-apportionment instrumentation — DONE.** Implemented as the
+`GCS_ORDER_ENCODING_STATS` diagnostic and measured (see "Pin apportionment" above).
+The answer: **step 3 would free 0 % of the resident encoding on every real instance
+measured**; the win is absent on real models because propagation-strong search never
+builds long chains (seat-moving: median chain 12, max 98, despite maxdom 901), and
+the deletion machinery churns (22 857 deletes / 22 829 reintroductions, net 28) for
+nothing there.
 
 **2. Brancher-API refactor** (the abstraction below) to generalise
-consolidate-then-delete and tidy the current direct wiring.
+consolidate-then-delete and tidy the current direct wiring. Its value was always
+design quality, not measured performance; that stands. It is also the natural home
+for the chain-length-gated deletion policy below.
 
-**3. Bridge-lifetime redesign** so viewed variables and divide/modulus aux magnitudes
-become *deletable* rather than resident, recovering their share of the win for
-view/product-heavy models. This is the larger proof-logging change.
+**2b. Chain-length-gated deletion (new).** Only track/delete a variable's order
+literals once its live chain exceeds a length threshold (~tens). Eliminates the
+real-model churn and overhead measured in the campaign (making mode-on
+strictly-no-harm on eq/small-chain models) while keeping the full large-domain win;
+would strengthen any future default-on case. Cheap; naturally lives inside the
+step-2 abstraction but does not require it.
 
-**Priority of step 2 vs step 3 is OPEN**, pending the step-1b apportionment data and
-user direction. The campaign's *read* is that the resident-by-design view/product
-classes — not any absence of long chains — block the real-instance win, which argues
-for prioritising the bridge redesign (3); but that inference rests on the del-count
-proxy that step 1b exists precisely to sharpen, so the decision is deliberately
-deferred rather than recorded here.
+**3. Bridge-lifetime redesign — DEPRIORITISED.** Making viewed and divide/modulus
+aux magnitudes deletable frees 0 % on every real instance measured (step 1b); its
+win-recovery motivation is gone. Revisit only if a view/product-heavy
+*weak-propagation large-domain bound-split* workload appears — the only regime where
+freed chains would be long enough to matter.
+
+**Priority between 2 and 2b is a user decision;** both are justified (2 by design
+quality, 2b by measured overhead elimination); 3 is parked.
 
 **Also:** decide productionisation (keep flag-gated vs default-on — current verdict:
 flag-gated), and — cleanup — the superseded dormant `Links` mode can be removed.

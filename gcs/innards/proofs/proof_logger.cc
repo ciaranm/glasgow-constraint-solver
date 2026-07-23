@@ -311,7 +311,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         visit(
             [&](const auto & id) {
                 names_and_ids_tracker().hoist_live_order_literals_toward_level(
-                    std::vector<Literal>{Literal{id < optional_minimise_variable_and_value->second}}, 0);
+                    std::vector<Literal>{Literal{id < optional_minimise_variable_and_value->second}}, 0, OrderEncodingResidencyCause::SoliHoist);
             },
             optional_minimise_variable_and_value->first);
 
@@ -352,7 +352,7 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     // first: its definition then survives the forget and the clause never names a
     // to-be-deleted literal. A no-op in every other mode. (proof_level() is the
     // backtrack level here: solve.cc enters it before calling backtrack.)
-    names_and_ids_tracker().hoist_live_order_literals_toward_level(guesses, proof_level());
+    names_and_ids_tracker().hoist_live_order_literals_toward_level(guesses, proof_level(), OrderEncodingResidencyCause::GuessHoist);
 
     _imp->proof << "% backtracking\n";
     // The backtrack clause is `at least one guess is false': exactly a
@@ -376,7 +376,7 @@ auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions) -> Proo
     // hoist those decision literals to Top first, so they stay resident and the Top
     // nogood never references a deleted literal. Done before emitting the clause so the
     // hoisted def ids precede the clause id in the Top bucket. A no-op in other modes.
-    names_and_ids_tracker().hoist_live_order_literals_toward_level(decisions, 0);
+    names_and_ids_tracker().hoist_live_order_literals_toward_level(decisions, 0, OrderEncodingResidencyCause::NogoodHoist);
 
     _imp->proof << "% learned nogood\n";
     WPBSum clause;
@@ -392,6 +392,12 @@ auto ProofLogger::end_proof() -> void
     // this is mostly for tests: we haven't necessarily destroyed the
     // Problem before running the verifier.
     _imp->proof << flush;
+
+    // Single conclude funnel (every conclude_* variant ends here exactly once): dump the
+    // order-encoding-deletion pin-apportionment diagnostic to stderr, if requested. A
+    // no-op unless GCS_ORDER_ENCODING_STATS is set under OrderEncodingDeletion::Literals;
+    // it writes only to stderr, never to the proof, so the .pbp is unaffected.
+    names_and_ids_tracker().dump_order_encoding_stats();
 }
 
 auto ProofLogger::conclude_unsatisfiable(bool is_optimisation) -> void

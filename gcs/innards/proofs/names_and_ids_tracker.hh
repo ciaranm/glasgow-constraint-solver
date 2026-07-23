@@ -61,6 +61,31 @@ namespace gcs::innards
     };
 
     /**
+     * Why a real variable's proof-time `ge` order literal is resident (for
+     * GuessHoist, transiently resident at a positive backtrack level), used only by
+     * the `GCS_ORDER_ENCODING_STATS` pin-apportionment diagnostic under
+     * OrderEncodingDeletion::Literals. Threaded from the residency-deciding call sites
+     * (creation in need_gevar, and the hoist primitives) so the end-of-proof dump can
+     * attribute each Top-resident literal to the cause that pinned it -- first-cause-wins
+     * -- and split the pins into the classes the bridge-lifetime redesign (dev_docs
+     * step 3) would free (view_pin, aux_pin) versus those it would not (eq/invar/nogood/
+     * soli hoists) versus structural ones (boundary, model_time). Attribution is exact
+     * (set at the deciding site), never inferred from level numbers.
+     */
+    enum class OrderEncodingResidencyCause
+    {
+        ModelTime,   ///< born Top: the ge atom was created before the logger attached.
+        Boundary,    ///< born Top: a trivially-derivable boundary literal (need_gevar's `boundary`).
+        ViewPin,     ///< born Top: whole encoding resident because the variable is a view underlying (views_of_variable).
+        AuxPin,      ///< born Top: whole encoding resident via order_encoding_stays_resident (aux magnitudes).
+        EqHoist,     ///< hoisted to Top from an eq atom's Top def (need_direct_encoding_for).
+        InvarHoist,  ///< hoisted to Top from an interval-partition atom's Top def (define_plain_invar).
+        NogoodHoist, ///< hoisted to Top by emit_learned_nogood.
+        SoliHoist,   ///< hoisted to Top by the objective-improvement hoist in ProofLogger::solution.
+        GuessHoist   ///< hoisted to a positive backtrack level by ProofLogger::backtrack (transient; never a Top cause).
+    };
+
+    /**
      * Provides access to information about flags and variables being used in a proof.
      *
      * This is for information that is shared between a ProofModel and a ProofLogger,
@@ -225,7 +250,8 @@ namespace gcs::innards
         // atom -- to keep naming a live literal after a backtrack forget. Skips a
         // literal that is not live for id (never referenced here, e.g. the ge not named
         // by the compact-encoding form) or already permanent at Top.
-        auto hoist_order_literal_to_top_if_live(const SimpleIntegerVariableID & id, Integer v) -> void;
+        auto hoist_order_literal_to_top_if_live(
+            const SimpleIntegerVariableID & id, Integer v, std::optional<OrderEncodingResidencyCause> stats_cause = std::nullopt) -> void;
 
         // Keep the two ge thresholds a permanent (Top) reifying atom names resident at
         // Top. An eq atom eq(v) <=> ge(v) & ~ge(v+1) names (v, v+1); an interval atom
@@ -237,7 +263,23 @@ namespace gcs::innards
         // unless the mode is Literals, the logger is attached, assertions are off, and
         // id is a real SimpleIntegerVariableID; harmlessly skips a threshold that is a
         // boundary/model-time literal (already Top) or not live.
-        auto hoist_ges_named_by_top_atom(SimpleOrProofOnlyIntegerVariableID id, Integer lower_ge, Integer upper_ge) -> void;
+        auto hoist_ges_named_by_top_atom(SimpleOrProofOnlyIntegerVariableID id, Integer lower_ge, Integer upper_ge,
+            std::optional<OrderEncodingResidencyCause> stats_cause = std::nullopt) -> void;
+
+        // --- GCS_ORDER_ENCODING_STATS pin-apportionment diagnostic (Literals mode only) ---
+        // Every one of these is a pure-bookkeeping no-op unless _imp->collect_order_encoding_stats
+        // is set (Literals mode AND the env var present); none of them emit proof bytes, so
+        // the .opb/.pbp are byte-identical whether or not the diagnostic runs.
+
+        // Register a real-variable ge threshold v as seen (proof-time), and, if it is born
+        // resident at Top, attribute that residency to born_cause (first-cause-wins).
+        auto stats_note_ge_recorded(const SimpleIntegerVariableID & id, Integer v, std::optional<OrderEncodingResidencyCause> born_cause) -> void;
+
+        // Note that a chain-link/stitch clause over the threshold pair (lo, hi) was just
+        // emitted for id, landing at proof level at_level. forget_path counts it as a
+        // forget-driven stitch; a link landing at Top (at_level == 0) whose pair was
+        // already Top-linked is counted as a duplicate-Top-stitch (a known inefficiency).
+        auto stats_note_stitch_emitted(const SimpleIntegerVariableID & id, Integer lo, Integer hi, int at_level, bool forget_path) -> void;
 
     public:
         /**
@@ -331,7 +373,8 @@ namespace gcs::innards
          * true when it is not (the eq/interval-def hoist to Top, whose deeper interior
          * survivors must stay chained). See stitch_hoisted_order_literal.
          */
-        auto hoist_order_literal_to_level(const SimpleIntegerVariableID & id, Integer v, int target_level, bool immediate_neighbours = false) -> void;
+        auto hoist_order_literal_to_level(const SimpleIntegerVariableID & id, Integer v, int target_level, bool immediate_neighbours = false,
+            std::optional<OrderEncodingResidencyCause> stats_cause = std::nullopt) -> void;
 
         /**
          * Hoist a search-introduced ge threshold to Top (proof level 0), where its
@@ -339,7 +382,8 @@ namespace gcs::innards
          * to hoist_order_literal_to_level(id, v, 0). This is the form restart
          * nogoods and parallel-search shared nogoods want.
          */
-        auto hoist_order_literal_to_top(const SimpleIntegerVariableID & id, Integer v) -> void;
+        auto hoist_order_literal_to_top(
+            const SimpleIntegerVariableID & id, Integer v, std::optional<OrderEncodingResidencyCause> stats_cause = std::nullopt) -> void;
 
         /**
          * Hoist every literal in \p lits that is a live, deletable real-variable
@@ -356,7 +400,17 @@ namespace gcs::innards
          * its decision literals to Top (so they survive the restart forget). Both
          * replace the old delete-then-reintroduce path for the pinned case.
          */
-        auto hoist_live_order_literals_toward_level(const std::vector<Literal> & lits, int target_level) -> void;
+        auto hoist_live_order_literals_toward_level(
+            const std::vector<Literal> & lits, int target_level, std::optional<OrderEncodingResidencyCause> stats_cause = std::nullopt) -> void;
+
+        /**
+         * If the `GCS_ORDER_ENCODING_STATS` diagnostic is active (OrderEncodingDeletion::Literals
+         * mode AND the env var set), sweep the pin-apportionment bookkeeping and print a
+         * compact summary to stderr, each line prefixed `%% oed-stats:`. Called once, from
+         * ProofLogger::end_proof (the single conclude funnel). A no-op otherwise; emits no
+         * proof bytes ever.
+         */
+        auto dump_order_encoding_stats() const -> void;
 
         /**
          * Ensure a proof-only binary-encoded variable exists for a given view.
