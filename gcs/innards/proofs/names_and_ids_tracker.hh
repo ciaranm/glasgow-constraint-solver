@@ -417,6 +417,25 @@ namespace gcs::innards
         [[nodiscard]] auto tracked_bounds(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::pair<Integer, Integer>;
 
         /**
+         * Track the OPB bound-row references (lower row, upper row) for a
+         * bits-encoded variable, so that proof steps can combine them by pol
+         * (ProofLogger::introduce_bits_of derives a linear form's own bound
+         * lines this way). A state variable's rows are referenced by their
+         * `i[name][lb]` / `i[name][ub]` labels (count-robust under
+         * cake_pb_cp's re-derived OPB); a proof-only variable's unlabelled
+         * rows by constraint number (it never appears in a cake chain).
+         */
+        auto track_bound_rows(const SimpleOrProofOnlyIntegerVariableID & id, ProofLine lower_row, ProofLine upper_row) -> void;
+
+        /**
+         * The bound-row references recorded by track_bound_rows, or nullopt
+         * for a variable with no OPB bound rows (one made by
+         * ProofModel::create_proof_only_integer_variable_in_proof, whose
+         * meaning lives entirely inside the proof).
+         */
+        [[nodiscard]] auto bound_rows(const SimpleOrProofOnlyIntegerVariableID & id) const -> std::optional<std::pair<ProofLine, ProofLine>>;
+
+        /**
          * Note that this variable's [lo, hi] bounds are not a trivial consequence of
          * the OPB (cake emits no bound line for it, and its bounds are only entailed
          * through conditional channels), so need_gevar must not pin its boundary order
