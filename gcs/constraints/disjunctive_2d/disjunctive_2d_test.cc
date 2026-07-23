@@ -302,6 +302,12 @@ auto main(int argc, char * argv[]) -> int
         {{{0, 0}, {2, 2}}, {{0, 0}, {0, 0}}, {1, 1}, {1, 1}},
         // All-fixed positions overlapping at the origin (contradiction).
         {{{0, 0}, {0, 0}}, {{0, 0}, {0, 0}}, {1, 1}, {1, 1}},
+        // Negative positions (issue #553 analog: origins are legitimately signed
+        // and the before-pol's bit reasoning rides the operands' sign bits).
+        // Both axes negative, then x-only negative; constant sizes here,
+        // variable-size negatives are in the var calls below.
+        {{{-2, 1}, {-2, 1}}, {{-2, 1}, {-2, 1}}, {2, 2}, {2, 2}},
+        {{{-3, 0}, {-3, 0}}, {{0, 3}, {0, 3}}, {2, 2}, {2, 2}},
     };
 
     mt19937 rand(*get_seed());
@@ -372,6 +378,12 @@ auto main(int argc, char * argv[]) -> int
             run_disjunctive_2d_var_test(proofs, mode, strict, "zero", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{0, 2}, {2, 2}}, {{2, 2}, {1, 2}});
             // Both rectangles can be zero-area on either axis.
             run_disjunctive_2d_var_test(proofs, mode, strict, "zero2", {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}}, {{0, 2}, {0, 2}});
+            // Negative origins with variable sizes: pos + size crosses below 0 on
+            // both axes, so the reified before-sum and its end-proxy bit encoding
+            // run over the operands' negative / sign-bit encoding (the direct
+            // issue #553 analog). "neg" is tight; "neg_wide" forces bound-pushes.
+            run_disjunctive_2d_var_test(proofs, mode, strict, "neg", {{-2, 1}, {-2, 1}}, {{-2, 1}, {-2, 1}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}});
+            run_disjunctive_2d_var_test(proofs, mode, strict, "neg_wide", {{-4, 0}, {-4, 0}}, {{-3, 0}, {-3, 0}}, {{2, 4}, {1, 3}}, {{1, 3}, {2, 4}});
         }
     }
 
