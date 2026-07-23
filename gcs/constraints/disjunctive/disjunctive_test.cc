@@ -338,6 +338,13 @@ auto main(int argc, char * argv[]) -> int
         {{{0, 0}, {1, 1}}, {1, 1}},
         // All-fixed starts that overlap: both span [0,2) (contradiction).
         {{{0, 0}, {1, 1}}, {2, 2}},
+        // Negative start times (issue #553 analog: start times are legitimately
+        // signed, and the before-pol's order-literal / bit-alignment reasoning
+        // rides the operands' sign-bit encoding). Constant lengths here;
+        // variable-length negatives are in var_data below.
+        {{{-2, 1}, {-2, 1}}, {2, 2}},
+        {{{-4, 0}, {-4, 0}}, {1, 3}},
+        {{{-3, -1}, {-3, -1}, {-3, -1}}, {1, 1, 1}},
     };
 
     // Random instances for breadth.
@@ -386,6 +393,14 @@ auto main(int argc, char * argv[]) -> int
         // contradiction-pruned (exercises emit_chain_step's end-proxy).
         {{{0, 6}, {0, 6}}, {{2, 3}, {2, 3}}},
         {{{0, 6}, {0, 6}, {0, 6}}, {{1, 3}, {1, 3}, {1, 3}}},
+        // Negative start times with variable durations: s + l crosses below 0,
+        // so the reified before-sum and its bit-alignment pol run over the
+        // operands' negative / sign-bit encoding (the direct issue #553 analog).
+        // Wide and all-negative windows force bound-pushes (the end-proxy path),
+        // not just contradictions.
+        {{{-3, 1}, {-3, 1}}, {{1, 2}, {1, 2}}},
+        {{{-6, 0}, {-6, 0}}, {{2, 3}, {2, 3}}},
+        {{{-8, -4}, {-8, -4}}, {{2, 3}, {2, 3}}},
     };
 
     // Variable-duration random cases (n=2 or 3, narrow horizons, durations 0-2).
