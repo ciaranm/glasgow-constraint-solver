@@ -158,6 +158,37 @@ struct NamesAndIDsTracker::Imp
     bool verbose_names;
     bool use_compact_boolean_encoding = false;
     AssertionLevel assertion_level = AssertionLevel::Off;
+
+    // --- Constraint-group RUP hints (ProofOptions::emit_rup_group_hints) ---
+    bool emit_rup_group_hints = false;
+    // @@v[...]: every proof line that forms part of a variable's encoding
+    // (atom definitions, bound-link ladder rungs, boundary pins, bits bound
+    // rows, AL1/AM1, view links, containment/partition rows), in emission
+    // order. The variable's whole transparency closure -- unit propagation is
+    // only guaranteed to simulate bounds/domain reasoning over the complete
+    // encoding, so the group must carry all of it, never a subset.
+    map<SimpleOrProofOnlyIntegerVariableID, vector<ProofLine>> hint_lines_for_variable;
+    // Members of each @@v[...] already announced to the checker (via a grpa
+    // line), so a flush only emits the ones added since.
+    map<SimpleOrProofOnlyIntegerVariableID, std::set<ProofLine>> announced_v_members;
+    // @@v[...] / @@c[...] that have been declared (a grpa emitted at least
+    // once, even with no members), so an empty group is still defined before it
+    // is nested or cited.
+    std::set<SimpleOrProofOnlyIntegerVariableID> v_declared;
+    std::set<ConstraintID> c_declared;
+    // @@c[...]: the defining OPB rows of each constraint, captured from its
+    // model block (see current_constraint_block), plus any later top-level
+    // rows the constraint tags to itself.
+    map<ConstraintID, vector<ProofLine>> constraint_lines;
+    map<ConstraintID, std::set<ProofLine>> announced_c_members;
+    // The constraint whose OPB block is currently being written at model-build
+    // time (set by begin_constraint_block_comment), so advance_constraint_counter
+    // can attribute each row it emits to that constraint.
+    optional<ConstraintID> current_constraint_block;
+    // @@cv[...] bookkeeping: which constraints have had their @@cv declared
+    // (nesting @@c), and which @@v[...] each @@cv already nests.
+    std::set<ConstraintID> announced_cv_base;
+    map<ConstraintID, std::set<SimpleOrProofOnlyIntegerVariableID>> cv_nested_vars;
 };
 
 NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) : _imp(make_unique<Imp>())
@@ -165,6 +196,7 @@ NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) : _im
     _imp->verbose_names = proof_options.verbose_names;
     _imp->use_compact_boolean_encoding = proof_options.use_compact_boolean_encoding;
     _imp->assertion_level = proof_options.assertion_level;
+    _imp->emit_rup_group_hints = proof_options.emit_rup_group_hints;
 
     if (proof_options.proof_file_names.variables_map_file) {
         _imp->variables_map_file_name = *proof_options.proof_file_names.variables_map_file;
@@ -236,6 +268,134 @@ auto NamesAndIDsTracker::associate_condition_with_xliteral(const VariableConditi
 auto NamesAndIDsTracker::track_variable_takes_at_least_one_value(const SimpleOrProofOnlyIntegerVariableID & id, ProofLine line) -> void
 {
     _imp->variable_at_least_one_constraints.emplace(id, line);
+    note_rup_hint_line_for(id, line);
+}
+
+// ----- Constraint-group RUP hints -----------------------------------------
+//
+// The design: each variable's whole encoding closure is a checker-side group
+// @@v[...]; each constraint's defining OPB rows are a group @@c[...]; and each
+// constraint gets a combined @@cv[...] = @@c[...] nested with @@v[...] for
+// every variable it reasons about. A bare-RUP propagator step cites the single
+// token @@cv[...] of its owning constraint. Groups are announced/extended
+// lazily via `grpa` lines just before the step that first needs them; nesting
+// is by live reference, so extending a @@v[...] later automatically updates
+// every @@cv[...] that nests it. See dev_docs and
+// project_rup_constraint_groups_benchmark.
+
+auto NamesAndIDsTracker::emitting_rup_group_hints() const -> bool
+{
+    return _imp->emit_rup_group_hints;
+}
+
+auto NamesAndIDsTracker::note_rup_hint_line_for(const SimpleOrProofOnlyIntegerVariableID & id, const ProofLine & line) -> void
+{
+    if (! _imp->emit_rup_group_hints)
+        return;
+    // A zero (no-line) sentinel / assertion-level placeholder carries no
+    // defining row -- there is nothing to cite.
+    if (auto n = std::get_if<ProofLineNumber>(&line); n && n->number == 0)
+        return;
+    _imp->hint_lines_for_variable[id].push_back(line);
+}
+
+auto NamesAndIDsTracker::begin_constraint_block(const ConstraintID & id) -> void
+{
+    if (_imp->emit_rup_group_hints)
+        _imp->current_constraint_block = id;
+}
+
+auto NamesAndIDsTracker::note_constraint_line(const ProofLine & line) -> void
+{
+    if (! _imp->emit_rup_group_hints || ! _imp->current_constraint_block)
+        return;
+    if (auto n = std::get_if<ProofLineNumber>(&line); n && n->number == 0)
+        return;
+    _imp->constraint_lines[*_imp->current_constraint_block].push_back(line);
+}
+
+auto NamesAndIDsTracker::note_constraint_cache_line(const ConstraintID & cid, const ProofLine & line) -> void
+{
+    // A top-level line emitted while a propagator was firing: a cached lemma
+    // the constraint may rely on in a later bare-RUP step (e.g. a linear
+    // parity/rounding cut, an all_different value-clique AM1). It becomes part
+    // of that constraint's @@c[...] group -- the "dynamically extended to
+    // include top-level caches" part of the scheme.
+    if (! _imp->emit_rup_group_hints)
+        return;
+    if (auto n = std::get_if<ProofLineNumber>(&line); n && n->number == 0)
+        return;
+    _imp->constraint_lines[cid].push_back(line);
+}
+
+auto NamesAndIDsTracker::append_rup_hint_lines_for(const SimpleOrProofOnlyIntegerVariableID & id, vector<ProofLine> & lines) -> void
+{
+    if (auto noted = _imp->hint_lines_for_variable.find(id); noted != _imp->hint_lines_for_variable.end())
+        lines.insert(lines.end(), noted->second.begin(), noted->second.end());
+
+    // A view's atoms only reach the underlying variable's encoding through the
+    // bit-vector link rows (recorded above under the view id) and the
+    // underlying variable's own encoding, so recurse into it.
+    if (auto pid_ptr = std::get_if<ProofOnlySimpleIntegerVariableID>(&id)) {
+        if (auto view_it = _imp->view_proof_only_to_view.find(*pid_ptr); view_it != _imp->view_proof_only_to_view.end())
+            append_rup_hint_lines_for(view_it->second.actual_variable, lines);
+    }
+}
+
+auto NamesAndIDsTracker::flush_v_group(const SimpleOrProofOnlyIntegerVariableID & id) -> ProofLine
+{
+    auto name = "v[" + definitional_label_base(id) + "]";
+    vector<ProofLine> closure;
+    append_rup_hint_lines_for(id, closure);
+    auto & announced = _imp->announced_v_members[id];
+    vector<ProofLine> fresh;
+    for (const auto & line : closure)
+        if (announced.insert(line).second)
+            fresh.push_back(line);
+    bool newly_declared = _imp->v_declared.insert(id).second;
+    // Declare the group the first time (even with no members, so nesting/citing
+    // it does not reference an undefined group), then extend it as it grows.
+    if ((newly_declared || ! fresh.empty()) && _imp->logger)
+        _imp->logger->emit_rup_hint_group_add(name, fresh);
+    return ProofLine{ProofLineLabel{"@" + name}};
+}
+
+auto NamesAndIDsTracker::ensure_c_group(const ConstraintID & cid) -> ProofLine
+{
+    auto name = "c[" + as_string(cid) + "]";
+    auto & announced = _imp->announced_c_members[cid];
+    vector<ProofLine> fresh;
+    if (auto it = _imp->constraint_lines.find(cid); it != _imp->constraint_lines.end())
+        for (const auto & line : it->second)
+            if (announced.insert(line).second)
+                fresh.push_back(line);
+    bool newly_declared = _imp->c_declared.insert(cid).second;
+    if ((newly_declared || ! fresh.empty()) && _imp->logger)
+        _imp->logger->emit_rup_hint_group_add(name, fresh);
+    return ProofLine{ProofLineLabel{"@" + name}};
+}
+
+auto NamesAndIDsTracker::cv_group_hint_token(const ConstraintID & cid, const vector<SimpleOrProofOnlyIntegerVariableID> & vars) -> ProofLine
+{
+    auto cv_name = "cv[" + as_string(cid) + "]";
+
+    // 1. Declare/extend @@c[cid] (its defining OPB rows), get its group token.
+    auto c_token = ensure_c_group(cid);
+
+    // 2. Declare @@cv[cid] once, nesting @@c[cid] by live reference.
+    if (_imp->announced_cv_base.insert(cid).second && _imp->logger)
+        _imp->logger->emit_rup_hint_group_add(cv_name, {c_token});
+
+    // 3. For each variable this step reasons about: flush its @@v[...]
+    //    (declare/extend) and nest it into @@cv[cid] the first time.
+    auto & nested = _imp->cv_nested_vars[cid];
+    for (const auto & v : vars) {
+        auto v_token = flush_v_group(v);
+        if (nested.insert(v).second && _imp->logger)
+            _imp->logger->emit_rup_hint_group_add(cv_name, {v_token});
+    }
+
+    return ProofLine{ProofLineLabel{"@" + cv_name}};
 }
 
 auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_value(IntegerVariableID var) -> ProofLine
@@ -251,6 +411,7 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
                     al1s += 1_i * (var == v);
 
                 auto line = _imp->logger->emit_rup_proof_line(al1s >= 1_i, ProofLevel::Top);
+                note_rup_hint_line_for(var, line);
                 result = _imp->variable_at_least_one_constraints.emplace(var, line).first;
             }
             return result->second;
@@ -273,6 +434,7 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
                         al1s += 1_i * (*v_id == v);
 
                     auto line = _imp->logger->emit_rup_proof_line(al1s >= 1_i, ProofLevel::Top);
+                    note_rup_hint_line_for(*v_id, line);
                     result = _imp->variable_at_least_one_constraints.emplace(*v_id, line).first;
                 }
                 return result->second;
@@ -596,6 +758,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     }
 
     _imp->eqvars_that_exist[id].emplace(v, pair{forwards_line, reverse_line});
+    note_rup_hint_line_for(id, forwards_line);
+    note_rup_hint_line_for(id, reverse_line);
 
     // If `id` is a view's proof-only var, eagerly emit the
     // eq-atom-level link `V=v <=> X=k_x` as two RUP lines. The GE-atom
@@ -632,14 +796,14 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             // drops the step entirely during model building, losing the
             // channelling between the proof-only encoding and the actual
             // variable. See the matching pattern in need_gevar's bound links.
-            emit_proof_line_now_or_at_start([v_cond, x_cond](ProofLogger * const logger) {
+            emit_proof_line_now_or_at_start([this, id, v_cond, x_cond](ProofLogger * const logger) {
                 if (logger->get_assertion_level() > AssertionLevel::Links)
                     return;
 
                 auto assert_or_rup =
                     logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-                logger->emit(assert_or_rup, WPBSum{} + 1_i * ! v_cond + 1_i * x_cond >= 1_i, ProofLevel::Top);
-                logger->emit(assert_or_rup, WPBSum{} + 1_i * ! x_cond + 1_i * v_cond >= 1_i, ProofLevel::Top);
+                note_rup_hint_line_for(id, logger->emit(assert_or_rup, WPBSum{} + 1_i * ! v_cond + 1_i * x_cond >= 1_i, ProofLevel::Top));
+                note_rup_hint_line_for(id, logger->emit(assert_or_rup, WPBSum{} + 1_i * ! x_cond + 1_i * v_cond >= 1_i, ProofLevel::Top));
             });
         }
     }
@@ -703,6 +867,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     else if (_imp->logger) {
         auto def_lines = visit(
             [&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Top); }, id);
+        note_rup_hint_line_for(id, def_lines.first);
+        note_rup_hint_line_for(id, def_lines.second);
         _imp->gevars_that_exist[id].emplace(v, def_lines);
     }
     else {
@@ -712,13 +878,15 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         // ~ge..) is cake's [r]; the second is [f]. v may be negative -- veripb
         // 3.0.2 allows `-` in @labels.
         string ge_label = definitional_label_base(id) + "[ge" + to_string(v.raw_value) + "]";
-        _imp->gevars_that_exist[id].emplace(v,
-            visit(
-                [&](const auto & vid) -> pair<ProofLine, ProofLine> {
-                    return pair{_imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
-                        _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
-                },
-                id));
+        auto ge_def_lines = visit(
+            [&](const auto & vid) -> pair<ProofLine, ProofLine> {
+                return pair{_imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
+                    _imp->model->add_labelled_constraint(ge_label + "[f]", WPBSum{} + (-1_i * vid) >= -v + 1_i, {{vid < v}})};
+            },
+            id);
+        note_rup_hint_line_for(id, ge_def_lines.first);
+        note_rup_hint_line_for(id, ge_def_lines.second);
+        _imp->gevars_that_exist[id].emplace(v, ge_def_lines);
         ++_imp->model_variables;
 
         // For a variable whose @i[..][ge] labels a cake_pb_cp OPB will not create (see
@@ -758,7 +926,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         // throughout both enumeration and refutation. emit_proof_line_now_or_at_start
         // queues it to proof start when the logger is not yet attached (model
         // building) and emits it immediately otherwise.
-        emit_proof_line_now_or_at_start([id, v, negated](ProofLogger * const logger) {
+        emit_proof_line_now_or_at_start([this, id, v, negated](ProofLogger * const logger) {
             if (logger->get_assertion_level() > AssertionLevel::Links)
                 return;
             ProofRule assert_or_rup =
@@ -766,7 +934,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
             auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
             visit(
                 [&](auto vid) {
-                    logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::Top, annotation);
+                    note_rup_hint_line_for(
+                        id, logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::Top, annotation));
                 },
                 id);
         });
@@ -810,12 +979,12 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         overloaded{
             [&](const ProofOnlySimpleIntegerVariableID & id) {
                 auto chain_con = WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id >= higher_gevar->first)) >= 1_i;
-                emit_proof_line_now_or_at_start([c = chain_con, link_hint](ProofLogger * const logger) {
+                emit_proof_line_now_or_at_start([this, id, c = chain_con, link_hint](ProofLogger * const logger) {
                     if (logger->get_assertion_level() > AssertionLevel::Links)
                         return;
                     ProofRule assert_or_rup =
                         logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-                    logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint);
+                    note_rup_hint_line_for(id, logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint));
                 });
             }, //
             [&](const SimpleIntegerVariableID & id) {
@@ -829,7 +998,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 }
                 else {
                     auto pol = make_pol_chain_line(id >= v, ! (id >= higher_gevar->first));
-                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                    emit_proof_line_now_or_at_start(
+                        [this, id, pol](ProofLogger * const logger) { note_rup_hint_line_for(id, pol->emit(*logger, ProofLevel::Top)); });
                 }
             } //
         }
@@ -841,12 +1011,12 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         overloaded{
             [&](const ProofOnlySimpleIntegerVariableID & id) {
                 auto chain_con = WPBSum{} + (1_i * (id >= prev(this_gevar)->first)) + (1_i * ! (id >= v)) >= 1_i;
-                emit_proof_line_now_or_at_start([c = chain_con, link_hint = link_hint](ProofLogger * const logger) {
+                emit_proof_line_now_or_at_start([this, id, c = chain_con, link_hint = link_hint](ProofLogger * const logger) {
                     if (logger->get_assertion_level() > AssertionLevel::Links)
                         return;
                     ProofRule assert_or_rup =
                         logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-                    logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint);
+                    note_rup_hint_line_for(id, logger->emit(assert_or_rup, c, ProofLevel::Top, link_hint));
                 });
             }, //
             [&](const SimpleIntegerVariableID & id) {
@@ -861,7 +1031,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 }
                 else {
                     auto pol = make_pol_chain_line(id >= prev(this_gevar)->first, ! (id >= v));
-                    emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
+                    emit_proof_line_now_or_at_start(
+                        [this, id, pol](ProofLogger * const logger) { note_rup_hint_line_for(id, pol->emit(*logger, ProofLevel::Top)); });
                 }
             } //
         }
@@ -930,9 +1101,9 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 b1->add(*v_fwd_line).add(link.first).add(d1_x).saturate();
                 auto b2 = make_shared<PolBuilder>();
                 b2->add(*v_rev_line).add(link.second).add(d2_x).saturate();
-                emit_proof_line_now_or_at_start([b1, b2](ProofLogger * const logger) {
-                    b1->emit(*logger, ProofLevel::Top);
-                    b2->emit(*logger, ProofLevel::Top);
+                emit_proof_line_now_or_at_start([this, id, b1, b2](ProofLogger * const logger) {
+                    note_rup_hint_line_for(id, b1->emit(*logger, ProofLevel::Top));
+                    note_rup_hint_line_for(id, b2->emit(*logger, ProofLevel::Top));
                 });
             }
         }
@@ -977,7 +1148,7 @@ auto NamesAndIDsTracker::link_immediate_containment(SimpleOrProofOnlyIntegerVari
                 else
                     edge += 1_i * not_in_range(id, clo, chi);
                 edge += 1_i * in_range(id, plo, phi);
-                _imp->logger->emit_rup_proof_line(move(edge) >= 1_i, ProofLevel::Top);
+                note_rup_hint_line_for(id, _imp->logger->emit_rup_proof_line(move(edge) >= 1_i, ProofLevel::Top));
             },
             id);
     };
@@ -1042,6 +1213,8 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
         : make_pair(ProofLine{}, ProofLine{});
 
     _imp->invars_that_exist[id].emplace(pair{lo, hi}, lines);
+    note_rup_hint_line_for(id, lines.first);
+    note_rup_hint_line_for(id, lines.second);
 
     // No containment tree apparatus needed at higher assertion levels.
     if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
@@ -1107,7 +1280,7 @@ auto NamesAndIDsTracker::ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID
     visit([&](const auto & id) { covering += 1_i * not_in_range(id, a, b); }, id);
     append_cell_literal_to(covering, id, a, p - 1_i);
     append_cell_literal_to(covering, id, p, b);
-    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top);
+    note_rup_hint_line_for(id, _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top));
 }
 
 auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariableID id, Integer request_lo, Integer request_hi) -> void
@@ -1145,7 +1318,7 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
             define_plain_invar(id, cell_lo, cell_hi);
         append_cell_literal_to(root_covering, id, cell_lo, cell_hi);
     }
-    _imp->logger->emit_rup_proof_line(move(root_covering) >= 1_i, ProofLevel::Top);
+    note_rup_hint_line_for(id, _imp->logger->emit_rup_proof_line(move(root_covering) >= 1_i, ProofLevel::Top));
 }
 
 auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integer lo, Integer hi) -> ProofLiteral
@@ -1204,7 +1377,7 @@ auto NamesAndIDsTracker::need_invar(SimpleOrProofOnlyIntegerVariableID id, Integ
     visit([&](const auto & id) { covering += 1_i * not_in_range(id, lo, hi); }, id);
     for (auto it = boundaries.find(span_lo); *it != span_hi + 1_i; ++it)
         append_cell_literal_to(covering, id, *it, *next(it) - 1_i);
-    _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top);
+    note_rup_hint_line_for(id, _imp->logger->emit_rup_proof_line(move(covering) >= 1_i, ProofLevel::Top));
     return as_literal();
 }
 
@@ -1247,6 +1420,8 @@ auto NamesAndIDsTracker::need_view(const ViewOfIntegerVariableID & view) -> Proo
     _imp->view_proof_only_vars.emplace(view, v_id);
     _imp->view_proof_only_to_view.emplace(v_id, view);
     _imp->view_link_ids.emplace(v_id, pair{link_le, link_ge});
+    note_rup_hint_line_for(v_id, link_le);
+    note_rup_hint_line_for(v_id, link_ge);
     _imp->views_of_variable[view.actual_variable].push_back(v_id);
 
     if (_imp->assertion_level > AssertionLevel::Links) // No further linking needed at higher assertion levels.

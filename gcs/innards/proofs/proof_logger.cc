@@ -117,6 +117,13 @@ struct ProofLogger::Imp
     int current_indent = 0;
     AssertionLevel assertion_level;
 
+    // Constraint-group RUP hints (ProofOptions::emit_rup_group_hints): whether
+    // on, and the constraint whose propagator is currently firing (set by
+    // Propagators around each propagation call), so a bare-RUP step it emits can
+    // cite that constraint's @@cv[...] group.
+    bool emit_rup_group_hints = false;
+    std::optional<ConstraintID> current_constraint;
+
     Imp(NamesAndIDsTracker & t) : tracker(t)
     {
     }
@@ -127,6 +134,7 @@ ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker 
     _imp->proof_file = proof_options.proof_file_names.proof_file;
     _imp->proof_lines_by_level.resize(2);
     _imp->assertion_level = proof_options.assertion_level;
+    _imp->emit_rup_group_hints = proof_options.emit_rup_group_hints;
 }
 
 ProofLogger::~ProofLogger() = default;
@@ -343,7 +351,33 @@ auto ProofLogger::infer(
     overloaded{
         [&]([[maybe_unused]] const JustifyUsingRUP<NoHint> & j) {
             if (! is_literally_true(lit)) {
-                emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * lit >= 1_i, ProofLevel::Current);
+                auto ineq = WPBSum{} + 1_i * lit >= 1_i;
+                if (_imp->emit_rup_group_hints && _imp->current_constraint) {
+                    // Introduce every atom this step references FIRST, so their
+                    // definition lines are recorded into the variables' @@v[...]
+                    // closures before we flush the groups (otherwise a lazily
+                    // introduced atom's def would land after the grpa that was
+                    // meant to carry it, and the group would be incomplete).
+                    // This mirrors what emit_under_reason does below; the repeat
+                    // there is then a no-op.
+                    if (! reason.empty())
+                        names_and_ids_tracker().need_all_proof_names_in(reason);
+                    names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
+
+                    // Cite the owning constraint's @@cv[...] group: its own OPB
+                    // rows plus the encoding of every variable in this step's
+                    // reason and inferred literal. Declares/extends the groups
+                    // first (grpa lines above the step), then cites one token.
+                    std::vector<SimpleOrProofOnlyIntegerVariableID> scope_vars;
+                    for (const auto & term : reason)
+                        collect_group_hint_vars(term, scope_vars);
+                    collect_group_hint_vars(ProofLiteralOrFlag{ProofLiteral{lit}}, scope_vars);
+                    auto hint = names_and_ids_tracker().cv_group_hint_token(*_imp->current_constraint, scope_vars);
+                    emit_rup_proof_line_under_reason(reason, ineq, ProofLevel::Current, {hint});
+                }
+                else {
+                    emit_rup_proof_line_under_reason(reason, ineq, ProofLevel::Current);
+                }
             }
         }, //
         [&]([[maybe_unused]] const AssertRatherThanJustifying & j) {
@@ -512,6 +546,52 @@ auto ProofLogger::emit_rup_proof_line_under_reason(
     return emit_under_reason(RUPProofRule{}, ineq, level, reason);
 }
 
+auto ProofLogger::emit_rup_proof_line_under_reason(const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq,
+    ProofLevel level, std::vector<ProofLine> hints) -> ProofLine
+{
+    return emit_under_reason(RUPProofRule{std::move(hints)}, ineq, level, reason);
+}
+
+auto ProofLogger::set_current_constraint(const std::optional<ConstraintID> & constraint_id) -> void
+{
+    _imp->current_constraint = constraint_id;
+}
+
+auto ProofLogger::current_constraint() const -> std::optional<ConstraintID>
+{
+    return _imp->current_constraint;
+}
+
+auto ProofLogger::emit_rup_hint_group_add(const std::string & name, const std::vector<ProofLine> & members) -> void
+{
+    // A `grpa` line declares/extends a checker-side group; it derives no
+    // constraint, so the proof line counter is deliberately not advanced.
+    log_stacktrace();
+    write_indent();
+    _imp->proof << "grpa @@" << name << " :";
+    for (const auto & line : members)
+        _imp->proof << ' ' << relative_proof_line(line, _imp->proof_line.number);
+    _imp->proof << " ;\n";
+}
+
+auto ProofLogger::collect_group_hint_vars(const ProofLiteralOrFlag & term, std::vector<SimpleOrProofOnlyIntegerVariableID> & out) -> void
+{
+    overloaded{
+        [&](const ProofLiteral & pl) {
+            overloaded{
+                [&](const VariableConditionFrom<SimpleIntegerVariableID> & c) { out.push_back(c.var); }, //
+                [&](const ProofVariableCondition & c) { out.push_back(c.var); },                         //
+                [&](const TrueLiteral &) {},                                                             //
+                [&](const FalseLiteral &) {}                                                             //
+            }
+                .visit(simplify_literal(names_and_ids_tracker(), pl));
+        },                                                                //
+        [&](const ProofFlag &) {},                                        //
+        [&](const ProofBitVariable & bit) { out.push_back(bit.for_var); } //
+    }
+        .visit(term);
+}
+
 auto ProofLogger::emit_rup_proof_line_under_reason_then_deview(
     const ReasonLiterals & reason, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> ProofLine
 {
@@ -598,7 +678,14 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
 auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber
 {
     switch (level) {
-    case ProofLevel::Top: _imp->proof_lines_by_level.at(0).insert_at_end(line.number); break;
+    case ProofLevel::Top:
+        _imp->proof_lines_by_level.at(0).insert_at_end(line.number);
+        // A top-level line emitted while a propagator is firing joins that
+        // constraint's @@c[...] group, so a later bare-RUP step of the same
+        // constraint that relies on the cached lemma can cite it via @@cv[...].
+        if (_imp->emit_rup_group_hints && _imp->current_constraint)
+            _imp->tracker.note_constraint_cache_line(*_imp->current_constraint, line);
+        break;
     case ProofLevel::Current: _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line.number); break;
     case ProofLevel::Temporary: _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line.number); break;
     }

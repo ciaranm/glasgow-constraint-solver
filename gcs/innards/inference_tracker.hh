@@ -585,8 +585,16 @@ namespace gcs::innards
                     ReasonLiterals reason_lits = materialise(snapshotted, _state);
                     auto t = logger->temporary_proof_level();
                     emit_explicit_steps(*logger, why.emit, reason_lits);
+                    // The concluding per-literal RUPs depend on the temporary
+                    // steps just emitted, so they must propagate over the whole
+                    // database rather than a constraint's @@cv[...] group.
+                    // Suppress the group hint around them (constraint-group RUP
+                    // hints).
+                    auto saved_constraint = logger->current_constraint();
+                    logger->set_current_constraint(std::nullopt);
                     for (const auto & lit : lits)
                         infer(logger, lit, JustifyUsingRUP{}, snapshotted);
+                    logger->set_current_constraint(saved_constraint);
                     logger->forget_proof_level(t);
                     return;
                 }

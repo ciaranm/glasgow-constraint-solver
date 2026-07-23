@@ -53,6 +53,11 @@ namespace gcs::innards
 
         auto record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber;
 
+        // Append the scope variable(s) a reason/inferred term mentions (a
+        // condition's variable, a proof bit's variable) to `out`, for building
+        // a constraint's @@cv[...] group hint. Skips flags and true/false.
+        auto collect_group_hint_vars(const ProofLiteralOrFlag & term, std::vector<SimpleOrProofOnlyIntegerVariableID> & out) -> void;
+
         auto end_proof() -> void;
 
         auto emit_subproofs(const std::map<ProofGoal, Subproof> & subproofs) -> auto;
@@ -143,6 +148,29 @@ namespace gcs::innards
          */
         auto infer(const Literal & lit, const Justification & why, const ReasonLiterals & reason,
             const std::optional<AssertionAnnotation> & annotation = std::nullopt) -> void;
+
+        /**
+         * \brief Constraint-group RUP hints: set (or clear) the constraint
+         * whose propagator is currently firing, so a bare-RUP step it emits
+         * cites that constraint's @@cv[...] group. Called by Propagators around
+         * each propagation call. No effect unless group hints are on.
+         */
+        auto set_current_constraint(const std::optional<ConstraintID> & constraint_id) -> void;
+
+        /**
+         * \brief The constraint currently firing (for constraint-group RUP
+         * hints), if any. Lets a caller save/clear/restore it around a nested
+         * inference that must stay hint-free (e.g. a JustifyExplicitly's
+         * concluding RUP, which depends on its just-emitted temporary steps).
+         */
+        [[nodiscard]] auto current_constraint() const -> std::optional<ConstraintID>;
+
+        /**
+         * \brief Write a `grpa @@name : members ;` line declaring or extending
+         * a checker-side constraint group. Derives no constraint, so the proof
+         * line counter does not advance. For constraint-group RUP hints only.
+         */
+        auto emit_rup_hint_group_add(const std::string & name, const std::vector<ProofLine> & members) -> void;
 
         /**
          * \brief Return the current <em>active proof level</em> &mdash; the
@@ -270,6 +298,14 @@ namespace gcs::innards
          */
         auto emit_rup_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level)
             -> ProofLine;
+
+        /**
+         * As `emit_rup_proof_line_under_reason`, but attaches the given RUP hint
+         * lines (e.g. a single @@cv[...] group token) so VeriPB restricts
+         * propagation to those constraints. For constraint-group RUP hints.
+         */
+        auto emit_rup_proof_line_under_reason(const ReasonLiterals &, const SumLessThanEqual<Weighted<PseudoBooleanTerm>> &, ProofLevel level,
+            std::vector<ProofLine> hints) -> ProofLine;
 
         /**
          * Like `emit_rup_proof_line_under_reason`, but returns the deview-form

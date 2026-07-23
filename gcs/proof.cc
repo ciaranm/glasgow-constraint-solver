@@ -58,11 +58,35 @@ namespace
      * Environment variables act as defaults only: an option set explicitly in code
      * takes precedence.
      */
+    /**
+     * Read a boolean flag from an environment variable, if set. Accepts
+     * 1/on/true/yes (case-insensitive) as true and 0/off/false/no as false; an
+     * unrecognised value is ignored with a warning.
+     */
+    [[nodiscard]] auto bool_from_env(const char * const name) -> optional<bool>
+    {
+        const auto * const env = std::getenv(name);
+        if (! env || ! *env)
+            return nullopt;
+
+        string value{env};
+        if (value == "1" || value == "on" || value == "true" || value == "yes")
+            return true;
+        else if (value == "0" || value == "off" || value == "false" || value == "no")
+            return false;
+
+        print(stderr, "Ignoring unrecognised {} value '{}'\n", name, value);
+        return nullopt;
+    }
+
     [[nodiscard]] auto with_env_overrides(ProofOptions options) -> ProofOptions
     {
         if (! options.assertion_level_set_explicitly)
             if (auto level = assertion_level_from_env())
                 options.assertion_level = *level;
+        if (! options.emit_rup_group_hints_set_explicitly)
+            if (auto groups = bool_from_env("GCS_RUP_GROUPS"))
+                options.emit_rup_group_hints = *groups;
         return options;
     }
 }
