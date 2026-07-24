@@ -61,7 +61,7 @@ namespace gcs
      * \ingroup SearchHeuristics
      */
     using BranchValueGenerator =
-        std::function<std::generator<IntegerVariableCondition>(const CurrentState &, const innards::Propagators &, const IntegerVariableID &)>;
+        std::function<std::generator<BranchDecision>(const CurrentState &, const innards::Propagators &, const IntegerVariableID &)>;
 
     /**
      * Combine a BranchVariableHeuristic from gcs::variable_order:: with a BranchValueGenerator

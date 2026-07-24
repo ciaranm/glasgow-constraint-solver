@@ -146,8 +146,8 @@ TEST_CASE("split_random takes each half first sometimes")
     bool saw_lower_first = false, saw_upper_first = false;
     for (int draw = 0; draw < 100; ++draw) {
         vector<IntegerVariableCondition> yielded;
-        for (auto && cond : generate(state.current(), propagators, x))
-            yielded.push_back(cond);
+        for (auto && decision : generate(state.current(), propagators, x))
+            yielded.push_back(decision.guess);
 
         REQUIRE(yielded.size() == 2);
         if (yielded[0] == lower_half) {

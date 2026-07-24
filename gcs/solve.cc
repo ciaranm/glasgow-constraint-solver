@@ -13,6 +13,7 @@
 #include <gcs/solve.hh>
 
 #include <util/enumerate.hh>
+#include <util/overloaded.hh>
 
 #include <cstdlib>
 #include <limits>
@@ -64,6 +65,42 @@ namespace
         unsigned long long conflicts_since_restart;
         unsigned long long cutoff;
         bool enabled;
+    };
+
+    /**
+     * The node's standing backtrack constraint: the framework's internal fold of
+     * the BranchDecision advances refuted so far at this node (design 1.1). It is
+     * derived, not a public type, and lives as a stack local for one frame.
+     *
+     * Stage A folds only backtrack_advance::Exclude, so the constraint never
+     * leaves the ExcludedSet (monostate) arm: the node's refutation lemma stays
+     * today's ~state.guesses(), emitted verbatim at node close. The Bound arm and
+     * its terminal-bound lemma are wired in stage B; they are structurally present
+     * here but behaviourally inert.
+     */
+    struct BacktrackConstraint final
+    {
+        std::variant<std::monostate, std::pair<SimpleIntegerVariableID, Integer>> state = std::monostate{};
+        bool is_lower = true; // meaningful only in the Bound arm
+
+        auto fold(const BacktrackAdvance & advance) -> void
+        {
+            overloaded{//
+                [&](const backtrack_advance::Exclude &) {
+                    // Accumulate ~guess into the excluded set: nothing to record here,
+                    // the ExcludedSet lemma is state.guesses() emitted at node close.
+                },
+                [&](const backtrack_advance::LowerBound &) {
+                    // Stage B: switch to / advance a monotone lower-bound frontier.
+                },
+                [&](const backtrack_advance::UpperBound &) {
+                    // Stage B: switch to / advance a monotone upper-bound frontier.
+                },
+                [&](const backtrack_advance::Custom &) {
+                    // Escape hatch; no consumer in stage A.
+                }}
+                .visit(advance);
+        }
     };
 
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, Propagators & propagators, State & state,
@@ -184,10 +221,18 @@ namespace
                     // re-derives it on the next pass. Every other descended sibling
                     // (a first sibling, or any d-way value) is a free positive
                     // decision and extends the prefix.
+                    // The framework's fold of this node's backtrack advances. Stage A
+                    // only ever folds Exclude, so it stays an ExcludedSet and the node
+                    // close below is verbatim today's ~state.guesses().
+                    BacktrackConstraint backtrack_constraint;
                     optional<IntegerVariableCondition> first_sibling;
                     unsigned long long sibling_index = 0;
                     for (; branch_iter != branch_generator.end(); ++branch_iter) {
-                        auto guess = *branch_iter;
+                        auto decision = *branch_iter;
+                        // The nld-nogood prefix and negative-flip detection operate on
+                        // the decision's guess (still an IntegerVariableCondition), not
+                        // on its backtrack advance (design 3).
+                        const auto & guess = decision.guess;
                         // Only maintain the reduced prefix when we are actually
                         // learning nogoods: otherwise reduced_prefix stays empty and
                         // the copy is free, so ordinary search pays nothing.
@@ -209,7 +254,10 @@ namespace
                             break;
                         }
                         // Complete: this sibling's subtree was refuted under the
-                        // current path, so record it for restart-nogood learning.
+                        // current path. Fold its backtrack advance into the node's
+                        // standing constraint (stage A: Exclude, so inert), and record
+                        // it for restart-nogood learning.
+                        backtrack_constraint.fold(decision.on_refuted);
                         refuted_siblings.push_back(guess);
                     }
                 }
