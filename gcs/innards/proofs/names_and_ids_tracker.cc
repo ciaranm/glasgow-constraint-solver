@@ -325,6 +325,13 @@ struct NamesAndIDsTracker::Imp
 
     // Whether (and how) order-encoding chain links are deleted on backtrack.
     OrderEncodingDeletion order_link_deletion_mode = OrderEncodingDeletion::None;
+    // Chain-length gate for OrderEncodingDeletion::Literals (order_encoding_deletion_min_chain):
+    // a real variable's interior ge def is only emitted deletable-at-Current once the number
+    // of ge thresholds ever named for it exceeds this value; at or below the gate the def is
+    // kept resident at Top, exactly like the boundary/view/aux paths. 0 disables the gate --
+    // deletion fires from the first threshold, byte-identically to the pre-gate behaviour.
+    // Read once here (not re-read per call), like order_link_deletion_mode.
+    int order_encoding_deletion_min_chain = 0;
     // Set while a chain-link pol is being built. Building the pol re-enters
     // need_gevar (via add_for_literal -> need_pol_item_defining_literal) for the
     // two thresholds it references; this guard stops the fast path from cascading
@@ -391,6 +398,7 @@ NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) : _im
     _imp->use_compact_boolean_encoding = proof_options.use_compact_boolean_encoding;
     _imp->assertion_level = proof_options.assertion_level;
     _imp->order_link_deletion_mode = proof_options.order_encoding_deletion;
+    _imp->order_encoding_deletion_min_chain = proof_options.order_encoding_deletion_min_chain;
 
     // The pin-apportionment diagnostic collects only under OrderEncodingDeletion::Literals
     // (the only mode with deletable/hoistable order literals) AND when GCS_ORDER_ENCODING_STATS
@@ -989,18 +997,43 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         //    the always-at-Top view-bridge pol lines cite by number.
         // views_of_variable is only ever populated at model-build time (need_view rejects
         // a proof-phase view), so this decision is stable for every proof-time ge.
-        if (def_at_current &&
-            (_imp->order_encoding_stays_resident.contains(id) || _imp->views_of_variable.contains(std::get<SimpleIntegerVariableID>(id))))
+        bool aux_resident = _imp->order_encoding_stays_resident.contains(id);
+        bool view_resident = _imp->views_of_variable.contains(std::get<SimpleIntegerVariableID>(id));
+        if (def_at_current && (aux_resident || view_resident))
             def_at_current = false;
-        // Stats attribution, matching the branches just taken (boundary wins over the
-        // aux/view override, which is only reached when boundary was false).
+        // Chain-length gate (order_encoding_deletion_min_chain): below/at the gate keep
+        // this interior ge resident at Top -- exactly like the boundary/view/aux paths --
+        // so a propagation-strong model that never builds a long chain pays no deletion
+        // churn. The gate crosses PERMANENTLY (ge_defs only ever grows) once the variable
+        // has named more than min_chain ge thresholds: its ge_defs entry count taken
+        // HERE, before v is emplaced below, i.e. "chain length" in the natural sense with
+        // model-time atoms included. ge_defs (not gevar_values) is the count that matches
+        // the definitions this gate governs, and it is the one still missing v at this
+        // point -- gevar_values gains v further down, in the chain-link block.
+        // min_chain == 0 disables the gate (the `> 0` short-circuits before the count), so
+        // the default path is byte-identical to the pre-gate Literals behaviour. Lowest
+        // residency priority: a boundary/aux/view literal is resident for its own
+        // structural reason regardless of chain length, so this only fires for an
+        // otherwise-deletable interior literal.
+        if (def_at_current && _imp->order_encoding_deletion_min_chain > 0) {
+            const auto * atoms = _imp->find_atoms(id);
+            long long ever_named = atoms ? static_cast<long long>(atoms->ge_defs.size()) : 0;
+            if (ever_named <= _imp->order_encoding_deletion_min_chain)
+                def_at_current = false;
+        }
+        // Stats attribution, matching the branches just taken. Priority (first-cause-wins):
+        // boundary > aux > view > gate; every case is reached only when the earlier ones
+        // did not fire, and (boundary, aux, view, gate) are the only ways !def_at_current
+        // holds here, so the trailing else is exactly the gate case.
         if (_imp->collect_order_encoding_stats && ! def_at_current) {
             if (boundary)
                 stats_born_cause = OrderEncodingResidencyCause::Boundary;
-            else if (_imp->order_encoding_stays_resident.contains(id))
+            else if (aux_resident)
                 stats_born_cause = OrderEncodingResidencyCause::AuxPin;
-            else
+            else if (view_resident)
                 stats_born_cause = OrderEncodingResidencyCause::ViewPin;
+            else
+                stats_born_cause = OrderEncodingResidencyCause::GateResident;
         }
     }
     else if (literals_real && _imp->collect_order_encoding_stats) {
@@ -1820,6 +1853,26 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
             }
         }
 
+    // Per-variable "chain length" = the number of distinct ge thresholds ever named for a
+    // real variable (its stats_ge_top_cause row size) -- exactly the quantity the min_chain
+    // gate tests. Report the distribution so a measurement can see WHY a given gate does or
+    // does not suppress a model's deletion churn: a model whose chains are all short
+    // (median a few, max tens) is fully held resident by a modest gate, whereas a
+    // weak-propagation large-domain model builds chains of hundreds that a modest gate
+    // barely touches.
+    vector<long long> chain_lens;
+    chain_lens.reserve(_imp->stats_ge_top_cause.size());
+    for (const auto & [id, vs] : _imp->stats_ge_top_cause)
+        chain_lens.push_back(static_cast<long long>(vs.size()));
+    sort(chain_lens);
+    auto pctile = [&](double q) -> long long {
+        if (chain_lens.empty())
+            return 0;
+        auto idx = static_cast<std::size_t>(q * static_cast<double>(chain_lens.size() - 1) + 0.5);
+        return chain_lens[idx];
+    };
+    long long chain_max = chain_lens.empty() ? 0 : chain_lens.back();
+
     // Live snapshot at proof end (a Top literal is never deleted, so live-at-Top equals
     // top_resident; a positive-level literal is a still-open deletable one).
     long long live_top = 0, live_positive = 0;
@@ -1829,8 +1882,10 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     long long net_deleted = seen - live_top - live_positive;
 
     // Per-variable classification: view/aux structurally, then ordinary variables by
-    // whether any of their ges are hoist-pinned (eq/invar/nogood/soli) vs all deletable.
-    long long n_view = 0, n_aux = 0, n_mixed = 0, n_deletable = 0;
+    // whether any of their ges are hoist-pinned (eq/invar/nogood/soli); a variable with
+    // no hoist pins but some gate-held (below-min_chain-resident) ge is its own class, so
+    // the fully-deletable count is not inflated by gate-held variables.
+    long long n_view = 0, n_aux = 0, n_mixed = 0, n_gate_held = 0, n_deletable = 0;
     for (const auto & [id, vs] : _imp->stats_ge_top_cause) {
         if (_imp->views_of_variable.contains(id)) {
             ++n_view;
@@ -1840,13 +1895,19 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
             ++n_aux;
             continue;
         }
-        bool any_hoist_pin = false;
-        for (const auto & [v, cause] : vs)
-            if (cause && (*cause == Cause::EqHoist || *cause == Cause::InvarHoist || *cause == Cause::NogoodHoist || *cause == Cause::SoliHoist)) {
+        bool any_hoist_pin = false, any_gate = false;
+        for (const auto & [v, cause] : vs) {
+            if (cause && (*cause == Cause::EqHoist || *cause == Cause::InvarHoist || *cause == Cause::NogoodHoist || *cause == Cause::SoliHoist))
                 any_hoist_pin = true;
-                break;
-            }
-        ((any_hoist_pin) ? n_mixed : n_deletable) += 1;
+            if (cause && *cause == Cause::GateResident)
+                any_gate = true;
+        }
+        if (any_hoist_pin)
+            ++n_mixed;
+        else if (any_gate)
+            ++n_gate_held;
+        else
+            ++n_deletable;
     }
 
     auto get = [](const map<Cause, long long> & m, Cause k) -> long long {
@@ -1859,14 +1920,17 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     long long eq_h = get(by_cause, Cause::EqHoist), invar_h = get(by_cause, Cause::InvarHoist);
     long long nogood_h = get(by_cause, Cause::NogoodHoist), soli_h = get(by_cause, Cause::SoliHoist);
     long long boundary = get(by_cause, Cause::Boundary), model_time = get(by_cause, Cause::ModelTime);
+    long long gate_resident = get(by_cause, Cause::GateResident);
     long long would_free = view_pin + aux_pin;
     long long would_not_free = eq_h + invar_h + nogood_h + soli_h;
     long long structural = boundary + model_time;
 
     stringstream o;
     auto emit = [&](const string & s) { o << "%% oed-stats: " << s << "\n"; };
-    emit("order-encoding-deletion pin apportionment (mode=Literals)");
+    emit(format("order-encoding-deletion pin apportionment (mode=Literals, min_chain={})", _imp->order_encoding_deletion_min_chain));
     emit(format("real-var ge atoms seen (proof-time): {}", seen));
+    emit(format("chain length (distinct ge thresholds per real var, n={}): median={} p90={} p99={} max={}", chain_lens.size(), pctile(0.5),
+        pctile(0.9), pctile(0.99), chain_max));
     emit(format("  currently live at Top: {}", live_top));
     emit(format("  currently live at positive levels: {}", live_positive));
     emit(format("  net deleted: {}", net_deleted));
@@ -1882,6 +1946,7 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     emit(format("  structural (boundary + model_time): {} ({:.1f}%)", structural, pct(structural)));
     emit(format("      boundary:     {} ({:.1f}%)", boundary, pct(boundary)));
     emit(format("      model_time:   {} ({:.1f}%)", model_time, pct(model_time)));
+    emit(format("  gate-held (below min_chain gate): {} ({:.1f}%)", gate_resident, pct(gate_resident)));
     emit("events:");
     emit(format("  deletes: {}", _imp->stats_deletes));
     emit(format("  stitches (forget-path): {}", _imp->stats_stitches));
@@ -1894,6 +1959,7 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     emit(format("  fully-resident-by-view: {}", n_view));
     emit(format("  fully-resident-by-aux:  {}", n_aux));
     emit(format("  mixed (some eq/invar/nogood/soli-hoisted resident): {}", n_mixed));
+    emit(format("  gate-held (no hoist pins, some ge below min_chain gate): {}", n_gate_held));
     emit(format("  fully-deletable (no hoist pins): {}", n_deletable));
 
     print(stderr, "{}", o.str());

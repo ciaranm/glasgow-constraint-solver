@@ -4,6 +4,7 @@
 #include <gcs/proof.hh>
 
 #include <cstdlib>
+#include <exception>
 #include <optional>
 #include <string>
 
@@ -94,6 +95,33 @@ namespace
     }
 
     /**
+     * Read the OrderEncodingDeletion::Literals chain-length gate from the
+     * GCS_DELETE_ORDER_ENCODING_MIN_CHAIN environment variable, if set. Accepts a
+     * non-negative integer; an unparseable or negative value is ignored (fall through
+     * to the code/default) with a warning.
+     */
+    [[nodiscard]] auto order_encoding_deletion_min_chain_from_env() -> optional<int>
+    {
+        const auto * const env = std::getenv("GCS_DELETE_ORDER_ENCODING_MIN_CHAIN");
+        if (! env || ! *env)
+            return nullopt;
+
+        string value{env};
+        try {
+            std::size_t consumed = 0;
+            int parsed = std::stoi(value, &consumed);
+            if (consumed == value.size() && parsed >= 0)
+                return parsed;
+        }
+        catch (const std::exception &) {
+            // Fall through to the warning below.
+        }
+
+        print(stderr, "Ignoring unrecognised GCS_DELETE_ORDER_ENCODING_MIN_CHAIN value '{}'\n", value);
+        return nullopt;
+    }
+
+    /**
      * Apply any environment-variable overrides to a copy of the given ProofOptions.
      * Environment variables act as defaults only: an option set explicitly in code
      * takes precedence.
@@ -106,6 +134,9 @@ namespace
         if (! options.order_encoding_deletion_set_explicitly)
             if (auto mode = order_encoding_deletion_from_env())
                 options.order_encoding_deletion = *mode;
+        if (! options.order_encoding_deletion_min_chain_set_explicitly)
+            if (auto min_chain = order_encoding_deletion_min_chain_from_env())
+                options.order_encoding_deletion_min_chain = *min_chain;
         return options;
     }
 }

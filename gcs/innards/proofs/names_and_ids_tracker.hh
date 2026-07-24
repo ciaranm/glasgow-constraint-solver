@@ -74,15 +74,16 @@ namespace gcs::innards
      */
     enum class OrderEncodingResidencyCause
     {
-        ModelTime,   ///< born Top: the ge atom was created before the logger attached.
-        Boundary,    ///< born Top: a trivially-derivable boundary literal (need_gevar's `boundary`).
-        ViewPin,     ///< born Top: whole encoding resident because the variable is a view underlying (views_of_variable).
-        AuxPin,      ///< born Top: whole encoding resident via order_encoding_stays_resident (aux magnitudes).
-        EqHoist,     ///< hoisted to Top from an eq atom's Top def (need_direct_encoding_for).
-        InvarHoist,  ///< hoisted to Top from an interval-partition atom's Top def (define_plain_invar).
-        NogoodHoist, ///< hoisted to Top by emit_learned_nogood.
-        SoliHoist,   ///< hoisted to Top by the objective-improvement hoist in ProofLogger::solution.
-        GuessHoist   ///< hoisted to a positive backtrack level by ProofLogger::backtrack (transient; never a Top cause).
+        ModelTime,    ///< born Top: the ge atom was created before the logger attached.
+        Boundary,     ///< born Top: a trivially-derivable boundary literal (need_gevar's `boundary`).
+        ViewPin,      ///< born Top: whole encoding resident because the variable is a view underlying (views_of_variable).
+        AuxPin,       ///< born Top: whole encoding resident via order_encoding_stays_resident (aux magnitudes).
+        GateResident, ///< born Top: the variable had not crossed the min-chain gate (order_encoding_deletion_min_chain).
+        EqHoist,      ///< hoisted to Top from an eq atom's Top def (need_direct_encoding_for).
+        InvarHoist,   ///< hoisted to Top from an interval-partition atom's Top def (define_plain_invar).
+        NogoodHoist,  ///< hoisted to Top by emit_learned_nogood.
+        SoliHoist,    ///< hoisted to Top by the objective-improvement hoist in ProofLogger::solution.
+        GuessHoist    ///< hoisted to a positive backtrack level by ProofLogger::backtrack (transient; never a Top cause).
     };
 
     /**

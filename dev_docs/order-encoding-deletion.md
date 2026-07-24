@@ -211,12 +211,58 @@ consolidate-then-delete and tidy the current direct wiring. Its value was always
 design quality, not measured performance; that stands. It is also the natural home
 for the chain-length-gated deletion policy below.
 
-**2b. Chain-length-gated deletion (new).** Only track/delete a variable's order
-literals once its live chain exceeds a length threshold (~tens). Eliminates the
-real-model churn and overhead measured in the campaign (making mode-on
-strictly-no-harm on eq/small-chain models) while keeping the full large-domain win;
-would strengthen any future default-on case. Cheap; naturally lives inside the
-step-2 abstraction but does not require it.
+**2b. Chain-length-gated deletion — DONE (implemented + measured; default gate 16).**
+
+Under `OrderEncodingDeletion::Literals`, a real variable's interior (non-boundary)
+`ge` definition is only emitted deletable-at-`Current` once the variable has crossed
+a chain-length gate: when the number of `ge` thresholds ever named for it (its
+`gevars_that_exist[id]` count at decision time in `need_gevar` — model-time atoms
+included) exceeds `min_chain`. At or below the gate the def stays resident at `Top`,
+exactly like the boundary / view-pin / aux-pin paths. The gate is monotone (the
+count only grows; once crossed, stays crossed; below-gate residents are never
+revisited) — no flapping.
+
+Parameter: `ProofOptions::order_encoding_deletion_min_chain` (+ fluent setter), env
+override `GCS_DELETE_ORDER_ENCODING_MIN_CHAIN` (explicit-in-code wins). **`0` = gate
+off = byte-identical to the pre-gate Literals behaviour — the aggressive-testing
+mode: regression runs exercising the deletion machinery MUST set `MIN_CHAIN=0`,
+because tiny test domains never cross a nonzero gate.** The suite passes caps-off
+flag-ON at gate 0 and at 32 (525/525 each, 0 flag-induced failures). The stats dump
+gains a `gate-held` cause and a per-variable chain-length distribution.
+
+**Default 16, chosen from measurement** (full tables in
+`.../real-instance-bench/chain-gate/gate-measurement.md`):
+
+| min_chain | pairwise d250 | d1000 | crystal_maze proof/deletes | talent | seat-moving |
+|--:|--:|--:|--|--|--|
+| 0 | 4.70× | 17.87× | +48.5 % / 774 | +22.6 % | +1.7 % / 22.8 k |
+| **16** | **2.97×** | **11.33×** | **+0.0 % / 0 (byte-identical to None)** | +5.8 % | +1.6 % / 20.8 k |
+| 32 | 2.29× | 8.43× | +0.0 % / 0 | +1.6 % | +1.6 % / 20.7 k |
+| 64 | 1.61× | 5.74× | +0.0 % / 0 | −0.0 % / 0 | +1.1 % / 13.1 k |
+| 128 | 1.04× | 3.43× | — | — | — |
+
+Search identical OFF vs ON at every gate; every proof VERIFIED. An infinite gate
+reproduces the mode-None proof **byte-for-byte** (measured two anchors) — the
+strongest strictly-no-harm form; crystal_maze reaches that already at gate 16 (its
+longest chain is 16). The synthetic-win tables in Results above are the gate-off
+(`MIN_CHAIN=0`) ceiling.
+
+Two measured caveats, stated plainly:
+- **Stitch explosion (proof-size only).** Under split branching the first ~L
+  thresholds are named in binary-split order, so resident anchors are spread and
+  fragment each deleted run into per-sub-run stitches (d1000 stitches triple at
+  L=16; the proof is briefly *larger* than un-gated at L=16/32). Proof size is
+  non-monotone in L; **verify time — the target — erodes cleanly**, so the gate is
+  chosen from the verify curve, not size. See `chain-gate/stitch-explosion.md`.
+- **A single long chain defeats the flat gate.** seat-moving's residual churn
+  (~20.8 k delete/reintroduce at gate 16) is concentrated on its objective (chain
+  98) and cost (76) variables, which any win-preserving gate leaves deletable. That
+  churn is verify-neutral (OFF 305.9 s ≈ L16 298.3 s ≈ L64 299.4 s, all VERIFIED)
+  and costs only +1.6 % proof / ~+5 % solve. Follow-up recorded for step 2: a
+  **targeted objective-variable exemption** (never delete, or gate separately, the
+  bound-tightened objective) would remove most remaining real-model churn at zero
+  win cost — it belongs where the backtrack-constraint owner knows the bound
+  frontier, not in the flat gate.
 
 **3. Bridge-lifetime redesign — DEPRIORITISED.** Making viewed and divide/modulus
 aux magnitudes deletable frees 0 % on every real instance measured (step 1b); its
@@ -224,8 +270,9 @@ win-recovery motivation is gone. Revisit only if a view/product-heavy
 *weak-propagation large-domain bound-split* workload appears — the only regime where
 freed chains would be long enough to matter.
 
-**Priority between 2 and 2b is a user decision;** both are justified (2 by design
-quality, 2b by measured overhead elimination); 3 is parked.
+**Ordering decided (2026-07): 2b first (done, above), then step 2.** Step 2 is the
+next piece of work, and inherits the objective-variable-exemption follow-up from 2b;
+3 stays parked.
 
 **Also:** decide productionisation (keep flag-gated vs default-on — current verdict:
 flag-gated), and — cleanup — the superseded dormant `Links` mode can be removed.

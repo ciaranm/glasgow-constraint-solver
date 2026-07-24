@@ -41,6 +41,10 @@
 //   order_deletion_bench --problem pairwise --size 8 --domain D --window D \
 //       --tightness 90 --unsat
 //
+// For the MAXIMUM win, also set GCS_DELETE_ORDER_ENCODING_MIN_CHAIN=0: the default
+// chain-length gate (16) holds each variable's first thresholds resident, trading a
+// slice of the synthetic win for strictly-no-harm on short-chain models.
+//
 // with D swept over e.g. 250 / 500 / 1000 / 2000 for the domain curve. `--window
 // D` disables the per-variable windows (otherwise the instance root-refutes) and
 // `--tightness 90` sits just inside UNSAT so the tree must be searched rather than

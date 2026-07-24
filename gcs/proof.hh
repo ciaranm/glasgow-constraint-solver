@@ -86,6 +86,19 @@ namespace gcs
         bool assertion_level_set_explicitly = false; ///< Was assertion_level set in code (so it overrides the env var)?
         OrderEncodingDeletion order_encoding_deletion = OrderEncodingDeletion::None; ///< Which order-encoding parts to delete on backtrack
         bool order_encoding_deletion_set_explicitly = false; ///< Was order_encoding_deletion set in code (so it overrides the env var)?
+        // Chain-length gate for OrderEncodingDeletion::Literals: a real variable's
+        // interior ge definition is only emitted deletable-at-Current once the number of
+        // ge thresholds ever named for that variable exceeds this value; below/at the
+        // gate the def is kept resident at Top (as in mode None), so a propagation-strong
+        // model that never builds long chains pays no deletion churn. 0 disables the gate
+        // entirely -- deletion fires from the first threshold, byte-identical to the
+        // pre-gate Literals behaviour; use 0 when regression-testing the deletion
+        // machinery (tiny test domains never cross a nonzero gate). The default of 16 is
+        // the measured sweet spot: short-chain models are held fully resident (often
+        // byte-identical to mode None) while the large-domain win keeps most of its value
+        // (d1000 11.3x of the ungated 17.9x); see dev_docs/order-encoding-deletion.md.
+        int order_encoding_deletion_min_chain = 16;                    ///< Min ge chain length before Literals-mode deletion engages (0 = gate off)
+        bool order_encoding_deletion_min_chain_set_explicitly = false; ///< Was the gate set in code (so it overrides the env var)?
 
         /// Write annotated assertions instead of full justifications.
         ProofOptions & set_assertion_level(AssertionLevel a = AssertionLevel::Inferences)
@@ -101,6 +114,16 @@ namespace gcs
         {
             order_encoding_deletion = d;
             order_encoding_deletion_set_explicitly = true;
+            return *this;
+        }
+        /// Set the chain-length gate for OrderEncodingDeletion::Literals: interior ge
+        /// definitions are only made deletable once a variable has named more than \p m
+        /// ge thresholds. 0 (the default) disables the gate, deleting from the first
+        /// threshold exactly as the pre-gate Literals mode did.
+        ProofOptions & set_order_encoding_deletion_min_chain(int m)
+        {
+            order_encoding_deletion_min_chain = m;
+            order_encoding_deletion_min_chain_set_explicitly = true;
             return *this;
         }
         /// Always write the full variable encoding to the OPB file.
