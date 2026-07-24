@@ -163,14 +163,41 @@ owns the MiniZinc frontend proofs.
   flag-induced VeriPB rejections; mode-off byte-identical; flag-off 525/525). The
   hoist primitive, guess/eq/partition-atom hoisting, and the aux/view dispositions
   below are all in `gcs/innards/proofs/{names_and_ids_tracker,proof_logger,proof_model}.*`.
+- **Gate — randomized-test seed sweeps are part of the flag-ON gate.** A single caps-off
+  suite run exercises only *one* random seed per data-driven test, and the fixed corpus
+  missed a ~10 %-of-seeds VeriPB-rejection hole in divide/modulus (seed 3072268882 was one
+  such seed). So any change to the deletion machinery, and any new resident/hoist
+  disposition, must additionally clear a **seed sweep** of the affected randomized tests:
+  ~200 fixed seeds, flag-ON at `GCS_DELETE_ORDER_ENCODING_MIN_CHAIN=0` (the gate-off,
+  aggressive-testing mode — a nonzero gate hides short-chain shapes), each run isolated in
+  its own working directory, **zero** rejections required. Report the before/after failure
+  counts. (Sweep harness + results live under
+  `.../order-encoding-deletion-artifacts/divide-modulus-seed-bug/`.)
 - **Kept resident (not deletable), per the "delete only when unreferenced" rule,
   because their `ge`s are named by *permanent* Top constraints:**
   - divide/modulus in-proof-bit **aux-magnitude** variables (`register_state_variable_bits_in_proof`)
     — pinned by the product-justification caches;
+  - the **real operands** of the magnitude-product constraints — divide/modulus `x, y, out`
+    and multiply/power `x, y, z` (marked in `install_divide_modulus` and in
+    `signed_multiply::make_data`, which multiply and power both route through) — pinned by
+    the permanent identity / remainder / magnitude-channel / **sign-clause** rows
+    (`product_encoding.cc`) and the `pol`/`rup` product reasons derived over them, all of
+    which name these operands' order/eq literals (e.g. an `emit_sign_clauses` row naming
+    `v >= 0` / `v < 1`, or a `mult_bc` reason naming `31 i[out][ge1]`). Without this an
+    interior operand `ge` is born deletable, a backtrack deletes it while a pinning row
+    stays live, a later reference **re-introduces** it, and the re-introduction's
+    falsify-witness `ge := 0` collides with the pin — VeriPB rejects the proofgoal. (This
+    was the divide/modulus seed-3072268882 bug: a ~10 %-of-random-seeds hole the fixed test
+    corpus missed. Multiply/power share the identical pin mechanism; the fix is applied to
+    them as a latent-bug closure — see the seed-sweep note under Gates.);
   - **viewed** variables (underlying of a registered view) — pinned by the
     always-at-Top view-bridge `pol`s in `need_gevar`.
-  These get no deletion win, but are correct. Making them deletable needs the
-  bridge-lifetime redesign (Future work).
+  These get no deletion win, but are correct. **This narrows the win scope: any variable
+  appearing as an operand of a divide/modulus/multiply/power constraint is now wholly
+  resident, so it contributes no chain-shrinkage win** (its long chains, if any, are
+  recoverable only by the parked bridge-lifetime redesign — Future work). In the win regime
+  (weak-propagation, large-domain, bound-split) such variables are typically not the
+  split-branched ones anyway.
 - **`soli` objective atom** is hoisted to Top when the objective-improvement
   constraint is emitted (latent optimisation-mode bug fixed defensively).
 - **Not yet done:** the clean Brancher abstraction (below) — the current wiring

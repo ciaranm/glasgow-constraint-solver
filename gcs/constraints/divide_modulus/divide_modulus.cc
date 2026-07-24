@@ -1083,6 +1083,23 @@ namespace
     auto define_proof_model_divide_modulus(InstallState & st, const ConstraintID & owner, bool expose_quotient, const IntegerVariableID & x,
         const IntegerVariableID & y, const IntegerVariableID & out, ProofModel & model) -> void
     {
+        // Under OrderEncodingDeletion::Literals, keep the WHOLE order encoding of the three
+        // real operands resident (defs at Top, never deleted), exactly as the in-proof aux
+        // magnitudes are (register_state_variable_bits_in_proof). The magnitude-product
+        // justification pins these operands' order literals in permanent product/identity/
+        // remainder/sign rows and the pol/rup reasons derived over them (e.g. a mult_bc row
+        // naming `31 i[out][ge1]`). Were an interior ge of x/y/out born deletable, a backtrack
+        // could delete it while such a pinning constraint stays live; a later reference then
+        // re-introduces the ge, and the re-introduction's falsify-witness (ge := 0) collides
+        // with the pin -- VeriPB cannot autoprove the resulting proofgoal. (The VIEW form of an
+        // operand is already held resident by the view-bridge path; this closes the same hole
+        // for the BARE form.) Constants have no order encoding, so skip them. Marked at the head
+        // of the model-building phase, before any row below names an operand threshold and
+        // before any search-time need_gevar, so every ge of these operands is born at Top.
+        for (const auto & a : {affine_of(x), affine_of(y), affine_of(out)})
+            if (a.var)
+                model.names_and_ids_tracker().note_order_encoding_stays_resident(*a.var);
+
         if (st.zero_divisor) {
             // Morally what an empty divisor domain encodes.
             model.add_constraint(WPBSum{} >= 1_i);

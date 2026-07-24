@@ -1,3 +1,4 @@
+#include <gcs/constraints/innards/arithmetic_utils.hh>
 #include <gcs/constraints/innards/product_bounds.hh>
 #include <gcs/constraints/innards/product_justify.hh>
 #include <gcs/constraints/multiply/hints.hh>
@@ -42,6 +43,26 @@ auto gcs::innards::signed_multiply::make_data(
 auto gcs::innards::signed_multiply::emit_encoding(ProofModel & model, const State & initial_state, const ConstraintID & constraint_id, Data & data)
     -> void
 {
+    // Under OrderEncodingDeletion::Literals, keep the WHOLE order encoding of the three
+    // real operands resident (defs at Top, never deleted), exactly as the in-proof
+    // magnitude channels are (product_enc emits them via
+    // register_state_variable_bits_in_proof). The magnitude channels, result channel and
+    // sign clauses below are permanent (Top) rows that name these operands' order/eq
+    // literals (e.g. `v >= 0`, `v < 1` in emit_sign_clauses/emit_magnitude_channel), and
+    // the pol/rup product reasons derived over them name further operand ge thresholds.
+    // Were an interior ge of x/y/z born deletable, a backtrack could delete it while such a
+    // pinning row stays live; a later reference then re-introduces the ge, and the
+    // re-introduction's falsify-witness (ge := 0) collides with the pin -- VeriPB cannot
+    // autoprove the resulting proofgoal. (The VIEW form of an operand is already held
+    // resident by the view-bridge path; this closes the same hole for the BARE form. This
+    // mirrors the divide/modulus operand-residency fix; both share this product machinery.)
+    // Constants have no order encoding, so skip them. Marked at the head of the
+    // model-building phase, before the rows below name an operand threshold and before any
+    // search-time need_gevar, so every ge of these operands is born at Top.
+    for (const auto & a : {affine_of(data.x), affine_of(data.y), affine_of(data.z)})
+        if (a.var)
+            model.names_and_ids_tracker().note_order_encoding_stays_resident(*a.var);
+
     // cake_pb_cp's multiplication encoding: a magnitude channel per
     // operand slot (axis 0 -> "X", 1 -> "Y", a fresh proof-only magnitude
     // each, even for a repeated operand), the bit-product grid, the
