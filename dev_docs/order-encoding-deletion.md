@@ -4,9 +4,12 @@
 measured on synthetic AND real instances; suite-safe; committed on this branch;
 not default.** This note records the design for shrinking the integer
 order-encoding that VeriPB carries, plus the measured outcome and what is and
-isn't yet done. The full Brancher-API refactor (below) is still a proposal; the
-current implementation wires deletion into the existing branch/backtrack flow via
-hoisting.
+isn't yet done. The full Brancher-API refactor (step 2, below) is now a
+**decided design, recorded in [brancher-design.md](brancher-design.md)** but not
+yet implemented; the current implementation wires deletion into the existing
+branch/backtrack flow via hoisting, and the sketch of the refactor further down
+this note is superseded by that decided design (see the note at "Design
+overview").
 
 ## Results (measured)
 
@@ -206,10 +209,25 @@ builds long chains (seat-moving: median chain 12, max 98, despite maxdom 901), a
 the deletion machinery churns (22 857 deletes / 22 829 reintroductions, net 28) for
 nothing there.
 
-**2. Brancher-API refactor** (the abstraction below) to generalise
-consolidate-then-delete and tidy the current direct wiring. Its value was always
-design quality, not measured performance; that stands. It is also the natural home
-for the chain-length-gated deletion policy below.
+**2. Brancher-API refactor — DESIGN DECIDED (see
+[brancher-design.md](brancher-design.md)); not yet implemented.** The concrete,
+decided step-2 design lives in that note; it generalises consolidate-then-delete,
+tidies the current direct wiring, and is the natural home for the chain-gated
+deletion policy, the objective-variable exemption (from 2b, below), and the
+objective-improvement `delc` lifecycle. Five owner decisions are settled there:
+the per-node object stays a `std::generator` (not a virtual class) until it shows
+as a benchmark hotspot; the pre-0.1 public yield-type source break is accepted
+(the implicit `IntegerVariableCondition → BranchDecision` conversion is the
+bridge); the objective is handled by exemption for its ges *and* an unconditional
+delete-all-but-the-most-recent improvement constraint; the value-order mapping is
+final; and the eq-atom window ships default-off pending a stage-E measurement.
+
+Crucially, the design adds an **eq-atom sliding window** (validated 8/8 in VeriPB
+3.0.2) that moves the four contiguous in-order/eq value orders —
+`smallest_first`, `largest_first`, `smallest_in`, `largest_in` — into the win
+regime as *O(1)-resident* (evict each eq/ge once the frontier steps past it),
+**superseding this note's earlier claim that only split wins**: split still wins
+by the bound *jump*, but ascending/descending eq now wins too, by the window.
 
 **2b. Chain-length-gated deletion — DONE (implemented + measured; default gate 16).**
 
@@ -355,6 +373,19 @@ Two consequences that shape the design:
    *resident* database is smaller, so every *other* RUP's closure shrinks.
 
 ## Design overview: consolidate -> hoist -> delete
+
+> **Historical sketch — superseded by [brancher-design.md](brancher-design.md).**
+> The sections from here through "Implementation staging" are the original
+> user-approved *conceptual* sketch; the concrete, decided step-2 design (grounded
+> in the real code, with the five owner decisions and the eq-atom window folded in)
+> is [brancher-design.md](brancher-design.md). In particular the "Mapping the
+> existing heuristics" table below is **wrong** and superseded: its in-order/eq rows
+> claimed `smallest_first`/`smallest_in`/`largest_first`/`largest_in` win by an
+> "O(1) pin" bound-jump, but eq branching has no gap to jump and an eq atom pins
+> both ges — those orders instead win via the **eq-atom window** (evict behind a
+> one-step frontier), while the bound-*jump* win is the `split_*` family only. The
+> foundation above this note ("The verified foundation: guess-reasoned bound jumps")
+> stands. The prose below is kept for provenance; do not treat it as current.
 
 A brancher maintains a compact **backtrack constraint** — the "what we'll use to
 backtrack" fact, i.e. the weakest constraint it has proven must hold given every
