@@ -1,0 +1,2 @@
+add_executable(knapsack_bench knapsack_bench.cc)
+target_link_libraries(knapsack_bench PRIVATE glasgow_constraint_solver cxxopts)

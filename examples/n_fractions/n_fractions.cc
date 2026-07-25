@@ -10,7 +10,6 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <random>
 #include <string>
 
 #include <version>
@@ -29,7 +28,6 @@ using std::cerr;
 using std::cout;
 using std::endl;
 using std::make_optional;
-using std::mt19937;
 using std::nullopt;
 using std::string;
 using std::vector;
