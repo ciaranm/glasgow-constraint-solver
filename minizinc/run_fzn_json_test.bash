@@ -40,6 +40,12 @@ if veripb --help >/dev/null 2>&1 ; then
         veripb --trace "$testname.opb" "$testname.pbp" 2>&1 | tail -n100 || true
         exit 4
     fi
+
+    # Verification passed, so dispose of the proof unless asked to preserve it;
+    # the failure path above exits first, leaving a failing proof to inspect.
+    case "${GCS_PRESERVE_PROOF_FILES:-}" in
+        '' | 0) rm -f "$testname".{opb,pbp,scp,varmap} ;;
+    esac
 fi
 
 exit 0

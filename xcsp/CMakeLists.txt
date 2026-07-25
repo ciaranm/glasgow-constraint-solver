@@ -26,7 +26,6 @@ function(add_xcsp_test name)
             ${CMAKE_SOURCE_DIR}/xcsp/tests/
             ${name})
     set_tests_properties(xcsp_${name} PROPERTIES
-        RESOURCE_LOCK xcsp
         SKIP_RETURN_CODE 66)
 endfunction()
 

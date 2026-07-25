@@ -43,7 +43,7 @@ echo "writing output to $testname.out"
 # CRLF (cout is in text mode) and git may check the LF-committed caches out as CRLF
 # too, so strip CR from both the captured output and the cached expectations.
 if [[ $mode == enumerate ]]; then
-    $prog --prove --all "$testsdir/$testname.xml" > "$testname.out" || exit 1
+    $prog --prove --proof-files-basename "$testname" --all "$testsdir/$testname.xml" > "$testname.out" || exit 1
     tr -d '\r' < "$testname.out" > "$testname.out.nocr" && mv -f "$testname.out.nocr" "$testname.out"
 
     actualfile="$testname.sols.actual"
@@ -60,7 +60,7 @@ if [[ $mode == enumerate ]]; then
     fi
     rm -f "$actualfile" "$expectedfile"
 else
-    $prog --prove "$testsdir/$testname.xml" > "$testname.out" || exit 1
+    $prog --prove --proof-files-basename "$testname" "$testsdir/$testname.xml" > "$testname.out" || exit 1
     tr -d '\r' < "$testname.out" > "$testname.out.nocr" && mv -f "$testname.out.nocr" "$testname.out"
 
     if ! grep -q '^s OPTIMUM FOUND$' "$testname.out"; then
@@ -76,6 +76,11 @@ else
     fi
 fi
 
-veripb xcsp.{opb,pbp} || exit 4
+veripb "$testname".{opb,pbp} || exit 4
 
-rm -f xcsp.{opb,pbp} "$testname.out"
+# Verification passed, so dispose of the proof unless asked to preserve it; the
+# failure paths above all exit first, leaving a failing proof to inspect.
+case "${GCS_PRESERVE_PROOF_FILES:-}" in
+    '' | 0) rm -f "$testname".{opb,pbp,scp,varmap} ;;
+esac
+rm -f "$testname.out"

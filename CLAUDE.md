@@ -44,6 +44,9 @@ Run a single test with proof verification (uses `run_test_and_verify.bash`):
 ```shell
 ./run_test_and_verify.bash ./build/circuit_disconnected_test
 ```
+The proof files are deleted once they verify. To keep them for inspection,
+set `GCS_PRESERVE_PROOF_FILES` (see `dev_docs/constraints.md`); they are
+kept automatically when verification fails.
 
 Disable XCSP or MiniZinc support to reduce dependencies:
 ```shell
