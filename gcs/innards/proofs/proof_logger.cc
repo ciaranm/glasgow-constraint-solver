@@ -187,6 +187,7 @@ struct ProofLogger::Imp
     vector<char> proof_stream_buffer;
     int current_indent = 0;
     AssertionLevel assertion_level;
+    OrderEncodingDeletion order_encoding_deletion = OrderEncodingDeletion::None;
 
     // Scratch buffers for assembling proof lines before they are written out,
     // reused across emissions to avoid a stringstream per logged inference.
@@ -220,6 +221,7 @@ ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker 
     _imp->proof_file = proof_options.proof_file_names.proof_file;
     _imp->proof_lines_by_level.resize(2);
     _imp->assertion_level = proof_options.assertion_level;
+    _imp->order_encoding_deletion = proof_options.order_encoding_deletion;
 }
 
 ProofLogger::~ProofLogger() = default;
@@ -366,6 +368,42 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
     emit_under_reason(
         assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Current, guesses_as_reason, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
+}
+
+auto ProofLogger::bound_advances_active() const -> bool
+{
+    // Bound advances act on the proof only under the Literals order-encoding-deletion
+    // mode with assertions off --- the same pairing every Literals-machinery guard uses.
+    // Under None a Bound advance is treated exactly like Exclude (no advance emitted),
+    // which is what keeps flag-off proofs byte-identical after the split family is tagged.
+    return _imp->order_encoding_deletion == OrderEncodingDeletion::Literals && _imp->assertion_level == AssertionLevel::Off;
+}
+
+auto ProofLogger::emit_split_bound_advance(const vector<Literal> & guesses, const Literal & refuted_guess) -> void
+{
+    if (! bound_advances_active())
+        return;
+
+    // The frontier order literal is the refuted guess's own negation. For a split
+    // sibling this is a single `ge` threshold: refuting `var <= v` (`var < v+1`) gives
+    // `var >= v+1`; refuting `var > v` (`var >= v+1`) gives `var < v+1`. No hole-jumping
+    // is needed in stage B --- the split refutes the half directly, so the advance clause
+    // coincides with the refuted child's still-live backtrack clause and RUP is immediate.
+    auto frontier = ! refuted_guess;
+
+    // Hoist the frontier to this level (the sibling's backtrack level == the active
+    // level) so the advance never names a to-be-deleted literal and the child's forget
+    // keeps exactly the frontier resident behind the monotone bound. Usually a no-op:
+    // the child's backtrack GuessHoist already placed the frontier here (it is named by
+    // the refuted guess); re-run so the frontier is anchored even were that to change.
+    names_and_ids_tracker().hoist_live_order_literals_toward_level(vector<Literal>{frontier}, proof_level(), OrderEncodingResidencyCause::GuessHoist);
+
+    _imp->proof << "% bound advance\n";
+    WPBSum advance;
+    for (const auto & guess : guesses)
+        advance += 1_i * ! guess;
+    advance += 1_i * frontier;
+    emit_rup_proof_line(move(advance) >= 1_i, ProofLevel::Current);
 }
 
 auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions) -> ProofLine

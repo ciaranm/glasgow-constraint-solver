@@ -95,6 +95,33 @@ namespace gcs::innards
         auto backtrack(const std::vector<Literal> & guesses) -> void;
 
         /**
+         * \brief True iff brancher bound advances are proof-active: the mode is
+         * OrderEncodingDeletion::Literals and assertions are off.
+         *
+         * The search loop consults this before building the advance's guess list, so
+         * that under mode None (or with assertions on) a Bound advance is fully inert
+         * --- no advance line, no guess-list materialisation --- which is what keeps
+         * flag-off proofs byte-identical and flag-off search free of extra work.
+         */
+        [[nodiscard]] auto bound_advances_active() const -> bool;
+
+        /**
+         * \brief Emit the guess-reasoned bound advance for a refuted split sibling.
+         *
+         * The refuted guess's own negation is the frontier order literal (refuting
+         * `var <= v`, i.e. `var < v+1`, proves `var >= v+1`; refuting `var > v` proves
+         * `var < v+1`), so no hole-jumping is needed: the split refutes the half
+         * directly. One RUP line `~guesses OR ~refuted_guess` is emitted at
+         * ProofLevel::Current (the sibling's backtrack level), which VeriPB re-derives
+         * from the refuted child's still-live backtrack clause; the frontier literal is
+         * first hoisted to that level so the child's forget deletes behind it while
+         * keeping exactly the frontier resident. \p guesses is the decision stack below
+         * this node (the just-refuted sibling already popped). A no-op unless
+         * bound_advances_active() --- under None a Bound advance is inert.
+         */
+        auto emit_split_bound_advance(const std::vector<Literal> & guesses, const Literal & refuted_guess) -> void;
+
+        /**
          * Derive a learned nogood --- the clause forbidding the given conjunction
          * of decisions --- as a persistent (ProofLevel::Top) RUP line, returning
          * its proof line. Used when restart learning records a nogood as the stack

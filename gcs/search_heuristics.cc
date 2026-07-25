@@ -408,14 +408,39 @@ auto gcs::value_order::smallest_first() -> BranchValueGenerator
     };
 }
 
+namespace
+{
+    // Tag a split sibling with the Bound advance its refutation entails, derived from
+    // the condition it ACTUALLY yields (never from which arm produced it). A split
+    // yields order-atom conditions only: `var <= v` lowers to `var < v+1` (Less), whose
+    // refutation proves `var >= v+1` --- a LowerBound advance on var; `var > v` lowers to
+    // `var >= v+1` (GreaterEqual), whose refutation proves `var < v+1` --- an UpperBound.
+    // Deriving from the yielded condition keeps split_random's tags honest whatever its
+    // (duplicated-arm) coin flip does. Any other operator would leave the sibling
+    // Exclude-tagged (byte-identical), but a split never yields one.
+    [[nodiscard]] auto split_decision(const IntegerVariableCondition & cond) -> BranchDecision
+    {
+        switch (cond.op) {
+            using enum VariableConditionOperator;
+        case Less: return BranchDecision{cond, backtrack_advance::LowerBound{cond.var}};
+        case GreaterEqual: return BranchDecision{cond, backtrack_advance::UpperBound{cond.var}};
+        case Equal:
+        case NotEqual:
+        case InRange:
+        case NotInRange: return BranchDecision{cond};
+        }
+        return BranchDecision{cond};
+    }
+}
+
 auto gcs::value_order::split_smallest_first() -> BranchValueGenerator
 {
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchDecision> {
         return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchDecision> {
             auto mid = s.domain_size(var) / 2_i;
             auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
-            co_yield var <= v;
-            co_yield var > v;
+            co_yield split_decision(var <= v);
+            co_yield split_decision(var > v);
         }(s, var);
     };
 }
@@ -426,8 +451,8 @@ auto gcs::value_order::split_largest_first() -> BranchValueGenerator
         return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchDecision> {
             auto mid = s.domain_size(var) / 2_i;
             auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
-            co_yield var > v;
-            co_yield var <= v;
+            co_yield split_decision(var > v);
+            co_yield split_decision(var <= v);
         }(s, var);
     };
 }
@@ -441,12 +466,12 @@ namespace
                 auto mid = s.domain_size(var) / 2_i;
                 auto v = *(s.each_value(var) | std::ranges::views::drop((mid - 1_i).as_index())).begin();
                 if (uniform_int_distribution(0, 1)(*rand) == 0) {
-                    co_yield var <= v;
-                    co_yield var > v;
+                    co_yield split_decision(var <= v);
+                    co_yield split_decision(var > v);
                 }
                 else {
-                    co_yield var > v;
-                    co_yield var <= v;
+                    co_yield split_decision(var > v);
+                    co_yield split_decision(var <= v);
                 }
             }(rand, s, var);
         };
