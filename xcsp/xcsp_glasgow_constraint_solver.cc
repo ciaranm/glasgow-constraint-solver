@@ -1727,10 +1727,12 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::Options options("XCSP Glasgow Constraint Solver", "Get started by using option --help");
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof")          //
-            ("all", "Find all solutions")        //
+        options.add_options("Program Options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<string>()->default_value("xcsp"))             //
+            ("all", "Find all solutions")                                    //
             ("branch",
                 "Branching heuristic: dom-then-deg, or dom-wdeg[:VARIANT] "          //
                 "(VARIANT one of classic, ia, ca, id, cd, ca.cd, chs)",              //
@@ -1850,7 +1852,7 @@ auto main(int argc, char * argv[]) -> int
             },
             .branch = *brancher,
             .restarts = restarts},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("xcsp") : nullopt, &abort_flag);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<string>()) : nullopt, &abort_flag);
 
     if (timeout_thread.joinable()) {
         {

@@ -237,14 +237,23 @@ cmake -S . -B build -DGCS_ENABLE_VIEW_WRAP_SWEEP=ON
 The harness and the `--view-wrap=N` / `--view-position=...` flags are always
 built; only the per-wrap ctest registrations are gated.
 
-Single manual run:
+Single manual run. These are data-driven test binaries, not example
+programs: they have no `--prove` flag, and instead prove and run VeriPB
+themselves whenever `veripb` is on the `PATH`, naming each proof after the
+test and its view configuration. So a manual run needs only the view
+flags, and `GCS_PRESERVE_PROOF_FILES=1` to stop the harness deleting each
+proof once it has verified (see `dev_docs/constraints.md`):
 
 ```shell
-./build/equals_test --view-wrap=11 --view-position=all --prove eq_w11
-veripb eq_w11.opb eq_w11.pbp
-./build/lex_test --view-position=mixed --prove lex_mixed   # heterogeneous views
-veripb lex_mixed.opb lex_mixed.pbp
+GCS_PRESERVE_PROOF_FILES=1 ./build/equals_test --view-wrap=11 --view-position=all
+ls equals_test_*.opb            # one per view configuration exercised
+
+GCS_PRESERVE_PROOF_FILES=1 ./build/lex_test --view-position=mixed  # heterogeneous views
+ls lex_test_*.opb
 ```
+
+Use `GCS_PRESERVE_PROOF_FILES=all` instead to keep *every* instance's
+proof rather than the last one per configuration.
 
 ## Status
 

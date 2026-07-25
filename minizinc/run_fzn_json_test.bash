@@ -32,7 +32,7 @@ if ! diff -u <(sort < "$jsondir/$testname.expected") "$testname.fzn.sols" ; then
 fi
 
 if veripb --help >/dev/null 2>&1 ; then
-    "$fznglasgow" -a --prove "$testname" "$infile" || exit 3
+    "$fznglasgow" -a --prove --proof-files-basename "$testname" "$infile" || exit 3
     if ! veripb "$testname.opb" "$testname.pbp" ; then
         echo "Rerunning last 100 lines of proof verification in trace mode..."
         echo '$ ' veripb --trace "$(readlink -f "$testname.opb")" "$(readlink -f "$testname.pbp")"
