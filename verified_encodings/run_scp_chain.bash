@@ -5,8 +5,8 @@
 # (e.g. GitHub CI, where building CakeML is awkward) it degrades to a workflow-1
 # self-verify so the case is still exercised rather than skipped.
 #
-#   1. <solver> --all --prove <scp>    -> <base>.scp (re-emitted, with the final
-#                                         (enumerate) / objective element) + .opb + .pbp
+#   1. <solver> --all --prove <scp>    -> <base>.scp (re-emitted, with its
+#                                         (prob_type enumerate) section) + .opb + .pbp
 #
 #   With cake_pb_cp (full workflow 2 -- the verified checker has the last word):
 #   2. cake_pb_cp <base>.scp            -> <base>.verifiedopb   (re-derive OPB, verified)

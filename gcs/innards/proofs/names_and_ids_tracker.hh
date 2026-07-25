@@ -569,7 +569,7 @@ namespace gcs::innards
         [[nodiscard]] auto s_expr_name_of(VariableConditionOperator op) const -> std::string;
 
         /**
-         * Render an objective variable as the final `.scp` element:
+         * Render an objective variable as the `.scp` `prob_type` spec:
          * `(minimize <name>)` or `(maximize <name>)`, matching cake_pb_cp's
          * spelling (a view that negates its variable becomes a maximize).
          */

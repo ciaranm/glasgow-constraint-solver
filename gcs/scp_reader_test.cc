@@ -100,8 +100,10 @@ TEST_CASE("read_scp: abs enumerates correctly")
 {
     auto solutions = enumerate(R"(
         (
-            ( (X -3 3) (Y 0 3) )
-            ( (_1 abs X Y) )
+            (version 1)
+            (variables (X -3 3) (Y 0 3))
+            (constraints (_1 abs X Y))
+            (prob_type enumerate)
         ))");
 
     CHECK(solutions.size() == 7);
@@ -113,8 +115,10 @@ TEST_CASE("read_scp: all_different enumerates correctly")
 {
     auto solutions = enumerate(R"(
         (
-            ( (A 0 1) (B 0 1) )
-            ( (_1 all_different (A B)) )
+            (version 1)
+            (variables (A 0 1) (B 0 1))
+            (constraints (_1 all_different (A B)))
+            (prob_type enumerate)
         ))");
 
     CHECK(solutions == set<map<string, long long>>{{{"A", 0}, {"B", 1}}, {{"A", 1}, {"B", 0}}});
@@ -124,8 +128,10 @@ TEST_CASE("read_scp: all_equal enumerates correctly")
 {
     auto solutions = enumerate(R"(
         (
-            ( (A 0 2) (B 0 2) (C 0 2) )
-            ( (_1 all_equal (A B C)) )
+            (version 1)
+            (variables (A 0 2) (B 0 2) (C 0 2))
+            (constraints (_1 all_equal (A B C)))
+            (prob_type enumerate)
         ))");
 
     CHECK(solutions == set<map<string, long long>>{{{"A", 0}, {"B", 0}, {"C", 0}}, {{"A", 1}, {"B", 1}, {"C", 1}}, {{"A", 2}, {"B", 2}, {"C", 2}}});
@@ -133,13 +139,17 @@ TEST_CASE("read_scp: all_equal enumerates correctly")
 
 TEST_CASE("read_scp: the increasing family enumerates correctly")
 {
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) ) ( (_1 increasing (X Y Z)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 2) (Y 0 2) (Z 0 2)) (constraints (_1 increasing (X Y Z))) (prob_type enumerate) )"))
         CHECK((s.at("X") <= s.at("Y") && s.at("Y") <= s.at("Z")));
-    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (Z 0 3) ) ( (_1 strictly_increasing (X Y Z)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (Z 0 3)) (constraints (_1 strictly_increasing (X Y Z))) (prob_type enumerate) )"))
         CHECK((s.at("X") < s.at("Y") && s.at("Y") < s.at("Z")));
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) ) ( (_1 decreasing (X Y Z)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 2) (Y 0 2) (Z 0 2)) (constraints (_1 decreasing (X Y Z))) (prob_type enumerate) )"))
         CHECK((s.at("X") >= s.at("Y") && s.at("Y") >= s.at("Z")));
-    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (Z 0 3) ) ( (_1 strictly_decreasing (X Y Z)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (Z 0 3)) (constraints (_1 strictly_decreasing (X Y Z))) (prob_type enumerate) )"))
         CHECK((s.at("X") > s.at("Y") && s.at("Y") > s.at("Z")));
 }
 
@@ -149,8 +159,10 @@ TEST_CASE("read_scp: circuit enumerates the Hamiltonian cycles")
     // directed 3-cycles.
     auto solutions = enumerate(R"(
         (
-            ( (A 0 2) (B 0 2) (C 0 2) )
-            ( (_1 circuit (A B C)) )
+            (version 1)
+            (variables (A 0 2) (B 0 2) (C 0 2))
+            (constraints (_1 circuit (A B C)))
+            (prob_type enumerate)
         ))");
 
     CHECK(solutions == set<map<string, long long>>{{{"A", 1}, {"B", 2}, {"C", 0}}, {{"A", 2}, {"B", 0}, {"C", 1}}});
@@ -158,22 +170,27 @@ TEST_CASE("read_scp: circuit enumerates the Hamiltonian cycles")
 
 TEST_CASE("read_scp: array_min / array_max enumerate correctly")
 {
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) (R 0 2) ) ( (_1 array_min (X Y Z) R) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 2) (Y 0 2) (Z 0 2) (R 0 2)) (constraints (_1 array_min (X Y Z) R)) (prob_type enumerate) )"))
         CHECK(s.at("R") == std::min({s.at("X"), s.at("Y"), s.at("Z")}));
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) (R 0 2) ) ( (_1 array_max (X Y Z) R) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 2) (Y 0 2) (Z 0 2) (R 0 2)) (constraints (_1 array_max (X Y Z) R)) (prob_type enumerate) )"))
         CHECK(s.at("R") == std::max({s.at("X"), s.at("Y"), s.at("Z")}));
 }
 
 TEST_CASE("read_scp: logical and / or reification-tuple forms enumerate correctly")
 {
     // Y >= 1  <->  (B1 >= 1) and (B2 >= 1)
-    for (const auto & s : enumerate("( ( (B1 0 1) (B2 0 1) (Y 0 1) ) ( (_1 and ((B1 >= 1) (B2 >= 1)) (Y >= 1)) ) )"))
+    for (const auto & s : enumerate(
+             "( (version 1) (variables (B1 0 1) (B2 0 1) (Y 0 1)) (constraints (_1 and ((B1 >= 1) (B2 >= 1)) (Y >= 1))) (prob_type enumerate) )"))
         CHECK((s.at("Y") == 1) == (s.at("B1") == 1 && s.at("B2") == 1));
     // Y >= 1  <->  (B1 >= 1) or (B2 >= 1)
-    for (const auto & s : enumerate("( ( (B1 0 1) (B2 0 1) (Y 0 1) ) ( (_1 or ((B1 >= 1) (B2 >= 1)) (Y >= 1)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (B1 0 1) (B2 0 1) (Y 0 1)) (constraints (_1 or ((B1 >= 1) (B2 >= 1)) (Y >= 1))) (prob_type enumerate) )"))
         CHECK((s.at("Y") == 1) == (s.at("B1") == 1 || s.at("B2") == 1));
     // bool_clause-style negated operands: D >= 1  <->  (A = 0) or (B = 0)
-    for (const auto & s : enumerate("( ( (A 0 1) (B 0 1) (D 0 1) ) ( (_1 or ((A = 0) (B = 0)) (D >= 1)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (A 0 1) (B 0 1) (D 0 1)) (constraints (_1 or ((A = 0) (B = 0)) (D >= 1))) (prob_type enumerate) )"))
         CHECK((s.at("D") == 1) == (s.at("A") == 0 || s.at("B") == 0));
 }
 
@@ -181,26 +198,32 @@ TEST_CASE("read_scp: parity reification-tuple form enumerates correctly")
 {
     // An odd number of (A >= 1), (B >= 1), (C >= 1) hold; the output tuple
     // (1 >= 1) is statically true (bare odd parity).
-    for (const auto & s : enumerate("( ( (A 0 1) (B 0 1) (C 0 1) ) ( (_1 parity ((A >= 1) (B >= 1) (C >= 1)) (1 >= 1)) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (A 0 1) (B 0 1) (C 0 1)) (constraints (_1 parity ((A >= 1) (B >= 1) (C >= 1)) (1 >= "
+                                    "1))) (prob_type enumerate) )"))
         CHECK((s.at("A") + s.at("B") + s.at("C")) % 2 == 1);
     // A non-static output tuple is rejected: only bare odd parity is supported.
-    CHECK_THROWS_AS(enumerate("( ( (A 0 1) (B 0 1) (Y 0 1) ) ( (_1 parity ((A >= 1) (B >= 1)) (Y >= 1)) ) )"), ScpReadError);
+    CHECK_THROWS_AS(
+        enumerate("( (version 1) (variables (A 0 1) (B 0 1) (Y 0 1)) (constraints (_1 parity ((A >= 1) (B >= 1)) (Y >= 1))) (prob_type enumerate) )"),
+        ScpReadError);
 }
 
 TEST_CASE("read_scp: lex comparisons enumerate correctly")
 {
     // (A B) >lex (C D): A > C, or A == C and B > D.
-    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) (D 0 2) ) ( (_1 lex_greater_than (A B) (C D)) ) )"))
+    for (const auto & s : enumerate(
+             "( (version 1) (variables (A 0 2) (B 0 2) (C 0 2) (D 0 2)) (constraints (_1 lex_greater_than (A B) (C D))) (prob_type enumerate) )"))
         CHECK(((s.at("A") > s.at("C")) || (s.at("A") == s.at("C") && s.at("B") > s.at("D"))));
     // (A B) <=lex (C D): A < C, or A == C and B <= D.
-    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) (D 0 2) ) ( (_1 lex_less_equal (A B) (C D)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (A 0 2) (B 0 2) (C 0 2) (D 0 2)) (constraints (_1 lex_less_equal (A B) (C D))) (prob_type enumerate) )"))
         CHECK(((s.at("A") < s.at("C")) || (s.at("A") == s.at("C") && s.at("B") <= s.at("D"))));
 }
 
 TEST_CASE("read_scp: a half-reified lex comparison enumerates correctly")
 {
     // Z == 1  =>  (A B) >lex (C D) (a half reification: Z == 0 leaves it free).
-    for (const auto & s : enumerate("( ( (Z 0 1) (A 0 1) (B 0 1) (C 0 1) (D 0 1) ) ( (_1 lex_greater_than_if (Z = 1) (A B) (C D)) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (Z 0 1) (A 0 1) (B 0 1) (C 0 1) (D 0 1)) (constraints (_1 lex_greater_than_if (Z = 1) "
+                                    "(A B) (C D))) (prob_type enumerate) )"))
         if (s.at("Z") == 1)
             CHECK(((s.at("A") > s.at("C")) || (s.at("A") == s.at("C") && s.at("B") > s.at("D"))));
 }
@@ -208,7 +231,8 @@ TEST_CASE("read_scp: a half-reified lex comparison enumerates correctly")
 TEST_CASE("read_scp: a fully-reified lex comparison enumerates correctly")
 {
     // Z == 1  iff  (A B) <=lex (C D).
-    for (const auto & s : enumerate("( ( (Z 0 1) (A 0 1) (B 0 1) (C 0 1) (D 0 1) ) ( (_1 lex_less_equal_iff (Z = 1) (A B) (C D)) ) )")) {
+    for (const auto & s : enumerate("( (version 1) (variables (Z 0 1) (A 0 1) (B 0 1) (C 0 1) (D 0 1)) (constraints (_1 lex_less_equal_iff (Z = 1) "
+                                    "(A B) (C D))) (prob_type enumerate) )")) {
         bool le = (s.at("A") < s.at("C")) || (s.at("A") == s.at("C") && s.at("B") <= s.at("D"));
         CHECK((s.at("Z") == 1) == le);
     }
@@ -217,14 +241,16 @@ TEST_CASE("read_scp: a fully-reified lex comparison enumerates correctly")
 TEST_CASE("read_scp: global cardinality enumerates correctly")
 {
     // CA counts the 0s among X, Y, Z; CB counts the 1s.
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) (CA 0 3) (CB 0 3) ) ( (_1 boundsglobalcardinality (X Y Z) (0 1) (CA CB)) ) )")) {
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 2) (Y 0 2) (Z 0 2) (CA 0 3) (CB 0 3)) (constraints (_1 boundsglobalcardinality (X "
+                                    "Y Z) (0 1) (CA CB))) (prob_type enumerate) )")) {
         CHECK(s.at("CA") == (s.at("X") == 0) + (s.at("Y") == 0) + (s.at("Z") == 0));
         CHECK(s.at("CB") == (s.at("X") == 1) + (s.at("Y") == 1) + (s.at("Z") == 1));
     }
     // The closed form additionally confines every variable to a cover value, so
     // the value 2 is excluded (the gac keyword selects the GAC propagator; the
     // solution set is the same).
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (Z 0 2) (CA 0 3) (CB 0 3) ) ( (_1 gacglobalcardinalityclosed (X Y Z) (0 1) (CA CB)) ) )")) {
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 2) (Y 0 2) (Z 0 2) (CA 0 3) (CB 0 3)) (constraints (_1 gacglobalcardinalityclosed "
+                                    "(X Y Z) (0 1) (CA CB))) (prob_type enumerate) )")) {
         CHECK((s.at("X") == 0 || s.at("X") == 1));
         CHECK(s.at("CA") + s.at("CB") == 3);
     }
@@ -235,8 +261,10 @@ TEST_CASE("read_scp: in with a mix of integer and variable values")
     // V in {0, 3} (constants) or = W (a variable).
     auto solutions = enumerate(R"(
         (
-            ( (V 0 5) (W 0 5) )
-            ( (_1 in (0 3 W) V) )
+            (version 1)
+            (variables (V 0 5) (W 0 5))
+            (constraints (_1 in (0 3 W) V))
+            (prob_type enumerate)
         ))");
 
     for (const auto & s : solutions)
@@ -247,16 +275,17 @@ TEST_CASE("read_scp: in with a mix of integer and variable values")
 
 TEST_CASE("read_scp: comparisons enumerate correctly")
 {
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 less_than X Y) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 2) (Y 0 2)) (constraints (_1 less_than X Y)) (prob_type enumerate) )"))
         CHECK(s.at("X") < s.at("Y"));
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 less_equal X Y) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 2) (Y 0 2)) (constraints (_1 less_equal X Y)) (prob_type enumerate) )"))
         CHECK(s.at("X") <= s.at("Y"));
 }
 
 TEST_CASE("read_scp: a fully-reified comparison enumerates correctly")
 {
     // C == 1  iff  X <= Y.
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 less_equal_iff (C = 1) X Y) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 2) (Y 0 2) (C 0 1)) (constraints (_1 less_equal_iff (C = 1) X Y)) (prob_type enumerate) )"))
         CHECK((s.at("C") == 1) == (s.at("X") <= s.at("Y")));
 }
 
@@ -303,20 +332,23 @@ TEST_CASE("read_scp: lex comparisons survive write -> read -> write unchanged")
 TEST_CASE("read_scp: linear constraints enumerate correctly")
 {
     // X + Y == 3
-    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) ) ( (_1 lin_equals (1 X 1 Y) 3) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_equals (1 X 1 Y) 3)) (prob_type enumerate) )"))
         CHECK(s.at("X") + s.at("Y") == 3);
     // X - Y <= 1
-    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) ) ( (_1 lin_less_equal (1 X -1 Y) 1) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 3) (Y 0 3)) (constraints (_1 lin_less_equal (1 X -1 Y) 1)) (prob_type enumerate) )"))
         CHECK(s.at("X") - s.at("Y") <= 1);
     // X + Y != 2
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 lin_not_equals (1 X 1 Y) 2) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 2) (Y 0 2)) (constraints (_1 lin_not_equals (1 X 1 Y) 2)) (prob_type enumerate) )"))
         CHECK(s.at("X") + s.at("Y") != 2);
 }
 
 TEST_CASE("read_scp: a reified linear constraint enumerates correctly")
 {
     // C == 1  iff  X + Y == 3.
-    for (const auto & s : enumerate("( ( (X 0 3) (Y 0 3) (C 0 1) ) ( (_1 lin_equals_iff (C = 1) (1 X 1 Y) 3) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 3) (Y 0 3) (C 0 1)) (constraints (_1 lin_equals_iff (C = 1) (1 X 1 Y) 3)) (prob_type enumerate) )"))
         CHECK((s.at("C") == 1) == (s.at("X") + s.at("Y") == 3));
 }
 
@@ -346,8 +378,10 @@ TEST_CASE("read_scp: multiply enumerates correctly")
 {
     auto solutions = enumerate(R"(
         (
-            ( (X 1 3) (Y 1 3) (Z 1 9) )
-            ( (_1 multiply X Y Z) )
+            (version 1)
+            (variables (X 1 3) (Y 1 3) (Z 1 9))
+            (constraints (_1 multiply X Y Z))
+            (prob_type enumerate)
         ))");
 
     CHECK(solutions.size() == 9);
@@ -382,8 +416,10 @@ TEST_CASE("read_scp: divide and modulus enumerate correctly")
 {
     auto div_solutions = enumerate(R"(
         (
-            ( (X -3 3) (Y -2 2) (Q -3 3) )
-            ( (_1 divide X Y Q) )
+            (version 1)
+            (variables (X -3 3) (Y -2 2) (Q -3 3))
+            (constraints (_1 divide X Y Q))
+            (prob_type enumerate)
         ))");
 
     CHECK(! div_solutions.empty());
@@ -395,8 +431,10 @@ TEST_CASE("read_scp: divide and modulus enumerate correctly")
 
     auto mod_solutions = enumerate(R"(
         (
-            ( (X -3 3) (Y -2 2) (R -3 3) )
-            ( (_1 modulus X Y R) )
+            (version 1)
+            (variables (X -3 3) (Y -2 2) (R -3 3))
+            (constraints (_1 modulus X Y R))
+            (prob_type enumerate)
         ))");
 
     CHECK(! mod_solutions.empty());
@@ -430,8 +468,10 @@ TEST_CASE("read_scp: power enumerates correctly")
 {
     auto solutions = enumerate(R"(
         (
-            ( (X -2 2) (K -1 3) (Z -2 8) )
-            ( (_1 power (X K Z)) )
+            (version 1)
+            (variables (X -2 2) (K -1 3) (Z -2 8))
+            (constraints (_1 power (X K Z)))
+            (prob_type enumerate)
         ))");
 
     CHECK(! solutions.empty());
@@ -475,19 +515,20 @@ TEST_CASE("read_scp: power survives write -> read -> write unchanged")
 
 TEST_CASE("read_scp: equals and not_equals enumerate correctly")
 {
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 equals X Y) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 2) (Y 0 2)) (constraints (_1 equals X Y)) (prob_type enumerate) )"))
         CHECK(s.at("X") == s.at("Y"));
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) ) ( (_1 not_equals X Y) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (X 0 2) (Y 0 2)) (constraints (_1 not_equals X Y)) (prob_type enumerate) )"))
         CHECK(s.at("X") != s.at("Y"));
     // not_equals against a constant, the way crystal_maze uses it.
-    for (const auto & s : enumerate("( ( (X -2 2) ) ( (_1 not_equals X 0) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (X -2 2)) (constraints (_1 not_equals X 0)) (prob_type enumerate) )"))
         CHECK(s.at("X") != 0);
 }
 
 TEST_CASE("read_scp: a reified equals enumerates correctly")
 {
     // C == 1  iff  X == Y.
-    for (const auto & s : enumerate("( ( (X 0 2) (Y 0 2) (C 0 1) ) ( (_1 equals_iff (C = 1) X Y) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (X 0 2) (Y 0 2) (C 0 1)) (constraints (_1 equals_iff (C = 1) X Y)) (prob_type enumerate) )"))
         CHECK((s.at("C") == 1) == (s.at("X") == s.at("Y")));
 }
 
@@ -517,22 +558,26 @@ TEST_CASE("read_scp: element enumerates correctly")
     const long long arr[] = {5, 7, 9, 11};
 
     // R = arr[I], I in 0..3 (offset 0).
-    for (const auto & s : enumerate("( ( (R 0 15) (I 0 3) ) ( (_1 element (5 7 9 11) (I 0) R) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (R 0 15) (I 0 3)) (constraints (_1 element (5 7 9 11) (I 0) R)) (prob_type enumerate) )"))
         CHECK(s.at("R") == arr[s.at("I")]);
 
     // With an offset of 1, I in 1..4 selects arr[I - 1].
-    for (const auto & s : enumerate("( ( (R 0 15) (I 1 4) ) ( (_1 element (5 7 9 11) (I 1) R) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (R 0 15) (I 1 4)) (constraints (_1 element (5 7 9 11) (I 1) R)) (prob_type enumerate) )"))
         CHECK(s.at("R") == arr[s.at("I") - 1]);
 
     // A variable array: R = (I == 0 ? A : B).
-    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (R 0 2) (I 0 1) ) ( (_1 element (A B) (I 0) R) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (A 0 2) (B 0 2) (R 0 2) (I 0 1)) (constraints (_1 element (A B) (I 0) R)) (prob_type enumerate) )"))
         CHECK(s.at("R") == (s.at("I") == 0 ? s.at("A") : s.at("B")));
 }
 
 TEST_CASE("read_scp: count enumerates correctly")
 {
     // K = #{ v in (A, B, C) : v == V }.
-    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) (V 0 2) (K 0 3) ) ( (_1 count (A B C) V K) ) )")) {
+    for (const auto & s :
+        enumerate("( (version 1) (variables (A 0 2) (B 0 2) (C 0 2) (V 0 2) (K 0 3)) (constraints (_1 count (A B C) V K)) (prob_type enumerate) )")) {
         auto k = (s.at("A") == s.at("V")) + (s.at("B") == s.at("V")) + (s.at("C") == s.at("V"));
         CHECK(s.at("K") == k);
     }
@@ -589,7 +634,8 @@ TEST_CASE("read_scp: regular enumerates correctly")
     // far (the start state and the only accepting state), state 1 = odd; reading
     // a 1 toggles the state. So the accepted words are those with an even number
     // of 1s.
-    for (const auto & s : enumerate("( ( (X0 0 1) (X1 0 1) (X2 0 1) ) ( (_1 regular (X0 X1 X2) 2 ( ((0 0) (1 1)) ((0 1) (1 0)) ) (0)) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (X0 0 1) (X1 0 1) (X2 0 1)) (constraints (_1 regular (X0 X1 X2) 2 ( ((0 0) (1 1)) ((0 "
+                                    "1) (1 0)) ) (0))) (prob_type enumerate) )"))
         CHECK((s.at("X0") + s.at("X1") + s.at("X2")) % 2 == 0);
 }
 
@@ -598,16 +644,19 @@ TEST_CASE("read_scp: disjunctive enumerates correctly")
     // Two length-2 tasks in 0..3 must not overlap, so their starts differ by at
     // least 2. The strict keyword variant builds the same solution set for
     // positive lengths.
-    for (const auto & s : enumerate("( ( (S0 0 3) (S1 0 3) ) ( (_1 disjunctive (S0 S1) (2 2)) ) )")) {
+    for (const auto & s :
+        enumerate("( (version 1) (variables (S0 0 3) (S1 0 3)) (constraints (_1 disjunctive (S0 S1) (2 2))) (prob_type enumerate) )")) {
         auto d = s.at("S0") - s.at("S1");
         CHECK((d >= 2 || d <= -2));
     }
-    for (const auto & s : enumerate("( ( (S0 0 3) (S1 0 3) ) ( (_1 disjunctive_strict (S0 S1) (2 2)) ) )")) {
+    for (const auto & s :
+        enumerate("( (version 1) (variables (S0 0 3) (S1 0 3)) (constraints (_1 disjunctive_strict (S0 S1) (2 2))) (prob_type enumerate) )")) {
         auto d = s.at("S0") - s.at("S1");
         CHECK((d >= 2 || d <= -2));
     }
     // Variable durations are allowed too: the length list may name variables.
-    for (const auto & s : enumerate("( ( (S0 0 4) (S1 0 4) (D 1 2) ) ( (_1 disjunctive (S0 S1) (D D)) ) )")) {
+    for (const auto & s :
+        enumerate("( (version 1) (variables (S0 0 4) (S1 0 4) (D 1 2)) (constraints (_1 disjunctive (S0 S1) (D D))) (prob_type enumerate) )")) {
         auto d = s.at("S0") - s.at("S1");
         CHECK((d >= s.at("D") || d <= -s.at("D")));
     }
@@ -617,7 +666,8 @@ TEST_CASE("read_scp: disjunctive2d enumerates correctly")
 {
     // Two 2x2 rectangles in a 0..3 x 0..3 grid must not overlap, so they are
     // separated in x or in y.
-    for (const auto & s : enumerate("( ( (X0 0 3) (X1 0 3) (Y0 0 3) (Y1 0 3) ) ( (_1 disjunctive2d (X0 X1) (Y0 Y1) (2 2) (2 2)) ) )")) {
+    for (const auto & s : enumerate("( (version 1) (variables (X0 0 3) (X1 0 3) (Y0 0 3) (Y1 0 3)) (constraints (_1 disjunctive2d (X0 X1) (Y0 Y1) (2 "
+                                    "2) (2 2))) (prob_type enumerate) )")) {
         auto dx = s.at("X0") - s.at("X1");
         auto dy = s.at("Y0") - s.at("Y1");
         CHECK((dx >= 2 || dx <= -2 || dy >= 2 || dy <= -2));
@@ -629,14 +679,16 @@ TEST_CASE("read_scp: cumulative enumerates correctly")
     // Three unit-length, unit-height tasks sharing a capacity-2 resource over the
     // two time points 0..1: at most two may run at any one time, so no time point
     // is occupied by all three.
-    for (const auto & s : enumerate("( ( (S0 0 1) (S1 0 1) (S2 0 1) ) ( (_1 cumulative (S0 S1 S2) (1 1 1) (1 1 1) 2) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (S0 0 1) (S1 0 1) (S2 0 1)) (constraints (_1 cumulative (S0 S1 S2) (1 1 1) (1 1 1) 2)) "
+                                    "(prob_type enumerate) )"))
         for (long long t = 0; t <= 1; ++t)
             CHECK((s.at("S0") == t) + (s.at("S1") == t) + (s.at("S2") == t) <= 2);
 
     // Variable heights and a variable capacity are allowed too: the height and
     // capacity slots may name variables. Two tasks of common height H share a
     // capacity-2 resource, so they may overlap only when 2*H <= 2, i.e. H <= 1.
-    for (const auto & s : enumerate("( ( (S0 0 1) (S1 0 1) (H 1 2) (C 2 2) ) ( (_1 cumulative (S0 S1) (1 1) (H H) C) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (S0 0 1) (S1 0 1) (H 1 2) (C 2 2)) (constraints (_1 cumulative (S0 S1) (1 1) (H H) C)) "
+                                    "(prob_type enumerate) )"))
         if (s.at("H") == 2)
             CHECK(s.at("S0") != s.at("S1"));
 }
@@ -672,24 +724,27 @@ TEST_CASE("read_scp: regular, disjunctive, disjunctive2d and cumulative survive 
 TEST_CASE("read_scp: table enumerates correctly")
 {
     // Allow exactly three of the nine pairs.
-    auto solutions = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 table ((0 1) (1 2) (2 0)) (A B)) ) )");
+    auto solutions =
+        enumerate("( (version 1) (variables (A 0 2) (B 0 2)) (constraints (_1 table ((0 1) (1 2) (2 0)) (A B))) (prob_type enumerate) )");
     CHECK(solutions == set<map<string, long long>>{{{"A", 0}, {"B", 1}}, {{"A", 1}, {"B", 2}}, {{"A", 2}, {"B", 0}}});
 
     // A wildcard allows a whole slice: (0 *) admits every tuple with A = 0.
-    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 table ((0 *)) (A B)) ) )"))
+    for (const auto & s : enumerate("( (version 1) (variables (A 0 2) (B 0 2)) (constraints (_1 table ((0 *)) (A B))) (prob_type enumerate) )"))
         CHECK(s.at("A") == 0);
 }
 
 TEST_CASE("read_scp: negative_table enumerates correctly")
 {
     // Forbid the three diagonal tuples, leaving exactly the off-diagonal pairs.
-    auto solutions = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 negative_table ((0 0) (1 1) (2 2)) (A B)) ) )");
+    auto solutions =
+        enumerate("( (version 1) (variables (A 0 2) (B 0 2)) (constraints (_1 negative_table ((0 0) (1 1) (2 2)) (A B))) (prob_type enumerate) )");
     CHECK(solutions.size() == 6);
     for (const auto & s : solutions)
         CHECK(s.at("A") != s.at("B"));
 
     // A wildcard forbids a whole slice: (0 *) rules out every tuple with A = 0.
-    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 negative_table ((0 *)) (A B)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (A 0 2) (B 0 2)) (constraints (_1 negative_table ((0 *)) (A B))) (prob_type enumerate) )"))
         CHECK(s.at("A") != 0);
 }
 
@@ -698,7 +753,8 @@ TEST_CASE("read_scp: smart_table enumerates correctly")
     // A two-row table exercising every entry kind: row 1 = (A = 1) and B in {2,3}
     // (a unary-value and a unary-set entry), row 2 = (A = B) (a binary entry). The
     // disjunction admits A = B, plus A = 1 paired with B in {2,3}.
-    auto solutions = enumerate("( ( (A 0 3) (B 0 3) ) ( (_1 smart_table ( ((A = 1) (B in (2 3))) ((A = B)) ) (A B)) ) )");
+    auto solutions = enumerate("( (version 1) (variables (A 0 3) (B 0 3)) (constraints (_1 smart_table ( ((A = 1) (B in (2 3))) ((A = B)) ) (A B))) "
+                               "(prob_type enumerate) )");
     CHECK(solutions.size() == 6);
     for (const auto & s : solutions)
         CHECK(((s.at("A") == 1 && (s.at("B") == 2 || s.at("B") == 3)) || s.at("A") == s.at("B")));
@@ -733,7 +789,7 @@ TEST_CASE("read_scp: all_different_except enumerates correctly")
 {
     // Distinct unless the value is excluded (here 2), so the only forbidden pairs
     // are the non-excluded diagonals (0,0) and (1,1).
-    auto solutions = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 all_different_except (A B) (2)) ) )");
+    auto solutions = enumerate("( (version 1) (variables (A 0 2) (B 0 2)) (constraints (_1 all_different_except (A B) (2))) (prob_type enumerate) )");
     CHECK(solutions.size() == 7);
     for (const auto & s : solutions)
         CHECK((s.at("A") != s.at("B") || s.at("A") == 2));
@@ -743,7 +799,8 @@ TEST_CASE("read_scp: symmetric_all_different enumerates correctly")
 {
     // An all_different whose assignment is an involution: reading each value as an
     // index (start 0), X[X[i]] == i.
-    auto solutions = enumerate("( ( (X0 0 2) (X1 0 2) (X2 0 2) ) ( (_1 symmetric_all_different (X0 X1 X2) 0) ) )");
+    auto solutions = enumerate(
+        "( (version 1) (variables (X0 0 2) (X1 0 2) (X2 0 2)) (constraints (_1 symmetric_all_different (X0 X1 X2) 0)) (prob_type enumerate) )");
     CHECK(solutions.size() == 4); // identity + the three transpositions
     for (const auto & s : solutions) {
         std::vector<long long> x{s.at("X0"), s.at("X1"), s.at("X2")};
@@ -755,7 +812,7 @@ TEST_CASE("read_scp: symmetric_all_different enumerates correctly")
 TEST_CASE("read_scp: at_most_one enumerates correctly")
 {
     // At most one of the variables equals the value 1.
-    auto solutions = enumerate("( ( (A 0 2) (B 0 2) (C 0 2) ) ( (_1 at_most_one (A B C) 1) ) )");
+    auto solutions = enumerate("( (version 1) (variables (A 0 2) (B 0 2) (C 0 2)) (constraints (_1 at_most_one (A B C) 1)) (prob_type enumerate) )");
     for (const auto & s : solutions)
         CHECK((s.at("A") == 1) + (s.at("B") == 1) + (s.at("C") == 1) <= 1);
 }
@@ -763,7 +820,7 @@ TEST_CASE("read_scp: at_most_one enumerates correctly")
 TEST_CASE("read_scp: among enumerates correctly")
 {
     // how_many counts the variables taking a value of interest (here just 1).
-    auto solutions = enumerate("( ( (A 0 2) (B 0 2) (N 0 2) ) ( (_1 among (A B) (1) N) ) )");
+    auto solutions = enumerate("( (version 1) (variables (A 0 2) (B 0 2) (N 0 2)) (constraints (_1 among (A B) (1) N)) (prob_type enumerate) )");
     CHECK(solutions.size() == 9); // one per (A, B) pair, N is then determined
     for (const auto & s : solutions)
         CHECK(s.at("N") == (s.at("A") == 1) + (s.at("B") == 1));
@@ -786,12 +843,14 @@ TEST_CASE("read_scp: the precedence family enumerates correctly")
     };
 
     // value_precede (0 1): 1 may not appear before 0 has.
-    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) ) ( (_1 value_precede (0 1) (A B C)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (A 0 2) (B 0 2) (C 0 2)) (constraints (_1 value_precede (0 1) (A B C))) (prob_type enumerate) )"))
         CHECK(precedes({s.at("A"), s.at("B"), s.at("C")}, 0, 1));
 
     // seq_precede_chain over 0..2 is value_precede on the implicit chain [1, 2],
     // so 2 may not appear before 1 has (0 and 1 are otherwise free).
-    for (const auto & s : enumerate("( ( (A 0 2) (B 0 2) (C 0 2) ) ( (_1 seq_precede_chain (A B C)) ) )"))
+    for (const auto & s :
+        enumerate("( (version 1) (variables (A 0 2) (B 0 2) (C 0 2)) (constraints (_1 seq_precede_chain (A B C))) (prob_type enumerate) )"))
         CHECK(precedes({s.at("A"), s.at("B"), s.at("C")}, 1, 2));
 }
 
@@ -821,7 +880,8 @@ TEST_CASE("read_scp: the remaining globals survive write -> read -> write unchan
 TEST_CASE("read_scp: element_2d enumerates correctly")
 {
     // result = array[i][j] over a constant 2x2 array; each (i, j) determines R.
-    auto solutions = enumerate("( ( (I 0 1) (J 0 1) (R 0 9) ) ( (_1 element_2d ((1 2) (3 4)) (I 0) (J 0) R) ) )");
+    auto solutions = enumerate(
+        "( (version 1) (variables (I 0 1) (J 0 1) (R 0 9)) (constraints (_1 element_2d ((1 2) (3 4)) (I 0) (J 0) R)) (prob_type enumerate) )");
     CHECK(solutions.size() == 4);
     for (const auto & s : solutions) {
         long long expected[2][2] = {{1, 2}, {3, 4}};
@@ -832,7 +892,8 @@ TEST_CASE("read_scp: element_2d enumerates correctly")
 TEST_CASE("read_scp: knapsack enumerates correctly")
 {
     // Two coefficient rows (weight and profit): W = 2*X0 + 3*X1, P = 3*X0 + 4*X1.
-    auto solutions = enumerate("( ( (X0 0 1) (X1 0 1) (W 0 5) (P 0 7) ) ( (_1 knapsack ((2 3) (3 4)) (X0 X1) (W P)) ) )");
+    auto solutions = enumerate("( (version 1) (variables (X0 0 1) (X1 0 1) (W 0 5) (P 0 7)) (constraints (_1 knapsack ((2 3) (3 4)) (X0 X1) (W P))) "
+                               "(prob_type enumerate) )");
     CHECK(solutions.size() == 4); // one per (X0, X1) subset, totals determined
     for (const auto & s : solutions) {
         CHECK(s.at("W") == 2 * s.at("X0") + 3 * s.at("X1"));
@@ -867,17 +928,18 @@ TEST_CASE("read_scp: element_2d and knapsack survive write -> read -> write unch
 TEST_CASE("read_scp: a constant integer can stand in for a variable anywhere")
 {
     // An abs operand that is a constant: Y = |3|.
-    CHECK(enumerate("( ( (Y 0 5) ) ( (_1 abs 3 Y) ) )") == set<map<string, long long>>{{{"Y", 3}}});
+    CHECK(
+        enumerate("( (version 1) (variables (Y 0 5)) (constraints (_1 abs 3 Y)) (prob_type enumerate) )") == set<map<string, long long>>{{{"Y", 3}}});
 
     // A constant member of all_different: A, 1, B all distinct, so A,B in {0,2}.
-    auto all_diff = enumerate("( ( (A 0 2) (B 0 2) ) ( (_1 all_different (A 1 B)) ) )");
+    auto all_diff = enumerate("( (version 1) (variables (A 0 2) (B 0 2)) (constraints (_1 all_different (A 1 B))) (prob_type enumerate) )");
     CHECK(all_diff == set<map<string, long long>>{{{"A", 0}, {"B", 2}}, {{"A", 2}, {"B", 0}}});
 }
 
 TEST_CASE("read_scp: constraint labels and variable names round-trip via the map")
 {
     Problem problem;
-    auto variables = read_scp(problem, "( ( (X 0 1) (Y 0 1) ) ( (_1 abs X Y) ) )");
+    auto variables = read_scp(problem, "( (version 1) (variables (X 0 1) (Y 0 1)) (constraints (_1 abs X Y)) (prob_type enumerate) )");
     CHECK(variables.size() == 2);
     CHECK(variables.contains("X"));
     CHECK(variables.contains("Y"));
@@ -930,14 +992,56 @@ TEST_CASE("read_scp: an out-of-order auto-number is rejected, not silently relab
 {
     // A single constraint labelled _2 would auto-number to _1 on re-post, so
     // post_autonumbered rejects the mismatch instead of quietly changing it.
-    CHECK_THROWS_AS(enumerate("( ( (X 0 1) (Y 0 1) ) ( (_2 abs X Y) ) )"), NamingError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 1) (Y 0 1)) (constraints (_2 abs X Y)) (prob_type enumerate) )"), NamingError);
 }
 
 TEST_CASE("read_scp: unsupported and malformed input throws")
 {
-    CHECK_THROWS_AS(enumerate("( ( (X 0 1) ) ( (_1 frobnicate X) ) )"), ScpReadError);
-    CHECK_THROWS_AS(enumerate("( ( (X 0 1) ) )"), ScpReadError);        // not (vars constraints)
-    CHECK_THROWS_AS(enumerate("( ( (X 0) ) ( ) )"), ScpReadError);      // bad var decl
-    CHECK_THROWS_AS(enumerate("( ( (X zero 1) ) ( ) )"), ScpReadError); // non-integer bound
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 1)) (constraints (_1 frobnicate X)) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0)) (constraints) (prob_type enumerate) )"), ScpReadError);      // bad var decl
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X zero 1)) (constraints) (prob_type enumerate) )"), ScpReadError); // non-integer bound
     CHECK_THROWS_AS(enumerate("not an s-expr ("), innards::SExprParseError);
+}
+
+TEST_CASE("read_scp: the version header is mandatory, and must be exactly 1")
+{
+    CHECK_NOTHROW(enumerate("( (version 1) (variables (X 0 1)) (constraints) (prob_type enumerate) )"));
+
+    // The pre-version layout is not read on a guess, and neither is any other
+    // version: a different number means a different grammar.
+    CHECK_THROWS_AS(enumerate("( ( (X 0 1) ) ( ) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (variables (X 0 1)) (constraints) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 0) (variables (X 0 1)) (constraints) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 2) (variables (X 0 1)) (constraints) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version one) (variables (X 0 1)) (constraints) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version) (variables (X 0 1)) (constraints) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1 1) (variables (X 0 1)) (constraints) (prob_type enumerate) )"), ScpReadError);
+}
+
+TEST_CASE("read_scp: all four sections are required, labelled and in order")
+{
+    // Both the keyword and the position have to line up, so a missing,
+    // misspelled, reordered or extra section is an error rather than something
+    // to search past.
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 1)) (constraints) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 1)) (constraints) (prob_type enumerate) (extra) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (constraints) (variables (X 0 1)) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (vars (X 0 1)) (constraints) (prob_type enumerate) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 1)) (constraint) (prob_type enumerate) )"), ScpReadError);
+}
+
+TEST_CASE("read_scp: the prob_type spec is checked, but this reader always enumerates")
+{
+    // decide / enumerate are bare atoms and the objectives are lists. Every one
+    // of them enumerates here -- optimising instead is the caller's decision --
+    // but a spec cake_pb_cp would reject must not pass silently either.
+    CHECK(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type decide) )").size() == 3);
+    CHECK(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize X)) )").size() == 3);
+    CHECK(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (maximize X)) )").size() == 3);
+
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (enumerate)) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type solve) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize)) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize X Y)) )"), ScpReadError);
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type) )"), ScpReadError);
 }

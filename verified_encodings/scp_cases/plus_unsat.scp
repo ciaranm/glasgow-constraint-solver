@@ -1,1 +1,1 @@
-( ( (A 0 2) (B 0 2) (Z 5 6) ) ( (_1 plus A B Z) ) )
+( (version 1) (variables (A 0 2) (B 0 2) (Z 5 6)) (constraints (_1 plus A B Z)) (prob_type enumerate) )

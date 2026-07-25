@@ -1,6 +1,6 @@
 # Workflow-2 regression harness. Each curated .scp is solved and --proved by
 # glasgow_scp_solver, re-derived by cake_pb_cp, checked by veripb (UNSAT *or*
-# complete enumeration -- the (enumerate) element makes cake emit `preserved:`),
+# complete enumeration -- (prob_type enumerate) makes cake emit `preserved:`),
 # and the two OPBs are compared by opbdiff --match-labels. Each test skips (77)
 # when cake_pb_cp / veripb are absent. Most domains are bits-encoded on purpose,
 # to keep the strict-opbdiff cases byte-clean; the binary_* cases below

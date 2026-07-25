@@ -1,1 +1,1 @@
-( ( (X -3 3) (Y 4 7) ) ( (_1 abs X Y) ) )
+( (version 1) (variables (X -3 3) (Y 4 7)) (constraints (_1 abs X Y)) (prob_type enumerate) )

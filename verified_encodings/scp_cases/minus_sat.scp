@@ -1,1 +1,1 @@
-( ( (A 0 4) (B 0 2) (Z 0 4) ) ( (_1 minus A B Z) ) (enumerate) )
+( (version 1) (variables (A 0 4) (B 0 2) (Z 0 4)) (constraints (_1 minus A B Z)) (prob_type enumerate) )

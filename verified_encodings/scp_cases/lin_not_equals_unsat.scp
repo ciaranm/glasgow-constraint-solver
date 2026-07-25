@@ -1,1 +1,1 @@
-( ( (X 1 1) (Y 1 1) ) ( (_1 lin_not_equals (1 X 1 Y) 2) ) )
+( (version 1) (variables (X 1 1) (Y 1 1)) (constraints (_1 lin_not_equals (1 X 1 Y) 2)) (prob_type enumerate) )

@@ -1,1 +1,1 @@
-( ( (A 2 3) (B 2 3) (C 0 1) (D 0 1) ) ( (_1 lex_less_than (A B) (C D)) ) )
+( (version 1) (variables (A 2 3) (B 2 3) (C 0 1) (D 0 1)) (constraints (_1 lex_less_than (A B) (C D))) (prob_type enumerate) )

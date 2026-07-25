@@ -1,1 +1,1 @@
-( ( (X -7 -4) (Y -3 0) ) ( (_1 greater_equal X Y) ) )
+( (version 1) (variables (X -7 -4) (Y -3 0)) (constraints (_1 greater_equal X Y)) (prob_type enumerate) )

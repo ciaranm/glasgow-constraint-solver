@@ -1,1 +1,1 @@
-( ( (X -3 3) (Z -2 9) ) ( (_1 multiply X X Z) ) (enumerate) )
+( (version 1) (variables (X -3 3) (Z -2 9)) (constraints (_1 multiply X X Z)) (prob_type enumerate) )

@@ -40,23 +40,28 @@ auto gcs::innards::write_scp(const string & file_name, const Problem & problem, 
         s_expr.exceptions(ios::failbit | ios::badbit);
         s_expr.open(file_name);
 
+        // Format version 1: exactly four tagged sections, in this order. A
+        // reader checks the version first and refuses anything else, so bumping
+        // this number is how an incompatible grammar change is announced.
         println(s_expr, "(");
-        println(s_expr, "    (");
+        println(s_expr, "    (version 1)");
+        println(s_expr, "    (variables");
         for (const auto & [_, l, u, n] : problem.each_variable_with_bounds_and_name())
             println(s_expr, "        ({} {} {})", n, l, u);
         println(s_expr, "    )");
-        println(s_expr, "    (");
+        println(s_expr, "    (constraints");
         for (const auto & c : problem.each_constraint())
             println(s_expr, "        {}", c.s_expr(model));
         println(s_expr, "    )");
-        // The final element is the objective, or (enumerate) for a satisfaction /
-        // enumeration problem. cake_pb_cp uses it to decide whether to emit a
-        // `preserved:` set -- which veripb needs to log/exclude solutions, so
-        // without it only refutation (UNSAT) proofs verify through the chain.
+        // The problem type is the objective, or the bare atom `enumerate` for a
+        // satisfaction / enumeration problem. cake_pb_cp uses it to decide
+        // whether to emit a `preserved:` set -- which veripb needs to
+        // log/exclude solutions, so with the alternative `decide` only
+        // refutation (UNSAT) proofs would verify through the chain.
         if (auto objective = problem.optional_minimise_variable())
-            println(s_expr, "    {}", model->names_and_ids_tracker().s_expr_render_of(*objective));
+            println(s_expr, "    (prob_type {})", model->names_and_ids_tracker().s_expr_render_of(*objective));
         else
-            println(s_expr, "    (enumerate)");
+            println(s_expr, "    (prob_type enumerate)");
         println(s_expr, ")");
     }
     catch (const ios_base::failure &) {

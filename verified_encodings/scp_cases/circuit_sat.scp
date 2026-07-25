@@ -1,1 +1,1 @@
-( ( (A 0 2) (B 0 2) (C 0 2) ) ( (_1 circuit (A B C)) ) )
+( (version 1) (variables (A 0 2) (B 0 2) (C 0 2)) (constraints (_1 circuit (A B C))) (prob_type enumerate) )

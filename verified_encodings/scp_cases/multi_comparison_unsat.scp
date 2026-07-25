@@ -1,1 +1,1 @@
-( ( (X 0 7) (Y 0 7) ) ( (_1 less_equal X Y) (_2 less_than Y X) ) )
+( (version 1) (variables (X 0 7) (Y 0 7)) (constraints (_1 less_equal X Y) (_2 less_than Y X)) (prob_type enumerate) )

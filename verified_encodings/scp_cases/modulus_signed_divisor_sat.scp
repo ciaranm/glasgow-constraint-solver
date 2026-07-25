@@ -1,1 +1,1 @@
-( ( (X 0 6) (Y -3 -1) (R -2 2) ) ( (_1 modulus X Y R) ) (enumerate) )
+( (version 1) (variables (X 0 6) (Y -3 -1) (R -2 2)) (constraints (_1 modulus X Y R)) (prob_type enumerate) )

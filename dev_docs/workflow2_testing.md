@@ -8,6 +8,29 @@ confirms the two OPBs agree by `@label`. Workflow 2 is what protects all the
 encoding/label reconciliation (names, orientations, `@c`/`@i`/`@b` labels) from
 silent regression.
 
+## The `.scp` wire format
+
+The `.scp` is versioned, and both ends of the chain check the version. A
+document is exactly four tagged sections, in order:
+
+```
+(
+  (version 1)
+  (variables (X -3 3) (Y 0 3))
+  (constraints (_1 abs X Y))
+  (prob_type enumerate)
+)
+```
+
+`prob_type` is the bare atom `decide` or `enumerate`, or the list
+`(minimize var)` / `(maximize var)`. `innards::write_scp` emits this and
+`gcs::read_scp` consumes it; the reader rejects any version other than 1
+outright rather than guessing at an unknown grammar, which is what makes a
+future format change a clean failure instead of a misread. Upstream's reference
+for the format lives outside this repo (cake's `SEXP_FORMAT.md`); the reader is
+the authority for what we accept, and `cake_pb_cp` for what the verified encoder
+accepts.
+
 Two complementary mechanisms:
 
 ## Part B — curated `.scp` chain harness (built)
@@ -17,7 +40,7 @@ files, one+ per cake-encodable constraint/form, driven by
 `verified_encodings/run_scp_chain.bash`:
 
 ```
-glasgow_scp_solver --all --prove <scp>          # re-emits scp (+ (enumerate)) + opb + pbp
+glasgow_scp_solver --all --prove <scp>          # re-emits scp (+ prob_type) + opb + pbp
 cake_pb_cp <scp>                  -> verifiedopb # re-derive OPB (verified)
 veripb verifiedopb pbp --elaborate corepb        # elaborate (VeriPB = untrusted translator)
 cake_pb_cp <scp> corepb           -> "s VERIFIED" # verified checker re-checks the core
@@ -33,8 +56,8 @@ building CakeML is awkward) the runner degrades to a workflow-1 self-verify
 still exercised; it skips (`SKIP_RETURN_CODE 77`) only when `veripb` itself is
 absent. To run the full chain locally rather than the fallback, put `cake_pb_cp`
 on `PATH` (alongside `veripb`/`opbdiff`, e.g. symlinked into `~/.cargo/bin`) or
-point `CAKE_PB_CP` at the built binary. The `(enumerate)` `.scp` element (so cake
-emits `preserved:`) means
+point `CAKE_PB_CP` at the built binary. The `(prob_type enumerate)` `.scp`
+section (so cake emits `preserved:`, which `decide` would not) means
 **SAT cases verify by complete enumeration** — not just UNSAT — so the table can
 exercise the naturally-satisfiable forms too.
 
