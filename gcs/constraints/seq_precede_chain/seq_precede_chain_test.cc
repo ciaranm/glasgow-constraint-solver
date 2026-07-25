@@ -151,7 +151,7 @@ auto run_scale_test(bool proofs) -> void
 
     if (proofs) {
         auto verify_start = steady_clock::now();
-        if (! run_veripb("seq_precede_chain_test.opb", "seq_precede_chain_test.pbp"))
+        if (! verify_proof_and_dispose("seq_precede_chain_test"))
             throw UnexpectedException{"veripb verification failed on scale test"};
         auto verify_elapsed = duration<double>(steady_clock::now() - verify_start).count();
         println(cerr, "  veripb verification: {:.2f}s", verify_elapsed);

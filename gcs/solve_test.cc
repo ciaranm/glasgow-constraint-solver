@@ -59,7 +59,7 @@ TEST_CASE("Solve unsat")
         ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }
 
 TEST_CASE("Solve unsat by model optimisation")
@@ -79,7 +79,7 @@ TEST_CASE("Solve unsat by model optimisation")
         ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }
 
 // Four variables over three values, pairwise different: unsatisfiable, and
@@ -112,7 +112,7 @@ TEST_CASE("Solve unsat with restarts")
     // Restarts learn nogoods from the refuted regions, and the proof verifies
     // those learned clauses (an unsound one would fail RUP).
     CHECK(stats.learned_nogoods > 0);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }
 
 // As "Solve unsat with restarts" but with binary (2-way) branching:
@@ -144,7 +144,7 @@ TEST_CASE("Solve unsat with restarts and binary branching")
     CHECK(! found_solution);
     CHECK(stats.restarts > 0);
     CHECK(stats.learned_nogoods > 0);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }
 
 // As above but with interval (bound-split) branching: value_order::
@@ -175,7 +175,7 @@ TEST_CASE("Solve unsat with restarts and interval branching")
     CHECK(! found_solution);
     CHECK(stats.restarts > 0);
     CHECK(stats.learned_nogoods > 0);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }
 
 // As above but with reject-interval branching: value_order::reject_random_interval
@@ -209,7 +209,7 @@ TEST_CASE("Solve unsat with restarts and reject-interval branching")
     CHECK(! found_solution);
     CHECK(stats.restarts > 0);
     CHECK(stats.learned_nogoods > 0);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }
 
 // Optimisation with restarts: the incumbent bound persists across restarts, so
@@ -238,7 +238,7 @@ TEST_CASE("Optimise with restarts")
 
     CHECK(best == optional<Integer>{2_i});
     CHECK(stats.restarts > 0);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }
 
 // Scan-vs-refined differential for the engine-owned learned-nogood store (issue
@@ -317,7 +317,7 @@ TEST_CASE("Solve unsat with restarts and root propagation")
 
     CHECK(! found_solution);
     CHECK(stats.restarts > 0);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }
 
 // Enumerate every solution while restarting. b, c, d are a pairwise-distinct
@@ -360,7 +360,7 @@ TEST_CASE("Enumerate all solutions with restarts")
     CHECK(stats.solutions == 6);
     CHECK(stats.restarts > 0); // restarts actually fired during enumeration
     CHECK(stats.learned_nogoods > 0);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }
 
 TEST_CASE("Solve unsat optimisation presolving")
@@ -380,5 +380,5 @@ TEST_CASE("Solve unsat optimisation presolving")
         ProofOptions{"solve_test"});
 
     CHECK(! found_solution);
-    CHECK(run_veripb("solve_test.opb", "solve_test.pbp"));
+    CHECK(verify_proof_and_dispose("solve_test"));
 }

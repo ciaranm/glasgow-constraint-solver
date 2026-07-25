@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <random>
 #include <string>
@@ -173,29 +174,130 @@ namespace gcs::test_innards
 #endif
 
     /**
-     * Verify a test's proof with VeriPB, then, on success, delete its .opb/.pbp
-     * files.
+     * The file extensions a proving run can leave beside its proof. Only .opb
+     * and .pbp are always written; .scp and .varmap appear for the runs that ask
+     * for them. std::remove and std::rename on an absent file are harmless
+     * no-ops, so every extension can be handled unconditionally.
+     */
+    inline constexpr std::array proof_file_extensions{".opb", ".pbp", ".scp", ".varmap"};
+
+    /**
+     * \brief What to do with a proof once it has verified successfully.
      *
-     * Every proving test instance writes its proof into the working directory,
-     * and VeriPB .pbp files for enumeration tests routinely reach hundreds of
-     * megabytes. Left in place they accumulate over a run: a full parallel
-     * `ctest` otherwise holds gigabytes of proofs at once, which can exhaust the
-     * disk mid-run and make an *unrelated* lane's proof write fail (an uncaught
-     * std::ios_failure that terminates that test). Deleting each proof as soon as
-     * it verifies bounds the footprint to the lanes running concurrently.
+     * \sa proof_file_preservation(), which reads this from the environment.
+     */
+    enum class ProofFilePreservation
+    {
+        Delete, ///< Delete the proof (the default).
+        Keep,   ///< Keep it, letting the next instance overwrite it in place.
+        KeepAll ///< Keep every instance, uniquified with a per-basename counter.
+    };
+
+    /**
+     * \brief Read the proof-file preservation policy from GCS_PRESERVE_PROOF_FILES.
      *
-     * The files are kept when verification fails, so a failing proof is still on
-     * disk to inspect. std::remove of an already-absent file is a harmless no-op.
+     * Unset, empty, or `0` selects ProofFilePreservation::Delete; `all` selects
+     * ProofFilePreservation::KeepAll; any other value selects
+     * ProofFilePreservation::Keep.
+     */
+    [[nodiscard]] inline auto proof_file_preservation() -> ProofFilePreservation
+    {
+        const char * e = std::getenv("GCS_PRESERVE_PROOF_FILES");
+        if (! (e && *e) || std::string{e} == "0")
+            return ProofFilePreservation::Delete;
+        return std::string{e} == "all" ? ProofFilePreservation::KeepAll : ProofFilePreservation::Keep;
+    }
+
+    /**
+     * \brief Dispose of a proof that has served its purpose, per the
+     * GCS_PRESERVE_PROOF_FILES policy.
+     *
+     * Call this once a proof has been verified, or once a test that reads its
+     * own proof back has finished with it. Call it only on the success path:
+     * leaving the files behind on failure is what makes a failure debuggable.
+     *
+     * By default the files are deleted. Every proving test instance writes its
+     * proof into the working directory, and VeriPB .pbp files for enumeration
+     * tests routinely reach hundreds of megabytes. Left in place they accumulate
+     * over a run: a full parallel `ctest` otherwise holds gigabytes of proofs at
+     * once, which can exhaust the disk mid-run and make an *unrelated* lane's
+     * proof write fail (an uncaught std::ios_failure that terminates that test).
+     * Deleting each proof as soon as it verifies bounds the footprint to the
+     * lanes running concurrently.
+     *
+     * Under ProofFilePreservation::KeepAll the files are instead renamed out of
+     * the way with a zero-padded per-basename counter, so an instance's proof
+     * survives the next instance reusing the basename. Renaming after the fact
+     * keeps the uniquification entirely here: tests go on choosing whatever
+     * basename they like.
+     */
+    inline auto dispose_of_proof_files(const std::string & proof_name) -> void
+    {
+        switch (proof_file_preservation()) {
+            using enum ProofFilePreservation;
+        case Delete:
+            for (auto ext : proof_file_extensions)
+                std::remove((proof_name + ext).c_str());
+            break;
+
+        case Keep: break;
+
+        case KeepAll: {
+            static std::map<std::string, int> counters;
+            auto suffix = std::to_string(++counters[proof_name]);
+            if (suffix.size() < 4)
+                suffix.insert(0, 4 - suffix.size(), '0');
+            for (auto ext : proof_file_extensions)
+                std::rename((proof_name + ext).c_str(), (proof_name + "." + suffix + ext).c_str());
+        } break;
+        }
+    }
+
+    /**
+     * \brief Verify a proof with VeriPB and, on success, dispose of it.
+     *
+     * Returns whether verification succeeded. The proof files are left in place
+     * when it did not, so a failing proof is always on disk to inspect.
+     *
+     * This is the non-throwing form, for tests that report the outcome
+     * themselves (a Catch2 `CHECK`, or a bool returned to a caller that prints
+     * its own diagnostic). Tests that should stop dead at the first bad proof
+     * want verify_proof_and_clean_up() instead.
+     */
+    [[nodiscard]] inline auto verify_proof_and_dispose(const std::string & proof_name) -> bool
+    {
+        if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
+            return false;
+        cake_probe_chain(proof_name); // PROBE: measure workflow-2 chain (no-op unless GCS_TEST_CAKE)
+        dispose_of_proof_files(proof_name);
+        return true;
+    }
+
+    /**
+     * \brief Verify a test's proof with VeriPB, throwing if it does not verify,
+     * and otherwise disposing of it per the GCS_PRESERVE_PROOF_FILES policy.
+     *
+     * Because this throws — and no test catches UnexpectedException — the run
+     * stops at the first bad proof, so the files left under the bare
+     * `proof_name` are exactly the failing instance's. That is why the default
+     * policy needs no counter: overwriting in place still leaves the
+     * interesting proof behind, identified by the test's own log line just
+     * above it.
+     *
+     * `GCS_PRESERVE_PROOF_FILES=all` is for the other use case: harvesting every
+     * instance's proof (byte-comparison across a change, say) rather than
+     * debugging one failure. Note that a single test can write hundreds of
+     * proofs under one basename, so combining that with
+     * -DGCS_TEST_CAP_DEFAULTS=OFF can fill a disk.
+     *
+     * (The cake probe above has its own GCS_TEST_CAKE_KEEP, which names a
+     * *directory* to copy failing triples into rather than being a policy
+     * switch, so it stays separate.)
      */
     inline auto verify_proof_and_clean_up(const std::string & proof_name) -> void
     {
-        if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
+        if (! verify_proof_and_dispose(proof_name))
             throw UnexpectedException{"veripb verification failed"};
-        cake_probe_chain(proof_name); // PROBE: measure workflow-2 chain (no-op unless GCS_TEST_CAKE)
-        std::remove((proof_name + ".opb").c_str());
-        std::remove((proof_name + ".pbp").c_str());
-        std::remove((proof_name + ".scp").c_str());
-        std::remove((proof_name + ".varmap").c_str());
     }
 
     /**
