@@ -14,12 +14,20 @@ This is built on the `302-then-347` branch. As built: the `Reason` variant
 `{Generic,BothBounds,Lazy}ReasonOver` + `Narrowable*`) and `materialise()`
 live in `gcs/innards/reason.hh`; the
 materialise is deferred inside the inference tracker (`snapshot_reason` pins the
-eager-vs-lazy timing so eager reasons snapshot pre-inference into an
-`ExplicitReason` and lazy ones materialise post-inference). The old
+eager-vs-lazy timing so eager reasons snapshot pre-inference into a
+`SnapshottedReason` and lazy ones materialise post-inference). The old
 `ReasonFunction` thunk, its `LegacyReasonFunction` bridge, and the `Reason(F&&)`
 ctor are all gone — no `std::function` is built on the reason path. Every step was
 byte-identical to the prior proofs. The justification layer that builds on this is
 implemented too; see the "IMPLEMENTED" note in `infer-redesign.md`.
+
+As built on 2026-06-19 `snapshot_reason` returned an `ExplicitReason`; #534
+replaced that with `SnapshottedReason` (`gcs/innards/inference_tracker.hh`),
+which carries `literals` / `materialise_later` / `original` and reaches the
+logger without being wrapped back up and re-materialised per inference. The
+`original` handle exists for the dom/wdeg conflict observers, which read the
+contradicting reason and run with proofs off — where the snapshot deliberately
+materialises nothing. The eager-versus-lazy timing described above is unchanged.
 
 ## Motivation
 

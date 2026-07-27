@@ -328,6 +328,28 @@ and the pol differently:
   variable-duration encoding **chain-verifies** against `cake_pb_cp`
   (`scp_chain_cumulative_var_duration_sat`).
 
+  **The proxy is signed when a start can precede time 0.** Its range must
+  cover `s + l` in full, or `introduce_bits_of`'s redundancy goals are
+  unprovable — so its lower bound is `min(0, lb(s_i) + lb(l_i))`, not a
+  hard-coded `0`, and it carries a sign bit whenever that is negative.
+  This was issue #553: mznc2023 `unison` parks its inactive tasks at
+  `s = -1, l = 0`, and with a `0` lower bound the first `le` step's
+  proofgoal `s + l ≥ 0` is simply false, so veripb rejected the proof
+  there. Zero stays the lower bound otherwise, because `end ≥ 0` is then
+  the one boundary pin that is a tautology.
+
+  `introduce_bits_of` grew the signed path to match: the same
+  construction shifted by `2^S`, with `¬sign` as the top bit of the
+  unsigned sum `BinEnc + 2^S`, so after veripb's literal normalisation
+  the emitted lines *are* the unsigned lines of the shifted form. It also
+  now derives the form's own bound lines by `pol` over the operands' OPB
+  bound rows before the top step, so the two top-step redundancy goals
+  discharge by veripb's implication check for any operand shape. Leaning
+  on unit propagation for those, as it used to, stalls whenever an
+  operand's bit encoding overhangs the target's — a start in `[-17, -16]`
+  spanning `[-32, 31]` against a proxy spanning `[-8, 7]`, say — which
+  was a latent failure in the unsigned case too.
+
 The `pin_contributor` / `pin_pushed` helpers in
 `cumulative/cumulative.cc` package the (a)/(b) emission so the overflow
 and both push inferences share one shape across all constant/variable

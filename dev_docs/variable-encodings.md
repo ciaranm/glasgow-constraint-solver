@@ -104,6 +104,19 @@ The two in-proof rows share a rule — the variable is meaningless until introdu
   them, register the variable's bounds as not-trivially-derivable
   (`note_bounds_not_trivially_derivable`, as ArgSort's free signed bit-sums do) and
   derive the bounds once, explicitly, from the introduction.
+- **The target's range must cover the form in full.** `introduce_bits_of` defines
+  the target *equal* to the linear form, so a target that cannot represent every
+  value the form can take leaves the top-step redundancy goals plain false, and
+  veripb rejects the proof at the first `le` step. Give the target
+  `[min over the form, max over the form]` and let it be **signed** when the lower
+  end is negative — do not floor it at `0` because the modelled quantity "obviously"
+  cannot be negative. It is the *form's* range that matters, not the quantity's:
+  issue #553 was exactly this, Cumulative's `end = s + l` proxy pinned to a lower
+  bound of `0` while `unison`'s inactive tasks sit at `s = -1, l = 0`, making the
+  first proofgoal `s + l >= 0` genuinely false. See
+  [cumulative-proof-logging.md](cumulative-proof-logging.md) for that case written
+  out. A signed target is fully supported: the construction is the same one shifted
+  by `2^S`, with `¬sign` as the top bit.
 
 ## Rule of thumb
 
