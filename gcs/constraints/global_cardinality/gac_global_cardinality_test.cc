@@ -116,6 +116,15 @@ auto main(int argc, char * argv[]) -> int
         {{pair{1, 2}, pair{1, 2}}, {1, 2}, {pair{0, 2}, pair{0, 2}}, false},
         // Closed.
         {{pair{1, 3}, pair{1, 3}, pair{2, 3}}, {1, 2, 3}, {pair{0, 3}, pair{0, 3}, pair{0, 3}}, true},
+        // Cover values spanning zero, with a bit-aliased {0,1}-domain variable in
+        // the Hall set (issue #557): its (== 0)/(== 1) atoms are the complementary
+        // pair ~b0/b0, which made the demand-aggregate at-most-one loose and broke
+        // the proof (emit_gcc_demand_pol). Exercises the fixed recover_am1 block
+        // scheme; the closed span-zero case fails a fraction of branching seeds
+        // before the fix.
+        {{pair{-1, 1}, pair{-1, 1}, pair{0, 1}}, {-1, 0, 1}, {pair{0, 3}, pair{0, 3}, pair{0, 3}}, true},
+        // Lower-demand Hall over a span-zero cover with a {0,1}-aliased supplier.
+        {{pair{-2, 1}, pair{-2, 1}, pair{-1, 2}}, {-2, -1}, {pair{2, 3}, pair{0, 3}}, false},
         // A GAC-only pruning: AllDifferent-style Hall set (each value once).
         {{pair{1, 2}, pair{1, 2}, pair{1, 3}}, {1, 2, 3}, {pair{0, 1}, pair{0, 1}, pair{0, 1}}, false},
         // Degenerate cases (issue #254): empty vars, empty value set, single

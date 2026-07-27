@@ -119,6 +119,20 @@ auto main(int argc, char * argv[]) -> int
         {{pair{1, 2}, pair{1, 2}}, {1, 2}, {pair{0, 2}, pair{0, 2}}, false},
         // Closed.
         {{pair{1, 3}, pair{1, 3}, pair{2, 3}}, {1, 2, 3}, {pair{0, 3}, pair{0, 3}, pair{0, 3}}, true},
+        // Cover values spanning zero, with a bit-aliased {0,1}-domain variable in
+        // the Hall set (issue #557): the aliased variable's (== 0)/(== 1) atoms are
+        // ~b0/b0, a complementary pair, which made the demand-aggregate at-most-one
+        // loose and broke the proof. These faithful negative mirrors of the
+        // positive cases above exercise the fixed recover_am1 block scheme. Closed
+        // span-zero (the primary reproducer): fails ~half the branching seeds
+        // before the fix.
+        {{pair{-1, 1}, pair{-1, 1}, pair{0, 1}}, {-1, 0, 1}, {pair{0, 3}, pair{0, 3}, pair{0, 3}}, true},
+        // Upper-capacity Hall, all-negative-plus-zero domains: three vars confined
+        // to {-2,-1} with capacity 2+1 force the fourth off value -1.
+        {{pair{-2, -1}, pair{-2, -1}, pair{-2, -1}, pair{-2, 0}}, {-2, -1}, {pair{0, 2}, pair{0, 1}}, false},
+        // Lower-demand Hall over a span-zero cover: value -1 demanded twice with a
+        // {0,1}-aliased supplier among the potential vars.
+        {{pair{-2, 1}, pair{-2, 1}, pair{-1, 2}}, {-2, -1}, {pair{2, 3}, pair{0, 3}}, false},
         // Bounded form, value absent from a domain.
         {{pair{1, 3}, pair{1, 3}, pair{1, 3}}, {1, 2}, {pair{1, 3}, pair{0, 1}}, false},
         // Degenerate cases (issue #254): empty vars, empty value set, single
