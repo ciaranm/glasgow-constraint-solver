@@ -10,7 +10,7 @@
 #
 # See dev_docs/benchmarking.md for the benchmark set used when evaluating a
 # performance-sensitive change.
-add_subdirectory(bin_packing)
+add_subdirectory(bin_packing_bench)
 add_subdirectory(knapsack_bench)
 add_subdirectory(linear_prop_cost)
 add_subdirectory(linear_slack_bench)

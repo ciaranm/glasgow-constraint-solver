@@ -4,6 +4,10 @@
 # suite, not just pedagogy, and a program added here needs a fixed instance
 # whose proof verifies quickly.
 #
+# One exception: skeleton_puzzle is a genuine example, but has no add_test,
+# because it does not finish in five minutes under --prove. Do not "fix" that by
+# registering it -- it needs a smaller instance first.
+#
 # Programs that only measure something live in ../benchmarks/ instead, and the
 # MiniCP comparison set in ../minicp_benchmarks/.
 #

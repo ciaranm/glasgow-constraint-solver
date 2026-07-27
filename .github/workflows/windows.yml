@@ -44,7 +44,7 @@ jobs:
         -DCMAKE_BUILD_TYPE=Release
         -DGCS_ENABLE_XCSP=OFF
         -DGCS_ENABLE_MINIZINC=OFF
-        -DGCS_ENABLE_EXAMPLES=ON
+        -DGCS_ENABLE_EXECUTABLES=ON
         -DGCS_BUILD_TESTS=ON
 
     - name: Build everything
@@ -127,7 +127,7 @@ jobs:
           -DGCS_ENABLE_XCSP=ON `
           -DGCS_ENABLE_MINIZINC=ON `
           -DGCS_ENABLE_PYTHON=ON `
-          -DGCS_ENABLE_EXAMPLES=OFF `
+          -DGCS_ENABLE_EXECUTABLES=OFF `
           -DGCS_BUILD_TESTS=ON
 
     - name: Build the frontends

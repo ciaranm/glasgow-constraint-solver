@@ -9,7 +9,7 @@ version = "0.1.8"
 [tool.scikit-build]
 cmake.version = ">=3.18"
 ninja.version = ">=1.11"
-cmake.args = ["-DGCS_ENABLE_PYTHON=ON", "-DGCS_ENABLE_XCSP=OFF", "-DGCS_ENABLE_MINIZINC=OFF", "-DGCS_ENABLE_EXAMPLES=OFF",
+cmake.args = ["-DGCS_ENABLE_PYTHON=ON", "-DGCS_ENABLE_XCSP=OFF", "-DGCS_ENABLE_MINIZINC=OFF", "-DGCS_ENABLE_EXECUTABLES=OFF",
 "-G Unix Makefiles"]
 cmake.source-dir = ".."
 build-dir = "build"

@@ -210,8 +210,9 @@ wider load-bound cases (single-valued loads, interior holes) need the
 same per-call pol+RUP machinery and the cache prevents redundant
 emission anyway.
 
-**Benchmark — why per-call is the default.** `benchmarks/bin_packing`,
-per-call (default) versus upfront (`--upfront`):
+**Benchmark — why per-call is the default.** `bin_packing_bench` (built from
+`benchmarks/bin_packing_bench/`), per-call (default) versus upfront
+(`--upfront`):
 
 | inst | layout | per-call proof | upfront proof | per-call veripb | upfront veripb | per-call solve | upfront solve |
 |------|--------|---------------:|--------------:|----------------:|---------------:|---------------:|--------------:|

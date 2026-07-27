@@ -55,7 +55,25 @@ option(GCS_ENABLE_MINIZINC "Support for the MiniZinc modelling language" ${PROJE
 # Off even at top level: unlike the other frontends it needs Python and pybind11.
 # scikit-build (python/pyproject.toml) turns it on explicitly.
 option(GCS_ENABLE_PYTHON "Build the Python bindings (requires Python and pybind11)" OFF)
-option(GCS_ENABLE_EXAMPLES "Build examples" ${PROJECT_IS_TOP_LEVEL})
+# One switch for everything that is a program rather than the library: examples/,
+# benchmarks/, verified_encodings/, scp/ and minicp_benchmarks/. Its job is to let
+# someone consuming this as a CMake dependency build the library without also
+# building sixty-odd binaries, and that argument does not distinguish between the
+# kinds of program, so grouping them is deliberate rather than an oversight from
+# when benchmarks/ was part of examples/.
+#
+# Previously named GCS_ENABLE_EXAMPLES, which stopped describing what it gates
+# once benchmarks/ was split out. The old spelling still supplies the default, so
+# an existing -DGCS_ENABLE_EXAMPLES=OFF does not silently start building
+# everything again; an explicit -DGCS_ENABLE_EXECUTABLES still wins over it.
+if(DEFINED GCS_ENABLE_EXAMPLES)
+    message(DEPRECATION "GCS_ENABLE_EXAMPLES is deprecated, use GCS_ENABLE_EXECUTABLES instead")
+    set(_gcs_enable_executables_default ${GCS_ENABLE_EXAMPLES})
+else()
+    set(_gcs_enable_executables_default ${PROJECT_IS_TOP_LEVEL})
+endif()
+option(GCS_ENABLE_EXECUTABLES "Build the example, benchmark and verified-encoding programs" ${_gcs_enable_executables_default})
+unset(_gcs_enable_executables_default)
 option(GCS_BUILD_TESTS "Build GCS tests" ${PROJECT_IS_TOP_LEVEL})
 option(GCS_ENABLE_VIEW_WRAP_SWEEP "Register the view-wrap proof-verification sweep (many tests, most failing today; opt in when working on view proof logging)" OFF)
 
@@ -192,7 +210,7 @@ if(GCS_BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
 endif()
 
-if(GCS_ENABLE_EXAMPLES OR GCS_ENABLE_MINIZINC)
+if(GCS_ENABLE_EXECUTABLES OR GCS_ENABLE_MINIZINC)
     FetchContent_Declare(
             cxxopts
             GIT_REPOSITORY https://github.com/jarro2783/cxxopts.git
@@ -315,7 +333,7 @@ install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/GlasgowConstraintSolverConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/GlasgowConstraintSolver)
 
-if(GCS_ENABLE_EXAMPLES)
+if(GCS_ENABLE_EXECUTABLES)
     add_subdirectory(examples)
     add_subdirectory(benchmarks)
     add_subdirectory(verified_encodings)
