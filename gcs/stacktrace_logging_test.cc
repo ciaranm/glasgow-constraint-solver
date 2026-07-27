@@ -73,5 +73,10 @@ TEST_CASE("Verbose logging names gcs stack frames in the proof")
     // No <stacktrace> here (e.g. macOS libc++): log_stacktrace() is compiled out,
     // so there is nothing to assert. Recorded as a pass on those platforms.
     SUCCEED("<stacktrace> unavailable on this toolchain; verbose frame logging is compiled out");
+
+    // The solve above runs on every platform, so its proof needs disposing of on
+    // every platform. Unconditionally here: this branch asserts nothing, so there
+    // is no failure state whose files are worth preserving.
+    gcs::test_innards::dispose_of_proof_files("stacktrace_logging_test");
 #endif
 }

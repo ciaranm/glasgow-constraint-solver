@@ -257,12 +257,20 @@ namespace gcs::test_innards
      * \brief Verify a proof with VeriPB and, on success, dispose of it.
      *
      * Returns whether verification succeeded. The proof files are left in place
-     * when it did not, so a failing proof is always on disk to inspect.
+     * when it did not, so a failing proof can be inspected.
      *
      * This is the non-throwing form, for tests that report the outcome
      * themselves (a Catch2 `CHECK`, or a bool returned to a caller that prints
      * its own diagnostic). Tests that should stop dead at the first bad proof
      * want verify_proof_and_clean_up() instead.
+     *
+     * Note that not stopping is what makes preservation the caller's problem
+     * rather than a guarantee this can make: files kept here survive only until
+     * something writes that basename again. Callers that abandon the run on
+     * failure (the circuit and smart_table tests, which `return EXIT_FAILURE`)
+     * get preservation for free; callers that carry on need a basename per
+     * proving instance, which is why gcs/solve_test.cc gives each of its cases
+     * its own.
      */
     [[nodiscard]] inline auto verify_proof_and_dispose(const std::string & proof_name) -> bool
     {
