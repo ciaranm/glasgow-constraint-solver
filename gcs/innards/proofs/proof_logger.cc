@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/emit_inequality_to.hh>
 #include <gcs/innards/proofs/hints.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -680,36 +681,128 @@ auto ProofLogger::introduce_bits_of(
 {
     // Wietze Koops's construction: walk target's bits from the top, defining each
     // bit e_k as the reified `running-remainder >= 2^k` via a single red whose
-    // witness is just e_k -> 1 (upper half) / e_k -> 0 (lower half). Every
-    // redundancy goal closes by RUP, and the final (k = 0) pair is
-    // BinEnc(target) >= form (end_ge) / BinEnc(target) <= form (end_le).
+    // witness is just e_k -> 1 (upper half) / e_k -> 0 (lower half). The final
+    // (k = 0) pair is BinEnc(target) >= form (end_ge) / BinEnc(target) <= form
+    // (end_le).
+    //
+    // A signed target (negative bit coefficient -2^S) is the same construction
+    // shifted by 2^S: BinEnc + 2^S = 2^S * ~sign + Sigma 2^j e_j is an unsigned
+    // bit sum whose top bit is the negated sign literal, so define ITS bits as
+    // equal to form + 2^S. Every inequality just gains the constant 2^S on the
+    // form side, and after veripb's literal normalisation the emitted lines ARE
+    // the unsigned lines of the shifted form (issue #553). The returned pair
+    // still reads BinEnc(target) >= form / <= form.
+    //
+    // Why every redundancy goal discharges: veripb autoproves a proofgoal by a
+    // single-constraint implication check against the database before trying
+    // RUP. Each middle step's goal is the previous step's line (or, for a le
+    // red's extra goal on that step's ge line, implied by ~C with the current
+    // bit weakened away), so only the two TOP-step goals --- form <= (top-half
+    // max) for the first ge and form >= (0, or -2^S when signed) for the first
+    // le --- have no earlier line to lean on. Unit propagation alone does NOT
+    // reliably close those two (it stalls whenever an operand's bit encoding
+    // overhangs the target's, e.g. a start in [-17, -16] whose encoding spans
+    // [-32, 31] against an end proxy spanning [-8, 7]), so we first derive the
+    // form's own bound lines by pol over the operands' OPB bound rows; the
+    // implication check then discharges the top goals from those, making the
+    // construction shape-independent.
     auto m = names_and_ids_tracker().num_bits(target).raw_value;
 
     // A [0, 0] target now has zero bits (the empty sum, identically zero), for
     // which the construction below would return default-constructed lines. No
-    // caller can currently supply one (every end proxy spans [0, t_hi + 1]),
-    // and the degenerate pair it would need (`form <= 0` / `form >= 0`, RUP
-    // from the operands' bound rows) should be written and tested when a real
-    // caller appears, not speculatively.
+    // caller can currently supply one (cumulative's end proxy could only span
+    // [0, 0] if both operands were constant, and then no proxy is made), and
+    // the degenerate pair it would need (`form <= 0` / `form >= 0`, exactly
+    // the two pol-derived bound lines below) should be written and tested when
+    // a real caller appears, not speculatively.
     if (0 == m)
         throw ProofError{"introduce_bits_of does not support a zero-width target"};
+
+    // The form's own bound lines: Sigma c_i * (operand's lower row) for the
+    // lower (using the upper row where c_i < 0), and symmetrically for the
+    // upper. Terms without tracked bound rows (views, flags, literals ---
+    // none of which any current caller passes) leave the top goals to plain
+    // RUP as before; constants fold into the goals' right-hand sides and
+    // need no row.
+    PolBuilder form_lower_bound, form_upper_bound;
+    bool have_bound_rows = false, bound_rows_derivable = true;
+    for (const auto & term : linear_form.terms) {
+        auto add_rows_for = [&](const SimpleOrProofOnlyIntegerVariableID & id) {
+            auto rows = names_and_ids_tracker().bound_rows(id);
+            if ((! rows) || 0_i == term.coefficient) {
+                bound_rows_derivable = bound_rows_derivable && rows.has_value();
+                return;
+            }
+            auto & [lower_row, upper_row] = *rows;
+            if (term.coefficient > 0_i) {
+                form_lower_bound.add(lower_row, term.coefficient);
+                form_upper_bound.add(upper_row, term.coefficient);
+            }
+            else {
+                form_lower_bound.add(upper_row, -term.coefficient);
+                form_upper_bound.add(lower_row, -term.coefficient);
+            }
+            have_bound_rows = true;
+        };
+        overloaded{
+            [&](const ProofLiteral &) { bound_rows_derivable = false; },            //
+            [&](const ProofFlag &) { bound_rows_derivable = false; },               //
+            [&](const ProofBitVariable &) { bound_rows_derivable = false; },        //
+            [&](const ProofOnlySimpleIntegerVariableID & id) { add_rows_for(id); }, //
+            [&](const IntegerVariableID & var) {
+                overloaded{
+                    [&](const SimpleIntegerVariableID & id) { add_rows_for(id); },         //
+                    [&](const ConstantIntegerVariableID &) {},                             //
+                    [&](const ViewOfIntegerVariableID &) { bound_rows_derivable = false; } //
+                }
+                    .visit(var);
+            } //
+        }
+            .visit(term.variable);
+    }
+    if (bound_rows_derivable && have_bound_rows) {
+        form_lower_bound.emit(*this, level);
+        form_upper_bound.emit(*this, level);
+    }
+
+    // 2^S for a signed target (whose sign bit occupies position 0 of the bits
+    // vector, with the value bit of weight 2^j at position j + 1), else 0.
+    auto shift = -names_and_ids_tracker().negative_bit_coefficient(target);
+    if (0_i != shift && shift != power2(Integer{m - 1}))
+        throw ProofError{"introduce_bits_of: signed target's negative bit coefficient does not match its bit count"};
+
+    // The bit of weight 2^k in the (shifted) sum.
+    auto bit_of_weight = [&](Integer k) -> ProofBitVariable {
+        if (0_i == shift)
+            return ProofBitVariable{target, k, true};
+        else if (k.raw_value == m - 1)
+            return ProofBitVariable{target, 0_i, false}; // ~sign as the top bit
+        else
+            return ProofBitVariable{target, k + 1_i, true};
+    };
 
     pair<ProofLine, ProofLine> bounds;
     SumOf<Weighted<PseudoBooleanTerm>> bitsum; // Sigma_{j > k} 2^j e_j, grows as k descends
     for (long long kk = m - 1; kk >= 0; --kk) {
         Integer k{kk};
-        bitsum += power2(k) * ProofBitVariable{target, k, true}; // now Sigma_{j >= k}
+        auto bit = bit_of_weight(k);
+        bitsum += power2(k) * bit; // now Sigma_{j >= k}
 
         // expr = (running bit sum) - (linear form)
         auto expr = bitsum;
         for (const auto & term : linear_form.terms)
             expr += Weighted<PseudoBooleanTerm>{-term.coefficient, term.variable};
 
-        ProofBitVariable bit{target, k, true};
-        // upper: Sigma_{j >= k} 2^j e_j + (2^k - 1) >= form  <=>  expr >= 1 - 2^k
-        auto ge = emit_red_proof_line(expr >= 1_i - power2(k), {{bit, TrueLiteral{}}}, level);
-        // lower: Sigma_{j >= k} 2^j e_j <= form  <=>  expr <= 0
-        auto le = emit_red_proof_line(expr <= 0_i, {{bit, FalseLiteral{}}}, level);
+        // The witness must map the underlying proof variable, so when the top
+        // bit is ~sign, setting it means mapping sign to the complement.
+        ProofBitVariable witness_var{target, bit.position, true};
+        ProofLiteralOrFlag bit_on = bit.positive ? ProofLiteralOrFlag{TrueLiteral{}} : ProofLiteralOrFlag{FalseLiteral{}};
+        ProofLiteralOrFlag bit_off = bit.positive ? ProofLiteralOrFlag{FalseLiteral{}} : ProofLiteralOrFlag{TrueLiteral{}};
+
+        // upper: Sigma_{j >= k} 2^j e_j + (2^k - 1) >= form + shift  <=>  expr >= 1 - 2^k + shift
+        auto ge = emit_red_proof_line(expr >= 1_i - power2(k) + shift, {{witness_var, bit_on}}, level);
+        // lower: Sigma_{j >= k} 2^j e_j <= form + shift  <=>  expr <= shift
+        auto le = emit_red_proof_line(expr <= shift, {{witness_var, bit_off}}, level);
         if (kk == 0)
             bounds = {ge, le};
     }

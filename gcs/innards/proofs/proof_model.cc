@@ -345,6 +345,12 @@ auto ProofModel::create_proof_only_integer_variable_in_proof(Integer lower, Inte
     // direct-encoding create_literals_for_introduced_variable_value, in bits.
     ProofOnlySimpleIntegerVariableID id{_imp->proof_only_integer_variable_nr++};
     register_bits_variable_encoding(id, lower, upper, name);
+    // No OPB rows means the [lo, hi] bounds are NOT a trivial consequence of
+    // the model: a need_gevar boundary pin (a top-of-proof RUP line) would
+    // have nothing to propagate from, and would be queued before the caller's
+    // in-proof definition lines even exist. Nothing creates gevars over such
+    // a variable today, so this is a trap-removal, not a behaviour change.
+    names_and_ids_tracker().note_bounds_not_trivially_derivable(id);
     return id;
 }
 
@@ -541,7 +547,7 @@ auto ProofModel::set_up_bits_variable_encoding(
     for (auto & [coeff, var] : bits)
         _imp->opb << coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << lower << " ;\n";
-    advance_constraint_counter();
+    auto lower_row = advance_constraint_counter();
 
     // upper bound
     if (labelled)
@@ -549,7 +555,17 @@ auto ProofModel::set_up_bits_variable_encoding(
     for (auto & [coeff, var] : bits)
         _imp->opb << -coeff << " " << names_and_ids_tracker().pb_file_string_for(var) << " ";
     _imp->opb << ">= " << -upper << " ;\n";
-    advance_constraint_counter();
+    auto upper_row = advance_constraint_counter();
+
+    // Track the two rows so proof steps can combine them by pol (e.g.
+    // ProofLogger::introduce_bits_of deriving a linear form's own bound
+    // lines): by label for a state variable, so the references stay
+    // count-robust under cake_pb_cp's re-derived OPB, and by constraint
+    // number for a proof-only variable, which never appears in a cake chain.
+    if (labelled)
+        names_and_ids_tracker().track_bound_rows(id, ProofLineLabel{"i[" + name + "][lb]"}, ProofLineLabel{"i[" + name + "][ub]"});
+    else
+        names_and_ids_tracker().track_bound_rows(id, lower_row, upper_row);
 
     if (_imp->always_use_full_encoding)
         overloaded{

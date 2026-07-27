@@ -491,6 +491,10 @@ auto main(int argc, char * argv[]) -> int
         {{{0, 4}}, {1}, {3}, 2},
         // Two tasks of differing lengths, cap 1: gaps matter.
         {{{0, 3}, {0, 3}}, {1, 2}, {1, 1}, 1},
+        // Negative start lower bounds with constant lengths: the per-task
+        // window and the before/after flags span t < 0 (issue #553 shape,
+        // without the end proxy).
+        {{{-2, 1}, {-2, 1}}, {2, 2}, {1, 1}, 1},
         // Degenerate cases (issue #254).
         // Empty active-task list: the only task has zero length and zero height,
         // so no propagator is installed and every start is feasible.
@@ -599,6 +603,23 @@ auto main(int argc, char * argv[]) -> int
             run_cumulative_full_test(proofs, "mrcpsp", {{0, 4}, {0, 4}}, {{1, 3}, {2, 3}}, {{1, 2}, {1, 2}}, {2, 2});
             // Full: durations, heights AND capacity all variable.
             run_cumulative_full_test(proofs, "full", {{0, 3}, {0, 3}}, {{1, 2}, {1, 2}}, {{1, 2}, {1, 2}}, {2, 3});
+
+            // Negative start lower bounds with variable durations: s + l
+            // reaches below 0, so the proof-only end = s + l proxy must be
+            // signed (issue #553; unison's inactive tasks sit at s = -1,
+            // l = 0, exactly this shape).
+            run_cumulative_full_test(proofs, "neg_start", {{-1, 2}, {-1, 2}}, {{0, 2}, {0, 2}}, {{1, 1}, {1, 1}}, {1, 1});
+            // Mixed: one signed-end task, one constant-length task (no end).
+            run_cumulative_full_test(proofs, "neg_start_mixed", {{-2, 1}, {0, 2}}, {{1, 2}, {2, 2}}, {{1, 1}, {1, 1}}, {1, 1});
+            // Deep negative start: s's own sign bit reaches -16, below
+            // end's -8 (end spans [-8, 3]), so the top redundancy goals
+            // need the derived form-bound pol lines (s's lower-bound row
+            // is out of slack's reach).
+            run_cumulative_full_test(proofs, "neg_start_deep", {{-10, 0}}, {{2, 3}}, {{1, 1}}, {1, 1});
+            // All-negative window whose top redundancy goals stall at a
+            // unit-propagation fixpoint without the derived form-bound
+            // lines: s's encoding spans [-32, 31] against end's [-8, 7].
+            run_cumulative_full_test(proofs, "neg_start_stall", {{-17, -16}}, {{9, 16}}, {{1, 1}}, {1, 1});
         }
     }
 

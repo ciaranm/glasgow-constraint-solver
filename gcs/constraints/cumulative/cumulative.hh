@@ -48,7 +48,11 @@ namespace gcs
         // variable one, where the variable / _contrib_flags is used instead) and
         // _*_ub holds the initial upper bound (used to size the possible-active
         // window / contrib domain and to filter tasks that can never load).
+        // _length_lb holds the initial length lower bound, used with lb(start)
+        // to give the proof-only end = s + l proxy its true lower bound (which
+        // is negative when a start can begin far enough before time 0).
         std::vector<Integer> _length_vals;
+        std::vector<Integer> _length_lb;
         std::vector<Integer> _length_ub;
         std::vector<Integer> _height_vals;
         std::vector<Integer> _height_ub;

@@ -30,6 +30,7 @@ using namespace gcs::innards;
 
 using std::make_shared;
 using std::make_unique;
+using std::min;
 using std::move;
 using std::size_t;
 using std::string;
@@ -133,15 +134,18 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     // the possible-active window / contrib domain and to filter tasks that can
     // never raise the profile.
     _length_vals.clear();
+    _length_lb.clear();
     _length_ub.clear();
     _height_vals.clear();
     _height_ub.clear();
     _length_vals.reserve(n);
+    _length_lb.reserve(n);
     _length_ub.reserve(n);
     _height_vals.reserve(n);
     _height_ub.reserve(n);
     for (const auto & l : _lengths) {
         _length_vals.push_back(is_constant_variable(l) ? const_value_of(l) : 0_i);
+        _length_lb.push_back(initial_state.lower_bound(l));
         _length_ub.push_back(initial_state.upper_bound(l));
     }
     for (const auto & h : _heights) {
@@ -205,9 +209,16 @@ auto Cumulative::define_proof_model(ProofModel & model) -> void
         // end = s_i + l_i. Crucially end has NO OPB encoding (cake has no such
         // variable): it is bit-defined inside the proof by the install_initialiser
         // (introduce_bits_of), which also emits the `end ≥ t+1 → after` bridge
-        // lemma per (i,t). nullopt unless both operands vary.
+        // lemma per (i,t). nullopt unless both operands vary. The range must
+        // cover s + l in full or introduce_bits_of's redundancy goals are
+        // unprovable: lb(s) + lb(l) can be negative (a start before time 0,
+        // issue #553), in which case end gets a sign bit; keep 0 as the lower
+        // bound otherwise --- end ≥ 0 is the one unsigned boundary pin that
+        // would be a tautology, and verified instances' tracked bounds stay
+        // untouched.
         if (! is_constant_variable(_starts[i]) && ! is_constant_variable(_lengths[i]))
-            _end[i] = model.create_proof_only_integer_variable_in_proof(0_i, _per_task_t_hi[i] + 1_i, "cumend");
+            _end[i] =
+                model.create_proof_only_integer_variable_in_proof(min(0_i, _per_task_t_lo[i] + _length_lb[i]), _per_task_t_hi[i] + 1_i, "cumend");
 
         for (Integer t = t_lo; t <= t_hi; ++t) {
             // Name the flags to match cake_pb_cp's verified cumulative encoder
