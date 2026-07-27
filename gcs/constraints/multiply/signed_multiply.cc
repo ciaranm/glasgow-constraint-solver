@@ -335,7 +335,8 @@ auto gcs::innards::signed_multiply::propagate(Data & d, const State & state, aut
     // only re-derive a line that is already a unit, and leaving out one that
     // could move would only propagate less.
     auto [z_lo_now, z_hi_now] = state.bounds(d.z);
-    bool need_upper = prod_hi<z_hi_now, need_lower = prod_lo> z_lo_now;
+    bool need_upper = prod_hi < z_hi_now;
+    bool need_lower = prod_lo > z_lo_now;
     if (need_upper || need_lower) {
         vector<Literal> z_bounds;
         z_bounds.reserve(2);
