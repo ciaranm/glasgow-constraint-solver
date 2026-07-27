@@ -83,8 +83,9 @@ template <typename Literal_>
         if constexpr (is_same_v<Literal_, ProofFlag>)
             return logger.names_and_ids_tracker().find_xliteral_for(atom);
         else
-            return overloaded{//
-                [](const TrueLiteral &) -> optional<XLiteral> { return nullopt; }, [](const FalseLiteral &) -> optional<XLiteral> { return nullopt; },
+            return overloaded{                                                      //
+                [](const TrueLiteral &) -> optional<XLiteral> { return nullopt; },  //
+                [](const FalseLiteral &) -> optional<XLiteral> { return nullopt; }, //
                 [&](const auto & cond) -> optional<XLiteral> { return logger.names_and_ids_tracker().find_xliteral_for(cond); }}
                 .visit(simplify_literal(logger.names_and_ids_tracker(), atom));
     };
