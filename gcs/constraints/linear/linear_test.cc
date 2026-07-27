@@ -349,6 +349,18 @@ auto main(int argc, char * argv[]) -> int
 
     data.emplace_back(pair{0, 1}, pair{0, 1}, pair{0, 1}, vector{pair{vector{1, 1, 1}, 2}});
 
+    // {0,1}-domain variables carrying NEGATIVE coefficients, alongside a wider
+    // variable so a bound is actually pushed: the bound justification
+    // (justify_linear_bounds) then substitutes a negative-coefficient lower/upper
+    // bound atom on a {0,1} variable -- the shape issue #554 was about, where a
+    // bit-aliased >= 1 atom cancelled its term in the bound pol. The random
+    // generator never produces width-1 domains, so this is only reached here.
+    data.emplace_back(pair{0, 1}, pair{0, 1}, pair{0, 5}, vector{pair{vector{-2, -3, 1}, 0}});
+
+    data.emplace_back(pair{0, 1}, pair{0, 1}, pair{-5, 0}, vector{pair{vector{-2, 3, -1}, 0}});
+
+    data.emplace_back(pair{0, 1}, pair{2, 6}, pair{0, 1}, vector{pair{vector{-4, 1, -2}, -1}});
+
     data.emplace_back(pair{-7, 5}, pair{7, 12}, pair{-3, 12}, vector{pair{vector{4, -8, 10}, 94}});
 
     data.emplace_back(pair{8, 14}, pair{0, 8}, pair{4, 19}, vector{pair{vector{-7, 6, 7}, 69}});

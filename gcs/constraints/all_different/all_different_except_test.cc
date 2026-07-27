@@ -151,6 +151,21 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
     run_alldiffexcept_test(proofs, view_cfg, {{1, 1}, {2, 2}}, {0}); // distinct constants (tautology)
     run_alldiffexcept_test(proofs, view_cfg, {{3, 3}, {3, 3}}, {});  // dup, empty excluded set (contradiction)
 
+    // Negative values and a negative exempt value: the excluded value is cited
+    // value-dependently in the clique !=, the duplicate-forcing initialiser, and
+    // the GAC/phantom-edge reasons, so a negative one drives all of those onto
+    // the negative side of the encoding (the issue #553 class of value citation).
+    // Hall pruning over negative domains with -1 excluded.
+    run_alldiffexcept_test(proofs, view_cfg, {{-2, 2}, {-2, 2}, {-2, 2}}, {-1});
+    // Domains spanning zero, 0 excluded: phantom edges sit on a negative-inclusive domain.
+    run_alldiffexcept_test(proofs, view_cfg, {{-2, 1}, {-2, 1}, {-2, 1}}, {0});
+    // Multiple negative excluded values.
+    run_alldiffexcept_test(proofs, view_cfg, {{-3, 0}, {-3, 0}, {-3, 0}}, {-1, -2});
+    // Infeasible via fixed negative duplicates: -1, -1 with 0 excluded forces -1 != -1.
+    run_alldiffexcept_test(proofs, view_cfg, {{-1, -1}, {-1, -1}}, {0});
+    // All-fixed dup of a negative excluded value: allowed (tautology).
+    run_alldiffexcept_test(proofs, view_cfg, {{-2, -2}, {-2, -2}}, {-2});
+
     if (run_dup) {
         // Same variable in two positions: forces it into the excluded set.
         run_alldiffexcept_dup_test(proofs, {{0, 3}}, {0, 0}, {0});
@@ -159,6 +174,12 @@ auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, bool run_dup) -
         // Same variable in two positions but no value in `excluded` available:
         // infeasible.
         run_alldiffexcept_dup_test(proofs, {{1, 3}}, {0, 0}, {0});
+
+        // Same variable duplicated, forced into a NEGATIVE excluded value: the
+        // initialiser infers x != v for every non-excluded v over a negative-
+        // inclusive domain (issue #553 class).
+        run_alldiffexcept_dup_test(proofs, {{-3, 0}}, {0, 0}, {-1});
+        run_alldiffexcept_dup_test(proofs, {{-2, 1}, {-2, 1}}, {0, 0, 1}, {-1});
 
         // Two unique variables, one duplicated, one not, with two excluded values.
         run_alldiffexcept_dup_test(proofs, {{0, 3}, {0, 3}}, {0, 0, 1}, {0});

@@ -98,6 +98,32 @@ auto main(int argc, char * argv[]) -> int
             auto y = p.create_integer_variable(5_i, 5_i, "y");
             p.post(LinearEquality{WeightedSum{} + 1_i * y + 1_i * 3_c, 8_i});
         });
+
+        // Negative constant terms / RHS: the empty-sum shortcut compares the
+        // folded constant against the RHS with everything crossing zero, so a
+        // sign error in the fold surfaces only here. (Constant terms are formed
+        // with a negative coefficient, since `_c` literals are non-negative.)
+        run_constant_linear_test(
+            proofs, "-1*1 == -1 (tautology)", true, [](Problem & p) { p.post(LinearEquality{WeightedSum{} + -1_i * 1_c, -1_i}); });
+        run_constant_linear_test(
+            proofs, "-1*1 == 0 (contradiction)", false, [](Problem & p) { p.post(LinearEquality{WeightedSum{} + -1_i * 1_c, 0_i}); });
+        run_constant_linear_test(
+            proofs, "-2*3 == -6 (tautology, coeff != 1)", true, [](Problem & p) { p.post(LinearEquality{WeightedSum{} + -2_i * 3_c, -6_i}); });
+        run_constant_linear_test(
+            proofs, "-2*3 == -5 (contradiction, coeff != 1)", false, [](Problem & p) { p.post(LinearEquality{WeightedSum{} + -2_i * 3_c, -5_i}); });
+
+        // LinearNotEquals with negatives.
+        run_constant_linear_test(
+            proofs, "-1*1 != -1 (contradiction)", false, [](Problem & p) { p.post(LinearNotEquals{WeightedSum{} + -1_i * 1_c, -1_i}); });
+        run_constant_linear_test(
+            proofs, "-1*1 != 0 (tautology)", true, [](Problem & p) { p.post(LinearNotEquals{WeightedSum{} + -1_i * 1_c, 0_i}); });
+
+        // Mixed with a negative variable value and a negative folded constant:
+        // y(=-5) + (-3) == -8 leaves a non-empty sum whose modifier is negative.
+        run_constant_linear_test(proofs, "y(=-5) + (-3) == -8 (tautology, constant folded)", true, [](Problem & p) {
+            auto y = p.create_integer_variable(-5_i, -5_i, "y");
+            p.post(LinearEquality{WeightedSum{} + 1_i * y + -1_i * 3_c, -8_i});
+        });
     }
 
     return EXIT_SUCCESS;
