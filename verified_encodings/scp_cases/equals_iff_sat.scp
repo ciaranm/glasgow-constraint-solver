@@ -1,1 +1,1 @@
-( ( (Z 0 2) (V1 0 2) (V2 0 2) ) ( (_1 equals_iff (Z = 1) V1 V2) ) )
+( (version 1) (variables (Z 0 2) (V1 0 2) (V2 0 2)) (constraints (_1 equals_iff (Z = 1) V1 V2)) (prob_type enumerate) )

@@ -1,1 +1,1 @@
-( ( (A 0 2) (B 0 2) ) ( (_1 smart_table ( ((A <= B)) ) (A B)) ) )
+( (version 1) (variables (A 0 2) (B 0 2)) (constraints (_1 smart_table ( ((A <= B)) ) (A B))) (prob_type enumerate) )

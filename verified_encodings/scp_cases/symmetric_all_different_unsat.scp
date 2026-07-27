@@ -1,1 +1,1 @@
-( ( (A 0 2) (B 0 2) (C 0 2) (D 0 2) ) ( (_1 symmetric_all_different (A B C D) 0) ) )
+( (version 1) (variables (A 0 2) (B 0 2) (C 0 2) (D 0 2)) (constraints (_1 symmetric_all_different (A B C D) 0)) (prob_type enumerate) )

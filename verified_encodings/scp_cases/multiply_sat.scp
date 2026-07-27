@@ -1,1 +1,1 @@
-( ( (X 2 5) (Y 1 6) (Z 1 12) ) ( (_1 multiply X Y Z) ) (enumerate) )
+( (version 1) (variables (X 2 5) (Y 1 6) (Z 1 12)) (constraints (_1 multiply X Y Z)) (prob_type enumerate) )

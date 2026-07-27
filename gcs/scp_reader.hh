@@ -13,8 +13,8 @@ namespace gcs
 {
     /**
      * \brief Thrown when a `.scp` (s-expression CP) description cannot be turned
-     * into a Problem: malformed structure, an unknown constraint, or a
-     * constraint this reader does not yet support.
+     * into a Problem: malformed structure, an unsupported format version, an
+     * unknown constraint, or a constraint this reader does not yet support.
      *
      * \ingroup Core
      */
@@ -32,6 +32,13 @@ namespace gcs
      * the basis of the "trusted producer" workflow (a `.scp` is the input). A
      * `.scp` written by the solver and read back here re-creates an equivalent
      * Problem; constraint labels are preserved via Problem::post_named.
+     *
+     * The document is the four-section version-1 form `( (version 1) (variables
+     * ...) (constraints ...) (prob_type ...) )`. All four sections are required,
+     * in that order, and the version must be exactly 1 — anything else is
+     * rejected rather than guessed at. The `prob_type` spec is validated but not
+     * acted on: this reader always enumerates, so honouring an objective is left
+     * to the caller.
      *
      * Only a subset of constraints is supported so far (`abs`, `all_different`,
      * `in`, the comparisons, the linear forms, `equals`/`not_equals`, `element`

@@ -1,1 +1,1 @@
-( ( (X -12 -1) (Y 1 3) (Q -12 0) ) ( (_1 divide X Y Q) ) (enumerate) )
+( (version 1) (variables (X -12 -1) (Y 1 3) (Q -12 0)) (constraints (_1 divide X Y Q)) (prob_type enumerate) )

@@ -46,12 +46,14 @@
 
 #include <charconv>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 using std::map;
 using std::move;
+using std::span;
 using std::string;
 using std::string_view;
 using std::unordered_map;
@@ -84,6 +86,19 @@ namespace
         if (! e.is_list())
             throw ScpReadError{string{"expected a list for "} + what};
         return e.as_list();
+    }
+
+    // A top-level section is `(<tag> item...)`. Check the tag -- both it and the
+    // section's position in the top-level list are fixed, so a missing,
+    // misspelled or reordered section is an error here rather than something to
+    // hunt for -- and hand back the items after it. The span points into `e`,
+    // which outlives every use.
+    auto section_items(const SExpr & e, const char * tag) -> span<const SExpr>
+    {
+        const auto & parts = children_of(e, tag);
+        if (parts.empty() || ! parts[0].is_atom() || parts[0].as_atom() != tag)
+            throw ScpReadError{string{"expected a ("} + tag + " ...) section"};
+        return span<const SExpr>{parts}.subspan(1);
     }
 
     // Resolve an argument to a variable: a declared name, or an integer constant
@@ -637,6 +652,36 @@ namespace
         return {resolve_variable(variables, pair[0]), as_integer(pair[1])};
     }
 
+    // (prob_type <spec>), where <spec> is the bare atom `decide` or `enumerate`,
+    // or the list (minimize var) / (maximize var). This reader enumerates
+    // whatever it is given, so the spec is checked but not acted on: honouring
+    // an objective would mean optimising instead of enumerating, which is the
+    // caller's decision to make. Checking it still matters -- the .scp is a
+    // contract with cake_pb_cp, and a spec quietly ignored here is one cake
+    // would reject downstream.
+    auto check_prob_type(const SExpr & section) -> void
+    {
+        auto spec = section_items(section, "prob_type");
+        if (spec.size() != 1)
+            throw ScpReadError{"the prob_type section takes exactly one specification"};
+
+        if (spec[0].is_atom()) {
+            const auto & kind = spec[0].as_atom();
+            if (kind != "decide" && kind != "enumerate")
+                throw ScpReadError{"unknown prob_type '" + kind + "'"};
+            return;
+        }
+
+        // An objective. The variable is left as an atom rather than resolved:
+        // the writer renders a constant objective as (minimize 3), so a name
+        // that isn't declared is legitimate here.
+        const auto & parts = children_of(spec[0], "the prob_type specification");
+        if (parts.size() != 2 || ! parts[0].is_atom() || (parts[0].as_atom() != "minimize" && parts[0].as_atom() != "maximize"))
+            throw ScpReadError{"a prob_type objective is (minimize var) or (maximize var)"};
+        if (! parts[1].is_atom())
+            throw ScpReadError{"a prob_type objective's variable must be an atom"};
+    }
+
     auto read_element_2d(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
         -> void
     {
@@ -658,17 +703,27 @@ namespace
 auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVariableID>
 {
     auto top = parse_s_expr(text);
-    const auto & sections = children_of(top, "the top-level (variables constraints [objective]) form");
-    // The optional third element is the objective / (enumerate) directive; this
-    // reader solves and enumerates, so it is accepted but not acted on (an
-    // objective would need the client to optimise rather than enumerate).
-    if (sections.size() != 2 && sections.size() != 3)
-        throw ScpReadError{"top level must be (variables constraints) or (variables constraints objective)"};
+    const auto & sections = children_of(top, "the top-level (version variables constraints prob_type) form");
+    if (sections.size() != 4)
+        throw ScpReadError{"top level must be ((version 1) (variables ...) (constraints ...) (prob_type ...))"};
+
+    // The version comes first so that an incompatible producer is caught before
+    // anything else is read. Only 1 is accepted: a different number means a
+    // different grammar, and guessing at it would be worse than refusing.
+    auto version = section_items(sections[0], "version");
+    if (version.size() != 1)
+        throw ScpReadError{"the version section must be (version 1)"};
+    if (auto number = as_integer(version[0]); number != 1_i)
+        throw ScpReadError{"unsupported .scp format version " + number.to_string() + ": this reader only accepts version 1"};
+
+    // Check the trailing section before anything is posted, so a malformed
+    // document leaves `problem` untouched rather than half-built.
+    check_prob_type(sections[3]);
 
     map<string, IntegerVariableID> variables;
 
     // Variables: each declaration is (name lower upper).
-    for (const auto & decl : children_of(sections[0], "the variables section")) {
+    for (const auto & decl : section_items(sections[1], "variables")) {
         const auto & parts = children_of(decl, "a variable declaration");
         if (parts.size() != 3)
             throw ScpReadError{"a variable declaration must be (name lower upper)"};
@@ -679,7 +734,7 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
     }
 
     // Constraints: each is (label operator args...).
-    for (const auto & constraint : children_of(sections[1], "the constraints section")) {
+    for (const auto & constraint : section_items(sections[2], "constraints")) {
         const auto & terms = children_of(constraint, "a constraint");
         if (terms.size() < 2)
             throw ScpReadError{"a constraint must be (label operator ...)"};

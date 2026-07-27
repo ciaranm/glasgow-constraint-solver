@@ -1,1 +1,1 @@
-( ( (X -4 4) (Y 2 3) ) ( (_1 multiply X Y X) ) (enumerate) )
+( (version 1) (variables (X -4 4) (Y 2 3)) (constraints (_1 multiply X Y X)) (prob_type enumerate) )

@@ -1,1 +1,1 @@
-( ( (A -1 1) (B -1 1) (N 0 2) ) ( (_1 nvalue (A B) N) ) )
+( (version 1) (variables (A -1 1) (B -1 1) (N 0 2)) (constraints (_1 nvalue (A B) N)) (prob_type enumerate) )
