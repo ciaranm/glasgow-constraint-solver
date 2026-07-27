@@ -249,8 +249,10 @@ auto main(int argc, char * argv[]) -> int
             // --prove is a bare flag here as it is everywhere else, with the
             // basename supplied separately. `--prove=NAME` is kept as a
             // deprecated alias for the old value-taking spelling; the
-            // space-separated `--prove NAME` is gone, so the .msc configs
-            // declare the basename as its own extraFlag.
+            // space-separated `--prove NAME` cannot be (a flag with an implicit
+            // value does not consume the following token), so it is diagnosed
+            // after parsing instead, and the .msc configs declare the basename
+            // as its own extraFlag.
             ("prove", "Create a proof", cxxopts::value<string>()->implicit_value("")) //
             ("proof-files-basename", "Basename for the .opb and .pbp files",          //
                 cxxopts::value<string>()->default_value("fzn-glasgow"))               //
@@ -271,6 +273,19 @@ auto main(int argc, char * argv[]) -> int
         cout << options.help() << std::endl;
         return EXIT_SUCCESS;
     }
+
+    // Positional arguments beyond the one --file consumes land in unmatched(),
+    // where nothing reads them: silently ignoring them turns a mistyped command
+    // line into a successful-looking run. The case that matters is the old
+    // `--prove NAME` spelling. --prove is now a bare flag, and a flag with an
+    // implicit value does not consume the following token, so `model.fzn --prove
+    // NAME` solves the model, strands NAME here, and writes the proof under the
+    // default basename -- exit 0, no diagnostic, and the mistake only surfaces
+    // when veripb is pointed at files that were never written.
+    for (const auto & arg : options_vars.unmatched())
+        println(cerr, "warning: ignoring unexpected argument '{}'", arg);
+    if (! options_vars.unmatched().empty() && options_vars.contains("prove") && options_vars["prove"].as<string>().empty())
+        println(cerr, "warning: --prove NAME is no longer accepted, use --prove --proof-files-basename NAME");
 
     bool all_solutions = options_vars.contains("all-solutions");
     bool free_search = options_vars.contains("free-search");
