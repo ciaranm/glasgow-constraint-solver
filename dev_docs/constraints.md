@@ -719,6 +719,42 @@ GCS_TEST_MAX_SOLUTIONS= GCS_TEST_MAX_RECURSIONS= ./build/foo_test
 The capped defaults are for keeping the *routine* parallel suite fast;
 correctness work wants the full enumeration check.
 
+### What happens to the proof files
+
+`verify_proof_and_clean_up` runs VeriPB and then, **by default, deletes**
+the `.opb`, `.pbp`, `.scp` and `.varmap` it just checked. This is not
+merely tidiness: a `.pbp` for an enumeration test can reach hundreds of
+megabytes, and a full parallel `ctest` that kept them all would hold
+gigabytes at once — enough to exhaust the disk mid-run and make an
+*unrelated* lane's proof write fail. Deleting each proof as it verifies
+bounds the footprint to the lanes running concurrently.
+
+Files are **always kept when verification fails**, whatever the policy.
+Since a failed verification throws, and no test catches
+`UnexpectedException`, the run stops at the first bad proof — so the
+files left under the bare proof name are exactly the failing instance's,
+identified by the test's own log line just above them. That is why the
+default needs no counter.
+
+`GCS_PRESERVE_PROOF_FILES` overrides the policy:
+
+| Value | Behaviour |
+|-------|-----------|
+| unset, empty, `0` | delete once verified (the default) |
+| any other value, e.g. `1` | keep, letting the next instance overwrite in place |
+| `all` | keep every instance, renamed with a zero-padded per-basename counter |
+
+Use `1` to inspect the proof a test just produced. Use `all` only when
+harvesting proofs across instances — comparing proof bytes before and
+after a change, say. A single test can write hundreds of proofs under one
+basename (`equals_test` writes 284), so `all` combined with
+`-DGCS_TEST_CAP_DEFAULTS=OFF` can fill a disk.
+
+```shell
+GCS_PRESERVE_PROOF_FILES=1 ./build/equals_test     # keep the last of each
+GCS_PRESERVE_PROOF_FILES=all ./build/equals_test   # equals_test.0001.pbp, ...
+```
+
 ## Adding a new constraint: checklist
 
 1. Header file with class declaration, Doxygen comments, the standard

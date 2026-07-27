@@ -3,6 +3,8 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
+#include <gcs/constraints/innards/constraints_test_utils.hh>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
@@ -59,9 +61,22 @@ TEST_CASE("Verbose logging names gcs stack frames in the proof")
     // named at least one gcs frame. If it did not, either the feature broke or
     // the build dropped the debug info that source_file() resolution depends on.
     CHECK(saw_gcs_frame);
+
+    // Unlike most proving tests this one reads its own proof rather than handing
+    // it to VeriPB, but the same disposal policy applies once it is finished
+    // with. Keep it when the check failed, so the missing frames can be
+    // inspected; close it first so the removal also works on Windows.
+    proof.close();
+    if (saw_gcs_frame)
+        gcs::test_innards::dispose_of_proof_files("stacktrace_logging_test");
 #else
     // No <stacktrace> here (e.g. macOS libc++): log_stacktrace() is compiled out,
     // so there is nothing to assert. Recorded as a pass on those platforms.
     SUCCEED("<stacktrace> unavailable on this toolchain; verbose frame logging is compiled out");
+
+    // The solve above runs on every platform, so its proof needs disposing of on
+    // every platform. Unconditionally here: this branch asserts nothing, so there
+    // is no failure state whose files are worth preserving.
+    gcs::test_innards::dispose_of_proof_files("stacktrace_logging_test");
 #endif
 }

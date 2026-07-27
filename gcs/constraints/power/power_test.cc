@@ -186,8 +186,7 @@ auto run_power_pinned_test(
     }
 
     if (proof_name)
-        if (! run_veripb(*proof_name + ".opb", *proof_name + ".pbp"))
-            throw UnexpectedException{"veripb verification failed"};
+        verify_proof_and_clean_up(*proof_name);
 }
 
 // A constant base with a view exponent still goes through PowerTable, and

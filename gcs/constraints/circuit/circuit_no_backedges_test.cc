@@ -90,7 +90,7 @@ auto main(int argc, char * argv[]) -> int
     cout << stats;
 
     if (proof_name)
-        if (! run_veripb(*proof_name + ".opb", *proof_name + ".pbp"))
+        if (! verify_proof_and_dispose(*proof_name))
             return EXIT_FAILURE;
 
     return EXIT_SUCCESS;

@@ -162,7 +162,7 @@ auto run_lex_test(bool proofs, const string & mode, int length, vector<pair<int,
 
     if (lex_violated)
         return false;
-    return ! proofs || run_veripb(proof_basename + ".opb", proof_basename + ".pbp");
+    return ! proofs || verify_proof_and_dispose(proof_basename);
 }
 
 auto run_at_most_1_test(bool proofs, const string & mode, int length, vector<pair<int, int>> & ranges, bool at_least, bool in_set) -> bool
@@ -223,7 +223,7 @@ auto run_at_most_1_test(bool proofs, const string & mode, int length, vector<pai
 
     if (at_most_1_violated)
         return false;
-    return ! proofs || run_veripb(proof_basename + ".opb", proof_basename + ".pbp");
+    return ! proofs || verify_proof_and_dispose(proof_basename);
 }
 
 // One tuple using the same variable in several entries at once, mixing
