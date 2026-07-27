@@ -17,6 +17,7 @@
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/element.hh>
+#include <gcs/constraints/min_distance.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
@@ -30,6 +31,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <cxxopts.hpp>
@@ -53,6 +55,7 @@ using std::make_shared;
 using std::nullopt;
 using std::optional;
 using std::string;
+using std::string_view;
 using std::to_string;
 using std::vector;
 
@@ -94,6 +97,65 @@ namespace
         problem.post(ArrayMin{ys, z});
     }
 
+    // Post the dedicated MinDistance global constraint with the given propagation
+    // mode. The distance matrix is shared (no copy) with the tuple variant's
+    // Element arrays. File-provided r_ij thresholds map to the constraint's R via
+    // the R_ij = r_ij + 1 conversion (D >= r_ij + 1); reqs[i][j] < 0 means "no
+    // requirement for this pair" and leaves R_ij = 0 (vacuous). The access is
+    // bounds-guarded against a ragged/undersized reqs matrix.
+    auto post_min_distance_variant(Problem & problem, const vector<IntegerVariableID> & x, IntegerVariableID z,
+        const std::shared_ptr<const DistanceMatrix> & distance, const vector<vector<long>> & reqs, MinDistancePropagation mode) -> void
+    {
+        auto pp = static_cast<int>(x.size());
+        std::optional<ArrayParam<MinDistance::Matrix>> md_reqs;
+        if (! reqs.empty()) {
+            MinDistance::Matrix r(pp, vector<Integer>(pp, 0_i));
+            for (int i = 0; i < pp; ++i)
+                for (int j = i + 1; j < pp; ++j)
+                    if (i < static_cast<int>(reqs.size()) && j < static_cast<int>(reqs[i].size()) && reqs[i][j] >= 0)
+                        r[i][j] = Integer{reqs[i][j] + 1};
+            md_reqs = ArrayParam<MinDistance::Matrix>{std::move(r)};
+        }
+        problem.post(MinDistance{x, z, ArrayParam<MinDistance::Matrix>{distance}, std::move(md_reqs), mode});
+    }
+
+    // The --variant names, in help order. A nullopt mode means the tuple
+    // decomposition; every other name posts the MinDistance global under the
+    // named propagation mode. This is the single source of truth: validation,
+    // dispatch and the --variant help text all read it, so adding a variant is
+    // one row here and nothing else.
+    struct Variant
+    {
+        string_view name;
+        optional<MinDistancePropagation> mode;
+    };
+
+    constexpr Variant variants[] = {
+        {"tuple", nullopt},
+        {"min-distance-check", MinDistancePropagation::CheckOnly},
+        {"min-distance-fb", MinDistancePropagation::ForwardBound},
+        {"min-distance-ps", MinDistancePropagation::PairSupport},
+    };
+
+    auto find_variant(const string & name) -> optional<Variant>
+    {
+        for (const auto & v : variants)
+            if (v.name == name)
+                return v;
+        return nullopt;
+    }
+
+    auto variant_names() -> string
+    {
+        string result;
+        for (const auto & v : variants) {
+            if (! result.empty())
+                result += ", ";
+            result += v.name;
+        }
+        return result;
+    }
+
     // Parse "WxH" (or a single "N" meaning N x N) into a (width, height) pair.
     auto parse_grid_spec(const string & spec) -> std::pair<int, int>
     {
@@ -124,8 +186,11 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<double>()->default_value("0"))                     //
             ;
 
-        options.add_options("Model")                                                                    //
-            ("variant", "Constraint variant to post (currently only: tuple)",                           //
+        options.add_options("Model") //
+            ("variant",
+                "Constraint variant to post: tuple (the Element+ArrayMin decomposition), or the "       //
+                "MinDistance global under one propagation mode. Supported: " +                          //
+                    variant_names(),                                                                    //
                 cxxopts::value<string>()->default_value("tuple"))                                       //
             ("p,points", "Number of sites to select (>= 2)", cxxopts::value<int>()->default_value("3")) //
             ("initial-lb",
@@ -170,8 +235,9 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto variant = options_vars["variant"].as<string>();
-    if (variant != "tuple") {
-        println(cerr, "Error: unknown --variant '{}'. Phase 1 supports only 'tuple'.", variant);
+    auto selected_variant = find_variant(variant);
+    if (! selected_variant) {
+        println(cerr, "Error: unknown --variant '{}'. Supported: {}.", variant, variant_names());
         return EXIT_FAILURE;
     }
 
@@ -250,7 +316,10 @@ auto main(int argc, char * argv[]) -> int
     auto z = problem.create_integer_variable(initial_lb, max_dist, "z");
 
     auto distance = make_shared<const DistanceMatrix>(instance.distance);
-    post_tuple_variant(problem, x, z, distance, reqs, max_dist);
+    if (selected_variant->mode)
+        post_min_distance_variant(problem, x, z, distance, reqs, *selected_variant->mode);
+    else
+        post_tuple_variant(problem, x, z, distance, reqs, max_dist);
 
     if (options_vars.contains("all-different"))
         problem.post(AllDifferent{x});

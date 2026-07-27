@@ -12,6 +12,33 @@
 namespace gcs
 {
     /**
+     * \brief Propagation strength for the MinDistance constraint.
+     *
+     * These select propagation strength only and never change the OPB encoding
+     * (define_proof_model is identical for all three). Following Lagerkvist,
+     * "Propagation Algorithms for the Minimum-Distance Constraint over Selected
+     * Points" (ModRef 2026), Sections 4.1-4.2:
+     *
+     * - \c CheckOnly: the constraint only acts once the endpoints of a pair are
+     *   assigned (the phase-2 baseline; the encoding regression check).
+     * - \c ForwardBound: the paper's global-forward-bound. When one endpoint of
+     *   a pair is assigned it prunes unsupported values from the other, and it
+     *   maintains a pairwise objective upper bound on \c z (the \c pair-forward-bound
+     *   filtering, aggregated into one global propagator).
+     * - \c PairSupport: the paper's global-pair-support. ForwardBound plus a full
+     *   per-pair support scan that can delete unsupported values from either
+     *   endpoint before it is assigned.
+     *
+     * \ingroup Constraints
+     */
+    enum class MinDistancePropagation
+    {
+        CheckOnly,
+        ForwardBound,
+        PairSupport
+    };
+
+    /**
      * \brief Constrain \c z to be the minimum, over all pairs of selected-point
      * variables, of the distance between the sites they select.
      *
@@ -36,10 +63,9 @@ namespace gcs
      * present, must be \f$p \times p\f$ with non-negative entries above the
      * diagonal. Violations are rejected at post time.
      *
-     * This propagator is deliberately check-only: it updates \c z (and detects a
-     * requirement violation) only once the endpoints of a pair are assigned.
-     * Every inference it makes is plain reverse unit propagation from the proof
-     * encoding.
+     * The \c propagation argument selects the propagation strength (see
+     * MinDistancePropagation); it never changes the proof encoding. The default
+     * is \c ForwardBound.
      *
      * \ingroup Constraints
      */
@@ -54,6 +80,7 @@ namespace gcs
         const IntegerVariableID _z;
         ArrayParam<Matrix> _distances;
         std::optional<ArrayParam<Matrix>> _requirements;
+        MinDistancePropagation _propagation;
 
         // Filled in by prepare() for use by define_proof_model(): the site
         // values each position can take (visible-frame, one list per position),
@@ -66,10 +93,12 @@ namespace gcs
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
+        auto install_check_only_propagator(innards::Propagators &) -> void;
+        auto install_forward_propagator(innards::Propagators &, bool pair_support) -> void;
 
     public:
         explicit MinDistance(std::vector<IntegerVariableID> x, IntegerVariableID z, ArrayParam<Matrix> distances,
-            std::optional<ArrayParam<Matrix>> requirements = std::nullopt);
+            std::optional<ArrayParam<Matrix>> requirements = std::nullopt, MinDistancePropagation propagation = MinDistancePropagation::ForwardBound);
 
         virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
