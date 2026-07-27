@@ -78,6 +78,18 @@ If you want to add one of these to a future benchmarking exercise, use a
 larger custom instance — don't rely on the default that the binary ships
 with.
 
+### The `benchmarks/` tree
+
+The eight benchmarks above are drawn from `examples/` and
+`minicp_benchmarks/`, which are the binaries with fixed instances worth
+timing end to end. Separately, `benchmarks/` holds the programs whose only
+purpose is measurement — propagator and mechanism micro-benchmarks such as
+`linear_prop_cost`, `wake_cost`, `slack_watch` and the random-table
+harnesses. They take a size or repeat count and print timings, so none of
+them is a ctest and none belongs in the curated set above; reach for them
+when you are attributing a change to a specific mechanism rather than
+measuring end-to-end solve time.
+
 ## How to compare two builds
 
 Build the baseline (e.g. `main`) in a separate worktree so you can keep both
