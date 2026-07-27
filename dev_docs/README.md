@@ -130,6 +130,13 @@ library. For an introduction to *using* the solver, start with the top-level
   it is not `add_constraint_state`), and the two-watched-literal `Nogoods` client
   that motivated it. Read when touching the propagation-queue/watch internals or
   nogood propagation performance.
+- [`MinDistance`: encoding and proofs](min-distance-proofs.md) — the definitional
+  OPB encoding for `min_distance(D, x, z)` (site-selection flags, per-site counts,
+  pair clauses, and the min-attained ladder), the justification for each of the
+  five propagation strengths, and the guarded counting derivation that certifies
+  the conflict-matching upper bound — a worked example of riding a guard literal
+  through an `all_different`-style at-most-one recurrence with an exact
+  coefficient. Also records what was deliberately left out, and why.
 
 More documents will be added here as we build up coverage of other parts of
 the codebase.

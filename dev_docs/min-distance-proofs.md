@@ -280,20 +280,36 @@ Per strict matching tightening the certificate is `O(|M| p^2)` RUP lines (each
 edge's at-most-one has `<= 2p` literals, hence `O(p^2)` pairwise clauses) plus
 `O(|M|)` pol lines; all are `Temporary`, forgotten when the justification scope
 closes, so they never enter the live database (VeriPB's hinted-RUP cost model).
-The verified prototype (`min-distance-plan/proto/gen_proto.py`, p=4, |A|=5,
-|M|=2) is 58 rup + 4 pol per tightening.
+The directed test `min_distance_matching_test.cc` pins the smallest instance
+that exercises it: `p=4`, `|A|=5`, and a matching of two edges leaving one site
+unmatched. Its root refutation is 66 rup lines — 62 guarded pairwise clauses
+(two edge at-most-ones over eight literals each, `C(8,2)` apiece, plus the
+unmatched site's four literals, `C(4,2)`) and one at-least-one per position —
+combined by 4 pol lines, three closing the at-most-ones and one summing them.
 
-The proofs-on grid measurements (`min-distance-bench/proofon4.csv`, all `s
-VERIFIED` optimal) bear out the trade. On grid 5x5 p=6 the matching cuts search
-sharply — `min-distance-psm` proves optimality in 669 nodes versus
-`min-distance-ps`'s 1505 (2.25x) — while each tightening's counting certificate
-makes the proof about 1.5x larger per node (3.50 MB vs 2.23 MB); the node
-reduction offsets it, so VeriPB time is flat-to-better (0.628 s vs 0.653 s).
-Both stay roughly 9-10x smaller and faster than the `tuple` decomposition (30.6
-MB / 8.08 s), whose `O(p^2)` Element + ArrayMin propagators each emit their own
-proof traffic. On grid 4x4 p=4 the matching never fires (the pairwise bound is
-already tight), so `fbm`/`psm` write byte-identical proofs to `fb`/`ps`. The
-consolidated tables are in `min-distance-plan/BENCHMARKS.md`.
+The grid measurements below bear out the trade. Each is reproducible from a
+checkout with
+
+    ./build/p_dispersion --grid 5x5 --points 6 --variant min-distance-psm --prove
+
+varying `--variant` over `tuple` and `min-distance-{fb,ps,fbm,psm}`; all report
+`s VERIFIED` optimal. Sizes and times are from one release build on one
+machine, so treat the ratios rather than the absolutes as the result.
+
+On grid 5x5 p=6 the matching cuts search sharply — `min-distance-psm` proves
+optimality in 669 nodes against `min-distance-ps`'s 1505 (2.25x) — while each
+tightening's counting certificate makes the proof about 1.6x larger (3.17 MB vs
+1.96 MB). The node reduction offsets that, so VeriPB time comes out
+flat-to-better (0.66 s vs 0.68 s). Both are an order of magnitude cheaper than
+the `tuple` decomposition, whose `O(p^2)` Element and ArrayMin propagators each
+emit their own proof traffic: 27.6 MB taking 9.7 s to check. On grid 4x4 p=4
+the matching never fires (the pairwise bound is already tight), so `fbm`/`psm`
+write byte-identical proofs to `fb`/`ps`.
+
+Proofs off, on the one grid that both proves optimality and leaves the bound
+room to bite — grid 10x10 p=10 — `psm` closes the search in 595k nodes / 12.4 s
+against `ps`'s 1.47M / 20.9 s and `tuple`'s 1.47M / 32.4 s. The matching's win
+grows with `p`, which is the paper's qualitative result.
 
 ## Deliberately not implemented
 
@@ -320,8 +336,10 @@ consolidated tables are in `min-distance-plan/BENCHMARKS.md`.
 
 - `gcs/constraints/min_distance/min_distance.cc` — the constraint, all five
   modes, and `define_proof_model`.
-- `min-distance-plan/proto/gen_proto.py` — the hand-built, VeriPB-verified
-  prototype of the matching counting derivation.
+- `gcs/constraints/min_distance/min_distance_matching_test.cc` — the directed
+  test that drives the counting derivation end to end on the smallest instance
+  where the matching is the only reason `z` can be pruned, and veripb-checks the
+  resulting proof.
 - `dev_docs/arithmetic-proofs.md` — the companion for the `pol`/`rup` style and
   the VeriPB cost model this leans on.
 - `dev_docs/propagator-performance.md` — the strength-vs-performance discipline
