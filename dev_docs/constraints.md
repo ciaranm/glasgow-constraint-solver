@@ -755,6 +755,19 @@ GCS_PRESERVE_PROOF_FILES=1 ./build/equals_test     # keep the last of each
 GCS_PRESERVE_PROOF_FILES=all ./build/equals_test   # equals_test.0001.pbp, ...
 ```
 
+The same variable is honoured by the shell test wrappers
+(`run_test_and_verify.bash`, `run_xcsp_test.bash`, `run_minizinc_test.bash`,
+`run_fzn_json_test.bash` and `run_scp_chain.bash`), so a proof is disposed of
+the same way whether it is checked inside the test binary or by the wrapper
+around it. Those wrappers run their binary once, so there is nothing for the
+counter to disambiguate: they treat `all` the same as `1`.
+
+All five get it from one `dispose_proof` in `proof_file_disposal.bash` at the
+repo root, which they source relative to their own `$0`. Changing what the
+wrappers delete — adding a sixth proof artifact, say — means changing that one
+file, and its extension list should stay in step with `proof_file_extensions`
+in `constraints_test_utils.hh`.
+
 ## Adding a new constraint: checklist
 
 1. Header file with class declaration, Doxygen comments, the standard

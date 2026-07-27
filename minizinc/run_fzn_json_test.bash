@@ -12,6 +12,10 @@
 
 set -euo pipefail
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../proof_file_disposal.bash
+. "$(dirname "$0")/../proof_file_disposal.bash"
+
 fznglasgow=$1
 minizincdir=$2
 testname=$3
@@ -40,6 +44,10 @@ if veripb --help >/dev/null 2>&1 ; then
         veripb --trace "$testname.opb" "$testname.pbp" 2>&1 | tail -n100 || true
         exit 4
     fi
+
+    # Verification passed, so dispose of the proof unless asked to preserve it;
+    # the failure path above exits first, leaving a failing proof to inspect.
+    dispose_proof "$testname"
 fi
 
 exit 0

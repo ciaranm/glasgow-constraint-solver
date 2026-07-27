@@ -26,6 +26,10 @@
 
 set -u
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../proof_file_disposal.bash
+. "$(dirname "$0")/../proof_file_disposal.bash"
+
 solver=$1
 scp=$2
 opbdiff_mode=${3:-strict}
@@ -56,7 +60,7 @@ if ! have "$CAKE_PB_CP"; then
     out=$(veripb "${base}.opb" "${base}.pbp" 2>&1)
     if ! verified "$out"; then echo "FAIL: self-verify"; tail -5 <<< "$out"; exit 1; fi
     grep -E '^s VERIFIED' <<< "$out"
-    rm -f "${base}".{scp,opb,pbp,varmap}
+    dispose_proof "${base}"
     echo "OK: workflow-1 self-verify passed for $(basename "$scp") (cake_pb_cp absent)"
     exit 0
 fi
@@ -85,5 +89,5 @@ else
     echo "      opbdiff absent; the verified chain above is authoritative"
 fi
 
-rm -f "${base}".{scp,opb,pbp,verifiedopb,corepb,varmap}
+dispose_proof "${base}" verifiedopb corepb
 echo "OK: full workflow-2 chain passed for $(basename "$scp") [$opbdiff_mode]"
