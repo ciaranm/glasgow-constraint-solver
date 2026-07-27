@@ -44,6 +44,7 @@
 #include <gcs/constraints/linear.hh>
 #include <gcs/constraints/logical.hh>
 #include <gcs/constraints/mdd.hh>
+#include <gcs/constraints/min_distance.hh>
 #include <gcs/constraints/min_max.hh>
 #include <gcs/constraints/minus.hh>
 #include <gcs/constraints/modulus.hh>
