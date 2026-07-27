@@ -387,13 +387,6 @@ namespace gcs::innards
             -> void;
 
         /**
-         * Track that a given greater-or-equal variable exists, and has a string name
-         * and associated defining constraints.
-         */
-        auto track_gevar(SimpleIntegerVariableID, Integer, const std::pair<std::variant<ProofLine, XLiteral>, std::variant<ProofLine, XLiteral>> &)
-            -> void;
-
-        /**
          * Track that an at-least-one constraint exists for a given variable.
          */
         auto track_variable_takes_at_least_one_value(const SimpleOrProofOnlyIntegerVariableID &, ProofLine) -> void;
