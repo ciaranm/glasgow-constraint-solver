@@ -283,13 +283,28 @@ auto gcs::solve_with(
     }
 
     auto state = problem.create_state_for_new_search(optional_proof ? optional_proof->model() : nullptr);
+
+    if (optional_proof) {
+        if (problem.optional_minimise_variable())
+            optional_proof->model()->minimise(*problem.optional_minimise_variable());
+
+        optional_proof->model()->preserve(problem.all_normal_variables());
+
+        // Every variable the objective and preserve list mention now exists,
+        // so the OPB front matter can go out; the constraint definitions that
+        // follow stream straight to the file.
+        optional_proof->model()->write_preamble();
+    }
+
     auto propagators = problem.create_propagators(state, optional_proof ? optional_proof->model() : nullptr);
 
     // With restarts on, search learns nogoods from refuted regions. Install an
     // (initially empty) Nogoods over a store the restart loop grows, subscribed
     // to every variable since a later-learned nogood may mention any. This is
     // engine-owned, not user-posted --- restart nogoods are internal (and, under
-    // parallel search, per-thread). Must precede the model finalise below.
+    // parallel search, per-thread). Must follow create_propagators (it installs
+    // into them) and precede the model finalise below; any model definitions it
+    // adds land after the preamble, like every other constraint's.
     shared_ptr<NogoodStore> nogood_store;
     if (callbacks.restarts) {
         nogood_store = make_shared<NogoodStore>();
@@ -306,11 +321,6 @@ auto gcs::solve_with(
     }
 
     if (optional_proof) {
-        if (problem.optional_minimise_variable())
-            optional_proof->model()->minimise(*problem.optional_minimise_variable());
-
-        optional_proof->model()->preserve(problem.all_normal_variables());
-
         optional_proof->model()->finalise();
         optional_proof->model()->names_and_ids_tracker().switch_from_model_to_proof(optional_proof->logger());
         optional_proof->logger()->start_proof(*optional_proof->model());

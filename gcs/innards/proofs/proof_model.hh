@@ -77,6 +77,12 @@ namespace gcs::innards
 
         auto set_up_direct_only_variable_encoding(SimpleOrProofOnlyIntegerVariableID, Integer, Integer, const std::string &) -> void;
 
+        // Send any pending OPB text on to the file. A no-op until
+        // write_preamble has run; emitting methods call it when they finish,
+        // and a missed call is harmless (the text simply rides along until
+        // the next one).
+        auto write_out_pending() -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -335,6 +341,24 @@ namespace gcs::innards
         auto preserve(std::vector<IntegerVariableID> vars) -> void;
 
         ///@}
+
+        /**
+         * Open the OPB file and write everything that must precede the
+         * constraints: the objective (min:) line and the preserved:
+         * projection line. Everything emitted afterwards goes straight to the
+         * file rather than accumulating in memory, so call this as soon as
+         * the objective and preserve list are known and every variable they
+         * mention has been set up -- in a solve, after
+         * Problem::create_state_for_new_search and before
+         * Problem::create_propagators. Calling minimise or preserve after
+         * this throws. A view objective's proof-only bit vector is registered
+         * here, so `min:` is always rendered over BinEnc(V).
+         *
+         * Optional: finalise() does it on your behalf (with everything still
+         * buffered, and the objective and preserve list set at any point) if
+         * nothing called it earlier.
+         */
+        auto write_preamble() -> void;
 
         /**
          * Finish writing the model. Must be called once, immediately before
