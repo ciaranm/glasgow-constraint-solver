@@ -264,14 +264,16 @@ auto random_distance_matrix(mt19937 & rand, int n, int max_d) -> IntMatrix
 
 auto random_site_domain(mt19937 & rand, int n) -> DomainSpec
 {
-    // Either a contiguous range or an explicit (possibly holey) subset of [0, n-1].
+    // A constant, a contiguous range, or an explicit (possibly holey) subset of
+    // [0, n-1], each a third of the time --- so one draw, reused.
     uniform_int_distribution<int> choice{0, 2};
-    if (choice(rand) == 0) {
+    const auto which = choice(rand);
+    if (which == 0) {
         // constant
         uniform_int_distribution<int> v{0, n - 1};
         return v(rand);
     }
-    if (choice(rand) == 1) {
+    if (which == 1) {
         uniform_int_distribution<int> lo{0, n - 1};
         int a = lo(rand);
         uniform_int_distribution<int> hi{a, n - 1};
