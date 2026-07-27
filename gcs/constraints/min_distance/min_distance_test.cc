@@ -33,6 +33,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::set;
+using std::string;
 using std::tuple;
 using std::uniform_int_distribution;
 using std::variant;
@@ -190,6 +191,43 @@ auto run_min_distance_test(bool proofs, const ViewWrapConfig & view_cfg, const v
     check_results(proof_name, expected, actual);
 }
 
+// Post a deliberately malformed instance and require it to be rejected with an
+// InvalidProblemDefinitionException rather than accepted or read out of bounds.
+auto expect_rejected(const IntMatrix & d, const optional<IntMatrix> & r, const string & what) -> void
+{
+    Problem problem;
+    auto xs = problem.create_integer_variable_vector(2, 0_i, Integer{static_cast<long long>(d.size()) - 1}, "x");
+    auto z = problem.create_integer_variable(0_i, 9_i, "z");
+
+    try {
+        if (r)
+            problem.post(MinDistance{xs, z, to_integer_matrix(d), ArrayParam<MinDistance::Matrix>{to_integer_matrix(*r)}});
+        else
+            problem.post(MinDistance{xs, z, to_integer_matrix(d)});
+        solve(problem, [](const CurrentState &) -> bool { return false; });
+    }
+    catch (const InvalidProblemDefinitionException &) {
+        return;
+    }
+    throw UnexpectedException{"min_distance accepted a malformed definition: " + what};
+}
+
+// The ragged case is the pointed one: its first row is full width, so a
+// validator that checks squareness row by row while already comparing D[a][b]
+// against D[b][a] reads a short row before ever size-checking it. Under the
+// sanitize preset that is a diagnosed overread, not a silent one.
+auto run_rejection_tests() -> void
+{
+    println(cerr, "min_distance: malformed definitions are rejected");
+    expect_rejected(IntMatrix{{0, 1, 2}, {}, {}}, nullopt, "ragged distance matrix, full first row");
+    expect_rejected(IntMatrix{{0, 1}, {1, 0}, {0, 0}}, nullopt, "non-square distance matrix");
+    expect_rejected(IntMatrix{{0, 1}, {2, 0}}, nullopt, "asymmetric distance matrix");
+    expect_rejected(IntMatrix{{0, -1}, {-1, 0}}, nullopt, "negative distance");
+    expect_rejected(IntMatrix{{1, 1}, {1, 1}}, nullopt, "non-zero diagonal");
+    expect_rejected(IntMatrix{{0, 1}, {1, 0}}, make_optional(IntMatrix{{0, -1}, {-1, 0}}), "negative requirement");
+    expect_rejected(IntMatrix{{0, 1}, {1, 0}}, make_optional(IntMatrix{{0}}), "requirements matrix not p x p");
+}
+
 auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg) -> void
 {
     // A handful of small symmetric distance matrices to draw on.
@@ -304,6 +342,8 @@ auto main(int argc, char * argv[]) -> int
     }
 
     mt19937 rand(*get_seed());
+
+    run_rejection_tests();
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
