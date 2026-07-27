@@ -23,6 +23,10 @@
 
 set -u
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=proof_file_disposal.bash
+. "$(dirname "$0")/proof_file_disposal.bash"
+
 basename_override=
 if [[ ${1:-} == --basename ]] ; then
     basename_override=$2
@@ -51,6 +55,4 @@ fi
 veripb "${proofname}.opb" "${proofname}.pbp" || exit 1
 
 # Verification passed, so dispose of the proof unless asked to preserve it.
-case "${GCS_PRESERVE_PROOF_FILES:-}" in
-    '' | 0) rm -f "${proofname}".{opb,pbp,scp,varmap} ;;
-esac
+dispose_proof "$proofname"

@@ -26,6 +26,10 @@
 
 set -u
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../proof_file_disposal.bash
+. "$(dirname "$0")/../proof_file_disposal.bash"
+
 solver=$1
 scp=$2
 opbdiff_mode=${3:-strict}
@@ -38,21 +42,6 @@ CAKE_PB_CP=${CAKE_PB_CP:-cake_pb_cp}
 
 have() { command -v "$1" >/dev/null 2>&1; }
 verified() { grep -qE '^s VERIFIED' <<< "$1"; }
-
-# dispose_proof BASE EXT...  -- delete BASE.EXT for each extension, unless
-# GCS_PRESERVE_PROOF_FILES asks for them to be kept. Only ever called on the
-# success path; every failure above exits first, so a failing chain leaves its
-# artefacts behind to inspect.
-dispose_proof() {
-    case "${GCS_PRESERVE_PROOF_FILES:-}" in
-        '' | 0) ;;
-        *) return 0 ;;
-    esac
-    local b=$1
-    shift
-    local e
-    for e in "$@" ; do rm -f "${b}.${e}" ; done
-}
 
 [[ -x "$solver" ]] || { echo "SKIP: glasgow_scp_solver not built at '$solver'"; exit 77; }
 have veripb || { echo "SKIP: veripb not on PATH"; exit 77; }
@@ -71,7 +60,7 @@ if ! have "$CAKE_PB_CP"; then
     out=$(veripb "${base}.opb" "${base}.pbp" 2>&1)
     if ! verified "$out"; then echo "FAIL: self-verify"; tail -5 <<< "$out"; exit 1; fi
     grep -E '^s VERIFIED' <<< "$out"
-    dispose_proof "${base}" scp opb pbp varmap
+    dispose_proof "${base}"
     echo "OK: workflow-1 self-verify passed for $(basename "$scp") (cake_pb_cp absent)"
     exit 0
 fi
@@ -100,5 +89,5 @@ else
     echo "      opbdiff absent; the verified chain above is authoritative"
 fi
 
-dispose_proof "${base}" scp opb pbp verifiedopb corepb varmap
+dispose_proof "${base}" verifiedopb corepb
 echo "OK: full workflow-2 chain passed for $(basename "$scp") [$opbdiff_mode]"

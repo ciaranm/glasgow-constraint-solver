@@ -762,6 +762,12 @@ the same way whether it is checked inside the test binary or by the wrapper
 around it. Those wrappers run their binary once, so there is nothing for the
 counter to disambiguate: they treat `all` the same as `1`.
 
+All five get it from one `dispose_proof` in `proof_file_disposal.bash` at the
+repo root, which they source relative to their own `$0`. Changing what the
+wrappers delete — adding a sixth proof artifact, say — means changing that one
+file, and its extension list should stay in step with `proof_file_extensions`
+in `constraints_test_utils.hh`.
+
 ## Adding a new constraint: checklist
 
 1. Header file with class declaration, Doxygen comments, the standard

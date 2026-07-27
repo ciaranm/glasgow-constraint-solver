@@ -18,6 +18,10 @@
 
 set -u
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../proof_file_disposal.bash
+. "$(dirname "$0")/../proof_file_disposal.bash"
+
 prog=$1
 testsdir=$2
 testname=$3
@@ -80,7 +84,5 @@ veripb "$testname".{opb,pbp} || exit 4
 
 # Verification passed, so dispose of the proof unless asked to preserve it; the
 # failure paths above all exit first, leaving a failing proof to inspect.
-case "${GCS_PRESERVE_PROOF_FILES:-}" in
-    '' | 0) rm -f "$testname".{opb,pbp,scp,varmap} ;;
-esac
+dispose_proof "$testname"
 rm -f "$testname.out"

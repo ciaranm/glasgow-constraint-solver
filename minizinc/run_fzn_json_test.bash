@@ -12,6 +12,10 @@
 
 set -euo pipefail
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../proof_file_disposal.bash
+. "$(dirname "$0")/../proof_file_disposal.bash"
+
 fznglasgow=$1
 minizincdir=$2
 testname=$3
@@ -43,9 +47,7 @@ if veripb --help >/dev/null 2>&1 ; then
 
     # Verification passed, so dispose of the proof unless asked to preserve it;
     # the failure path above exits first, leaving a failing proof to inspect.
-    case "${GCS_PRESERVE_PROOF_FILES:-}" in
-        '' | 0) rm -f "$testname".{opb,pbp,scp,varmap} ;;
-    esac
+    dispose_proof "$testname"
 fi
 
 exit 0
