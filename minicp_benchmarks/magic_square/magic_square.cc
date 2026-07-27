@@ -34,9 +34,11 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof")          //
+        options.add_options("Program Options")                                //
+            ("help", "Display help information")                              //
+            ("prove", "Create a proof")                                       //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",  //
+                cxxopts::value<std::string>()->default_value("magic_square")) //
             ("branch",
                 "Branching heuristic: default, or dom-wdeg[:VARIANT] "                                               //
                 "(VARIANT = classic/ia/ca/id/cd/ca.cd/chs; bare = chs)",                                             //
@@ -161,7 +163,7 @@ auto main(int argc, char * argv[]) -> int
     unsigned long long n_solutions = 0;
     auto stats = bench::solve_with_timeout(options_vars["timeout"].as<double>(), p,
         SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return ++n_solutions < 10000; }, .branch = brancher, .restarts = restarts},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("magic_square") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<std::string>()) : nullopt);
 
     cout << stats;
 

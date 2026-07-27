@@ -33,9 +33,11 @@ auto main(int argc, char * argv[]) -> int
     cxxopts::ParseResult options_vars;
 
     try {
-        options.add_options("Program Options")   //
-            ("help", "Display help information") //
-            ("prove", "Create a proof")          //
+        options.add_options("Program Options")                               //
+            ("help", "Display help information")                             //
+            ("prove", "Create a proof")                                      //
+            ("proof-files-basename", "Basename for the .opb and .pbp files", //
+                cxxopts::value<std::string>()->default_value("qap"))         //
             ("branch",
                 "Branching heuristic: default, or dom-wdeg[:VARIANT] "               //
                 "(VARIANT = classic/ia/ca/id/cd/ca.cd/chs; bare = chs)",             //
@@ -176,7 +178,7 @@ auto main(int argc, char * argv[]) -> int
                        },
             .branch = brancher,
             .restarts = restarts},
-        options_vars.contains("prove") ? make_optional<ProofOptions>("qap") : nullopt);
+        options_vars.contains("prove") ? make_optional<ProofOptions>(options_vars["proof-files-basename"].as<std::string>()) : nullopt);
 
     cout << stats << endl;
 

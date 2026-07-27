@@ -243,10 +243,19 @@ auto main(int argc, char * argv[]) -> int
             ("statistics,s", "Print statistics")                                                       //
             ("timeout,t", "Timeout in ms", cxxopts::value<unsigned long long>())                       //
             ("restarts",
-                "Restart on a Luby schedule with the given conflict scale (find-one / "      //
-                "optimisation only); learns nogoods across restarts",                        //
-                cxxopts::value<unsigned long long>())                                        //
-            ("prove", "Write proofs to this file (.opb and .pbp)", cxxopts::value<string>()) //
+                "Restart on a Luby schedule with the given conflict scale (find-one / " //
+                "optimisation only); learns nogoods across restarts",                   //
+                cxxopts::value<unsigned long long>())                                   //
+            // --prove is a bare flag here as it is everywhere else, with the
+            // basename supplied separately. `--prove=NAME` is kept as a
+            // deprecated alias for the old value-taking spelling; the
+            // space-separated `--prove NAME` cannot be (a flag with an implicit
+            // value does not consume the following token), so it is diagnosed
+            // after parsing instead, and the .msc configs declare the basename
+            // as its own extraFlag.
+            ("prove", "Create a proof", cxxopts::value<string>()->implicit_value("")) //
+            ("proof-files-basename", "Basename for the .opb and .pbp files",          //
+                cxxopts::value<string>()->default_value("fzn-glasgow"))               //
             ("file", "FlatZinc file used as input", cxxopts::value<string>());
 
         options.parse_positional({"file"});
@@ -264,6 +273,19 @@ auto main(int argc, char * argv[]) -> int
         cout << options.help() << std::endl;
         return EXIT_SUCCESS;
     }
+
+    // Positional arguments beyond the one --file consumes land in unmatched(),
+    // where nothing reads them: silently ignoring them turns a mistyped command
+    // line into a successful-looking run. The case that matters is the old
+    // `--prove NAME` spelling. --prove is now a bare flag, and a flag with an
+    // implicit value does not consume the following token, so `model.fzn --prove
+    // NAME` solves the model, strands NAME here, and writes the proof under the
+    // default basename -- exit 0, no diagnostic, and the mistake only surfaces
+    // when veripb is pointed at files that were never written.
+    for (const auto & arg : options_vars.unmatched())
+        println(cerr, "warning: ignoring unexpected argument '{}'", arg);
+    if (! options_vars.unmatched().empty() && options_vars.contains("prove") && options_vars["prove"].as<string>().empty())
+        println(cerr, "warning: --prove NAME is no longer accepted, use --prove --proof-files-basename NAME");
 
     bool all_solutions = options_vars.contains("all-solutions");
     bool free_search = options_vars.contains("free-search");
@@ -1052,8 +1074,11 @@ auto main(int argc, char * argv[]) -> int
 
         optional<ProofOptions> proof_options;
         if (options_vars.contains("prove")) {
-            string basename = options_vars["prove"].as<string>();
-            proof_options.emplace(basename);
+            // A non-empty --prove value is the deprecated `--prove=NAME` form.
+            string legacy_basename = options_vars["prove"].as<string>();
+            if (! legacy_basename.empty())
+                println(cerr, "warning: --prove=NAME is deprecated, use --prove --proof-files-basename NAME");
+            proof_options.emplace(legacy_basename.empty() ? options_vars["proof-files-basename"].as<string>() : legacy_basename);
         }
 
         optional<RestartSchedule> restart_schedule;

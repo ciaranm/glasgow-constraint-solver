@@ -59,7 +59,7 @@ else
 fi
 
 if [[ "$doproofs" == "true" ]] && veripb --help >/dev/null ; then
-    minizinc --solver "$solver_msc" -a "$minizincdir/tests/$testname.mzn" --prove "$testname" | tee "$testname.glasgow.out" || exit 7
+    minizinc --solver "$solver_msc" -a "$minizincdir/tests/$testname.mzn" --prove --proof-files-basename "$testname" | tee "$testname.glasgow.out" || exit 7
     if ! veripb "$testname.opb" "$testname.pbp" ; then
         echo "Rerunning last 100 lines of proof verification in trace mode..."
         echo '$ ' veripb --trace "$(readlink -f "$testname.opb")" "$(readlink -f "$testname.pbp")"
