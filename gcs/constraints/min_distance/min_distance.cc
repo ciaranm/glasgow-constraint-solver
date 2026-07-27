@@ -60,12 +60,18 @@ auto MinDistance::prepare(Propagators & propagators, State & initial_state, Proo
     const auto n = D.size();
     if (n == 0)
         throw InvalidProblemDefinitionException{"min_distance distance matrix must be non-empty"};
-    for (std::size_t a = 0; a < n; ++a) {
-        if (D[a].size() != n)
+    // Squareness first, as its own pass: the symmetry test below reads D[b][a]
+    // for b > a, which is only in bounds once every row is known to be n wide.
+    for (const auto & row : D)
+        if (row.size() != n)
             throw InvalidProblemDefinitionException{"min_distance distance matrix must be square"};
+    // Then the entry-wise conditions over the strict upper triangle: symmetry
+    // carries non-negativity to the lower triangle, and the diagonal is pinned
+    // to zero, so every entry is covered.
+    for (std::size_t a = 0; a < n; ++a) {
         if (D[a][a] != 0_i)
             throw InvalidProblemDefinitionException{"min_distance distance matrix must have a zero diagonal"};
-        for (std::size_t b = 0; b < n; ++b) {
+        for (std::size_t b = a + 1; b < n; ++b) {
             if (D[a][b] < 0_i)
                 throw InvalidProblemDefinitionException{"min_distance distances must be non-negative"};
             if (D[a][b] != D[b][a])
@@ -201,7 +207,7 @@ auto MinDistance::define_proof_model(ProofModel & model) -> void
     vector<Integer> levels(level_set.begin(), level_set.end());
     const auto num_levels = levels.size();
 
-    if (! levels.empty() && z_lo < levels.back()) {
+    if (z_lo < levels.back()) {
         map<Integer, ProofFlag> d;                // duplicate (distance-0) witnesses
         map<pair<Integer, Integer>, ProofFlag> w; // off-diagonal pair witnesses
 
