@@ -13,7 +13,6 @@
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
-#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -66,7 +65,7 @@ namespace
         long long recursions = 0;
         int root_z_upper = -1;
         optional<int> best_z;
-        bool verified = true;
+        optional<bool> verified; // nullopt: no proof was written, so nothing was checked
     };
 
     auto solve_probe(MinDistancePropagation mode, int z_lo, int z_hi, bool proofs, const string & tag) -> Probe
@@ -106,13 +105,15 @@ namespace
         probe.recursions = static_cast<long long>(stats.recursions);
 
         if (proof_name && can_run_veripb()) {
-            auto opb = *proof_name + ".opb", pbp = *proof_name + ".pbp";
-            probe.verified = run_veripb(opb, pbp);
-            // as in the shared test utilities: delete the proofs on success,
-            // keep them around for debugging on failure
-            if (probe.verified) {
-                std::remove(opb.c_str());
-                std::remove(pbp.c_str());
+            // The shared helper checks the proof, runs the workflow-2 chain probe,
+            // and removes all four proof files on success (keeping them on failure
+            // so a bad proof is still on disk); it signals failure by throwing.
+            try {
+                verify_proof_and_clean_up(*proof_name);
+                probe.verified = true;
+            }
+            catch (const UnexpectedException &) {
+                probe.verified = false;
             }
         }
 
@@ -130,6 +131,17 @@ namespace
         else
             println(cerr, "ok: {}", what);
     }
+
+    // For a check that only runs when veripb is present: report it as skipped
+    // rather than passing it by default, so the log never claims a proof
+    // verified when none was written.
+    auto expect_or_skip(const optional<bool> & cond, const string & what) -> void
+    {
+        if (! cond)
+            println(cerr, "skipped: {}", what);
+        else
+            expect(*cond, what);
+    }
 }
 
 auto main() -> int
@@ -146,7 +158,7 @@ auto main() -> int
         auto p = solve_probe(mode, 0, 5, proofs, string{ps ? "psm" : "fbm"} + "_tighten");
         expect(p.root_z_upper == 4, string{ps ? "psm" : "fbm"} + ": matching lowers root z upper bound to 4 (was 5)");
         expect(p.best_z.has_value() && *p.best_z == 3, "optimal z = 3 found");
-        expect(p.verified, string{ps ? "psm" : "fbm"} + ": proof verifies (tightening)");
+        expect_or_skip(p.verified, string{ps ? "psm" : "fbm"} + ": proof verifies (tightening)");
     }
 
     // Baselines: the non-matching variants do NOT tighten z at the root here.
@@ -165,7 +177,7 @@ auto main() -> int
         auto p = solve_probe(mode, 5, 5, proofs, string{ps ? "psm" : "fbm"} + "_contradiction");
         expect(! p.has_solution, string{ps ? "psm" : "fbm"} + ": z pinned to 5 is infeasible");
         expect(p.recursions <= 1, string{ps ? "psm" : "fbm"} + ": matching fails z=5 at the root (recursions <= 1)");
-        expect(p.verified, string{ps ? "psm" : "fbm"} + ": proof verifies (contradiction)");
+        expect_or_skip(p.verified, string{ps ? "psm" : "fbm"} + ": proof verifies (contradiction)");
     }
 
     if (failures == 0)
