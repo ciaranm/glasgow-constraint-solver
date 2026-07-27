@@ -306,7 +306,9 @@ install(EXPORT GlasgowConstraintSolverTargets
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/gcs/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/gcs
         FILES_MATCHING PATTERN "*.hh"
-        REGEX "constraints_test_utils\\.hh$" EXCLUDE)
+        # Test-harness headers, not part of the installed API.
+        REGEX "constraints_test_utils\\.hh$" EXCLUDE
+        REGEX "cake_probe\\.hh$" EXCLUDE)
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/util/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/util
