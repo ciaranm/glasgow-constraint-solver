@@ -366,6 +366,18 @@ proof lines via `logger->emit_rup_proof_line_under_reason`,
 `logger->emit(RUPProofRule{}, ..., ProofLevel::Temporary)`, and similar.
 See `among/among.cc` and `lex/lex.cc` for examples of varying complexity.
 
+**A `JustifyExplicitly` handed to `infer_all` justifies the whole batch,
+once.** The `emit` is never told which literal it is justifying, so it runs
+exactly once per `infer_all` call, before any of the literals are applied,
+with the reason materialised once at that point. What each literal needs
+after the steps is what `ThenRUP` says: with `ThenRUP::Yes` the steps are
+shared scaffolding and every literal is RUPped under it; with
+`ThenRUP::No` the steps must themselves derive **every** literal in the
+batch, at `ProofLevel::Current` so the conclusions outlive the emit's
+temporary scaffolding — nothing further is logged per literal. Never write
+an `emit` that assumes it will be called once per firing literal, and never
+pass a literal the steps do not conclude.
+
 **Assertion hints (optional).** Both `JustifyUsingRUP` and
 `JustifyExplicitly` take an optional trailing *typed assertion hint*, e.g.
 `JustifyUsingRUP{hints::Foo{owner}}` or `JustifyExplicitly{emit,
