@@ -73,6 +73,7 @@ addressed.
 | half-reified comparisons (`LessThanEqualIf`, …) | partially via `Comparison` + reif | ? | n/a | gap (#61) | |
 | half-reified `And` / `Or` | – | ? | n/a | gap (#61) | |
 | `Among` | `Among` | ✓ | n/a (use count) | ? | |
+| `MinDistance` | `MinDistance` | unsupported | n/a | unsupported | Glasgow-specific extension; no frontend vocabulary for it |
 | `SmartTable` | `SmartTable` | ✓ | n/a | ? | Glasgow-specific extension |
 
 ## Solver gaps tracked elsewhere
