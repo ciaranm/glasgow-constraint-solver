@@ -11,7 +11,6 @@
 #include <gcs/innards/state.hh>
 
 #include <algorithm>
-#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
@@ -574,10 +573,10 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
     // literals over exactly these positions --- mirroring the encoding's u/count
     // reifications and each variable's at-least-one --- so absent [x_i = a]
     // literals (a not in x_i's root domain) never appear anywhere.
-    vector<vector<std::uint32_t>> positions_at(static_cast<std::size_t>(n));
+    vector<vector<std::size_t>> positions_at(static_cast<std::size_t>(n));
     for (std::size_t i = 0; i < p; ++i)
         for (const auto & a : _position_sites[i])
-            positions_at[static_cast<std::size_t>(a.raw_value)].push_back(static_cast<std::uint32_t>(i));
+            positions_at[static_cast<std::size_t>(a.raw_value)].push_back(i);
 
     // Wake on any selected-point domain change (the active site set shrinks) and
     // on z-bound changes (they move the candidate-level window).
@@ -653,7 +652,7 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
             // greedy matching is only weakly monotone, so this is a heuristic for a
             // good level, not a proof of monotonicity; every refutation is certified
             // in its own right (paper Section 4.4).
-            std::optional<std::size_t> refuted_idx;
+            optional<std::size_t> refuted_idx;
             std::size_t left = lo, right = hi;
             while (left <= right) {
                 std::size_t mid = left + (right - left) / 2;
@@ -688,8 +687,13 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
                 sum_c += Integer{static_cast<long long>(lit_count(A[ia]) + lit_count(A[ib])) - 1};
             for (const auto & c : unmatched)
                 sum_c += Integer{static_cast<long long>(lit_count(c)) - 1};
+            // Unreachable: writing S for the sum of the at-least-one literals over
+            // A, sum_c = S + |M| - |A|; every position's domain is a non-empty
+            // subset of A, so S >= p, and a refutation means |A| - |M| < p, hence
+            // sum_c > 0. Fail loudly rather than silently stop propagating if that
+            // ever stops holding.
             if (sum_c < 1_i)
-                return PropagatorState::Enable; // no guard-bearing constraint (cannot happen on a refutation)
+                throw UnexpectedException{"min_distance: no guard-bearing constraint on a refutation"};
 
             const auto t_minus_1 = t - 1_i;
             const auto guard = (z <= t_minus_1); // g = ~[z >= t]
@@ -707,7 +711,7 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
                 // then combine with the all_different PolBuilder layer recurrence, so
                 // g rides through the ceil-divisions with an exact coefficient:
                 // Sum_{l in L} ~l + (|L|-1) g >= |L|-1.
-                auto emit_am1 = [&](const vector<pair<std::uint32_t, Integer>> & lits) -> std::optional<ProofLine> {
+                auto emit_am1 = [&](const vector<pair<std::size_t, Integer>> & lits) -> optional<ProofLine> {
                     if (lits.size() < 2) {
                         // A single-literal site contributes nothing to the counting
                         // beyond cancelling its own at-least-one term; the trivially
@@ -734,7 +738,7 @@ auto MinDistance::install_matching_propagator(Propagators & propagators) -> void
                 };
 
                 PolBuilder final_pol;
-                vector<pair<std::uint32_t, Integer>> lits;
+                vector<pair<std::size_t, Integer>> lits;
                 for (const auto & [ia, ib] : edges) {
                     lits.clear();
                     for (auto pos : positions_at[static_cast<std::size_t>(A[ia].raw_value)])
