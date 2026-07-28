@@ -18,7 +18,7 @@
 // differential in the `differential` mode, are the only things standing between
 // a silent regression and shipping. If one of them fails, DETECTION IS BROKEN.
 // Do not update the expected numbers to match what the code now does. Fix
-// gcs/presolvers/difference_logic.cc.
+// gcs/presolvers/difference_logic/difference_logic.cc.
 
 #include <gcs/constraints/all_different.hh>
 #include <gcs/constraints/comparison.hh>
@@ -90,10 +90,10 @@ namespace
                                        "Problem::each_constraint_of_type<ReifiedLinearInequality>() (or\n"
                                        "<ReifiedCompareLessThanOrMaybeEqual>()) no longer yields the posted derived\n"
                                        "constraints (clone() currently returns the family base -- see PR #585).\n\n"
-                                       "Fix gcs/presolvers/difference_logic.cc. Do NOT update the expected count here: a\n"
-                                       "presolver that lifts nothing still passes every solution-equivalence, OPB byte-diff\n"
-                                       "and VeriPB check, so this assertion is the only thing standing between a silent\n"
-                                       "regression and shipping.";
+                                       "Fix gcs/presolvers/difference_logic/difference_logic.cc. Do NOT update the\n"
+                                       "expected count here: a presolver that lifts nothing still passes every\n"
+                                       "solution-equivalence, OPB byte-diff and VeriPB check, so this assertion is the\n"
+                                       "only thing standing between a silent regression and shipping.";
 
     auto check_count(const string & what, size_t expected, size_t actual, const string & fixture) -> void
     {

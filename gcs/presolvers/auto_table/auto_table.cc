@@ -3,7 +3,7 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/propagators.hh>
-#include <gcs/presolvers/auto_table.hh>
+#include <gcs/presolvers/auto_table/auto_table.hh>
 #include <gcs/search_heuristics.hh>
 
 #include <util/enumerate.hh>
