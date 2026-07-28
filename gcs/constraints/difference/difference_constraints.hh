@@ -2,7 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DIFFERENCE_DIFFERENCE_CONSTRAINTS_HH
 
 #include <gcs/constraint.hh>
-#include <gcs/innards/proofs/proof_line.hh>
+#include <gcs/constraints/difference/difference_graph.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
@@ -72,32 +72,15 @@ namespace gcs
         // propagator works off the canonical form below.
         std::vector<DifferenceEdge> _edges;
 
-        // The canonical graph, built by prepare(). Every operand is reduced to
-        // a bare SimpleIntegerVariableID plus an offset, and the offsets are
-        // folded into the weight, so that every edge's OPB row speaks the same
-        // representation and the telescoping pol cancels exactly.
-        std::vector<SimpleIntegerVariableID> _nodes;
-
-        struct GraphEdge
-        {
-            std::size_t from;
-            std::size_t to;
-            Integer d;
-            std::size_t posted_index;
-        };
-
-        // A constant operand does not give a graph edge, it gives a static
-        // bound on the other operand.
-        struct StaticBound
-        {
-            std::size_t node;
-            Integer value;
-            bool is_lower;
-            std::size_t posted_index;
-        };
-
-        std::vector<GraphEdge> _graph_edges;
-        std::vector<StaticBound> _static_bounds;
+        // The canonical graph, built by prepare() and filled in with one
+        // labelled OPB row per posted edge by define_proof_model(). Every
+        // operand is reduced to a bare SimpleIntegerVariableID plus an offset,
+        // and the offsets are folded into the weight, so that every edge's OPB
+        // row speaks the same representation and the telescoping pol cancels
+        // exactly. The propagator itself is shared with the difference-logic
+        // presolver, which builds one of these out of constraints somebody else
+        // posted; see innards::install_difference_propagator.
+        innards::DifferenceGraph _graph;
 
         // An edge whose two operands canonicalise to the same thing (aliasing,
         // or two constants) says 0 <= d. Harmless when d >= 0; a root
@@ -106,10 +89,6 @@ namespace gcs
         // Only whether this is engaged is acted on; the index identifies the
         // first offending edge, for a future assertion hint to name.
         std::optional<std::size_t> _root_contradiction_posted_index;
-
-        // One labelled OPB row per posted edge, indexed by posted position.
-        // Empty when proofs are off.
-        std::vector<innards::ProofLine> _edge_lines;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
