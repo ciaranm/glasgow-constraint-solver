@@ -139,6 +139,40 @@ The general recipe (see `gcs/constraints/lex/lex.cc` and the
    `.mzn` test, all set to `SKIP_RETURN_CODE 66` (which means
    "MiniZinc isn't installed, skip").
 
+## When no predicate is the right answer
+
+Not every gcs feature wants an `mznlib/` override. The difference-logic
+presolver (#571) is the worked example: it looks for two-term
+`LinearLessThanEqual`s with coefficients `+1` and `-1` and lifts them
+into one global propagator, and MiniZinc 2.10's flattener already emits
+exactly that shape — `t[i] + 2 <= t[i+1]` becomes
+`int_lin_le([1,-1],[t_i,t_i+1],-2)`, and so does a bare `x <= y`. The
+shape is in the model whether or not anybody asks for it, so the whole
+binding is one command-line flag:
+
+```
+--difference-logic                    add the presolver (default: off)
+--difference-logic-simplify on|off    root simplification (default: on)
+```
+
+Both are declared in the three `.msc` files' `extraFlags`, which is what
+lets `minizinc --solver glasgow.msc --difference-logic model.mzn`
+forward them.
+
+A `glasgow_difference_logic` predicate was considered and rejected.
+There is no standard FlatZinc builtin for a difference-constraint
+*system*, so it would be a Glasgow-only extension; it would not reach
+anything the presolver does not already reach automatically; and it
+would require every model that wants the global propagator to be
+rewritten against it, which is the thing the presolver exists to avoid.
+The general rule: **add a predicate when the frontend cannot otherwise
+express what your propagator needs; add a flag when it can already, and
+the only question is whether to switch something on.**
+
+The counters are reported as `%%%mzn-stat:` lines under `--statistics`,
+prefixed `differenceLogic`. They are not decoration — see the note on
+required output patterns below.
+
 ## Testing
 
 Each test is a small `.mzn` instance run twice by
@@ -153,6 +187,22 @@ divergence fails the test. If `veripb` is installed, the harness then
 re-runs Glasgow with `--prove` and verifies the proof file. Tests
 that don't need proof verification can pass `false` as the last
 argument to the bash script.
+
+### Extra flags and required output patterns
+
+After the five positional arguments the harness takes an optional
+whitespace-separated list of extra flags for the Glasgow run (the
+default-solver run never sees them; they must be declared in the `.msc`
+for MiniZinc to forward them), and then any number of extended regexes
+that must each match a line of the Glasgow run's output.
+
+The second part exists because some things are invisible to every other
+check the harness makes. A presolver preserves the solution set, adds no
+OPB content and leaves the proof verifying whether it fired or not, so a
+presolver that silently lifted nothing would pass the cross-solver diff
+and VeriPB alike. `minizinc-differencelogic` therefore runs with
+`-s --difference-logic` and asserts on the `%%%mzn-stat:
+differenceLogic*` counters as well.
 
 ### Solution counts
 

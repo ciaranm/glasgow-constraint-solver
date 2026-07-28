@@ -161,6 +161,7 @@ Useful options:
 
 - `--all` — enumerate every solution (CSP only; ignored on COP).
 - `--branch <heuristic>` — branching heuristic: `dom-then-deg` (the default), or `dom-wdeg[:VARIANT]` with `VARIANT` one of `classic`, `ia`, `ca`, `id`, `cd`, `ca.cd`, `chs`.
+- `--difference-logic` — lift difference-shaped constraints (`x - y <= d`) into one global difference-logic propagator, alongside their own propagators. Off by default: the wins are concentrated on scheduling models. `--difference-logic-simplify off` turns off the root simplification stage that comes with it.
 - `--prove` — emit OPB and VeriPB proof artefacts under `xcsp.{opb,pbp}` for external verification.
 - `--restarts [<scale>]` — restart on a Luby schedule with the given conflict scale (`100` if given bare), learning nogoods across restarts. Sound for finding one solution or optimising, not with `--all`.
 - `--timeout <seconds>` — abort search after the given wall-clock time and report `s UNKNOWN` (or `s SATISFIABLE` for a partial COP solution).
@@ -188,6 +189,12 @@ Then you can run
 ```shell
 minizinc --solver glasgow -a -s cake.mzn
 ```
+
+Beyond the standard flags, the solver configuration declares `--prove`
+(with `--proof-files-basename`), `--restarts`, and `--difference-logic`
+(with `--difference-logic-simplify on|off`), which does the same thing as
+its XCSP3 counterpart above. For developer documentation on the MiniZinc
+frontend, see [`dev_docs/minizinc.md`](dev_docs/minizinc.md).
 
 Manually Solving a Constraint Optimisation Problem
 --------------------------------------------------
