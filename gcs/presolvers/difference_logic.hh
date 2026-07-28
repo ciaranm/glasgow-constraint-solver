@@ -1,0 +1,153 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_DIFFERENCE_LOGIC_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_DIFFERENCE_LOGIC_HH
+
+#include <gcs/presolver.hh>
+
+#include <cstddef>
+#include <memory>
+
+namespace gcs
+{
+    /**
+     * \brief What the difference-logic presolver did, filled in when it runs.
+     *
+     * The presolver's whole job is invisible from the outside: it adds no OPB
+     * content, changes no solution, and leaves proofs verifying whether it fired
+     * or not. A presolver that silently lifted nothing --- because, say,
+     * Constraint::clone() stopped flattening a posted LinearLessThanEqual to
+     * ReifiedLinearInequality --- would pass every solution-equivalence, OPB
+     * byte-diff and VeriPB check there is. So the counts are not decoration:
+     * they are how the tests, and the measurements, tell "working" from
+     * "no-op". \sa DifferenceLogic
+     *
+     * \ingroup Presolvers
+     */
+    struct DifferenceLogicStats
+    {
+        /// Donors turned into graph edges: the number that matters.
+        std::size_t edges_lifted = 0;
+
+        /// Distinct variables those edges span.
+        std::size_t nodes = 0;
+
+        /// True if a global propagator was actually installed.
+        bool propagator_installed = false;
+
+        /// Propagators retired by the donors-off option.
+        std::size_t donor_propagators_disabled = 0;
+
+        /**
+         * \name Why a candidate was not lifted.
+         *
+         * Every posted linear inequality the presolver looked at falls into
+         * exactly one of edges_lifted or one of the first five buckets, so those
+         * six numbers account for every ReifiedLinearInequality in the model.
+         * @{
+         */
+
+        /// A linear that is not exactly two terms.
+        std::size_t skipped_not_two_terms = 0;
+
+        /// A two-term linear whose coefficients are not exactly +1 and -1.
+        std::size_t skipped_coefficients = 0;
+
+        /// A linear whose reification condition is not reif::MustHold. Lifting
+        /// one of these as though it were unconditional would be unsound: the
+        /// `If` form's row is emitted half-reified.
+        std::size_t skipped_reified = 0;
+
+        /// An operand that is a negated view (`-X + c`), which is not a
+        /// difference constraint at all.
+        std::size_t skipped_negated_view = 0;
+
+        /// An edge that canonicalises to `0 <= d` (both operands the same
+        /// variable, or both constants), or to a plain bound on one variable
+        /// (one constant operand). Nothing is gained by lifting these and the
+        /// `d < 0` case would need an initialiser, a door that has closed by
+        /// the time a presolver runs, so they are left to their own propagator.
+        std::size_t skipped_degenerate = 0;
+
+        /// A Comparison (`x < y`, `x <= y + d`, ...) that *is* difference
+        /// shaped but whose OPB row is emitted unlabelled, so no proof step can
+        /// cite it. This is the measure of what a later PR that labels those
+        /// rows would gain. \sa DifferenceLogic
+        std::size_t skipped_unlabelled_comparison = 0;
+
+        ///@}
+    };
+
+    /**
+     * \brief Scan a posted Problem for difference-shaped constraints and install
+     * a global difference-logic propagator over them, alongside the constraints'
+     * own propagators.
+     *
+     * A model does not have to be rewritten against DifferenceConstraints to get
+     * the global propagation: post `1*x + -1*y <= d` as an ordinary
+     * LinearLessThanEqual, add this presolver, and the edges are lifted into one
+     * Bellman-Ford pass over the whole graph. This is the hybrid of section 4.4
+     * of Kletzander, Dekker, Schutt and Stuckey, "Global Difference Constraint
+     * Propagation for Constraint Programming" (arXiv:2607.20022) --- and it is
+     * what the timing forces in any case, since presolvers run after
+     * create_propagators and after the proof model has been finalised, so the
+     * donors' propagators cannot be removed and no new OPB content can be added.
+     *
+     * That timing is not a limitation, it is what makes the proofs trivial. Each
+     * donor already emitted its own labelled OPB row; the global propagator
+     * simply cites those rows in its `pol`s, and derives nothing that is not a
+     * cutting-planes consequence of constraints the model already contains.
+     *
+     * Off by default: the paper's own MiniZinc-wide result is near-noise, so
+     * this is opted into with Problem::add_presolver, not applied automatically.
+     *
+     * \par What is lifted
+     *
+     * The paper's "level 1", restricted to what the propagator supports today: a
+     * two-term LinearLessThanEqual with coefficients exactly `+1` and `-1`, an
+     * unconditional (reif::MustHold) reification condition, and two distinct
+     * variable operands, each of which may carry a `+X + c` view offset (folded
+     * into the weight). Everything else is skipped and counted --- see
+     * DifferenceLogicStats, and note in particular that Comparison donors are
+     * skipped only because their unconditional OPB rows are emitted *unlabelled*
+     * and so cannot be cited, not because they are the wrong shape.
+     *
+     * Equalities (level 2) and disequalities (level 3) are not chased at all;
+     * the paper measures both as losing to level 1.
+     *
+     * \ingroup Presolvers
+     */
+    class DifferenceLogic : public Presolver
+    {
+    private:
+        std::shared_ptr<DifferenceLogicStats> _stats;
+        bool _disable_lifted_donors;
+
+    public:
+        /**
+         * \brief Construct the presolver, optionally sharing a stats block that
+         * will be filled in when it runs.
+         *
+         * The block is shared, not copied, so it survives Problem::add_presolver
+         * cloning the presolver and can be read after solving.
+         */
+        explicit DifferenceLogic(std::shared_ptr<DifferenceLogicStats> stats = nullptr);
+
+        /**
+         * \brief Also retire the propagators of every donor whose edge was
+         * lifted, so only the global propagator runs over them.
+         *
+         * Ships off, because the hybrid is what the paper measures as best; this
+         * exists so the alternative can be measured rather than assumed. It is
+         * also a soundness tripwire, and a strong one: the global propagator
+         * subsumes every donor's single-edge bound push, and disabling a
+         * propagator changes neither degrees nor adjacency, so the search tree
+         * must come out *identical* either way. It differing means the
+         * subsumption claim is wrong.
+         */
+        auto disabling_lifted_donors(bool = true) -> DifferenceLogic &;
+
+        [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool override;
+        [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Presolver> override;
+    };
+}
+
+#endif

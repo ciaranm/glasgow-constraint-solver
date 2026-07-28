@@ -111,6 +111,7 @@ add_library(glasgow_constraint_solver
         innards/state.cc
         innards/variable_id_utils.cc
         presolvers/auto_table.cc
+        presolvers/difference_logic.cc
 )
 
 # The repo root contains both gcs/ and util/, so it must be on the include path.
@@ -178,6 +179,15 @@ if(GCS_BUILD_TESTS)
     add_executable(problem_test problem_test.cc)
     target_link_libraries(problem_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME problem_test COMMAND $<TARGET_FILE:problem_test>)
+
+    add_executable(difference_logic_presolver_test presolvers/difference_logic_test.cc)
+    target_link_libraries(difference_logic_presolver_test PRIVATE glasgow_constraint_solver)
+    foreach(mode detection equivalence tripwire opb)
+        add_test(NAME difference_logic_presolver_${mode}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:difference_logic_presolver_test> ${mode})
+    endforeach()
+    add_test(NAME difference_logic_presolver_proofs
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:difference_logic_presolver_test> proofs)
 
     add_executable(constraint_enumeration_test constraint_enumeration_test.cc)
     target_link_libraries(constraint_enumeration_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
