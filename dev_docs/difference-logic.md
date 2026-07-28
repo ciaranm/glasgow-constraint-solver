@@ -1,11 +1,12 @@
-# Difference logic: `DifferenceConstraints`
+# Difference logic: `DifferenceConstraints` and the `DifferenceLogic` presolver
 
 `DifferenceConstraints` propagates a whole system of `x - y <= d` at once,
 rather than one propagator per constraint. This note covers the graph
 formulation, the two propagation directions, the round bound and why the
 negative-cycle extraction is total, the canonicalisation rule and why it exists,
 the two proof shapes with worked examples, the defects in the source paper's
-pseudocode, and what is deliberately deferred.
+pseudocode, the presolver that lifts an already-posted model into the same
+propagator, and what is deliberately deferred.
 
 The source is Kletzander, Dekker, Schutt and Stuckey, *Global Difference
 Constraint Propagation for Constraint Programming*, arXiv:2607.20022 — the
@@ -375,6 +376,230 @@ difference is the posting-order change made here, which moves the cycle-closing
 edge in front of the lower-bound bump so that both variants post identical edge
 sequences.)
 
+## The presolver
+
+`DifferenceLogic` (`gcs/presolvers/difference_logic.hh`) scans a posted
+`Problem` for difference-shaped constraints and installs the propagator above
+over them, **alongside** the donors' own propagators. A model written as
+ordinary two-term `LinearLessThanEqual`s does not have to be rewritten to get
+the global propagation. It is off by default; the user opts in with
+`problem.add_presolver(DifferenceLogic{})`.
+
+The timing dictates the shape and is worth stating plainly. Presolvers run
+*after* `create_propagators` and *after* the proof model is finalised
+(`solve.cc`), so a presolver **cannot remove** the donors' propagators and
+**cannot add OPB content** — `Presolver::run` is handed no `ProofModel *` at all.
+That is the paper's §4.4 hybrid, and it is also what makes the proof trivial:
+each donor already emitted its own labelled row, so the global propagator cites
+*those* rows and derives nothing that is not a cutting-planes consequence of
+constraints the model already contains.
+
+### What is lifted, and what is not
+
+The paper's **level 1**, restricted to what the propagator supports today: a
+two-term linear with coefficients exactly `+1` and `-1`, an unconditional
+(`reif::MustHold`) condition, and two distinct variable operands, each of which
+may carry a `+X + c` view offset. Two of the exclusions are soundness
+requirements rather than mere incompleteness:
+
+- **Half-reified donors are refused.** `linear_inequality.cc` emits the `If`
+  form's row under `HalfReifyOnConjunctionOf`, so it states `b -> x - y <= d`,
+  not `x - y <= d`. Lifting it as an unconditional edge would licence
+  inferences the model does not entail (and the pol citing it would carry an
+  uncancelled gate term). Since `clone()` returns the family base, the
+  reification condition is the *only* thing distinguishing a
+  `LinearLessThanEqual` from a `LinearLessThanEqualIf` at enumeration time.
+- **Negated views are refused**, for the reason given above.
+
+Degenerate edges — a constant operand, or the same variable at both ends — are
+also skipped, and left to the donor. This is not just tidiness: a `0 <= d` with
+`d < 0` is a root contradiction, which `DifferenceConstraints` reports with
+`install_initial_contradiction`, and **initialisers have already run** by the
+time a presolver is called. Declining to lift such an edge leaves it with the
+donor, which handles it correctly.
+
+**`Comparison` donors are the shape we most want and cannot yet have.**
+`x <= y + d` over an offset view *is* a difference constraint, but
+`ReifiedCompareLessThanOrMaybeEqual::define_proof_model` emits its unconditional
+rows through the `void`-returning `add_constraint`, so they carry no `@label`
+and no proof step can cite them. They are detected, skipped, and **counted**, so
+what a later labelling PR would buy is measured rather than guessed at.
+Labelling them touches the `cake_pb_cp` chain surface, hence the deferral.
+
+### Deview mode is the one thing the shared propagator needed
+
+`DifferenceConstraints` emits its own rows over the canonical bare variables,
+which is why its pols telescope. A donor's row is emitted over the *user's*
+operands, views and all. So the shared propagator cites every edge row through a
+`PolBuilder` in **deview mode**, which substitutes the framework's already-derived
+deview-form line (in `X`-bits) for the `V`-form one. For
+`DifferenceConstraints`'s own rows this is a no-op — no view appears in their
+left-hand sides, so no deview-form is registered and `deviewed_line_for` returns
+the line unchanged — which is why the constraint's OPB and proof output is
+byte-identical to before the sharing refactor. It is load-bearing for the
+presolver: confirmed by mutation, removing it fails VeriPB on the
+`view_negcycle_wide` fixture in the *shipping* hybrid configuration. Same
+situation, and same fix, as `linear/justify.cc`.
+
+### Turning the donors off, and why `DisableUntilBacktrack` could not be reused as is
+
+The hybrid is what the paper measures as best and is the default, but the
+redundant donors should be measurable, so `disabling_lifted_donors()` exists and
+ships off.
+
+gcs already has `PropagatorState::DisableUntilBacktrack`, and its **mechanism**
+is exactly right: the propagator is swapped past `idle_end` in the queue, where
+`enqueue_if_idle` will not find it, so skipping it costs nothing. Its
+**lifetime** is the part that does not transfer, in two places:
+
+- `propagate()` saves `orig_idle_end` on entry and restores it from that call's
+  `on_backtrack`, so the boundary is scoped to one `propagate()` call;
+- more decisively, the no-guesses path *rebuilds* `queue` and `lookup` from
+  scratch and resets `idle_end` to the propagator count.
+
+A presolver acts at the root, before the first root propagation, so a boundary
+it set would be erased before it ever took effect. `Propagators::
+disable_propagators_for_constraints` therefore reuses the partition and adds a
+*second* boundary that nothing restores: the rebuild puts permanently disabled
+propagators at the tail, past `idle_end`, and the enabled count is what
+`enqueued_end` and `idle_end` are set to.
+
+It takes a **batch** of `ConstraintID`s, not one at a time. Finding a
+constraint's propagators means scanning the propagator list, so a per-constraint
+entry point makes disabling `m` donors `O(m · propagators)`; on `difference_chain`
+at `n = 160` that quadratic was 23× the entire rest of the solve.
+
+Disabling is **not** removing. The constraint keeps its OPB row, its scope and
+adjacency entries, and its contribution to every variable's degree, so the
+branching heuristic sees an unchanged problem. That is what makes the option a
+tripwire as well as a knob: the global propagator subsumes every donor's
+single-edge push, so **solutions and recursions must come out identical** with
+the donors on and off. They do, across the whole test corpus; if they ever did
+not, the subsumption claim would be wrong.
+
+### Why the tests assert on counts
+
+The presolver is invisible from the outside. A version that silently lifted
+nothing — because, say, `clone()` stopped flattening a posted
+`LinearLessThanEqual` to `ReifiedLinearInequality`, so
+`each_constraint_of_type<ReifiedLinearInequality>()` no longer matched it —
+would pass **every** validation we would otherwise write: solution-set
+equivalence (a no-op presolver preserves solutions), the OPB byte-diff
+(byte-identical is the *expected* result), and VeriPB (there would be nothing
+new to check).
+
+So the presolver reports what it did in `DifferenceLogicStats`, and three
+things guard it:
+
+- `static_assert`s in `run()` pinning the class relationships the enumeration
+  relies on, so a hierarchy change is a compiler error at the site that needs
+  fixing;
+- a **runtime cross-check** of the typed enumeration against
+  `Constraint::constraint_type()`, which does not depend on the hierarchy at all:
+  if more constraints report `lin_less_equal` than the typed enumeration
+  yielded, the presolver throws;
+- assertions on the counts, and the propagation-count differential below.
+
+Every one of those failure messages names the invariant and says explicitly not
+to update the expectation. Mutation-tested: asking for `LinearLessThanEqual`
+instead of `ReifiedLinearInequality` — the exact regression being defended
+against — trips the cross-check, and with the cross-check also disabled all four
+test modes fail, each naming the presolver.
+
+The cross-check is on unconditionally, rather than being an opt-in strict mode,
+and it is deliberately *not* "throw if nothing was lifted". Lifting nothing is a
+perfectly ordinary outcome — most models contain plenty of `lin_less_equal`
+constraints and no two-term `+1`/`-1` ones — so that version would fire on
+legitimate models and would have to be off by default, which is to say it would
+never be on when it mattered. The condition that cannot legitimately hold is the
+narrower one: a constraint reporting a donor family's `constraint_type()` that
+the typed enumeration did not yield. That is exactly the regression, it is free
+of false positives, and it costs one pass over the posted constraints per
+solve.
+
+### Gating
+
+None, beyond declining to install over a single edge, which is a degeneracy (one
+edge's global propagator computes exactly what that edge's own propagator does)
+rather than a tuning decision. A minimum-edge-count or connectivity threshold was
+considered and **not** shipped: the measurements below give no crossover to site
+it at — the presolver is a large win on the unlucky order at every size measured,
+and its cost on the lucky order is a roughly constant factor rather than
+something that switches sign — and the presolver is opt-in already, so a second
+gate the user cannot reason about would be guessing dressed as tuning.
+
+### Measurements
+
+`examples/difference_chain --variant=presolved`, `-k 2`, release, medians of 3.
+First, **`--mode=refute`**, which is unsatisfiable at the root, so there is no
+search and the columns compare propagation and proof directly:
+
+| n | order | variant | propagations | time (s) | `.pbp` lines |
+|---:|---|---|---:|---:|---:|
+| 40 | unlucky | decomposed | 68,137 | 0.00185 | 45,712 |
+| 40 | unlucky | presolved | 903 | 0.00063 | **40** |
+| 40 | unlucky | presolved + donors off | 2 | 0.00067 | **18** |
+| 40 | unlucky | global | 1 | 0.00013 | **12** |
+| 40 | lucky | decomposed | 38,435 | 0.00132 | 26,935 |
+| 40 | lucky | presolved | 903 | 0.00061 | **40** |
+| 160 | unlucky | decomposed | 4,139,782 | 0.0845 | 720,352 |
+| 160 | unlucky | presolved | 13,203 | 0.0113 | **40** |
+| 160 | unlucky | presolved + donors off | 2 | 0.0108 | **18** |
+| 160 | unlucky | global | 1 | 0.0025 | **12** |
+| 160 | lucky | decomposed | 2,150,495 | 0.0492 | 414,835 |
+| 160 | lucky | presolved | 13,203 | 0.0112 | **40** |
+
+The proof-size result is the headline: the presolver recovers essentially the
+whole of the global route's win, 720,352 lines down to 40, because the
+refutation is one telescoping `pol` over the donors' own rows however big the
+domains are.
+
+Then **`--mode=fixpoint`**, which searches:
+
+| n | order | variant | propagations | recursions | time (s) |
+|---:|---|---|---:|---:|---:|
+| 160 | unlucky | decomposed | 2,126,002 | 163 | 0.0473 |
+| 160 | unlucky | presolved | 52,807 | 163 | 0.0157 |
+| 160 | unlucky | presolved + donors off | 167 | 163 | 0.0148 |
+| 160 | unlucky | global | 327 | 323 | 0.0085 |
+| 160 | lucky | decomposed | 52,801 | 163 | 0.0097 |
+| 160 | lucky | presolved | 52,807 | 163 | 0.0152 |
+| 640 | unlucky | decomposed | 132,305,602 | 643 | 4.460 |
+| 640 | unlucky | presolved | 825,607 | 643 | 0.459 |
+| 640 | unlucky | presolved + donors off | 647 | 643 | 0.452 |
+| 640 | unlucky | global | 1,287 | 1,283 | 0.333 |
+| 640 | lucky | decomposed | 825,601 | 643 | 0.257 |
+| 640 | lucky | presolved | 825,607 | 643 | 0.445 |
+
+Four things to read out of this.
+
+**The presolver buys order-independence, which is what the pathology was.** The
+`presolved` propagation count is identical for both orders at every size, and
+equal to the *lucky* decomposed figure: 132.3M → 825.6k at `n = 640`, a 160×
+reduction and 9.7× in wall time.
+
+**It does not reach the global route, and the reason is registration order.**
+gcs has no runtime propagator priorities (issue #582), and a presolver's
+propagator is registered last, so at every round the donors all run before the
+global one gets its turn — and then the global one's inferences wake them all
+again. The residual is Θ(|E|) per round where the global route is Θ(1), which is
+why `presolved` sits at 825,607 against `global`'s 1,287. Priorities would remove
+the extra sweeps but not the one-run-per-donor-per-round floor; only disabling
+the donors does that, and it takes the count to 647.
+
+**The redundant donors cost almost nothing in wall time here**, 0.459 s against
+0.452 s at `n = 640`, even though they are 1,275× of the propagation count.
+Time is dominated by the non-incremental Bellman-Ford, not by the donors' cheap
+two-term propagations. So on this family the hybrid is nearly free, which
+matches the paper preferring it.
+
+**On the lucky order the presolver is a modest loss**, 0.257 s → 0.445 s at
+`n = 640`: nothing was wrong with the propagation order to begin with, and the
+extra global pass and the presolver's own O(number of constraints) enumeration
+(about 200 ns per constraint per pass, three passes, two of them the tripwire's)
+are pure overhead. That is the honest counterweight to the 9.7× on the unlucky
+order, and the reason this ships off by default.
+
 ## Deliberately deferred
 
 - **Incrementality.** The paper's `IncSat` / `IncLB` / `IncUB` maintain a valid
@@ -396,11 +621,10 @@ sequences.)
   shape 1 with `b` the sole surviving residual — but the paper's own
   configuration study says to leave it **off**: on RCPSP/max every configuration
   with it on scored below every configuration with it off.
-- **The presolver** — detecting difference-shaped constraints already posted on
-  a `Problem` and lifting them into a global propagator. This is the half the
-  paper's measurements say is actually valuable (310.00 → 312.94 for the
-  propagator alone on the MiniZinc challenge set, → 320.95 with simplification),
-  and it depends on #546's typed constraint enumeration.
+- **Lifting `Comparison` donors**, which needs their unconditional OPB rows
+  labelled; see the presolver section above.
+- **Lifting half-reified donors**, which is the same problem as supporting
+  half-reified edges in the propagator.
 - **Root simplification** — Johnson's all-pairs shortest paths, then dropping
   redundant edges, fixing Booleans whose edge would close a negative cycle, and
   unifying variables on a zero-weight cycle. Note that dropping a redundant edge
@@ -410,7 +634,8 @@ sequences.)
 - **Runtime propagator priorities.** The paper wants bound propagation at the
   lowest priority and Boolean propagation at the highest, as separate
   propagators. gcs has no runtime propagator priorities, only
-  `InitialiserPriority`.
+  `InitialiserPriority`. Issue #582 tracks this, and the presolver measurements
+  above are the concrete cost of not having them.
 
 ## See also
 

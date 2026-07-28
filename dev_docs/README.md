@@ -80,8 +80,10 @@ library. For an introduction to *using* the solver, start with the top-level
   shapes — a negative cycle refuted by one telescoping `pol`, a bound push
   justified per edge along the predecessor forest — the source paper's
   pseudocode defects, the measured order-independence and proof-size results,
-  and what is deferred (incrementality, half-reification, presolver, root
-  simplification).
+  the `DifferenceLogic` presolver that lifts an already-posted model into the
+  same propagator (including why `DisableUntilBacktrack` could not be imposed
+  from outside, and why the tests assert on counts rather than on solutions),
+  and what is deferred (incrementality, half-reification, root simplification).
 - [Range ("in") literals](range_literals_spec.md) — the design specification
   for the interval-literal proof layer: reifying `[X∈[a,b]]` to its
   order-chain cuts, the always-covered partition invariant, interval-tree
