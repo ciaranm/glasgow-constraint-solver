@@ -12,7 +12,9 @@ to graph algorithms for `Circuit`.
 For reified constraints, read this document first, then
 [reification.md](reification.md) for the additional machinery on top.
 For exposing a finished constraint to MiniZinc, see
-[minizinc.md](minizinc.md).
+[minizinc.md](minizinc.md). Presolvers are a different kind of object,
+but they share this document's file layout — see
+[Presolvers](#presolvers) below.
 
 ## The big picture
 
@@ -81,6 +83,42 @@ gcs/constraints/all_different/*_test.cc                tests
 Here the umbrella `gcs/constraints/<family>.hh` `#include`s every
 variant's header. `gcs/gcs.hh` then only needs the umbrella, not each
 variant.
+
+### Presolvers
+
+Presolvers (`gcs/presolver.hh`, the `Presolvers` Doxygen group) are laid
+out exactly the same way, one directory each, under `gcs/presolvers/`
+instead of `gcs/constraints/`. For a presolver named `Foo`:
+
+```
+gcs/presolvers/foo.hh             public umbrella header
+gcs/presolvers/foo/foo.hh         public class declaration
+gcs/presolvers/foo/foo.cc         run() method
+gcs/presolvers/foo/foo_test.cc    tests
+```
+
+The same rules apply, for the same reasons (issue #589):
+
+- The umbrella keeps the bare guard `..._PRESOLVERS_FOO_HH` and does
+  nothing but `#include <gcs/presolvers/foo/foo.hh>`; the class header's
+  guard is directory-qualified, `..._PRESOLVERS_FOO_FOO_HH`.
+- Consumers — examples, the frontends, other presolvers' tests — always
+  include the umbrella `<gcs/presolvers/foo.hh>`, so the public include
+  path stays put no matter how the directory's internals are arranged.
+  The implementation `.cc` includes the class header directly; the
+  `*_test.cc` includes the umbrella, matching what constraint tests do.
+- `gcs/CMakeLists.txt` gets `presolvers/foo/foo.cc` in the library
+  sources and a test target built from `presolvers/foo/foo_test.cc`.
+
+Unlike a constraint, a presolver is **not** added to `gcs/gcs.hh`:
+presolvers are opt-in, and a user asks for one by name.
+
+A presolver whose implementation grows past one file — an enumeration
+pass, a lifting pass, a proof helper — puts the extra files in its own
+directory and, if they are part of its interface, `#include`s them from
+the umbrella, exactly as the multi-file constraint families do above.
+The Cumulative presolver family (issues #547, #548, #549) is the next
+consumer of this layout.
 
 Constraints that offer more than one consistency level or propagation
 algorithm select it with a fluent `.with_*()` setter and the
