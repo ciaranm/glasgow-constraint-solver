@@ -1,6 +1,7 @@
 #include <gcs/gcs.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/state.hh>
+#include <gcs/presolvers/difference_logic.hh>
 #include <util/enumerate.hh>
 
 #include <XCSP3CoreParser.h>
@@ -1620,6 +1621,15 @@ namespace
         // LinearLessThanEqual instead is the same constraint at the same
         // (bounds) consistency.
         //
+        // It also decides what gcs::DifferenceLogic ends up with a graph *over*.
+        // The auxiliary form is not invisible to it --- since Comparison rows
+        // carry labels, `subresult <= t` is a perfectly liftable comparison
+        // donor --- but the edge then spans the invented variable rather than
+        // the instance's own, so the graph gains a node per constraint for no
+        // extra propagation. Measured on tests/difference_logic.xml: the same
+        // four edges either way, over seven nodes without the peephole and four
+        // with it.
+        //
         // Returns false, having posted nothing, when the expression is not
         // affine or degenerates to a constant-only comparison; the caller then
         // falls back to the ordinary walk.
@@ -1862,6 +1872,17 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<string>()->default_value("dom-then-deg"))             //
             ("restarts", "Restart on a Luby schedule with the given conflict scale", //
                 cxxopts::value<unsigned long long>()->implicit_value("100"))         //
+            // Off by default, matching the presolver's own opt-in default and
+            // fzn-glasgow's spelling of the same two options: the paper's
+            // benchmark-wide result is near-noise, and the wins are concentrated
+            // on scheduling.
+            ("difference-logic",                                                                        //
+                "Lift difference-shaped constraints (x - y <= d) into one global difference-logic "     //
+                "propagator, alongside their own propagators")                                          //
+            ("difference-logic-simplify",                                                               //
+                "Run the difference-logic root simplification stage: on (the default) or off. Ignored " //
+                "without --difference-logic",                                                           //
+                cxxopts::value<string>()->default_value("on"))                                          //
             ("timeout", "Timeout in seconds", cxxopts::value<int>());
 
         options.add_options()("file", "Input file in XCSP format", cxxopts::value<string>());
@@ -1902,6 +1923,26 @@ auto main(int argc, char * argv[]) -> int
         cout << "s UNSUPPORTED" << endl;
         cout << "c " << e.what() << endl;
         return EXIT_FAILURE;
+    }
+
+    // Every constraint is posted, so the presolver can see the whole model. It
+    // runs later still, after create_propagators and after the proof model is
+    // finalised, so it cites the constraints' own OPB rows rather than adding
+    // any of its own.
+    shared_ptr<DifferenceLogicStats> difference_logic_stats;
+    shared_ptr<DifferenceSimplificationStats> difference_simplification_stats;
+    if (options_vars.contains("difference-logic")) {
+        auto simplify = options_vars["difference-logic-simplify"].as<string>();
+        if (simplify != "on" && simplify != "off") {
+            cerr << "Error: unknown --difference-logic-simplify value " << simplify << ", expected on or off" << endl;
+            return EXIT_FAILURE;
+        }
+
+        difference_logic_stats = make_shared<DifferenceLogicStats>();
+        difference_simplification_stats = make_shared<DifferenceSimplificationStats>();
+        problem.add_presolver(DifferenceLogic{difference_logic_stats}
+                .simplifying_at_root(simplify == "on")
+                .reporting_simplification_to(difference_simplification_stats));
     }
 
     auto model_done_duration = duration_cast<microseconds>(steady_clock::now() - start_time);
@@ -2029,6 +2070,26 @@ auto main(int argc, char * argv[]) -> int
 
     if (options_vars.contains("all"))
         cout << "d FOUND SOLUTIONS " << stats.solutions << endl;
+
+    // A presolver that lifts nothing preserves the solution set, adds no OPB
+    // content and leaves every proof verifying, so these counts are the only way
+    // to tell "it worked" from "it silently did nothing" --- which is why a test
+    // asserts on them.
+    if (difference_logic_stats) {
+        cout << "d DIFFERENCE LOGIC EDGES LIFTED " << difference_logic_stats->edges_lifted << endl;
+        cout << "d DIFFERENCE LOGIC COMPARISON EDGES LIFTED " << difference_logic_stats->comparison_edges_lifted << endl;
+        cout << "d DIFFERENCE LOGIC HALF REIFIED EDGES LIFTED " << difference_logic_stats->half_reified_edges_lifted << endl;
+        cout << "d DIFFERENCE LOGIC NODES " << difference_logic_stats->nodes << endl;
+        cout << "d DIFFERENCE LOGIC SKIPPED NOT TWO TERMS " << difference_logic_stats->skipped_not_two_terms << endl;
+        cout << "d DIFFERENCE LOGIC SKIPPED COEFFICIENTS " << difference_logic_stats->skipped_coefficients << endl;
+        cout << "d DIFFERENCE LOGIC SKIPPED REIFIED " << difference_logic_stats->skipped_reified << endl;
+        cout << "d DIFFERENCE LOGIC SKIPPED NEGATED VIEW " << difference_logic_stats->skipped_negated_view << endl;
+        cout << "d DIFFERENCE LOGIC SKIPPED DEGENERATE " << difference_logic_stats->skipped_degenerate << endl;
+        cout << "d DIFFERENCE LOGIC SKIPPED UNCITABLE ROW " << difference_logic_stats->skipped_uncitable_row << endl;
+        cout << "d DIFFERENCE LOGIC SIMPLIFY RAN " << (difference_simplification_stats->ran ? 1 : 0) << endl;
+        cout << "d DIFFERENCE LOGIC SIMPLIFY REDUNDANT EDGES REMOVED " << difference_simplification_stats->redundant_edges_removed << endl;
+        cout << "d DIFFERENCE LOGIC SIMPLIFY CONDITIONS FIXED " << difference_simplification_stats->conditions_fixed << endl;
+    }
 
     return actually_aborted ? EXIT_FAILURE : EXIT_SUCCESS;
 }

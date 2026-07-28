@@ -1,0 +1,23 @@
+<!-- A time-lag network for the difference-logic presolver, which this test
+     runs with the flag that enables it. Each of the first four constraints
+     is affine with two variables and unit coefficients, so the binding posts
+     it as a two-term LinearLessThanEqual, whose OPB row is labelled and
+     therefore citable, and the presolver lifts it into one global
+     propagator. The fifth is deliberately three-term, so the skip counters
+     have something in them too and the test pins the classification rather
+     than only the total. -->
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="t0"> 0..9 </var>
+        <var id="t1"> 0..9 </var>
+        <var id="t2"> 0..9 </var>
+        <var id="t3"> 0..9 </var>
+    </variables>
+    <constraints>
+        <intension> le(add(t0,2),t1) </intension>
+        <intension> le(add(t1,2),t2) </intension>
+        <intension> le(add(t2,2),t3) </intension>
+        <intension> le(sub(t3,t0),8) </intension>
+        <intension> le(add(t0,t1,t2),14) </intension>
+    </constraints>
+</instance>

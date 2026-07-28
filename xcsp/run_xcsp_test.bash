@@ -15,6 +15,18 @@
 # regenerate_expected.bash, not silently as a side effect of `ctest`.
 #
 # After the comparison, runs veripb on the proof artefacts.
+#
+# <solverflags> is a whitespace-separated list of extra flags for the
+# binding; ACE never sees them, so the cached expected output stays a
+# genuine cross-check. Each <requiredpattern> after it is an extended
+# regex that must match at least one line of the binding's output. That
+# is how a feature invisible from the solution set --- a presolver, say
+# --- gets checked at all: it preserves the solutions and leaves the
+# proof verifying whether it fired or not, so only its own counters can
+# tell the difference.
+#
+# Usage: run_xcsp_test.bash <prog> <testsdir> <testname>
+#                           [<solverflags> [<requiredpattern>...]]
 
 set -u
 
@@ -25,6 +37,9 @@ set -u
 prog=$1
 testsdir=$2
 testname=$3
+read -r -a solverflags <<< "${4:-}"
+shift $(( $# < 4 ? $# : 4 ))
+required_patterns=("$@")
 
 sols_cache="$testsdir/expected/$testname.sols"
 opt_cache="$testsdir/expected/$testname.opt"
@@ -47,7 +62,8 @@ echo "writing output to $testname.out"
 # CRLF (cout is in text mode) and git may check the LF-committed caches out as CRLF
 # too, so strip CR from both the captured output and the cached expectations.
 if [[ $mode == enumerate ]]; then
-    $prog --prove --proof-files-basename "$testname" --all "$testsdir/$testname.xml" > "$testname.out" || exit 1
+    $prog --prove --proof-files-basename "$testname" --all ${solverflags[@]+"${solverflags[@]}"} \
+        "$testsdir/$testname.xml" > "$testname.out" || exit 1
     tr -d '\r' < "$testname.out" > "$testname.out.nocr" && mv -f "$testname.out.nocr" "$testname.out"
 
     actualfile="$testname.sols.actual"
@@ -64,7 +80,8 @@ if [[ $mode == enumerate ]]; then
     fi
     rm -f "$actualfile" "$expectedfile"
 else
-    $prog --prove --proof-files-basename "$testname" "$testsdir/$testname.xml" > "$testname.out" || exit 1
+    $prog --prove --proof-files-basename "$testname" ${solverflags[@]+"${solverflags[@]}"} \
+        "$testsdir/$testname.xml" > "$testname.out" || exit 1
     tr -d '\r' < "$testname.out" > "$testname.out.nocr" && mv -f "$testname.out.nocr" "$testname.out"
 
     if ! grep -q '^s OPTIMUM FOUND$' "$testname.out"; then
@@ -79,6 +96,13 @@ else
         exit 3
     fi
 fi
+
+for pattern in ${required_patterns[@]+"${required_patterns[@]}"}; do
+    if ! grep -Eq -- "$pattern" "$testname.out"; then
+        echo "expected output matching '$pattern', which the binding did not produce" >&2
+        exit 5
+    fi
+done
 
 veripb "$testname".{opb,pbp} || exit 4
 
