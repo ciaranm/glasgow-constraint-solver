@@ -652,15 +652,26 @@ namespace
                 posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
             p.post(DifferenceConstraints{posted}.simplifying_at_root(simplify).reporting_simplification_to(simplify ? stats : nullptr));
 
-            // The same branching heuristic, from the same seed, in both runs, so
+            // A *deterministic* branching heuristic, identical in both runs, so
             // that a difference in the recursion count is a difference in
             // propagation and cannot be a difference in search order.
+            //
+            // This was a seeded random brancher, which is not good enough for
+            // the expect_fewer_recursions fixtures. Fixing a condition at the
+            // root only removes search if the search would otherwise have
+            // branched on that condition; whether it does depends on where the
+            // variable order happens to put it, so on some seeds the two runs
+            // came out equal and the assertion fired spuriously (seed 879451257
+            // on fix_cascade, one CI lane only). The equality-asserting
+            // fixtures were always safe -- propagation-neutral under any fixed
+            // order -- but the differential ones need the order pinned. Variety
+            // across search orders is the random and random_reified modes' job.
             auto result = solve_with(p,
                 SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
                                    into.emplace(extract_from_state(s, vars));
                                    return true;
                                },
-                    .branch = random_branch_with_optional_seed(p)},
+                    .branch = branch_with(variable_order::in_order(vars), value_order::smallest_first())},
                 proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
             return result.recursions;
         };
