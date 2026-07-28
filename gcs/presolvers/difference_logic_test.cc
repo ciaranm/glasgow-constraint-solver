@@ -85,10 +85,11 @@ namespace
     // enough on its own: the whole hazard is that "just update the number" looks
     // like a reasonable response to one of these.
     const string detection_is_broken = "\n\nThis means the presolver's DETECTION is broken, not that this expectation is stale.\n"
-                                       "The most likely cause is a change to Constraint::clone() or to the Linear class\n"
-                                       "hierarchy, such that Problem::each_constraint_of_type<ReifiedLinearInequality>()\n"
-                                       "no longer yields posted LinearLessThanEqual constraints (clone() currently returns\n"
-                                       "the family base -- see PR #585).\n\n"
+                                       "The most likely cause is a change to Constraint::clone() or to the Linear or\n"
+                                       "Comparison class hierarchy, such that\n"
+                                       "Problem::each_constraint_of_type<ReifiedLinearInequality>() (or\n"
+                                       "<ReifiedCompareLessThanOrMaybeEqual>()) no longer yields the posted derived\n"
+                                       "constraints (clone() currently returns the family base -- see PR #585).\n\n"
                                        "Fix gcs/presolvers/difference_logic.cc. Do NOT update the expected count here: a\n"
                                        "presolver that lifts nothing still passes every solution-equivalence, OPB byte-diff\n"
                                        "and VeriPB check, so this assertion is the only thing standing between a silent\n"
@@ -200,22 +201,100 @@ namespace
         throw UnimplementedException{};
     }
 
-    // Post the system as one two-term LinearLessThanEqual per edge -- the shape
-    // the presolver detects -- and attach the presolver as asked.
+    // Which constraint an edge is written as. Every one of these spellings ends
+    // up emitting the *same* OPB row -- `x - y <= d` under the bare @c[<id>]
+    // label -- which is the whole reason the presolver can lift them all, and
+    // which is what makes sweeping a fixture across the lot a real check rather
+    // than five unrelated test sets: the lift and skip counts must come out
+    // identical every time.
+    enum class Donor
+    {
+        Linear,
+        Le,
+        Lt,
+        Ge,
+        Mixed
+    };
+
+    auto donor_name(Donor donor) -> string
+    {
+        switch (donor) {
+            using enum Donor;
+        case Linear: return "linear";
+        case Le: return "less-equal";
+        case Lt: return "less-than";
+        case Ge: return "greater-equal";
+        case Mixed: return "mixed";
+        }
+        throw UnimplementedException{};
+    }
+
+    auto all_donors() -> vector<Donor>
+    {
+        return {Donor::Linear, Donor::Le, Donor::Lt, Donor::Ge, Donor::Mixed};
+    }
+
+    // Post one edge in one donor's spelling. The comparison spellings put the
+    // weight in a view on the larger side, which is exactly how a real model
+    // writes `x <= y + d`, and (for the strict form) rely on `x - y <= d` being
+    // `x < y + d + 1` over the integers.
+    auto post_edge(Problem & p, const EdgeSpec & e, const vector<IntegerVariableID> & vars, Donor donor) -> void
+    {
+        auto x = operand_id(e.x, vars), y = operand_id(e.y, vars);
+        optional<IntegerVariableCondition> cond;
+        if (e.cond)
+            cond = vars.at(e.cond->var) == Integer(e.cond->value);
+
+        switch (donor) {
+            using enum Donor;
+        case Linear: {
+            auto sum = WeightedSum{} + 1_i * x + -1_i * y;
+            if (cond)
+                p.post(LinearLessThanEqualIf{sum, Integer(e.d), *cond});
+            else
+                p.post(LinearLessThanEqual{sum, Integer(e.d)});
+            return;
+        }
+        case Le:
+            if (cond)
+                p.post(LessThanEqualIf{x, y + Integer(e.d), *cond});
+            else
+                p.post(LessThanEqual{x, y + Integer(e.d)});
+            return;
+        case Lt:
+            if (cond)
+                p.post(LessThanIf{x, y + Integer(e.d + 1), *cond});
+            else
+                p.post(LessThan{x, y + Integer(e.d + 1)});
+            return;
+        case Ge:
+            // GreaterThanEqual(a, b) normalises to left = b, right = a, so this
+            // reads back as the same `x <= y + d` the Le case posts -- through
+            // the swapped-operand constructor, which is the part that could
+            // silently invert an edge.
+            if (cond)
+                p.post(GreaterThanEqualIf{y + Integer(e.d), x, *cond});
+            else
+                p.post(GreaterThanEqual{y + Integer(e.d), x});
+            return;
+        case Mixed: throw UnimplementedException{};
+        }
+        throw UnimplementedException{};
+    }
+
+    // Post the system one constraint per edge, in the requested spelling, and
+    // attach the presolver as asked. Donor::Mixed alternates linear and
+    // comparison donors so that both detection loops contribute to one graph,
+    // which is where an edge-index or ordering mistake between them would show.
     auto build(Problem & p, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges, Config config,
-        const shared_ptr<DifferenceLogicStats> & stats) -> vector<IntegerVariableID>
+        const shared_ptr<DifferenceLogicStats> & stats, Donor donor) -> vector<IntegerVariableID>
     {
         vector<IntegerVariableID> vars;
         for (const auto & [lo, hi] : domains)
             vars.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
 
-        for (const auto & e : edges) {
-            auto sum = WeightedSum{} + 1_i * operand_id(e.x, vars) + -1_i * operand_id(e.y, vars);
-            if (e.cond)
-                p.post(LinearLessThanEqualIf{sum, Integer(e.d), vars.at(e.cond->var) == Integer(e.cond->value)});
-            else
-                p.post(LinearLessThanEqual{sum, Integer(e.d)});
-        }
+        for (size_t i = 0; i < edges.size(); ++i)
+            post_edge(p, edges.at(i), vars, donor == Donor::Mixed ? (i % 2 == 0 ? Donor::Linear : Donor::Le) : donor);
 
         switch (config) {
             using enum Config;
@@ -232,10 +311,11 @@ namespace
     // over-pruning presolver loses a solution and an unsound one gains one, and
     // no proof would catch either, since a proof only certifies what was
     // derived.
-    auto run_equivalence_test(bool proofs, const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges,
+    auto run_equivalence_test(bool proofs, Donor donor, const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges,
         size_t expected_edges_lifted, size_t expected_half_reified) -> void
     {
-        print(cerr, "difference presolver equivalence {} domains={} edges={}{}", name, domains, edges.size(), proofs ? " with proofs:" : ":");
+        print(cerr, "difference presolver equivalence {} {} domains={} edges={}{}", donor_name(donor), name, domains, edges.size(),
+            proofs ? " with proofs:" : ":");
         cerr << flush;
 
         set<tuple<vector<int>>> expected;
@@ -245,18 +325,28 @@ namespace
         for (auto config : {Config::NoPresolver, Config::Hybrid, Config::DonorsDisabled}) {
             auto stats = make_shared<DifferenceLogicStats>();
             Problem p;
-            auto vars = build(p, domains, edges, config, stats);
+            auto vars = build(p, domains, edges, config, stats, donor);
 
             set<tuple<vector<int>>> actual;
             // The presolver only reads and writes bounds, so bounds consistent,
             // not GAC.
-            auto proof_name = proofs ? make_optional("difference_presolver_" + name + "_" + config_name(config)) : nullopt;
+            auto proof_name = proofs ? make_optional("difference_presolver_" + donor_name(donor) + "_" + name + "_" + config_name(config)) : nullopt;
             solve_for_tests(p, proof_name, actual, tuple{vars});
             check_results(proof_name, expected, actual);
 
             if (config != Config::NoPresolver) {
                 check_count("edges lifted", expected_edges_lifted, stats->edges_lifted, name);
                 check_count("half-reified edges lifted", expected_half_reified, stats->half_reified_edges_lifted, name);
+                // Whichever spelling the fixture used, the same edges come out
+                // of it -- so a comparison-donor sweep is only checking
+                // anything at all if the *comparison* detection loop is what
+                // produced them, and this is what says so. (Donor::Mixed's
+                // split depends on which of the alternating edges happen to
+                // skip, so it is pinned by an exact detection fixture instead
+                // of restated here.)
+                if (donor != Donor::Mixed)
+                    check_count("edges lifted from comparison donors", donor == Donor::Linear ? 0 : expected_edges_lifted,
+                        stats->comparison_edges_lifted, name);
             }
         }
     }
@@ -273,10 +363,10 @@ namespace
     // LinearLessThanEqualIf also infers `!cond' from its own bounds, and the
     // global propagator makes no inference about a condition at all. Retire one
     // and the search grows, which shows up here as a recursion mismatch.
-    auto run_tripwire_test(const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges, size_t expected_edges_lifted,
-        size_t expected_half_reified) -> void
+    auto run_tripwire_test(Donor donor, const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges,
+        size_t expected_edges_lifted, size_t expected_half_reified) -> void
     {
-        print(cerr, "difference presolver tripwire {}:", name);
+        print(cerr, "difference presolver tripwire {} {}:", donor_name(donor), name);
         cerr << flush;
 
         // Only unconditional donors are candidates for retirement, so a fixture
@@ -287,7 +377,7 @@ namespace
         for (auto [index, config] : {pair{0, Config::Hybrid}, pair{1, Config::DonorsDisabled}}) {
             auto stats = make_shared<DifferenceLogicStats>();
             Problem p;
-            static_cast<void>(build(p, domains, edges, config, stats));
+            static_cast<void>(build(p, domains, edges, config, stats, donor));
             results[index] = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return true; }});
             if (config == Config::DonorsDisabled && expect_disabling && 0 == stats->donor_propagators_disabled)
                 throw UnexpectedException{"the difference-logic presolver disabled no donor propagators on fixture '" + name +
@@ -355,10 +445,12 @@ namespace
             // refused rather than lifted: -x - y <= d has both coefficients
             // negative. The other two edges still lift.
             {"negated_view", {{-3, 3}, {-3, 3}, {-3, 3}}, {{neg(0), v(1), 1}, {v(0), v(2), -1}, {v(2), v(1), -1}}, 2},
-            // Half-reified donors. LinearLessThanEqualIf emits its row under
-            // HalfReifyOnConjunctionOf and labels it @c[<id>] with an empty
-            // role, exactly as the unconditional form does, so it is citable
-            // and lifts as a conditional edge. The last variable of each
+            // Half-reified donors. LinearLessThanEqualIf and LessThanEqualIf
+            // both emit their row under HalfReifyOnConjunctionOf and label it
+            // @c[<id>] with an empty role, exactly as the unconditional forms
+            // do, so both are citable and both lift as a conditional edge (the
+            // donor sweep runs each of these fixtures as each spelling in
+            // turn). The last variable of each
             // fixture is the condition, and the oracle enumerates both of its
             // settings, so the false branch is checked as hard as the true one.
             {"reified_chain", {{0, 5}, {0, 5}, {0, 5}, {0, 1}}, {{v(0), v(1), -1, b(3)}, {v(1), v(2), -1, b(3)}}, 2, 2},
@@ -387,16 +479,23 @@ namespace
             {"reified_root_fix_views", {{0, 10}, {0, 10}, {0, 1}}, {{v(1, 1), v(0), 2}, {v(0, 2), v(1, -1), -5, b(2)}}, 2, 1}};
     }
 
+    // Each fixture is run in every donor spelling. The lift counts are stated
+    // once, in the corpus, because they must not depend on the spelling: an
+    // `x <= y + d` and a `1*x + -1*y <= d` are the same difference constraint
+    // and the same OPB row, and if a sweep ever produced different numbers,
+    // that would be the bug.
     auto run_equivalence_tests(bool proofs) -> void
     {
-        for (const auto & f : corpus())
-            run_equivalence_test(proofs, f.name, f.domains, f.edges, f.expected_edges_lifted, f.expected_half_reified);
+        for (auto donor : all_donors())
+            for (const auto & f : corpus())
+                run_equivalence_test(proofs, donor, f.name, f.domains, f.edges, f.expected_edges_lifted, f.expected_half_reified);
     }
 
     auto run_tripwire_tests() -> void
     {
-        for (const auto & f : corpus())
-            run_tripwire_test(f.name, f.domains, f.edges, f.expected_edges_lifted, f.expected_half_reified);
+        for (auto donor : all_donors())
+            for (const auto & f : corpus())
+                run_tripwire_test(donor, f.name, f.domains, f.edges, f.expected_edges_lifted, f.expected_half_reified);
     }
 
     // Every donor shape, with the count it must land in. A donor migrating from
@@ -406,11 +505,12 @@ namespace
     {
         auto check = [](const string & fixture, const DifferenceLogicStats & stats, const DifferenceLogicStats & expected) {
             println(cerr,
-                "difference presolver detection {}: lifted {} ({} half-reified) over {} nodes, skipped {} not-two-terms, {} coefficients, {} "
-                "reified, {} negated-view, {} degenerate, {} unlabelled-comparison",
-                fixture, stats.edges_lifted, stats.half_reified_edges_lifted, stats.nodes, stats.skipped_not_two_terms, stats.skipped_coefficients,
-                stats.skipped_reified, stats.skipped_negated_view, stats.skipped_degenerate, stats.skipped_unlabelled_comparison);
+                "difference presolver detection {}: lifted {} ({} from comparisons, {} half-reified) over {} nodes, skipped {} not-two-terms, {} "
+                "coefficients, {} reified, {} negated-view, {} degenerate",
+                fixture, stats.edges_lifted, stats.comparison_edges_lifted, stats.half_reified_edges_lifted, stats.nodes, stats.skipped_not_two_terms,
+                stats.skipped_coefficients, stats.skipped_reified, stats.skipped_negated_view, stats.skipped_degenerate);
             check_count("edges lifted", expected.edges_lifted, stats.edges_lifted, fixture);
+            check_count("edges lifted from comparison donors", expected.comparison_edges_lifted, stats.comparison_edges_lifted, fixture);
             check_count("half-reified edges lifted", expected.half_reified_edges_lifted, stats.half_reified_edges_lifted, fixture);
             check_count("nodes", expected.nodes, stats.nodes, fixture);
             check_count("skipped: not two terms", expected.skipped_not_two_terms, stats.skipped_not_two_terms, fixture);
@@ -418,7 +518,6 @@ namespace
             check_count("skipped: reified", expected.skipped_reified, stats.skipped_reified, fixture);
             check_count("skipped: negated view", expected.skipped_negated_view, stats.skipped_negated_view, fixture);
             check_count("skipped: degenerate", expected.skipped_degenerate, stats.skipped_degenerate, fixture);
-            check_count("skipped: unlabelled comparison", expected.skipped_unlabelled_comparison, stats.skipped_unlabelled_comparison, fixture);
             if (expected.propagator_installed != stats.propagator_installed)
                 throw UnexpectedException{"the difference-logic presolver " + string{stats.propagator_installed ? "did" : "did not"} +
                     " install a propagator on fixture '" + fixture + "', but it should " + (expected.propagator_installed ? "have" : "not have") +
@@ -469,12 +568,12 @@ namespace
             // Aliasing, and a constant operand.
             p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + -1_i * x[0], 0_i});
             p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + -1_i * constant_variable(4_i), 1_i});
-            // A Comparison, which *is* difference shaped but whose OPB row is
-            // emitted unlabelled, so no proof step could cite it.
+            // Comparisons, which are difference shaped and, since their OPB
+            // rows carry an @c[<id>] label, citable: these two lift.
             p.post(LessThanEqual{x[2], x[3] + 2_i});
             p.post(GreaterThan{x[3], x[2]});
-            // ... and one that is not, so it is not counted as a missed
-            // opportunity either.
+            // ... and one whose right-hand operand is a constant, which is a
+            // plain bound rather than an edge.
             p.post(LessThan{x[2], constant_variable(5_i)});
 
             // The two real edges.
@@ -484,15 +583,76 @@ namespace
             p.add_presolver(DifferenceLogic{stats});
             solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
             check("every_skip", *stats,
-                DifferenceLogicStats{.edges_lifted = 2,
-                    .nodes = 3,
+                DifferenceLogicStats{.edges_lifted = 4,
+                    .comparison_edges_lifted = 2,
+                    .nodes = 4,
                     .propagator_installed = true,
                     .skipped_not_two_terms = 1,
                     .skipped_coefficients = 2,
                     .skipped_reified = 2,
                     .skipped_negated_view = 1,
-                    .skipped_degenerate = 2,
-                    .skipped_unlabelled_comparison = 2});
+                    .skipped_degenerate = 3});
+        }
+
+        // Every comparison spelling the presolver lifts, and every reason it
+        // declines one. This is the fixture that fails if the comparison
+        // detection loop stops working: the linear loop would still lift its
+        // edges and the presolver would still look busy.
+        {
+            auto stats = make_shared<DifferenceLogicStats>();
+            Problem p;
+            auto x = p.create_integer_variable_vector(5, 0_i, 9_i, "x");
+            auto b = p.create_integer_variable(0_i, 1_i, "b");
+
+            // The four unconditional spellings, including both swapped-operand
+            // constructors, and a view offset on either side.
+            p.post(LessThanEqual{x[0], x[1] + 2_i});
+            p.post(LessThan{x[1] + 1_i, x[2]});
+            p.post(GreaterThanEqual{x[3], x[2]});
+            p.post(GreaterThan{x[4], x[3] - 1_i});
+            // Half-reified, which joins the graph as a conditional edge and
+            // whose donor must therefore never be retired.
+            p.post(LessThanEqualIf{x[0], x[4], b == 1_i});
+            // Fully reified: the halves are labelled @c[<id>][r] and
+            // @c[<id>][f], neither of which is the row cited, so counted.
+            p.post(LessThanEqualIff{x[0], x[2], b == 1_i});
+            // Stated negatively. Also a difference row, also citable, and also
+            // deliberately not lifted --- see the comment in the presolver.
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x[0], x[1], reif::MustNotHold{}, true});
+            // A negated view, which is not a difference constraint at all.
+            p.post(LessThanEqual{-x[0], x[1]});
+            // Aliasing (`0 <= 3`, vacuous) and a constant operand (a bound).
+            p.post(LessThanEqual{x[0], x[0] + 3_i});
+            p.post(LessThan{x[0], constant_variable(9_i)});
+
+            p.add_presolver(DifferenceLogic{stats});
+            solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
+            check("comparison_donors", *stats,
+                DifferenceLogicStats{.edges_lifted = 5,
+                    .comparison_edges_lifted = 5,
+                    .half_reified_edges_lifted = 1,
+                    .nodes = 5,
+                    .propagator_installed = true,
+                    .skipped_reified = 2,
+                    .skipped_negated_view = 1,
+                    .skipped_degenerate = 2});
+        }
+
+        // Both detection loops feeding one graph. The comparison loop runs
+        // second, so its edges land at higher posted indices than the linears';
+        // the proof-line vector is indexed by that same number, and a mismatch
+        // between the two would make the propagator cite the wrong donor's row.
+        {
+            auto stats = make_shared<DifferenceLogicStats>();
+            Problem p;
+            auto x = p.create_integer_variable_vector(4, 0_i, 9_i, "x");
+            p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + -1_i * x[1], -1_i});
+            p.post(LessThanEqual{x[1] + 1_i, x[2]});
+            p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[2] + -1_i * x[3], -1_i});
+            p.add_presolver(DifferenceLogic{stats});
+            solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
+            check("mixed_donors", *stats,
+                DifferenceLogicStats{.edges_lifted = 3, .comparison_edges_lifted = 1, .nodes = 4, .propagator_installed = true});
         }
 
         // Half-reified donors, in every shape the propagator distinguishes: two
@@ -563,12 +723,90 @@ namespace
         return string{istreambuf_iterator<char>{f}, istreambuf_iterator<char>{}};
     }
 
+    // How many rows of an OPB carry a constraint @label. Variable encodings are
+    // @i[...] and proof flags @b[...] / @x[...], so this counts constraint rows
+    // and nothing else.
+    auto count_labelled_constraint_rows(const string & opb) -> size_t
+    {
+        size_t count = 0;
+        for (size_t pos = 0; pos != string::npos;) {
+            auto line_end = opb.find('\n', pos);
+            if (opb.compare(pos, 3, "@c[") == 0)
+                ++count;
+            pos = line_end == string::npos ? string::npos : line_end + 1;
+        }
+        return count;
+    }
+
+    // Every row ReifiedCompareLessThanOrMaybeEqual emits must carry an @label.
+    // The presolver's whole licence for lifting a comparison is that it can
+    // cite the donor's row by name, and an unlabelled row cannot be cited at
+    // all -- a `pol` would name something the OPB never defines.
+    //
+    // Checked here on the .opb text rather than left to the presolver's own
+    // proofs, for two reasons. A form the presolver does not lift today
+    // (MustNotHold, NotIf) would lose its label with nothing noticing, and a
+    // regression that dropped the label from a form the presolver *does* lift
+    // would only show up in a proof, in a model that both uses that form and
+    // makes the propagator derive something from it.
+    auto run_comparison_label_tests() -> void
+    {
+        auto rows_for = [](const string & basename, auto && post) -> size_t {
+            Problem p;
+            auto x = p.create_integer_variable_vector(2, 0_i, 5_i, "x");
+            auto b = p.create_integer_variable(0_i, 1_i, "b");
+            post(p, x, b);
+            // No .scp: the MustNotHold and NotIf forms have no cake spelling
+            // and s_expr() throws on them, which is precisely why their @label
+            // is free to be the bare @c[<id>] --- and why the OPB is the only
+            // place their labelling can be checked.
+            ProofFileNames names{basename};
+            names.s_expr_file = nullopt;
+            static_cast<void>(
+                solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }}, make_optional<ProofOptions>(names)));
+            auto opb = read_file(basename + ".opb");
+            for (auto ext : proof_file_extensions)
+                std::remove((basename + ext).c_str());
+            return count_labelled_constraint_rows(opb);
+        };
+
+        // One row per form, except the iff, whose two halves are @c[id][r] and
+        // @c[id][f].
+        auto check = [&](const string & form, size_t expected, size_t actual) {
+            println(cerr, "difference presolver comparison labels: {} emits {} labelled row(s)", form, actual);
+            if (expected != actual)
+                throw UnexpectedException{"a " + form + " comparison emitted " + to_string(actual) + " @label'd OPB rows, expected " +
+                    to_string(expected) +
+                    ". Every row ReifiedCompareLessThanOrMaybeEqual emits must go out through "
+                    "ProofModel::add_labelled_constraint, never the void-returning add_constraint: an unlabelled row cannot be cited, and the "
+                    "difference-logic presolver lifts these constraints into a propagator whose pols cite exactly them by name. Fix "
+                    "gcs/constraints/comparison/comparison.cc."};
+        };
+
+        check("must-hold", 1,
+            rows_for("difference_presolver_label_hold", [](Problem & p, const auto & x, const auto &) { p.post(LessThanEqual{x[0], x[1]}); }));
+        check("if", 1, rows_for("difference_presolver_label_if", [](Problem & p, const auto & x, const auto & b) {
+            p.post(LessThanEqualIf{x[0], x[1], b == 1_i});
+        }));
+        check("must-not-hold", 1, rows_for("difference_presolver_label_not_hold", [](Problem & p, const auto & x, const auto &) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x[0], x[1], reif::MustNotHold{}, true});
+        }));
+        check("not-if", 1, rows_for("difference_presolver_label_not_if", [](Problem & p, const auto & x, const auto & b) {
+            p.post(ReifiedCompareLessThanOrMaybeEqual{x[0], x[1], reif::NotIf{b == 1_i}, true});
+        }));
+        check("iff", 2, rows_for("difference_presolver_label_iff", [](Problem & p, const auto & x, const auto & b) {
+            p.post(LessThanEqualIff{x[0], x[1], b == 1_i});
+        }));
+    }
+
     // The defining property: a presolver adds no OPB content. Presolver::run has
     // no ProofModel * at all, so this should be true by construction; check it
     // anyway, since it is the entire licence for lifting other people's
     // constraints after the model has been finalised.
     auto run_opb_tests() -> void
     {
+        run_comparison_label_tests();
+
         auto solve_and_read = [](const string & basename, Config config, auto && post) -> pair<string, string> {
             auto stats = make_shared<DifferenceLogicStats>();
             Problem p;
@@ -590,25 +828,36 @@ namespace
             return {opb, pbp};
         };
 
-        // Positive case: a system the presolver does lift.
-        {
-            auto post = [](Problem & p) {
-                auto x = p.create_integer_variable_vector(4, 0_i, 5_i, "x");
-                p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + -1_i * x[1], -1_i});
-                p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[1] + -1_i * (x[2] + 1_i), -1_i});
-                p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[2] + -1_i * x[3], -1_i});
-            };
-            auto [off_opb, off_pbp] = solve_and_read("difference_presolver_opb_off", Config::NoPresolver, post);
-            auto [on_opb, on_pbp] = solve_and_read("difference_presolver_opb_on", Config::Hybrid, post);
+        // Positive case: a system the presolver does lift, once written as
+        // linears and once as comparisons. The second is the one that says the
+        // comparison donors add no OPB content of their own either --- they
+        // must not, for exactly the same reason, and it is worth stating
+        // separately because it is a different detection path.
+        for (auto [what, post] : vector<pair<string, void (*)(Problem &)>>{//
+                 {"linear",
+                     [](Problem & p) {
+                         auto x = p.create_integer_variable_vector(4, 0_i, 5_i, "x");
+                         p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + -1_i * x[1], -1_i});
+                         p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[1] + -1_i * (x[2] + 1_i), -1_i});
+                         p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[2] + -1_i * x[3], -1_i});
+                     }},
+                 {"comparison", [](Problem & p) {
+                      auto x = p.create_integer_variable_vector(4, 0_i, 5_i, "x");
+                      p.post(LessThan{x[0], x[1]});
+                      p.post(LessThan{x[1], x[2] + 1_i});
+                      p.post(LessThan{x[2], x[3]});
+                  }}}) {
+            auto [off_opb, off_pbp] = solve_and_read("difference_presolver_opb_" + what + "_off", Config::NoPresolver, post);
+            auto [on_opb, on_pbp] = solve_and_read("difference_presolver_opb_" + what + "_on", Config::Hybrid, post);
             if (off_opb != on_opb)
-                throw UnexpectedException{"the difference-logic presolver changed the .opb. It must not: Presolver::run is handed no ProofModel, "
-                                          "and the whole design rests on the global propagator citing rows the donors already emitted"};
+                throw UnexpectedException{"the difference-logic presolver changed the .opb on the " + what +
+                    " fixture. It must not: Presolver::run is handed no ProofModel, "
+                    "and the whole design rests on the global propagator citing rows the donors already emitted"};
             if (off_pbp == on_pbp)
-                throw UnexpectedException{"the difference-logic presolver left the .pbp byte-identical on a fixture it is supposed to lift three "
-                                          "edges from, so it evidently propagated nothing." +
-                    detection_is_broken};
-            println(cerr, "difference presolver opb: lifted fixture .opb identical ({} bytes), .pbp differs ({} vs {} bytes)", off_opb.size(),
-                off_pbp.size(), on_pbp.size());
+                throw UnexpectedException{"the difference-logic presolver left the .pbp byte-identical on the " + what +
+                    " fixture, which it is supposed to lift three edges from, so it evidently propagated nothing." + detection_is_broken};
+            println(cerr, "difference presolver opb: lifted {} fixture .opb identical ({} bytes), .pbp differs ({} vs {} bytes)", what,
+                off_opb.size(), off_pbp.size(), on_pbp.size());
         }
 
         // Negative control: nothing is difference shaped, so the presolver posts
@@ -690,9 +939,13 @@ namespace
     // per-constraint propagation can only find it by crawling both bounds two
     // units at a time -- Theta(domain size) propagations. The global propagator
     // sums the two edges round the cycle and refutes at once.
-    auto run_differential_test() -> void
+    //
+    // Run for each donor spelling: `x <= y` and `y <= x - 2` is the same
+    // pathology written the way a scheduling model would write it, and it is
+    // the shape the measurement in dev_docs/difference-logic.md uses.
+    auto run_differential_test(Donor donor) -> void
     {
-        print(cerr, "difference presolver differential:");
+        print(cerr, "difference presolver differential {}:", donor_name(donor));
         cerr << flush;
 
         const int n = 500;
@@ -701,8 +954,9 @@ namespace
             Problem p;
             auto x = p.create_integer_variable(0_i, Integer(n), "x");
             auto y = p.create_integer_variable(0_i, Integer(n), "y");
-            p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x + -1_i * y, 0_i});
-            p.post(LinearLessThanEqual{WeightedSum{} + 1_i * y + -1_i * x, -2_i});
+            vector<IntegerVariableID> vars{x, y};
+            post_edge(p, EdgeSpec{v(0), v(1), 0}, vars, donor == Donor::Mixed ? Donor::Linear : donor);
+            post_edge(p, EdgeSpec{v(1), v(0), -2}, vars, donor == Donor::Mixed ? Donor::Le : donor);
             switch (config) {
                 using enum Config;
             case NoPresolver: break;
@@ -724,6 +978,8 @@ namespace
 
         check_count("edges lifted", 2, with_stats.edges_lifted, "differential");
         check_count("edges lifted", 2, disabled_stats.edges_lifted, "differential");
+        if (donor != Donor::Linear && donor != Donor::Mixed)
+            check_count("edges lifted from comparison donors", 2, with_stats.comparison_edges_lifted, "differential");
 
         // A factor of ten is far inside the margin: the measured numbers are
         // around 500 against 3. Equality is what a no-op presolver would give.
@@ -749,7 +1005,8 @@ auto main(int argc, char * argv[]) -> int
 
     if (mode == "detection") {
         run_detection_tests();
-        run_differential_test();
+        for (auto donor : all_donors())
+            run_differential_test(donor);
     }
     else if (mode == "equivalence")
         run_equivalence_tests(false);

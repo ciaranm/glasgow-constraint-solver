@@ -30,6 +30,20 @@ namespace gcs
         std::size_t edges_lifted = 0;
 
         /**
+         * \brief How many of edges_lifted came from a Comparison donor
+         * (`LessThan`, `LessThanEqual`, `GreaterThan`, `GreaterThanEqual` and
+         * their `If` forms) rather than from a two-term linear.
+         *
+         * Broken out because it is a separate detection path over a separate
+         * class hierarchy, reading the constraint back through
+         * ReifiedCompareLessThanOrMaybeEqual's accessors rather than through a
+         * WeightedSum, and because it is the one that can regress silently on
+         * its own: a model built entirely out of `x <= y + d` would still lift
+         * its linears and still look busy.
+         */
+        std::size_t comparison_edges_lifted = 0;
+
+        /**
          * \brief How many of edges_lifted came from a half-reified (`reif::If`)
          * donor, and so joined the graph as `cond -> x - y <= d`.
          *
@@ -52,9 +66,12 @@ namespace gcs
         /**
          * \name Why a candidate was not lifted.
          *
-         * Every posted linear inequality the presolver looked at falls into
-         * exactly one of edges_lifted or one of the first five buckets, so those
-         * six numbers account for every ReifiedLinearInequality in the model.
+         * Every donor the presolver looked at, of either family, falls into
+         * exactly one of edges_lifted or one of these five buckets, so the six
+         * numbers together account for every ReifiedLinearInequality *and*
+         * every ReifiedCompareLessThanOrMaybeEqual in the model. (The first two
+         * only ever fire on a linear: a comparison is two terms with
+         * coefficients +1 and -1 by construction.)
          * @{
          */
 
@@ -64,11 +81,14 @@ namespace gcs
         /// A two-term linear whose coefficients are not exactly +1 and -1.
         std::size_t skipped_coefficients = 0;
 
-        /// A linear whose reification condition is neither reif::MustHold nor
+        /// A donor whose reification condition is neither reif::MustHold nor
         /// reif::If: MustNotHold, NotIf or Iff. Each of those *is* expressible
-        /// as one or two difference edges, but each needs a different row of the
-        /// donor's OPB output than the two forms handled here, so they are
-        /// counted rather than guessed at.
+        /// as one or two difference edges. Iff cannot be lifted as things
+        /// stand, because its halves are labelled with the roles r and f rather
+        /// than with the empty role the propagator cites; MustNotHold and NotIf
+        /// could be, and are a deliberate gap, to be closed for both donor
+        /// families at once rather than for one of them. Counted rather than
+        /// guessed at.
         std::size_t skipped_reified = 0;
 
         /// An operand that is a negated view (`-X + c`), which is not a
@@ -82,12 +102,6 @@ namespace gcs
         /// the time a presolver runs, so they are left to their own propagator.
         std::size_t skipped_degenerate = 0;
 
-        /// A Comparison (`x < y`, `x <= y + d`, ...) that *is* difference
-        /// shaped but whose OPB row is emitted unlabelled, so no proof step can
-        /// cite it. This is the measure of what a later PR that labels those
-        /// rows would gain. \sa DifferenceLogic
-        std::size_t skipped_unlabelled_comparison = 0;
-
         ///@}
     };
 
@@ -98,8 +112,9 @@ namespace gcs
      *
      * A model does not have to be rewritten against DifferenceConstraints to get
      * the global propagation: post `1*x + -1*y <= d` as an ordinary
-     * LinearLessThanEqual, add this presolver, and the edges are lifted into one
-     * Bellman-Ford pass over the whole graph. This is the hybrid of section 4.4
+     * LinearLessThanEqual, or `x <= y + d` as an ordinary LessThanEqual, add
+     * this presolver, and the edges are lifted into one Bellman-Ford pass over
+     * the whole graph. This is the hybrid of section 4.4
      * of Kletzander, Dekker, Schutt and Stuckey, "Global Difference Constraint
      * Propagation for Constraint Programming" (arXiv:2607.20022) --- and it is
      * what the timing forces in any case, since presolvers run after
@@ -116,19 +131,24 @@ namespace gcs
      *
      * \par What is lifted
      *
-     * The paper's "level 1", restricted to what the propagator supports today: a
-     * two-term LinearLessThanEqual with coefficients exactly `+1` and `-1` and
-     * two distinct variable operands, each of which may carry a `+X + c` view
-     * offset (folded into the weight). The reification condition may be
-     * unconditional (reif::MustHold), giving a plain edge, or half-reified
-     * (reif::If), giving `cond -> x - y <= d`: `linear_inequality.cc` labels
-     * both forms `@c[<id>]` with no role suffix, so both are citable, and the
-     * `If` form's row is emitted under HalfReifyOnConjunctionOf, which is
-     * exactly the shape the propagator's proofs assume. Everything else is
-     * skipped and counted --- see DifferenceLogicStats, and note in particular
-     * that Comparison donors are skipped only because their unconditional OPB
-     * rows are emitted *unlabelled* and so cannot be cited, not because they are
-     * the wrong shape.
+     * The paper's "level 1", restricted to what the propagator supports today,
+     * from two donor families:
+     *
+     *  - a two-term LinearLessThanEqual with coefficients exactly `+1` and `-1`
+     *    and two distinct variable operands;
+     *  - a Comparison --- LessThan, LessThanEqual, GreaterThan,
+     *    GreaterThanEqual --- over two distinct variable operands, which is the
+     *    same thing written the way a model usually writes it: `x <= y + d` is
+     *    a view on one side, not a separate constraint kind.
+     *
+     * Either operand may carry a `+X + c` view offset, folded into the weight.
+     * The reification condition may be unconditional (reif::MustHold), giving a
+     * plain edge, or half-reified (reif::If), giving `cond -> x - y <= d`: both
+     * families label both forms `@c[<id>]` with no role suffix, so all four are
+     * citable, and the `If` form's row is emitted under
+     * HalfReifyOnConjunctionOf, which is exactly the shape the propagator's
+     * proofs assume. Everything else is skipped and counted --- see
+     * DifferenceLogicStats.
      *
      * Equalities (level 2) and disequalities (level 3) are not chased at all;
      * the paper measures both as losing to level 1.
