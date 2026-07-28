@@ -1020,6 +1020,13 @@ corpus from the shared test-utils generator, so any change to it elsewhere in th
 tree reshuffles which instances get built and hence how many land on each side.
 The registration count and the hand-written modes do not move.
 
+The seven always-on `_view_mixed` cases are registered too, and for this
+constraint they land mostly on the rejection side: `mixed_view_cycle()` negates
+positions 1 and 3, which most fixtures use as operands, so 108 of their 134
+fixture runs are rejection checks. That is a fine thing for the always-on tier to
+be checking — it is the soundness half — but the offset-only coverage really does
+need `GCS_ENABLE_VIEW_WRAP_SWEEP=ON`, which is where the numbers above come from.
+
 ### Extreme weights
 
 Bellman-Ford accumulates weights along a path, so a system whose edges are each
