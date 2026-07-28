@@ -69,7 +69,7 @@ namespace
     auto enumerate(string_view scp) -> set<map<string, long long>>
     {
         Problem problem;
-        auto variables = read_scp(problem, scp);
+        auto variables = read_scp(problem, scp).variables;
 
         set<map<string, long long>> solutions;
         solve_with(problem, //
@@ -939,10 +939,11 @@ TEST_CASE("read_scp: a constant integer can stand in for a variable anywhere")
 TEST_CASE("read_scp: constraint labels and variable names round-trip via the map")
 {
     Problem problem;
-    auto variables = read_scp(problem, "( (version 1) (variables (X 0 1) (Y 0 1)) (constraints (_1 abs X Y)) (prob_type enumerate) )");
-    CHECK(variables.size() == 2);
-    CHECK(variables.contains("X"));
-    CHECK(variables.contains("Y"));
+    auto model = read_scp(problem, "( (version 1) (variables (X 0 1) (Y 0 1)) (constraints (_1 abs X Y)) (prob_type enumerate) )");
+    CHECK(model.variables.size() == 2);
+    CHECK(model.variables.contains("X"));
+    CHECK(model.variables.contains("Y"));
+    CHECK_FALSE(model.minimise_variable);
 }
 
 TEST_CASE("read_scp: a solver-written .scp survives write -> read -> write unchanged")
@@ -1030,12 +1031,13 @@ TEST_CASE("read_scp: all four sections are required, labelled and in order")
     CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 1)) (constraint) (prob_type enumerate) )"), ScpReadError);
 }
 
-TEST_CASE("read_scp: the prob_type spec is checked, but this reader always enumerates")
+TEST_CASE("read_scp: the prob_type spec is checked, and a malformed one throws")
 {
-    // decide / enumerate are bare atoms and the objectives are lists. Every one
-    // of them enumerates here -- optimising instead is the caller's decision --
-    // but a spec cake_pb_cp would reject must not pass silently either.
+    // decide / enumerate are bare atoms and the objectives are lists. None of
+    // them is posted to the Problem, so all four still enumerate here -- but a
+    // spec cake_pb_cp would reject must not pass silently either.
     CHECK(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type decide) )").size() == 3);
+    CHECK(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type enumerate) )").size() == 3);
     CHECK(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize X)) )").size() == 3);
     CHECK(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (maximize X)) )").size() == 3);
 
@@ -1044,4 +1046,79 @@ TEST_CASE("read_scp: the prob_type spec is checked, but this reader always enume
     CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize)) )"), ScpReadError);
     CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize X Y)) )"), ScpReadError);
     CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type) )"), ScpReadError);
+
+    // An objective naming something that is neither a declared variable nor an
+    // integer constant is a typo. Optimising a constant conjured out of the name
+    // would silently solve a different problem.
+    CHECK_THROWS_AS(enumerate("( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize Q)) )"), ScpReadError);
+}
+
+TEST_CASE("read_scp: the objective comes back as a variable to minimise")
+{
+    // The objective is resolved but not posted: the caller decides whether to
+    // optimise, so a Problem read from an optimisation .scp still enumerates
+    // until Problem::minimise() is called with what came back.
+    auto solve_objective = [](string_view scp) {
+        Problem problem;
+        auto model = read_scp(problem, scp);
+        REQUIRE(model.minimise_variable);
+        problem.minimise(*model.minimise_variable);
+
+        map<string, long long> best;
+        solve_with(problem, //
+            SolveCallbacks{ //
+                .solution = [&](const CurrentState & state) -> bool {
+                    best.clear();
+                    for (const auto & [name, id] : model.variables)
+                        best.emplace(name, state(id).raw_value);
+                    return true;
+                }});
+        return best;
+    };
+
+    // 2X + Y = 10 and P = X * Y: the product is largest at (2, 6) and (3, 4),
+    // and smallest at either end of the line.
+    auto scp = [](string_view sense) {
+        return "( (version 1) (variables (X 0 10) (Y 0 10) (P 0 100)) (constraints (_1 lin_equals (2 X 1 Y) 10) (_2 multiply X Y P)) (prob_type (" +
+            string{sense} + " P)) )";
+    };
+
+    CHECK(solve_objective(scp("maximize")).at("P") == 12);
+    CHECK(solve_objective(scp("minimize")).at("P") == 0);
+
+    // A constant objective -- what the writer renders for Problem::minimise() of
+    // a constant -- resolves to a constant variable rather than being rejected
+    // as an undeclared name.
+    Problem problem;
+    auto model = read_scp(problem, "( (version 1) (variables (X 0 2)) (constraints) (prob_type (minimize 3)) )");
+    REQUIRE(model.minimise_variable);
+    CHECK(*model.minimise_variable == constant_variable(3_i));
+}
+
+TEST_CASE("read_scp: an objective survives write -> read -> write unchanged")
+{
+    // The reader's objective mirrors Problem::optional_minimise_variable(), so
+    // handing it back to Problem::minimise() must reproduce the same .scp --
+    // including for maximise, which is stored as a negated view and so is the
+    // case that a sense flip would silently break.
+    for (bool maximise : {false, true}) {
+        Problem original;
+        auto x = original.create_integer_variable(0_i, 4_i, "X");
+        auto y = original.create_integer_variable(0_i, 4_i, "Y");
+        original.post(LessThan{x, y});
+        if (maximise)
+            original.maximise(x);
+        else
+            original.minimise(x);
+        auto scp_a = prove_to_scp(original, "scp_reader_obj_a");
+
+        Problem rebuilt;
+        auto model = read_scp(rebuilt, scp_a);
+        REQUIRE(model.minimise_variable);
+        rebuilt.minimise(*model.minimise_variable);
+        auto scp_b = prove_to_scp(rebuilt, "scp_reader_obj_b");
+
+        CHECK(scp_a == scp_b);
+        CHECK(scp_a.contains(maximise ? "(prob_type (maximize X))" : "(prob_type (minimize X))"));
+    }
 }

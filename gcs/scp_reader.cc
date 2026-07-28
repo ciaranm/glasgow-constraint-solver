@@ -53,6 +53,8 @@
 
 using std::map;
 using std::move;
+using std::nullopt;
+using std::optional;
 using std::span;
 using std::string;
 using std::string_view;
@@ -68,14 +70,24 @@ ScpReadError::ScpReadError(const string & w) : MessageException("Error reading .
 
 namespace
 {
-    auto as_integer(const SExpr & e) -> Integer
+    // The atom's value if it is an integer, nullopt if it is some other atom.
+    // Callers that must have an integer use as_integer; the objective needs to
+    // tell "an integer constant" from "a name", without either being an error.
+    auto optional_integer(const SExpr & e) -> optional<Integer>
     {
         const auto & a = e.as_atom();
         long long value;
         auto [ptr, ec] = std::from_chars(a.data(), a.data() + a.size(), value);
         if (ec != std::errc{} || ptr != a.data() + a.size())
-            throw ScpReadError{"expected an integer, got '" + a + "'"};
+            return nullopt;
         return Integer{value};
+    }
+
+    auto as_integer(const SExpr & e) -> Integer
+    {
+        if (auto value = optional_integer(e))
+            return *value;
+        throw ScpReadError{"expected an integer, got '" + e.as_atom() + "'"};
     }
 
     // The children of a list term, or a clear error if `e` is an atom. `what`
@@ -652,14 +664,21 @@ namespace
         return {resolve_variable(variables, pair[0]), as_integer(pair[1])};
     }
 
+    // An objective from a (prob_type ...) section, before its operand has been
+    // resolved: the section is checked before any variable is created (so that
+    // a malformed document leaves `problem` untouched), but resolving needs the
+    // variables map, which does not exist until afterwards.
+    struct ObjectiveSpec
+    {
+        bool maximize;
+        SExpr variable;
+    };
+
     // (prob_type <spec>), where <spec> is the bare atom `decide` or `enumerate`,
-    // or the list (minimize var) / (maximize var). This reader enumerates
-    // whatever it is given, so the spec is checked but not acted on: honouring
-    // an objective would mean optimising instead of enumerating, which is the
-    // caller's decision to make. Checking it still matters -- the .scp is a
-    // contract with cake_pb_cp, and a spec quietly ignored here is one cake
-    // would reject downstream.
-    auto check_prob_type(const SExpr & section) -> void
+    // or the list (minimize var) / (maximize var). Checking this matters even
+    // for the bare atoms -- the .scp is a contract with cake_pb_cp, and a spec
+    // quietly ignored here is one cake would reject downstream.
+    auto check_prob_type(const SExpr & section) -> optional<ObjectiveSpec>
     {
         auto spec = section_items(section, "prob_type");
         if (spec.size() != 1)
@@ -669,17 +688,32 @@ namespace
             const auto & kind = spec[0].as_atom();
             if (kind != "decide" && kind != "enumerate")
                 throw ScpReadError{"unknown prob_type '" + kind + "'"};
-            return;
+            return nullopt;
         }
 
-        // An objective. The variable is left as an atom rather than resolved:
-        // the writer renders a constant objective as (minimize 3), so a name
-        // that isn't declared is legitimate here.
         const auto & parts = children_of(spec[0], "the prob_type specification");
         if (parts.size() != 2 || ! parts[0].is_atom() || (parts[0].as_atom() != "minimize" && parts[0].as_atom() != "maximize"))
             throw ScpReadError{"a prob_type objective is (minimize var) or (maximize var)"};
         if (! parts[1].is_atom())
             throw ScpReadError{"a prob_type objective's variable must be an atom"};
+        return ObjectiveSpec{parts[0].as_atom() == "maximize", parts[1]};
+    }
+
+    // The objective as a variable to minimise, mirroring what
+    // Problem::minimise() / Problem::maximise() would have stored -- so a
+    // caller can hand it straight back to Problem::minimise(), and so that
+    // reader and writer are inverses.
+    auto resolve_objective(const map<string, IntegerVariableID> & variables, const ObjectiveSpec & spec) -> IntegerVariableID
+    {
+        // The writer renders a constant objective as (minimize 3), so an
+        // undeclared atom is legitimate -- but only when it really is an
+        // integer. Anything else is a typo, and silently turning it into a
+        // constant would optimise something the document never mentioned.
+        if (! variables.contains(spec.variable.as_atom()) && ! optional_integer(spec.variable))
+            throw ScpReadError{"the prob_type objective names an unknown variable '" + spec.variable.as_atom() + "'"};
+
+        auto variable = resolve_variable(variables, spec.variable);
+        return spec.maximize ? -variable : variable;
     }
 
     auto read_element_2d(Problem & problem, const map<string, IntegerVariableID> & variables, const vector<SExpr> & terms, const string & label)
@@ -700,7 +734,7 @@ namespace
     }
 }
 
-auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVariableID>
+auto gcs::read_scp(Problem & problem, string_view text) -> ScpModel
 {
     auto top = parse_s_expr(text);
     const auto & sections = children_of(top, "the top-level (version variables constraints prob_type) form");
@@ -717,8 +751,9 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
         throw ScpReadError{"unsupported .scp format version " + number.to_string() + ": this reader only accepts version 1"};
 
     // Check the trailing section before anything is posted, so a malformed
-    // document leaves `problem` untouched rather than half-built.
-    check_prob_type(sections[3]);
+    // document leaves `problem` untouched rather than half-built. Its objective
+    // can only be resolved once the variables exist, below.
+    auto objective = check_prob_type(sections[3]);
 
     map<string, IntegerVariableID> variables;
 
@@ -1025,5 +1060,6 @@ auto gcs::read_scp(Problem & problem, string_view text) -> map<string, IntegerVa
             throw ScpReadError{"unsupported constraint operator '" + op + "'"};
     }
 
-    return variables;
+    auto minimise_variable = objective.transform([&](const ObjectiveSpec & spec) { return resolve_objective(variables, spec); });
+    return ScpModel{move(variables), minimise_variable};
 }

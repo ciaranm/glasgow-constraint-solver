@@ -691,14 +691,27 @@ auto ProofModel::write_preamble() -> void
     // register it now (this appends BinEnc(V)'s set-up rows to the pending
     // text, where they land just after the variable rows). This also
     // guarantees find_view succeeds for the objective later, e.g. in the
-    // solution-logging soli path. The exception is a view whose bit vector
-    // cannot be represented at all -- negating a FlatZinc unbounded-int
-    // objective spans one more bit than an Integer holds -- which stays
-    // unregistered, and min: falls back to deviewing through the underlying.
+    // solution-logging soli path. There are two exceptions, both of which stay
+    // unregistered so that min: falls back to deviewing through the underlying:
+    //
+    //  - a view whose bit vector cannot be represented at all -- negating a
+    //    FlatZinc unbounded-int objective spans one more bit than an Integer
+    //    holds;
+    //
+    //  - a plain negation, which is what Problem::maximise() stores. Its bit
+    //    vector would be an extra proof-only variable that cake_pb_cp cannot
+    //    know about: cake re-derives a `(maximize V)` .scp as `min: -1 i[V][b0]
+    //    ...` straight over V's own bits, so an objective hosted on its own
+    //    vector leaves the solver's proof citing view-linking labels that
+    //    cake's OPB has no counterpart for, and the workflow-2 chain cannot
+    //    check a maximisation at all. Deviewing writes exactly cake's line.
+    //    Only the offset-free case is done this way: `then_add` shifts the
+    //    objective by a constant that the deviewed min: cannot carry, and the
+    //    .scp cannot express either (it renders as a bare `(maximize V)`).
     if (_imp->optional_minimise_variable)
         if (auto * view = std::get_if<ViewOfIntegerVariableID>(&*_imp->optional_minimise_variable)) {
             auto [v_lo, v_hi] = names_and_ids_tracker().view_bounds(*view);
-            if (bits_encoding_fits(v_lo, v_hi))
+            if (bits_encoding_fits(v_lo, v_hi) && ! (view->negate_first && view->then_add == 0_i))
                 static_cast<void>(names_and_ids_tracker().need_view(*view));
         }
 

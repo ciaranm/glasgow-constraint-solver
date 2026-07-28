@@ -8,7 +8,6 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
-#include <map>
 #include <string>
 
 #include <cxxopts.hpp>
@@ -29,7 +28,6 @@ using std::cout;
 using std::ifstream;
 using std::istreambuf_iterator;
 using std::make_optional;
-using std::map;
 using std::nullopt;
 using std::string;
 
@@ -45,6 +43,10 @@ using fmt::println;
 // .scp is the *input* (e.g. produced by another solver's --prove, or by a
 // higher-level translator), and with --prove the run emits a proof that, via
 // cake_pb_cp, is verified against that same .scp. See gcs/scp_reader.hh.
+//
+// A `(prob_type (minimize V))` / `(maximize V)` document is solved as the
+// optimisation problem it says it is, so `--prove` on one yields an
+// optimisation proof rather than an enumeration of every feasible solution.
 auto main(int argc, char * argv[]) -> int
 {
     cxxopts::Options options("glasgow_scp_solver", "Solve a .scp (s-expression CP) problem");
@@ -56,7 +58,7 @@ auto main(int argc, char * argv[]) -> int
             ("prove", "Create a proof")                                      //
             ("proof-files-basename", "Basename for the .opb and .pbp files", //
                 cxxopts::value<string>()->default_value("scp"))              //
-            ("all", "Find all solutions rather than just the first")         //
+            ("all", "Find all solutions (implied by an objective)")          //
             ("stats", "Print solve statistics")                              //
             ("file", "The .scp file to solve", cxxopts::value<string>())     //
             ;
@@ -85,20 +87,30 @@ auto main(int argc, char * argv[]) -> int
     string text{istreambuf_iterator<char>{infile}, istreambuf_iterator<char>{}};
 
     Problem problem;
-    map<string, IntegerVariableID> variables;
+    ScpModel model;
     try {
-        variables = read_scp(problem, text);
+        model = read_scp(problem, text);
     }
     catch (const std::exception & e) {
         println(cerr, "Error: {}", e.what());
         return EXIT_FAILURE;
     }
 
-    bool find_all = options_vars.contains("all");
+    // read_scp resolves an objective but leaves posting it to us, so that a
+    // caller who wants to enumerate an optimisation instance still can. Here we
+    // honour it: the .scp says what problem it is, and solving something else
+    // would be answering a different question.
+    if (model.minimise_variable)
+        problem.minimise(*model.minimise_variable);
+
+    // With an objective, every solution is just the next bound on the way to
+    // the optimum, so the search must run to completion however --all is set;
+    // the last solution printed is the optimal one.
+    bool find_all = options_vars.contains("all") || model.minimise_variable.has_value();
     auto stats = solve_with(problem, //
         SolveCallbacks{              //
             .solution = [&](const CurrentState & state) -> bool {
-                for (const auto & [name, id] : variables)
+                for (const auto & [name, id] : model.variables)
                     print("{}={} ", name, state(id));
                 println("");
                 return find_all;

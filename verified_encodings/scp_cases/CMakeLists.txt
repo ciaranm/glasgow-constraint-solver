@@ -43,6 +43,20 @@ add_scp_chain_test(lin_greater_equal_unsat  strict)
 add_scp_chain_test(multi_comparison_unsat   strict)  # two interacting comparisons
 add_scp_chain_test(multi_mixed_unsat        strict)  # comparison + linear together
 
+# strict: the third proof shape, optimisation. Every other case here is a
+# refutation or a complete enumeration; these carry a `(prob_type (minimize X))`
+# / `(maximize X)`, which glasgow_scp_solver posts as the objective, so the
+# chain checks an `s VERIFIED BOUNDS` optimality proof rather than a
+# `preserved:` enumeration. The maximise case is the one that pins the objective
+# encoding down: Problem::maximise() stores a negated view, and hosting that on
+# its own proof-only bit vector would leave the proof citing view-linking labels
+# cake's OPB has no counterpart for, so an offset-free negated objective is
+# deviewed into cake's `min: -1 i[X][b0] ...` form instead (ProofModel::
+# write_preamble). Without that these two would not even share a min: line.
+add_scp_chain_test(lin_equals_minimize_opt      strict)
+add_scp_chain_test(lin_equals_maximize_opt      strict)
+add_scp_chain_test(lin_equals_maximize_neg_opt  strict)  # sign bit inside the objective
+
 # strict: not_equals' single selector is now named b[id][ne] with cake's
 # polarity (selector TRUE = gt half, FALSE = lt half), via the
 # create_proof_flag(ConstraintID, annotation) overload -- the first consumer of
