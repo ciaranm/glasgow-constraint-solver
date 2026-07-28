@@ -112,6 +112,11 @@ namespace gcs
         // first offending edge, for a future assertion hint to name.
         std::optional<std::size_t> _root_contradiction_posted_index;
 
+        // Whether to run the root simplification stage, and where to report what
+        // it did. On by default, unlike the presolver as a whole: the paper
+        // measures the simplification as most of the win.
+        innards::DifferenceSimplificationOptions _simplify;
+
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
@@ -119,6 +124,31 @@ namespace gcs
     public:
         explicit DifferenceConstraints(std::vector<DifferenceEdge> edges);
 
+        /**
+         * \brief Run (or do not run) the root simplification stage.
+         *
+         * On by default. Once, before search, Johnson's all-pairs shortest paths
+         * over the system says which edges a shorter path already implies (they
+         * stop being propagated, but stay in the model, so there is nothing to
+         * certify), which conditions would close a negative cycle if they held
+         * (they are fixed false, which is an inference and is proved), and which
+         * nodes are left with no edges. It is the paper's section 5.2, and its
+         * section 6.3 measures it as most of the difference-logic win --- but
+         * that is a claim about their solver, so it can be switched off here and
+         * checked rather than inherited.
+         */
+        auto simplifying_at_root(bool = true) -> DifferenceConstraints &;
+
+        /**
+         * \brief Share a stats block the simplification stage will fill in when
+         * it runs.
+         *
+         * Shared, not copied, so it survives Problem::post cloning the
+         * constraint, and it is filled in during the first propagation rather
+         * than at post time. A stage that silently did nothing would pass every
+         * other check there is, so these counters are what the tests assert on.
+         */
+        auto reporting_simplification_to(std::shared_ptr<DifferenceSimplificationStats>) -> DifferenceConstraints &;
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;

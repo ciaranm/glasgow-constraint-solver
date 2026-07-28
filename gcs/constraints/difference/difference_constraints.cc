@@ -23,6 +23,7 @@ using std::make_unique;
 using std::map;
 using std::move;
 using std::optional;
+using std::shared_ptr;
 using std::size_t;
 using std::string;
 using std::to_string;
@@ -62,9 +63,24 @@ DifferenceConstraints::DifferenceConstraints(vector<DifferenceEdge> edges) : _ed
     }
 }
 
+auto DifferenceConstraints::simplifying_at_root(bool simplify) -> DifferenceConstraints &
+{
+    _simplify.enabled = simplify;
+    return *this;
+}
+
+auto DifferenceConstraints::reporting_simplification_to(shared_ptr<DifferenceSimplificationStats> stats) -> DifferenceConstraints &
+{
+    _simplify.stats = move(stats);
+    return *this;
+}
+
 auto DifferenceConstraints::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<DifferenceConstraints>(_edges);
+    auto result = make_unique<DifferenceConstraints>(_edges);
+    result->simplifying_at_root(_simplify.enabled);
+    result->reporting_simplification_to(_simplify.stats);
+    return result;
 }
 
 auto DifferenceConstraints::prepare(Propagators &, State &, ProofModel * const) -> bool
@@ -198,7 +214,7 @@ auto DifferenceConstraints::install_propagators(Propagators & propagators) -> vo
         return;
     }
 
-    install_difference_propagator(propagators, constraint_id(), move(_graph));
+    install_difference_propagator(propagators, constraint_id(), move(_graph), move(_simplify));
 }
 
 auto DifferenceConstraints::constraint_type() const -> string

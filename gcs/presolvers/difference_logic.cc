@@ -88,7 +88,7 @@ namespace
     }
 }
 
-DifferenceLogic::DifferenceLogic(shared_ptr<DifferenceLogicStats> stats) : _stats(move(stats)), _disable_lifted_donors(false)
+DifferenceLogic::DifferenceLogic(shared_ptr<DifferenceLogicStats> stats) : _stats(move(stats)), _disable_lifted_donors(false), _simplify(true)
 {
 }
 
@@ -98,10 +98,24 @@ auto DifferenceLogic::disabling_lifted_donors(bool disable) -> DifferenceLogic &
     return *this;
 }
 
+auto DifferenceLogic::simplifying_at_root(bool simplify) -> DifferenceLogic &
+{
+    _simplify = simplify;
+    return *this;
+}
+
+auto DifferenceLogic::reporting_simplification_to(shared_ptr<DifferenceSimplificationStats> stats) -> DifferenceLogic &
+{
+    _simplification_stats = move(stats);
+    return *this;
+}
+
 auto DifferenceLogic::clone() const -> unique_ptr<Presolver>
 {
     auto result = make_unique<DifferenceLogic>(_stats);
     result->disabling_lifted_donors(_disable_lifted_donors);
+    result->simplifying_at_root(_simplify);
+    result->reporting_simplification_to(_simplification_stats);
     return result;
 }
 
@@ -270,7 +284,8 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State &,
     if (graph.edges.size() >= 2) {
         // A presolver-derived propagator has no posted-constraint identity of
         // its own, exactly as for AutoTable.
-        install_difference_propagator(propagators, CurrentlyUnnamedConstraint{}, move(graph));
+        install_difference_propagator(
+            propagators, CurrentlyUnnamedConstraint{}, move(graph), DifferenceSimplificationOptions{_simplify, _simplification_stats});
         stats.propagator_installed = true;
 
         if (_disable_lifted_donors)
