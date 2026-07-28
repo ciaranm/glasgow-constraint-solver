@@ -38,11 +38,14 @@
 // which is a single cutting-planes step whatever the domains are; this mode is
 // the baseline that claim will be measured against.
 //
-// --variant=decomposed posts every constraint as its own two-term
-// LinearLessThanEqual, i.e. 1*a + -1*b <= d, which is the shape the presolver
-// planned in issue #571 will detect. Deliberately not LessThanEqual/Comparison
-// over an offset view: those are emitted unlabelled in the OPB, so a global
-// propagator could not cite them in a proof.
+// --variant=decomposed posts every constraint as its own constraint, in the
+// spelling --donor selects. --donor=linear (the default) writes each edge as a
+// two-term LinearLessThanEqual, 1*a + -1*b <= d; --donor=comparison writes the
+// same edge as LessThanEqual{a, b + d}, i.e. a comparison over an offset view,
+// which is how a model that was not written with this presolver in mind
+// usually says it. The two produce the same OPB row under the same @c[<id>]
+// label, so the presolver lifts either and the proofs are directly comparable;
+// --donor is what measures whether the second route costs anything.
 //
 // --variant=global posts exactly the same edges, in exactly the same order, as
 // a single DifferenceConstraints. That runs one Bellman-Ford pass over the
@@ -62,6 +65,7 @@
 // anything measurable. --disable-donors additionally retires the lifted donors'
 // propagators, which is the same experiment with that cost removed.
 
+#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/difference.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/presolvers/difference_logic.hh>
@@ -132,6 +136,16 @@ namespace
         Global
     };
 
+    // How a decomposed edge is spelled. Both spellings emit the same labelled
+    // OPB row and are lifted by the same presolver; they differ in which of its
+    // two detection loops finds them, and in which propagator the hybrid leaves
+    // running alongside the global one.
+    enum struct Donor
+    {
+        Linear,
+        Comparison
+    };
+
     // Build Example 8's constraints over y and x. The two orders contain
     // exactly the same edges and differ only in the sequence they come out in,
     // which is what seeds the propagation queue for --variant=decomposed (and
@@ -193,7 +207,7 @@ namespace
     // Hand the same edges to the solver, either one propagator each or all at
     // once. Both variants produce the same OPB rows for the same edges (one
     // labelled inequality per edge), so the proofs are directly comparable.
-    auto post_edges(Problem & problem, const vector<DifferenceEdge> & edges, Variant variant, bool disable_donors,
+    auto post_edges(Problem & problem, const vector<DifferenceEdge> & edges, Variant variant, Donor donor, bool disable_donors,
         const shared_ptr<DifferenceLogicStats> & presolver_stats, bool simplify, const shared_ptr<DifferenceSimplificationStats> & simplification,
         bool incremental) -> void
     {
@@ -202,7 +216,10 @@ namespace
         case Presolved:
         case Decomposed:
             for (const auto & e : edges)
-                problem.post(LinearLessThanEqual{WeightedSum{} + 1_i * e.x + -1_i * e.y, e.d});
+                if (donor == Donor::Linear)
+                    problem.post(LinearLessThanEqual{WeightedSum{} + 1_i * e.x + -1_i * e.y, e.d});
+                else
+                    problem.post(LessThanEqual{e.x, e.y + e.d});
             if (variant == Presolved)
                 problem.add_presolver(DifferenceLogic{presolver_stats}
                         .disabling_lifted_donors(disable_donors)
@@ -267,6 +284,11 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<string>()->default_value("fixpoint"))                                     //
             ("variant", "Model variant to post. Supported: " + variant_names(),                          //
                 cxxopts::value<string>()->default_value("decomposed"))                                   //
+            ("donor",                                                                                    //
+                "How to spell each edge under --variant=decomposed or presolved: linear (a two-term "    //
+                "LinearLessThanEqual) or comparison (a LessThanEqual over an offset view). Both emit "   //
+                "the same labelled OPB row and both are lifted by the presolver",                        //
+                cxxopts::value<string>()->default_value("linear"))                                       //
             ("disable-donors",                                                                           //
                 "With --variant=presolved, also retire the lifted constraints' own propagators, so "     //
                 "only the global one runs over them")                                                    //
@@ -377,6 +399,21 @@ auto main(int argc, char * argv[]) -> int
     }
     auto incremental = (incremental_name == "on");
 
+    auto donor_name = options_vars["donor"].as<string>();
+    optional<Donor> donor;
+    if (donor_name == "linear")
+        donor = Donor::Linear;
+    else if (donor_name == "comparison")
+        donor = Donor::Comparison;
+    else {
+        println(cerr, "Error: unknown --donor '{}'. Supported: linear, comparison.", donor_name);
+        return EXIT_FAILURE;
+    }
+    if (donor == Donor::Comparison && *variant == Variant::Global) {
+        println(cerr, "Error: --donor only means anything with --variant=decomposed or --variant=presolved.");
+        return EXIT_FAILURE;
+    }
+
     auto disable_donors = options_vars.contains("disable-donors");
     if (disable_donors && *variant != Variant::Presolved) {
         println(cerr, "Error: --disable-donors only means anything with --variant=presolved.");
@@ -385,7 +422,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto presolver_stats = make_shared<DifferenceLogicStats>();
     auto simplification = make_shared<DifferenceSimplificationStats>();
-    post_edges(problem, edges, *variant, disable_donors, presolver_stats, simplify, simplification, incremental);
+    post_edges(problem, edges, *variant, *donor, disable_donors, presolver_stats, simplify, simplification, incremental);
 
     // The lower-bound bump that starts the chase. Posted last, so that the
     // difference constraints are all in the queue ahead of it and the bump wakes
@@ -425,6 +462,8 @@ auto main(int argc, char * argv[]) -> int
     println("order: {}", order_name);
     println("mode: {}", mode_name);
     println("variant: {}", variant_name_given);
+    if (*variant != Variant::Global)
+        println("donor: {}", donor_name);
     if (*variant != Variant::Decomposed) {
         println("incremental: {}", incremental_name);
         println("simplify: {}", simplify_name);
@@ -438,6 +477,7 @@ auto main(int argc, char * argv[]) -> int
     if (*variant == Variant::Presolved) {
         println("disable_donors: {}", disable_donors ? "yes" : "no");
         println("presolver_edges_lifted: {}", presolver_stats->edges_lifted);
+        println("presolver_comparison_edges_lifted: {}", presolver_stats->comparison_edges_lifted);
         println("presolver_nodes: {}", presolver_stats->nodes);
         println("presolver_donors_disabled: {}", presolver_stats->donor_propagators_disabled);
     }
