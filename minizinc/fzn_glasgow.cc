@@ -1,5 +1,6 @@
 #include <gcs/gcs.hh>
 #include <gcs/interval_set.hh>
+#include <gcs/presolvers/difference_logic.hh>
 #include <gcs/restarts.hh>
 
 #include <nlohmann/json.hpp>
@@ -27,6 +28,7 @@
 #include <functional>
 #include <iostream>
 #include <list>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -49,10 +51,12 @@ using std::flush;
 using std::function;
 using std::ifstream;
 using std::list;
+using std::make_shared;
 using std::mutex;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_lock;
@@ -246,6 +250,19 @@ auto main(int argc, char * argv[]) -> int
                 "Restart on a Luby schedule with the given conflict scale (find-one / " //
                 "optimisation only); learns nogoods across restarts",                   //
                 cxxopts::value<unsigned long long>())                                   //
+            // A FlatZinc `x - y <= d` arrives here as int_lin_le([1,-1],[x,y],d),
+            // which is exactly the two-term LinearLessThanEqual the presolver
+            // detects, so no new predicate or mznlib redefinition is needed: the
+            // shape is already in the model. Off by default, matching the
+            // presolver's own opt-in default and the paper's near-noise
+            // MiniZinc-wide result.
+            ("difference-logic",                                                                        //
+                "Lift difference-shaped constraints (x - y <= d) into one global difference-logic "     //
+                "propagator, alongside their own propagators")                                          //
+            ("difference-logic-simplify",                                                               //
+                "Run the difference-logic root simplification stage: on (the default) or off. Ignored " //
+                "without --difference-logic",                                                           //
+                cxxopts::value<string>()->default_value("on"))                                          //
             // --prove is a bare flag here as it is everywhere else, with the
             // basename supplied separately. `--prove=NAME` is kept as a
             // deprecated alias for the old value-taking spelling; the
@@ -966,6 +983,24 @@ auto main(int argc, char * argv[]) -> int
                 throw FlatZincInterfaceError{format("Unknown flatzinc constraint {} in {}", id, fznname)};
         }
 
+        // Every constraint has been posted, so the presolver can see the whole
+        // model. It runs later still, after create_propagators and after the
+        // proof model is finalised, so it cites the donors' own OPB rows rather
+        // than adding any.
+        shared_ptr<DifferenceLogicStats> difference_logic_stats;
+        shared_ptr<DifferenceSimplificationStats> difference_simplification_stats;
+        if (options_vars.contains("difference-logic")) {
+            auto simplify = options_vars["difference-logic-simplify"].as<string>();
+            if (simplify != "on" && simplify != "off")
+                throw FlatZincInterfaceError{format("Unknown --difference-logic-simplify value {}, expected on or off", simplify)};
+
+            difference_logic_stats = make_shared<DifferenceLogicStats>();
+            difference_simplification_stats = make_shared<DifferenceSimplificationStats>();
+            problem.add_presolver(DifferenceLogic{difference_logic_stats}
+                    .simplifying_at_root(simplify == "on")
+                    .reporting_simplification_to(difference_simplification_stats));
+        }
+
         auto solve_method = fzn["solve"]["method"];
         bool optimisation = false;
         if (solve_method == "satisfy") {
@@ -1177,6 +1212,25 @@ auto main(int argc, char * argv[]) -> int
             println(cout, "%%%mzn-stat: peakDepth={}", stats.max_depth);
             println(cout, "%%%mzn-stat: restarts={}", stats.restarts);
             println(cout, "%%%mzn-stat: solveTime={:.3f}", duration_cast<milliseconds>(stats.solve_time).count() / 1000.0);
+            // A presolver that lifts nothing preserves the solution set, adds no
+            // OPB content and leaves every proof verifying, so these counts are
+            // the only way to tell "it worked" from "it silently did nothing".
+            if (difference_logic_stats) {
+                println(cout, "%%%mzn-stat: differenceLogicEdgesLifted={}", difference_logic_stats->edges_lifted);
+                println(cout, "%%%mzn-stat: differenceLogicComparisonEdgesLifted={}", difference_logic_stats->comparison_edges_lifted);
+                println(cout, "%%%mzn-stat: differenceLogicHalfReifiedEdgesLifted={}", difference_logic_stats->half_reified_edges_lifted);
+                println(cout, "%%%mzn-stat: differenceLogicNodes={}", difference_logic_stats->nodes);
+                println(cout, "%%%mzn-stat: differenceLogicSkippedNotTwoTerms={}", difference_logic_stats->skipped_not_two_terms);
+                println(cout, "%%%mzn-stat: differenceLogicSkippedCoefficients={}", difference_logic_stats->skipped_coefficients);
+                println(cout, "%%%mzn-stat: differenceLogicSkippedReified={}", difference_logic_stats->skipped_reified);
+                println(cout, "%%%mzn-stat: differenceLogicSkippedNegatedView={}", difference_logic_stats->skipped_negated_view);
+                println(cout, "%%%mzn-stat: differenceLogicSkippedDegenerate={}", difference_logic_stats->skipped_degenerate);
+                println(cout, "%%%mzn-stat: differenceLogicSkippedUncitableRow={}", difference_logic_stats->skipped_uncitable_row);
+                println(cout, "%%%mzn-stat: differenceLogicSimplifyRan={}", difference_simplification_stats->ran ? 1 : 0);
+                println(
+                    cout, "%%%mzn-stat: differenceLogicSimplifyRedundantEdgesRemoved={}", difference_simplification_stats->redundant_edges_removed);
+                println(cout, "%%%mzn-stat: differenceLogicSimplifyConditionsFixed={}", difference_simplification_stats->conditions_fixed);
+            }
             println(cout, "%%%mzn-stat-end");
             cout << flush;
         }

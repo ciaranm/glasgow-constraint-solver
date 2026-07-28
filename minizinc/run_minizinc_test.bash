@@ -7,7 +7,18 @@
 # veripb is available, also reruns with --prove and verifies the proof.
 # Skips (exit 66, the ctest SKIP_RETURN_CODE) if minizinc is not installed.
 #
+# <solverflags> is a whitespace-separated list of extra flags handed to
+# MiniZinc for the Glasgow run only (they must be declared in the .msc's
+# stdFlags or extraFlags for MiniZinc to forward them); the default-solver run
+# never sees them. Each <requiredpattern> after it is an extended regex that
+# must match at least one line of the Glasgow run's output. That is how a
+# feature whose whole effect is invisible from the solution set --- a presolver,
+# say --- gets checked at all: it preserves the solutions and leaves the proof
+# verifying whether it fired or not, so only its own counters can tell the
+# difference.
+#
 # Usage: run_minizinc_test.bash <fzn-glasgow> <minizincdir> <testname> <enumeration> <doproofs>
+#                              [<solverflags> [<requiredpattern>...]]
 
 set -euo pipefail
 
@@ -15,11 +26,15 @@ set -euo pipefail
 # shellcheck source=../proof_file_disposal.bash
 . "$(dirname "$0")/../proof_file_disposal.bash"
 
+solverexe=$1
 builddir=$(dirname "$1")
 minizincdir=$2
 testname=$3
 enumeration=$4
 doproofs=$5
+read -r -a solverflags <<< "${6:-}"
+shift $(( $# < 6 ? $# : 6 ))
+required_patterns=("$@")
 
 export PATH="$builddir:$HOME/.local/bin:$PATH"
 
@@ -33,12 +48,20 @@ fi
 # config pointing at the absolute path of the built solver ($1, which already
 # carries the .exe suffix on Windows) with an absolute mznlib. Same result on Unix.
 solver_msc="$testname.glasgow.msc"
-sed -e "s|\"executable\": \"fzn-glasgow\"|\"executable\": \"$1\"|" \
+sed -e "s|\"executable\": \"fzn-glasgow\"|\"executable\": \"$solverexe\"|" \
     -e "s|\"mznlib\": \"mznlib\"|\"mznlib\": \"$minizincdir/mznlib\"|" \
     "$minizincdir/glasgow-for-tests.msc" > "$solver_msc"
 
-minizinc --solver "$solver_msc" --fzn "$testname.fzn" -a "$minizincdir/tests/$testname.mzn" | tee "$testname.glasgow.out" || exit 1
+minizinc --solver "$solver_msc" --fzn "$testname.fzn" -a \
+    ${solverflags[@]+"${solverflags[@]}"} "$minizincdir/tests/$testname.mzn" | tee "$testname.glasgow.out" || exit 1
 minizinc -a "$minizincdir/tests/$testname.mzn" | tee "$testname.default.out" || exit 2
+
+for pattern in ${required_patterns[@]+"${required_patterns[@]}"} ; do
+    if ! grep -Eq -- "$pattern" "$testname.glasgow.out" ; then
+        echo "expected output matching '$pattern', which the Glasgow run did not produce"
+        exit 9
+    fi
+done
 
 if [[ "$enumeration" == "true" ]] ; then
     grep -q '^ENUMSOL:' < "$testname.glasgow.out" || exit 3
@@ -63,7 +86,8 @@ else
 fi
 
 if [[ "$doproofs" == "true" ]] && veripb --help >/dev/null ; then
-    minizinc --solver "$solver_msc" -a "$minizincdir/tests/$testname.mzn" --prove --proof-files-basename "$testname" | tee "$testname.glasgow.out" || exit 7
+    minizinc --solver "$solver_msc" -a ${solverflags[@]+"${solverflags[@]}"} "$minizincdir/tests/$testname.mzn" \
+        --prove --proof-files-basename "$testname" | tee "$testname.glasgow.out" || exit 7
     if ! veripb "$testname.opb" "$testname.pbp" ; then
         echo "Rerunning last 100 lines of proof verification in trace mode..."
         echo '$ ' veripb --trace "$(readlink -f "$testname.opb")" "$(readlink -f "$testname.pbp")"
