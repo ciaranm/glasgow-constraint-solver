@@ -24,7 +24,12 @@ document is exactly four tagged sections, in order:
 
 `prob_type` is the bare atom `decide` or `enumerate`, or the list
 `(minimize var)` / `(maximize var)`. `innards::write_scp` emits this and
-`gcs::read_scp` consumes it; the reader rejects any version other than 1
+`gcs::read_scp` consumes it, returning an objective as
+`ScpModel::minimise_variable` (a `(maximize V)` comes back as the negated view,
+mirroring `Problem::optional_minimise_variable()`) without posting it, so that
+enumerating an optimisation document stays possible — `glasgow_scp_solver` is
+the caller that hands it to `Problem::minimise()`. The reader rejects any
+version other than 1
 outright rather than guessing at an unknown grammar, which is what makes a
 future format change a clean failure instead of a misread. Upstream's reference
 for the format lives outside this repo (cake's `SEXP_FORMAT.md`); the reader is

@@ -43,6 +43,19 @@ CAKE_PB_CP=${CAKE_PB_CP:-cake_pb_cp}
 have() { command -v "$1" >/dev/null 2>&1; }
 verified() { grep -qE '^s VERIFIED' <<< "$1"; }
 
+# A case whose .scp carries an objective must come back as an *optimality*
+# proof. A bare "s VERIFIED" would mean the objective went missing somewhere --
+# the solver not posting it, or the re-emitted .scp losing it -- and the run
+# enumerated instead, which every check below would happily accept.
+optimisation_case() { grep -qE '\(prob_type +\((minimize|maximize)' "$scp"; }
+check_bounds() {
+    if optimisation_case && ! grep -qE '^s VERIFIED BOUNDS' <<< "$1"; then
+        echo "FAIL: $(basename "$scp") has an objective, but the proof is not an optimality proof"
+        echo "$1"
+        exit 1
+    fi
+}
+
 [[ -x "$solver" ]] || { echo "SKIP: glasgow_scp_solver not built at '$solver'"; exit 77; }
 have veripb || { echo "SKIP: veripb not on PATH"; exit 77; }
 
@@ -59,6 +72,7 @@ if ! have "$CAKE_PB_CP"; then
     echo "[fallback] cake_pb_cp not on PATH (set CAKE_PB_CP to override); workflow-1 self-verify only"
     out=$(veripb "${base}.opb" "${base}.pbp" 2>&1)
     if ! verified "$out"; then echo "FAIL: self-verify"; tail -5 <<< "$out"; exit 1; fi
+    check_bounds "$out"
     grep -E '^s VERIFIED' <<< "$out"
     dispose_proof "${base}"
     echo "OK: workflow-1 self-verify passed for $(basename "$scp") (cake_pb_cp absent)"
@@ -76,6 +90,7 @@ if ! verified "$out"; then echo "FAIL: veripb did not verify"; tail -5 <<< "$out
 echo "[4] cake_pb_cp: re-check the elaborated core (the verified step)"
 core_out=$("$CAKE_PB_CP" "${base}.scp" "${base}.corepb")
 if ! verified "$core_out"; then echo "FAIL: cake_pb_cp rejected the core"; tail -5 <<< "$core_out"; exit 1; fi
+check_bounds "$core_out"
 echo "$core_out"
 
 echo "[5] opbdiff oracle (mode: $opbdiff_mode)"

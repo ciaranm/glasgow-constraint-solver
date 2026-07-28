@@ -6,6 +6,7 @@
 #include <gcs/variable_id.hh>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -25,6 +26,34 @@ namespace gcs
     };
 
     /**
+     * \brief What read_scp recovered from a `.scp` beyond the Problem it built:
+     * the variables by name, and the objective if the document had one.
+     *
+     * \ingroup Core
+     */
+    struct ScpModel
+    {
+        /**
+         * \brief A map from each variable's `.scp` name to its IntegerVariableID,
+         * so a caller can report solution values by name.
+         */
+        std::map<std::string, IntegerVariableID> variables;
+
+        /**
+         * \brief The objective variable, to minimise, or nullopt for a `decide`
+         * or `enumerate` document.
+         *
+         * This mirrors Problem::optional_minimise_variable(), so that reader and
+         * writer are inverses: a `(maximize V)` spec gives back the negated view
+         * of V, exactly what Problem::maximise() would have stored, and feeding
+         * it to Problem::minimise() reinstates the original objective. A
+         * constant objective (the writer renders one as `(minimize 3)`) comes
+         * back as a constant variable.
+         */
+        std::optional<IntegerVariableID> minimise_variable;
+    };
+
+    /**
      * \brief Populate `problem` from the `.scp` (s-expression CP) description in
      * `text`: create its variables and post its constraints.
      *
@@ -36,9 +65,14 @@ namespace gcs
      * The document is the four-section version-1 form `( (version 1) (variables
      * ...) (constraints ...) (prob_type ...) )`. All four sections are required,
      * in that order, and the version must be exactly 1 — anything else is
-     * rejected rather than guessed at. The `prob_type` spec is validated but not
-     * acted on: this reader always enumerates, so honouring an objective is left
-     * to the caller.
+     * rejected rather than guessed at.
+     *
+     * An objective in the `prob_type` section is resolved and returned, but is
+     * deliberately *not* posted to `problem`: setting it would commit the caller
+     * to optimising, and there is no way to unset it afterwards, so a caller who
+     * wants to enumerate an optimisation instance (as the workflow-2 chain
+     * harness does) could not. Call Problem::minimise() with
+     * ScpModel::minimise_variable to honour it.
      *
      * Only a subset of constraints is supported so far (`abs`, `all_different`,
      * `in`, the comparisons, the linear forms, `equals`/`not_equals`, `element`
@@ -46,10 +80,9 @@ namespace gcs
      * being silently dropped. Throws ScpReadError (or SExprParseError) on
      * malformed input.
      *
-     * \returns A map from each variable's `.scp` name to its IntegerVariableID,
-     * so a caller can report solution values by name.
+     * \returns The variables by name, and the objective if there was one.
      */
-    auto read_scp(Problem & problem, std::string_view text) -> std::map<std::string, IntegerVariableID>;
+    auto read_scp(Problem & problem, std::string_view text) -> ScpModel;
 }
 
 #endif
