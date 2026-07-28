@@ -1482,13 +1482,19 @@ interesting ones.
 | record end-of-call state bounds in `Do` | `incremental`, `basic` (the hole snap), `reified`, `cycles`, `views` |
 | clamp `Do` lazily instead of restoring it | every mode, and the presolver |
 | never unwind the trail at all | every mode, and the presolver |
-| seed nothing on activation (section 5.4 only) | `incremental`, `reified`, `random_reified` |
+| seed nothing on activation (section 5.4 only) | `incremental`, `reified`, `simplify`, `random_reified` |
 | cache "this arc has been checked" across backtracking | `incremental`, `reified`, `simplify`, `random_reified`, presolver |
-| `Vl` gate off by one | every mode |
-| expansion gate off by one | every mode |
-| Algorithm 3 lines 15–16 literally (`γ(s)` after the `+∞` reset) | every mode |
+| `Vl` gate off by one | every mode, and the presolver |
+| expansion gate off by one | every mode, and the presolver |
+| Algorithm 3 lines 15–16 literally (`γ(s)` after the `+∞` reset) | every mode, and the presolver |
 | **`π(v0)` not the maximum over `Vl`** | **nothing — and it cannot be** |
 | **no expansion gate at all** | **nothing — and it should not be** |
+
+"Every mode" means every mode that fired on the run that produced this table;
+`random` and `random_reified` generate their systems from the announced test
+seed, so which of the two catches a given mutation moves about between seeds and
+neither is what any row is resting on. The deterministic modes were stable across
+the runs taken.
 
 The last two are worth stating properly, because one of them contradicts a
 prediction and the other confirms the theory.

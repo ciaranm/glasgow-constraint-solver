@@ -1048,13 +1048,12 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, Stat
                 }
             }
             else if (! memory.changed_arcs.empty()) {
-                // Arcs whose activity has changed since the last run. Each newly
-                // active one needs
-                // needs *both* halves of the paper's section 4.4 treatment, and
-                // its section 5.4's during-search description gives only the
-                // first: repair the potential function (or find that the arc
-                // closes a negative cycle), *and* seed bound propagation across
-                // it. Without the second, a condition becoming true with no node
+                // Arcs whose activity has changed since the last run. Each
+                // newly active one needs *both* halves of the paper's section
+                // 4.4 treatment, and its section 5.4's during-search description
+                // gives only the first: repair the potential function (or find
+                // that the arc closes a negative cycle), *and* seed bound
+                // propagation across it. Without the second, a condition becoming true with no node
                 // bound changing anywhere leaves Vl empty and the push the arc
                 // delivers is silently lost.
                 //
