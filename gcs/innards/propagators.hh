@@ -14,6 +14,7 @@
 #include <gcs/problem.hh>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -471,6 +472,38 @@ namespace gcs::innards
          * state so it cannot be mis-sequenced.
          */
         auto install(const ConstraintID & constraint_id, PropagationFunction &&, const Triggers & trigger_vars) -> void;
+
+        /**
+         * Retire every propagator belonging to any of the given constraints for
+         * the rest of the search, returning how many were retired (a constraint
+         * that installed none, or whose propagators were already disabled,
+         * contributes nothing). Ids this Propagators has never seen are ignored.
+         *
+         * This is for a Presolver that has installed something strictly stronger
+         * than a set of already-installed propagators and wants to measure what
+         * the redundant ones cost --- see the difference-logic presolver, whose
+         * global propagator subsumes every donor's single-edge bound push.
+         * Disabling is *not* removing: the constraint keeps its OPB row, its
+         * entry in the scope and adjacency tables, and its contribution to every
+         * variable's degree, so a branching heuristic sees exactly the same
+         * problem and the search tree is unchanged. Consequently the caller is
+         * responsible for the soundness argument --- disabling a propagator
+         * whose inferences are not all made by something else loses propagation
+         * silently, and no proof will complain, because a proof only certifies
+         * what was derived.
+         *
+         * The effect is permanent, deliberately unlike
+         * PropagatorState::DisableUntilBacktrack, whose lifetime is scoped to a
+         * propagate() call. Intended to be called before search starts (a
+         * Presolver runs at the root); calling it later is safe but only ever
+         * takes effect from the next propagator dequeue onwards.
+         *
+         * Takes a whole batch rather than one constraint at a time because it
+         * has to scan the propagators to find them: one call per constraint
+         * would make disabling m of them quadratic, which for a difference-logic
+         * model with a dense edge set is the dominant cost.
+         */
+        auto disable_propagators_for_constraints(std::span<const ConstraintID> constraint_ids) -> std::size_t;
 
         /**
          * Install an initialiser, which will be called once just before search

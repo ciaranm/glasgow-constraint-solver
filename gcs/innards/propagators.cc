@@ -169,6 +169,20 @@ struct Propagators::Imp : RefinedWatchSink
     // (see the run loop); a member so it isn't reallocated on every propagate() call.
     vector<int> to_disable;
 
+    // Indexed by propagator id: 1 if disable_propagators_for_constraint has
+    // retired this propagator for the whole search. This is the *permanent*
+    // counterpart of PropagatorState::DisableUntilBacktrack, and it needs to be
+    // separate from it because the "until backtrack" lifetime is scoped to a
+    // propagate() call --- idle_end is saved on entry and restored by that
+    // call's on_backtrack, and the no-guesses path rebuilds queue and lookup
+    // from scratch --- so a boundary set before search starts would be erased
+    // by the first root propagation. The mechanism, though, is the same one:
+    // the rebuild below partitions the queue so that disabled propagators sit
+    // beyond idle_end, exactly where a to_disable swap puts them, which is what
+    // makes enqueue_if_idle skip them for free.
+    vector<uint8_t> permanently_disabled;
+    int permanently_disabled_count = 0;
+
     // One entry per run this round that returned EnableButIdempotent (and whose
     // claim is not ignored): runs are serial and the store applies inferences
     // immediately, so a run whose end left the tracker holding
@@ -373,6 +387,7 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
 {
     int id = _imp->propagation_functions.size();
     _imp->propagation_functions.emplace_back(move(f));
+    _imp->permanently_disabled.push_back(0);
 
     auto [it, inserted] = _imp->constraint_index_of_id.try_emplace(constraint_id, static_cast<int>(_imp->constraint_ids.size()));
     if (inserted)
@@ -484,6 +499,28 @@ auto Propagators::install(const ConstraintID & constraint_id, PropagationFunctio
         trigger_on_instantiated(v, id);
     for (const auto & [literal, payload] : triggers.refined)
         _imp->register_refined_watch(id, literal, payload, false);
+}
+
+auto Propagators::disable_propagators_for_constraints(std::span<const ConstraintID> constraint_ids) -> std::size_t
+{
+    // Plural, and deliberately so: a per-constraint entry point would have to
+    // scan every propagator per call, and a presolver disabling m donors would
+    // then pay O(m * propagators). Mark the constraint indices first, then make
+    // one pass.
+    vector<uint8_t> wanted(_imp->constraint_ids.size(), 0);
+    for (const auto & constraint_id : constraint_ids)
+        if (auto it = _imp->constraint_index_of_id.find(constraint_id); it != _imp->constraint_index_of_id.end())
+            wanted[it->second] = 1;
+
+    std::size_t disabled = 0;
+    for (std::size_t p = 0; p < _imp->propagator_constraint_index.size(); ++p)
+        if (wanted[_imp->propagator_constraint_index[p]] && ! _imp->permanently_disabled[p]) {
+            _imp->permanently_disabled[p] = 1;
+            ++_imp->permanently_disabled_count;
+            ++disabled;
+        }
+
+    return disabled;
 }
 
 auto Propagators::install_initialiser(InitialisationFunction && f, InitialiserPriority priority) -> void
@@ -629,17 +666,33 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
 
     if (guesses.empty()) {
         // On the first pass, walk propagators in registration order. The queue runs
-        // oldest-first, so push them forwards.
+        // oldest-first, so push them forwards. Permanently disabled propagators
+        // (disable_propagators_for_constraint) go to the tail instead, past
+        // idle_end, which is the same place a DisableUntilBacktrack swap puts
+        // one --- so they are neither run now nor woken later --- except that
+        // this boundary is not restored by anything, which is the whole point.
         _imp->queue.resize(_imp->propagation_functions.size());
         _imp->lookup.resize(_imp->propagation_functions.size());
-        for (unsigned i = 0; i != _imp->propagation_functions.size(); ++i) {
-            _imp->queue[i] = i;
-            _imp->lookup[i] = i;
+        int enabled_end = 0;
+        for (unsigned i = 0; i != _imp->propagation_functions.size(); ++i)
+            if (! _imp->permanently_disabled[i]) {
+                _imp->queue[enabled_end] = i;
+                _imp->lookup[i] = enabled_end;
+                ++enabled_end;
+            }
+        if (0 != _imp->permanently_disabled_count) {
+            int at = enabled_end;
+            for (unsigned i = 0; i != _imp->propagation_functions.size(); ++i)
+                if (_imp->permanently_disabled[i]) {
+                    _imp->queue[at] = i;
+                    _imp->lookup[i] = at;
+                    ++at;
+                }
         }
 
         _imp->enqueued_begin = 0;
-        _imp->enqueued_end = _imp->propagation_functions.size();
-        _imp->idle_end = _imp->propagation_functions.size();
+        _imp->enqueued_end = enabled_end;
+        _imp->idle_end = enabled_end;
     }
     else {
         // Seed the queue from every supplied guess. A propagator already enqueued by an
@@ -742,6 +795,15 @@ auto Propagators::propagate(const Literals & guesses, State & state, ProofLogger
                 break;
 
             int propagator_id = _imp->queue[_imp->enqueued_begin++];
+            // A propagator disabled between two propagate() calls can still be
+            // sitting inside the enqueued region of a queue built before the
+            // disable; the partition above only takes effect at the next
+            // rebuild. Skipping it here means disable_propagators_for_constraint
+            // takes effect immediately whenever it is called, at the cost of one
+            // predictable branch that is not even reached unless something has
+            // been disabled.
+            if (0 != _imp->permanently_disabled_count && _imp->permanently_disabled[propagator_id]) [[unlikely]]
+                continue;
             try {
                 ++_imp->total_propagations;
                 tracker.begin_propagator_run();
