@@ -79,14 +79,23 @@ auto ReifiedCompareLessThanOrMaybeEqual::prepare(Propagators &, State & initial_
 
 auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model, const State &) -> void
 {
-    // `role` is the cake_pb_cp @c label role, or "" for the lines cake leaves
-    // unlabelled (an unconditional comparison is a single bare inequality).
+    // `role` is the cake_pb_cp @c label role, empty for the forms cake labels
+    // with the bare @c[<id>] (a comparison is a single inequality, so there is
+    // no half to name). Every row is labelled: an unlabelled row cannot be
+    // cited, and the difference-logic presolver lifts these into a global
+    // propagator whose `pol`s cite exactly this row. Checked against
+    // cake_pb_cp: `less_equal`, `less_than`, `greater_equal`, `greater_than`
+    // and their `_if` spellings all come back as @c[<id>], and the `_iff`
+    // spelling as @c[<id>][r] and @c[<id>][f].
+    //
+    // MustNotHold and NotIf have no `.scp` spelling at all --- s_expr() throws
+    // on them --- so they never reach cake, and the bare @c[<id>] is free for
+    // them too. It states the *negated* inequality, which is still a single
+    // difference inequality with the operands the other way round; anything
+    // citing @c[<id>] must therefore look at the reification condition to know
+    // which inequality it got (see gcs/presolvers/difference_logic.cc).
     auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const string & role) {
-        auto ineq = WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i);
-        if (role.empty())
-            model.add_constraint(ineq, cond);
-        else
-            model.add_labelled_constraint(_constraint_id, role, ineq, cond);
+        model.add_labelled_constraint(_constraint_id, role, WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
     };
 
     overloaded{
