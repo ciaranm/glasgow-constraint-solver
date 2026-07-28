@@ -194,8 +194,8 @@ namespace
     // once. Both variants produce the same OPB rows for the same edges (one
     // labelled inequality per edge), so the proofs are directly comparable.
     auto post_edges(Problem & problem, const vector<DifferenceEdge> & edges, Variant variant, bool disable_donors,
-        const shared_ptr<DifferenceLogicStats> & presolver_stats, bool simplify, const shared_ptr<DifferenceSimplificationStats> & simplification)
-        -> void
+        const shared_ptr<DifferenceLogicStats> & presolver_stats, bool simplify, const shared_ptr<DifferenceSimplificationStats> & simplification,
+        bool incremental) -> void
     {
         switch (variant) {
             using enum Variant;
@@ -207,9 +207,13 @@ namespace
                 problem.add_presolver(DifferenceLogic{presolver_stats}
                         .disabling_lifted_donors(disable_donors)
                         .simplifying_at_root(simplify)
-                        .reporting_simplification_to(simplification));
+                        .reporting_simplification_to(simplification)
+                        .incrementally(incremental));
             break;
-        case Global: problem.post(DifferenceConstraints{edges}.simplifying_at_root(simplify).reporting_simplification_to(simplification)); break;
+        case Global:
+            problem.post(
+                DifferenceConstraints{edges}.simplifying_at_root(simplify).reporting_simplification_to(simplification).incrementally(incremental));
+            break;
         }
     }
 
@@ -270,6 +274,12 @@ auto main(int argc, char * argv[]) -> int
             ("simplify",                                                                                 //
                 "Run the difference-logic root simplification stage. On by default; --simplify=off "     //
                 "turns it off. Ignored under --variant=decomposed, which has no difference propagator",  //
+                cxxopts::value<string>()->default_value("on"))                                           //
+            ("incremental",                                                                              //
+                "Propagate the difference system incrementally (a maintained potential function and "    //
+                "Dijkstra on reduced costs) rather than re-running Bellman-Ford from scratch on every "  //
+                "wake. On by default; --incremental=off selects the from-scratch version, which must "   //
+                "reach the identical fixpoint and so must search identically",                           //
                 cxxopts::value<string>()->default_value("on"))                                           //
             ;
 
@@ -360,6 +370,13 @@ auto main(int argc, char * argv[]) -> int
     }
     auto simplify = (simplify_name == "on");
 
+    auto incremental_name = options_vars["incremental"].as<string>();
+    if (incremental_name != "on" && incremental_name != "off") {
+        println(cerr, "Error: --incremental must be on or off, not '{}'.", incremental_name);
+        return EXIT_FAILURE;
+    }
+    auto incremental = (incremental_name == "on");
+
     auto disable_donors = options_vars.contains("disable-donors");
     if (disable_donors && *variant != Variant::Presolved) {
         println(cerr, "Error: --disable-donors only means anything with --variant=presolved.");
@@ -368,7 +385,7 @@ auto main(int argc, char * argv[]) -> int
 
     auto presolver_stats = make_shared<DifferenceLogicStats>();
     auto simplification = make_shared<DifferenceSimplificationStats>();
-    post_edges(problem, edges, *variant, disable_donors, presolver_stats, simplify, simplification);
+    post_edges(problem, edges, *variant, disable_donors, presolver_stats, simplify, simplification, incremental);
 
     // The lower-bound bump that starts the chase. Posted last, so that the
     // difference constraints are all in the queue ahead of it and the bump wakes
@@ -409,6 +426,7 @@ auto main(int argc, char * argv[]) -> int
     println("mode: {}", mode_name);
     println("variant: {}", variant_name_given);
     if (*variant != Variant::Decomposed) {
+        println("incremental: {}", incremental_name);
         println("simplify: {}", simplify_name);
         println("simplify_ran: {}", simplification->ran ? "yes" : "no");
         println("simplify_seconds: {:.6f}", simplification->seconds);
