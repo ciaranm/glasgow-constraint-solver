@@ -1322,6 +1322,12 @@ Three things are true of `π` and all three are load-bearing:
   was fine when it was last active can need repair when it comes back. See
   "re-activation" below.
 
+Nothing bounds how far `π` drifts down over a long search, and the guard against
+that is free: `Integer`'s arithmetic is overflow-checked, so a drift that ever
+reached the edge of a `long long` is a loud exception at the operation that did
+it rather than silent wrap-around. Nothing has come close on anything measured
+here.
+
 **`IncSat`** (the paper's Algorithm 1, from Cotton and Maler) repairs `π` when
 one arc is added, or reports that the graph now has a negative cycle. It is a
 Dijkstra-shaped relaxation of the *violation* `γ`, touching only the nodes it
