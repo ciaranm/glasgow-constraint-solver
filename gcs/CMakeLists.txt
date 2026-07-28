@@ -35,6 +35,7 @@ add_library(glasgow_constraint_solver
         constraints/cumulative/cumulative.cc
         constraints/difference/difference_constraints.cc
         constraints/difference/difference_graph.cc
+        constraints/difference/difference_incremental.cc
         constraints/difference/difference_simplify.cc
         constraints/disjunctive/disjunctive.cc
         constraints/disjunctive_2d/disjunctive_2d.cc
