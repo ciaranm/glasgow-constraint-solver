@@ -158,6 +158,17 @@ namespace
         build_expected(expected, [&](const vector<int> & vals) { return satisfied(vals, edges); }, domains);
         println(cerr, " expecting {} solutions", expected.size());
 
+        // Whether either solve stopped early because a runtime cap fired (see
+        // GCS_TEST_CAP_DEFAULTS). check_results copes with that on its own --- it
+        // drops to checking soundness of what was produced --- but the
+        // cross-check below cannot: two truncated runs stop after the same
+        // *number* of solutions, not the same *set*, because the two models
+        // search in different orders. Comparing them then reports a disagreement
+        // where there is none, which is a defect of this harness rather than of
+        // the propagator, and it is what CI found on the reified random mode
+        // (whose extra condition variables multiply the solution count).
+        bool truncated = false;
+
         {
             Problem p;
             auto vars = make_vars(p, domains);
@@ -171,6 +182,7 @@ namespace
             // bounds, and gcs domains can have holes where the paper's Theorem
             // 2 assumes ranges.
             solve_for_tests(p, proof_name, actual, tuple{vars});
+            truncated = truncated || last_run_truncated();
             check_results(proof_name, expected, actual);
         }
 
@@ -185,9 +197,12 @@ namespace
                     p.post(LinearLessThanEqual{sum, Integer(e.d)});
             }
             solve_for_tests(p, nullopt, decomposed, tuple{vars});
+            truncated = truncated || last_run_truncated();
         }
 
-        if (actual != decomposed) {
+        if (truncated)
+            println(cerr, "difference {} {}: a cap fired, so the global/decomposed cross-check is skipped", mode, name);
+        else if (actual != decomposed) {
             println(cerr, "difference {} {}: global and decomposed models disagree", mode, name);
             println(cerr, "global has {} solutions, decomposed has {}", actual.size(), decomposed.size());
             throw UnexpectedException{"difference global and decomposed models disagree"};
@@ -477,7 +492,10 @@ namespace
 
             // Bound pushes across conditional edges, chained, so the reason of
             // the second cites the first's inferred bound and its own condition.
-            run_test(proofs, mode, "chain_conds", {{0, 6}, {0, 6}, {0, 6}, {0, 1}, {0, 1}}, {{v(0), v(1), -2, b(3)}, {v(1), v(2), -2, b(4)}});
+            // Domains kept narrow enough that the whole solution set fits inside
+            // the default runtime cap, so this keeps its cross-check against the
+            // decomposed model even in a capped run.
+            run_test(proofs, mode, "chain_conds", {{0, 4}, {0, 4}, {0, 4}, {0, 1}, {0, 1}}, {{v(0), v(1), -2, b(3)}, {v(1), v(2), -2, b(4)}});
 
             // A conditional edge that can never hold over these domains: the
             // negative control, as a solution count. Every assignment with the
