@@ -1,0 +1,1 @@
+( (version 1) (variables (X -3 3) (Y -3 3)) (constraints (_1 lin_equals (1 X 1 Y) 0)) (prob_type (maximize X)) )

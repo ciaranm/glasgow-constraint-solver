@@ -28,8 +28,18 @@ document is exactly four tagged sections, in order:
 `ScpModel::minimise_variable` (a `(maximize V)` comes back as the negated view,
 mirroring `Problem::optional_minimise_variable()`) without posting it, so that
 enumerating an optimisation document stays possible — `glasgow_scp_solver` is
-the caller that hands it to `Problem::minimise()`. The reader rejects any
-version other than 1
+the caller that hands it to `Problem::minimise()`.
+
+For the chain to check a maximisation at all, the two ends have to agree on how
+the objective is *encoded*, not just what it is. cake re-derives `(maximize V)`
+as `min: -1 i[V][b0] -2 i[V][b1] ...` over V's own bits, so an offset-free
+negated objective — exactly what `Problem::maximise()` stores — is deviewed the
+same way rather than being hosted on its own proof-only bit vector
+(`ProofModel::write_preamble`). A hosted vector is invisible to cake, and the
+solver's proof would cite view-linking labels (`@c[neg_view_of_V][viewle]`)
+that cake's OPB has no counterpart for, failing the chain on an unknown label.
+
+The reader rejects any version other than 1
 outright rather than guessing at an unknown grammar, which is what makes a
 future format change a clean failure instead of a misread. Upstream's reference
 for the format lives outside this repo (cake's `SEXP_FORMAT.md`); the reader is
