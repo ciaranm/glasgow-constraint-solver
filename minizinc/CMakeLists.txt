@@ -193,6 +193,9 @@ set_tests_properties(minizinc-sort PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-argsort COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ argsorttest true true)
 set_tests_properties(minizinc-argsort PROPERTIES SKIP_RETURN_CODE 66)
 
+add_test(NAME minizinc-splitrandom COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ splitrandom true true)
+set_tests_properties(minizinc-splitrandom PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-strictlydecreasing COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ strictlydecreasing true true)
 set_tests_properties(minizinc-strictlydecreasing PROPERTIES SKIP_RETURN_CODE 66)
 
