@@ -9,6 +9,8 @@
 #include <gcs/problem.hh>
 #include <gcs/reification.hh>
 
+#include <util/overloaded.hh>
+
 #include <concepts>
 #include <map>
 #include <memory>
@@ -26,6 +28,7 @@ using std::holds_alternative;
 using std::make_unique;
 using std::map;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::shared_ptr;
 using std::size_t;
@@ -132,19 +135,32 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State &,
 
     // The donors whose edges were lifted, for the optional disable below. Kept
     // as ids rather than pointers because that is what Propagators indexes by.
+    // Half-reified donors are deliberately never added: see below.
     vector<ConstraintID> lifted_donors;
 
     size_t linears_seen = 0;
     for (const auto & c : problem.each_constraint_of_type<ReifiedLinearInequality>()) {
         ++linears_seen;
 
-        // Unconditional only. This is not a nicety: comparison.cc and
-        // linear_inequality.cc emit the `If` form's row *half-reified* under
-        // HalfReifyOnConjunctionOf, so treating it as an unconditional edge
-        // would licence inferences the model does not entail, and the pol
-        // citing it would carry an uncancelled gate term. Half-reified edges
-        // need the paper's E' machinery and a trailed edge journal; a later PR.
-        if (! holds_alternative<reif::MustHold>(c.reification_condition())) {
+        // MustHold gives a plain edge; If gives a half-reified one,
+        // `cond -> x - y <= d'. Both are citable and both are the shape the
+        // propagator's proofs assume: linear_inequality.cc labels the
+        // unconditional row and the `If' row identically, @c[<id>] with an empty
+        // role, and emits the latter under HalfReifyOnConjunctionOf on exactly
+        // the condition recorded here.
+        //
+        // The other three kinds are each expressible as difference edges too,
+        // and are skipped only because each needs a *different* row of the
+        // donor's output: MustNotHold and NotIf state the integer negation
+        // (`y - x <= -d-1'), and Iff emits its two halves under the roles r and
+        // f rather than under the empty role. Counted rather than guessed at.
+        auto liftable_kind = true;
+        optional<IntegerVariableCondition> edge_condition;
+        overloaded{//
+            [&](const reif::MustHold &) {}, [&](const reif::If & cond) { edge_condition = cond.cond; }, [&](const auto &) { liftable_kind = false; }}
+            .visit(c.reification_condition());
+
+        if (! liftable_kind) {
             ++stats.skipped_reified;
             continue;
         }
@@ -179,9 +195,10 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State &,
 
         // A constant operand makes this a plain bound, which the donor's own
         // propagator applies once and which adds nothing to the graph; and
-        // aliasing says 0 <= d, which is vacuous or else a root contradiction
-        // that would need an initialiser --- and initialisers have already run
-        // by the time a presolver is called. Leave both to the donor, which
+        // aliasing says 0 <= d, which is vacuous, or else a root contradiction
+        // (unconditionally, needing an initialiser --- and initialisers have
+        // already run by the time a presolver is called) or a fact about the
+        // condition (half-reified). Leave all of them to the donor, which
         // handles them. Checked before node_index is called, so a skipped edge
         // never leaves an isolated node behind to be triggered on.
         if (! left->variable || ! right->variable || *left->variable == *right->variable) {
@@ -198,16 +215,26 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State &,
         auto to = node_index(*right->variable);
 
         auto posted_index = graph.edges.size();
-        graph.edges.push_back(DifferenceGraphEdge{from, to, d, posted_index});
+        graph.edges.push_back(DifferenceGraphEdge{from, to, d, posted_index, edge_condition});
         if (logger) {
             // The donor's own row, which linear_inequality.cc labelled
-            // @c[<id>] with an empty role. Nothing new goes into the OPB ---
+            // @c[<id>] with an empty role, for the `If` form exactly as for the
+            // unconditional one. Nothing new goes into the OPB ---
             // Presolver::run has no ProofModel * precisely because that door has
             // closed --- and nothing needs to: every inference the propagator
             // makes is a cutting-planes consequence of these rows.
             graph.edge_lines.push_back(ProofLineLabel{"c[" + as_string(c.constraint_id()) + "]"});
         }
-        lifted_donors.push_back(c.constraint_id());
+
+        if (edge_condition)
+            ++stats.half_reified_edges_lifted;
+        else {
+            // Only unconditional donors are candidates for retirement. A
+            // half-reified donor also infers `!cond' from its own bounds, and
+            // the global propagator infers nothing about a condition at all, so
+            // retiring one would silently lose propagation.
+            lifted_donors.push_back(c.constraint_id());
+        }
     }
 
     // Comparisons are difference constraints too --- `x <= y + d` is a view, not
