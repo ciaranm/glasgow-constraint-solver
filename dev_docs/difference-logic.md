@@ -1471,6 +1471,19 @@ randomised or conflict-weighted heuristic; the default `dom_then_deg` and the
 harness's seeded random brancher are both fine, because both runs use the same
 one.)
 
+The `incremental` test mode then adds five deterministic scenarios --- the
+stale-`Do` sequence verbatim, a Boolean fixed with no node bound change
+anywhere, an arc activated and re-activated across four backtracks with a
+negative cycle that closes only when two conditions hold at once, the hole-snap
+topology, and a conditional static bound applied in a branch that fails --- each
+run both ways and each asserting its invariant at **every** search node rather
+than at the leaves, which is where a gate bug shows and a solution count does
+not. Last, a randomised stress of twenty systems under a Luby restart schedule
+with a tiny scale: a restart unwinds to the root at a moment nothing else
+chooses, which is the sharpest exercise of the undo trail there is, and the two
+routes have to agree on the optimum, the solution count *and* the recursion
+count.
+
 ### What actually went wrong, measured by mutation
 
 Every row was produced by breaking the shipping code in exactly that way,

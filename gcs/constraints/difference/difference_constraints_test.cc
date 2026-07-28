@@ -894,6 +894,87 @@ namespace
             66);
     }
 
+    // Randomised backtracking stress, with restarts. Restarts are the one thing
+    // in the engine that unwinds all the way to the root at a moment nothing
+    // else chooses, so they are the sharpest exercise of the undo trail there
+    // is: every restart pops it back to the root mark, and a Do array that
+    // survived a restart it should not have, or that was popped further than it
+    // should have been, shows up as a different optimum or a different search.
+    //
+    // Optimisation rather than enumeration, because a restart schedule without
+    // recorded nogoods re-finds solutions and gcs rejects combining it with
+    // all-solution enumeration. The Luby scale is deliberately tiny so that a
+    // few-hundred-node search restarts many times.
+    auto run_restart_stress() -> void
+    {
+        print(cerr, "difference incremental restart stress:");
+        cerr << flush;
+
+        mt19937 rand(*get_seed());
+        size_t agreed = 0;
+
+        for (int iteration = 0; iteration < 20; ++iteration) {
+            uniform_int_distribution n_vars_dist{3, 5};
+            auto n_vars = n_vars_dist(rand);
+            vector<pair<int, int>> domains;
+            for (int i = 0; i < n_vars; ++i) {
+                uniform_int_distribution lo_dist{-2, 2};
+                auto lo = lo_dist(rand);
+                uniform_int_distribution width_dist{2, 7};
+                domains.emplace_back(lo, lo + width_dist(rand));
+            }
+            domains.emplace_back(0, 1);
+            domains.emplace_back(0, 1);
+
+            uniform_int_distribution n_edges_dist{2, 7};
+            auto n_edges = n_edges_dist(rand);
+            vector<EdgeSpec> edges;
+            for (int e = 0; e < n_edges; ++e) {
+                uniform_int_distribution var_dist{0, n_vars - 1};
+                uniform_int_distribution d_dist{-3, 3};
+                uniform_int_distribution which_dist{0, 4};
+                auto which = which_dist(rand);
+                optional<Cond> cond;
+                if (which > 0)
+                    cond = Cond{static_cast<size_t>(n_vars + (which - 1) / 2), (which - 1) % 2};
+                edges.push_back(EdgeSpec{v(static_cast<size_t>(var_dist(rand))), v(static_cast<size_t>(var_dist(rand))), d_dist(rand), cond});
+            }
+
+            auto solve_one = [&](bool incremental) -> tuple<unsigned long long, unsigned long long, int> {
+                Problem p;
+                auto vars = make_vars(p, domains);
+                vector<DifferenceEdge> posted;
+                for (const auto & e : edges)
+                    posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
+                p.post(DifferenceConstraints{posted}.incrementally(incremental).auditing_incremental_propagation());
+                p.minimise(vars.front());
+
+                int best = 0;
+                auto result = solve_with(p,
+                    SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                                       best = s(vars.front()).raw_value;
+                                       return true;
+                                   },
+                        .branch = random_branch_with_optional_seed(p),
+                        .restarts = RestartSchedule::luby(3)});
+                return {result.recursions, result.solutions, best};
+            };
+
+            auto incremental = solve_one(true);
+            auto from_scratch = solve_one(false);
+            if (incremental != from_scratch)
+                throw UnexpectedException{"difference incremental restart stress iteration " + to_string(iteration) +
+                    ": with restarts, incremental propagation gave recursions/solutions/optimum " + to_string(std::get<0>(incremental)) + "/" +
+                    to_string(std::get<1>(incremental)) + "/" + to_string(std::get<2>(incremental)) + " against the from-scratch pass's " +
+                    to_string(std::get<0>(from_scratch)) + "/" + to_string(std::get<1>(from_scratch)) + "/" + to_string(std::get<2>(from_scratch)) +
+                    ". A restart unwinds to the root at a moment nothing else chooses, so this is the undo trail being popped too far or not far "
+                    "enough. Do NOT relax this check."};
+            ++agreed;
+        }
+
+        println(cerr, " {} random systems agreed on recursions, solutions and optimum", agreed);
+    }
+
     auto run_incremental_tests() -> void
     {
         for (bool incremental : {true, false}) {
@@ -907,6 +988,8 @@ namespace
             // the mandatory self-re-wake finds Vl empty and stops with z at 5.
             run_hole_snap_test(incremental);
         }
+
+        run_restart_stress();
     }
 
     auto run_all_tests(bool proofs, const string & mode) -> void
