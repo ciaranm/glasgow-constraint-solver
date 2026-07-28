@@ -648,8 +648,27 @@ namespace gcs::innards
                     auto t = logger->temporary_proof_level();
                     emit_explicit_steps(*logger, why.emit, snapshotted.materialised(_state, scratch));
                     if (why.then_rup == ThenRUP::Yes) {
-                        for (const auto & lit : lits)
-                            track(logger, _state.infer(lit), lit, JustifyUsingRUP{}, snapshotted);
+                        // One of these inferences can wipe a domain, and a
+                        // contradiction unwinds out of track() -- so the forget has to
+                        // happen on the way out as well. The temporary level is this
+                        // function's to close: whoever catches TrackedPropagationFailed
+                        // is several frames up with no idea a level was opened here,
+                        // and the backtrack that follows forgets the *search* level,
+                        // which is one shallower than this one. Stranding it is not
+                        // unsound -- nothing references the scaffolding once the steps
+                        // are emitted, and the lines are swept by whichever forget of
+                        // this level comes next -- but "the code that opens a temporary
+                        // level closes it" is the invariant the emit-then-forget
+                        // pattern rests on, and the single-literal path
+                        // (infer_explicitly) has always closed before it throws.
+                        try {
+                            for (const auto & lit : lits)
+                                track(logger, _state.infer(lit), lit, JustifyUsingRUP{}, snapshotted);
+                        }
+                        catch (const TrackedPropagationFailed &) {
+                            logger->forget_proof_level(t);
+                            throw;
+                        }
                         logger->forget_proof_level(t);
                     }
                     else {
