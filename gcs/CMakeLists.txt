@@ -35,6 +35,7 @@ add_library(glasgow_constraint_solver
         constraints/cumulative/cumulative.cc
         constraints/difference/difference_constraints.cc
         constraints/difference/difference_graph.cc
+        constraints/difference/difference_simplify.cc
         constraints/disjunctive/disjunctive.cc
         constraints/disjunctive_2d/disjunctive_2d.cc
         constraints/divide_modulus/divide_modulus.cc
@@ -306,7 +307,7 @@ if(GCS_BUILD_TESTS)
     add_test(NAME bounds_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:bounds_global_cardinality_test>)
     add_test(NAME gac_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:gac_global_cardinality_test>)
     add_test(NAME cumulative_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
-    foreach(mode basic cycles views alias reified random random_reified)
+    foreach(mode basic cycles views alias reified simplify random random_reified)
         add_test(NAME difference_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:difference_test> ${mode})
     endforeach()
