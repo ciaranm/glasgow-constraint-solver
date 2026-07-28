@@ -326,6 +326,17 @@ auto gcs::innards::install_difference_propagator(
                         if (outcome.fix.empty())
                             break;
 
+                        // Every round that gets here fixes at least one
+                        // condition and so drops at least one edge, which is
+                        // what bounds the loop --- an edge the pass wants to fix
+                        // is never also an edge it wants to remove, since
+                        // `d >= D_uv' and `d + D_vu < 0' cannot both hold when
+                        // the graph has no negative cycle. That is an argument
+                        // about the pass, though, and this is a loop inside a
+                        // propagator, so make the progress explicit rather than
+                        // inferred.
+                        bool progress = false;
+
                         for (const auto & [candidate, path] : outcome.fix) {
                             if (dropped[candidate])
                                 continue;
@@ -416,8 +427,12 @@ auto gcs::innards::install_difference_propagator(
                                 reason);
 
                             dropped[candidate] = true;
+                            progress = true;
                             ++stats.conditions_fixed;
                         }
+
+                        if (! progress)
+                            break;
                     }
 
                     // Now actually shrink the graph. Everything above only
