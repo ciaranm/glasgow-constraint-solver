@@ -109,12 +109,16 @@ namespace
         return hints;
     }
 
-    // Justify both bounds on z (thesis Justification Procedure 7.5): derive
-    // each live sign case's product bound through the grid, channel to z, and
-    // resolve the cases; then restate the two bound atoms, which the caller's
-    // infer_all applies.
+    // Justify the bounds on z that are actually moving (thesis Justification
+    // Procedure 7.5): derive each live sign case's product bound through the
+    // grid, channel to z, and resolve the cases; then restate the bound atoms,
+    // which the caller's infer_all applies. need_lower/need_upper say which
+    // ones the caller is inferring: a direction that is not being inferred
+    // needs no premises, no case resolution and no closer, and each direction
+    // draws on only one of the two grid sums per sign case, so dropping one
+    // roughly halves the derivation.
     auto justify_z_bounds(ProofLogger & logger, const ReasonLiterals & reason, Data & d, Integer x_lo, Integer x_hi, Integer y_lo, Integer y_hi,
-        Integer prod_lo, Integer prod_hi) -> void
+        Integer prod_lo, Integer prod_hi, bool need_lower, bool need_upper) -> void
     {
         auto dims = vector<pj::SignCaseDimension>{{d.x >= 0_i, d.x < 0_i}, {d.y >= 0_i, d.y < 0_i}};
         vector<optional<pj::ConditionalBound>> lower_premises(4, nullopt), upper_premises(4, nullopt);
@@ -137,22 +141,32 @@ namespace
 
             auto xc = channel_pair(logger, xs, d.x, *d.chan_x, xneg, false);
             auto yc = channel_pair(logger, ys, d.y, *d.chan_y, yneg, false);
-            auto glb = pj::grid_sum_lower_bound(logger, reason, d.grid, d.chan_x->mag, xc.mag_lb, yc.mag_lb);
-            auto gub = pj::grid_sum_upper_bound(logger, reason, d.grid, d.chan_x->mag, d.chan_y->mag, xc.mag_ub, yc.mag_ub);
+            optional<pj::ConditionalBound> glb, gub;
+            if (zneg ? need_upper : need_lower)
+                glb = pj::grid_sum_lower_bound(logger, reason, d.grid, d.chan_x->mag, xc.mag_lb, yc.mag_lb);
+            if (zneg ? need_lower : need_upper)
+                gub = pj::grid_sum_upper_bound(logger, reason, d.grid, d.chan_x->mag, d.chan_y->mag, xc.mag_ub, yc.mag_ub);
             if (! zneg) {
-                lower_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, false, true, hints);
-                upper_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, false, false, hints);
+                if (need_lower)
+                    lower_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, *glb, false, true, hints);
+                if (need_upper)
+                    upper_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, *gub, false, false, hints);
             }
             else {
-                lower_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, gub, true, false, hints);
-                upper_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, glb, true, true, hints);
+                if (need_lower)
+                    lower_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, *gub, true, false, hints);
+                if (need_upper)
+                    upper_premises[pattern] = pj::channel_grid_bound_to_result(logger, reason, d.z, *d.zchan, *glb, true, true, hints);
             }
         }
 
-        auto lower_red =
-            pj::conclude_by_sign_cases(logger, reason, WPBSum{} + 1_i * d.z >= prod_lo, dims, lower_premises, {}, pj::SubproofRUPHints::Assemble);
-        auto upper_red =
-            pj::conclude_by_sign_cases(logger, reason, WPBSum{} + -1_i * d.z >= -prod_hi, dims, upper_premises, {}, pj::SubproofRUPHints::Assemble);
+        optional<ProofLine> lower_red, upper_red;
+        if (need_lower)
+            lower_red =
+                pj::conclude_by_sign_cases(logger, reason, WPBSum{} + 1_i * d.z >= prod_lo, dims, lower_premises, {}, pj::SubproofRUPHints::Assemble);
+        if (need_upper)
+            upper_red = pj::conclude_by_sign_cases(
+                logger, reason, WPBSum{} + -1_i * d.z >= -prod_hi, dims, upper_premises, {}, pj::SubproofRUPHints::Assemble);
         auto closer_hints = [&](ProofLine red, const IntegerVariableCondition & lit) {
             vector<ProofLine> h{red};
             if (auto def = pj::def_line_for(logger, lit))
@@ -161,10 +175,12 @@ namespace
                 h.emplace_back(*def);
             return h;
         };
-        logger.emit_under_reason(
-            RUPProofRule{closer_hints(upper_red, d.z <= prod_hi)}, WPBSum{} + 1_i * (d.z <= prod_hi) >= 1_i, ProofLevel::Current, reason);
-        logger.emit_under_reason(
-            RUPProofRule{closer_hints(lower_red, d.z >= prod_lo)}, WPBSum{} + 1_i * (d.z >= prod_lo) >= 1_i, ProofLevel::Current, reason);
+        if (need_upper)
+            logger.emit_under_reason(
+                RUPProofRule{closer_hints(*upper_red, d.z <= prod_hi)}, WPBSum{} + 1_i * (d.z <= prod_hi) >= 1_i, ProofLevel::Current, reason);
+        if (need_lower)
+            logger.emit_under_reason(
+                RUPProofRule{closer_hints(*lower_red, d.z >= prod_lo)}, WPBSum{} + 1_i * (d.z >= prod_lo) >= 1_i, ProofLevel::Current, reason);
     }
 
     // Justify one factor bound (thesis Justification Procedures 7.6/7.7):
@@ -310,9 +326,30 @@ auto gcs::innards::signed_multiply::propagate(Data & d, const State & state, aut
     bool square = d.x == d.y;
     auto [prod_lo, prod_hi] = square ? square_bounds(x_lo, x_hi) : product_bounds(x_lo, x_hi, y_lo, y_hi);
 
-    auto justf = [&](const ReasonLiterals & reason) { justify_z_bounds(*logger, reason, d, x_lo, x_hi, y_lo, y_hi, prod_lo, prod_hi); };
-    inference.infer_all(logger, {d.z <= prod_hi, d.z >= prod_lo}, JustifyExplicitly{justf, ThenRUP::No, hints::Multiply{owner}},
-        ReasonLiterals{d.x >= x_lo, d.x <= x_hi, d.y >= y_lo, d.y <= y_hi});
+    // Only ask for the bounds that will actually move, and tell the
+    // justification which they are: infer_all emits the steps once for the
+    // batch, so a bound left out of the batch is a whole direction of the
+    // Procedure 7.5 derivation not written. These tests mirror the tracker's
+    // own (z <= prod_hi is already true exactly when z_hi <= prod_hi), but
+    // nothing rests on them agreeing: naming a bound that does not move would
+    // only re-derive a line that is already a unit, and leaving out one that
+    // could move would only propagate less.
+    auto [z_lo_now, z_hi_now] = state.bounds(d.z);
+    bool need_upper = prod_hi < z_hi_now;
+    bool need_lower = prod_lo > z_lo_now;
+    if (need_upper || need_lower) {
+        vector<Literal> z_bounds;
+        z_bounds.reserve(2);
+        if (need_upper)
+            z_bounds.emplace_back(d.z <= prod_hi);
+        if (need_lower)
+            z_bounds.emplace_back(d.z >= prod_lo);
+        auto justf = [&](const ReasonLiterals & reason) {
+            justify_z_bounds(*logger, reason, d, x_lo, x_hi, y_lo, y_hi, prod_lo, prod_hi, need_lower, need_upper);
+        };
+        inference.infer_all(logger, z_bounds, JustifyExplicitly{justf, ThenRUP::No, hints::Multiply{owner}},
+            ReasonLiterals{d.x >= x_lo, d.x <= x_hi, d.y >= y_lo, d.y <= y_hi});
+    }
 
     if (square) {
         // x from z: the outer square-root bounds first, then, against the
