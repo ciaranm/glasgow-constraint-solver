@@ -2,9 +2,11 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DIFFERENCE_DIFFERENCE_GRAPH_HH
 
 #include <gcs/constraint_id.hh>
+#include <gcs/constraints/difference/difference_incremental.hh>
 #include <gcs/constraints/difference/difference_simplify.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/propagators-fwd.hh>
+#include <gcs/innards/state-fwd.hh>
 #include <gcs/integer.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
@@ -186,9 +188,18 @@ namespace gcs::innards
      * first call, guarded on that call being at the root --- which is where every
      * propagator's first call is, since search starts by propagating everything.
      *
+     * The \c State is needed at install time for one thing only: a trailed
+     * constraint state holding the length of the incremental machinery's undo
+     * trail. `State::on_backtrack` is not reachable from a propagator's
+     * `const State &`, so that number is how the `Do` array and the active arc
+     * record are restored exactly on backtracking --- which they must be, since
+     * clamping them lazily against the current bounds loses propagation
+     * silently. \sa DifferenceIncrementalOptions
+     *
      * \ingroup Innards
      */
-    auto install_difference_propagator(Propagators &, const ConstraintID &, DifferenceGraph, DifferenceSimplificationOptions = {}) -> void;
+    auto install_difference_propagator(Propagators &, State &, const ConstraintID &, DifferenceGraph, DifferenceSimplificationOptions = {},
+        DifferenceIncrementalOptions = {}) -> void;
 }
 
 #endif

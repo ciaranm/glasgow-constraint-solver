@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_DIFFERENCE_LOGIC_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_DIFFERENCE_LOGIC_HH
 
+#include <gcs/constraints/difference/difference_incremental.hh>
 #include <gcs/constraints/difference/difference_simplify.hh>
 #include <gcs/presolver.hh>
 
@@ -141,6 +142,7 @@ namespace gcs
         std::shared_ptr<DifferenceSimplificationStats> _simplification_stats;
         bool _disable_lifted_donors;
         bool _simplify;
+        innards::DifferenceIncrementalOptions _incremental;
 
     public:
         /**
@@ -196,6 +198,22 @@ namespace gcs
          * once the propagator has first fired.
          */
         auto reporting_simplification_to(std::shared_ptr<DifferenceSimplificationStats>) -> DifferenceLogic &;
+
+        /**
+         * \brief Propagate the lifted system incrementally (the default), or
+         * from scratch on every wake.
+         *
+         * \sa DifferenceConstraints::incrementally
+         */
+        auto incrementally(bool = true) -> DifferenceLogic &;
+
+        /**
+         * \brief Re-run the from-scratch pass after every incremental call and
+         * require the two to agree. For tests.
+         *
+         * \sa DifferenceConstraints::auditing_incremental_propagation
+         */
+        auto auditing_incremental_propagation(bool = true) -> DifferenceLogic &;
 
         [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool override;
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Presolver> override;

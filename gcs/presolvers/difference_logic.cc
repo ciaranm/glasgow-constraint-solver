@@ -88,7 +88,8 @@ namespace
     }
 }
 
-DifferenceLogic::DifferenceLogic(shared_ptr<DifferenceLogicStats> stats) : _stats(move(stats)), _disable_lifted_donors(false), _simplify(true)
+DifferenceLogic::DifferenceLogic(shared_ptr<DifferenceLogicStats> stats) :
+    _stats(move(stats)), _disable_lifted_donors(false), _simplify(true), _incremental()
 {
 }
 
@@ -110,16 +111,30 @@ auto DifferenceLogic::reporting_simplification_to(shared_ptr<DifferenceSimplific
     return *this;
 }
 
+auto DifferenceLogic::incrementally(bool incremental) -> DifferenceLogic &
+{
+    _incremental.enabled = incremental;
+    return *this;
+}
+
+auto DifferenceLogic::auditing_incremental_propagation(bool audit) -> DifferenceLogic &
+{
+    _incremental.audit = audit;
+    return *this;
+}
+
 auto DifferenceLogic::clone() const -> unique_ptr<Presolver>
 {
     auto result = make_unique<DifferenceLogic>(_stats);
     result->disabling_lifted_donors(_disable_lifted_donors);
     result->simplifying_at_root(_simplify);
     result->reporting_simplification_to(_simplification_stats);
+    result->incrementally(_incremental.enabled);
+    result->auditing_incremental_propagation(_incremental.audit);
     return result;
 }
 
-auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State &, ProofLogger * const logger) -> bool
+auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & initial_state, ProofLogger * const logger) -> bool
 {
     // Compile-time pins on the contract the enumeration below relies upon. The
     // helper matches the type Problem *stores*, which is what clone() returns,
@@ -284,8 +299,8 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State &,
     if (graph.edges.size() >= 2) {
         // A presolver-derived propagator has no posted-constraint identity of
         // its own, exactly as for AutoTable.
-        install_difference_propagator(
-            propagators, CurrentlyUnnamedConstraint{}, move(graph), DifferenceSimplificationOptions{_simplify, _simplification_stats});
+        install_difference_propagator(propagators, initial_state, CurrentlyUnnamedConstraint{}, move(graph),
+            DifferenceSimplificationOptions{_simplify, _simplification_stats}, _incremental);
         stats.propagator_installed = true;
 
         if (_disable_lifted_donors)

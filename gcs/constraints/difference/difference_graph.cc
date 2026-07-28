@@ -1,4 +1,5 @@
 #include <gcs/constraints/difference/difference_graph.hh>
+#include <gcs/constraints/difference/difference_incremental.hh>
 #include <gcs/constraints/difference/difference_simplify.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -12,18 +13,23 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <any>
 #include <chrono>
+#include <cstdlib>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::any_cast;
 using std::move;
 using std::nullopt;
 using std::optional;
 using std::size_t;
+using std::string;
 using std::vector;
 using std::chrono::duration;
 using std::chrono::steady_clock;
@@ -33,29 +39,6 @@ using std::ranges::find_if;
 
 namespace
 {
-    // The propagator's hot data: one of these per edge, scanned end to end once
-    // per Bellman-Ford round, so its *size* is a measurable property rather than
-    // a detail. Carrying the edge's optional<IntegerVariableCondition> inline
-    // took DifferenceGraphEdge from 32 bytes to 96 and cost 2.9x on
-    // examples/difference_chain at n = 640 --- 0.32 s to 0.93 s with the
-    // propagation and recursion counts unchanged, i.e. pure memory traffic in
-    // the innermost loop.
-    //
-    // So DifferenceGraphEdge stays the convenient *construction* type, with the
-    // condition attached to the edge it belongs to, and install_difference_
-    // propagator repacks it once: arcs here, conditions in a parallel array read
-    // only when the active set is snapshotted (once per call) and when a reason
-    // is built (only when something is inferred). Never inside a round.
-    struct DifferenceArc
-    {
-        size_t from;
-        size_t to;
-        Integer d;
-        size_t posted_index;
-    };
-
-    static_assert(sizeof(DifferenceArc) <= 32, "the difference-logic relaxation loop scans this array once per round; keep it small");
-
     // Publishes the simplification counters on the way out, whichever way out it
     // is.
     //
@@ -81,6 +64,99 @@ namespace
                 *report_to = stats;
         }
     };
+
+    // What one undo record restores. The potential function is deliberately not
+    // in here: it is never trailed, because its invariant is a conjunction over
+    // the edges currently in the graph and backtracking only ever removes edges.
+    enum class DifferenceTrailKind
+    {
+        LowerGate,
+        UpperGate,
+        Activation
+    };
+
+    // For a gate entry, `value` is the bound to restore; for an activation
+    // entry, it is the record's previous setting, which is not always zero ---
+    // the defensive path that drops a record for an arc that has gone inactive
+    // has to be undone the other way round.
+    struct DifferenceTrailEntry
+    {
+        DifferenceTrailKind kind;
+        size_t index;
+        Integer value;
+    };
+
+    // Everything the incremental propagator remembers between calls.
+    //
+    // None of it is copied by the engine: the one thing that *is* trailed is a
+    // single number, the length of `trail` that belongs to the current epoch, so
+    // an epoch costs O(1) to enter rather than O(n + m) to copy. Unwinding
+    // `trail` down to that mark restores `do_lb`, `do_ub` and `arc_was_active`
+    // to *exactly* the values they had at the restore point.
+    //
+    // Exactness is the whole point. The tempting cheap alternative --- clamp
+    // `Do` against the current bounds at the next call instead of restoring it
+    // --- is wrong, and silently so. Guess `y >= 10`; the propagator runs and
+    // records `Do(y) = 10`; the branch fails; `y >= 5` is restored; the sibling
+    // guesses `y >= 7`. The clamp gives `Do(y) = min(10, 7) = 7`, which is
+    // `min D(y)`, so `y` is not in `Vl`, the gate never expands, and the
+    // consequences of `y >= 7` --- which were computed in a branch that has been
+    // thrown away --- are lost. Successive guesses tightening the same variable
+    // is the single most common branching pattern there is, and no proof can see
+    // the loss.
+    struct DifferencePropagatorMemory
+    {
+        // Dijkstra needs adjacency where Bellman-Ford needed only a flat scan.
+        // Built once over every arc; the currently active ones are selected by
+        // `active_flags` during traversal.
+        DifferenceAdjacency by_tail, by_head;
+
+        // Valid for every currently active arc, monotonically decreasing over
+        // the whole search, never reset and never trailed. `neg_potential` is
+        // maintained alongside it rather than rebuilt per call, for the same
+        // reason as `do_ub_neg`: it is the upper bound pass's potential.
+        vector<Integer> potential, neg_potential;
+
+        // The paper's Do: the bounds the previous run propagated *from*. The
+        // upper half is stored negated, because that is the form the shared
+        // implementation of IncLB reads it in and negating it per call was
+        // measurable on `examples/rcpsp_max`.
+        vector<Integer> do_lb, do_ub_neg;
+
+        // Which arcs the incremental machinery has established its invariants
+        // for. Empty when the system is unconditional, in which case every arc
+        // is active for ever and there is nothing to track.
+        vector<char> arc_was_active;
+
+        vector<DifferenceTrailEntry> trail;
+
+        // Per-call scratch, hoisted so that a wake allocates nothing.
+        // `ub_start_neg` is the sign-flipped copy of the current upper bounds,
+        // which is what lets one implementation of IncLB serve both directions.
+        // `pass_bound` and `pass_pred` belong to the from-scratch route and to
+        // the audit's re-run of it.
+        vector<size_t> active_edges, changed_arcs;
+        vector<char> active_flags;
+        vector<char> forced_lb, forced_ub;
+        vector<Integer> lb_start, ub_start_neg;
+        vector<Integer> pass_bound, claim;
+        vector<optional<size_t>> pass_pred;
+
+        DifferencePotentialWorkspace potential_work;
+        DifferenceBoundsWorkspace bounds_work;
+    };
+
+    // GCS_DIFFERENCE_AUDIT turns the differential fixpoint audit on for every
+    // difference propagator in the process, so a whole corpus can be run under
+    // it without touching a single model. Read once.
+    auto difference_audit_from_environment() -> bool
+    {
+        static const bool result = [] {
+            const char * e = std::getenv("GCS_DIFFERENCE_AUDIT");
+            return e && *e && string{e} != "0";
+        }();
+        return result;
+    }
 }
 
 auto gcs::innards::deview_difference_operand(const IntegerVariableID & var) -> optional<DeviewedDifferenceOperand>
@@ -97,11 +173,13 @@ auto gcs::innards::deview_difference_operand(const IntegerVariableID & var) -> o
         .visit(var);
 }
 
-auto gcs::innards::install_difference_propagator(
-    Propagators & propagators, const ConstraintID & constraint_id, DifferenceGraph graph, DifferenceSimplificationOptions simplify) -> void
+auto gcs::innards::install_difference_propagator(Propagators & propagators, State & initial_state, const ConstraintID & constraint_id,
+    DifferenceGraph graph, DifferenceSimplificationOptions simplify, DifferenceIncrementalOptions incremental) -> void
 {
     if (graph.edges.empty() && graph.static_bounds.empty() && graph.disallowed_conditions.empty())
         return;
+
+    incremental.audit = incremental.audit || difference_audit_from_environment();
 
     Triggers triggers;
     for (const auto & v : graph.nodes)
@@ -162,20 +240,31 @@ auto gcs::innards::install_difference_propagator(
     // Read before the capture list moves the node vector out from under it.
     auto number_of_nodes = graph.nodes.size();
 
+    // The only trailed state: how much of the undo trail belongs to the current
+    // epoch. State::on_backtrack is not reachable from a propagator's
+    // `const State &`, and copying the whole of Do into every epoch would make
+    // entering an epoch O(n + m); a single number in the trailed constraint
+    // state gives exact restoration at O(1) per epoch instead, unwound lazily at
+    // the next call. Lazily is safe precisely because the restored values are
+    // exact and do not depend on the current domains --- nothing reads Do
+    // between the backtrack and that call.
+    auto trail_mark_handle = initial_state.add_constraint_state(size_t{0});
+
     // The root simplification stage mutates `arcs`, `arc_conditions` and
     // `round_bound` in place, once, on the first call --- hence the `mutable`
-    // below, which is the only mutable propagator state in this file. It is safe
-    // without trailing for the same reason the paper's section 5.3 boundary is
-    // where it is: the stage runs only at the root, before any decision, and
-    // every conclusion it draws (this edge is implied by a path of unconditional
-    // or root-fixed edges; this node has no edges left) is a statement about the
-    // *graph*, which no amount of backtracking changes. Nothing here reads a
-    // domain.
+    // below. It is safe without trailing for the same reason the paper's section
+    // 5.3 boundary is where it is: the stage runs only at the root, before any
+    // decision, and every conclusion it draws (this edge is implied by a path of
+    // unconditional or root-fixed edges; this node has no edges left) is a
+    // statement about the *graph*, which no amount of backtracking changes.
+    // Nothing there reads a domain. The incremental machinery below is `mutable`
+    // for a different reason, and one the paper is explicit about: the potential
+    // function survives backtracking by design.
     propagators.install(
         constraint_id,
         [nodes = move(graph.nodes), arcs = move(arcs), arc_conditions = move(arc_conditions), static_bounds = move(graph.static_bounds),
             disallowed_conditions = move(graph.disallowed_conditions), edge_lines = move(graph.edge_lines), simplify = move(simplify),
-            simplification_pending = true,
+            incremental = move(incremental), memory = DifferencePropagatorMemory{}, trail_mark_handle, simplification_pending = true,
             round_bound = number_of_nodes](const State & state, auto & inference, ProofLogger * const logger) mutable -> PropagatorState {
             auto n = nodes.size();
             auto m = arcs.size();
@@ -217,9 +306,12 @@ auto gcs::innards::install_difference_propagator(
 
             // Static bounds next: an edge with a constant operand is a plain
             // bound on the other operand, and once applied it is just part of
-            // the state that Bellman-Ford seeds from. An unconditional one never
-            // changes, so after the first call it is a no-op; a conditional one
-            // applies from the moment its condition holds, and cites it.
+            // the state that the passes below seed from. An unconditional one
+            // never changes, so after the first call it is a no-op; a
+            // conditional one applies from the moment its condition holds, and
+            // cites it. Nothing about it needs trailing or gating: a bound it
+            // applies moves the state, and moving the state is exactly what puts
+            // the node into Vl on this very call.
             for (const auto & sb : static_bounds) {
                 if (sb.cond && LiteralIs::DefinitelyTrue != state.test_literal(*sb.cond))
                     continue;
@@ -233,6 +325,9 @@ auto gcs::innards::install_difference_propagator(
                         inference.infer_less_than(logger, nodes[sb.node], sb.value + 1_i, JustifyUsingRUP{}, why);
                 }
             }
+
+            auto first_call = simplification_pending;
+            bool at_root = true;
 
             // The root simplification stage, which is the paper's Algorithm 4
             // (its section 5.2) run to the fixpoint of its section 5.3. Once, on
@@ -251,10 +346,9 @@ auto gcs::innards::install_difference_propagator(
             // Zero-weight-cycle unification is not implemented; the cycles are
             // counted so the question of whether it would pay is answerable from
             // a measurement (see dev_docs/difference-logic.md).
-            if (simplification_pending) {
+            if (first_call) {
                 simplification_pending = false;
 
-                bool at_root = true;
                 for ([[maybe_unused]] const auto & guess : state.guesses()) {
                     at_root = false;
                     break;
@@ -304,7 +398,7 @@ auto gcs::innards::install_difference_propagator(
                         auto outcome = simplify_difference_graph(n, simplify_edges, roles);
                         if (outcome.base_negative_cycle) {
                             // The unconditional part of the system is already
-                            // infeasible. Stop and let the Bellman-Ford pass
+                            // infeasible. Stop and let the from-scratch pass
                             // below refute it: that is where the cycle
                             // extraction and the telescoping pol live, and
                             // duplicating them here would buy nothing.
@@ -503,21 +597,63 @@ auto gcs::innards::install_difference_propagator(
             // examples/difference_chain at n = 640 (0.32 s to 0.47 s) with the
             // propagation count unchanged. The branch is on the *outside* of the
             // per-edge loop, so the conditional case pays nothing for it either.
-            vector<size_t> active_edges;
-            auto all_active = arc_conditions.empty();
-            if (! all_active) {
-                active_edges.reserve(m);
-                for (size_t e = 0; e < m; ++e)
-                    if (! arc_conditions[e] || LiteralIs::DefinitelyTrue == state.test_literal(*arc_conditions[e]))
-                        active_edges.push_back(e);
+
+            // The undo trail is popped down to the mark *before* the snapshot,
+            // so that the snapshot loop can compare each arc's current activity
+            // against the restored record in the same pass. This restores exact
+            // values, which is what makes doing it here rather than at the
+            // moment of the backtrack sound *and* complete: nothing reads `Do`
+            // in between, and what is restored does not depend on the current
+            // domains. On the first call the trail is empty and the mark is
+            // zero, so this does nothing and the arrays below need not exist
+            // yet.
+            if (incremental.enabled) {
+                auto & mark = any_cast<size_t &>(state.get_constraint_state(trail_mark_handle));
+                while (memory.trail.size() > mark) {
+                    const auto & entry = memory.trail.back();
+                    switch (entry.kind) {
+                        using enum DifferenceTrailKind;
+                    case LowerGate: memory.do_lb[entry.index] = entry.value; break;
+                    case UpperGate: memory.do_ub_neg[entry.index] = entry.value; break;
+                    case Activation: memory.arc_was_active[entry.index] = (0_i == entry.value ? 0 : 1); break;
+                    }
+                    memory.trail.pop_back();
+                }
             }
+
+            auto all_active = arc_conditions.empty();
+            memory.active_edges.clear();
+            memory.changed_arcs.clear();
+            if (! all_active) {
+                // One pass over the arcs, doing everything a conditional system
+                // needs: the flags the adjacency traversals filter on, the index
+                // list the from-scratch relaxation walks, and the list of arcs
+                // whose activity differs from what the incremental machinery has
+                // established its invariants for. Three separate passes here was
+                // 10-15% on the half-reified RCPSP/max instances, where the
+                // conditional edges make `m` an order of magnitude larger than
+                // `n` and these passes are the whole cost of a wake.
+                auto detect_changes = incremental.enabled && ! first_call;
+                memory.active_edges.reserve(m);
+                memory.active_flags.resize(m);
+                for (size_t e = 0; e < m; ++e) {
+                    char active = (! arc_conditions[e] || LiteralIs::DefinitelyTrue == state.test_literal(*arc_conditions[e])) ? 1 : 0;
+                    memory.active_flags[e] = active;
+                    if (active)
+                        memory.active_edges.push_back(e);
+                    if (detect_changes && active != memory.arc_was_active[e])
+                        memory.changed_arcs.push_back(e);
+                }
+            }
+            else
+                memory.active_flags.clear();
 
             auto for_each_active_edge = [&](auto && relax) {
                 if (all_active)
                     for (size_t e = 0; e < m; ++e)
                         relax(e);
                 else
-                    for (auto e : active_edges)
+                    for (auto e : memory.active_edges)
                         relax(e);
             };
 
@@ -654,150 +790,436 @@ auto gcs::innards::install_difference_propagator(
                 }
             };
 
-            // Lower bounds flow forwards. Edge x --d--> y is x - y <= d, i.e.
-            // y >= x - d, so lb(y) >= lb(x) - d. Writing dist(v) = -lb(v) this
-            // is single-source shortest paths from the paper's dummy vertex v0,
-            // whose edge to v weighs -lb(v): that is exactly how the seeding
-            // below encodes the current bounds (Corollary 1).
-            vector<Integer> lb(n, 0_i);
-            vector<optional<size_t>> lb_pred(n, nullopt);
-            for (size_t v = 0; v < n; ++v)
-                lb[v] = state.lower_bound(nodes[v]);
-
-            // A shortest path from v0 is simple, so after the seeding (which is
-            // the v0 edge set) it uses at most n - 1 real edges, and n - 1
-            // relaxation rounds suffice. Rounds 0 .. n - 1 give n of them, one
-            // more than needed; round n relaxes nothing unless the system has a
-            // negative cycle, so a success there is sound evidence of one and
-            // the extraction above is guaranteed to find it.
-            auto lb_tail_of = [](const DifferenceArc & g) { return g.from; };
-            auto lb_head_of = [](const DifferenceArc & g) { return g.to; };
-
-            for (size_t round = 0; round <= round_bound; ++round) {
-                bool changed = false;
-                for_each_active_edge([&](size_t e) {
-                    const auto & edge = arcs[e];
-                    auto candidate = lb[edge.from] - edge.d;
-                    if (candidate > lb[edge.to]) {
-                        lb[edge.to] = candidate;
-                        lb_pred[edge.to] = e;
-                        changed = true;
-                        if (round == round_bound)
-                            contradict_on_cycle(extract_cycle(edge.to, lb_pred, lb_tail_of), lb_tail_of, lb_head_of);
-                    }
-                });
-                if (! changed)
-                    break;
-            }
-
-            infer_along_forest(lb_pred, lb_tail_of, [&](size_t v) {
-                const auto & edge = arcs[*lb_pred[v]];
-                const auto & edge_cond = condition_of(*lb_pred[v]);
-                auto source = nodes[edge.from];
-                auto source_lb = lb[edge.from];
-                if (source_lb - edge.d != lb[v])
+            // One edge, one pol: the edge row plus the definition row of the
+            // predecessor's bound literal cancels BinEnc(source) and leaves
+            // BinEnc(v) >= source_bound - d, which is exactly what the closing
+            // RUP needs. This is justify_linear_bounds for a two-term linear,
+            // and it is the shape verified by hand in boundpush_hand.pbp.
+            // Citing the predecessor's own bound is already the paper's
+            // "lifted" explanation: the weakest antecedent for v >= L - d
+            // across this edge *is* source >= L, so the pol's degree comes out
+            // at exactly the pushed amount with no wasted slack.
+            //
+            // A half-reified edge adds `M.~cond' to that sum, and its condition
+            // to the reason. Only *this* edge's condition, because the
+            // inference is per edge: the predecessor's bound was either already
+            // there when the call started, or was itself inferred a moment ago
+            // carrying its own edge's condition in its own reason, so the
+            // conditions along a whole path are cited by the chain of
+            // inferences rather than by any one of them. Each link is a
+            // standalone entailment of one row, which is what makes its RUP
+            // check.
+            //
+            // No saturate here, unlike the cycle refutation: the residual is
+            // harmless under the closing RUP, which assumes cond and so drives
+            // that term to zero, leaving the line the unconditional case would
+            // have produced. Saturating would instead clamp BinEnc(v)'s own
+            // coefficients against the degree, for no gain.
+            //
+            // Shared between the from-scratch and the incremental passes, so
+            // that the two cannot drift apart in what they emit. The self-checks
+            // are what turn a predecessor-walk or a settle-order bug into an
+            // exception here rather than a VeriPB failure much later.
+            auto infer_lower_bound = [&](size_t v, Integer new_bound, size_t arc_index, Integer source_bound) -> void {
+                const auto & edge = arcs[arc_index];
+                const auto & edge_cond = condition_of(arc_index);
+                if (edge.to != v)
+                    throw UnexpectedException{"difference logic lower bound was pushed along an edge that does not end at it"};
+                if (source_bound - edge.d != new_bound)
                     throw UnexpectedException{"difference logic lower bound does not match its predecessor edge"};
-                if (state.lower_bound(nodes[v]) >= lb[v])
+                if (state.lower_bound(nodes[v]) >= new_bound)
                     return;
 
-                // One edge, one pol: the edge row plus the definition row
-                // of the predecessor's bound literal cancels BinEnc(source)
-                // and leaves BinEnc(v) >= source_lb - d, which is exactly
-                // what the closing RUP needs. This is justify_linear_bounds
-                // for a two-term linear, and it is the shape verified by
-                // hand in boundpush_hand.pbp. Citing the predecessor's own
-                // bound is already the paper's "lifted" explanation: the
-                // weakest antecedent for v >= L - d across this edge *is*
-                // source >= L, so the pol's degree comes out at exactly the
-                // pushed amount with no wasted slack.
-                //
-                // A half-reified edge adds `M.~cond' to that sum, and its
-                // condition to the reason. Only *this* edge's condition, because
-                // the inference is per edge: the predecessor's bound was either
-                // already there when the call started, or was itself inferred a
-                // moment ago carrying its own edge's condition in its own
-                // reason, so the conditions along a whole path are cited by the
-                // chain of inferences rather than by any one of them. Each link
-                // is a standalone entailment of one row, which is what makes its
-                // RUP check.
-                //
-                // No saturate here, unlike the cycle refutation: the residual is
-                // harmless under the closing RUP, which assumes cond and so
-                // drives that term to zero, leaving the line the unconditional
-                // case would have produced. Saturating would instead clamp
-                // BinEnc(v)'s own coefficients against the degree, for no gain.
-                inference.infer_greater_than_or_equal(logger, nodes[v], lb[v],
+                auto source = nodes[edge.from];
+                inference.infer_greater_than_or_equal(logger, nodes[v], new_bound,
                     JustifyExplicitly{[&](const ReasonLiterals &) {
                                           auto pol = edge_line_pol();
                                           pol.add(edge_lines[edge.posted_index]);
-                                          pol.add_for_literal(logger->names_and_ids_tracker(), source >= source_lb);
+                                          pol.add_for_literal(logger->names_and_ids_tracker(), source >= source_bound);
                                           pol.emit(*logger, ProofLevel::Temporary);
                                       },
                         ThenRUP::Yes},
-                    ExplicitReason{edge_cond ? ReasonLiterals{{source >= source_lb}, {*edge_cond}} : ReasonLiterals{{source >= source_lb}}});
-            });
+                    ExplicitReason{edge_cond ? ReasonLiterals{{source >= source_bound}, {*edge_cond}} : ReasonLiterals{{source >= source_bound}}});
+            };
 
-            // Upper bounds flow backwards along the same edges. Edge
-            // x --d--> y is also x <= y + d, so ub(x) <= ub(y) + d: shortest
-            // paths in the reverse graph, seeded from the current upper bounds.
-            vector<Integer> ub(n, 0_i);
-            vector<optional<size_t>> ub_pred(n, nullopt);
-            for (size_t v = 0; v < n; ++v)
-                ub[v] = state.upper_bound(nodes[v]);
-
-            auto ub_tail_of = [](const DifferenceArc & g) { return g.to; };
-            auto ub_head_of = [](const DifferenceArc & g) { return g.from; };
-
-            for (size_t round = 0; round <= round_bound; ++round) {
-                bool changed = false;
-                for_each_active_edge([&](size_t e) {
-                    const auto & edge = arcs[e];
-                    auto candidate = ub[edge.to] + edge.d;
-                    if (candidate < ub[edge.from]) {
-                        ub[edge.from] = candidate;
-                        ub_pred[edge.from] = e;
-                        changed = true;
-                        if (round == round_bound)
-                            contradict_on_cycle(extract_cycle(edge.from, ub_pred, ub_tail_of), ub_tail_of, ub_head_of);
-                    }
-                });
-                if (! changed)
-                    break;
-            }
-
-            infer_along_forest(ub_pred, ub_tail_of, [&](size_t v) {
-                const auto & edge = arcs[*ub_pred[v]];
-                const auto & edge_cond = condition_of(*ub_pred[v]);
-                auto source = nodes[edge.to];
-                auto source_ub = ub[edge.to];
-                if (source_ub + edge.d != ub[v])
+            auto infer_upper_bound = [&](size_t v, Integer new_bound, size_t arc_index, Integer source_bound) -> void {
+                const auto & edge = arcs[arc_index];
+                const auto & edge_cond = condition_of(arc_index);
+                if (edge.from != v)
+                    throw UnexpectedException{"difference logic upper bound was pushed along an edge that does not start at it"};
+                if (source_bound + edge.d != new_bound)
                     throw UnexpectedException{"difference logic upper bound does not match its predecessor edge"};
-                if (state.upper_bound(nodes[v]) <= ub[v])
+                if (state.upper_bound(nodes[v]) <= new_bound)
                     return;
 
-                inference.infer_less_than(logger, nodes[v], ub[v] + 1_i,
+                auto source = nodes[edge.to];
+                inference.infer_less_than(logger, nodes[v], new_bound + 1_i,
                     JustifyExplicitly{[&](const ReasonLiterals &) {
                                           auto pol = edge_line_pol();
                                           pol.add(edge_lines[edge.posted_index]);
-                                          pol.add_for_literal(logger->names_and_ids_tracker(), source < source_ub + 1_i);
+                                          pol.add_for_literal(logger->names_and_ids_tracker(), source < source_bound + 1_i);
                                           pol.emit(*logger, ProofLevel::Temporary);
                                       },
                         ThenRUP::Yes},
                     ExplicitReason{
-                        edge_cond ? ReasonLiterals{{source < source_ub + 1_i}, {*edge_cond}} : ReasonLiterals{{source < source_ub + 1_i}}});
-            });
+                        edge_cond ? ReasonLiterals{{source < source_bound + 1_i}, {*edge_cond}} : ReasonLiterals{{source < source_bound + 1_i}}});
+            };
 
-            // Deliberately not EnableButIdempotent, and not merely because the
-            // scope aliases whenever one variable appears in several edges
-            // (which is the normal case here, and which Propagators::install
-            // detects and ignores the claim for anyway). The claim would be
-            // wrong on its own terms: the passes above reach the fixpoint of
-            // the bounds abstraction, but an inferred bound can snap past a
-            // hole in the domain and land strictly above the value computed
-            // here, which seeds the next call higher and lets it push further.
-            // So a second call genuinely can infer more, and the propagator has
-            // to be re-woken by its own inferences until the state settles.
-            // (run_hole_snap_test in difference_constraints_test.cc pins this.)
+            // Lower bounds flow forwards. Edge x --d--> y is x - y <= d, i.e.
+            // y >= x - d, so lb(y) >= lb(x) - d. Writing dist(v) = -lb(v) this
+            // is single-source shortest paths from the paper's dummy vertex v0,
+            // whose edge to v weighs -lb(v): that is exactly how the seeding
+            // below encodes the current bounds (Corollary 1). Upper bounds flow
+            // backwards along the same edges: x --d--> y is also x <= y + d, so
+            // ub(x) <= ub(y) + d, which is shortest paths in the reverse graph.
+            auto lb_tail_of = [](const DifferenceArc & g) { return g.from; };
+            auto lb_head_of = [](const DifferenceArc & g) { return g.to; };
+            auto ub_tail_of = [](const DifferenceArc & g) { return g.to; };
+            auto ub_head_of = [](const DifferenceArc & g) { return g.from; };
+
+            // The from-scratch Bellman-Ford relaxation, to the fixpoint of the
+            // bounds abstraction.
+            //
+            // A shortest path from v0 is simple, so after the seeding (which is
+            // the v0 edge set) it uses at most n - 1 real edges, and n - 1
+            // relaxation rounds suffice. Rounds 0 .. round_bound give one more
+            // than needed; a relaxation that still succeeds in the last round is
+            // sound evidence that the system has a negative cycle, and the
+            // extraction above is then guaranteed to find it.
+            //
+            // With `refute` set this refutes on the spot, at the exact edge that
+            // relaxed, which is what the shipping non-incremental path wants.
+            // Without it the cycle is only reported, which is what the audit
+            // wants: it needs to know whether the incremental pass missed one,
+            // not to duplicate the refutation.
+            auto relax_lower_bounds = [&](vector<Integer> & lb, vector<optional<size_t>> & lb_pred, bool refute) -> bool {
+                for (size_t round = 0; round <= round_bound; ++round) {
+                    bool changed = false, cycle = false;
+                    for_each_active_edge([&](size_t e) {
+                        if (cycle)
+                            return;
+                        const auto & edge = arcs[e];
+                        auto candidate = lb[edge.from] - edge.d;
+                        if (candidate > lb[edge.to]) {
+                            lb[edge.to] = candidate;
+                            lb_pred[edge.to] = e;
+                            changed = true;
+                            if (round == round_bound) {
+                                if (refute)
+                                    contradict_on_cycle(extract_cycle(edge.to, lb_pred, lb_tail_of), lb_tail_of, lb_head_of);
+                                cycle = true;
+                            }
+                        }
+                    });
+                    if (cycle)
+                        return true;
+                    if (! changed)
+                        break;
+                }
+                return false;
+            };
+
+            auto relax_upper_bounds = [&](vector<Integer> & ub, vector<optional<size_t>> & ub_pred, bool refute) -> bool {
+                for (size_t round = 0; round <= round_bound; ++round) {
+                    bool changed = false, cycle = false;
+                    for_each_active_edge([&](size_t e) {
+                        if (cycle)
+                            return;
+                        const auto & edge = arcs[e];
+                        auto candidate = ub[edge.to] + edge.d;
+                        if (candidate < ub[edge.from]) {
+                            ub[edge.from] = candidate;
+                            ub_pred[edge.from] = e;
+                            changed = true;
+                            if (round == round_bound) {
+                                if (refute)
+                                    contradict_on_cycle(extract_cycle(edge.from, ub_pred, ub_tail_of), ub_tail_of, ub_head_of);
+                                cycle = true;
+                            }
+                        }
+                    });
+                    if (cycle)
+                        return true;
+                    if (! changed)
+                        break;
+                }
+                return false;
+            };
+
+            // A negative cycle found by IncSat, or by the initial potential
+            // computation, is refuted by handing straight over to the
+            // from-scratch pass, which already carries the extraction and the
+            // telescoping pol. A negative cycle ends the search, so the O(n.m)
+            // is paid at most once per branch and buys a second implementation
+            // that does not have to be written or trusted.
+            auto refute_negative_cycle = [&](const char * who) -> void {
+                memory.pass_bound.assign(n, 0_i);
+                memory.pass_pred.assign(n, nullopt);
+                for (size_t v = 0; v < n; ++v)
+                    memory.pass_bound[v] = state.lower_bound(nodes[v]);
+                static_cast<void>(relax_lower_bounds(memory.pass_bound, memory.pass_pred, true));
+                throw UnexpectedException{string{"difference logic "} + who +
+                    " reported a negative cycle that the from-scratch pass could not find, so one of the two is wrong"};
+            };
+
+            if (! incremental.enabled) {
+                // The from-scratch route: one Bellman-Ford pass each way from
+                // the current bounds, every wake. Kept compiled and selectable
+                // because it is the reference the incremental route is checked
+                // against --- `recursions` and the solution sequence must come
+                // out identical, and a lost inference is invisible to VeriPB.
+                auto & lb = memory.pass_bound;
+                auto & lb_pred = memory.pass_pred;
+                lb.assign(n, 0_i);
+                lb_pred.assign(n, nullopt);
+                for (size_t v = 0; v < n; ++v)
+                    lb[v] = state.lower_bound(nodes[v]);
+                static_cast<void>(relax_lower_bounds(lb, lb_pred, true));
+                infer_along_forest(lb_pred, lb_tail_of, [&](size_t v) { infer_lower_bound(v, lb[v], *lb_pred[v], lb[arcs[*lb_pred[v]].from]); });
+
+                auto & ub = memory.pass_bound;
+                auto & ub_pred = memory.pass_pred;
+                ub.assign(n, 0_i);
+                ub_pred.assign(n, nullopt);
+                for (size_t v = 0; v < n; ++v)
+                    ub[v] = state.upper_bound(nodes[v]);
+                static_cast<void>(relax_upper_bounds(ub, ub_pred, true));
+                infer_along_forest(ub_pred, ub_tail_of, [&](size_t v) { infer_upper_bound(v, ub[v], *ub_pred[v], ub[arcs[*ub_pred[v]].to]); });
+
+                // Deliberately not EnableButIdempotent, and not merely because
+                // the scope aliases whenever one variable appears in several
+                // edges (which is the normal case here, and which
+                // Propagators::install detects and ignores the claim for
+                // anyway). The claim would be wrong on its own terms: the passes
+                // above reach the fixpoint of the bounds abstraction, but an
+                // inferred bound can snap past a hole in the domain and land
+                // strictly above the value computed here, which seeds the next
+                // call higher and lets it push further. So a second call
+                // genuinely can infer more, and the propagator has to be re-woken
+                // by its own inferences until the state settles.
+                // (run_hole_snap_test in difference_constraints_test.cc pins
+                // this, for both routes.)
+                return PropagatorState::Enable;
+            }
+
+            // ---- the incremental route ----
+
+            if (first_call) {
+                if (! at_root)
+                    throw UnexpectedException{"difference logic incremental state was initialised below a decision, where nothing it concludes "
+                                              "would survive backtracking"};
+
+                memory.by_tail = build_difference_adjacency(n, arcs, true);
+                memory.by_head = build_difference_adjacency(n, arcs, false);
+                memory.do_lb.assign(n, 0_i);
+                memory.do_ub_neg.assign(n, 0_i);
+                memory.forced_lb.assign(n, 0);
+                memory.forced_ub.assign(n, 0);
+                memory.lb_start.assign(n, 0_i);
+                memory.ub_start_neg.assign(n, 0_i);
+                if (! all_active)
+                    memory.arc_was_active = memory.active_flags;
+
+                // One Bellman-Ford, once, for the potential function. Every
+                // later change to the active arc set goes through IncSat
+                // instead, which is what makes a wake O(n log n + m) rather
+                // than O(n.m). No trail entries: this is the root, and the
+                // trail mark stays where it is.
+                auto initial_potential = difference_initial_potential(n, arcs, memory.active_flags);
+                if (! initial_potential)
+                    refute_negative_cycle("the initial potential computation");
+                memory.potential = move(*initial_potential);
+                memory.neg_potential.assign(n, 0_i);
+                for (size_t v = 0; v < n; ++v)
+                    memory.neg_potential[v] = -memory.potential[v];
+            }
+
+            memory.forced_lb.assign(n, 0);
+            memory.forced_ub.assign(n, 0);
+
+            if (first_call) {
+                // Nothing has been propagated from anything yet, so every node
+                // has to be seeded and expanded once. Setting Do to the current
+                // bounds and forcing every node is exactly that, and it leaves
+                // both gate invariants established when the pass finishes.
+                for (size_t v = 0; v < n; ++v) {
+                    memory.forced_lb[v] = 1;
+                    memory.forced_ub[v] = 1;
+                }
+            }
+            else if (! memory.changed_arcs.empty()) {
+                // Arcs whose activity has changed since the last run. Each newly
+                // active one needs
+                // needs *both* halves of the paper's section 4.4 treatment, and
+                // its section 5.4's during-search description gives only the
+                // first: repair the potential function (or find that the arc
+                // closes a negative cycle), *and* seed bound propagation across
+                // it. Without the second, a condition becoming true with no node
+                // bound changing anywhere leaves Vl empty and the push the arc
+                // delivers is silently lost.
+                //
+                // Seeding is done by forcing the arc's tail into Vl for the
+                // lower bound pass and its head for the upper bound pass, rather
+                // than by touching Do: Dijkstra then carries that node's bound
+                // across the new arc and on downstream, and the Do update at the
+                // end re-establishes I2 for the arc as a side effect.
+                //
+                // Re-activation after backtracking counts, every time. The
+                // potential function is never reset and drifts downwards over
+                // the whole search, so an arc that was valid when it was last
+                // active may need repair now; nothing may cache "this arc has
+                // been checked".
+                bool potential_moved = false;
+                for (auto e : memory.changed_arcs) {
+                    if (0 != memory.active_flags[e]) {
+                        memory.trail.push_back(DifferenceTrailEntry{DifferenceTrailKind::Activation, e, 0_i});
+                        memory.arc_was_active[e] = 1;
+
+                        // IncSat over `arc_was_active`, not over the current
+                        // active set: the potential is valid for exactly the
+                        // arcs recorded there, and the loop adds this one to it
+                        // just before repairing, so each new arc is handled
+                        // against a graph the potential is already valid for.
+                        if (! difference_repair_potential(n, arcs, memory.by_tail, memory.arc_was_active, memory.potential, e, memory.potential_work))
+                            refute_negative_cycle("IncSat");
+                        potential_moved = true;
+                        memory.forced_lb[arcs[e].from] = 1;
+                        memory.forced_ub[arcs[e].to] = 1;
+                    }
+                    else {
+                        // An arc that was active at the restore point but is not
+                        // now. Going down a branch this cannot happen --- a
+                        // definitely-true literal stays definitely true as
+                        // domains shrink --- so this is defensive. Dropping the
+                        // record is always safe: an inactive arc has no
+                        // invariant to maintain, and it will be treated as new
+                        // if it ever comes back.
+                        memory.trail.push_back(DifferenceTrailEntry{DifferenceTrailKind::Activation, e, 1_i});
+                        memory.arc_was_active[e] = 0;
+                    }
+                }
+
+                if (potential_moved)
+                    for (size_t v = 0; v < n; ++v)
+                        memory.neg_potential[v] = -memory.potential[v];
+            }
+
+            if (incremental.audit)
+                if (auto bad = difference_invalid_potential_arc(arcs, memory.active_flags, memory.potential))
+                    throw UnexpectedException{"difference logic entered a call with an invalid potential function, at arc " + std::to_string(*bad)};
+
+            // Both bounds of every node, in one pass. Reading the upper bounds
+            // now rather than after the lower bound pass is not a shortcut: a
+            // lower bound inference removes values *below* a bound and so cannot
+            // move an upper bound at all (a domain it emptied would have raised
+            // a contradiction and ended the call), so the values are the same
+            // either way. It matters because the two accessors were the single
+            // largest line in the profile of a wake.
+            for (size_t v = 0; v < n; ++v) {
+                auto [l, u] = state.bounds(nodes[v]);
+                memory.lb_start[v] = l;
+                memory.ub_start_neg[v] = -u;
+            }
+
+            // IncLB. `Vl`, `pi(v0)` and the seeds are all computed inside; the
+            // settle order that comes back is the order the pushes have to be
+            // made in, so that each cites the one before it.
+            if (first_call) {
+                memory.do_lb = memory.lb_start;
+                memory.do_ub_neg = memory.ub_start_neg;
+            }
+
+            difference_incremental_bounds(n, arcs, memory.by_tail, true, memory.active_flags, memory.potential, memory.lb_start, memory.do_lb,
+                memory.forced_lb, memory.bounds_work);
+
+            for (auto v : memory.bounds_work.settle_order)
+                if (memory.bounds_work.has_predecessor[v] && memory.bounds_work.settled_bound[v] > memory.lb_start[v]) {
+                    auto e = memory.bounds_work.predecessor[v];
+                    infer_lower_bound(v, memory.bounds_work.settled_bound[v], e, memory.bounds_work.settled_bound[arcs[e].from]);
+                }
+
+            // Do becomes the bounds this run propagated *from*, which is what
+            // the pass computed and emphatically not what the state ends up
+            // holding. gcs domains have holes, so an inferred bound can snap
+            // above the value computed here; recording the snapped value would
+            // leave the mandatory self-re-wake with `Vl` empty, and the
+            // consequences of the snap would be lost with nothing to show for
+            // it. Recording the computed value instead is what puts the snapped
+            // node back into `Vl` next time. (`run_hole_snap_test` pins it.)
+            for (auto v : memory.bounds_work.settle_order)
+                if (memory.bounds_work.settled_bound[v] > memory.do_lb[v]) {
+                    memory.trail.push_back(DifferenceTrailEntry{DifferenceTrailKind::LowerGate, v, memory.do_lb[v]});
+                    memory.do_lb[v] = memory.bounds_work.settled_bound[v];
+                }
+
+            if (incremental.audit) {
+                memory.claim = memory.lb_start;
+                for (auto v : memory.bounds_work.settle_order)
+                    if (memory.bounds_work.settled_bound[v] > memory.claim[v])
+                        memory.claim[v] = memory.bounds_work.settled_bound[v];
+
+                memory.pass_bound = memory.lb_start;
+                memory.pass_pred.assign(n, nullopt);
+                if (relax_lower_bounds(memory.pass_bound, memory.pass_pred, false))
+                    throw UnexpectedException{"difference logic incremental propagation missed a negative cycle that the from-scratch pass found"};
+                for (size_t v = 0; v < n; ++v)
+                    if (memory.claim[v] != memory.pass_bound[v])
+                        throw UnexpectedException{"difference logic incremental propagation reached a different lower bound fixpoint from the "
+                                                  "from-scratch pass at node " +
+                            std::to_string(v) + ": " + memory.claim[v].to_string() + " against " + memory.pass_bound[v].to_string() +
+                            ". The incremental pass has lost propagation, which no proof can see."};
+            }
+
+            // IncUB is IncLB on the reverse graph with the potential, the bounds
+            // and the gate all negated: `ub(x) <= ub(y) + d` is
+            // `-ub(x) >= -ub(y) - d`, which is the lower bound relation along
+            // the arc read backwards, and `-pi` is a valid potential for it.
+            // One implementation, two instantiations, and no second chance to
+            // mistranscribe Algorithm 3. All three negated arrays are stored
+            // that way rather than rebuilt per call.
+            difference_incremental_bounds(n, arcs, memory.by_head, false, memory.active_flags, memory.neg_potential, memory.ub_start_neg,
+                memory.do_ub_neg, memory.forced_ub, memory.bounds_work);
+
+            for (auto v : memory.bounds_work.settle_order)
+                if (memory.bounds_work.has_predecessor[v] && memory.bounds_work.settled_bound[v] > memory.ub_start_neg[v]) {
+                    auto e = memory.bounds_work.predecessor[v];
+                    infer_upper_bound(v, -memory.bounds_work.settled_bound[v], e, -memory.bounds_work.settled_bound[arcs[e].to]);
+                }
+
+            for (auto v : memory.bounds_work.settle_order)
+                if (memory.bounds_work.settled_bound[v] > memory.do_ub_neg[v]) {
+                    memory.trail.push_back(DifferenceTrailEntry{DifferenceTrailKind::UpperGate, v, memory.do_ub_neg[v]});
+                    memory.do_ub_neg[v] = memory.bounds_work.settled_bound[v];
+                }
+
+            if (incremental.audit) {
+                memory.claim = memory.ub_start_neg;
+                for (auto v : memory.bounds_work.settle_order)
+                    if (memory.bounds_work.settled_bound[v] > memory.claim[v])
+                        memory.claim[v] = memory.bounds_work.settled_bound[v];
+                for (size_t v = 0; v < n; ++v)
+                    memory.claim[v] = -memory.claim[v];
+
+                memory.pass_bound.assign(n, 0_i);
+                for (size_t v = 0; v < n; ++v)
+                    memory.pass_bound[v] = -memory.ub_start_neg[v];
+                memory.pass_pred.assign(n, nullopt);
+                if (relax_upper_bounds(memory.pass_bound, memory.pass_pred, false))
+                    throw UnexpectedException{"difference logic incremental propagation missed a negative cycle that the from-scratch pass found"};
+                for (size_t v = 0; v < n; ++v)
+                    if (memory.claim[v] != memory.pass_bound[v])
+                        throw UnexpectedException{"difference logic incremental propagation reached a different upper bound fixpoint from the "
+                                                  "from-scratch pass at node " +
+                            std::to_string(v) + ": " + memory.claim[v].to_string() + " against " + memory.pass_bound[v].to_string() +
+                            ". The incremental pass has lost propagation, which no proof can see."};
+            }
+
+            // Publish the trail: everything pushed above belongs to this epoch,
+            // and a backtrack past it will restore this number and undo exactly
+            // those entries. Done last, so that a contradiction raised part way
+            // through leaves the entries to be undone rather than committed.
+            any_cast<size_t &>(state.get_constraint_state(trail_mark_handle)) = memory.trail.size();
+
             return PropagatorState::Enable;
         },
         triggers);
