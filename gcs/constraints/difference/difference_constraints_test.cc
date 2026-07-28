@@ -190,6 +190,47 @@ namespace
             throw UnexpectedException{"difference did not push x's upper bound transitively to 3"};
     }
 
+    // The hole snap, which is why this propagator returns PropagatorState::Enable
+    // rather than EnableButIdempotent. One Bellman-Ford pass each way reaches the
+    // fixpoint of the *bounds abstraction*, but an inferred bound can land
+    // strictly above the value the pass computed, because the state snaps it past
+    // a hole in the domain -- and that higher bound seeds the next call, which
+    // then pushes further. So a second call genuinely infers more, and the
+    // propagator must be re-woken by its own inferences.
+    //
+    // y has the hole {3, 4, 5}. First call: lb(y) >= lb(x) + 3 = 3, which snaps
+    // to 6; lb(z) >= lb(y) + 2, but the *pass* computed lb(y) = 3, so it only
+    // pushes z to 5. Second call, seeded from the snapped lb(y) = 6: z >= 8.
+    // Nothing else is in the model, so if the propagator claimed idempotence the
+    // engine would not re-wake it from its own inferences and z would be left at
+    // 5. Confirmed by mutation: switching the return to EnableButIdempotent makes
+    // this fail (and also trips the harness's GCS_CHECK_IDEMPOTENT_CLAIMS re-run).
+    auto run_hole_snap_test() -> void
+    {
+        print(cerr, "difference hole snap:");
+        cerr << flush;
+
+        Problem p;
+        auto x = p.create_integer_variable(0_i, 10_i, "x");
+        auto y = p.create_integer_variable(vector<Integer>{0_i, 1_i, 2_i, 6_i, 7_i, 8_i, 9_i, 10_i}, "y");
+        auto z = p.create_integer_variable(0_i, 10_i, "z");
+        p.post(DifferenceConstraints{{DifferenceEdge{x, y, -3_i}, DifferenceEdge{y, z, -2_i}}});
+
+        optional<Integer> y_lower, z_lower;
+        solve_with(p, SolveCallbacks{.trace = [&](const CurrentState & s) -> bool {
+            y_lower = s.lower_bound(y);
+            z_lower = s.lower_bound(z);
+            return false;
+        }});
+
+        println(cerr, " y >= {}, z >= {}", y_lower ? y_lower->raw_value : -1, z_lower ? z_lower->raw_value : -1);
+        if (y_lower != make_optional(6_i))
+            throw UnexpectedException{"difference did not snap y's lower bound past the hole to 6"};
+        if (z_lower != make_optional(8_i))
+            throw UnexpectedException{"difference stopped at the first pass's lower bound for z instead of re-running from the snapped bound: "
+                                      "the propagator must not claim idempotence"};
+    }
+
     // A negated view operand is not a difference constraint at all, and
     // accepting one would be unsound rather than merely incomplete, so it is
     // rejected at construction.
@@ -335,8 +376,10 @@ auto main(int argc, char * argv[]) -> int
     string mode{argv[1]};
 
     run_negated_view_test();
-    if (mode == "basic")
+    if (mode == "basic") {
         run_transitive_test();
+        run_hole_snap_test();
+    }
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
