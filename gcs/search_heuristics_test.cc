@@ -1,4 +1,5 @@
 #include <gcs/constraint.hh>
+#include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/equals.hh>
 #include <gcs/current_state.hh>
 #include <gcs/innards/propagators.hh>
@@ -13,9 +14,12 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <optional>
+#include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
+
+using std::vector;
 
 namespace
 {
@@ -117,6 +121,77 @@ TEST_CASE("dom_wdeg tie-breaks on degree")
     auto picked = selector(state.current(), propagators);
     REQUIRE(picked.has_value());
     CHECK(*picked == IntegerVariableID{a});
+}
+
+// split_random's coin flip used to yield the same pair of conditions in both
+// arms, so it always took the upper half first: split_largest_first plus a
+// wasted RNG draw (issue #568). Both orderings must appear, and every node
+// must still offer exactly the complementary pair, or search stops being
+// complete.
+TEST_CASE("split_random takes each half first sometimes")
+{
+    State state;
+    auto x = IntegerVariableID{state.allocate_integer_variable_with_state(1_i, 4_i)};
+    Propagators propagators;
+
+    // The split point does not depend on the coin flip: domain size 4 gives
+    // mid = 2, and dropping mid - 1 = 1 value lands on 2 either way.
+    const auto lower_half = x <= 2_i, upper_half = x > 2_i;
+
+    // A fixed seed keeps this deterministic run to run. The exact sequence is
+    // not portable --- uniform_int_distribution's algorithm is unspecified ---
+    // but 100 draws from a fair coin see both arms on any implementation.
+    auto generate = value_order::split_random(1234);
+
+    bool saw_lower_first = false, saw_upper_first = false;
+    for (int draw = 0; draw < 100; ++draw) {
+        vector<IntegerVariableCondition> yielded;
+        for (auto && cond : generate(state.current(), propagators, x))
+            yielded.push_back(cond);
+
+        REQUIRE(yielded.size() == 2);
+        if (yielded[0] == lower_half) {
+            CHECK(yielded[1] == upper_half);
+            saw_lower_first = true;
+        }
+        else {
+            CHECK(yielded[0] == upper_half);
+            CHECK(yielded[1] == lower_half);
+            saw_upper_first = true;
+        }
+    }
+
+    CHECK(saw_lower_first);
+    CHECK(saw_upper_first);
+}
+
+TEST_CASE("split_random wired into solve_with finds every solution")
+{
+    // The 24 permutations of 1..4, restricted to the 12 with x[0] < x[3].
+    // Which half of a domain is tried first only changes the order in which
+    // the tree is explored, so a complete search must find all of them
+    // whatever the coin flips do -- checked over several seeds, since each
+    // seed gives a different sequence of branch orderings.
+    auto seed = GENERATE(1, 2, 3, 4, 5);
+
+    Problem problem;
+    vector<IntegerVariableID> xs;
+    for (int i = 0; i < 4; ++i)
+        xs.push_back(problem.create_integer_variable(1_i, 4_i));
+    for (unsigned i = 0; i < xs.size(); ++i)
+        for (unsigned j = i + 1; j < xs.size(); ++j)
+            problem.post(NotEquals{xs[i], xs[j]});
+    problem.post(LessThan{xs[0], xs[3]});
+
+    int solutions = 0;
+    solve_with(problem,
+        SolveCallbacks{.solution = [&](const CurrentState &) -> bool {
+                           ++solutions;
+                           return true;
+                       },
+            .branch = branch_with(variable_order::dom(problem), value_order::split_random(seed))});
+
+    CHECK(solutions == 12);
 }
 
 TEST_CASE("dom_wdeg wired into solve_with finds every solution")
