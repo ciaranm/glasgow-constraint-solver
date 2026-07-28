@@ -602,18 +602,38 @@ namespace gcs::innards
                 track(logger, _state.infer(lit), lit, why, snapshotted, assertion_hints);
         }
 
-        // The JustifyExplicitly counterpart of infer_all. When the steps end in a
-        // RUP (ThenRUP::Yes) and proofs are Off, it does the shared-temporary-level
-        // batching: emit the scaffolding once via the emit callable, then RUP each
-        // inference under it. Otherwise (assertion mode, or ThenRUP::No) it falls
-        // through to the per-literal path, where each inference carries the
-        // assertion hint in assert mode.
+        // The JustifyExplicitly counterpart of infer_all. A JustifyExplicitly handed
+        // to infer_all is *one* justification for the whole batch, not one repeated
+        // per literal: the emit callable is never told which literal it is
+        // justifying, so it cannot behave per-literal even if it wanted to, and
+        // re-running it would only re-emit the same lines. So whenever proofs are on
+        // and nothing is being asserted, the steps are emitted exactly once, under a
+        // single temporary level, and then each literal is applied. What a literal
+        // needs after the steps is what ThenRUP says:
+        //
+        //   - ThenRUP::Yes: the steps are shared scaffolding, so each literal is
+        //     RUPped under the reason, inside the temporary bracket the scaffolding
+        //     lives in;
+        //   - ThenRUP::No: the steps conclude the inference themselves, which for a
+        //     batch means they must derive *every* literal in it, at
+        //     ProofLevel::Current so the conclusions outlive the bracket. Nothing
+        //     further is logged per literal, so the scaffolding can be forgotten
+        //     before the domain updates are applied -- which also means a
+        //     contradiction unwinding out of one of them cannot strand the level.
+        //
+        // Either way the reason is materialised once, before any of the inferences:
+        // an eager reason is a pre-inference snapshot regardless, but a lazy one is
+        // pinned here rather than re-evaluated against each intermediate state.
+        //
+        // In assertion mode there is nothing to batch -- no steps are emitted, and
+        // every literal must carry its own assertion and hint -- so that falls
+        // through to the per-literal path below, as does the proofs-off tracker.
         template <typename Emit_, typename Hint_>
         auto infer_all(ProofLogger * const logger, const std::vector<Literal> & lits, const JustifyExplicitly<Emit_, Hint_> & why,
             const Reason & reason, const std::optional<AssertionAnnotation> & fallback = std::nullopt) -> void
         {
             if constexpr (Actual_::materialises_reasons) {
-                if (logger && logger->get_assertion_level() == AssertionLevel::Off && why.then_rup == ThenRUP::Yes) {
+                if (logger && logger->get_assertion_level() == AssertionLevel::Off) {
                     auto any_will_fire = false;
                     for (const auto & lit : lits)
                         if (_state.test_literal(lit) != LiteralIs::DefinitelyTrue) {
@@ -627,9 +647,16 @@ namespace gcs::innards
                     ReasonLiterals scratch;
                     auto t = logger->temporary_proof_level();
                     emit_explicit_steps(*logger, why.emit, snapshotted.materialised(_state, scratch));
-                    for (const auto & lit : lits)
-                        track(logger, _state.infer(lit), lit, JustifyUsingRUP{}, snapshotted);
-                    logger->forget_proof_level(t);
+                    if (why.then_rup == ThenRUP::Yes) {
+                        for (const auto & lit : lits)
+                            track(logger, _state.infer(lit), lit, JustifyUsingRUP{}, snapshotted);
+                        logger->forget_proof_level(t);
+                    }
+                    else {
+                        logger->forget_proof_level(t);
+                        for (const auto & lit : lits)
+                            track(logger, _state.infer(lit), lit, NoJustificationNeeded{}, snapshotted);
+                    }
                     return;
                 }
             }
