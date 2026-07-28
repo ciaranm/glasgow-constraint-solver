@@ -190,12 +190,21 @@ auto gcs::innards::difference_incremental_bounds(size_t number_of_nodes, const v
     // section 4.4 recipe its section 5.4 leaves out, in one place.
     auto in_start_set = [&](size_t v) { return bound[v] > gate[v] || 0 != forced[v]; };
 
-    // pi(v0) is a **per-call temporary**, computed over Vl and nothing else. It
-    // is what makes every seed non-negative, so caching it across calls (where
-    // Vl is different) or computing it over all of V would let a negative seed
-    // into the queue and corrupt Dijkstra's settle order --- which loses
-    // propagation silently, since no proof can see it. It is deliberately not
-    // stored anywhere.
+    // pi(v0), the paper's line 2: the maximum over Vl, which is what makes every
+    // seed below non-negative. It is a per-call temporary and is deliberately
+    // not stored anywhere.
+    //
+    // Worth knowing, because it is easy to over-fear: with a binary heap this
+    // value cannot actually affect the answer. It enters as
+    // `gamma(v) = pi_v0 - bound(v) - pi(v)' and leaves as
+    // `-delta(v) = pi_v0 - gamma(v) - pi(v)', so any change to it is a uniform
+    // shift of every key in the queue and cancels exactly out of every bound
+    // reported --- and Dijkstra needs non-negative *edges*, not non-negative
+    // starting distances. It is computed properly anyway because that costs
+    // nothing on a loop that has to run regardless, and because the invariant
+    // stops being free under a monotone bucket or radix queue, which assumes
+    // non-decreasing extraction. Confirmed by mutation: a deliberately
+    // non-maximal pi_v0 changes no test's behaviour at all.
     bool any = false;
     Integer pi_v0{0};
     for (size_t v = 0; v < number_of_nodes; ++v)
@@ -255,13 +264,16 @@ auto gcs::innards::difference_incremental_bounds(size_t number_of_nodes, const v
             if (work.settled[next])
                 continue;
 
-            // Note gamma_here, not gamma[here]: the pseudocode's lines 15-16
-            // read gamma(s) after line 10 has set it to +infinity, which makes
-            // the test always false and the algorithm never propagate anything.
-            // The value intended is wSP(v0, s), saved before the reset.
             auto reduced = potential[here] + arcs[e].d - potential[next];
             if (reduced < 0_i)
                 throw UnexpectedException{"difference logic found a negative reduced cost, so its potential function is invalid"};
+
+            // `gamma_here', not `work.gamma[here]'. The pseudocode's lines 15-16
+            // read gamma(s) after its line 10 has set it to +infinity, which
+            // makes the relaxation test always false and the algorithm never
+            // propagate anything at all. The value intended is wSP(v0, s), which
+            // line 9 saved and which is kept in a local here so there is nothing
+            // to reset and nothing to read back wrongly.
             auto candidate = gamma_here + reduced;
 
             if (! work.queued[next] || candidate < work.gamma[next]) {
