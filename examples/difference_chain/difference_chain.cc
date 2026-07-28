@@ -38,17 +38,20 @@
 // which is a single cutting-planes step whatever the domains are; this mode is
 // the baseline that claim will be measured against.
 //
-// Everything is posted as a two-term LinearLessThanEqual, i.e.
-// 1*a + -1*b <= d, which is the shape the presolver planned in issue #571 will
-// detect. Deliberately not LessThanEqual/Comparison over an offset view: those
-// are emitted unlabelled in the OPB, so a later global propagator could not
-// cite them in a proof.
+// --variant=decomposed posts every constraint as its own two-term
+// LinearLessThanEqual, i.e. 1*a + -1*b <= d, which is the shape the presolver
+// planned in issue #571 will detect. Deliberately not LessThanEqual/Comparison
+// over an offset view: those are emitted unlabelled in the OPB, so a global
+// propagator could not cite them in a proof.
 //
-// --variant currently accepts only "decomposed", the model above with one
-// propagator per constraint. A later PR in this stack adds --variant=global,
-// which posts the same system as a single global difference-logic constraint;
-// the dispatch below is the seam for it.
+// --variant=global posts exactly the same edges, in exactly the same order, as
+// a single DifferenceConstraints. That runs one Bellman-Ford pass over the
+// whole graph per wake instead of one propagator per edge, so the fixpoint cost
+// stops depending on the order the edges were given in; and in --mode=refute it
+// refutes the negative cycle by summing the cycle's edge rows, which is one
+// cutting-planes step whatever the domains are.
 
+#include <gcs/constraints/difference.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -95,13 +98,6 @@ using fmt::println;
 
 namespace
 {
-    // Post the difference constraint a - b <= d. Always as a two-term linear
-    // inequality: see the file-top comment for why not Comparison.
-    auto post_difference(Problem & problem, IntegerVariableID a, IntegerVariableID b, Integer d) -> void
-    {
-        problem.post(LinearLessThanEqual{WeightedSum{} + 1_i * a + -1_i * b, d});
-    }
-
     enum struct Order
     {
         Unlucky,
@@ -114,32 +110,43 @@ namespace
         Refute
     };
 
-    // Post Example 8's constraints over y and x. The two orders contain exactly
-    // the same constraints and differ only in the sequence they are handed to
-    // the solver in, which is what seeds the propagation queue.
-    auto post_example_8(Problem & problem, const vector<IntegerVariableID> & y, const vector<IntegerVariableID> & x, int n, Order order) -> void
+    enum struct Variant
     {
+        Decomposed,
+        Global
+    };
+
+    // Build Example 8's constraints over y and x. The two orders contain
+    // exactly the same edges and differ only in the sequence they come out in,
+    // which is what seeds the propagation queue for --variant=decomposed (and
+    // which --variant=global is designed not to care about).
+    auto example_8_edges(const vector<IntegerVariableID> & y, const vector<IntegerVariableID> & x, int n, Order order) -> vector<DifferenceEdge>
+    {
+        vector<DifferenceEdge> edges;
+
+        auto edge = [&](IntegerVariableID a, IntegerVariableID b, Integer d) { edges.push_back(DifferenceEdge{a, b, d}); };
+
         auto chain_ascending = [&] {
             for (int i = 2; i <= n; ++i)
-                post_difference(problem, y[i - 1], y[i], 0_i);
+                edge(y[i - 1], y[i], 0_i);
         };
         auto chain_descending = [&] {
             for (int i = n; i >= 2; --i)
-                post_difference(problem, y[i - 1], y[i], 0_i);
+                edge(y[i - 1], y[i], 0_i);
         };
         auto jumps_ascending = [&] {
             for (int i = 1; i <= n; ++i)
-                post_difference(problem, y[0], y[i], Integer{i - 1});
+                edge(y[0], y[i], Integer{i - 1});
         };
         auto jumps_descending = [&] {
             for (int i = n; i >= 1; --i)
-                post_difference(problem, y[0], y[i], Integer{i - 1});
+                edge(y[0], y[i], Integer{i - 1});
         };
-        auto bridge = [&] { post_difference(problem, y[n], x[0], 0_i); };
+        auto bridge = [&] { edge(y[n], x[0], 0_i); };
         auto x_pairs = [&] {
             for (int i = 0; i <= n; ++i)
                 for (int j = i + 1; j <= n; ++j)
-                    post_difference(problem, x[i], x[j], 0_i);
+                    edge(x[i], x[j], 0_i);
         };
 
         switch (order) {
@@ -163,12 +170,27 @@ namespace
             x_pairs();
             break;
         }
+
+        return edges;
     }
 
-    // The --variant names, in help order. Only the decomposition exists in this
-    // PR; --variant=global (one global difference-logic constraint over the same
-    // system) arrives in a later PR of the issue #571 stack.
-    constexpr string_view variants[] = {"decomposed"};
+    // Hand the same edges to the solver, either one propagator each or all at
+    // once. Both variants produce the same OPB rows for the same edges (one
+    // labelled inequality per edge), so the proofs are directly comparable.
+    auto post_edges(Problem & problem, const vector<DifferenceEdge> & edges, Variant variant) -> void
+    {
+        switch (variant) {
+            using enum Variant;
+        case Decomposed:
+            for (const auto & e : edges)
+                problem.post(LinearLessThanEqual{WeightedSum{} + 1_i * e.x + -1_i * e.y, e.d});
+            break;
+        case Global: problem.post(DifferenceConstraints{edges}); break;
+        }
+    }
+
+    // The --variant names, in help order.
+    constexpr string_view variants[] = {"decomposed", "global"};
 
     auto variant_names() -> string
     {
@@ -274,9 +296,14 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    auto variant = options_vars["variant"].as<string>();
-    if (variant != "decomposed") {
-        println(cerr, "Error: unknown --variant '{}'. Supported: {}.", variant, variant_names());
+    auto variant_name_given = options_vars["variant"].as<string>();
+    optional<Variant> variant;
+    if (variant_name_given == "decomposed")
+        variant = Variant::Decomposed;
+    else if (variant_name_given == "global")
+        variant = Variant::Global;
+    else {
+        println(cerr, "Error: unknown --variant '{}'. Supported: {}.", variant_name_given, variant_names());
         return EXIT_FAILURE;
     }
 
@@ -285,18 +312,22 @@ auto main(int argc, char * argv[]) -> int
     auto y = problem.create_integer_variable_vector(n + 1, 0_i, hi, "y");
     auto x = problem.create_integer_variable_vector(n + 1, 0_i, hi, "x");
 
-    post_example_8(problem, y, x, n, *order);
-
-    // The lower-bound bump that starts the chase. Posted last, so that the
-    // difference constraints are all in the queue ahead of it and the bump wakes
-    // them exactly as the paper describes.
-    problem.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * y[0], Integer{n}});
+    auto edges = example_8_edges(y, x, n, *order);
 
     // One extra difference constraint closing a negative cycle of weight -1
     // around y_0 <= ... <= y_n <= x_0 <= ... <= x_n, which the chain makes
     // reachable at cost 0. Nothing about it is locally violated.
     if (*mode == Mode::Refute)
-        post_difference(problem, x[n], y[0], -1_i);
+        edges.push_back(DifferenceEdge{x[n], y[0], -1_i});
+
+    post_edges(problem, edges, *variant);
+
+    // The lower-bound bump that starts the chase. Posted last, so that the
+    // difference constraints are all in the queue ahead of it and the bump wakes
+    // them exactly as the paper describes. Not a difference constraint, and
+    // posted identically in both variants, so the comparison is between the two
+    // ways of handling the edges and nothing else.
+    problem.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * y[0], Integer{n}});
 
     auto all = options_vars.contains("all");
     bool proven = false;
@@ -328,7 +359,7 @@ auto main(int argc, char * argv[]) -> int
     println("k: {}", k);
     println("order: {}", order_name);
     println("mode: {}", mode_name);
-    println("variant: {}", variant);
+    println("variant: {}", variant_name_given);
     println("all: {}", all ? "yes" : "no");
     println("domain: 0..{}", hi.raw_value);
     println("status: {}", status);
