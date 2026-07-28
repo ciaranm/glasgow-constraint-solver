@@ -1567,6 +1567,97 @@ namespace
             }
         }
 
+        // An affine expression: variable occurrences with integer coefficients,
+        // plus a constant. \sa accumulate_affine
+        struct AffineForm
+        {
+            vector<pair<string, Integer>> terms;
+            Integer constant = 0_i;
+        };
+
+        // Add `sign * node` to `into`, or return false if the node is not
+        // affine. Deliberately creates nothing --- not even a lazily-materialised
+        // instance variable --- because a false return has to leave the model
+        // exactly as it found it: the caller then walks the same tree the
+        // ordinary way instead.
+        auto accumulate_affine(Node * node, Integer sign, AffineForm & into) -> bool
+        {
+            switch (node->type) {
+                using enum ExpressionType;
+
+            case ODECIMAL: into.constant += sign * Integer{static_cast<NodeConstant *>(node)->val}; return true;
+
+            case OVAR: into.terms.emplace_back(static_cast<NodeVariable *>(node)->var, sign); return true;
+
+            case OADD:
+                for (auto * p : node->parameters)
+                    if (! accumulate_affine(p, sign, into))
+                        return false;
+                return true;
+
+            case OSUB:
+                return node->parameters.size() == 2 && accumulate_affine(node->parameters.at(0), sign, into) &&
+                    accumulate_affine(node->parameters.at(1), -sign, into);
+
+            case ONEG: return node->parameters.size() == 1 && accumulate_affine(node->parameters.at(0), -sign, into);
+
+            default: return false;
+            }
+        }
+
+        // The peephole for a top-level ordering: `lesser <= greater + slack`,
+        // with slack 0 for a non-strict comparison and -1 for a strict one
+        // (everything here is over integers). Both operand orders reach this,
+        // with the arguments swapped for `ge` / `gt`.
+        //
+        // Without it, `le(sub(x,y),d)` --- a difference constraint, and the shape
+        // XCSP3 spells one in --- walks as a compound operand: an OSUB, or an
+        // OADD once the parser has canonicalised it to `le(x, add(y,d))`. Either
+        // way that invents an auxiliary variable, posts its defining linear
+        // equality, and compares the auxiliary. That is an extra variable, an
+        // extra propagator, and a whole extra integer's worth of OPB bit
+        // variables and bound rows per constraint. Posting the one two-term
+        // LinearLessThanEqual instead is the same constraint at the same
+        // (bounds) consistency.
+        //
+        // Returns false, having posted nothing, when the expression is not
+        // affine or degenerates to a constant-only comparison; the caller then
+        // falls back to the ordinary walk.
+        auto try_post_ordering_as_linear(Node * lesser, Node * greater, Integer slack) -> bool
+        {
+            AffineForm form;
+            if (! accumulate_affine(lesser, 1_i, form) || ! accumulate_affine(greater, -1_i, form))
+                return false;
+
+            // Combine repeated occurrences of a variable, keeping first-mention
+            // order so the OPB row does not depend on the accumulation order.
+            // `le(sub(x,x),d)` and `le(x,x)` both fall out here with nothing
+            // left, which is why the empty case is a fall-back rather than a
+            // post: a constant-only comparison is the ordinary walk's business.
+            vector<pair<string, Integer>> combined;
+            for (const auto & [name, coefficient] : form.terms) {
+                auto merged = false;
+                for (auto & already : combined)
+                    if (already.first == name) {
+                        already.second += coefficient;
+                        merged = true;
+                        break;
+                    }
+                if (! merged)
+                    combined.emplace_back(name, coefficient);
+            }
+            erase_if(combined, [](const auto & t) { return t.second == 0_i; });
+
+            if (combined.empty())
+                return false;
+
+            WeightedSum sum;
+            for (const auto & [name, coefficient] : combined)
+                sum += coefficient * need_variable(name);
+            _problem.post(std::move(sum) <= slack - form.constant);
+            return true;
+        }
+
         // Walk an intension at the top level of a constraint, posting it
         // directly (no reification) when the root is a relational operator
         // we can express natively.
@@ -1593,25 +1684,40 @@ namespace
                 _problem.post(NotEquals{a.var, b.var});
                 return;
             }
+            // The four orderings each try the affine peephole first, in the
+            // operand order that makes them a `<=`. Only these four: `eq` must
+            // *not* go this way, because Equals over two variables is
+            // domain-consistent and a linear equality is only bounds-consistent,
+            // so rewriting it would silently weaken propagation. Comparison and
+            // a two-term linear inequality are both bounds-consistent, so for
+            // these four there is nothing to lose.
             case OLE: {
+                if (root->parameters.size() == 2 && try_post_ordering_as_linear(root->parameters.at(0), root->parameters.at(1), 0_i))
+                    return;
                 auto a = walk_intension(root->parameters.at(0));
                 auto b = walk_intension(root->parameters.at(1));
                 _problem.post(LessThanEqual{a.var, b.var});
                 return;
             }
             case OLT: {
+                if (root->parameters.size() == 2 && try_post_ordering_as_linear(root->parameters.at(0), root->parameters.at(1), -1_i))
+                    return;
                 auto a = walk_intension(root->parameters.at(0));
                 auto b = walk_intension(root->parameters.at(1));
                 _problem.post(LessThan{a.var, b.var});
                 return;
             }
             case OGT: {
+                if (root->parameters.size() == 2 && try_post_ordering_as_linear(root->parameters.at(1), root->parameters.at(0), -1_i))
+                    return;
                 auto a = walk_intension(root->parameters.at(0));
                 auto b = walk_intension(root->parameters.at(1));
                 _problem.post(GreaterThan{a.var, b.var});
                 return;
             }
             case OGE: {
+                if (root->parameters.size() == 2 && try_post_ordering_as_linear(root->parameters.at(1), root->parameters.at(0), 0_i))
+                    return;
                 auto a = walk_intension(root->parameters.at(0));
                 auto b = walk_intension(root->parameters.at(1));
                 _problem.post(GreaterThanEqual{a.var, b.var});
