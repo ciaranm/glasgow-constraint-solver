@@ -30,6 +30,7 @@
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/count.hh>
 #include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/difference.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/disjunctive_2d.hh>
 #include <gcs/constraints/divide.hh>

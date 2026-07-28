@@ -33,6 +33,7 @@ add_library(glasgow_constraint_solver
         constraints/comparison/comparison.cc
         constraints/count/count.cc
         constraints/cumulative/cumulative.cc
+        constraints/difference/difference_constraints.cc
         constraints/disjunctive/disjunctive.cc
         constraints/disjunctive_2d/disjunctive_2d.cc
         constraints/divide_modulus/divide_modulus.cc
