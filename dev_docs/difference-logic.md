@@ -395,6 +395,33 @@ branch and shrinks on backtrack — and nothing needs to be trailed for that,
 because nothing about the graph is stored between calls. This version recomputes
 from scratch every wake anyway.
 
+### Two things that cost 3× until they were measured
+
+Both were found by benchmarking `examples/difference_chain --variant=global` at
+`n = 640` against the table above, not by inspection, and both left the
+propagation and recursion counts *identical* — so nothing but wall clock would
+have caught either.
+
+- **The condition must not live in the edge struct.** An
+  `optional<IntegerVariableCondition>` is 64 bytes, which took the edge from 32
+  bytes to 96. The relaxation loop scans the whole edge array once per round, so
+  that is 3× the memory traffic in the innermost loop, and it cost exactly that:
+  0.32 s → 0.93 s. `DifferenceGraphEdge` therefore stays the convenient
+  *construction* type, with the condition attached to the edge it belongs to,
+  and `install_difference_propagator` repacks it once into a 32-byte arc array
+  plus a parallel condition array. The conditions are read when the active set is
+  snapshotted (once per call) and when a reason is built (only when something is
+  inferred) — never inside a round. A `static_assert` pins the arc size.
+- **An unconditional system must not go through the snapshot.** Iterating
+  `active_edges` rather than `0 .. m-1` is a level of indirection in the same
+  innermost loop, worth another 45% (0.32 s → 0.47 s). When nothing is
+  conditional the snapshot is not built at all and the arc array is scanned
+  straight through; the branch sits *outside* the per-edge loop, so the
+  conditional case pays nothing for the choice either.
+
+With both, `--variant=global` at `n = 640` is 0.332 s against the 0.323 s
+measured before half-reification existed, which is inside the noise.
+
 ### The completeness caveat, which is the paper's and not ours
 
 The paper's section 4.1 claims its propagator is a *domain* propagator only

@@ -156,8 +156,11 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State &,
         // f rather than under the empty role. Counted rather than guessed at.
         auto liftable_kind = true;
         optional<IntegerVariableCondition> edge_condition;
-        overloaded{//
-            [&](const reif::MustHold &) {}, [&](const reif::If & cond) { edge_condition = cond.cond; }, [&](const auto &) { liftable_kind = false; }}
+        overloaded{
+            [&](const reif::MustHold &) {},                             //
+            [&](const reif::If & cond) { edge_condition = cond.cond; }, //
+            [&](const auto &) { liftable_kind = false; }                //
+        }
             .visit(c.reification_condition());
 
         if (! liftable_kind) {
