@@ -10,6 +10,7 @@
 
 #include <util/overloaded.hh>
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -22,6 +23,7 @@ using std::nullopt;
 using std::optional;
 using std::size_t;
 using std::vector;
+using std::ranges::find;
 
 auto gcs::innards::deview_difference_operand(const IntegerVariableID & var) -> optional<DeviewedDifferenceOperand>
 {
@@ -39,17 +41,54 @@ auto gcs::innards::deview_difference_operand(const IntegerVariableID & var) -> o
 
 auto gcs::innards::install_difference_propagator(Propagators & propagators, const ConstraintID & constraint_id, DifferenceGraph graph) -> void
 {
-    if (graph.edges.empty() && graph.static_bounds.empty())
+    if (graph.edges.empty() && graph.static_bounds.empty() && graph.disallowed_conditions.empty())
         return;
 
     Triggers triggers;
     for (const auto & v : graph.nodes)
         triggers.on_bounds.emplace_back(v);
 
+    // A half-reified edge joins the graph the moment its condition becomes
+    // true, so the propagator must wake on that as well as on the nodes'
+    // bounds. `on_change' on the condition's variable is the coarsest trigger
+    // gcs offers that is guaranteed to catch it: a condition can become true
+    // through an interior removal (`x != v' the instant v leaves the domain),
+    // which `on_bounds' does not see, and `on_instantiated' fires strictly less
+    // often still (`x >= v' can become true long before x is fixed). Nothing
+    // finer is needed, because there is no cheaper "becomes true" trigger and
+    // the refined per-literal watches would have to be armed one per condition
+    // anyway. Waking when a condition becomes *false* is not needed at all ---
+    // an inactive edge simply does not participate, and no inference is lost by
+    // finding that out later --- but `on_change' cannot distinguish the two
+    // directions, and paying for the extra wake is cheaper than the machinery
+    // to avoid it.
+    //
+    // Deliberately not deduplicated against the node list: a variable that is
+    // both a graph node and somebody's condition would then have to give up one
+    // of the two trigger kinds, and a duplicate wake is merely wasted work.
+    {
+        vector<IntegerVariableID> condition_vars;
+        auto note = [&](const IntegerVariableCondition & c) {
+            if (condition_vars.end() == find(condition_vars, c.var))
+                condition_vars.push_back(c.var);
+        };
+        for (const auto & e : graph.edges)
+            if (e.cond)
+                note(*e.cond);
+        for (const auto & sb : graph.static_bounds)
+            if (sb.cond)
+                note(*sb.cond);
+        for (const auto & dc : graph.disallowed_conditions)
+            note(dc.cond);
+        for (const auto & v : condition_vars)
+            triggers.on_change.emplace_back(v);
+    }
+
     propagators.install(
         constraint_id,
-        [nodes = move(graph.nodes), graph_edges = move(graph.edges), static_bounds = move(graph.static_bounds), edge_lines = move(graph.edge_lines)](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [nodes = move(graph.nodes), graph_edges = move(graph.edges), static_bounds = move(graph.static_bounds),
+            disallowed_conditions = move(graph.disallowed_conditions),
+            edge_lines = move(graph.edge_lines)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto n = nodes.size();
             auto m = graph_edges.size();
 
@@ -68,20 +107,63 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                 return pol;
             };
 
-            // Static bounds first: an edge with a constant operand is a plain
+            // A half-reified edge whose condition says `cond -> 0 <= d' with
+            // d < 0 says `!cond', and saying so is a soundness obligation, not a
+            // nicety: dropping the edge would licence solutions in which cond
+            // holds and the constraint is violated. The row is `M.~cond >= -d'
+            // with -d >= 1, which is the unit clause `~cond' after saturation,
+            // so plain RUP against it suffices and nothing in the state is
+            // involved. (Unconditionally this is a root contradiction instead;
+            // see DifferenceConstraints::install_propagators.)
+            for (const auto & dc : disallowed_conditions)
+                if (LiteralIs::DefinitelyFalse != state.test_literal(dc.cond))
+                    inference.infer(logger, ! dc.cond, JustifyUsingRUP{}, NoReason{});
+
+            // Static bounds next: an edge with a constant operand is a plain
             // bound on the other operand, and once applied it is just part of
-            // the state that Bellman-Ford seeds from. These never change, so
-            // after the first call every one of these is a no-op.
+            // the state that Bellman-Ford seeds from. An unconditional one never
+            // changes, so after the first call it is a no-op; a conditional one
+            // applies from the moment its condition holds, and cites it.
             for (const auto & sb : static_bounds) {
+                if (sb.cond && LiteralIs::DefinitelyTrue != state.test_literal(*sb.cond))
+                    continue;
+                Reason why = sb.cond ? Reason{ExplicitReason{ReasonLiterals{{*sb.cond}}}} : Reason{NoReason{}};
                 if (sb.is_lower) {
                     if (state.lower_bound(nodes[sb.node]) < sb.value)
-                        inference.infer_greater_than_or_equal(logger, nodes[sb.node], sb.value, JustifyUsingRUP{}, NoReason{});
+                        inference.infer_greater_than_or_equal(logger, nodes[sb.node], sb.value, JustifyUsingRUP{}, why);
                 }
                 else {
                     if (state.upper_bound(nodes[sb.node]) > sb.value)
-                        inference.infer_less_than(logger, nodes[sb.node], sb.value + 1_i, JustifyUsingRUP{}, NoReason{});
+                        inference.infer_less_than(logger, nodes[sb.node], sb.value + 1_i, JustifyUsingRUP{}, why);
                 }
             }
+
+            // Which edges are in the graph *for this call*. A half-reified edge
+            // participates exactly while its condition currently holds; the
+            // paper's E' set, restricted to the entailed half, since nothing
+            // here infers a condition from the graph.
+            //
+            // Snapshotting once, rather than re-testing as we go, is what keeps
+            // the round bound and the cycle-extraction argument in
+            // dev_docs/difference-logic.md applicable verbatim: both are
+            // statements about one Bellman-Ford run over one fixed edge set, and
+            // the edge set is now fixed for the duration of the call rather than
+            // for the lifetime of the constraint. Nothing else in those
+            // arguments mentions where the edges came from.
+            //
+            // The snapshot also stays *correct* as inferences land during the
+            // call, which is why it is safe to cite a snapshotted condition in a
+            // reason later on. A literal that is definitely true holds for every
+            // value in the current domain, so it holds for every value in any
+            // subset of it; all this propagator does is shrink domains, and a
+            // domain shrunk to empty is a contradiction, which stops the call.
+            // So a condition true at snapshot time is still true at every
+            // inference made from it.
+            vector<size_t> active_edges;
+            active_edges.reserve(m);
+            for (size_t e = 0; e < m; ++e)
+                if (! graph_edges[e].cond || LiteralIs::DefinitelyTrue == state.test_literal(*graph_edges[e].cond))
+                    active_edges.push_back(e);
 
             // Both passes walk a predecessor relation, one forwards along the
             // edges and one backwards, so each is parameterised by which end of
@@ -96,6 +178,29 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
             // `0 >= -(cycle weight)' with the right hand side at least 1. No
             // domain state is involved, hence the empty reason.
             //
+            // A half-reified edge on the cycle contributes one extra term,
+            // `M.~cond', which does not telescope. Summing leaves
+            // `sum_i M_i.~cond_i >= -(cycle weight)', and one saturate turns it
+            // into the clause `~cond_1 v ... v ~cond_k' --- the learned clause,
+            // and exactly the shape hand-verified against real gcs OPB output in
+            // reified_hand.pbp before any of this was written. Every such
+            // condition therefore has to appear in the reason: the refutation is
+            // conditional on precisely them, and citing fewer would claim a
+            // contradiction the model does not entail. *That* part is
+            // load-bearing --- omitting a condition from the reason fails VeriPB
+            // on the reified fixtures, confirmed by mutation.
+            //
+            // The saturate itself is not: the closing RUP assumes every
+            // condition, which drives each `M.~cond' to zero and falsifies the
+            // unsaturated line just as well, and removing the saturate leaves
+            // every reified fixture verifying (also confirmed by mutation). It
+            // is emitted anyway because it makes the derived line *be* the
+            // clause rather than a big-M encoding of it, which is what a reader,
+            // an assertion hint or a longer-lived proof level would want. It is
+            // emitted only when there is a residual to saturate, so an
+            // unconditional cycle's proof line is byte-for-byte what it was
+            // before half-reified edges existed.
+            //
             // Before saying anything, verify the extracted cycle
             // arithmetically: that each edge meets the next, that it closes,
             // and that the total weight really is negative. That is O(cycle)
@@ -106,25 +211,39 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                 if (cycle.empty())
                     throw UnexpectedException{"difference logic extracted an empty negative cycle"};
                 Integer weight{0};
+                vector<IntegerVariableCondition> conditions;
                 for (size_t k = 0; k < cycle.size(); ++k) {
                     const auto & here = graph_edges[cycle[k]];
                     const auto & next = graph_edges[cycle[(k + 1) % cycle.size()]];
                     weight += here.d;
                     if (head_of(next) != tail_of(here))
                         throw UnexpectedException{"difference logic extracted a disconnected negative cycle"};
+                    // Deduplicated, because the same Boolean legitimately
+                    // appears on more than one edge (a disjunctive encoding
+                    // makes that the normal case) and a reason listing it twice
+                    // would render a proof line with a repeated literal.
+                    if (here.cond && conditions.end() == find(conditions, *here.cond))
+                        conditions.push_back(*here.cond);
                 }
                 if (weight >= 0_i)
                     throw UnexpectedException{"difference logic extracted a cycle of weight " + weight.to_string() + ", which is not negative"};
+
+                auto conditional = ! conditions.empty();
+                ReasonLiterals reason_literals;
+                for (const auto & c : conditions)
+                    reason_literals.push_back(c);
 
                 inference.contradiction(logger,
                     JustifyExplicitly{[&](const ReasonLiterals &) {
                                           auto pol = edge_line_pol();
                                           for (auto e : cycle)
                                               pol.add(edge_lines[graph_edges[e].posted_index]);
+                                          if (conditional)
+                                              pol.saturate();
                                           pol.emit(*logger, ProofLevel::Temporary);
                                       },
                         ThenRUP::Yes},
-                    NoReason{});
+                    conditional ? Reason{ExplicitReason{move(reason_literals)}} : Reason{NoReason{}});
             };
 
             // Walk predecessors back from `start' looking for a cycle, which is
@@ -199,7 +318,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
 
             for (size_t round = 0; round <= n; ++round) {
                 bool changed = false;
-                for (size_t e = 0; e < m; ++e) {
+                for (auto e : active_edges) {
                     const auto & edge = graph_edges[e];
                     auto candidate = lb[edge.from] - edge.d;
                     if (candidate > lb[edge.to]) {
@@ -233,6 +352,22 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                 // weakest antecedent for v >= L - d across this edge *is*
                 // source >= L, so the pol's degree comes out at exactly the
                 // pushed amount with no wasted slack.
+                //
+                // A half-reified edge adds `M.~cond' to that sum, and its
+                // condition to the reason. Only *this* edge's condition, because
+                // the inference is per edge: the predecessor's bound was either
+                // already there when the call started, or was itself inferred a
+                // moment ago carrying its own edge's condition in its own
+                // reason, so the conditions along a whole path are cited by the
+                // chain of inferences rather than by any one of them. Each link
+                // is a standalone entailment of one row, which is what makes its
+                // RUP check.
+                //
+                // No saturate here, unlike the cycle refutation: the residual is
+                // harmless under the closing RUP, which assumes cond and so
+                // drives that term to zero, leaving the line the unconditional
+                // case would have produced. Saturating would instead clamp
+                // BinEnc(v)'s own coefficients against the degree, for no gain.
                 inference.infer_greater_than_or_equal(logger, nodes[v], lb[v],
                     JustifyExplicitly{[&](const ReasonLiterals &) {
                                           auto pol = edge_line_pol();
@@ -241,7 +376,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                                           pol.emit(*logger, ProofLevel::Temporary);
                                       },
                         ThenRUP::Yes},
-                    ExplicitReason{ReasonLiterals{{source >= source_lb}}});
+                    ExplicitReason{edge.cond ? ReasonLiterals{{source >= source_lb}, {*edge.cond}} : ReasonLiterals{{source >= source_lb}}});
             });
 
             // Upper bounds flow backwards along the same edges. Edge
@@ -257,7 +392,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
 
             for (size_t round = 0; round <= n; ++round) {
                 bool changed = false;
-                for (size_t e = 0; e < m; ++e) {
+                for (auto e : active_edges) {
                     const auto & edge = graph_edges[e];
                     auto candidate = ub[edge.to] + edge.d;
                     if (candidate < ub[edge.from]) {
@@ -289,7 +424,8 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                                           pol.emit(*logger, ProofLevel::Temporary);
                                       },
                         ThenRUP::Yes},
-                    ExplicitReason{ReasonLiterals{{source < source_ub + 1_i}}});
+                    ExplicitReason{
+                        edge.cond ? ReasonLiterals{{source < source_ub + 1_i}, {*edge.cond}} : ReasonLiterals{{source < source_ub + 1_i}}});
             });
 
             // Deliberately not EnableButIdempotent, and not merely because the

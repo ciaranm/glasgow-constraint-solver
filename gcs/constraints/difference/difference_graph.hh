@@ -5,6 +5,7 @@
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/integer.hh>
+#include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
@@ -18,6 +19,14 @@ namespace gcs::innards
      * nodes[to] <= d`, derived from the `posted_index`th constraint the caller
      * handed over.
      *
+     * When \c cond is engaged the edge is *half-reified*: the constraint states
+     * `cond -> nodes[from] - nodes[to] <= d`, and the edge takes part in the
+     * graph only while \c cond currently holds. Its OPB row is emitted under
+     * \c HalfReifyOnConjunctionOf, so it carries a big-M term on `~cond` which
+     * survives every telescoping sum as a residual --- which is exactly the
+     * clause the propagator wants to learn, and why \c cond must appear in the
+     * reason of anything derived using this edge.
+     *
      * \sa DifferenceGraph
      * \ingroup Innards
      */
@@ -27,12 +36,16 @@ namespace gcs::innards
         std::size_t to;
         Integer d;
         std::size_t posted_index;
+        std::optional<IntegerVariableCondition> cond = std::nullopt;
     };
 
     /**
      * \brief An edge with a constant operand, which is not a graph edge at all
      * but a plain bound on the other operand: `nodes[node] >= value` when
      * `is_lower`, `nodes[node] <= value` otherwise.
+     *
+     * A \c cond means the bound is only enforced while that condition holds, and
+     * is then cited as the reason for applying it.
      *
      * \sa DifferenceGraph
      * \ingroup Innards
@@ -42,6 +55,26 @@ namespace gcs::innards
         std::size_t node;
         Integer value;
         bool is_lower;
+        std::size_t posted_index;
+        std::optional<IntegerVariableCondition> cond = std::nullopt;
+    };
+
+    /**
+     * \brief A half-reified edge that canonicalises to `cond -> 0 <= d` with
+     * `d < 0`, i.e. to `!cond`.
+     *
+     * Unconditionally this would be a root contradiction; with a condition it is
+     * a fact about that condition instead, and one that *must* be stated --- an
+     * implementation that quietly dropped such an edge would allow solutions in
+     * which \c cond holds and the edge is violated. The row saturates to the
+     * unit clause `~cond`, so the inference is plain RUP against it.
+     *
+     * \sa DifferenceGraph
+     * \ingroup Innards
+     */
+    struct DifferenceDisallowedCondition
+    {
+        IntegerVariableCondition cond;
         std::size_t posted_index;
     };
 
@@ -98,6 +131,7 @@ namespace gcs::innards
         std::vector<SimpleIntegerVariableID> nodes;
         std::vector<DifferenceGraphEdge> edges;
         std::vector<DifferenceStaticBound> static_bounds;
+        std::vector<DifferenceDisallowedCondition> disallowed_conditions;
         std::vector<ProofLine> edge_lines;
     };
 
@@ -114,11 +148,18 @@ namespace gcs::innards
      * Problem: the algorithm cares only about the node list, the edge list and
      * the rows, never about where they came from.
      *
-     * A no-op if the system has neither edges nor static bounds. Detecting a
-     * root-level contradiction (an edge saying `0 <= d` with `d < 0`) is *not*
-     * this function's job --- see DifferenceConstraints::install_propagators,
-     * which handles it with an initialiser, a door that has closed by the time a
-     * presolver runs.
+     * Half-reified edges take part only while their condition currently holds.
+     * No inference runs the other way: the propagator never fixes a condition
+     * from the graph (the paper's `IncImp`), which its own configuration study
+     * says to leave off.
+     *
+     * A no-op if the system has no edges, static bounds or disallowed
+     * conditions. Detecting a root-level contradiction (an *unconditional* edge
+     * saying `0 <= d` with `d < 0`) is *not* this function's job --- see
+     * DifferenceConstraints::install_propagators, which handles it with an
+     * initialiser, a door that has closed by the time a presolver runs. The
+     * half-reified counterpart *is* handled here, as a
+     * DifferenceDisallowedCondition, precisely because it needs no initialiser.
      *
      * \ingroup Innards
      */

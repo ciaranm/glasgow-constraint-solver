@@ -4,6 +4,7 @@
 #include <gcs/constraint.hh>
 #include <gcs/constraints/difference/difference_graph.hh>
 #include <gcs/integer.hh>
+#include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
@@ -15,11 +16,20 @@
 namespace gcs
 {
     /**
-     * \brief One edge of a DifferenceConstraints system: \f$x - y \le d\f$.
+     * \brief One edge of a DifferenceConstraints system: \f$x - y \le d\f$, or
+     * \f$cond \rightarrow x - y \le d\f$ when \c cond is given.
      *
      * Either operand may be a view or a constant. A negated view (`-X + c`) is
      * rejected: `V - W <= d` with `V = -X + c` is `-X - W <= d - c`, which is
      * not a difference constraint at all.
+     *
+     * A \c cond makes the edge *half-reified*: the constraint holds only when
+     * the condition does, and the edge takes part in the graph only while the
+     * condition currently holds. Nothing is inferred in the other direction ---
+     * the condition is never fixed from the graph. That is the paper's
+     * `IncImp`, which its own configuration study says to leave off, so it is
+     * deliberately absent; posting `b -> x - y <= d` on its own therefore leaves
+     * `b` for the search (or for some other constraint) to decide.
      *
      * \sa DifferenceConstraints
      * \ingroup Constraints
@@ -29,6 +39,7 @@ namespace gcs
         IntegerVariableID x;
         IntegerVariableID y;
         Integer d;
+        std::optional<IntegerVariableCondition> cond = std::nullopt;
     };
 
     /**
@@ -55,10 +66,21 @@ namespace gcs
      * an interior value, and gcs domains may have holes where the paper's
      * Theorem 2 assumes ranges.
      *
-     * This version handles unconditional edges only. Half-reified edges
-     * (`b -> x - y <= d`), which make the graph change during search, are not
-     * supported yet. Neither is incremental propagation: every wake recomputes
-     * from scratch.
+     * An edge may carry a reification condition, giving `b -> x - y <= d`; such
+     * an edge participates only while its condition currently holds, and every
+     * inference made using it cites that condition. Inference in the other
+     * direction (fixing a condition because its edge would close a negative
+     * cycle --- the paper's `IncImp`) is deliberately not implemented, since the
+     * paper's own configuration study says to leave it off. Note also the
+     * paper's caveat in its section 4.1: its "this is a domain propagator"
+     * claim assumes no Boolean appears in two difference constraints, which a
+     * disjunctive encoding (`b -> i before j`, `!b -> j before i`) violates by
+     * construction. That is a *completeness* caveat only; soundness is
+     * unaffected, and this propagator is bounds consistent rather than domain
+     * consistent in any case.
+     *
+     * Incremental propagation is not implemented: every wake recomputes from
+     * scratch.
      *
      * See `dev_docs/difference-logic.md` for the design, the proof shapes and
      * what is deferred.

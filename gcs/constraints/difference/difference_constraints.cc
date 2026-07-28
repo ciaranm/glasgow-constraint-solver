@@ -4,12 +4,14 @@
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_model.hh>
+#include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,6 +22,7 @@ using namespace gcs::innards;
 using std::make_unique;
 using std::map;
 using std::move;
+using std::optional;
 using std::size_t;
 using std::string;
 using std::to_string;
@@ -86,31 +89,40 @@ auto DifferenceConstraints::prepare(Propagators &, State &, ProofModel * const) 
         // edge's weight is expressed over bare variables and nothing else.
         auto d = e.d - left.offset + right.offset;
 
+        // A degenerate edge says 0 <= d. Unconditionally that is vacuous when
+        // d >= 0 and a root contradiction when d < 0. Half-reified it is
+        // vacuous when d >= 0 and says `!cond' when d < 0 --- which has to be
+        // *said*, since dropping it would let cond hold with the constraint
+        // violated. The propagator does that from the same row, so no
+        // initialiser is involved and a presolver could do the same.
+        auto degenerate = [&](Integer weight) {
+            if (weight >= 0_i)
+                return;
+            if (e.cond)
+                _graph.disallowed_conditions.push_back(DifferenceDisallowedCondition{*e.cond, i});
+            else if (! _root_contradiction_posted_index)
+                _root_contradiction_posted_index = i;
+        };
+
         if (left.variable && right.variable) {
             auto from = node_index(*left.variable);
             auto to = node_index(*right.variable);
-            if (from == to) {
-                // Aliasing: X - X <= d, i.e. 0 <= d. Vacuous when d >= 0, a
-                // root contradiction when d < 0 (the OPB row is directly
-                // false, so the contradiction RUPs from it).
-                if (d < 0_i && ! _root_contradiction_posted_index)
-                    _root_contradiction_posted_index = i;
-            }
+            if (from == to)
+                degenerate(d);
             else
-                _graph.edges.push_back(DifferenceGraphEdge{from, to, d, i});
+                _graph.edges.push_back(DifferenceGraphEdge{from, to, d, i, e.cond});
         }
         else if (left.variable) {
             // X - c2 <= d, i.e. X <= d (c2 already folded in above).
-            _graph.static_bounds.push_back(DifferenceStaticBound{node_index(*left.variable), d, false, i});
+            _graph.static_bounds.push_back(DifferenceStaticBound{node_index(*left.variable), d, false, i, e.cond});
         }
         else if (right.variable) {
             // c1 - Y <= d, i.e. Y >= -d.
-            _graph.static_bounds.push_back(DifferenceStaticBound{node_index(*right.variable), -d, true, i});
+            _graph.static_bounds.push_back(DifferenceStaticBound{node_index(*right.variable), -d, true, i, e.cond});
         }
         else {
             // Two constants: 0 <= d, exactly as for aliasing.
-            if (d < 0_i && ! _root_contradiction_posted_index)
-                _root_contradiction_posted_index = i;
+            degenerate(d);
         }
     }
 
@@ -158,7 +170,18 @@ auto DifferenceConstraints::define_proof_model(ProofModel & model, const State &
         // both render as a row whose left hand side is zero, which is exactly
         // what 0 <= d says, and which VeriPB reads as trivially true or
         // directly false according to d's sign.
-        _graph.edge_lines.push_back(model.add_labelled_constraint(constraint_id(), "e" + to_string(i), move(sum) <= d));
+        //
+        // A half-reified edge's row is emitted under HalfReifyOnConjunctionOf,
+        // so it says `cond -> X - Y <= d' and carries a big-M term on `~cond'.
+        // That term does not telescope, which is the point: it survives every
+        // sum as a residual and saturates into exactly the clause the propagator
+        // is entitled to learn. An unconditional edge passes nullopt and its row
+        // is byte-for-byte what it was before conditions existed.
+        optional<HalfReifyOnConjunctionOf> half_reif;
+        if (e.cond)
+            half_reif = HalfReifyOnConjunctionOf{*e.cond};
+
+        _graph.edge_lines.push_back(model.add_labelled_constraint(constraint_id(), "e" + to_string(i), move(sum) <= d, half_reif));
     }
 }
 
@@ -188,8 +211,14 @@ auto DifferenceConstraints::s_expr(const ProofModel * const model) const -> SExp
     auto & tracker = model->names_and_ids_tracker();
 
     vector<SExpr> edges;
-    for (const auto & e : _edges)
-        edges.push_back(SExpr::list({tracker.s_expr_term_of(e.x), tracker.s_expr_term_of(e.y), SExpr::atom(e.d.to_string())}));
+    for (const auto & e : _edges) {
+        vector<SExpr> edge{tracker.s_expr_term_of(e.x), tracker.s_expr_term_of(e.y), SExpr::atom(e.d.to_string())};
+        // A half-reified edge carries its condition as a fourth element, so
+        // that an unconditional system's s-expression is unchanged.
+        if (e.cond)
+            edge.push_back(tracker.s_expr_term_of(Literal{*e.cond}));
+        edges.push_back(SExpr::list(move(edge)));
+    }
 
     return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(move(edges))});
 }
