@@ -53,6 +53,7 @@ using std::cout;
 using std::cv_status;
 using std::deque;
 using std::endl;
+using std::erase_if;
 using std::make_optional;
 using std::make_shared;
 using std::map;
@@ -62,6 +63,7 @@ using std::minmax_element;
 using std::mutex;
 using std::nullopt;
 using std::optional;
+using std::pair;
 using std::set;
 using std::shared_ptr;
 using std::signal;
@@ -334,7 +336,7 @@ namespace
         auto buildConstraintCount(string, vector<XVariable *> & x_vars, vector<int> & values, XCondition & cond) -> void override
         {
             auto vars = need_variables(x_vars);
-            auto how_many = _problem.create_integer_variable(0_i, Integer{static_cast<long long>(vars.size())}, "countresult");
+            auto how_many = create_aux_variable(0_i, Integer{static_cast<long long>(vars.size())}, "countresult");
             if (values.size() == 1)
                 _problem.post(Count{vars, constant_variable(Integer{values[0]}), how_many});
             else {
@@ -350,7 +352,7 @@ namespace
         auto buildConstraintAmong(string, vector<XVariable *> & x_vars, vector<int> & values, int k) -> void override
         {
             auto vars = need_variables(x_vars);
-            auto how_many = _problem.create_integer_variable(Integer{k}, Integer{k}, "amongresult");
+            auto how_many = create_aux_variable(Integer{k}, Integer{k}, "amongresult");
             vector<Integer> ivals;
             ivals.reserve(values.size());
             for (auto v : values)
@@ -361,21 +363,21 @@ namespace
         auto buildConstraintAtMost(string, vector<XVariable *> & x_vars, int value, int k) -> void override
         {
             auto vars = need_variables(x_vars);
-            auto how_many = _problem.create_integer_variable(0_i, Integer{k}, "atmost");
+            auto how_many = create_aux_variable(0_i, Integer{k}, "atmost");
             _problem.post(Count{vars, constant_variable(Integer{value}), how_many});
         }
 
         auto buildConstraintAtLeast(string, vector<XVariable *> & x_vars, int value, int k) -> void override
         {
             auto vars = need_variables(x_vars);
-            auto how_many = _problem.create_integer_variable(Integer{k}, Integer{static_cast<long long>(vars.size())}, "atleast");
+            auto how_many = create_aux_variable(Integer{k}, Integer{static_cast<long long>(vars.size())}, "atleast");
             _problem.post(Count{vars, constant_variable(Integer{value}), how_many});
         }
 
         auto buildConstraintExactlyK(string, vector<XVariable *> & x_vars, int value, int k) -> void override
         {
             auto vars = need_variables(x_vars);
-            auto how_many = _problem.create_integer_variable(Integer{k}, Integer{k}, "exactlyk");
+            auto how_many = create_aux_variable(Integer{k}, Integer{k}, "exactlyk");
             _problem.post(Count{vars, constant_variable(Integer{value}), how_many});
         }
 
@@ -388,7 +390,7 @@ namespace
         auto buildConstraintNValues(string, vector<XVariable *> & x_vars, XCondition & cond) -> void override
         {
             auto vars = need_variables(x_vars);
-            auto n_values = _problem.create_integer_variable(1_i, Integer{static_cast<long long>(vars.size())}, "nvalues");
+            auto n_values = create_aux_variable(1_i, Integer{static_cast<long long>(vars.size())}, "nvalues");
             _problem.post(NValue{n_values, vars});
             apply_count_condition(n_values, cond, "nValues");
         }
@@ -678,7 +680,7 @@ namespace
             vector<IntegerVariableID> loads;
             loads.reserve(num_bins);
             for (size_t b = 0; b < num_bins; ++b)
-                loads.push_back(_problem.create_integer_variable(0_i, total, "binpack_load"));
+                loads.push_back(create_aux_variable(0_i, total, "binpack_load"));
 
             _problem.post(BinPacking{items, std::move(sizes_i), loads});
 
@@ -783,8 +785,8 @@ namespace
                 pmin += min(Integer{profits[i]} * mv.lower, Integer{profits[i]} * mv.upper);
                 pmax += max(Integer{profits[i]} * mv.lower, Integer{profits[i]} * mv.upper);
             }
-            auto weight_total = _problem.create_integer_variable(wmin, wmax, "knap_weight");
-            auto profit_total = _problem.create_integer_variable(pmin, pmax, "knap_profit");
+            auto weight_total = create_aux_variable(wmin, wmax, "knap_weight");
+            auto profit_total = create_aux_variable(pmin, pmax, "knap_profit");
             _problem.post(Knapsack{std::move(ws), std::move(ps), vars, weight_total, profit_total});
             apply_count_condition(weight_total, weightCondition, "knapsack weight");
             apply_count_condition(profit_total, profitCondition, "knapsack profit");
@@ -834,8 +836,7 @@ namespace
             vector<IntegerVariableID> counts;
             counts.reserve(occurs.size());
             for (size_t i = 0; i != occurs.size(); ++i)
-                counts.emplace_back(
-                    _problem.create_integer_variable(Integer{occurs[i].min}, Integer{occurs[i].max}, "gccoccurs" + std::to_string(i)));
+                counts.emplace_back(create_aux_variable(Integer{occurs[i].min}, Integer{occurs[i].max}, "gccoccurs" + std::to_string(i)));
             _problem.post(GlobalCardinality{move(vars), gcc_cover(values), move(counts)}.with_closed(closed));
         }
 
@@ -971,6 +972,22 @@ namespace
         vector<std::unique_ptr<vector<vector<IntegerVariableID>>>> _element_2d_var_arrays;
         vector<std::unique_ptr<vector<vector<Integer>>>> _element_2d_const_arrays;
 
+        // Serial number for aux variable names. \sa create_aux_variable
+        unsigned long long _aux_variables = 0;
+
+        // Every auxiliary variable this binding invents needs a name, because
+        // that is what the OPB and the proof log call it, and Problem rejects a
+        // duplicate name outright. The names were literals, so two intension
+        // constraints each wanting an "addresult" --- or two <abs> anywhere in
+        // the instance, or a second bin packing --- threw NamingError and killed
+        // the process before search began. Serial-number them instead. Variables
+        // the instance itself declares keep their own names: they are unique by
+        // construction, and they are what the solution output prints.
+        auto create_aux_variable(Integer lower, Integer upper, const string & role) -> IntegerVariableID
+        {
+            return _problem.create_integer_variable(lower, upper, role + "_" + std::to_string(++_aux_variables));
+        }
+
         // Variable lookup helpers. need_variable() lazily creates the
         // IntegerVariableID on first use.
 
@@ -1074,7 +1091,7 @@ namespace
             if (startIndex == 0)
                 return idx;
             auto & mv = find_variable(x->id);
-            auto shifted = _problem.create_integer_variable(mv.lower - Integer{startIndex}, mv.upper - Integer{startIndex}, "idx_shifted");
+            auto shifted = create_aux_variable(mv.lower - Integer{startIndex}, mv.upper - Integer{startIndex}, "idx_shifted");
             _problem.post(WeightedSum{} + 1_i * idx + -1_i * shifted == Integer{startIndex});
             return shifted;
         }
@@ -1119,7 +1136,7 @@ namespace
                 lower = lower ? min(*lower, mv.lower) : mv.lower;
                 upper = upper ? max(*upper, mv.upper) : mv.upper;
             }
-            auto result = _problem.create_integer_variable(*lower, *upper, is_min ? "minresult" : "maxresult");
+            auto result = create_aux_variable(*lower, *upper, is_min ? "minresult" : "maxresult");
             if (is_min)
                 _problem.post(ArrayMin{vars, result});
             else
@@ -1186,7 +1203,7 @@ namespace
             case GT: _problem.post(std::move(cvs) >= bound + 1_i); break;
             case GE: _problem.post(std::move(cvs) >= bound); break;
             case NE: {
-                auto diff = _problem.create_integer_variable(-range, range, "ne");
+                auto diff = create_aux_variable(-range, range, "ne");
                 cvs += 1_i * diff;
                 _problem.post(std::move(cvs) == bound);
                 _problem.post(NotEquals{diff, 0_c});
@@ -1262,7 +1279,7 @@ namespace
         {
             auto a = walk_intension(node->parameters.at(0));
             auto b = walk_intension(node->parameters.at(1));
-            auto control = _problem.create_integer_variable(0_i, 1_i, name);
+            auto control = create_aux_variable(0_i, 1_i, name);
             _problem.post(Constraint_{a.var, b.var, control == 1_i});
             return {control, 0_i, 1_i};
         }
@@ -1277,7 +1294,7 @@ namespace
         {
             auto lower = min({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
             auto upper = max({a.lower * b.lower, a.lower * b.upper, a.upper * b.lower, a.upper * b.upper});
-            auto r = _problem.create_integer_variable(lower, upper, name);
+            auto r = create_aux_variable(lower, upper, name);
             _problem.post(Multiply{a.var, b.var, r});
             return {r, lower, upper};
         }
@@ -1310,7 +1327,7 @@ namespace
                     upper += sub.upper;
                     cvs += 1_i * sub.var;
                 }
-                auto r = _problem.create_integer_variable(lower, upper, "addresult");
+                auto r = create_aux_variable(lower, upper, "addresult");
                 cvs += -1_i * r;
                 _problem.post(std::move(cvs) == 0_i);
                 return {r, lower, upper};
@@ -1321,7 +1338,7 @@ namespace
                 auto b = walk_intension(node->parameters.at(1));
                 auto lower = a.lower - b.upper;
                 auto upper = a.upper - b.lower;
-                auto r = _problem.create_integer_variable(lower, upper, "subresult");
+                auto r = create_aux_variable(lower, upper, "subresult");
                 _problem.post(WeightedSum{} + 1_i * a.var + -1_i * b.var == 1_i * r);
                 return {r, lower, upper};
             }
@@ -1339,7 +1356,7 @@ namespace
                 auto a = walk_intension(node->parameters.at(0));
                 auto lower = -a.upper;
                 auto upper = -a.lower;
-                auto r = _problem.create_integer_variable(lower, upper, "negresult");
+                auto r = create_aux_variable(lower, upper, "negresult");
                 _problem.post(WeightedSum{} + 1_i * a.var + 1_i * r == 0_i);
                 return {r, lower, upper};
             }
@@ -1348,7 +1365,7 @@ namespace
                 auto a = walk_intension(node->parameters.at(0));
                 auto upper = max(abs(a.lower), abs(a.upper));
                 auto lower = (a.lower >= 0_i) ? a.lower : (a.upper <= 0_i) ? -a.upper : 0_i;
-                auto r = _problem.create_integer_variable(lower, upper, "absresult");
+                auto r = create_aux_variable(lower, upper, "absresult");
                 _problem.post(Abs{a.var, r});
                 return {r, lower, upper};
             }
@@ -1360,7 +1377,7 @@ namespace
 
             case ONOT: {
                 auto a = walk_intension(node->parameters.at(0));
-                auto r = _problem.create_integer_variable(0_i, 1_i, "notresult");
+                auto r = create_aux_variable(0_i, 1_i, "notresult");
                 _problem.post(WeightedSum{} + 1_i * a.var + 1_i * r == 1_i);
                 return {r, 0_i, 1_i};
             }
@@ -1384,7 +1401,7 @@ namespace
                         upper = (node->type == OMIN) ? min(upper, sub.upper) : max(upper, sub.upper);
                     }
                 }
-                auto r = _problem.create_integer_variable(lower, upper, node->type == OMIN ? "minresult" : "maxresult");
+                auto r = create_aux_variable(lower, upper, node->type == OMIN ? "minresult" : "maxresult");
                 if (node->type == OMIN)
                     _problem.post(ArrayMin{vars, r});
                 else
@@ -1436,7 +1453,7 @@ namespace
                     upper = *hi;
                 }
 
-                auto r = _problem.create_integer_variable(lower, upper, "powresult");
+                auto r = create_aux_variable(lower, upper, "powresult");
                 _problem.post(Power{base.var, constant_variable(k), r});
                 return {r, lower, upper};
             }
@@ -1445,7 +1462,7 @@ namespace
                 auto a = walk_intension(node->parameters.at(0));
                 auto b = walk_intension(node->parameters.at(1));
                 auto bound = max(abs(b.lower), abs(b.upper));
-                auto r = _problem.create_integer_variable(-bound, bound, "modresult");
+                auto r = create_aux_variable(-bound, bound, "modresult");
                 _problem.post(Modulus{a.var, b.var, r});
                 return {r, -bound, bound};
             }
@@ -1454,7 +1471,7 @@ namespace
                 auto a = walk_intension(node->parameters.at(0));
                 auto b = walk_intension(node->parameters.at(1));
                 auto bound = max(abs(a.lower), abs(a.upper));
-                auto r = _problem.create_integer_variable(-bound, bound, "divresult");
+                auto r = create_aux_variable(-bound, bound, "divresult");
                 _problem.post(Divide{a.var, b.var, r});
                 return {r, -bound, bound};
             }
@@ -1463,8 +1480,8 @@ namespace
                 auto a = walk_intension(node->parameters.at(0));
                 auto b = walk_intension(node->parameters.at(1));
                 auto bound = max(a.upper, b.upper) - min(a.lower, b.lower);
-                auto diff = _problem.create_integer_variable(-bound, bound, "dist");
-                auto r = _problem.create_integer_variable(0_i, bound, "distresult");
+                auto diff = create_aux_variable(-bound, bound, "dist");
+                auto r = create_aux_variable(0_i, bound, "distresult");
                 _problem.post(WeightedSum{} + 1_i * a.var + -1_i * b.var == 1_i * diff);
                 _problem.post(Abs{diff, r});
                 return {r, 0_i, bound};
@@ -1494,9 +1511,9 @@ namespace
                 // a ⇒ b ≡ (¬a) ∨ b. We materialise ¬a as 1-a and reify Or.
                 auto a = walk_intension(node->parameters.at(0));
                 auto b = walk_intension(node->parameters.at(1));
-                auto not_a = _problem.create_integer_variable(0_i, 1_i, "not_a");
+                auto not_a = create_aux_variable(0_i, 1_i, "not_a");
                 _problem.post(WeightedSum{} + 1_i * a.var + 1_i * not_a == 1_i);
-                auto r = _problem.create_integer_variable(0_i, 1_i, "impresult");
+                auto r = create_aux_variable(0_i, 1_i, "impresult");
                 vector<IntegerVariableID> args{not_a, b.var};
                 _problem.post(Or{args, r});
                 return {r, 0_i, 1_i};
@@ -1511,8 +1528,8 @@ namespace
                 vars.reserve(node->parameters.size() + 1);
                 for (auto * p : node->parameters)
                     vars.emplace_back(walk_intension(p).var);
-                auto r = _problem.create_integer_variable(0_i, 1_i, "xorresult");
-                auto not_r = _problem.create_integer_variable(0_i, 1_i, "not_xorresult");
+                auto r = create_aux_variable(0_i, 1_i, "xorresult");
+                auto not_r = create_aux_variable(0_i, 1_i, "not_xorresult");
                 _problem.post(WeightedSum{} + 1_i * r + 1_i * not_r == 1_i);
                 vars.emplace_back(not_r);
                 _problem.post(ParityOdd{vars});
@@ -1526,7 +1543,7 @@ namespace
                 auto e = walk_intension(node->parameters.at(2));
                 auto lower = min(t.lower, e.lower);
                 auto upper = max(t.upper, e.upper);
-                auto r = _problem.create_integer_variable(lower, upper, "ifresult");
+                auto r = create_aux_variable(lower, upper, "ifresult");
                 _problem.post(EqualsIf{r, t.var, cond.var == 1_i});
                 _problem.post(EqualsIf{r, e.var, cond.var == 0_i});
                 return {r, lower, upper};
@@ -1538,7 +1555,7 @@ namespace
                 vars.reserve(node->parameters.size());
                 for (auto * p : node->parameters)
                     vars.emplace_back(walk_intension(p).var);
-                auto control = _problem.create_integer_variable(0_i, 1_i, node->type == OAND ? "andresult" : "orresult");
+                auto control = create_aux_variable(0_i, 1_i, node->type == OAND ? "andresult" : "orresult");
                 if (node->type == OAND)
                     _problem.post(And{vars, control});
                 else
@@ -1644,7 +1661,7 @@ namespace
                 // a ⇒ b at top level: post Or{¬a, b}.
                 auto a = walk_intension(root->parameters.at(0));
                 auto b = walk_intension(root->parameters.at(1));
-                auto not_a = _problem.create_integer_variable(0_i, 1_i, "not_a");
+                auto not_a = create_aux_variable(0_i, 1_i, "not_a");
                 _problem.post(WeightedSum{} + 1_i * a.var + 1_i * not_a == 1_i);
                 vector<IntegerVariableID> args{not_a, b.var};
                 _problem.post(Or{args});
