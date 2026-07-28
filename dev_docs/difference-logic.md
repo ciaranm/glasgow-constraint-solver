@@ -595,32 +595,49 @@ constraints the model already contains.
 
 ### What is lifted, and what is not
 
-The paper's **level 1**, restricted to what the propagator supports today: a
-two-term linear with coefficients exactly `+1` and `-1` and two distinct variable
-operands, each of which may carry a `+X + c` view offset. The reification
-condition may be either of two kinds:
+The paper's **level 1**, restricted to what the propagator supports today, from
+two donor families:
+
+- a **two-term linear** with coefficients exactly `+1` and `-1` and two distinct
+  variable operands;
+- a **`Comparison`** — `LessThan`, `LessThanEqual`, `GreaterThan`,
+  `GreaterThanEqual` — over two distinct variable operands, which is the same
+  constraint written the way a model usually writes it: `x <= y + d` is a view on
+  one side, not a separate constraint kind.
+
+Either operand may carry a `+X + c` view offset, folded into the weight. The
+reification condition may be either of two kinds:
 
 - **`reif::MustHold`**, giving a plain edge;
 - **`reif::If`**, giving a half-reified one, `b -> x - y <= d`.
 
-**Both forms are citable, and this was checked rather than assumed.**
-`linear_inequality.cc` labels them identically — `add_labelled_constraint(id, "",
-…)`, i.e. `@c[<id>]` with an *empty* role — and differs only in passing
-`HalfReifyOnConjunctionOf{cond.cond}` for the `If` form. So the `If` row is
-exactly the shape the propagator's proofs assume, unlike `Comparison`'s
-unconditional rows, which go through the `void`-returning `add_constraint` and
-carry no label at all.
+**All four combinations are citable, and this was checked rather than assumed.**
+`linear_inequality.cc` and `comparison.cc` both label the unconditional and the
+`If` row identically — `add_labelled_constraint(id, "", …)`, i.e. `@c[<id>]` with
+an *empty* role — and differ only in passing
+`HalfReifyOnConjunctionOf{cond.cond}` for the `If` form. So all four are exactly
+the shape the propagator's proofs assume. For the comparison family the check was
+against the other end of the label as well as against our own code: `cake_pb_cp`
+re-derives `less_equal`, `less_than`, `greater_equal`, `greater_than` and their
+`_if` spellings as `@c[<id>]`, and the `_iff` spelling as `@c[<id>][r]` /
+`@c[<id>][f]` — see the section below.
 
-The other three reification kinds are *also* difference constraints, and are
-skipped only because each needs a **different row** of the donor's output than
-the two above:
+The other three reification kinds are *also* difference constraints:
 
-- `reif::MustNotHold` and `reif::NotIf` state the integer negation,
-  `y - x <= -d-1`;
 - `reif::Iff` emits its two halves under the roles `r` and `f` rather than under
-  the empty role — and both halves are edges, one on `cond` and one on `¬cond`.
+  the empty role — and both halves are edges, one on `cond` and one on `¬cond` —
+  so neither is the row a lifted edge cites. It **cannot** be lifted as things
+  stand.
+- `reif::MustNotHold` and `reif::NotIf` state the integer negation,
+  `y - x <= -d-1`. For a comparison, and for a linear `MustNotHold`, that row
+  goes out under the same empty role and so *is* citable; a linear `NotIf` uses
+  the role `ltn`. These are therefore a **deliberate gap, not an
+  impossibility** — nothing in gcs constructs a comparison with either (there is
+  no user-facing class, and `s_expr()` throws on both, so they have no `.scp`
+  spelling), and closing the gap is worth doing for both donor families at once
+  rather than for one of them.
 
-They are counted in `skipped_reified` rather than guessed at. Two exclusions
+All three are counted in `skipped_reified` rather than guessed at. Two exclusions
 remain soundness requirements rather than mere incompleteness:
 
 - **Negated views are refused**, for the reason given above.
@@ -646,13 +663,59 @@ also skipped, and left to the donor. This is not just tidiness: a `0 <= d` with
 time a presolver is called. Declining to lift such an edge leaves it with the
 donor, which handles it correctly.
 
-**`Comparison` donors are the shape we most want and cannot yet have.**
+### Labelling `Comparison`'s rows, and what it did to the cake chain
+
+`Comparison` donors were for one PR the shape we most wanted and could not have.
 `x <= y + d` over an offset view *is* a difference constraint, but
-`ReifiedCompareLessThanOrMaybeEqual::define_proof_model` emits its unconditional
-rows through the `void`-returning `add_constraint`, so they carry no `@label`
-and no proof step can cite them. They are detected, skipped, and **counted**, so
-what a later labelling PR would buy is measured rather than guessed at.
-Labelling them touches the `cake_pb_cp` chain surface, hence the deferral.
+`ReifiedCompareLessThanOrMaybeEqual::define_proof_model` used to emit every form
+except `Iff` through the `void`-returning `add_constraint`, so those rows carried
+no `@label` and no `pol` could cite them. They were detected, skipped and
+counted, which is how the size of the missed opportunity was known rather than
+guessed at.
+
+They are now emitted through `add_labelled_constraint` with an empty role, so
+they come out as `@c[<id>]`, exactly as `LinearLessThanEqual`'s do. The
+deferral was never about the shape; it was about the `cake_pb_cp` chain, which
+compares our `.opb` against a *verified* re-derivation of the same model, by
+label. The standing rule there is **chain-verify, not byte-match** — a label or
+flag *name* change is acceptable if the chain still verifies — so the question
+was empirical and was answered empirically:
+
+- **`cake_pb_cp` already labels these rows `@c[<id>]`.** Probed directly, before
+  changing anything: for `( … (constraints (_1 less_equal X Y)) … )` cake emits
+  `@c[_1] 1 i[Y][b0] 2 i[Y][b1] -1 i[X][b0] -2 i[X][b1] >= 0 ;` while the solver
+  emitted the same inequality with **no** label at all. Same for `less_than`,
+  `greater_equal`, `greater_than` and each one's `_if` spelling; the `_iff`
+  spelling comes back as `@c[_1][r]` and `@c[_1][f]`, which is what the solver
+  already emitted. So labelling did not invent a name — it *stopped omitting*
+  the name cake was already using, and the `.opb` moved towards cake rather than
+  away from it.
+- **All 157 `scp_chain_*` ctest cases pass the full verified chain**, before and
+  after, with `cake_pb_cp` on `PATH` (so `cake_pb_cp` re-derives the OPB, VeriPB
+  elaborates our proof against *that*, `cake_pb_cp` re-checks the elaborated
+  core, and `opbdiff --match-labels` compares). That includes the ten
+  comparison-carrying cases (`less_equal_*`, `less_than_*`, `greater_equal_*`,
+  `greater_than_unsat`, `greater_equal_neg_unsat`, `multi_comparison_unsat`,
+  `multi_mixed_unsat`) and the many others that use comparisons internally
+  (`increasing`, `decreasing`, `lex_*`, `all_equal`, `seq_precede_chain`, …).
+- The `.opb` byte-diff is exactly one token per comparison row, the added
+  `@c[<id>]`.
+
+`MustNotHold` and `NotIf` are labelled too, with the same empty role. Neither has
+a `.scp` spelling — `s_expr()` throws on both — so neither reaches cake, and the
+bare `@c[<id>]` is free for them; the row states the *negated* inequality, so
+anything citing the label has to read the reification condition to know which
+inequality it got. That is the reason the presolver's comparison loop branches on
+the condition rather than on the label.
+
+Because a lost label would only show up in a proof, in a model that both uses the
+affected form and makes the propagator derive something from it, the labelling
+has its own direct guard: `difference_logic_presolver_opb` posts one comparison
+of each of the five reification forms and counts the `@c[`-prefixed rows in the
+`.opb` (1, 1, 1, 1, 2). Mutation-tested — reverting `do_less` to the old
+`add_constraint` branch is caught by that check and by VeriPB, and by **nothing
+else**: the detection, equivalence and tripwire modes all still pass, because
+none of them looks at a proof.
 
 ### Deview mode is the one thing the shared propagator needed
 
@@ -733,6 +796,38 @@ to update the expectation. Mutation-tested: asking for `LinearLessThanEqual`
 instead of `ReifiedLinearInequality` — the exact regression being defended
 against — trips the cross-check, and with the cross-check also disabled all four
 test modes fail, each naming the presolver.
+
+The comparison family gets the same treatment, and needs it more, because it can
+regress *on its own*: a model built entirely out of `x <= y + d` whose comparison
+loop stopped detecting anything would still lift its linears, still look busy,
+and still pass every proof. So `comparison_edges_lifted` is broken out of
+`edges_lifted` and asserted separately, and the fixture corpus is run in **five
+donor spellings** — `1*x + -1*y <= d`, `x <= y + d`, `x < y + d + 1`,
+`y + d >= x`, and an alternating mixture — with the *same* expected lift and skip
+counts every time, since all five emit the same OPB row. The strict and
+swapped-operand spellings are there because `LessThan` and `GreaterThanEqual`
+reach `ReifiedCompareLessThanOrMaybeEqual` through constructors that move the
+operands around, which is where an edge could silently invert.
+
+What each mutation costs, measured rather than asserted (`✓` = caught):
+
+| mutation | detection | equivalence | tripwire | opb | proofs |
+|---|:-:|:-:|:-:|:-:|:-:|
+| comparison loop lifts nothing | ✓ | ✓ | ✓ | ✓ | ✓ |
+| comparison edge inverted (operands swapped) | ✓ | ✓ | ✓ | | ✓ |
+| strictness dropped (`<` treated as `<=`) | ✓ | ✓ | ✓ | | ✓ |
+| half-reified condition dropped from the edge | ✓ | ✓ | ✓ | | ✓ |
+| `Iff` lifted as though it were `If` | ✓ | | | | |
+| negated view approximated instead of refused | ✓ | ✓ | ✓ | | ✓ |
+| comparison rows emitted unlabelled again | | | | ✓ | ✓ |
+
+Two rows are worth reading carefully. Lifting an `Iff` as though it were an `If`
+is caught **only** by the detection counts: the `r` half really does say
+`cond -> x - y <= d`, so the solution set is unchanged, and the corpus has no
+`Iff` comparison donor for a proof to trip over — the `skipped_reified` count is
+the whole guard. And un-labelling the rows is caught **only** by the `.opb` label
+check and by VeriPB, which is why that check exists rather than being left
+implicit in "the proofs pass".
 
 The cross-check is on unconditionally, rather than being an opt-in strict mode,
 and it is deliberately *not* "throw if nothing was lifted". Lifting nothing is a
@@ -833,6 +928,119 @@ extra global pass and the presolver's own O(number of constraints) enumeration
 (about 200 ns per constraint per pass, three passes, two of them the tripwire's)
 are pure overhead. That is the honest counterweight to the 9.7× on the unlucky
 order, and the reason this ships off by default.
+
+### Measurements: what the `Comparison` donors buy
+
+`difference_chain --donor=comparison` posts the identical system as
+`LessThanEqual{a, b + d}` instead of `LinearLessThanEqual{1*a + -1*b, d}`, so the
+two columns below differ in the *spelling* and in nothing else. Measured on
+fataepyc-10, release, `--order=unlucky`, `taskset -c 4`-pinned with boost
+disabled, medians of 3; `.pbp` sizes from a separate `--prove` run, never a timed
+one.
+
+| mode | n | k | donor | presolver | propagations | time (s) | `.pbp` |
+|---|---:|---:|---|---|---:|---:|---:|
+| fixpoint | 150 | 2 | linear | off | 1,756,127 | 0.1261 | 17.5 MB |
+| fixpoint | 150 | 2 | linear | on | 46,507 | 0.0411 | 350 kB |
+| fixpoint | 150 | 2 | **comparison** | off | 1,733,927 | 0.3576 | 28.2 MB |
+| fixpoint | 150 | 2 | **comparison** | on | **35,033** | **0.0360** | **723 kB** |
+| fixpoint | 300 | 2 | linear | off | 13,772,252 | 0.9056 | 76.1 MB |
+| fixpoint | 300 | 2 | linear | on | 183,007 | 0.1979 | 753 kB |
+| fixpoint | 300 | 2 | **comparison** | off | 13,682,852 | 2.7554 | 123.0 MB |
+| fixpoint | 300 | 2 | **comparison** | on | **137,558** | **0.1702** | **1.57 MB** |
+| refute | 100 | 4 | linear | off | 2,080,094 | 0.1440 | 40.6 MB |
+| refute | 100 | 4 | linear | on | 5,253 | 0.0167 | 3.7 kB |
+| refute | 100 | 4 | **comparison** | off | 2,148,034 | 0.4332 | 76.2 MB |
+| refute | 100 | 4 | **comparison** | on | **5,253** | **0.0135** | **11.8 kB** |
+| refute | 40 | 8 | **comparison** | off | 316,203 | 0.0641 | 25.6 MB |
+| refute | 40 | 8 | **comparison** | on | **903** | **0.00194** | **8.1 kB** |
+
+`recursions` is identical in every row of a given `(mode, n, k)` — 153, 303, 1, 1
+respectively — so none of this is search-shape noise; it is all propagation and
+proof.
+
+Three things to read out of it.
+
+**The win on a comparison-spelled model is larger than on a linear-spelled one,
+in every column.** At `n = 300` the presolver takes propagations down 99.5×
+(13.68M → 137.6k) against 75× for the linear spelling, wall time 16.2× (2.755 s →
+0.170 s) against 4.6×, and the proof 78× (123.0 MB → 1.57 MB) against 101×. On
+`--mode=refute` at `n = 100` it is 409× the propagations, 32× the time, and
+**6,448×** the proof (76.2 MB → 11.8 kB); at `n = 40, k = 8`, 3,171× the proof.
+
+**Most of that extra headroom is the comparison propagator being the more
+expensive one to leave running.** With the presolver off, the comparison spelling
+is 2.8–3.0× slower in wall time and 1.6–1.9× larger in proof than the linear
+spelling *at the same propagation count* — its per-wake work and per-inference
+proof output are simply bigger. So a model that used `<=` rather than a weighted
+sum was paying more, and had more to gain.
+
+**Once the donors are retired the two spellings converge exactly.** With
+`--disable-donors` at `n = 300` both give 307 propagations, 0.149 s (comparison)
+against 0.186 s (linear); at `refute n = 100` both give 2 propagations. That is
+the subsumption claim, measured: the global propagator computes the same thing
+from either donor family, and everything above it is what the surviving donors
+cost.
+
+The one row that does *not* improve is the presolved `.pbp` size, which is larger
+for the comparison spelling (1.57 MB against 753 kB at `n = 300`) because the
+surviving comparison donors log more per inference than the linear ones do. That
+is a hybrid cost, not a presolver cost: `--disable-donors` removes it.
+
+### The view-wrap sweep
+
+`GCS_ENABLE_VIEW_WRAP_SWEEP=ON` had never been run against this constraint. It is
+now registered for the seven data-driven modes (`basic`, `cycles`, `views`,
+`alias`, `reified`, `random`, `random_reified`) — the two hand-built modes
+(`incremental`, `simplify`) construct their models directly and take no wrap, so
+they self-skip — and `difference_test` threads a `ViewWrapConfig` through
+`run_test`, creating each fixture's variables behind the wrap its position was
+assigned with the underlying domain inverted, so the visible domain and hence the
+oracle are unchanged.
+
+**Ten of the nineteen canonical wraps negate, and the constraint refuses a
+negated operand by design.** Rather than skipping those, the test inverts its
+obligation: under a negating wrap it asserts that constructing
+`DifferenceConstraints` throws `InvalidProblemDefinitionException`. That turns
+what would have been ten-nineteenths of the sweep into a real check that the
+rejection is *total* — every fixture, every edge shape, every operand position —
+instead of a hole. Conditions are exempt: a condition is a literal, not a
+difference operand, and `b == 1` over a negated view is perfectly well-formed.
+
+**772 `difference_constraint*` ctest cases, all passing**, comprising 2,033
+rejection fixtures and 5,337 solve-and-verify fixtures — each run twice, with
+proofs off and on, so 14,740 runs. No defect found: the offset-only wraps,
+including the `±17` ones, telescope in the proof exactly as the hand-written
+`v(i, offset)` fixtures do, which is what the canonicalisation argument predicts
+and is worth having checked at magnitudes nobody would type by hand.
+
+Two of those counts move on their own, so treat them as an order of magnitude
+rather than a signature: the `random` and `random_reified` modes draw their
+corpus from the shared test-utils generator, so any change to it elsewhere in the
+tree reshuffles which instances get built and hence how many land on each side.
+The registration count and the hand-written modes do not move.
+
+### Extreme weights
+
+Bellman-Ford accumulates weights along a path, so a system whose edges are each
+representable can still have a path sum that is not. `Integer`'s arithmetic is
+overflow-checked and throws, so this cannot wrap silently — but nothing went
+anywhere near the limit until `run_overflow_test` did. It pins both halves:
+
+- a single vacuous edge of weight `LLONG_MAX / 4` over two `0..5` variables must
+  give the right answer (all 36 assignments), so "checked" does not mean "unusable
+  at large weights";
+- two chained edges of weight `-(LLONG_MAX / 2 + 1)`, each representable and
+  their sum not, must throw `IntegerOverflow`. The lower-bound relaxation
+  computes `lb[from] - d` before comparing, so the second edge asks for
+  `LLONG_MAX + 2` and `Integer` refuses.
+
+A wrapped sum would be the worst failure available: an enormous positive distance
+would come back negative, the propagator would refute a satisfiable system, and
+**proof logging could not catch it**, because nothing wrong would have been
+derived from the model's rows — only from the solver's own arithmetic. Mutation
+check: shrinking the second fixture's weights to `-(LLONG_MAX / 8)`, so the sum
+fits, makes the test fail.
 
 ## RCPSP/max: the benchmark this was built for
 
@@ -1681,11 +1889,14 @@ the asymptotics say it should be: `|E| >> n`, or long chains.
   RCPSP/max measurement below now costs something visible**: without it, a system
   whose infeasibility depends on edges nobody has fixed yet is invisible at the
   root.
-- **Lifting `Comparison` donors**, which needs their unconditional OPB rows
-  labelled; see the presolver section above.
-- **Lifting `Iff`, `NotIf` and `MustNotHold` linear donors**, which need the `r`
-  and `f` rows and the integer-negation row respectively rather than the
-  empty-role row the two supported kinds share.
+- **Lifting `Iff` donors** of either family, which needs the `r` and `f` rows
+  rather than the empty-role row the two supported kinds share. This one is a
+  real obstacle, not a choice.
+- **Lifting `MustNotHold` and `NotIf` donors** of either family. Their rows state
+  the integer negation and are citable (empty role, except a linear `NotIf`'s
+  `ltn`), so this is a gap rather than an obstacle — deferred so that it is
+  closed for both families at once, and because nothing in gcs currently
+  constructs a comparison with either.
 - **Zero-weight-cycle unification**, the fourth of the root simplification
   stage's sub-steps. The other three are implemented; see the section on it
   above, which also reports how often a zero-weight cycle actually turns up.
