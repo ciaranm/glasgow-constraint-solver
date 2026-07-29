@@ -295,11 +295,14 @@ therefore search.
 
 Footnotes:
 
-1. **Pre-existing oddity, leave alone.** `split_random_value_generator`
-   (`search_heuristics.cc:442`) has *identical* then/else arms — both yield
-   `var > v` then `var <= v` regardless of the coin flip, so it is effectively
-   `split_largest_first`. The mapping is unaffected; do not "fix" it as part of
-   step 2 (it changes search and is out of scope).
+1. **Fixed upstream; the note is kept for history.** `split_random_value_generator`
+   used to have *identical* then/else arms — both yielding `var > v` then
+   `var <= v` regardless of the coin flip, making it effectively
+   `split_largest_first`. That was filed as issue #568 and fixed upstream in
+   `e8befc17` ("make split_random actually pick a random half"), which this branch
+   picked up when it rebased onto `3800424f`. The mapping was unaffected either way:
+   the advance is derived from the *yielded condition*, so both arms tag correctly
+   whether or not they differ.
 
 2. `smallest_out` / `largest_out` are **likely foldable**, but as their own small
    design, not this one: refuting the reject-first sibling (`x != lb` first)
@@ -424,18 +427,35 @@ the checker enforces.
 
 ### Bookkeeping mirrors
 
-An eq eviction must update, mirroring the ge eviction's
-`gevars_that_exist` / `live_order_literals` / `order_literals_by_level` triple:
+**The storage moved.** Since the rebase onto `3800424f`, `variable_conditions_to_x`,
+`gevars_that_exist` and `eqvars_that_exist` are gone: conditions resolve through
+per-variable `VariableAtoms` tables holding the atom literals (`eq` / `ge` / `in`,
+**positive polarity only** — the negative op is the flip, resolved in `find_condition`)
+alongside their defining lines (`eq_defs` / `ge_defs`), keyed by raw value. The one
+remaining ordered structure is `Imp::gevar_values`, the per-variable set of ge thresholds
+the chain walk iterates — distinct from `live_order_literals`, which is the *currently
+resident* subset. An eq eviction mirrors the ge eviction's
+`ge_defs` / `live_order_literals` / `order_literals_by_level` triple:
 
-- `eqvars_that_exist[id].erase(v)` — so a later `need_direct_encoding_for(id, v)`
-  re-mints; readers to keep consistent: `need_pol_item_defining_literal`
-  (386-387 / 407-408), containment/partition seeders (1917 / 1986), view eq-links
-  (2131).
-- `variable_conditions_to_x.erase(id == v)` **and** `.erase(id != v)` — so the
-  guard at 595 (`contains(id == v)`) stops short-circuiting and re-mint proceeds
-  (the eq analogue of `need_gevar`'s fast-path at 792, and of the ge-eviction
-  path). This is the piece with **no current analogue**, because eq defs are
-  unconditionally Top today and so are never erased.
+- `atoms_for(id).eq_defs.erase(v.raw_value)` — drop the **definition lines only**.
+- **Keep `atoms_for(id).eq[v]`: the atom stays permanent** (owner decision, 2026-07-29).
+  This mirrors the ge side exactly — `need_gevar` keeps the atom and re-emits only the
+  definition (`reintroduce_order_literal`), so `need_direct_encoding_for` gains the same
+  liveness fast-path plus a `reintroduce_eq_literal`. The earlier draft of this section
+  said to erase the atom and let the guard re-mint; that is wrong. Re-minting goes through
+  `allocate_xliteral_meaning`, which allocates a **fresh** xliteral and a fresh varmap
+  entry — under verbose names rendering to the *same* PB variable name as the dead atom,
+  and without them a genuinely distinct variable — while stale copies of the old `XLiteral`
+  can outlive the erase in `containment_trees`, the partition coverings, the view eq-link
+  pair and the `at_least_one` clause. Atom identity permanent, definition residency
+  transient, on both sides.
+- A DirectOnly `{0,1}` variable's eq entries hold `XLiteral`s, not `ProofLine`s
+  (`track_eqvar`, from `proof_model.cc`), so eviction must skip them — exactly as the ge
+  hoist filters on `get_if<ProofLine>` and `order_literal_aliased_to_bit` skips aliased
+  re-introduction.
+- Whatever the eviction does, it must not break the naming invariant recorded in
+  [order-encoding-deletion.md](order-encoding-deletion.md) (Implementation status): every
+  path that names a literal in an emitted line has to go through the re-introduction hook.
 - **New `live_eq_literals` + `eq_literals_by_level`** (mirroring
   `live_order_literals` / `order_literals_by_level`): a per-level index of windowed
   eq defs, so a backtrack `forget` deletes the right eq def lines and an eviction
@@ -469,7 +489,7 @@ the same variable, so they sit as sibling slots just above the gate.
 
 A windowed eq variable that *also* receives an `in`/`not_in` interval literal has
 its live eq atoms retro-pinned as `Top` partition singleton cells
-(`init_interval_partition` / `define_plain_invar` walk `eqvars_that_exist`),
+(`init_interval_partition` / `define_plain_invar` walk the variable's `eq_defs` table),
 holding the window open. Ascending eq branching alone never does this, but a
 constraint on the same variable might. The guard must be **bidirectional**
 (supervisor correction):
@@ -739,7 +759,7 @@ stitches the chain *over* it:
 // reification def lines and its two Top chain links, stitch the surviving Top
 // neighbours lo,hi with a skip link ge(hi) -> ge(lo) (the run-stitch of
 // forget_order_literals_at_level, run for a single Top literal on demand), and drop
-// v from live_order_literals / gevars_that_exist so a later need_gevar reintroduces
+// v from live_order_literals (leaving the atom and its ge_defs slot) so a later need_gevar reintroduces
 // it as a deletable interior literal. Precondition (asserted): v's only Top
 // residency cause is the one the caller names (e.g. SoliHoist).
 auto evict_order_literal_from_top(const SimpleIntegerVariableID & id, Integer v,
@@ -983,7 +1003,8 @@ the owner:
   guard instead.
 - **Virtual `Brancher` alias** — build only if a `Custom` consumer appears
   (Decision 1).
-- **`split_random` duplicated arms** — pre-existing; note, do not fix in step 2.
+- ~~**`split_random` duplicated arms**~~ — was issue #568; fixed upstream in `e8befc17`
+  and picked up by the rebase onto `3800424f`. Nothing left to do.
 
 ## Provenance
 

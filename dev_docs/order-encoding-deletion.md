@@ -160,9 +160,35 @@ owns the MiniZinc frontend proofs.
 ## Implementation status
 
 - **Done, suite-safe:** the full caps-off test suite passes with the flag on (0
-  flag-induced VeriPB rejections; mode-off byte-identical; flag-off 525/525). The
+  flag-induced VeriPB rejections; mode-off byte-identical; flag-off 536/536). The
   hoist primitive, guess/eq/partition-atom hoisting, and the aux/view dispositions
   below are all in `gcs/innards/proofs/{names_and_ids_tracker,proof_logger,proof_model}.*`.
+- **LOAD-BEARING INVARIANT — every path that *names* a literal in an emitted line must
+  go through `need_gevar`.** Deletion makes atom identity permanent but the atom's
+  *definition* transient, so "the atom exists" no longer implies "the line can name it":
+  `need_gevar`'s fast path is what re-introduces a deleted definition before the naming
+  line is written. Any short-cut that resolves a known condition straight to its
+  `XLiteral` silently bypasses re-introduction, and the resulting line names a literal
+  with no definition — a VeriPB rejection far from the cause.
+
+  This is not hypothetical. The `proof-writing-perf` stack fused name introduction into
+  line rendering (`834b7029`), and its `xliteral_for_ensuring` calls `need_proof_name`
+  **only when the atom is missing** — correct for every other mode, fatal here. Rebasing
+  onto that stack turned 0 flag-induced rejections into 37 across the caps-off suite, all
+  of the same shape: a `rup` naming a `ge` whose definition had been deleted, with the
+  re-introduction appearing a few lines *later* in the proof, triggered by whatever next
+  needed the atom. The fix is the mode-gated `else` branch in `xliteral_for_ensuring`,
+  which restores the unconditional `need_proof_name` for the deletion modes only, leaving
+  the single-lookup fast path intact when deletion is off. `reintroduce_order_literal`
+  then needs the `building_order_link` guard around its `red`, because the re-emitted
+  reification names the very atom being re-introduced and would otherwise recurse.
+
+  Two consequences worth carrying forward: (i) the invariant is currently enforced by
+  nothing — a cheap always-on-under-Literals check that every named `ge` is live would
+  have caught this at the first emission rather than at VeriPB; (ii) the extra
+  `need_proof_name` per literal restores the pre-`834b7029` cost profile under Literals,
+  which is the right trade for now but is a candidate for narrowing (a per-variable
+  "has a non-live threshold" flag) if rendering shows up as a hotspot in stage E.
 - **Gate — randomized-test seed sweeps are part of the flag-ON gate.** A single caps-off
   suite run exercises only *one* random seed per data-driven test, and the fixed corpus
   missed a ~10 %-of-seeds VeriPB-rejection hole in divide/modulus (seed 3072268882 was one
@@ -261,7 +287,8 @@ by the bound *jump*, but ascending/descending eq now wins too, by the window.
 Under `OrderEncodingDeletion::Literals`, a real variable's interior (non-boundary)
 `ge` definition is only emitted deletable-at-`Current` once the variable has crossed
 a chain-length gate: when the number of `ge` thresholds ever named for it (its
-`gevars_that_exist[id]` count at decision time in `need_gevar` — model-time atoms
+`ge_defs` count for it at decision time in `need_gevar`, taken before this threshold is
+inserted — model-time atoms
 included) exceeds `min_chain`. At or below the gate the def stays resident at `Top`,
 exactly like the boundary / view-pin / aux-pin paths. The gate is monotone (the
 count only grows; once crossed, stays crossed; below-gate residents are never
