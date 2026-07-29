@@ -16,8 +16,10 @@ namespace gcs
      * The presolver's whole job is invisible from the outside: it adds no OPB
      * content, changes no solution, and leaves proofs verifying whether it fired
      * or not. A presolver that silently lifted nothing --- because, say,
-     * Constraint::clone() stopped flattening a posted LinearLessThanEqual to
-     * ReifiedLinearInequality --- would pass every solution-equivalence, OPB
+     * Constraint::clone() started returning a type from outside the
+     * ReifiedLinearInequality family, so that
+     * Problem::each_constraint_of_type() no longer found a posted
+     * LinearLessThanEqual --- would pass every solution-equivalence, OPB
      * byte-diff and VeriPB check there is. So the counts are not decoration:
      * they are how the tests, and the measurements, tell "working" from
      * "no-op". \sa DifferenceLogic

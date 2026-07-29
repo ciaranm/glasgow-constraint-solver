@@ -3,7 +3,6 @@
 #include <gcs/constraints/linear/linear_greater_than_equal.hh>
 #include <gcs/constraints/linear/linear_inequality.hh>
 #include <gcs/constraints/linear/linear_less_than_equal.hh>
-#include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/presolvers/difference_logic/difference_logic.hh>
 #include <gcs/problem.hh>
@@ -31,61 +30,11 @@ using std::nullopt;
 using std::optional;
 using std::shared_ptr;
 using std::size_t;
-using std::string;
-using std::to_string;
 using std::unique_ptr;
 using std::vector;
 
 namespace
 {
-    // The type strings the two donor families report. Constraint::constraint_type()
-    // is total and independent of the C++ class hierarchy, which is exactly what
-    // makes it usable as a cross-check on the hierarchy: see check_enumeration_is_working.
-    const string linear_inequality_type = "lin_less_equal";
-
-    auto is_comparison_type(const string & t) -> bool
-    {
-        return t == "less_than" || t == "less_equal" || t == "greater_than" || t == "greater_equal";
-    }
-
-    // The failure this exists to catch is a silent one, so it says so at length.
-    // Problem stores what Constraint::clone() returns, and every member of these
-    // families currently clones to its family base, which is why asking for the
-    // base is what finds a posted LinearLessThanEqual. If that ever stops being
-    // true, each_constraint_of_type<ReifiedLinearInequality>() yields nothing, the
-    // presolver lifts nothing, and *every* validation still passes: a presolver
-    // that does nothing preserves the solution set, adds no OPB content and leaves
-    // every proof verifying. So cross-check the typed enumeration against
-    // constraint_type(), which does not depend on the hierarchy at all, and fail
-    // loudly rather than quietly doing nothing.
-    auto check_enumeration_is_working(const Problem & problem, size_t linears_seen, size_t comparisons_seen) -> void
-    {
-        size_t linears_by_type = 0, comparisons_by_type = 0;
-        for (const auto & c : problem.each_constraint()) {
-            auto type = c.constraint_type();
-            if (type == linear_inequality_type)
-                ++linears_by_type;
-            else if (is_comparison_type(type))
-                ++comparisons_by_type;
-        }
-
-        auto complain = [&](const string & family, const string & base, size_t by_type, size_t seen) {
-            throw UnexpectedException{"the difference-logic presolver's constraint enumeration is broken: " + to_string(by_type) +
-                " posted constraints report a " + family + " constraint_type(), but Problem::each_constraint_of_type<" + base + ">() yielded only " +
-                to_string(seen) +
-                " of them. DETECTION is what needs fixing here, not this check. The likely cause is a change to Constraint::clone() or to the class "
-                "hierarchy, so that a posted constraint is no longer stored as its family base (see PR #585). Do NOT relax this check: a presolver "
-                "that lifts nothing still passes every solution-equivalence, OPB byte-diff and VeriPB check, so this is the only thing standing "
-                "between a silent regression and shipping. Fix gcs/presolvers/difference_logic/difference_logic.cc."};
-        };
-
-        if (linears_by_type > linears_seen)
-            complain(linear_inequality_type, "ReifiedLinearInequality", linears_by_type, linears_seen);
-        if (comparisons_by_type > comparisons_seen)
-            complain(
-                "less_than / less_equal / greater_than / greater_equal", "ReifiedCompareLessThanOrMaybeEqual", comparisons_by_type, comparisons_seen);
-    }
-
     // One OPB row of the only shape this presolver can lift: `1 * positive +
     // -1 * negative <= value`, emitted under the bare @c[<id>] label and, when
     // `cond` is engaged, under HalfReifyOnConjunctionOf on that condition.
@@ -156,9 +105,16 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
     // and for both of these families that is the base; asking for the derived
     // user-facing type is not a compile error, it simply matches nothing. If a
     // future refactor breaks these relationships, this is the place that needs
-    // to change, so fail here rather than at runtime. (The base being a base is
-    // necessary but not sufficient --- clone() must also still return it --- so
-    // check_enumeration_is_working covers the rest.)
+    // to change, so fail here rather than at runtime.
+    //
+    // These are necessary but not sufficient: each_constraint_of_type is a
+    // dynamic_cast, so asking for the base keeps working however clone()
+    // flattens within a family, but it would find nothing at all if clone()
+    // started returning a type from outside one. That residual is pinned by
+    // gcs/constraint_enumeration_test.cc, which posts one of each of these and
+    // requires the base enumeration to recover them; a change that broke it
+    // would fail there, and again on the exact counts in
+    // difference_logic_test.cc, before anything reached a user.
     static_assert(std::derived_from<LinearLessThanEqual, ReifiedLinearInequality>);
     static_assert(std::derived_from<LinearLessThanEqualIf, ReifiedLinearInequality>);
     static_assert(std::derived_from<LinearGreaterThanEqual, ReifiedLinearInequality>);
@@ -247,10 +203,7 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
         return true;
     };
 
-    size_t linears_seen = 0;
     for (const auto & c : problem.each_constraint_of_type<ReifiedLinearInequality>()) {
-        ++linears_seen;
-
         // MustHold gives a plain edge; If gives a half-reified one,
         // `cond -> x - y <= d'. Both are citable and both are the shape the
         // propagator's proofs assume: linear_inequality.cc labels the
@@ -306,10 +259,7 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
     // a separate constraint kind --- and every row
     // ReifiedCompareLessThanOrMaybeEqual emits now carries an @label, so every
     // row is citable.
-    size_t comparisons_seen = 0;
     for (const auto & c : problem.each_constraint_of_type<ReifiedCompareLessThanOrMaybeEqual>()) {
-        ++comparisons_seen;
-
         // `x <= y` states `x - y <= 0` and `x < y` states `x - y <= -1`, both
         // under the bare @c[<id>] label; the `If' form states the same row
         // under HalfReifyOnConjunctionOf on the recorded condition, and under
@@ -345,8 +295,6 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
         if (lift_row(*row, c.constraint_id()))
             ++stats.comparison_edges_lifted;
     }
-
-    check_enumeration_is_working(problem, linears_seen, comparisons_seen);
 
     stats.edges_lifted = graph.edges.size();
     stats.nodes = graph.nodes.size();

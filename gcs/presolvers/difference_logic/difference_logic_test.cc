@@ -5,10 +5,9 @@
 // This presolver is invisible from the outside by design. It adds no OPB
 // content, changes no solution, and leaves every proof verifying. That means a
 // presolver which silently lifted *nothing* -- because, say, Constraint::clone()
-// stopped flattening a posted LinearLessThanEqual down to
-// ReifiedLinearInequality, so that
-// Problem::each_constraint_of_type<ReifiedLinearInequality>() no longer matched
-// it -- would pass:
+// started returning a type from outside the ReifiedLinearInequality family, so
+// that Problem::each_constraint_of_type<ReifiedLinearInequality>() no longer
+// matched a posted LinearLessThanEqual -- would pass:
 //
 //   * every solution-set equivalence check (a no-op presolver preserves them);
 //   * the OPB byte-identical check (byte-identical is the *expected* result);
@@ -88,8 +87,11 @@ namespace
                                        "The most likely cause is a change to Constraint::clone() or to the Linear or\n"
                                        "Comparison class hierarchy, such that\n"
                                        "Problem::each_constraint_of_type<ReifiedLinearInequality>() (or\n"
-                                       "<ReifiedCompareLessThanOrMaybeEqual>()) no longer yields the posted derived\n"
-                                       "constraints (clone() currently returns the family base -- see PR #585).\n\n"
+                                       "<ReifiedCompareLessThanOrMaybeEqual>()) no longer yields the posted\n"
+                                       "constraints. Enumeration is a dynamic_cast, so asking for the base survives\n"
+                                       "clone() flattening within a family, but not clone() returning a type from\n"
+                                       "outside one (see PR #585). If gcs/constraint_enumeration_test.cc is failing\n"
+                                       "too, start there: it pins that contract directly.\n\n"
                                        "Fix gcs/presolvers/difference_logic/difference_logic.cc. Do NOT update the\n"
                                        "expected count here: a presolver that lifts nothing still passes every\n"
                                        "solution-equivalence, OPB byte-diff and VeriPB check, so this assertion is the\n"
