@@ -1,0 +1,18 @@
+# LeakSanitizer suppressions for the sanitize build.
+#
+# Point LeakSanitizer at this file with LSAN_OPTIONS=suppressions=<path to this
+# file>; the sanitize test preset and the CI lane both do. A frame matches if the
+# pattern appears anywhere in its demangled function name, source file or module,
+# and one matching frame suppresses the whole leak report.
+#
+# Keep this list to leaks in code we do not own and cannot fix. Anything we can fix
+# should be fixed, not listed here -- every entry below is coverage given up.
+
+# The XCSP3 parser (fetched from xcsp3team/XCSP3-CPP-Parser) allocates an XVariable
+# per variable in XMLParser::VarTagAction::beginTag/endTag -- XMLParserTags.cc:126
+# and :151 -- and never frees them, so every xcsp_* test reports a few hundred bytes
+# leaked before it has run any of our code. It is a FetchContent dependency pinned to
+# an upstream commit, so there is nothing to fix on our side. Suppressing just this
+# leaves leak detection on for everything else in those same test runs, which is the
+# part we actually care about.
+leak:XCSP3Core::XMLParser

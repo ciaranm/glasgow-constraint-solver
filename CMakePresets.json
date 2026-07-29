@@ -22,9 +22,7 @@
             "displayName": "Sanitize (ASan + UBSan)",
             "binaryDir": "${sourceDir}/build-sanitize",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Sanitize",
-                "GCS_ENABLE_XCSP": "OFF",
-                "GCS_ENABLE_MINIZINC": "OFF"
+                "CMAKE_BUILD_TYPE": "Sanitize"
             }
         }
     ],

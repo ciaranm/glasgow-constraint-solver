@@ -94,15 +94,26 @@ jobs:
     - name: Install VeriPB using cargo
       run: cargo install --path ./VeriPB
 
+    - name: Install MiniZinc bundle (Linux)
+      # Same bundle as the build lanes above. Without it every minizinc-* test
+      # skips (exit 66), so the frontend would be built under the sanitizers but
+      # never actually run under them.
+      run: |
+        sudo apt-get update && sudo apt-get install -y libegl1 libgl1
+        mkdir -p "$HOME/minizinc"
+        curl -fsSL https://github.com/MiniZinc/MiniZincIDE/releases/download/2.9.7/MiniZincIDE-2.9.7-bundle-linux-x86_64.tgz \
+          | tar xz -C "$HOME/minizinc" --strip-components=1
+        mzn="$(find "$HOME/minizinc" -name minizinc -type f | head -1)"
+        dirname "$mzn" >> "$GITHUB_PATH"
+        "$mzn" --version
+
     - name: Configure CMake (Sanitize)
       run: cmake --preset sanitize -B ${{github.workspace}}/build-sanitize
 
     - name: Build (Sanitize)
       run: cmake --build ${{github.workspace}}/build-sanitize --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 
+    # Run through the test preset rather than repeating its environment here, so a
+    # local `ctest --preset sanitize` and this lane run with the same options.
     - name: Test (Sanitize)
-      working-directory: ${{github.workspace}}/build-sanitize
-      run: ctest -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu) --output-on-failure --rerun-failed
-      env:
-        ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
-        UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      run: ctest --preset sanitize -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu) --rerun-failed

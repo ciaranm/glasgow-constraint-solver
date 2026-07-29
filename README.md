@@ -110,14 +110,19 @@ ctest --preset release          # using presets
 { cd build ; ctest ; }          # without presets
 ```
 
-For a sanitizer test run, set the following environment variables so that the first error
-halts the process with a useful backtrace rather than continuing:
+For a sanitizer test run, use the preset:
 
 ```shell
-ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
-UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
 ctest --preset sanitize
 ```
+
+It sets `ASAN_OPTIONS` and `UBSAN_OPTIONS` so that the first error halts the process with a
+useful backtrace rather than continuing.
+
+The `xcsp_*` tests additionally run with `lsan_suppressions.txt`, which exists for one
+thing: the XCSP3 parser we fetch from upstream never frees the variables it allocates, so
+without it those tests report a leak in code we do not own and cannot fix. Leak detection
+stays on for everything else, including the rest of those same test runs.
 
 ### Optional features
 

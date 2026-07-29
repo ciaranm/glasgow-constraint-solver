@@ -19,6 +19,13 @@ target_link_libraries(xcsp_glasgow_constraint_solver PRIVATE
 # instance and diffs the streamed solutions against a cached expected
 # output committed under tests/expected/<name>.sols. If the cache is
 # missing, the test skips (ctest exit code 66) rather than failing.
+#
+# Under the sanitize build these tests would also report a leak that is not ours:
+# the parser allocates an XVariable per variable and never frees them, so point
+# LeakSanitizer at the suppressions file that ignores exactly that (and nothing
+# else) and leave leak detection on for the rest of the run. Setting it here rather
+# than in the sanitize test preset means it applies however ctest is invoked, and
+# only to the tests that need it. LSAN_OPTIONS is inert in a non-sanitizer build.
 function(add_xcsp_test name)
     add_test(NAME xcsp_${name}
         COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash
@@ -26,7 +33,8 @@ function(add_xcsp_test name)
             ${CMAKE_SOURCE_DIR}/xcsp/tests/
             ${name})
     set_tests_properties(xcsp_${name} PROPERTIES
-        SKIP_RETURN_CODE 66)
+        SKIP_RETURN_CODE 66
+        ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/lsan_suppressions.txt:print_suppressions=0")
 endfunction()
 
 add_xcsp_test(all_different_matrix)
