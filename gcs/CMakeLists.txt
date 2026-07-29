@@ -160,6 +160,19 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(stacktrace_logging_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME stacktrace_logging_test COMMAND $<TARGET_FILE:stacktrace_logging_test>)
 
+    # The Sanitize counterpart of stacktrace_logging_test: it fails if a Sanitize
+    # build was compiled without the sanitizers it is named after (issue #597).
+    # This test unit is compiled with the same configuration-wide flags as the
+    # library, so what it sees is what the library got. GCS_CONFIG_IS_SANITIZE is
+    # what tells it to expect them; in any other configuration, and on MSVC where
+    # the Sanitize build type is not supported at all, the test trivially passes.
+    add_executable(sanitizers_enabled_test sanitizers_enabled_test.cc)
+    target_link_libraries(sanitizers_enabled_test PRIVATE Catch2::Catch2WithMain)
+    if(NOT MSVC)
+        target_compile_definitions(sanitizers_enabled_test PRIVATE $<$<CONFIG:Sanitize>:GCS_CONFIG_IS_SANITIZE>)
+    endif()
+    add_test(NAME sanitizers_enabled_test COMMAND $<TARGET_FILE:sanitizers_enabled_test>)
+
     add_executable(problem_test problem_test.cc)
     target_link_libraries(problem_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME problem_test COMMAND $<TARGET_FILE:problem_test>)

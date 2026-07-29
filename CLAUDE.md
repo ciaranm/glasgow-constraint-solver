@@ -23,6 +23,15 @@ cmake -S . -B build
 cmake --build build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 ```
 
+The per-configuration flags at the top of `CMakeLists.txt` are plain `set()` calls,
+not `set(... CACHE ...)`, and must stay that way: a cached `set()` there is a silent
+no-op, because `project()` has already created those cache entries. That is how the
+Sanitize build spent months containing no sanitizers (issue #597). Do not "tidy" them
+back into cache variables — `sanitizers_enabled_test` and a configure-time check will
+both object, and `-DCMAKE_CXX_FLAGS_SANITIZE=...` on the command line has no effect
+either way. `grep`ping `CMakeCache.txt` for these tells you nothing; check
+`build-sanitize/gcs/CMakeFiles/*.dir/flags.make` instead.
+
 Use `--parallel N` for parallel builds. The expression `$(nproc 2>/dev/null || sysctl -n
 hw.logicalcpu)` gives the CPU count on both Linux and macOS. Omitting the count causes
 `make` to spawn unlimited jobs, which exhausts memory. If the build fails and the error

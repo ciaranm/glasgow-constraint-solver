@@ -115,7 +115,14 @@ namespace
                 if (optional_abort_flag && optional_abort_flag->load())
                     return SearchResult::Stop;
 
-                auto branch_generator = branch_callback(state.current(), propagators);
+                // The branchers in search_heuristics.cc are coroutines, so calling
+                // branch_callback only builds the frame: the CurrentState reference is
+                // stored, and nothing reads it until begin() resumes the coroutine on
+                // the next line. State::current() returns by value, so a temporary here
+                // would be dead by then -- it works only for as long as nothing reuses
+                // that stack slot. Bind it to a local that outlives the generator.
+                auto current_state = state.current();
+                auto branch_generator = branch_callback(current_state, propagators);
                 auto branch_iter = branch_generator.begin();
 
                 if (branch_iter == branch_generator.end()) {
