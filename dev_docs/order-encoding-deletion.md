@@ -163,32 +163,42 @@ owns the MiniZinc frontend proofs.
   flag-induced VeriPB rejections; mode-off byte-identical; flag-off 536/536). The
   hoist primitive, guess/eq/partition-atom hoisting, and the aux/view dispositions
   below are all in `gcs/innards/proofs/{names_and_ids_tracker,proof_logger,proof_model}.*`.
-- **LOAD-BEARING INVARIANT — every path that *names* a literal in an emitted line must
-  go through `need_gevar`.** Deletion makes atom identity permanent but the atom's
-  *definition* transient, so "the atom exists" no longer implies "the line can name it":
-  `need_gevar`'s fast path is what re-introduces a deleted definition before the naming
-  line is written. Any short-cut that resolves a known condition straight to its
-  `XLiteral` silently bypasses re-introduction, and the resulting line names a literal
-  with no definition — a VeriPB rejection far from the cause.
+- **A line must never name a literal whose definition has been deleted — and that is now
+  structural, not a discipline.** Deletion makes a `ge` atom's *definition* transient, so
+  "the atom exists" does not imply "a line may name it". Rather than requiring every
+  naming path to remember to consult a liveness check, deletion **retires the atom**: the
+  sweep in `forget_order_literals_at_level` moves the `XLiteral` out of `VariableAtoms::ge`
+  into `VariableAtoms::retired_ge`, so `find_condition` stops answering for it. The only
+  route back to the literal is `need_gevar`, which re-introduces the definition and takes
+  the retired `XLiteral` back — so the atom keeps its identity and its PB name across
+  delete/re-introduce cycles. Anything that tries to render it without going through
+  `need_gevar` now hits the const `xliteral_for`, which **throws** rather than silently
+  emitting a stale name: a bypass fails loudly at emission instead of becoming a VeriPB
+  rejection hundreds of lines downstream.
 
-  This is not hypothetical. The `proof-writing-perf` stack fused name introduction into
-  line rendering (`834b7029`), and its `xliteral_for_ensuring` calls `need_proof_name`
-  **only when the atom is missing** — correct for every other mode, fatal here. Rebasing
-  onto that stack turned 0 flag-induced rejections into 37 across the caps-off suite, all
-  of the same shape: a `rup` naming a `ge` whose definition had been deleted, with the
-  re-introduction appearing a few lines *later* in the proof, triggered by whatever next
-  needed the atom. The fix is the mode-gated `else` branch in `xliteral_for_ensuring`,
-  which restores the unconditional `need_proof_name` for the deletion modes only, leaving
-  the single-lookup fast path intact when deletion is off. `reintroduce_order_literal`
-  then needs the `building_order_link` guard around its `red`, because the re-emitted
-  reification names the very atom being re-introduced and would otherwise recurse.
+  Why it is written this way. The `proof-writing-perf` stack fused name introduction into
+  line rendering (`834b7029`), and its `xliteral_for_ensuring` introduces a name **only
+  when the atom is missing** — correct for every other mode. When the atom stayed put and
+  only its definition was deleted, that check passed and re-introduction never fired:
+  rebasing onto the stack turned 0 flag-induced rejections into **37** across the caps-off
+  suite, every one a line naming a `ge` whose definition had gone, with the re-introduction
+  appearing a few lines *later*, triggered by whatever next needed the atom. Retiring the
+  atom makes "missing" true exactly when it should be, so the renderer's own check is the
+  enforcement and no mode-specific special case is needed.
 
-  Two consequences worth carrying forward: (i) the invariant is currently enforced by
-  nothing — a cheap always-on-under-Literals check that every named `ge` is live would
-  have caught this at the first emission rather than at VeriPB; (ii) the extra
-  `need_proof_name` per literal restores the pre-`834b7029` cost profile under Literals,
-  which is the right trade for now but is a candidate for narrowing (a per-variable
-  "has a non-live threshold" flag) if rendering shows up as a hotspot in stage E.
+  Two traps worth carrying forward:
+
+  - `ge_defs` keeps its entry when a threshold is retired, and the re-introduction must
+    **`insert_or_assign`, not `try_emplace`**. The stale entry holds the deleted
+    definition's line numbers, and every chain `pol` resolves its operands through them
+    (`need_pol_item_defining_literal`), so `try_emplace` leaves the links pointing at
+    deleted lines. That entry is deliberately never erased: it keeps `ge_defs` monotone,
+    which is what makes it a sound basis for the chain gate's "thresholds ever named"
+    count.
+  - There is no longer an aliased-`ge` exception. Issue #554's fix deliberately stopped
+    aliasing a DirectOnly `{0,1}` variable's `>= 1` atom to its bit, so every `ge` owns its
+    own reification and `order_literal_aliased_to_bit` — which existed only to keep such a
+    literal out of the re-introduction path — became dead and has been removed.
 - **Gate — randomized-test seed sweeps are part of the flag-ON gate.** A single caps-off
   suite run exercises only *one* random seed per data-driven test, and the fixed corpus
   missed a ~10 %-of-seeds VeriPB-rejection hole in divide/modulus (seed 3072268882 was one

@@ -116,6 +116,24 @@ namespace
         // variable's values). Value-keyed like the literal tables.
         std::unordered_map<long long, AtomDefs> eq_defs;
         std::unordered_map<long long, AtomDefs> ge_defs;
+        // OrderEncodingDeletion::Literals only: the XLiterals of ge atoms whose
+        // definitions have been deleted on backtrack. Deletion moves the atom out of
+        // `ge` and into here, so find_condition stops answering for it: a line can
+        // then only name the literal by going through need_gevar, which re-introduces
+        // the definition first. That makes the "never name a literal whose definition
+        // is gone" rule structural rather than a discipline every naming path has to
+        // remember -- and the const xliteral_for throws rather than silently rendering
+        // a stale name, so a bypass fails at emission instead of at VeriPB.
+        //
+        // The XLiteral is *retired, not discarded*: need_gevar takes it back on
+        // re-introduction, so the atom keeps its identity (and its PB name) across
+        // delete/re-introduce cycles, exactly as it did when the atom stayed put. That
+        // matters because a fresh allocation would render as the same verbose name but a
+        // different `x<n>` with verbose names off -- proof semantics that depended on a
+        // rendering flag. `ge_defs` deliberately keeps its (stale, overwritten on
+        // re-introduction) entry, so it stays monotone and remains the chain gate's
+        // "thresholds ever named" count.
+        std::unordered_map<long long, XLiteral> retired_ge;
     };
 
     struct HashView
@@ -384,7 +402,7 @@ struct NamesAndIDsTracker::Imp
     // Event counters.
     long long stats_deletes = 0;                                    // literals dropped by forget_order_literals_at_level.
     long long stats_stitches = 0;                                   // forget-path skip-link emissions (emit_order_stitch).
-    long long stats_reintroductions = 0;                            // reintroduce_order_literal calls.
+    long long stats_reintroductions = 0;                            // ge definitions re-introduced after deletion.
     long long stats_dup_top_stitches = 0;                           // Top-level stitch clauses re-emitted for an already-linked pair.
     map<OrderEncodingResidencyCause, long long> stats_hoist_events; // actual hoist events, by cause.
     // Top-level (level-0) stitch pairs already emitted per variable, for cheap
@@ -942,31 +960,37 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         // carry deletable chain links. building_order_link suppresses this while a
         // chain-link pol is being built (those need_gevar calls only want the resident
         // definitions).
+        //
+        // Under Literals there is deliberately nothing to do here: a ge whose definition
+        // was deleted has had its atom retired out of the lookup table, so it does not
+        // reach this branch at all -- it falls through to the introduction path below,
+        // which re-introduces the definition and takes the retired XLiteral back.
         if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Links && _imp->logger && ! _imp->building_order_link) {
             if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id))
                 ensure_order_chain_connected(*sid_ptr);
         }
-        else if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals && _imp->logger && _imp->assertion_level == AssertionLevel::Off &&
-            ! _imp->building_order_link) {
-            // Literals mode: the atom is permanent, but its definition may have been
-            // deleted by an earlier backtrack. If this threshold is no longer live,
-            // re-introduce it (re-emit its def at Current and re-link it to its current
-            // live neighbours). Boundary / model-time literals are tagged level 0 and
-            // never leave the live set, so this only fires for interior literals. A
-            // ge aliased to a preserved bit (DirectOnly {0,1}) is skipped: it has no
-            // proof-time reification to delete or re-introduce, and re-emitting one would
-            // put the preserved bit in a red witness -- rejected at a derived level.
-            if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
-                auto live_it = _imp->live_order_literals.find(*sid_ptr);
-                if ((live_it == _imp->live_order_literals.end() || ! live_it->second.contains(v)) && ! order_literal_aliased_to_bit(id, v))
-                    reintroduce_order_literal(*sid_ptr, v);
-            }
-        }
         return;
     }
 
-    auto gevar = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::GreaterEqual, v);
+    // Take back a retired XLiteral if this threshold is being re-introduced after a
+    // backtrack deleted its definition, so the atom keeps its identity and its PB name;
+    // otherwise mint a fresh one. Only Literals mode ever retires anything.
+    bool reintroducing = false;
+    auto gevar = [&]() {
+        if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals) {
+            auto & atoms = _imp->atoms_for(id);
+            if (auto retired = atoms.retired_ge.find(v.raw_value); retired != atoms.retired_ge.end()) {
+                auto reused = retired->second;
+                atoms.retired_ge.erase(retired);
+                reintroducing = true;
+                return reused;
+            }
+        }
+        return allocate_xliteral_meaning(id, EqualsOrGreaterEqual::GreaterEqual, v);
+    }();
     _imp->store_condition(id >= v, gevar);
+    if (reintroducing && _imp->collect_order_encoding_stats)
+        ++_imp->stats_reintroductions;
 
     // Literals order-encoding-deletion mode: a real variable's non-boundary ge
     // definition is emitted at ProofLevel::Current, so a backtrack deletes it and a
@@ -1042,15 +1066,20 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     }
     auto ge_def_level = def_at_current ? ProofLevel::Current : ProofLevel::Top;
 
-    // gevar -> bits
+    // gevar -> bits. insert_or_assign, not try_emplace: on a re-introduction the
+    // ge_defs entry is still present but holds the line numbers of the definition the
+    // backtrack deleted, and every chain pol resolves its operands through those numbers
+    // (need_pol_item_defining_literal). try_emplace would keep the stale pair and the
+    // links would reference deleted lines. The entry is deliberately never erased, so
+    // ge_defs stays monotone and remains the chain gate's "thresholds ever named" count.
     if (_imp->logger && _imp->assertion_level > AssertionLevel::Definitions) {
-        _imp->atoms_for(id).ge_defs.try_emplace(
+        _imp->atoms_for(id).ge_defs.insert_or_assign(
             v.raw_value, make_pair(ProofLine{}, ProofLine{})); // Don't output geqvar definitions if using assertions
     }
     else if (_imp->logger) {
         auto def_lines = visit(
             [&](const auto & id) { return _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ge_def_level); }, id);
-        _imp->atoms_for(id).ge_defs.try_emplace(v.raw_value, def_lines);
+        _imp->atoms_for(id).ge_defs.insert_or_assign(v.raw_value, def_lines);
     }
     else {
         // Label the two halves @<base>[ge<v>][r]/[f]: the base is @i[name] for a
@@ -1059,7 +1088,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         // ~ge..) is cake's [r]; the second is [f]. v may be negative -- veripb
         // 3.0.2 allows `-` in @labels.
         string ge_label = definitional_label_base(id) + "[ge" + to_string(v.raw_value) + "]";
-        _imp->atoms_for(id).ge_defs.try_emplace(v.raw_value,
+        _imp->atoms_for(id).ge_defs.insert_or_assign(v.raw_value,
             visit(
                 [&](const auto & vid) -> pair<ProofLine, ProofLine> {
                     return pair{_imp->model->add_labelled_constraint(ge_label + "[r]", WPBSum{} + (1_i * vid) >= v, {{vid >= v}}),
@@ -1478,41 +1507,6 @@ auto NamesAndIDsTracker::link_order_literal_to_live_neighbours(const SimpleInteg
     _imp->building_order_link = saved;
 }
 
-auto NamesAndIDsTracker::reintroduce_order_literal(const SimpleIntegerVariableID & id, Integer v) -> void
-{
-    // The atom already exists but its Current-level definition was deleted on an
-    // earlier backtrack, and the search has genuinely re-touched it. Re-emit the
-    // reification def at Current, overwrite the stale def lines, re-record as live at
-    // Current, then re-link to live neighbours. Only interior literals reach here
-    // (level-0 literals never leave the live set), and in practice only *unpinned*
-    // ones: a ge pinned by a surviving Top constraint -- in particular a ge named by an
-    // eq atom's permanent (Top) definition -- is hoisted to Top when that atom is
-    // created and is thereafter never deleted, so it never reaches reintroduction. That
-    // is why the fresh `red` VeriPB accepts here never collides with a pin against its
-    // falsify-witness: pinned literals are hoisted, not reintroduced. Only genuinely
-    // re-touched unpinned interior literals reintroduce, and they verify.
-    SimpleOrProofOnlyIntegerVariableID key{id};
-    // The re-emitted `red` reifies against `id >= v` itself, so rendering it resolves
-    // that very condition through xliteral_for_ensuring -- which, under this mode, calls
-    // back into need_gevar to re-introduce a non-live literal. v is not live again until
-    // record_live_order_literal below, so without this guard the call recurses forever.
-    // building_order_link is the existing "we are emitting order-encoding machinery, do
-    // not recursively re-introduce" flag, used the same way by emit_order_stitch.
-    auto saved_building = _imp->building_order_link;
-    _imp->building_order_link = true;
-    auto def_lines = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * id) >= v, id >= v, ProofLevel::Current);
-    _imp->building_order_link = saved_building;
-    auto & entry = _imp->atoms_for(key).ge_defs.at(v.raw_value);
-    entry.first = def_lines.first;
-    entry.second = def_lines.second;
-
-    if (_imp->collect_order_encoding_stats)
-        ++_imp->stats_reintroductions;
-
-    record_live_order_literal(id, v, /*top=*/false);
-    link_order_literal_to_live_neighbours(id, v);
-}
-
 auto NamesAndIDsTracker::emit_order_stitch(const SimpleIntegerVariableID & id, Integer lo, Integer hi, int at_level, int restore_level) -> void
 {
     // Derive the skip link ge(hi) -> ge(lo) (clause ge(lo) OR ~ge(hi)) from the two
@@ -1586,12 +1580,29 @@ auto NamesAndIDsTracker::forget_order_literals_at_level(int level) -> void
         }
 
         // The deleted literals' def+link lines were del'd by forget_proof_level's own
-        // loop; drop the thresholds from the live set so a later need_gevar
-        // re-introduces them.
+        // loop; drop the thresholds from the live set and RETIRE their atoms out of the
+        // lookup table, so a later reference cannot name a literal whose definition is
+        // gone -- find_condition stops answering, and the only way back to the literal is
+        // through need_gevar, which re-introduces the definition and takes the retired
+        // XLiteral back. `ge_defs` deliberately keeps its now-stale entry: it is
+        // overwritten on re-introduction and is the chain gate's monotone
+        // "thresholds ever named" count.
+        //
+        // There is no longer an aliased-ge case to exclude here: issue #554's fix
+        // (set_up_direct_only_variable_encoding) deliberately stopped aliasing a
+        // DirectOnly {0,1} variable's `>= 1` atom to its bit, precisely so the atom gets a
+        // genuine reified pair, and need_gevar now mints it lazily like any other. So
+        // every ge that reaches this sweep owns its own reification and can be retired.
         if (_imp->collect_order_encoding_stats)
             _imp->stats_deletes += static_cast<long long>(dvals.size());
-        for (auto v : dvals)
+        auto & atoms = _imp->atoms_for(SimpleOrProofOnlyIntegerVariableID{id});
+        for (auto v : dvals) {
             live.erase(v);
+            if (auto atom = atoms.ge.find(v.raw_value); atom != atoms.ge.end()) {
+                atoms.retired_ge.insert_or_assign(v.raw_value, atom->second);
+                atoms.ge.erase(atom);
+            }
+        }
         if (live.empty())
             _imp->live_order_literals.erase(live_it);
     }
@@ -1745,19 +1756,6 @@ auto NamesAndIDsTracker::hoist_order_literal_to_top_if_live(
     // v and its nearest Top neighbour must stay chained -- link to the immediate live
     // neighbours, not only the Top ones.
     hoist_order_literal_to_level(id, v, 0, /*immediate_neighbours=*/true, stats_cause);
-}
-
-auto NamesAndIDsTracker::order_literal_aliased_to_bit(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> bool
-{
-    // Aliasing (proof_model.cc set_up_direct_only_variable_encoding) only ever happens
-    // for a single-bit DirectOnly {0,1} variable, so a >1-bit variable is excluded up
-    // front (cheap). For a one-bit variable, the ge is aliased iff id >= v's xliteral
-    // *is* that bit's xliteral (a Bits-encoded {0,1} variable instead mints a distinct
-    // ge1 atom, whose xliteral differs, so it returns false and stays reintroducible).
-    if (! has_bit_representation(id) || num_bits(id) != 1_i)
-        return false;
-    auto cond = _imp->find_condition(id >= v);
-    return cond && *cond == get_bit(id, 0_i).second;
 }
 
 auto NamesAndIDsTracker::hoist_ges_named_by_top_atom(
@@ -2610,20 +2608,6 @@ auto NamesAndIDsTracker::xliteral_for_ensuring(const VariableConditionFrom<Simpl
         f = _imp->find_condition(cond);
         if (! f)
             throw ProofError{"still can't find literals for cond after introducing it"};
-    }
-    else if (_imp->order_link_deletion_mode != OrderEncodingDeletion::None && _imp->logger && ! _imp->building_order_link) {
-        // Under order-encoding deletion an existing atom is NOT enough: atom identity is
-        // permanent, but the atom's *definition* may have been deleted by a backtrack, and
-        // a line naming a literal whose definition is gone does not verify. So go through
-        // need_proof_name anyway -- need_gevar's fast path re-introduces a deleted
-        // definition (and reconnects the chain) before this line names the literal. This
-        // is what the old need_all_proof_names_in pre-pass did unconditionally; the fused
-        // renderer skips it for known atoms, which is right for every other mode.
-        // Deletion off (the default) keeps the single-lookup path untouched.
-        // The XLiteral itself never changes -- re-introduction re-emits definition lines
-        // and rewrites their line numbers, it never re-mints the atom -- so the value
-        // found above stays correct.
-        need_proof_name(cond);
     }
     return *f;
 }

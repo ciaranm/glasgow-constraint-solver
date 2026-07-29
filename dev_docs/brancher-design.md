@@ -438,39 +438,31 @@ resident* subset. An eq eviction mirrors the ge eviction's
 `ge_defs` / `live_order_literals` / `order_literals_by_level` triple:
 
 - `atoms_for(id).eq_defs.erase(v.raw_value)` — drop the **definition lines only**.
-- **Keep `atoms_for(id).eq[v]`: the atom stays permanent** (owner decision, 2026-07-29) —
-  mirroring the ge side, where `need_gevar` keeps the atom and re-emits only the definition
-  (`reintroduce_order_literal`), so `need_direct_encoding_for` gains the same liveness
-  fast-path plus a `reintroduce_eq_literal`.
+- **Retire `atoms_for(id).eq[v]` into a `retired_eq` table, mirroring what the ge side now
+  does** (owner decision, 2026-07-29, revised the same day once the ge side proved it out).
+  Do *not* leave the atom in place and track liveness separately, and do *not* erase it
+  outright and let it re-mint.
 
-  **This decision is worth revisiting, because deleting the atom would make the naming
-  invariant self-enforcing** rather than a discipline: an absent atom makes
-  `find_condition` return `nullopt`, which is exactly the trigger `xliteral_for_ensuring`
-  already acts on, so the mode-gated `else` branch disappears — and the const
-  `xliteral_for` throws instead of silently rendering a stale literal, turning a future
-  bypass into a loud failure at emission rather than a VeriPB rejection far downstream.
-  Two objections that were raised against it do **not** hold up on inspection: nothing
-  outside the atom tables keeps a long-lived `XLiteral` for a ge or eq atom
-  (`containment_trees` holds an `IntervalTree` of values, `interval_partitions` a
-  `set<Integer>`, `variable_at_least_one_constraints` a `ProofLine`; the coverings, view
-  eq-links and at-least-one clause all resolve conditions to literals at emit time), and
-  the extra Top-emitting work in the cold mint path cannot coincide with a deletable ge
-  (`vars_recover_labels` recovery is on the model path only, `fix_bound` and the
-  view-bridge `pol`s fire only for boundary and viewed variables, whose encodings are
-  resident).
+  Retiring is what makes the naming rule self-enforcing: an atom absent from the lookup
+  table makes `find_condition` return `nullopt`, which is exactly the trigger
+  `xliteral_for_ensuring` already acts on, so no mode-specific special case is needed and
+  the const `xliteral_for` throws rather than rendering a stale name. Keeping the retired
+  `XLiteral` and taking it back on re-introduction is what keeps identity stable: a fresh
+  `allocate_xliteral_meaning` would render as the same verbose name but as a different
+  `x<n>` with `set_verbose_names(false)`, making proof semantics depend on a rendering flag.
 
-  Two things genuinely block it and must be settled first. (i) **Identity would become
-  rendering-dependent**: `allocate_xliteral_meaning` mints a fresh xliteral, which under
-  `verbose_names` (the default) re-registers the *same* PB name — so VeriPB sees the same
-  variable and today's witness-vs-pin analysis carries over — but under
-  `set_verbose_names(false)` becomes `x<new id>`, a genuinely different variable. The two
-  settings would then have different proof semantics and the default gate would never
-  exercise the other; the clean fix is to derive the non-verbose name from
-  (variable, op, value) instead of the xliteral id, after which atom deletion is
-  identity-stable either way. (ii) **The chain gate's monotone basis moves**: it counts
-  `ge_defs.size()`, which would shrink on deletion and let a variable fall back below the
-  gate and flip residency mid-search; `gevar_values` is the right basis — never erased,
-  and inserted *after* the gate check, so the counted semantics match exactly.
+  Follow the two traps the ge side hit (see
+  [order-encoding-deletion.md](order-encoding-deletion.md), Implementation status):
+  `eq_defs` keeps its entry and the re-introduction must `insert_or_assign` its refreshed
+  line numbers, because `need_pol_item_defining_literal` resolves pol operands through
+  them; and there is no aliased-atom exception to carve out, since #554's fix removed the
+  aliasing that motivated one. A DirectOnly `{0,1}` variable's `eq_defs` entries do still
+  hold `XLiteral`s rather than `ProofLine`s (`track_eqvar`), so an eq eviction must skip
+  those, as the ge hoist does via `get_if<ProofLine>`.
+
+  `reintroduce_eq_literal` is therefore **not** needed: `need_direct_encoding_for`'s
+  existing guard becomes the re-introduction path for free, exactly as `need_gevar`'s did
+  once `reintroduce_order_literal` was deleted.
 - A DirectOnly `{0,1}` variable's eq entries hold `XLiteral`s, not `ProofLine`s
   (`track_eqvar`, from `proof_model.cc`), so eviction must skip them — exactly as the ge
   hoist filters on `get_if<ProofLine>` and `order_literal_aliased_to_bit` skips aliased
