@@ -29,24 +29,69 @@ endif()
 # on top of the always-on flags set below.  They are GCC/Clang syntax, so on MSVC we
 # leave CMake's own sane per-config defaults (/O2 for Release, /Od /Zi for Debug) in
 # place instead.  The Sanitize configuration is GCC/Clang-only.
+#
+# These are plain set() calls, deliberately, and the reason is worth spelling out
+# because the obvious-looking alternative is silently broken (issue #597).
+#
+# CMake has two kinds of variable.  A *cache* variable is written into
+# CMakeCache.txt, persists across configures, and is what -D on the command line
+# sets.  A *normal* variable lives only for this configure run, and takes
+# precedence over a cache entry of the same name for the rest of the run.
+#
+# `set(FOO "value" CACHE STRING "help")` means "put this in the cache **if it is
+# not there already**" -- it is a defaulting operation, not an assignment, and it
+# does nothing at all, without a word of warning, when the entry already exists.
+# By the time this file runs, project() has already run the compiler-setup modules,
+# and those create a CMAKE_CXX_FLAGS_<CONFIG> cache entry for every configuration:
+# the standard ones get CMake's defaults (Release "-O3 -DNDEBUG", Debug "-g"), and
+# since CMake 4.2 our custom Sanitize configuration gets an *empty* one.  So every
+# cached set() below was a no-op.  For Release and Debug that went unnoticed, because
+# CMake's defaults are close enough to what we wanted; for Sanitize it meant compiling
+# with no flags whatsoever -- no -fsanitize=..., no sanitizers in the binaries, and a
+# CI lane that had been reporting "sanitize clean" for months without ever running a
+# sanitizer.
+#
+# A plain set() has no such conditional behaviour: it always assigns, and shadows
+# whatever CMake put in the cache.  The trade-off is that -DCMAKE_CXX_FLAGS_DEBUG=...
+# on the command line no longer reaches the compiler -- but it never did, so nothing
+# is lost.  To add flags to a build, use CMAKE_CXX_FLAGS, which is applied to every
+# configuration ahead of these and is unaffected; to change what a build type *means*,
+# edit it here.  The guard further down, and sanitizers_enabled_test, exist so that
+# if this ever silently stops working again the build says so instead of pretending.
+#
+# One consequence to know about when checking a build: CMakeCache.txt keeps CMake's
+# own (for Sanitize, empty) entries, because nothing writes to the cache any more, so
+# grepping the cache tells you nothing about the flags in use.  The build files are
+# the truth -- `grep CXX_FLAGS build-sanitize/gcs/CMakeFiles/*.dir/flags.make`, or
+# just run sanitizers_enabled_test, which asks the compiler itself.
 if(NOT MSVC)
     # Release: full optimisation, no sanitizers.  -march=native is added later after the
-    #   compiler capability check.  We omit -DNDEBUG deliberately because the codebase does
-    #   not use assert(), so it buys nothing while making behaviour harder to reason about.
-    set(CMAKE_CXX_FLAGS_RELEASE         "-O3"
-        CACHE STRING "Flags for release builds")
+    #   compiler capability check.  -DNDEBUG is here because gch::small_vector -- which
+    #   backs IntervalSet, and so is on the hottest path in the solver -- asserts on
+    #   erase(), pop_back() and friends.  Our own code has no runtime assert() at all, so
+    #   this comment used to say NDEBUG bought nothing and was deliberately omitted; the
+    #   omission never actually took effect (see above), and it would not have been free.
+    set(CMAKE_CXX_FLAGS_RELEASE         "-O3 -DNDEBUG")
     # Debug: disable optimisation so the debugger can follow every step.
-    set(CMAKE_CXX_FLAGS_DEBUG           "-O0"
-        CACHE STRING "Flags for debug builds")
+    set(CMAKE_CXX_FLAGS_DEBUG           "-O0")
     # Sanitize: light optimisation keeps stack traces readable; -O0 is too slow and hides
     #   inlining bugs.  ASan + UBSan together catch memory errors and undefined behaviour.
-    set(CMAKE_CXX_FLAGS_SANITIZE
-        "-O1 -fsanitize=address,undefined -fno-omit-frame-pointer"
-        CACHE STRING "Flags for sanitizer builds (ASan + UBSan)")
-    set(CMAKE_EXE_LINKER_FLAGS_SANITIZE    "-fsanitize=address,undefined"
-        CACHE STRING "Linker flags for sanitizer builds")
-    set(CMAKE_SHARED_LINKER_FLAGS_SANITIZE "-fsanitize=address,undefined"
-        CACHE STRING "Linker flags for sanitizer builds")
+    set(CMAKE_CXX_FLAGS_SANITIZE           "-O1 -fsanitize=address,undefined -fno-omit-frame-pointer")
+    set(CMAKE_EXE_LINKER_FLAGS_SANITIZE    "-fsanitize=address,undefined")
+    set(CMAKE_SHARED_LINKER_FLAGS_SANITIZE "-fsanitize=address,undefined")
+
+    # A sanitizer build that quietly stops sanitizing is worse than not having one,
+    # so fail the configure rather than hand back a build that only looks instrumented.
+    # This catches the flags going missing however it happens: the shadowing above
+    # breaking again, someone reintroducing a cached set(), or a future CMake changing
+    # the rules once more.  sanitizers_enabled_test then checks the other end, that the
+    # flags actually reached the compiler and are present in the binaries.
+    if(CMAKE_BUILD_TYPE STREQUAL "Sanitize" AND NOT CMAKE_CXX_FLAGS_SANITIZE MATCHES "fsanitize")
+        message(FATAL_ERROR
+            "Sanitize build type selected but CMAKE_CXX_FLAGS_SANITIZE (\"${CMAKE_CXX_FLAGS_SANITIZE}\") "
+            "carries no -fsanitize flag, so this build would contain no sanitizers. "
+            "Fix the flag handling in CMakeLists.txt; see issue #597.")
+    endif()
 endif()
 
 option(GCS_ENABLE_DOXYGEN "Add a doxygen target to generate the documentation" OFF)

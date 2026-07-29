@@ -97,7 +97,9 @@ cmake --build build --parallel $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 The sanitize build runs the code under [AddressSanitizer](https://clang.llvm.org/docs/AddressSanitizer.html)
 and [UndefinedBehaviourSanitizer](https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html),
 which catch memory errors and undefined behaviour at runtime. It is roughly 2× slower than
-release and is run automatically on every check-in.
+release and is run automatically on every check-in. `sanitizers_enabled_test` fails if a
+Sanitize build was somehow compiled without them, because a sanitizer build that quietly
+stops sanitizing is worse than not having one.
 
 ### Running the tests
 
