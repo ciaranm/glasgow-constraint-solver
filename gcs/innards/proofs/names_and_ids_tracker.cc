@@ -281,6 +281,13 @@ struct NamesAndIDsTracker::Imp
     // view-bridge pol lines -- is detected directly from views_of_variable in need_gevar,
     // not carried here.
     std::set<SimpleOrProofOnlyIntegerVariableID> order_encoding_stays_resident;
+    // Variables the frontier owner has exempted from Literals-mode deletion
+    // (note_deletion_exempt): every ge definition stays resident at Top however long the
+    // chain grows. Unlike order_encoding_stays_resident above this is a POLICY note, not a
+    // correctness one -- nothing is stranded if it is missing, the variable just churns --
+    // and it exists because the chain-length gate cannot tell a win-regime long chain from
+    // a churn-regime one. Populated by ProofModel::minimise for the objective.
+    std::set<SimpleOrProofOnlyIntegerVariableID> deletion_exempt;
     // The values with ge atoms, per variable, in value order: need_gevar's
     // order-encoding chain links join each new atom to its neighbours, which
     // needs ordered iteration. The atoms' literals and defining lines live in
@@ -851,6 +858,17 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     if (windowed && (_imp->interval_partitions.contains(id) || _imp->containment_trees.contains(id)))
         windowed = false;
 
+    // A deletion-exempt variable is not windowed either. `FrontierExempt` and
+    // `WindowedFrontier` are opposite answers to the same question -- resident *despite*
+    // being frontier, versus deletable *because* frontier -- and the design says they never
+    // apply to the same variable. Nothing stopped them: a branched objective is both, which
+    // happens (`tour` branches on its objective). Making the exemption win here keeps that
+    // claim true by construction rather than by hope, and it is the right way round:
+    // exempting a variable says "do not churn this encoding", and windowing its eq atoms is
+    // churning it.
+    if (windowed && _imp->deletion_exempt.contains(id))
+        windowed = false;
+
     // Mark the variable as windowed BEFORE the definition is emitted, because emitting it
     // is what mints the two ge thresholds it names, and need_gevar's WindowedFrontier slot
     // reads this mark to keep them deletable through the chain gate.
@@ -1156,6 +1174,17 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         bool view_resident = _imp->views_of_variable.contains(std::get<SimpleIntegerVariableID>(id));
         if (def_at_current && (aux_resident || view_resident))
             def_at_current = false;
+        // Frontier exemption (note_deletion_exempt): the frontier owner has said this
+        // variable's chain is a CHURN-regime one -- re-tightened and relaxed forever, so
+        // deletion pays its whole cost and returns no shrinkage. Keep the whole encoding
+        // resident, exactly like the aux/view classes above, but for a policy reason rather
+        // than a correctness one. Ranks below them (they force residency whatever anyone
+        // wants) and above the gate (the exemption holds however long the chain grows,
+        // which is the entire point -- the gate is length-based and cannot see the
+        // difference).
+        bool frontier_exempt = _imp->deletion_exempt.contains(id);
+        if (def_at_current && frontier_exempt)
+            def_at_current = false;
         // Chain-length gate (order_encoding_deletion_min_chain): below/at the gate keep
         // this interior ge resident at Top -- exactly like the boundary/view/aux paths --
         // so a propagation-strong model that never builds a long chain pays no deletion
@@ -1187,9 +1216,9 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 def_at_current = false;
         }
         // Stats attribution, matching the branches just taken. Priority (first-cause-wins):
-        // boundary > aux > view > gate; every case is reached only when the earlier ones
-        // did not fire, and (boundary, aux, view, gate) are the only ways !def_at_current
-        // holds here, so the trailing else is exactly the gate case.
+        // boundary > aux > view > exempt > gate; every case is reached only when the earlier
+        // ones did not fire, and those five are the only ways !def_at_current holds here, so
+        // the trailing else is exactly the gate case.
         if (_imp->collect_order_encoding_stats && ! def_at_current) {
             if (boundary)
                 stats_born_cause = OrderEncodingResidencyCause::Boundary;
@@ -1197,6 +1226,8 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
                 stats_born_cause = OrderEncodingResidencyCause::AuxPin;
             else if (view_resident)
                 stats_born_cause = OrderEncodingResidencyCause::ViewPin;
+            else if (frontier_exempt)
+                stats_born_cause = OrderEncodingResidencyCause::FrontierExempt;
             else
                 stats_born_cause = OrderEncodingResidencyCause::GateResident;
         }
@@ -2462,7 +2493,7 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     // whether any of their ges are hoist-pinned (eq/invar/nogood/soli); a variable with
     // no hoist pins but some gate-held (below-min_chain-resident) ge is its own class, so
     // the fully-deletable count is not inflated by gate-held variables.
-    long long n_view = 0, n_aux = 0, n_mixed = 0, n_gate_held = 0, n_deletable = 0;
+    long long n_view = 0, n_aux = 0, n_exempt = 0, n_mixed = 0, n_gate_held = 0, n_deletable = 0;
     for (const auto & [id, vs] : _imp->stats_ge_top_cause) {
         if (_imp->views_of_variable.contains(id)) {
             ++n_view;
@@ -2470,6 +2501,10 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
         }
         if (_imp->order_encoding_stays_resident.contains(SimpleOrProofOnlyIntegerVariableID{id})) {
             ++n_aux;
+            continue;
+        }
+        if (_imp->deletion_exempt.contains(SimpleOrProofOnlyIntegerVariableID{id})) {
+            ++n_exempt;
             continue;
         }
         bool any_hoist_pin = false, any_gate = false;
@@ -2498,6 +2533,7 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     long long nogood_h = get(by_cause, Cause::NogoodHoist), soli_h = get(by_cause, Cause::SoliHoist);
     long long boundary = get(by_cause, Cause::Boundary), model_time = get(by_cause, Cause::ModelTime);
     long long gate_resident = get(by_cause, Cause::GateResident);
+    long long frontier_exempt = get(by_cause, Cause::FrontierExempt);
     long long would_free = view_pin + aux_pin;
     long long would_not_free = eq_h + invar_h + nogood_h + soli_h;
     long long structural = boundary + model_time;
@@ -2523,6 +2559,7 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     emit(format("  structural (boundary + model_time): {} ({:.1f}%)", structural, pct(structural)));
     emit(format("      boundary:     {} ({:.1f}%)", boundary, pct(boundary)));
     emit(format("      model_time:   {} ({:.1f}%)", model_time, pct(model_time)));
+    emit(format("  frontier-exempt (note_deletion_exempt): {} ({:.1f}%)", frontier_exempt, pct(frontier_exempt)));
     emit(format("  gate-held (below min_chain gate): {} ({:.1f}%)", gate_resident, pct(gate_resident)));
     emit("events:");
     emit(format("  deletes: {}", _imp->stats_deletes));
@@ -2537,6 +2574,7 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     emit("variables by class:");
     emit(format("  fully-resident-by-view: {}", n_view));
     emit(format("  fully-resident-by-aux:  {}", n_aux));
+    emit(format("  fully-resident-by-exemption: {}", n_exempt));
     emit(format("  mixed (some eq/invar/nogood/soli-hoisted resident): {}", n_mixed));
     emit(format("  gate-held (no hoist pins, some ge below min_chain gate): {}", n_gate_held));
     emit(format("  fully-deletable (no hoist pins): {}", n_deletable));
@@ -3032,6 +3070,11 @@ auto NamesAndIDsTracker::note_bounds_not_trivially_derivable(const SimpleOrProof
 auto NamesAndIDsTracker::note_order_encoding_stays_resident(const SimpleOrProofOnlyIntegerVariableID & id) -> void
 {
     _imp->order_encoding_stays_resident.insert(id);
+}
+
+auto NamesAndIDsTracker::note_deletion_exempt(const SimpleOrProofOnlyIntegerVariableID & id) -> void
+{
+    _imp->deletion_exempt.insert(id);
 }
 
 auto NamesAndIDsTracker::note_recover_atom_labels_in_proof(const SimpleOrProofOnlyIntegerVariableID & id) -> void

@@ -712,7 +712,8 @@ gate keeps its job for the **non-frontier short-chain tail**
 (crystal_maze / talent eq atoms that are *not* branched on), which the window
 never touches.
 
-This composes with payload 3's `FrontierExempt` (below) as its exact opposite:
+This composes with payload 3's `FrontierExempt` (below, **built in stage C**) as its exact
+opposite:
 `FrontierExempt` says "resident *despite* being frontier" (the churn-regime
 objective); `WindowedFrontier` says "deletable *because* frontier" (the win-regime
 eq branch). They are the two opposite frontier policies and only the frontier
@@ -727,7 +728,9 @@ it is a reason to stay *deletable*, and a ge born deletable takes no cause at al
 `windowed_eq_variables` set, marked when the first windowed definition on that
 variable is minted — before the definition is emitted, because emitting it is what
 mints the two thresholds that must come out deletable. `FrontierExempt` (stage C)
-*is* a Top cause and will want the enumerator.
+*is* a Top cause and duly took the enumerator, plus its own line in the stats dump and its
+own per-variable class there — otherwise the gate would be credited with variables the
+exemption held.
 
 ### The one hidden pin — eq⨯interval (bidirectional guard)
 
@@ -1289,13 +1292,41 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   **This stage re-confirmed the real-solver eq advance level** (see Implementation
   gates), including the descending direction the hand-authored driver never covered.
 
-- **Stage C — objective / frontier exemption (payload 3; flag-gated; committable).**
-  Add `note_deletion_exempt` + the `FrontierExempt` residency cause + the `need_gevar`
-  priority slot (now reusing B''s residency ladder; `FrontierExempt` and
-  `WindowedFrontier` are sibling slots); `solve_with` exempts the objective.
-  **Oracle:** VeriPB verifies + search-identical; on seat-moving 2018 the
-  objective/cost churn (~20.8k delete/reintroduce at gate 16) drops toward 0 at no win
-  cost on the synthetic sweep (the exemption must not touch non-objective wins).
+- **Stage C — objective / frontier exemption (payload 3). DONE.**
+  Shipped: `NamesAndIDsTracker::note_deletion_exempt`, the `FrontierExempt` residency
+  cause and its slot in `need_gevar`'s ladder (**boundary > aux > view > exempt > gate**,
+  reusing B'''s ladder, with `WindowedFrontier` as `exempt`'s opposite-signed sibling), the
+  stats dump's exempt class, and `ProofModel::minimise` exempting the objective. The
+  brancher-facing half is deliberately **not** built: the design offers it "optionally...
+  but not by default", and an API with no caller is speculation — a brancher that wants it
+  can call `note_deletion_exempt` when a use appears.
+  Unlike every other stage this one is **policy, not correctness**: nothing is stranded
+  without it, so no proof can reject to say it stopped working. That is why its test asserts
+  the residency fact in C++ **both ways round** — an exempt variable's thresholds survive a
+  forget, an ordinary variable's do not — since an exemption that quietly held everything
+  resident would suppress the churn *and* the win.
+  **Oracle (met):** caps-off suite in each of {None, Literals gate 0, Literals gate 16};
+  mode-None byte-identity; `deletion_exempt_test` (VeriPB-checked, and it uses the exempt
+  literals *after* the forget that would have deleted them, so a bookkeeping-only lie
+  rejects; mutation-checked, a no-op `note_deletion_exempt` fails it); and the measurements
+  below.
+
+  **Measured.** The exemption's own oracle is two-sided, and both sides hold. It **must not
+  touch non-objective wins**: the synthetic split sweep (`order_deletion_bench --unsat`,
+  d250, gate 0) is **byte-identical** to the stack's previous tip, because that instance has
+  no objective and the note is never made. And it **must suppress the objective's churn**:
+  on the same synthetic with `--optimise`, deletes fall 812 → 726 at gate 0 and 656 → 591 at
+  gate 16 (~10 % each), reintroductions 180 → 172 and 141 → 137, and the proof shrinks
+  slightly (463 839 → 460 736 bytes) — while **78 Top-resident `ge` atoms**, 97.5 % of all
+  Top residency at gate 0, are now attributed to the exemption. On the real optimisation
+  examples the churn goes to zero outright (tour 4 → 0 deletes, colour 2/1 → 0/0 at gate 0),
+  though those are small enough that the absolute numbers say little.
+
+  Under Literals this stage deliberately **does** move the proof — but only for
+  optimisation. Of six instances compared against the stack's previous tip, colour and
+  talent differ (in `.pbp` only, never `.opb`) and crystal_maze, langford, money and sudoku
+  are byte-identical. That asymmetry *is* the feature: the exemption should be invisible to
+  everything without an objective.
 
 - **Stage D — objective-improvement delc + Top-eviction (payload 2; flag-gated;
   committable). Reuses B''s evict primitive** rather than introducing it.

@@ -75,8 +75,8 @@ namespace gcs::innards
      *    than only the first.
      *  - The `GCS_ORDER_ENCODING_STATS` **pin-apportionment diagnostic**, which
      *    attributes each Top-resident literal to the cause that pinned it *first*, and
-     *    also covers the born-Top structural causes (boundary, model_time, aux/view pin,
-     *    gate) that never hoist and so never take a pin. It splits the pins into the
+     *    also covers the born-Top causes (boundary, model_time, aux/view pin, frontier
+     *    exemption, gate) that never hoist and so never take a pin. It splits the pins into the
      *    classes the bridge-lifetime redesign (dev_docs step 3) would free (view_pin,
      *    aux_pin) versus those it would not (eq/invar/nogood/soli hoists) versus
      *    structural ones.
@@ -86,16 +86,17 @@ namespace gcs::innards
      */
     enum class OrderEncodingResidencyCause
     {
-        ModelTime,    ///< born Top: the ge atom was created before the logger attached.
-        Boundary,     ///< born Top: a trivially-derivable boundary literal (need_gevar's `boundary`).
-        ViewPin,      ///< born Top: whole encoding resident because the variable is a view underlying (views_of_variable).
-        AuxPin,       ///< born Top: whole encoding resident via order_encoding_stays_resident (aux magnitudes).
-        GateResident, ///< born Top: the variable had not crossed the min-chain gate (order_encoding_deletion_min_chain).
-        EqHoist,      ///< hoisted to Top from an eq atom's Top def (need_direct_encoding_for).
-        InvarHoist,   ///< hoisted to Top from an interval-partition atom's Top def (define_plain_invar).
-        NogoodHoist,  ///< hoisted to Top by emit_learned_nogood.
-        SoliHoist,    ///< hoisted to Top by the objective-improvement hoist in ProofLogger::solution.
-        GuessHoist    ///< hoisted to a positive backtrack level by ProofLogger::backtrack (transient; never a Top cause).
+        ModelTime,      ///< born Top: the ge atom was created before the logger attached.
+        Boundary,       ///< born Top: a trivially-derivable boundary literal (need_gevar's `boundary`).
+        ViewPin,        ///< born Top: whole encoding resident because the variable is a view underlying (views_of_variable).
+        AuxPin,         ///< born Top: whole encoding resident via order_encoding_stays_resident (aux magnitudes).
+        FrontierExempt, ///< born Top: the frontier owner exempted the variable from deletion (note_deletion_exempt).
+        GateResident,   ///< born Top: the variable had not crossed the min-chain gate (order_encoding_deletion_min_chain).
+        EqHoist,        ///< hoisted to Top from an eq atom's Top def (need_direct_encoding_for).
+        InvarHoist,     ///< hoisted to Top from an interval-partition atom's Top def (define_plain_invar).
+        NogoodHoist,    ///< hoisted to Top by emit_learned_nogood.
+        SoliHoist,      ///< hoisted to Top by the objective-improvement hoist in ProofLogger::solution.
+        GuessHoist      ///< hoisted to a positive backtrack level by ProofLogger::backtrack (transient; never a Top cause).
     };
 
     /**
@@ -981,6 +982,34 @@ namespace gcs::innards
          * unless the Literals mode is later active.
          */
         auto note_order_encoding_stays_resident(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
+
+        /**
+         * Note that this variable is **exempt from order-encoding deletion**: under
+         * OrderEncodingDeletion::Literals every one of its `ge` definitions stays resident
+         * at Top, as in mode None, however long its chain grows.
+         *
+         * This is the frontier owner's call, and it is a *policy* note rather than a
+         * correctness one — unlike note_order_encoding_stays_resident, nothing breaks if it
+         * is omitted; the variable simply churns. It exists because the chain-length gate
+         * cannot distinguish the two kinds of long chain: a **win-regime** one (a
+         * weak-propagation split variable, whose stepped-over thresholds are exactly what
+         * deletion should remove) from a **churn-regime** one (a perpetually re-tightened
+         * bound, deleted and re-introduced forever for no shrinkage at all). Only whoever
+         * owns the frontier knows which it is looking at.
+         *
+         * The measured instance is the **objective**: on seat-moving 2018 its objective and
+         * cost variables carry essentially all of the residual 20 784 delete/reintroduce
+         * churn at the default gate, verify-neutrally and for zero saving, because
+         * branch-and-bound re-tightens the objective at every improving solution and every
+         * backtrack relaxes it again. ProofModel::minimise exempts it.
+         *
+         * A pure note; a no-op unless the Literals mode is later active. Its residency slot
+         * (`FrontierExempt`) sits just above the chain gate and just below the structural
+         * pins, and is the exact opposite of the eq window's `WindowedFrontier` -- "resident
+         * *despite* being frontier" against "deletable *because* frontier". The two never
+         * apply to the same variable; see dev_docs/brancher-design.md.
+         */
+        auto note_deletion_exempt(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
 
         /**
          * Note that this variable's order-encoding (ge) atom definitions carry @i[..][ge]
