@@ -841,8 +841,19 @@ namespace
     };
 }
 
-auto gcs::innards::install_knapsack_upfront(Propagators & propagators, State & initial_state, ProofModel * const optional_model,
-    const ConstraintID & owner, vector<vector<Integer>> coeffs, vector<IntegerVariableID> vars, vector<IntegerVariableID> totals) -> void
+// Everything the three phases share. Opaque to knapsack.cc, which only holds it
+// by shared_ptr and hands it back.
+struct gcs::innards::KnapsackUpfrontData
+{
+    vector<vector<Integer>> coeffs;
+    vector<IntegerVariableID> vars;
+    vector<IntegerVariableID> totals;
+    shared_ptr<KnapsackUpfrontBridge> bridge;
+    ConstraintStateHandle dead_cache;
+};
+
+auto gcs::innards::knapsack_upfront_prepare(State & initial_state, vector<vector<Integer>> coeffs, vector<IntegerVariableID> vars,
+    vector<IntegerVariableID> totals) -> shared_ptr<KnapsackUpfrontData>
 {
     if (coeffs.size() != totals.size())
         throw InvalidProblemDefinitionException{"KnapsackUpfront: coefficients and totals must have the same number of equations"};
@@ -881,21 +892,34 @@ auto gcs::innards::install_knapsack_upfront(Propagators & propagators, State & i
         vector<set<vector<Integer>>>(vars.size() + 1), vector<vector<set<long long>>>(vars.size() + 1, vector<set<long long>>(totals.size()))};
     auto dead_cache_handle = initial_state.add_constraint_state(move(initial_cache));
 
-    if (optional_model) {
-        for (const auto & [cc_idx, cc] : enumerate(coeffs)) {
-            WPBSum sum_eq;
-            for (const auto & [idx, v] : enumerate(vars))
-                sum_eq += cc.at(idx) * v;
-            // cake_pb_cp labels each row's totals equality @c[<id>][<row>_le]/[<row>_ge]:
-            // the row index lives in the annotation tag, not the constraint name (a
-            // name-embedded row could collide with a sibling constraint's name). Match
-            // that so the propagator's pol steps, which cite these lines by label,
-            // resolve against cake's OPB. The bodies are identical.
-            auto [eq1, eq2] = optional_model->add_labelled_constraint(
-                owner, std::to_string(cc_idx) + "_le", std::to_string(cc_idx) + "_ge", sum_eq == 1_i * totals.at(cc_idx));
-            bridge->opb_lines.emplace_back(eq1, eq2);
-        }
+    return make_shared<KnapsackUpfrontData>(move(coeffs), move(vars), move(totals), move(bridge), dead_cache_handle);
+}
+
+auto gcs::innards::knapsack_upfront_define_proof_model(ProofModel & model, const ConstraintID & owner, KnapsackUpfrontData & data) -> void
+{
+    for (const auto & [cc_idx, cc] : enumerate(data.coeffs)) {
+        WPBSum sum_eq;
+        for (const auto & [idx, v] : enumerate(data.vars))
+            sum_eq += cc.at(idx) * v;
+        // cake_pb_cp labels each row's totals equality @c[<id>][<row>_le]/[<row>_ge]:
+        // the row index lives in the annotation tag, not the constraint name (a
+        // name-embedded row could collide with a sibling constraint's name). Match
+        // that so the propagator's pol steps, which cite these lines by label,
+        // resolve against cake's OPB. The bodies are identical.
+        auto [eq1, eq2] = model.add_labelled_constraint(
+            owner, std::to_string(cc_idx) + "_le", std::to_string(cc_idx) + "_ge", sum_eq == 1_i * data.totals.at(cc_idx));
+        data.bridge->opb_lines.emplace_back(eq1, eq2);
     }
+}
+
+auto gcs::innards::knapsack_upfront_install_propagators(
+    Propagators & propagators, const ConstraintID & owner, const shared_ptr<KnapsackUpfrontData> & data) -> void
+{
+    auto vars = data->vars;
+    auto coeffs = data->coeffs;
+    auto totals = data->totals;
+    auto bridge = data->bridge;
+    auto dead_cache_handle = data->dead_cache;
 
     Triggers triggers;
     triggers.on_change = {vars.begin(), vars.end()};

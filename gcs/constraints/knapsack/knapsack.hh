@@ -2,9 +2,13 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_KNAPSACK_KNAPSACK_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/constraints/knapsack/knapsack_upfront.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/proof_strategy.hh>
 #include <gcs/variable_id.hh>
 
+#include <memory>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -48,6 +52,16 @@ namespace gcs
         std::vector<IntegerVariableID> _vars;
         std::vector<IntegerVariableID> _totals;
         KnapsackProofStrategy _proof_strategy = proof_strategy::PerCall{};
+
+        // Set by prepare() under proof_strategy::Upfront: that strategy's own
+        // three-phase implementation, opaque here. Unset means the per-call
+        // strategy, whose state is the _eqns_lines below.
+        std::shared_ptr<innards::KnapsackUpfrontData> _upfront;
+        std::vector<std::pair<innards::ProofLine, innards::ProofLine>> _eqns_lines;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit Knapsack(std::vector<Integer> weights, std::vector<Integer> profits, std::vector<IntegerVariableID> vars, IntegerVariableID weight,

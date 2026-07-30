@@ -516,44 +516,48 @@ auto Regular::clone() const -> unique_ptr<Constraint>
 
 auto Regular::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
+
+    install_propagators(propagators);
+}
+
+auto Regular::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
     // The three strategies share this constraint's OPB encoding and its
     // inferences; they differ only in the proof scaffolding, so each is a
     // distinct install path over the same automaton. Upfront is this class's
-    // own path; PerCall and Bacchus delegate to the sibling implementations,
-    // which are internal to this constraint (not part of the public API).
-    overloaded{[&](const proof_strategy::Upfront &) {
-                   if (! prepare(propagators, initial_state, optional_model))
-                       return;
-                   if (optional_model)
-                       define_proof_model(*optional_model, initial_state);
-                   install_propagators(propagators);
-               },
-        [&](const proof_strategy::PerCall &) {
-            RegularLegacy legacy{_vars, _num_states, _transitions, _final_states, _symbols, _short_reasons, _regex};
-            legacy.set_constraint_id(constraint_id());
-            move(legacy).install(propagators, initial_state, optional_model);
-        },
-        [&](const proof_strategy::Bacchus &) {
-            if (_regex)
-                throw UnimplementedException{"the Bacchus proof strategy for Regular does not support regular-expression / NFA input"};
-            // Recover the deterministic transition map the Bacchus encoding
-            // needs from the shared (possibly non-deterministic) representation.
-            vector<unordered_map<Integer, long>> dfa(_transitions.size());
-            for (size_t q = 0; q < _transitions.size(); ++q)
-                for (const auto & [val, targets] : _transitions[q]) {
-                    if (targets.size() != 1)
-                        throw UnimplementedException{"the Bacchus proof strategy for Regular requires a deterministic automaton"};
-                    dfa[q][val] = *targets.begin();
-                }
-            RegularBacchus bacchus{_vars, _num_states, dfa, _final_states, _short_reasons};
-            bacchus.set_constraint_id(constraint_id());
-            move(bacchus).install(propagators, initial_state, optional_model);
-        }}
-        .visit(_proof_strategy);
-}
+    // own path, and falls through to the rest of prepare(). PerCall and Bacchus
+    // delegate in full to the sibling implementations -- internal to this
+    // constraint, not part of the public API -- and so return false.
+    if (holds_alternative<proof_strategy::PerCall>(_proof_strategy)) {
+        RegularLegacy legacy{_vars, _num_states, _transitions, _final_states, _symbols, _short_reasons, _regex};
+        legacy.set_constraint_id(constraint_id());
+        move(legacy).install(propagators, initial_state, optional_model);
+        return false;
+    }
 
-auto Regular::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
-{
+    if (holds_alternative<proof_strategy::Bacchus>(_proof_strategy)) {
+        if (_regex)
+            throw UnimplementedException{"the Bacchus proof strategy for Regular does not support regular-expression / NFA input"};
+        // Recover the deterministic transition map the Bacchus encoding
+        // needs from the shared (possibly non-deterministic) representation.
+        vector<unordered_map<Integer, long>> dfa(_transitions.size());
+        for (size_t q = 0; q < _transitions.size(); ++q)
+            for (const auto & [val, targets] : _transitions[q]) {
+                if (targets.size() != 1)
+                    throw UnimplementedException{"the Bacchus proof strategy for Regular requires a deterministic automaton"};
+                dfa[q][val] = *targets.begin();
+            }
+        RegularBacchus bacchus{_vars, _num_states, dfa, _final_states, _short_reasons};
+        bacchus.set_constraint_id(constraint_id());
+        move(bacchus).install(propagators, initial_state, optional_model);
+        return false;
+    }
+
     if (_regex) {
         // Alphabet for "." and "[^...]": the contiguous min..max range over the
         // union of the variables' domains, mirroring MiniZinc's semantics.

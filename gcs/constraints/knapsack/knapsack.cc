@@ -576,75 +576,94 @@ namespace
     }
 }
 
-namespace
+auto Knapsack::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    auto install_knapsack_percall(Propagators & propagators, State & initial_state, ProofModel * const optional_model, const ConstraintID & owner,
-        vector<vector<Integer>> coeffs, vector<IntegerVariableID> vars, vector<IntegerVariableID> totals) -> void
-    {
-        if (coeffs.size() != totals.size())
-            throw InvalidProblemDefinitionException{"mismatch between coefficients and totals sizes for knapsack"};
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
 
-        if (coeffs.empty())
-            throw InvalidProblemDefinitionException{"empty knapsack coefficients"};
-        unsigned n_vars = coeffs.begin()->size();
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
 
-        for (auto & c : coeffs)
-            if (c.size() != n_vars)
-                throw InvalidProblemDefinitionException{"not sure what to do about different coefficient array sizes for knapsack"};
+    install_propagators(propagators);
+}
 
-        for (auto & cc : coeffs)
-            for (auto & c : cc)
-                if (c < 0_i)
-                    throw InvalidProblemDefinitionException{"not sure what to do about negative coefficients for knapsack"};
+auto Knapsack::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    // The two strategies draw the same inferences and share this OPB encoding;
+    // they differ only in the proof scaffolding, so each has its own three-phase
+    // implementation over the same arguments. Validation lives in whichever one
+    // runs, since the messages differ.
+    if (holds_alternative<proof_strategy::Upfront>(_proof_strategy)) {
+        _upfront = knapsack_upfront_prepare(initial_state, move(_coeffs), move(_vars), move(_totals));
+        return true;
+    }
 
-        for (auto & v : vars)
-            if (initial_state.lower_bound(v) < 0_i)
-                throw InvalidProblemDefinitionException{"can only support non-negative variables for knapsack"};
+    if (_coeffs.size() != _totals.size())
+        throw InvalidProblemDefinitionException{"mismatch between coefficients and totals sizes for knapsack"};
 
-        for (auto & t : totals)
-            if (initial_state.lower_bound(t) < 0_i)
-                throw InvalidProblemDefinitionException{"not sure what to do about negative permitted totals for knapsack"};
+    if (_coeffs.empty())
+        throw InvalidProblemDefinitionException{"empty knapsack coefficients"};
+    unsigned n_vars = _coeffs.begin()->size();
 
-        vector<pair<ProofLine, ProofLine>> eqns_lines;
-        if (optional_model) {
-            for (const auto & [cc_idx, cc] : enumerate(coeffs)) {
-                WPBSum sum_eq;
-                for (const auto & [idx, v] : enumerate(vars))
-                    sum_eq += cc.at(idx) * v;
-                // cake_pb_cp labels each row's totals equality @c[<id>][<row>_le]/[<row>_ge]:
-                // the row index lives in the annotation tag, not the constraint name (a
-                // name-embedded row could collide with a sibling constraint's name). Match
-                // that so the propagator's pol steps, which cite these lines by label,
-                // resolve against cake's OPB. The bodies are identical.
-                auto [eq1, eq2] = optional_model->add_labelled_constraint(
-                    owner, std::to_string(cc_idx) + "_le", std::to_string(cc_idx) + "_ge", sum_eq == 1_i * totals.at(cc_idx));
-                eqns_lines.emplace_back(eq1, eq2);
-            }
-        }
+    for (auto & c : _coeffs)
+        if (c.size() != n_vars)
+            throw InvalidProblemDefinitionException{"not sure what to do about different coefficient array sizes for knapsack"};
 
-        Triggers triggers;
-        triggers.on_change = {vars.begin(), vars.end()};
-        triggers.on_change.insert(triggers.on_change.end(), totals.begin(), totals.end());
+    for (auto & cc : _coeffs)
+        for (auto & c : cc)
+            if (c < 0_i)
+                throw InvalidProblemDefinitionException{"not sure what to do about negative coefficients for knapsack"};
 
-        propagators.install(
-            owner,
-            [coeffs = move(coeffs), vars = move(vars), totals = move(totals), eqns_lines = move(eqns_lines), owner](
-                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                return knapsack(state, logger, inference, owner, coeffs, vars, totals, eqns_lines);
-            },
-            triggers);
+    for (auto & v : _vars)
+        if (initial_state.lower_bound(v) < 0_i)
+            throw InvalidProblemDefinitionException{"can only support non-negative variables for knapsack"};
+
+    for (auto & t : _totals)
+        if (initial_state.lower_bound(t) < 0_i)
+            throw InvalidProblemDefinitionException{"not sure what to do about negative permitted totals for knapsack"};
+
+    return true;
+}
+
+auto Knapsack::define_proof_model(ProofModel & model, const State &) -> void
+{
+    if (_upfront) {
+        knapsack_upfront_define_proof_model(model, constraint_id(), *_upfront);
+        return;
+    }
+
+    for (const auto & [cc_idx, cc] : enumerate(_coeffs)) {
+        WPBSum sum_eq;
+        for (const auto & [idx, v] : enumerate(_vars))
+            sum_eq += cc.at(idx) * v;
+        // cake_pb_cp labels each row's totals equality @c[<id>][<row>_le]/[<row>_ge]:
+        // the row index lives in the annotation tag, not the constraint name (a
+        // name-embedded row could collide with a sibling constraint's name). Match
+        // that so the propagator's pol steps, which cite these lines by label,
+        // resolve against cake's OPB. The bodies are identical.
+        auto [eq1, eq2] = model.add_labelled_constraint(
+            constraint_id(), std::to_string(cc_idx) + "_le", std::to_string(cc_idx) + "_ge", sum_eq == 1_i * _totals.at(cc_idx));
+        _eqns_lines.emplace_back(eq1, eq2);
     }
 }
 
-auto Knapsack::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto Knapsack::install_propagators(Propagators & propagators) -> void
 {
-    overloaded{[&](const proof_strategy::PerCall &) {
-                   install_knapsack_percall(propagators, initial_state, optional_model, constraint_id(), move(_coeffs), move(_vars), move(_totals));
-               },
-        [&](const proof_strategy::Upfront &) {
-            install_knapsack_upfront(propagators, initial_state, optional_model, constraint_id(), move(_coeffs), move(_vars), move(_totals));
-        }}
-        .visit(_proof_strategy);
+    if (_upfront) {
+        knapsack_upfront_install_propagators(propagators, constraint_id(), _upfront);
+        return;
+    }
+
+    Triggers triggers;
+    triggers.on_change = {_vars.begin(), _vars.end()};
+    triggers.on_change.insert(triggers.on_change.end(), _totals.begin(), _totals.end());
+
+    propagators.install(
+        constraint_id(),
+        [coeffs = _coeffs, vars = _vars, totals = _totals, eqns_lines = move(_eqns_lines), owner = constraint_id()](const State & state,
+            auto & inference,
+            ProofLogger * const logger) -> PropagatorState { return knapsack(state, logger, inference, owner, coeffs, vars, totals, eqns_lines); },
+        triggers);
 }
 
 auto Knapsack::constraint_type() const -> std::string
