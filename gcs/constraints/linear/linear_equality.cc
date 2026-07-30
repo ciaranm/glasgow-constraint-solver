@@ -177,12 +177,31 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & initial_s
     if (optional_model)
         define_proof_model(*optional_model, initial_state);
 
-    install_propagators(propagators, initial_state);
+    install_propagators(propagators);
 }
 
 auto ReifiedLinearEquality::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _evaluated_cond = test_reification_condition(initial_state, _reif_cond);
+
+    std::tie(_sanitised, _modifier) = tidy_up_linear(_coeff_vars);
+
+    // The incremental (fixed-term-folding) propagator needs a backtrackable fold
+    // state, and allocating one is prepare()'s job. Allocate it only for a
+    // constraint that can actually run it: not tabulating, wide enough for the
+    // folding to pay off, and with a branch the dispatcher can reach. Only the
+    // must-hold branch folds -- must-not-hold is a different (not-equals) algorithm
+    // and the undecided branch only inspects a single residual variable -- so the
+    // state is reachable exactly when the condition may hold. Skipping the
+    // unreachable cases is not just tidiness: State::new_epoch deep-copies every
+    // constraint-state slot at every search node.
+    if (! holds_alternative<consistency::Tabulated>(_level)) {
+        auto n_terms = visit([](const auto & cv) { return cv.terms.size(); }, _sanitised);
+        auto may_hold = holds_alternative<evaluated_reif::MustHold>(_evaluated_cond) || holds_alternative<evaluated_reif::Undecided>(_evaluated_cond);
+        if (may_hold && n_terms >= _incremental_threshold.value_or(default_linear_incremental_threshold()))
+            _incremental_handle = initial_state.add_constraint_state(LinearIncrementalState{n_terms, 0_i});
+    }
+
     return true;
 }
 
@@ -233,9 +252,10 @@ auto ReifiedLinearEquality::define_proof_model(ProofModel & model, const State &
         .visit(_reif_cond);
 }
 
-auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State & initial_state) -> void
+auto ReifiedLinearEquality::install_propagators(Propagators & propagators) -> void
 {
-    auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
+    const auto & sanitised_cv = _sanitised;
+    const auto modifier = _modifier;
 
     vector<IntegerVariableID> all_vars;
     visit(
@@ -322,11 +342,11 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
                         // Wide enough? Use the incremental propagator (folds instantiated terms
                         // out), which needs backtrackable constraint state set up here. Otherwise
                         // the cheaper stateless path, where folding bookkeeping does not pay off.
-                        if (lin.terms.size() >= _incremental_threshold.value_or(default_linear_incremental_threshold())) {
+                        if (_incremental_handle) {
                             auto active = make_shared<vector<std::size_t>>(lin.terms.size());
                             for (std::size_t i = 0; i != lin.terms.size(); ++i)
                                 (*active)[i] = i;
-                            auto handle = initial_state.add_constraint_state(LinearIncrementalState{lin.terms.size(), 0_i});
+                            auto handle = *_incremental_handle;
                             propagators.install(
                                 constraint_id(),
                                 [modifier = modifier, lin = lin, value = _value, proof_line = _proof_line, reason_from_cond = reif.cond,
@@ -400,12 +420,11 @@ auto ReifiedLinearEquality::install_propagators(Propagators & propagators, State
                         // while the condition is decided true in a subtree, backtracks on its own
                         // handle, and re-folds any terms instantiated while another branch was active.
                         std::optional<std::pair<std::shared_ptr<vector<std::size_t>>, ConstraintStateHandle>> inc_must_hold;
-                        if (sanitised_cv.terms.size() >= _incremental_threshold.value_or(default_linear_incremental_threshold())) {
+                        if (_incremental_handle) {
                             auto active = make_shared<vector<std::size_t>>(sanitised_cv.terms.size());
                             for (std::size_t i = 0; i != sanitised_cv.terms.size(); ++i)
                                 (*active)[i] = i;
-                            auto handle = initial_state.add_constraint_state(LinearIncrementalState{sanitised_cv.terms.size(), 0_i});
-                            inc_must_hold = std::pair{active, handle};
+                            inc_must_hold = std::pair{active, *_incremental_handle};
                         }
 
                         // Whole-scope reason built once here and captured, not
