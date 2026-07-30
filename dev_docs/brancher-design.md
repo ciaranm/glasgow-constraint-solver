@@ -1,8 +1,10 @@
 # Step 2 — the Brancher-API refactor: concrete, decided design
 
-**Status: decided design, partly implemented — stages A, B, B' and B'' have landed
-(#606, #607, #608); C–E have not.** "Migration staging", below, is the authority on
-what each remaining stage owes, and tracking issue #612 indexes them.
+**Status: decided design, partly implemented — stages A, B, B', B'' and C have landed
+(#606, #607, #615, #617); D and E have not.** The whole stack stays unmerged until the plan
+is complete: stage E's benchmarking is the go/no-go gate for all of it (owner, 2026-07-30).
+"Migration staging", below, is the authority on what each remaining stage owes, and
+tracking issue #612 indexes them.
 This note is the single committed record of the step-2 design: it turns the
 user-approved conceptual sketch in
 [order-encoding-deletion.md](order-encoding-deletion.md) ("Design overview"
