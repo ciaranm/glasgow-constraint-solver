@@ -44,6 +44,19 @@ auto LexSmartTable::clone() const -> unique_ptr<Constraint>
 
 auto LexSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
+
+    install_propagators(propagators);
+}
+
+auto LexSmartTable::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    // Delegates entirely to the SmartTable built below; see the note on
+    // Constraint::prepare about returning false.
     SmartTuples tuples;
 
     for (unsigned int i = 0; i < min(_vars_1.size(), _vars_2.size()); ++i) {
@@ -62,6 +75,8 @@ auto LexSmartTable::install(Propagators & propagators, State & initial_state, Pr
 
     auto smt_table = SmartTable{all_vars, tuples};
     move(smt_table).install(propagators, initial_state, optional_model);
+
+    return false;
 }
 
 auto LexSmartTable::constraint_type() const -> std::string

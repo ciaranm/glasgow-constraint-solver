@@ -178,11 +178,26 @@ auto AtMostOneSmartTable::clone() const -> unique_ptr<Constraint>
 
 auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
+
+    install_propagators(propagators);
+}
+
+auto AtMostOneSmartTable::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    // Delegates entirely: the SmartTable below is this constraint. Building and
+    // installing it needs all three of propagators, state and model, so it happens
+    // here, and returning false stops the empty define_proof_model/install_propagators
+    // from running afterwards.
     // 0 or 1 vars: "at most 1 of n equals val" is vacuously true. The
     // SmartTable below would build empty tuples for n == 0, which means
     // "no row matches" i.e. UNSAT — wrong for the trivial case. Skip.
     if (_vars.size() < 2)
-        return;
+        return false;
 
     SmartTuples tuples;
     for (int i = 0; cmp_less(i, _vars.size()); ++i) {
@@ -200,6 +215,8 @@ auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_sta
 
     SmartTable smt_table{all_vars, tuples};
     move(smt_table).install(propagators, initial_state, optional_model);
+
+    return false;
 }
 
 auto AtMostOneSmartTable::constraint_type() const -> std::string

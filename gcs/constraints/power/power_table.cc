@@ -30,6 +30,19 @@ auto PowerTable::clone() const -> unique_ptr<Constraint>
 
 auto PowerTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
+
+    install_propagators(propagators);
+}
+
+auto PowerTable::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    // Delegates entirely to a materialised Table over the reachable triples, which
+    // is why this reads the initial domains here.
     vector<vector<Integer>> permitted;
     for (const auto & v1 : initial_state.each_value_immutable(_base))
         for (const auto & v2 : initial_state.each_value_immutable(_exponent)) {
@@ -43,6 +56,8 @@ auto PowerTable::install(Propagators & propagators, State & initial_state, Proof
     Table table{vector<IntegerVariableID>{_base, _exponent, _result}, move(permitted)};
     table.set_constraint_id(constraint_id());
     move(table).install(propagators, initial_state, optional_model);
+
+    return false;
 }
 
 auto PowerTable::constraint_type() const -> std::string

@@ -53,6 +53,25 @@ namespace gcs
          */
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void {};
         virtual auto install_propagators(innards::Propagators &) -> void {};
+        /**
+         * \brief Everything that has to happen before the constraint can be described
+         * and propagated: argument validation, reading the initial domains, allocating
+         * auxiliary variables and backtrackable constraint state, and installing child
+         * constraints.
+         *
+         * This is the only phase holding all three of the propagators, the mutable
+         * State and the model at once, so it is the only one that can allocate or
+         * install a child.
+         *
+         * Return false to say that the other two phases must not run. That covers both
+         * "there is nothing to do" -- the constraint is trivially satisfied, or a
+         * contradiction initialiser has already been installed -- and "this constraint
+         * has delegated itself to a child, which has been installed in full".
+         *
+         * When allocating constraint state, allocate it only for a branch that can
+         * actually be reached: State::new_epoch deep-copies every slot at every search
+         * node, so a slot for an unreachable branch costs on every node of the search.
+         */
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool
         {
             return true;

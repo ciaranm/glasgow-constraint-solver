@@ -25,6 +25,8 @@ namespace gcs::innards
     private:
         IntegerVariableID _base, _exponent, _result;
 
+        virtual auto prepare(Propagators &, State &, ProofModel * const) -> bool override;
+
     public:
         explicit PowerTable(IntegerVariableID base, IntegerVariableID exponent, IntegerVariableID result);
 
