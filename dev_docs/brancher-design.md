@@ -1324,6 +1324,13 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   examples the churn goes to zero outright (tour 4 → 0 deletes, colour 2/1 → 0/0 at gate 0),
   though those are small enough that the absolute numbers say little.
 
+  **Not measured here: seat-moving 2018 itself**, the instance whose ~20.8k churn at gate 16
+  motivated the exemption. Its proof passes 8 GB and the solve runs well past half an hour,
+  so it belongs in stage E's benchmarking rather than in a per-stage gate — and stage E,
+  being the stack's go/no-go, re-measures every figure anyway. What is established here is
+  that the mechanism does what it claims, on an instance small enough to check both sides of
+  the oracle.
+
   Under Literals this stage deliberately **does** move the proof — but only for
   optimisation. Of six instances compared against the stack's previous tip, colour and
   talent differ (in `.pbp` only, never `.opb`) and crystal_maze, langford, money and sudoku
