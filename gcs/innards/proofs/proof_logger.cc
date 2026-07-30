@@ -208,6 +208,24 @@ struct ProofLogger::Imp
         int level;
     };
     optional<BacktrackClause> last_backtrack_clause;
+
+    // --- the incumbent record (dev_docs/brancher-design.md, payload 2) ---
+    // What the previous improving solution left permanently resident, so the next one can
+    // retire it: an optimisation descent otherwise accumulates O(#incumbents) Top lines
+    // (and, without stage C's exemption, O(#incumbents) pinned objective thresholds).
+    // `improvement_line` is the core constraint the `soli` itself produces -- the one
+    // `delc` is for, and the only one of the two that is in core. `unit_line` is the Top
+    // `~ge(value) >= 1` emitted just after it, which is derived and so goes by plain `del`.
+    // Set on every improving solution under Literals; nullopt in every other mode and on
+    // the `solx` path, so the whole of payload 2 is skipped there.
+    struct IncumbentRecord
+    {
+        Integer value;
+        ProofLine improvement_line;
+        ProofLine unit_line;
+    };
+    optional<IncumbentRecord> last_incumbent;
+
     // The standing frontier advance for each windowed variable, bucketed by the proof level
     // it was emitted at and then by variable, so the next step of that window can delete the
     // one it supersedes. Bucketed by level because a level number is reused by every node at
@@ -361,13 +379,17 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
     }
 
     _imp->proof << ";\n";
-    record_proof_line(advance_proof_line_number(), ProofLevel::Top);
+    // The `soli` itself produces the objective-improvement constraint, in *core* at this id.
+    // Payload 2 needs it by number; on the `solx` path nothing reads it back.
+    auto improvement_line = record_proof_line(advance_proof_line_number(), ProofLevel::Top);
+
+    optional<ProofLine> unit_line;
 
     if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
         // soli and no links => have to assert the objective improving constraint
         visit(
             [&](const auto & id) {
-                emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top,
+                unit_line = emit(AssertProofRule{}, WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top,
                     AssertionAnnotation{.hint_name = hints::SoliImprove::hint_name});
             },
             optional_minimise_variable_and_value->first);
@@ -379,7 +401,7 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
                 emit_inequality_to(names_and_ids_tracker(), WPBSum{} + 1_i * id <= optional_minimise_variable_and_value->second - 1_i, _imp->proof);
                 _imp->proof << ":" << relative_proof_line(_imp->proof_line, _imp->proof_line.number) << ";\n";
 
-                emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
+                unit_line = emit_rup_proof_line(WPBSum{} + 1_i * (id < optional_minimise_variable_and_value->second) >= 1_i, ProofLevel::Top);
             },
             optional_minimise_variable_and_value->first);
     else if (_imp->assertion_level > AssertionLevel::Definitions) {
@@ -387,6 +409,74 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         emit(AssertProofRule{}, blocking_sum >= 1_i, ProofLevel::Top, AssertionAnnotation{.hint_name = hints::SolxBlock::hint_name});
     }
     // nothing needs done for solx below AssertionLevel::Links
+
+    // Literals with assertions off -- the pairing every guard over this machinery uses (see
+    // bound_advances_active). With assertions on there are no ge definitions to evict and no
+    // residency bookkeeping over them, so the retirement has nothing to be right about; that
+    // is also why `unit_line` is certainly the emit_rup_proof_line above rather than the
+    // asserted form.
+    if (optional_minimise_variable_and_value && bound_advances_active())
+        retire_superseded_incumbent(
+            optional_minimise_variable_and_value->first, optional_minimise_variable_and_value->second, improvement_line, unit_line.value());
+}
+
+auto ProofLogger::retire_superseded_incumbent(const IntegerVariableID & objective, Integer value, ProofLine improvement_line, ProofLine unit_line)
+    -> void
+{
+    // Payload 2 (dev_docs/brancher-design.md): the incumbent just recorded supersedes the
+    // previous one, whose improvement constraint, Top unit and pinned threshold would
+    // otherwise stay resident for the rest of the solve -- O(#incumbents) of each over a
+    // branch-and-bound descent, which is exactly the accumulation this mode exists to stop.
+    //
+    // Only reached on the `soli` path, so `-n 1` / find-first (one incumbent, so the swap
+    // below records and retires nothing) and `--all` enumeration (the `solx` path, which
+    // never gets here) are both inert.
+    auto previous = std::exchange(_imp->last_incumbent, Imp::IncumbentRecord{value, improvement_line, unit_line});
+    if (! previous)
+        return;
+
+    write_indent();
+    _imp->proof << "% retire the superseded incumbent\n";
+
+    // 1. The improvement constraint, by *checked* deletion: it is in core, and what remains
+    //    resident implies it -- the new constraint is the same objective bounded by a
+    //    strictly smaller value, so VeriPB's RUP shortcut autoproves it. This must happen
+    //    before anything below is deleted, while the database it is checked against still
+    //    holds everything the implication may need.
+    checked_delete_proof_lines_at_level(vector<ProofLine>{previous->improvement_line}, 0);
+
+    // 2. The Top unit `~ge(previous) >= 1`. Derived, not core, so `delc` would be rejected
+    //    for its origin and plain deletion is the right instrument. Nothing later loses by it:
+    //    the new unit `~ge(current) >= 1` plus the resident order chain unit-propagates
+    //    back up to `~ge(previous)`, every chain link being a binary clause, so a later RUP
+    //    that wanted the old bound still gets it.
+    delete_proof_lines_at_level(vector<ProofLine>{previous->unit_line}, 0);
+
+    // 3. The threshold itself, now that the only permanent line naming it is gone. Strictly
+    //    after step 2 -- VeriPB will not police this ordering (it rejects at a point of use,
+    //    not at a deletion), so it is a solver-side invariant, and the reverse order leaves
+    //    a Top unit naming a deleted atom for as long as it takes something to trip over it.
+    //
+    //    In the shipped configuration this always refuses, and that is stage C's doing
+    //    rather than a gap here: `ProofModel::minimise` marks the objective deletion-exempt,
+    //    so its thresholds are resident by policy and eviction declines them. The call is
+    //    still the right one to make -- C owns the objective's ge residency and D owns its
+    //    improvement constraints -- and steps 1 and 2 are the half that fires regardless.
+    //
+    //    Only a real variable, mirroring the hoist that took the pin in the first place: it
+    //    reads the threshold off a `SimpleIntegerVariableID` condition and skips a view or a
+    //    constant, so for those there is no pin to release and nothing to evict. A view
+    //    objective is doubly covered, being resident as a view underlying as well.
+    overloaded{
+        //
+        [&](const SimpleIntegerVariableID & id) {
+            if (names_and_ids_tracker().order_literal_is_live(id, previous->value))
+                names_and_ids_tracker().evict_order_literal(id, previous->value, OrderEncodingResidencyCause::SoliHoist);
+        },
+        [&](const ViewOfIntegerVariableID &) {},  //
+        [&](const ConstantIntegerVariableID &) {} //
+    }
+        .visit(objective);
 }
 
 auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
@@ -1034,6 +1124,22 @@ auto ProofLogger::delete_proof_lines_at_level(const vector<ProofLine> & lines, i
             bucket.erase(n->number);
             write_indent();
             _imp->proof << "del id " << (n->number - current - 1) << ";\n";
+        }
+}
+
+auto ProofLogger::checked_delete_proof_lines_at_level(const vector<ProofLine> & lines, int level) -> void
+{
+    auto & bucket = _imp->proof_lines_by_level.at(level);
+    // The same relative (negative) encoding, taken once, as the two unchecked deleters above,
+    // and for the same reason. Relative addressing is not merely accepted by `delc`: it
+    // resolves to exactly the constraint it names, confirmed by pointing one at its
+    // neighbour and watching `-c` reject the autoproof.
+    auto current = _imp->proof_line.number;
+    for (const auto & l : lines)
+        if (const auto * n = std::get_if<ProofLineNumber>(&l)) {
+            bucket.erase(n->number);
+            write_indent();
+            _imp->proof << "delc " << (n->number - current - 1) << ";\n";
         }
 }
 

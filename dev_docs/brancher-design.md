@@ -1,7 +1,7 @@
 # Step 2 — the Brancher-API refactor: concrete, decided design
 
-**Status: decided design, partly implemented — stages A, B, B', B'' and C have landed
-(#606, #607, #615, #617); D and E have not.** The whole stack stays unmerged until the plan
+**Status: decided design, partly implemented — stages A, B, B', B'', C and D have landed
+(#606, #607, #615, #617, #618); E has not.** The whole stack stays unmerged until the plan
 is complete: stage E's benchmarking is the go/no-go gate for all of it (owner, 2026-07-30).
 "Migration staging", below, is the authority on what each remaining stage owes, and
 tracking issue #612 indexes them.
@@ -902,40 +902,54 @@ optimisation descent this accumulates **O(#incumbents)** resident unit clauses p
 O(#incumbents) Top-pinned thresholds. Payloads 2 and 3 convert this to O(1)
 resident.
 
-`solution()` gains a small **incumbent record** (in `ProofLogger::Imp`, or threaded
-from the tracker):
+`solution()` gains a small **incumbent record**, in `ProofLogger::Imp`. As shipped it
+carries *two* lines rather than the one the sketch drew, because an improving solution
+leaves two permanent lines behind and they are in different constraint sets:
 
 ```cpp
 struct IncumbentRecord {
-    Integer value;             // the incumbent objective value
-    ProofLine improvement_line; // the Top RUP `~ge(value) >= 1` just emitted
+    Integer value;              // the incumbent objective value
+    ProofLine improvement_line; // the CORE constraint the `soli` itself produces
+    ProofLine unit_line;        // the DERIVED Top RUP `~ge(value) >= 1` after it
 };
 std::optional<IncumbentRecord> last_incumbent;   // per objective, per solve
 ```
 
-Today `emit_rup_proof_line(... id < value ...)`'s return is discarded
-(`proof_logger.cc:235`); the `soli` improvement constraint lands in **core** at the
-next sequential ID (`IDmax+1`), which is exactly the ID to capture here.
+Both returns were previously discarded (`proof_logger.cc`). The `soli` improvement
+constraint lands in **core** at the next sequential ID (`IDmax+1`); the unit that follows
+it is derived, which is what decides the instrument each one is retired with.
 
 ### Payload 2 — delc the superseded improvement constraint + evict its threshold
 
-When solution `k+1` lands (value `v' < v`, minimisation), `solution()`:
+**Implemented in stage D.** When solution `k+1` lands (value `v' < v`, minimisation),
+`solution()`:
 
 1. Emit the new `soli`, hoist `ge(v')` to Top, emit the new improvement constraint
-   `~ge(v') >= 1` (as today), and set `last_incumbent = {v', line'}`.
-2. **Delc the old improvement constraint** `~ge(v) >= 1`. It is implied by the new
-   one plus the resident order chain: `v' < v` gives the chain link
-   `ge(v) → ge(v')`, so `~ge(v')` (the new unit) RUP-derives `~ge(v)` (the old
-   unit).
-3. **Evict `ge(v)` from Top** — the new evict-from-Top primitive (below), *iff* the
-   residency bookkeeping says the `soli` pin was `ge(v)`'s **only** Top cause. If
-   `ge(v)` is also pinned by an eq atom, an invar atom, a nogood, or the objective
-   exemption, it stays resident and only the improvement constraint is delc'd.
+   `~ge(v') >= 1` (as today), and set `last_incumbent = {v', core line, unit line}`.
+2. **Delc the old improvement constraint** — the *core* one, produced by the old `soli`.
+   `v' < v` makes the new one the same objective under a strictly tighter bound, so the
+   autoproof's RUP shortcut discharges it directly over the bits; the order chain is not
+   needed for this half.
+3. **Del the old Top unit** `~ge(v) >= 1`. Derived, so `delc` is rejected outright and
+   plain `del id` is the instrument. Nothing downstream loses by it: the new unit
+   `~ge(v')` plus the resident chain links (binary clauses, `ge(hi) → ge(lo)`)
+   unit-propagates back up to `~ge(v)`, so a later RUP that wanted the old bound still
+   gets it.
+4. **Evict `ge(v)` from Top** — the evict primitive (below), *iff* the residency
+   bookkeeping says the `soli` pin was `ge(v)`'s **only** Top cause. If `ge(v)` is also
+   pinned by an eq atom, an invar atom, or a nogood, it stays resident and only the
+   constraints go. **And unconditionally if the variable is deletion-exempt**, which
+   under the shipped configuration the objective always is — see the composition note
+   under payload 3, and note that this refusal had to be *added*: a `SoliHoist` pin over
+   an exempt variable's Top threshold is otherwise indistinguishable from the sole-pin
+   case this step acts on.
 
-**Ordering is load-bearing:** delc the old constraint (step 2) *before* evicting
-`ge(v)` (step 3), because the delc's subproof needs `ge(v)` and its chain link still
-resident. This delc-before-evict discipline is a **solver-side invariant** — see the
-validated mechanics below.
+**Ordering is load-bearing:** retire the two constraints (steps 2 and 3) *before*
+evicting `ge(v)` (step 4), so that nothing permanent is left naming a deleted atom and
+the delc is checked against a database that still holds everything its implication might
+need. This discipline is a **solver-side invariant** — see the validated mechanics below —
+and `incumbent_retire_test` asserts the emitted order line by line, since VeriPB will
+accept either.
 
 `-n 1` / find-first optimisation: only one incumbent is ever produced, so
 `last_incumbent` is set once and payload 2 never fires — a clean no-op. Full
@@ -947,14 +961,17 @@ skipped — the `blocking_sum` / `SolxBlock` path is untouched.
 Interaction with `solution()`'s existing hoist: unchanged for the *current*
 incumbent (still `SoliHoist` to Top so the fresh improvement constraint does not
 name a to-be-deleted literal); payload 2 only adds the *retirement* of the *previous*
-incumbent's hoist. Measured benefit is TBD and stated honestly: this converts
-O(#incumbents) resident constraints to O(1), matching the "shrink the resident DB"
-thesis, but its verify-time payoff is unproven until the stage-E optimisation sweep.
+incumbent's hoist. Measured benefit, stated honestly now that it has been measured: the
+residency claim holds — `incumbent_retire_test` shows one resident improvement constraint
+after a 21-incumbent descent instead of 21 — but the **verify time does not move** at
+tour/talent scale (0.50s and 1.30s either side of the change, three runs each in one
+sitting). That is what twenty constraints out of thousands should do. Whether it converts
+at seat-moving scale is the stage-E optimisation sweep's to answer.
 
 #### Validated delc mechanics (veripb 3.0.2)
 
-The `delc` syntax and its obligations are validated against `veripb 3.0.2` (9/9
-driver checks, independently re-run by the supervisor; see Provenance):
+The `delc` syntax and its obligations are validated against `veripb 3.0.2` (15/15
+driver checks, the first nine independently re-run by the supervisor; see Provenance):
 
 - **Autoproof form (the one to emit): `delc <id> ;`** — succeeds via veripb's RUP
   shortcut for the weaker-from-tighter implication (the empty witness fires the
@@ -966,6 +983,18 @@ driver checks, independently re-run by the supervisor; see Provenance):
 - The `soli` improvement constraint lands in **core** at the next sequential ID
   (delc-able); `delc` on a *derived* constraint is rejected outright, so it cannot be
   misapplied to ge defs by accident.
+- **Relative (negative) ids work, and resolve exactly** (Q7, added at stage D). The
+  other two deleters emit relatively so a constraint-count difference between our OPB
+  and cake_pb_cp's re-derived one cannot misaddress them; `delc` needs no exception.
+  Aiming the same relative id one line further on is rejected under `-c`, so this is
+  addressing evidence rather than tolerance.
+- **The checking follows the core set, not the spelling** (Q8, added at stage D). An
+  unchecked `del id` aimed at a *core* constraint is checked exactly as a `delc` is —
+  `DeletionChecker::check` enters the checked path on whether the deleted IDs are in
+  core, and `DeletionOrigin` only decides which origins are permitted. So what `delc`
+  buys over `del id` is **not** the check; it is the **origin assertion**, which is
+  worth having for an emitter deleting by remembered line number: get the two the wrong
+  way round and it fails loudly rather than silently.
 
 Two load-bearing caveats:
 
@@ -1133,11 +1162,19 @@ length-based and cannot tell a **win-regime long chain** (a weak-prop split vari
 keep it resident). Only the frontier owner knows which is which.
 
 **Composition with payload 2.** If the objective is exempt, its ges are resident by
-`FrontierExempt`, so payload 2's *ge*-eviction never fires for them (soli is not the
-only cause) — but payload 2's *improvement-constraint* delc still fires and still
-matters (those O(#incumbents) unit clauses exist regardless of ge residency). So the
-two compose cleanly: **payload 3 owns the objective's ge residency; payload 2 owns
-the improvement constraints.** The measured objective chain (median a dozen, max 98)
+`FrontierExempt`, so payload 2's *ge*-eviction never fires for them — but payload 2's
+*improvement-constraint* delc still fires and still matters (those O(#incumbents) unit
+clauses exist regardless of ge residency). So the two compose cleanly: **payload 3 owns
+the objective's ge residency; payload 2 owns the improvement constraints.**
+
+The parenthetical this sentence used to carry — "soli is not the only cause" — was wrong,
+and stage D had to fix the code rather than the sentence. On an exempt variable the
+threshold is born Top and takes *no* pin; the `soli` hoist then records a `SoliHoist` pin
+over it and becomes the only cause, which is precisely the shape `evict_order_literal`
+acts on. The exemption is therefore checked explicitly, above the pin check, and
+`deletion_exempt_test` pins both directions: exempt refuses, ordinary still evicts. A
+policy that holds only until the first improving solution, on the one variable it exists
+for, is not a policy. The measured objective chain (median a dozen, max 98)
 is short, so keeping it resident is cheap and the ge-eviction half of payload 2 buys
 little on the objective — its value is for a future long-objective-chain regime or a
 non-exempt configuration. Per Decision 3, ship both.
@@ -1337,16 +1374,46 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   are byte-identical. That asymmetry *is* the feature: the exemption should be invisible to
   everything without an objective.
 
-- **Stage D — objective-improvement delc + Top-eviction (payload 2; flag-gated;
-  committable). Reuses B''s evict primitive** rather than introducing it.
-  Add the incumbent record + the delc + the evict call. **Oracle:** VeriPB verifies,
-  with **`-c` (`--force-checked-deletion`) in suites and gates from this stage on** —
-  not for soundness (veripb's guarantee machinery already rejects deletion-endangered
-  sat/enumeration conclusions) but as a **fail-fast discipline**: `-c` errors at the
-  delc site, catching a broken implication in our emission even when the conclusion
-  would still check. Plus search-identical on an optimisation instance with many
-  incumbents (colour, knapsack, seat-moving); resident improvement-constraint count at
-  proof end **O(1) not O(#incumbents)**; `-n 1` and no-objective paths proven inert.
+- **Stage D — objective-improvement delc + Top-eviction (payload 2). LANDED (#618).**
+  Reuses B''s evict primitive rather than introducing it: the incumbent record, the
+  delc, and the evict call. `-c` (`--force-checked-deletion`) is now passed by both
+  verification funnels — `run_test_and_verify.bash` and `verify_proof_and_dispose` — so
+  it applies to the whole suite from here, and the full 549-test suite passes with it.
+  Not for soundness (veripb's guarantee machinery already rejects deletion-endangered
+  sat/enumeration conclusions) but as a **fail-fast discipline**: `-c` errors at the delc
+  site rather than at a distant conclusion.
+
+  Three things the design did not have right, each worth carrying:
+
+  1. **There are two accumulating lines per incumbent, not one, and they need different
+     instruments.** The `soli` itself produces the improvement constraint, in *core*, and
+     that is what `delc` is for. The `~ge(v) >= 1` unit emitted just after it is *derived*,
+     so `delc` on it is rejected outright ("Deletion of derived constraint ID … using
+     deletion from core set") and it goes by plain `del id`. The prose above conflates the
+     two; the code does not.
+  2. **The exemption did not actually outrank the pin.** Stage C's claim that an exempt
+     objective's ge-eviction "never fires" was not enforced anywhere: the `soli` hoist takes
+     a `SoliHoist` pin over the already-Top threshold, which is exactly the sole-pin shape
+     `evict_order_literal` evicts on, so the exemption would have held only until the first
+     improving solution. `evict_order_literal` now refuses a `deletion_exempt` variable
+     above the pin check, with `deletion_exempt_test` asserting both directions.
+  3. **`delc` takes relative ids, and resolves them exactly.** Confirmed by aiming one at
+     its neighbour and watching `-c` reject the autoproof, so the relative encoding the
+     other two deleters use for cake_pb_cp's benefit needs no exception here.
+
+  **Oracle, as measured.** VeriPB verifies under `-c`; `incumbent_retire_test` asserts from
+  the proof text that `#soli - #delc == 1` over a 21-incumbent descent (so the resident
+  count is O(1), not O(#incumbents)), that each retirement emitted its two deletions in the
+  load-bearing order, and that a find-first run emits nothing at all. Search is identical
+  mode-on vs mode-off on tour and talent; mode-off proofs and Literals-mode `solx` proofs
+  (crystal_maze, langford) are byte-identical to the stack's previous tip.
+
+  **What it does not yet buy.** Verify time on tour and talent is unchanged (0.50s and
+  1.30s either side, three runs each in one sitting): twenty constraints out of a database
+  of thousands is not measurable, exactly as the payload-2 section predicts. The claim this
+  stage establishes is the residency one. Whether it converts to verify time at seat-moving
+  scale is **stage E's measurement**, and it is the kind of thing stage E's go/no-go has to
+  weigh against the complexity.
 
 - **Stage E — benchmark + cleanup.**
   Re-run the eq-free large-domain sweep and the optimisation sweep for the step-2
@@ -1357,9 +1424,9 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   `live_order_links` and the `_links_`-named machinery the tracker header flags as
   "left unchanged until the planned Brancher refactor renames it."
 
-Stages A, B, B', B'', C have no external dependency and can land in sequence. Stage D
-is the only one gated on work outside this task (the delc mechanics, now validated),
-and can be prepared ahead (it reuses B''s primitives) and finished once wired.
+Stages A, B, B', B'', C and D have all landed in sequence. Stage D was the only one gated
+on work outside this task (the delc mechanics), and that gate is closed. Stage E is the
+only stage left, and it is the go/no-go for the whole stack.
 
 ## Implementation gates (not owner calls)
 

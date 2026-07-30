@@ -2124,6 +2124,16 @@ auto NamesAndIDsTracker::evict_order_literal(
         throw ProofError{"eviction of a non-live order literal"};
     int level = lvl_it->second;
 
+    // The frontier exemption outranks any pin: note_deletion_exempt says this variable's
+    // whole encoding stays resident, and need_gevar honours that when the definition is
+    // born. An eviction would be the one route that took a definition back out afterwards,
+    // and it is a route a pin can open -- the objective's ge is Top-resident by exemption,
+    // and then payload 2's `soli` hoist records a SoliHoist pin over it, which is exactly
+    // the sole-pin shape the check below evicts on. So refuse here, above that check, or
+    // stage C's exemption would hold only until the first improving solution.
+    if (_imp->deletion_exempt.contains(SimpleOrProofOnlyIntegerVariableID{id}))
+        return false;
+
     // The residency precondition, checked rather than asserted: VeriPB accepts a
     // wrongly-evicted literal at the deletion and only rejects at a later point of use, so
     // getting this wrong would show up far from its cause. A refusal is always safe -- the
