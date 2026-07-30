@@ -49,6 +49,7 @@ using std::ios_base;
 using std::make_unique;
 using std::map;
 using std::max;
+using std::nullopt;
 using std::optional;
 using std::ostream;
 using std::pair;
@@ -188,6 +189,32 @@ struct ProofLogger::Imp
     int current_indent = 0;
     AssertionLevel assertion_level;
     OrderEncodingDeletion order_encoding_deletion = OrderEncodingDeletion::None;
+    bool eq_window = false;
+
+    // --- the eq-atom window's per-node state (dev_docs/brancher-design.md) ---
+    // The clause the most recent backtrack() emitted: the deepest guess it was reasoned
+    // over, its line, and the level it landed at. The window's tidy has to delete the
+    // refuted sibling's clause -- it names eq(v), so the atom is not free until it goes --
+    // and that clause is emitted by the child frame, which returns only a search result.
+    // Nothing between the child's backtrack and the parent's advance emits another one (the
+    // forget in between emits `del`s and stitches), so "the last backtrack clause"
+    // identifies it exactly. The window still checks the recorded guess AND level against
+    // the sibling it is tidying and skips the deletion if either differs, so a future
+    // caller landing in between costs a win rather than a double deletion.
+    struct BacktrackClause
+    {
+        Literal guess;
+        ProofLine line;
+        int level;
+    };
+    optional<BacktrackClause> last_backtrack_clause;
+    // The standing frontier advance for each windowed variable, bucketed by the proof level
+    // it was emitted at and then by variable, so the next step of that window can delete the
+    // one it supersedes. Bucketed by level because a level number is reused by every node at
+    // that depth: the bucket is dropped when the level is forgotten (which is what deleted
+    // its lines), so a later node at the same depth never inherits the previous one's
+    // already-deleted line. Empty unless the window is on.
+    map<int, map<long long, ProofLine>> standing_eq_advance;
 
     // Scratch buffers for assembling proof lines before they are written out,
     // reused across emissions to avoid a stringstream per logged inference.
@@ -222,6 +249,7 @@ ProofLogger::ProofLogger(const ProofOptions & proof_options, NamesAndIDsTracker 
     _imp->proof_lines_by_level.resize(2);
     _imp->assertion_level = proof_options.assertion_level;
     _imp->order_encoding_deletion = proof_options.order_encoding_deletion;
+    _imp->eq_window = proof_options.order_encoding_deletion_eq_window;
 }
 
 ProofLogger::~ProofLogger() = default;
@@ -262,6 +290,27 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
             [&](const ViewOfIntegerVariableID & var) { names_and_ids_tracker().need_proof_name(deview(var == val)); } //
         }
             .visit(var);
+
+    // The solx / soli line below is a permanent (Top) reference to every `var == val` it
+    // names, so the eq-atom window's hoist-out rule fires for any of them that is a live
+    // windowed definition: retain it at Top instead of letting the window's next tidy evict
+    // it, together with the two ge thresholds it names. This is the commonest permanent
+    // reference by far -- every solution takes one on each branched variable's current
+    // value. Guarded by the window rather than left to the no-op inside, because this is a
+    // per-solution walk of every variable and an enumeration takes it millions of times.
+    if (eq_window_active())
+        for (const auto & [var, val] : all_variables_and_values)
+            overloaded{
+                [&](const ConstantIntegerVariableID &) {}, //
+                [&](const SimpleIntegerVariableID & var) { names_and_ids_tracker().note_permanent_eq_reference(var, val); },
+                [&](const ViewOfIntegerVariableID & var) {
+                    // A view is named through its underlying, which is the variable that can
+                    // be windowed. A view that negates still deviews to an `==` condition.
+                    auto under = deview(var == val);
+                    names_and_ids_tracker().note_permanent_eq_reference(under.var, under.value);
+                } //
+            }
+                .visit(var);
 
     _imp->proof << (optional_minimise_variable_and_value ? "soli" : "solx");
 
@@ -366,8 +415,14 @@ auto ProofLogger::backtrack(const vector<Literal> & guesses) -> void
     for (const auto & guess : guesses)
         guesses_as_reason.emplace_back(ProofLiteral{guess});
     auto assert_or_rup = (_imp->assertion_level >= AssertionLevel::Inferences) ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
-    emit_under_reason(
+    auto line = emit_under_reason(
         assert_or_rup, WPBSum{} >= 1_i, ProofLevel::Current, guesses_as_reason, AssertionAnnotation{.hint_name = hints::Backtrack::hint_name});
+
+    // Remember the clause for the eq window's tidy: the parent frame is about to advance
+    // its frontier past this refuted sibling, and this clause -- which names the sibling's
+    // eq atom -- has to go with the atom. See Imp::last_backtrack_clause.
+    if (eq_window_active() && ! guesses.empty())
+        _imp->last_backtrack_clause = Imp::BacktrackClause{guesses.back(), line, proof_level()};
 }
 
 auto ProofLogger::bound_advances_active() const -> bool
@@ -406,6 +461,128 @@ auto ProofLogger::emit_split_bound_advance(const vector<Literal> & guesses, cons
     emit_rup_proof_line(move(advance) >= 1_i, ProofLevel::Current);
 }
 
+auto ProofLogger::eq_window_active() const -> bool
+{
+    return _imp->eq_window && bound_advances_active();
+}
+
+namespace
+{
+    // The `var == v` a windowed branch guess is, or nullopt for anything else (an order
+    // guess, a range guess, a view, a proof-scaffolding literal). The window only ever
+    // acts on an eq atom of a real variable.
+    [[nodiscard]] auto windowed_eq_guess(const Literal & guess) -> optional<pair<SimpleIntegerVariableID, Integer>>
+    {
+        const auto * cond = std::get_if<IntegerVariableCondition>(&guess);
+        if (! cond || cond->op != VariableConditionOperator::Equal)
+            return nullopt;
+        const auto * sid = std::get_if<SimpleIntegerVariableID>(&cond->var);
+        if (! sid)
+            return nullopt;
+        return pair{*sid, cond->value};
+    }
+}
+
+auto ProofLogger::mint_windowed_eq_guess(const Literal & guess) -> void
+{
+    if (! eq_window_active())
+        return;
+    auto eq = windowed_eq_guess(guess);
+    if (! eq)
+        return;
+
+    // The scope is the only route to a deletable eq definition: it is open across this one
+    // mint and nothing else, so every other caller in the solver keeps getting a permanent
+    // definition without knowing lifetimes exist.
+    NamesAndIDsTracker::WindowedEqScope scope{names_and_ids_tracker()};
+    names_and_ids_tracker().need_direct_encoding_for(eq->first, eq->second);
+}
+
+auto ProofLogger::emit_eq_window_advance(const vector<Literal> & guesses, const Literal & refuted_guess, bool lower) -> void
+{
+    if (! eq_window_active())
+        return;
+    auto eq = windowed_eq_guess(refuted_guess);
+    if (! eq)
+        return;
+    auto [var, v] = *eq;
+
+    // Nothing was windowed here, so there is nothing behind the frontier to take out. The
+    // advance exists only to be the standing bound the tidy reasons from, so emitting one
+    // now would be cost with no matching saving -- and this is the *common* case on
+    // eq-heavy models, where a constraint names the values the search branches on and
+    // defines their atoms permanently long before the branch layer asks. Measured on
+    // talent: 0 windowed atoms, so without this check the run paid +1.1 % proof and ~5 %
+    // verify time for advances that could never be tidied behind.
+    if (! names_and_ids_tracker().eq_literal_is_windowed(var, v))
+        return;
+
+    // The frontier the refutation of `var == v` establishes, given the standing bound this
+    // node has already reached. Ascending: `var >= v` and `var != v` give `var >= v+1`.
+    // Descending: `var <= v` and `var != v` give `var <= v-1`, i.e. `var < v`. Either way
+    // it is one threshold, and the eq atom's reverse reification is the step that gets
+    // there -- which is why the tidy below must not delete that definition first.
+    Literal frontier = lower ? Literal{var >= v + 1_i} : Literal{var < v};
+
+    // Anchor the frontier at this level, exactly as the split advance does: the definition
+    // was minted here by mint_windowed_eq_guess, so this is normally a no-op, but a
+    // frontier that already existed deeper (named by an earlier propagation) must not be
+    // left for a deeper forget to delete under the standing advance.
+    names_and_ids_tracker().hoist_live_order_literals_toward_level(vector<Literal>{frontier}, proof_level(), OrderEncodingResidencyCause::GuessHoist);
+
+    _imp->proof << "% eq window advance\n";
+    WPBSum advance;
+    for (const auto & guess : guesses)
+        advance += 1_i * ! guess;
+    advance += 1_i * frontier;
+    auto advance_line = emit_rup_proof_line(move(advance) >= 1_i, ProofLevel::Current);
+
+    // ---- the per-iteration tidy ----
+    // Everything below is deletion, and every step of it is ordered after the advance
+    // above: the advance RUPs *through* eq(v)'s reverse reification, and deleting that
+    // first is exactly what driver control D2c shows VeriPB rejecting.
+    auto level = proof_level();
+
+    // The previous step's advance is superseded by the one just emitted (the frontier only
+    // moves one way), so it goes; the new one takes its place as this node's standing
+    // bound. Nothing else can be relying on it: it was RUP from this node's own clauses,
+    // and the node-close lemma re-derives what it needs from the standing one.
+    auto & standing = _imp->standing_eq_advance[level];
+    if (auto previous = standing.find(var.index); previous != standing.end()) {
+        delete_proof_lines_at_level(vector<ProofLine>{previous->second}, level);
+        previous->second = advance_line;
+    }
+    else
+        standing.emplace(var.index, advance_line);
+
+    // The refuted sibling's own backtrack clause names eq(v), so the atom is not
+    // unreferenced -- and so not evictable -- until it goes too. This is the deletion the
+    // naive "definition lines only" list omits, and it is confirmed necessary in the
+    // validated driver proof.
+    bool sibling_deleted = false;
+    if (_imp->last_backtrack_clause && _imp->last_backtrack_clause->level == level && _imp->last_backtrack_clause->guess == refuted_guess) {
+        delete_proof_lines_at_level(vector<ProofLine>{_imp->last_backtrack_clause->line}, level);
+        _imp->last_backtrack_clause = nullopt;
+        sibling_deleted = true;
+    }
+
+    // Now the atom itself. Skipped when the sibling clause survived, because a live clause
+    // naming an evicted atom is exactly the stranded reference the mode must not create.
+    // A refusal here is the hoist-out rule having retained the atom (a solution or a
+    // learned nogood took a permanent reference to it), which is correct and merely wins
+    // less -- and it leaves the stepped-over threshold pinned, so that eviction refuses too.
+    if (sibling_deleted && names_and_ids_tracker().evict_eq_literal(var, v)) {
+        // The threshold the frontier has stepped over: ascending, ge(v) is now behind the
+        // bound; descending, ge(v+1) is. Its definition and every chain clause naming it go,
+        // and the chain is re-stitched over the hole. Refused (safely) when it is pinned by
+        // a permanent atom; skipped when it is not resident at all, which the compact
+        // boolean encoding's one-sided eq definitions can leave it.
+        auto stepped_over = lower ? v : v + 1_i;
+        if (names_and_ids_tracker().order_literal_is_live(var, stepped_over))
+            names_and_ids_tracker().evict_order_literal(var, stepped_over, nullopt);
+    }
+}
+
 auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions) -> ProofLine
 {
     // The nogood clause lands at Top and survives the restart forget, but it names
@@ -415,6 +592,14 @@ auto ProofLogger::emit_learned_nogood(const vector<Literal> & decisions) -> Proo
     // nogood never references a deleted literal. Done before emitting the clause so the
     // hoisted def ids precede the clause id in the Top bucket. A no-op in other modes.
     names_and_ids_tracker().hoist_live_order_literals_toward_level(decisions, 0, OrderEncodingResidencyCause::NogoodHoist);
+
+    // The same for any eq decision the nogood names: a windowed definition would be
+    // deleted out from under this Top clause, so the hoist-out rule retains it instead.
+    for (const auto & lit : decisions)
+        if (const auto * cond = std::get_if<IntegerVariableCondition>(&lit))
+            if (cond->op == VariableConditionOperator::Equal || cond->op == VariableConditionOperator::NotEqual)
+                if (const auto * sid = std::get_if<SimpleIntegerVariableID>(&cond->var))
+                    names_and_ids_tracker().note_permanent_eq_reference(*sid, cond->value);
 
     _imp->proof << "% learned nogood\n";
     WPBSum clause;
@@ -764,6 +949,15 @@ auto ProofLogger::forget_proof_level(int depth) -> void
     // del'd, so drop them from the live set so a later need_gevar re-emits them if
     // required. A cheap no-op when the order-link deletion mode is off.
     names_and_ids_tracker().forget_order_links_at_level(depth);
+
+    // The eq window's per-node records for this level went with those deletions. Dropping
+    // them is not tidiness: the next node at this depth reuses the level number, and a
+    // stale line would be `del`'d a second time, which VeriPB errors on (unlike the
+    // `del range` above, a `del id` does not skip an already-deleted line).
+    if (! _imp->standing_eq_advance.empty())
+        _imp->standing_eq_advance.erase(depth);
+    if (_imp->last_backtrack_clause && _imp->last_backtrack_clause->level >= depth)
+        _imp->last_backtrack_clause = nullopt;
 }
 
 auto ProofLogger::move_proof_lines_to_level(const vector<ProofLine> & lines, int from_level, int target_level) -> void

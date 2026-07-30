@@ -99,6 +99,17 @@ namespace gcs
         // (d1000 11.3x of the ungated 17.9x); see dev_docs/order-encoding-deletion.md.
         int order_encoding_deletion_min_chain = 16;                    ///< Min ge chain length before Literals-mode deletion engages (0 = gate off)
         bool order_encoding_deletion_min_chain_set_explicitly = false; ///< Was the gate set in code (so it overrides the env var)?
+        // The eq-atom sliding window for the four contiguous eq value orders
+        // (smallest_first / largest_first / smallest_in / largest_in), under
+        // OrderEncodingDeletion::Literals. Off by default: the window trades transient work
+        // (a per-iteration tidy, and a re-mint whenever a refuted value is named again) for
+        // permanent residency, and whether that pays on eq-heavy models is a measurement,
+        // not an assumption. With it off those value orders behave exactly as they always
+        // have -- their Bound advance tags stay inert, no eq definition is ever windowed,
+        // and their proofs are byte-identical to the untagged ones. See
+        // dev_docs/brancher-design.md, "The eq-atom window".
+        bool order_encoding_deletion_eq_window = false;                ///< Window eq-branching atoms under Literals (default off)
+        bool order_encoding_deletion_eq_window_set_explicitly = false; ///< Was the window set in code (so it overrides the env var)?
 
         /// Write annotated assertions instead of full justifications.
         ProofOptions & set_assertion_level(AssertionLevel a = AssertionLevel::Inferences)
@@ -124,6 +135,15 @@ namespace gcs
         {
             order_encoding_deletion_min_chain = m;
             order_encoding_deletion_min_chain_set_explicitly = true;
+            return *this;
+        }
+        /// Turn the eq-atom sliding window on for the four contiguous eq value orders
+        /// under OrderEncodingDeletion::Literals, making them O(1)-resident in the proof
+        /// rather than O(domain width). Off by default; inert in every other mode.
+        ProofOptions & set_order_encoding_deletion_eq_window(bool w = true)
+        {
+            order_encoding_deletion_eq_window = w;
+            order_encoding_deletion_eq_window_set_explicitly = true;
             return *this;
         }
         /// Always write the full variable encoding to the OPB file.

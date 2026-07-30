@@ -1,7 +1,7 @@
 # Step 2 — the Brancher-API refactor: concrete, decided design
 
-**Status: decided design, partly implemented — stages A, B and B' have landed
-(#606, #607); B''–E have not.** "Migration staging", below, is the authority on
+**Status: decided design, partly implemented — stages A, B, B' and B'' have landed
+(#606, #607, #608); C–E have not.** "Migration staging", below, is the authority on
 what each remaining stage owes, and tracking issue #612 indexes them.
 This note is the single committed record of the step-2 design: it turns the
 user-approved conceptual sketch in
@@ -13,8 +13,8 @@ findings), and integrates the eq-atom sliding window that turns ascending and
 descending eq branching into a win. Where a call needed the owner it has been
 made; the five decisions are recorded up front. Where a claim needed a checker it
 was validated against `veripb 3.0.2`, and the raw drivers are cited in
-Provenance. The three remaining unknowns are implementation gates, not owner
-calls, and are flagged as such.
+Provenance. The three unknowns were implementation gates, not owner calls, and are
+flagged as such; all three are now resolved by the stages that owned them.
 
 Step 2 changes no model, no propagator, no search order. It is a proof-only
 change and must be verified as one: search identical mode-off vs mode-on at every
@@ -279,8 +279,15 @@ Why the eq family splits the way it does:
   seat-moving). The window does **not** try to jump gaps — it deletes *behind* a
   one-step frontier, evicting each `eq(v)`/`ge(v)` once the frontier has stepped
   past it, bounding the permanent proof objects per branched variable from
-  O(domain-width) to O(1). That is the win, and it is driver-backed (see "The
-  eq-atom window").
+  O(domain-width) to O(1). That is the win; it is driver-backed and, since B'',
+  measured at **4.8× at domain 1000** (see "The eq-atom window").
+
+  A frontier that steps over a **hole** — consecutive branch values that are not
+  adjacent, because propagation removed what lay between — is not a special case in
+  the implementation: the advance still moves one threshold, and the next step's RUP
+  bridges the gap through the removed values' own exclusions, which are still live at
+  or above the node's level. It verifies; `eq_window_solve_test` exercises it
+  deliberately.
 
 - **Stay `Exclude`** — `median` / `random` / `random_out` refute a *non-boundary*
   value, so the frontier does not move and there is no "behind" to delete;
@@ -318,11 +325,14 @@ Footnotes:
 ## The eq-atom window
 
 The mechanism that makes the four contiguous eq orders win. Audited (window closes
-cleanly at assertion Off; one scoping caveat, eq⨯interval) and driver-validated
-(8/8 in VeriPB 3.0.2, including the load-bearing eq-def-traversal control). The
-advance is emitted by **the framework** (`solve.cc` + `ProofLogger`), never the
-brancher — the same framework/brancher split the split family uses; branchers only
-declare `LowerBound`/`UpperBound`, and the mode gate makes it inert under `None`.
+cleanly at assertion Off; one scoping caveat, eq⨯interval), driver-validated
+(8/8 in VeriPB 3.0.2, including the load-bearing eq-def-traversal control), and
+**built in stage B''** — the sections below are marked "as built" where the
+implementation settled something the design left open. The advance is emitted by
+**the framework** (`solve.cc` + `ProofLogger`), never the brancher — the same
+framework/brancher split the split family uses; branchers only declare
+`LowerBound`/`UpperBound`, and the mode gate makes it inert under `None`, as does
+the window's own off-by-default switch.
 
 Grounding facts the window rests on:
 
@@ -337,13 +347,109 @@ Grounding facts the window rests on:
   is tolerated), so ge-under-eq residency is a solver-side invariant, not a
   checker-enforced one.
 
-### Mint-time lifetime tagging (the narrow API)
+### What it measures (B'', current hardware, one sitting)
 
-Today `need_direct_encoding_for` hardcodes the eq def at `ProofLevel::Top`
-(`names_and_ids_tracker.cc:672`), unlike `need_gevar`, which already chooses
-`Current` vs `Top` from `def_at_current`. The window gives the eq path the same
-choice, **gated so ordinary `need_proof_name` callers are oblivious** — a scoped
-RAII guard set by the branch layer around the guess mint only:
+The window does what it was built to do in the regime it was built for, and costs
+nothing outside it — but that regime is narrower than the design assumed, in two ways
+recorded below. Every row here is `order_deletion_bench --problem pairwise --size 6
+--window D --tightness 90 --unsat --value-order smallest` — ascending eq branching,
+weak propagation, no solutions — and every one of them **verifies**, with the search
+shape (recursions, propagations) byte-for-byte identical window-off vs window-on, as a
+proof-only change requires. Best-of-3 `veripb` wall time:
+
+| domain | gate | off | on | speedup |
+|---|---|---|---|---|
+| 250 | 0 | 0.756 s | 0.329 s | **2.30×** |
+| 500 | 0 | 5.765 s | 1.634 s | **3.53×** |
+| 1000 | 0 | 45.92 s | 9.678 s | **4.74×** |
+| 250 | 16 | 0.892 s | 0.475 s | 1.88× |
+| 500 | 16 | 6.380 s | 2.337 s | 2.73× |
+| 1000 | 16 | 48.75 s | 13.22 s | 3.69× |
+
+The speedup **grows with domain width**, which is the signature of a residency win
+rather than a constant-factor one — the same shape the split family's curve has. Note
+that the window makes the proof **bigger** (+31 % at every domain: the advances, the
+`del`s, and the re-mints are all extra bytes) and verifies it **4.8× faster**: this is
+the mode's central SIZE≠TIME point, that what costs `veripb` time is the resident
+constraint database, not the file.
+
+On the eq-heavy *real* instances the window turns out not to engage at all, which is a
+more useful result than a slow one. Instrumented (`GCS_ORDER_ENCODING_STATS`): the
+synthetic above evicts **3255** windowed eq definitions at d250; crystal_maze evicts
+**1**; talent evicts **0**. The reason is a precondition the design did not name:
+
+> **The window can only act on an eq atom the branch layer is the first to name.**
+> `need_direct_encoding_for` decides residency once, when the definition is emitted, and
+> returns early for an atom that already exists. On a model whose *constraints* reason
+> per value — which is what "eq-heavy" means — the propagators have already defined
+> `x == v` permanently long before the search branches on it, and the window has nothing
+> to window.
+
+An earlier revision of this stage emitted the advance regardless, which cost talent
++1.1 % proof and **~5 % verify time** for zero evictions. `emit_eq_window_advance` now
+returns immediately when the guess's atom is not a live windowed definition, and talent's
+window-on proof is **byte-identical** to its window-off proof: when the window cannot
+engage it now costs nothing at all, rather than a little. That is Decision 5's
+transient-for-permanent trade turning out not even to arise on those models.
+
+**The second, larger limit: solutions retain atoms.** The `solx` blocking clause names
+`var == val` for every variable, so the hoist-out rule retains the windowed atom of every
+sibling whose subtree contained a solution — which in an *enumeration* is most of them.
+The window therefore engages fully on refutation search (the synthetic sweep above is
+`--unsat`) and only on the solution-free siblings of an enumeration:
+`eq_window_solve_test` gets 1–2 advances from a 2-solution search, not one per node. Two
+things follow, both stage E's:
+
+- The regime statement needs a third clause: weak propagation, large domain, **and the eq
+  atoms named by search rather than by constraints** — plus, for the full win,
+  refutation-heavy rather than solution-heavy search.
+- Whether the solx retention is *needed* is worth measuring rather than assuming. It is
+  kept here because it is the conservative reading of "delete only when unreferenced", but
+  mutation says the small instances verify without it (the blocking clause carries
+  `~eq(v)`, which the re-introduction's falsify witness satisfies), and dropping it is the
+  single biggest lever on the window's reach. That is a soundness-adjacent change and
+  belongs to the owner, not to this stage.
+
+**Beware the bench's size.** The eq control enumerates the whole domain at every node,
+so it scales quite differently from the split default: `--size 16 --domain 250
+--value-order smallest --prove` wrote **12 GB** of proof in three minutes without
+finishing and took the VM's free disk with it. `--size 6` keeps every row above in the
+low tens of megabytes.
+
+### What the tests catch, and what they do not
+
+Established by mutation, because a test suite's silence is not evidence:
+
+- **The residency invariant is what catches a window that stops working.** Making
+  `evict_eq_literal` a no-op leaves every proof verifying — it is the baseline again —
+  and is caught only by `eq_window_test`'s C++ counts. That is the whole reason those
+  counts are asserted rather than left implicit.
+- **The tidy-ordering violation is caught — but only because the model is weak.**
+  Deleting the eq definition *before* the advance (the D2c shape) makes VeriPB reject
+  `eq_window_solve_test` with "not implied by reverse unit propagation", on all four
+  value orders and both models. It did **not** reject an earlier version of that test
+  whose constraints were comparisons and `NotEquals`: there propagation is strong enough
+  that the advance is independently RUP, and the eq definition the design leans on is not
+  actually doing the work. The linear equality is in the model to keep the propagator too
+  weak for that shortcut — **if it is ever removed, this stops being tested**, silently.
+  (The artifacts driver's D2c control remains the pure demonstration, with an opaque
+  sibling clause and no bit-level hole; promoting it into `gcs/` is still stage E's job,
+  #611.)
+- **The solx retention is defensive on the instances measured, and load-bearing in
+  reach.** Removing the `solution` trigger left talent's proof **byte-identical** (talent
+  windows nothing) and left the small enumerations verifying. It is kept anyway, because
+  "nothing on these instances noticed" is not an argument that a permanent reference to a
+  deleted definition is safe — but it is also what keeps the window from engaging in an
+  enumeration, so its cost is real and stage E should settle it with a measurement rather
+  than inherit the assumption.
+
+### Mint-time lifetime tagging (the narrow API) — **as built**
+
+Before the window, `need_direct_encoding_for` hardcoded the eq def at
+`ProofLevel::Top`, unlike `need_gevar`, which already chooses `Current` vs `Top`
+from `def_at_current`. The window gives the eq path the same choice, **gated so
+ordinary `need_proof_name` callers are oblivious** — a scoped RAII guard set by
+the branch layer around the guess mint only:
 
 ```cpp
 // NamesAndIDsTracker — RAII, set by the branch layer around the guess mint only.
@@ -355,15 +461,26 @@ struct WindowedEqScope {                       // ctor sets _imp->minting_window
 `need_direct_encoding_for` reads `minting_windowed_eq` exactly where `need_gevar`
 reads its residency inputs: when set (and Literals mode / `AssertionLevel::Off` —
 the same pairing every existing Literals-machinery guard uses / real Bits var /
-not a bound / not eq⨯interval — see the guard below) it emits the two eq def lines at
-`ProofLevel::Current` and records the atom in a new live-eq index, instead of Top.
+not eq⨯interval — see the guard below) it emits the two eq def lines at
+`ProofLevel::Current` and records the atom in the live-eq index, instead of Top.
 **Every other caller** — propagator reasons, reified constraints,
 `need_pol_item_defining_literal` — runs with the flag clear and gets today's
 byte-identical Top behaviour. This meets the owner's bar: only the guess/mint path
-knows about lifetimes. (A tagged
-`need_direct_encoding_for(id, v, Lifetime::Windowed)` overload is equivalent but
-threads the tag through more call sites; the scoped guard keeps the surface to one
-RAII object set in `solve.cc`'s branch loop, where the guess is made.)
+knows about lifetimes. B''s `EqAtomResidency` argument, which existed so the
+stage-B' primitives had a producer to be checked against, is gone: the scope
+replaces it, and `order_evict_test` opens the scope like the branch layer does.
+
+**Where the mint happens, and why it is not left to the child.** The scope is
+opened in `solve.cc`'s branch loop, *before* the descent into the guess's subtree
+(`ProofLogger::mint_windowed_eq_guess`), not left to whatever propagation inside
+the child first names `id == v`. The level is the point: the window needs the
+definition at the node's own level `L` — the level the refuted child's backtrack
+clause lands at, and the level the advance is emitted at — and a definition minted
+inside the child lands at `L+1`, which the child's own `forget` then deletes out
+from under both, breaking the advance exactly as control D2c does. Minting ahead of
+the descent also mints the two `ge` thresholds it names at `L`, so the design's
+"hoist the frontier to `L`" step (5 in the tidy) is already satisfied and the hoist
+call is a no-op that only fires for a frontier that already existed deeper.
 
 ### The per-iteration tidy sequence
 
@@ -408,7 +525,37 @@ Steady state after each tidy is the design's target: **one boundary `ge0` + one
 frontier `ge` + one standing advance clause live** (plus, mid-iteration, one eq
 def). Descending (`largest_first` / `largest_in`) is the `UpperBound` mirror
 (`x == ub`, advance `x < ub` i.e. `~ge(ub)`), mechanically symmetric; the driver
-validated the ascending direction only (see Implementation gates).
+validated the ascending direction only, and the descending one is covered instead
+by `eq_window_test` / `eq_window_solve_test` (see Implementation gates).
+
+**As built**, the whole sequence is `ProofLogger::emit_eq_window_advance`, called
+from the branch loop for a refuted eq sibling that is not the node's last. Two
+details the sequence above leaves implicit, both of which the implementation has to
+name explicitly:
+
+- **The superseded advance is found by remembering it**, per `(proof level,
+  variable)`, and the record is dropped when that level is forgotten. Levels are
+  reused by every node at a depth, and a `del id` of an already-deleted line is an
+  error in VeriPB (only `del range` skips them), so an inherited record from the
+  previous node at that depth would reject.
+- **The sibling clause is found the same way** — `ProofLogger::backtrack` records
+  the clause it emits, with the guess and level it was over, and the tidy uses it
+  only if both match the sibling being tidied. The clause is emitted by the *child*
+  frame, which returns only a search result; nothing between it and the parent's
+  advance emits another (the `forget` in between emits `del`s and stitches). If the
+  match ever fails, the tidy skips the deletion — and therefore also skips the
+  eviction, because an atom whose sibling clause is still live is still referenced.
+
+**One shape the window deliberately does not tidy.** `smallest_in` / `largest_in`
+yield `var == lb` and then its *complement* `var != lb`, whose own refutation names
+the very atom the tidy would evict — forcing an immediate re-mint, and (the scope
+being closed by then) a **permanent** one that pins both its thresholds at Top:
+strictly worse than not tidying. With no later sibling there is also nothing for the
+advance to be the standing bound of, so the branch loop skips the advance entirely
+when the next decision is the complement of the refuted one. Those two orders still
+gain from the window — their guess atoms are windowed, so an eq def and its two
+thresholds die with the node instead of living at Top forever — just across the
+chain of nodes rather than within one.
 
 ### The hoist-out rule for permanent references
 
@@ -420,11 +567,33 @@ evicted**; instead it and the two ges it names are hoisted to Top, exactly as
 `hoist_ges_named_by_top_atom` already does for the ges, plus a new
 `hoist_eq_to_top`. The window then evicts `eq(v)`'s **neighbours** normally and
 stitches the chain **around** the retained interior ges (the genuine
-`make_pol_chain` case — driver D4, `ge3 -> ge2`). Detecting "has a permanent
-reference" reuses the residency-cause bookkeeping the design already mandates for
-the ge/soli case. VeriPB will not catch a wrongly-evicted referenced ge except at
-a point of use (D4c vs D4c-silent), so this is a solver invariant, not something
-the checker enforces.
+`make_pol_chain` case — driver D4, `ge3 -> ge2`). VeriPB will not catch a
+wrongly-evicted referenced ge except at a point of use (D4c vs D4c-silent), so this
+is a solver invariant, not something the checker enforces.
+
+**Detection, as built**, is `note_permanent_eq_reference(id, v)`, called at each
+reference site exactly as `note_order_literal_top_pin` is for the ge side —
+`hoist_eq_to_top` is the action, this is the trigger. The sites are the ones that
+put an eq atom into a line that outlives a backtrack:
+
+- **`ProofLogger::solution`** — the `solx` blocking clause and the `soli` witness
+  name `var == val` for *every* variable. This is by far the commonest permanent
+  reference: every solution takes one on each branched variable's current value, so
+  in an enumeration the window retains an atom at each solution rather than evicting
+  it. (A view is deviewed first; the underlying is the variable that can be
+  windowed.)
+- **`ProofLogger::emit_learned_nogood`** — a restart nogood's decision literals,
+  the eq analogue of the existing `NogoodHoist`.
+- The **eq⨯interval** guard below, which collapses a whole window at once rather
+  than one atom at a time.
+
+An eq atom that acquires a permanent reference from anywhere *else* is not detected,
+and would be a stranded reference. That failure is **not silent**, which is what
+makes the enumerated list acceptable rather than a latent hole: the atom keeps its
+`XLiteral` identity across eviction, so a surviving line naming it and a later
+re-introduction collide — the fresh `red`'s falsify-witness against the pin — and
+VeriPB rejects, loudly, at the re-introduction. Contrast the ge/chain-clause leak,
+which really is silent.
 
 ### Bookkeeping mirrors
 
@@ -488,16 +657,24 @@ resident* subset. An eq eviction mirrors the ge eviction's
   funnel, after the ge sweep — which is what emits the level's stitches, and those land at
   a *surviving* neighbour's level, never at the level being forgotten.
 
-  The producer of a windowed def is a defaulted argument,
-  `need_direct_encoding_for(id, v, EqAtomResidency::Windowed)`; `Permanent` is the default
-  and what every caller in the solver passes, so B' changes no emission. The request is
-  honoured only where a deletable def is meaningful (Literals, proof-time, assertions off,
-  real variable) and, per **(i-static)** below, is refused for a variable that already has
-  an interval partition or a containment tree — that half of the eq⨯interval guard is
-  cheap enough to ship with the primitive rather than with the window. B'' replaces the
-  argument with the variable's `WindowedEqScope` tag; until then it exists so
-  `hoist_eq_to_top` and the eq forget sweep have a producer to be VeriPB-checked against
-  (`order_evict_test`).
+  The producer of a windowed def is `WindowedEqScope`, open across the branch layer's
+  guess mint and nothing else; every other caller in the solver mints permanently, so
+  nothing outside the branch layer changes. The request is honoured only where a deletable
+  def is meaningful (Literals, proof-time, assertions off, real variable) and, per
+  **(i-static)** below, is refused for a variable that already has an interval partition or
+  a containment tree. (B' shipped this as a defaulted `EqAtomResidency` argument, so
+  `hoist_eq_to_top` and the eq forget sweep had a producer to be VeriPB-checked against
+  before the window existed; B'' replaced it with the scope, and `order_evict_test` now
+  opens the scope like the branch layer does.)
+
+  The eviction counterpart is `evict_eq_literal`: the same `delete_proof_lines_at_level` +
+  retire pair the forget sweep performs, on demand for one atom, with the same
+  `get_if<ProofLine>` filter for a DirectOnly `{0,1}` variable's `XLiteral`-valued
+  `eq_defs`. Like `evict_order_literal` it **refuses rather than throws** when the atom is
+  not a live windowed def — which is exactly what an atom the hoist-out rule has retained
+  looks like — so the window's tidy needs no special case for the atoms it must not touch.
+  Unlike the ge case there is no chain to stitch and no Top-pin precondition, because a
+  windowed def by construction has neither.
 
 ### WindowedFrontier vs FrontierExempt, and the chain gate
 
@@ -521,6 +698,16 @@ eq branch). They are the two opposite frontier policies and only the frontier
 owner (branch layer / objective owner) can pick which applies. They never apply to
 the same variable, so they sit as sibling slots just above the gate.
 
+**As built**, `WindowedFrontier` is a slot in `need_gevar`'s residency ladder and
+**not** a new `OrderEncodingResidencyCause` enumerator. That enum answers "why is
+this `ge` resident at Top", and `WindowedFrontier` is the opposite of a Top cause —
+it is a reason to stay *deletable*, and a ge born deletable takes no cause at all
+(the stats already record `nullopt` for one). It reads off a per-variable
+`windowed_eq_variables` set, marked when the first windowed definition on that
+variable is minted — before the definition is emitted, because emitting it is what
+mints the two thresholds that must come out deletable. `FrontierExempt` (stage C)
+*is* a Top cause and will want the enumerator.
+
 ### The one hidden pin — eq⨯interval (bidirectional guard)
 
 A windowed eq variable that *also* receives an `in`/`not_in` interval literal has
@@ -540,9 +727,14 @@ constraint on the same variable might. The guard must be **bidirectional**
   hoist-out mechanism run wholesale) and only then build the partition; the
   variable is thereafter unwindowed.
 
-Both are recommended for step 2, flagged as a future extension. The alternative —
-the window managing partition coverings on evict — stays out of step-2 scope. This
-is the single scoping caveat the audit surfaced.
+Both are built. (i-dynamic) is `collapse_eq_window`, called from the **two** paths
+that walk a variable's `eq_defs` table and name every atom in it from Top lines:
+`init_interval_partition`, and the containment-tree seeding in `define_plain_invar`
+(the static half already refuses both structures, so the dynamic half has to cover
+both too). It unwindows the variable unconditionally, so a *later* guess mint gets a
+permanent definition and the partition can never be left naming a deletable one.
+The alternative — the window managing partition coverings on evict — stays out of
+step-2 scope. This is the single scoping caveat the audit surfaced.
 
 ## Ownership and lifecycle
 
@@ -1051,16 +1243,30 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   of the eq⨯interval guard, and tagging `smallest_first` / `largest_first` /
   `smallest_in` / `largest_in`.
 
-- **Stage B'' — the eq-atom window.**
-  The `WindowedEqScope` tag, `need_direct_encoding_for` Current-emission, the
-  per-iteration tidy, the hoist-out rule, the `WindowedFrontier` residency slot, and
-  the bidirectional eq⨯interval guard. Tag `smallest_first` / `largest_first` /
-  `smallest_in` / `largest_in` with `Lower/UpperBound`. **Oracle:** VeriPB verifies +
-  search-identical at `MIN_CHAIN=0`; flag-off byte-identity preserved; resident eq/ge
-  count per branched var is **O(1) not O(width)**; the driver-analogue behaviours
-  (D1–D4) hold on a real enumerated-domain instance. Ships **default-off for eq orders**
-  (Decision 5). **This stage re-confirms the real-solver eq advance level** (see
-  Implementation gates).
+- **Stage B'' — the eq-atom window. DONE.**
+  Shipped: the `WindowedEqScope` tag (replacing B''s `EqAtomResidency` argument);
+  `need_direct_encoding_for`'s Current-emission and its `windowed_eq_variables` mark;
+  the `WindowedFrontier` slot in `need_gevar`'s ladder; `evict_eq_literal` (the eq
+  mirror of `evict_order_literal`); `note_permanent_eq_reference` as the hoist-out
+  rule's trigger, wired at the solx/soli and learned-nogood sites; `collapse_eq_window`
+  as the (i-dynamic) half of the eq⨯interval guard, on both the partition and
+  containment-tree paths; `ProofLogger::{eq_window_active, mint_windowed_eq_guess,
+  emit_eq_window_advance}` and the branch-loop wiring; and the `Lower`/`UpperBound`
+  tags on `smallest_first` / `largest_first` / `smallest_in` / `largest_in`.
+  Ships **default-off for eq orders** (Decision 5), behind
+  `ProofOptions::set_order_encoding_deletion_eq_window()` /
+  `GCS_DELETE_ORDER_ENCODING_EQ_WINDOW`; with it off the four tagged orders are
+  byte-identical to the untagged ones, which is what makes the tags free to add now.
+  **Oracle (met):** the caps-off suite passes with the window on at `MIN_CHAIN=0`
+  (542/542, no flag-induced rejection); flag-off byte-identity holds across
+  {None, Literals gate 0, Literals gate 16}; and two new VeriPB-checked tests cover
+  the mechanism — `eq_window_test`, which drives the production entry points and
+  asserts in C++ the thing VeriPB cannot see (one live windowed eq definition per
+  branched variable and a flat ge count, **O(1) not O(width)**), plus the hoist-out
+  and eq⨯interval-collapse behaviours; and `eq_window_solve_test`, four ctest entries
+  enumerating through a real search with each tagged value order.
+  **This stage re-confirmed the real-solver eq advance level** (see Implementation
+  gates), including the descending direction the hand-authored driver never covered.
 
 - **Stage C — objective / frontier exemption (payload 3; flag-gated; committable).**
   Add `note_deletion_exempt` + the `FrontierExempt` residency cause + the `need_gevar`
@@ -1097,8 +1303,7 @@ and can be prepared ahead (it reuses B''s primitives) and finished once wired.
 ## Implementation gates (not owner calls)
 
 Three unknowns; all are validated empirically against VeriPB, not decided by the owner.
-Two are now resolved by the stages that owned them, and the remaining one belongs to
-B'':
+All three are now resolved by the stages that owned them:
 
 1. **Advance-RUP proof level (stage B). RESOLVED.** The exact level at which the
    split-family advance RUP and frontier hoist land, given the child has already
@@ -1107,16 +1312,23 @@ B'':
    and the synthetic split/UNSAT sweep preserves its win. Nothing about the level was
    taken on trust; the gate was the suite, not an argument.
 
-2. **Real-solver eq advance re-confirmation (stage B'').** The eq analogue of gate 1.
-   The driver commits the sibling `~g | ~eq(v)` via an order-hole `red` witness because
-   it has no child subtree; the *solver* emits it as `ProofLogger::backtrack`'s RUP
-   clause from the still-live child. The two produce the identical clause, but the real
-   path's RUP must be re-confirmed once wired — specifically that hoisting the frontier
-   `ge(v+1)` to `L` before the child `forget` leaves the advance RUP at `L`. Validate
-   against VeriPB at `MIN_CHAIN=0`, with `order_jump_check` + `d1_main.pbp` as anchors.
-   (The descending direction — `largest_first` / `largest_in`, the `UpperBound` mirror
-   — is expected to verify by symmetry but was not driver-tested; confirm before
-   shipping the descending orders.)
+2. **Real-solver eq advance re-confirmation (stage B''). RESOLVED.** The eq analogue of
+   gate 1. The driver commits the sibling `~g | ~eq(v)` via an order-hole `red` witness
+   because it has no child subtree; the *solver* emits it as `ProofLogger::backtrack`'s
+   RUP clause from the still-live child. The two produce the identical clause, but the
+   real path's RUP had to be re-confirmed once wired.
+
+   *Resolution as shipped:* the answer was **not** to hoist the frontier — it was to
+   mint the eq definition at the node's level in the first place (see "Mint-time
+   lifetime tagging"), which puts the frontier `ge(v+1)` there too and leaves the
+   design's hoist step a no-op. With that, the advance is RUP at `L` across the caps-off
+   suite at `MIN_CHAIN=0`, in `eq_window_test` (which drives the production emission
+   directly), and in `eq_window_solve_test`'s four real enumerations. **The descending
+   direction is confirmed, not assumed**: `largest_first` / `largest_in` have their own
+   scenarios in both tests, mirroring `y < v` against `y >= v+1`. The hole case —
+   consecutive branch values that are not adjacent, because propagation removed what lay
+   between — verifies too, and is exercised deliberately by the solve test's
+   `NotEquals` pair.
 
 3. **Residency-bookkeeping promotion (stage B'). RESOLVED.** Eviction's "sole Top cause"
    precondition needs always-on per-ge cause tracking under Literals. *Resolution as

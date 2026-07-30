@@ -558,6 +558,24 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(order_evict_test PRIVATE glasgow_constraint_solver)
     add_test(NAME order_evict_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:order_evict_test>)
 
+    add_executable(eq_window_test innards/proofs/eq_window_test.cc)
+    target_link_libraries(eq_window_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME eq_window_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:eq_window_test>)
+
+    # One entry per (contiguous eq value order, model): each enumerates with all four orders
+    # over both models and compares the counts, and writes the VeriPB-checked proof for its
+    # own pair, so every windowed proof shape -- ascending and descending, full d-way and
+    # complement-sibling, window-engaging and window-inert -- is covered. Distinct basenames
+    # because a parallel ctest would otherwise race over one set of proof files (issue #562).
+    add_executable(eq_window_solve_test innards/proofs/eq_window_solve_test.cc)
+    target_link_libraries(eq_window_solve_test PRIVATE glasgow_constraint_solver)
+    foreach(order smallest_first largest_first smallest_in largest_in)
+        foreach(model bounds holes)
+            add_test(NAME eq_window_solve_${order}_${model}_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash
+                --basename eq_window_solve_${order}_${model}_test $<TARGET_FILE:eq_window_solve_test> --order ${order} --model ${model})
+        endforeach()
+    endforeach()
+
     add_executable(range_branch_test innards/proofs/range_branch_test.cc)
     target_link_libraries(range_branch_test PRIVATE glasgow_constraint_solver)
     add_test(NAME range_branch_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_branch_test>)

@@ -122,6 +122,60 @@ namespace gcs::innards
         auto emit_split_bound_advance(const std::vector<Literal> & guesses, const Literal & refuted_guess) -> void;
 
         /**
+         * \brief True iff the eq-atom sliding window is proof-active: bound advances are
+         * active (Literals, assertions off) **and** the window was asked for.
+         *
+         * Off by default (dev_docs/brancher-design.md, owner decision 5), so the four
+         * contiguous eq value orders keep their Bound advance tags fully inert and their
+         * proofs byte-identical until the window is switched on.
+         */
+        [[nodiscard]] auto eq_window_active() const -> bool;
+
+        /**
+         * \brief Mint the eq atom for a windowed branch guess, ahead of the descent into
+         * its subtree.
+         *
+         * The window needs the guess's definition to live at the level the branch loop is
+         * running at -- the level the refuted child's backtrack clause lands at, and the
+         * level the frontier advance is emitted at -- not at whichever deeper level the
+         * child's first propagation happens to name it from, which the child's own forget
+         * would then delete out from under both. Minting it here, before the descent, is
+         * what puts it there; the child's later references find it already defined.
+         *
+         * The two ge thresholds the definition names are minted with it, at the same level
+         * and left deletable (a windowed definition deliberately does not hoist them to
+         * Top -- keeping them deletable is the win).
+         *
+         * A no-op unless eq_window_active() and \p guess is an `==` condition on a real
+         * variable.
+         */
+        auto mint_windowed_eq_guess(const Literal & guess) -> void;
+
+        /**
+         * \brief Emit the frontier advance for a refuted **eq** sibling, and run the
+         * window's per-iteration tidy behind it.
+         *
+         * For an ascending (LowerBound) step refuting `var == v` with standing bound
+         * `var >= v`, the advance is `~guesses OR var >= v+1`, which is RUP through the
+         * standing bound, the refuted child's still-live backtrack clause `~guesses OR
+         * var != v`, and -- load-bearing, and the thing driver control D2c shows VeriPB
+         * rejecting when it is deleted first -- `eq(v)`'s reverse reification. Descending
+         * (UpperBound) is the mirror: the advance is `~guesses OR var < v`.
+         *
+         * Then the tidy, which is what makes the window O(1)-resident: the superseded
+         * previous advance, the sibling clause (it names `eq(v)`, so the atom is not free
+         * until it goes -- this is the deletion the naive "definition lines only" list
+         * omits), `eq(v)`'s definition, and the stepped-over `ge` threshold all go, and the
+         * chain is re-stitched over the hole. Every one of those is a refusal-not-error
+         * primitive, so an atom the hoist-out rule has retained is simply kept.
+         *
+         * \p guesses is the decision stack below this node (the just-refuted sibling
+         * already popped), \p refuted_guess the `var == v` that was refuted, and \p lower
+         * which direction the frontier runs. A no-op unless eq_window_active().
+         */
+        auto emit_eq_window_advance(const std::vector<Literal> & guesses, const Literal & refuted_guess, bool lower) -> void;
+
+        /**
          * Derive a learned nogood --- the clause forbidding the given conjunction
          * of decisions --- as a persistent (ProofLevel::Top) RUP line, returning
          * its proof line. Used when restart learning records a nogood as the stack
