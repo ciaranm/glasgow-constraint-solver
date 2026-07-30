@@ -68,29 +68,6 @@ auto ArgSort::install(Propagators & propagators, State & initial_state, ProofMod
     if (! prepare(propagators, initial_state, optional_model))
         return;
 
-    // Set up the internal sorted-value variables in the proof, then run the
-    // shared sortedness helpers on {x, y} to reuse the Mehlhorn-Thiel bounds(Z)
-    // propagator and its fully-certified proof of y = sort(x). Keeping the
-    // witness lets ArgSort channel its permutation p to the stable rank pos.
-    vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
-    if (optional_model) {
-        // cake encodes each sorted-value y[j] as a proof-only, always-signed free
-        // bit-sum (v[id][j_b][y] value bits + a forced v[id][j][ysgn] sign bit even
-        // when the range is non-negative), with no OPB bound lines. Name y's bits to
-        // match, so the in-proof introduction of y's atoms lines up with cake's.
-        for (size_t j = 0; j < _y.size(); ++j)
-            optional_model->set_up_integer_variable(_y[j], _lowest_x, _highest_x, "argsort_y_" + std::to_string(j),
-                IntegerVariableProofRepresentation::Bits,
-                CakeBitNaming{.id = _constraint_id,
-                    .indices = {static_cast<long long>(j)},
-                    .value_annotation = "y",
-                    .sign_annotation = "ysgn",
-                    .add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does = true});
-        _witness = define_sortedness_proof_model(*optional_model, _constraint_id, _x, y_ids, /*arg_sort_labels=*/true);
-    }
-
-    install_sortedness_propagator(propagators, constraint_id(), _x, y_ids, _witness);
-
     if (optional_model)
         define_proof_model(*optional_model, initial_state);
 
@@ -150,6 +127,26 @@ auto ArgSort::prepare(Propagators & propagators, State & initial_state, ProofMod
 
 auto ArgSort::define_proof_model(ProofModel & model, const State &) -> void
 {
+    // First, the internal sorted-value variables and the shared sortedness
+    // encoding over {x, y}, which reuses the Mehlhorn-Thiel bounds(Z) proof of
+    // y = sort(x). Keeping the witness lets the channel below tie the
+    // permutation p to the stable rank pos, and lets install_propagators()
+    // hand it to the sortedness propagator.
+    //
+    // cake encodes each sorted-value y[j] as a proof-only, always-signed free
+    // bit-sum (v[id][j_b][y] value bits + a forced v[id][j][ysgn] sign bit even
+    // when the range is non-negative), with no OPB bound lines. Name y's bits to
+    // match, so the in-proof introduction of y's atoms lines up with cake's.
+    vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
+    for (size_t j = 0; j < _y.size(); ++j)
+        model.set_up_integer_variable(_y[j], _lowest_x, _highest_x, "argsort_y_" + std::to_string(j), IntegerVariableProofRepresentation::Bits,
+            CakeBitNaming{.id = _constraint_id,
+                .indices = {static_cast<long long>(j)},
+                .value_annotation = "y",
+                .sign_annotation = "ysgn",
+                .add_a_pointless_sign_bit_only_because_cake_argsort_wastefully_always_does = true});
+    _witness = define_sortedness_proof_model(model, _constraint_id, _x, y_ids, /*arg_sort_labels=*/true);
+
     // These constraints conform to cake_pb_cp's cencode_argsort
     // (cp_to_ilp_sortingScript.sml); the inner sortedness blocks (before flags,
     // rank equation, non-decreasing chain @c[id][yle<i>], position channel
@@ -206,8 +203,14 @@ auto ArgSort::install_propagators(Propagators & propagators) -> void
     auto n = _x.size();
     vector<IntegerVariableID> y_ids{_y.begin(), _y.end()};
 
+    // The shared sortedness propagator over {x, y}: the Mehlhorn-Thiel bounds(Z)
+    // algorithm enforcing y = sort(x), justified against the witness
+    // define_proof_model() built. Installed first, as it was before this was a
+    // phase, so the propagator ordering is unchanged.
+    install_sortedness_propagator(propagators, constraint_id(), _x, y_ids, _witness);
+
     // cake leaves each sorted value y[j] as an unbounded free bit-sum (see
-    // set_up_integer_variable in install()): y[j] in [lowest_x, highest_x] is
+    // set_up_integer_variable in define_proof_model()): y[j] in [lowest_x, highest_x] is
     // entailed -- every y[j] equals some x[p[j] - offset], all within that range --
     // but it is not reverse-unit-propagatable, because pinning it needs a case split
     // on p[j]'s value that unit propagation cannot make. So make that case split once,

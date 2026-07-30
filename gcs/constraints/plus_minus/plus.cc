@@ -142,9 +142,13 @@ auto Plus::install(Propagators & propagators, State & initial_state, ProofModel 
         define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
+}
 
+auto Plus::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
     // Tabulation for GAC: enumerate the distinct underlying variables, mapping
-    // values back through the affine forms.
+    // values back through the affine forms. Deciding needs the initial domains,
+    // so it happens here; the installing is install_propagators()'s job.
     auto aa = affine_of(_a), ab = affine_of(_b), ac = affine_of(_result);
     TabulationVariables enum_vars;
     optional<size_t> pa = aa.var ? optional{enum_vars.position_of(*aa.var)} : nullopt;
@@ -185,9 +189,10 @@ auto Plus::install(Propagators & propagators, State & initial_state, ProofModel 
             return sum == cv.raw_value;
         };
 
-        install_tabulation<hints::Plus>(
-            propagators, constraint_id(), enum_vars.vars(), move(determined), nullopt, accept, "plustab", "building GAC table for plus");
+        _tabulation = TabulationPlan{enum_vars.vars(), move(determined), accept};
     }
+
+    return true;
 }
 
 auto Plus::define_proof_model(ProofModel & model, const State &) -> void
@@ -210,6 +215,10 @@ auto Plus::install_propagators(Propagators & propagators) -> void
         [a = _a, b = _b, result = _result, sum_line = _sum_line, owner = constraint_id()](const State & state, auto & inference,
             ProofLogger * const logger) -> PropagatorState { return propagate_plus(a, b, result, state, inference, logger, sum_line, owner); },
         triggers);
+
+    if (_tabulation)
+        install_tabulation<hints::Plus>(propagators, constraint_id(), move(_tabulation->enum_vars), move(_tabulation->determined), nullopt,
+            move(_tabulation->accept), "plustab", "building GAC table for plus");
 }
 
 auto Plus::constraint_type() const -> std::string

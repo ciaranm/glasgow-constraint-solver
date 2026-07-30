@@ -257,6 +257,27 @@ namespace gcs::innards
         -> bool;
 
     /**
+     * \brief A tabulation that has been decided on: the enumeration scope, the
+     * determined-variable claims, and the acceptance test.
+     *
+     * Deciding needs the initial State (want_tabulation() sizes the enumeration
+     * against the domains) but installing does not. A constraint therefore builds
+     * this in prepare(), where the State is available, and hands it to
+     * install_tabulation() from install_propagators(), where it is not. An empty
+     * optional means the constraint is not tabulating.
+     *
+     * \ingroup Innards
+     * \sa gcs::innards::want_tabulation()
+     * \sa gcs::innards::install_tabulation()
+     */
+    struct TabulationPlan
+    {
+        std::vector<IntegerVariableID> enum_vars;
+        std::vector<DeterminedVariable> determined;
+        std::function<auto(const std::vector<Integer> &)->bool> accept;
+    };
+
+    /**
      * \brief The standard wiring for tabulated GAC: an expensive initialiser
      * that derives the table in-proof via build_table_in_proof() (inferring
      * FalseLiteral when no assignment is accepted), and an extensional
