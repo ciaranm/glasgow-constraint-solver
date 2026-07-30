@@ -108,18 +108,22 @@ auto ValuePrecede::define_proof_model(ProofModel & model) -> void
                 "pge", WPBSum{} + 1_i * pos_v >= Integer{static_cast<long long>(k)}));
         pge.emplace(v, move(ges));
 
-        // Upper bound: (vars[i] = v) -> pos[v] <= i.
+        // Upper bound: (vars[i] = v) -> pos[v] <= i. The role is keyed by both the
+        // position i and the value v: these rows live inside the per-value loop, so a
+        // position-only role would collide across values (#604), giving the .opb several
+        // different rows under one name. cake keys them the same way ("<i>ub_<v>").
         for (size_t i = 0; i < n; ++i)
-            model.add_labelled_constraint(_constraint_id, std::to_string(i) + "ub", WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(i)},
-                HalfReifyOnConjunctionOf{{_vars[i] == v}});
+            model.add_labelled_constraint(_constraint_id, std::to_string(i) + "ub_" + v.to_string(),
+                WPBSum{} + 1_i * pos_v <= Integer{static_cast<long long>(i)}, HalfReifyOnConjunctionOf{{_vars[i] == v}});
 
-        // Existence: [pos[v] >= i+1] OR (exists k <= i. vars[k] = v).
+        // Existence: [pos[v] >= i+1] OR (exists k <= i. vars[k] = v). Value-keyed for
+        // the same reason as the upper bound above.
         for (size_t i = 0; i < n; ++i) {
             WPBSum existence;
             existence += 1_i * pge.at(v)[i]; // [pos[v] >= i+1]
             for (size_t k = 0; k <= i; ++k)
                 existence += 1_i * (_vars[k] == v);
-            model.add_labelled_constraint(_constraint_id, std::to_string(i) + "ex", move(existence) >= 1_i);
+            model.add_labelled_constraint(_constraint_id, std::to_string(i) + "ex_" + v.to_string(), move(existence) >= 1_i);
         }
     }
 
