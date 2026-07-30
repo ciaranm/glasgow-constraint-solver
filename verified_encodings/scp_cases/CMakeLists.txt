@@ -511,6 +511,22 @@ add_scp_chain_test(element_2d_unsat            none)
 # whose all-absent solutions only pin pos[v] via that bound. value_precede_unsat
 # pins a leading value with no legal predecessor; seq_precede_chain_unsat starts
 # the sequence at 2 (1 absent).
+# Why these stay none, measured rather than assumed (#604, which value-keyed the
+# ub/ex roles and so made the label sets comparable at all). The three
+# value_precede cases now have *label sets identical to cake's*, and every one of
+# the constraint's own rows compares equal; opbdiff --match-labels reports 60
+# matches / 3 differing / 0 only-in-A / 0 only-in-B on value_precede_sat, and all
+# three differing rows are the variables' boundary reifications @i[X][ge0][r] --
+# cake pins the always-true ge0 with a zero coefficient where the solver reifies
+# it, the lazy-vs-eager variable-encoding divergence of #358 that puts every case
+# in this file's `none` section here. So strict/aux is one #358 away, not one
+# constraint fix away. seq_precede_chain has a second, smaller gap: cake emits a
+# per-position clamp row @c[id][<i>cl] whenever m >= 1, while the solver clamps
+# only when the declared domains actually exceed m (they do not, in these cases),
+# so cake's OPB carries 3-4 rows the solver's does not -- harmless, since they are
+# redundant there and the chain verifies, but a label-set difference on top of
+# #358. Recurrence of #604 itself is guarded at the source instead: ProofModel
+# now throws on a duplicate @label, so it no longer depends on this mode.
 add_scp_chain_test(value_precede_sat            none)
 add_scp_chain_test(value_precede_nonexact_sat   none)
 add_scp_chain_test(value_precede_unsat          none)

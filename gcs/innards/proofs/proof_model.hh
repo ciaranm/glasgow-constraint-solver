@@ -64,6 +64,19 @@ namespace gcs::innards
         // it is never a numeric line.
         auto emit_constraint_label(const std::string & constraint_id, const std::string & role) -> ProofLineLabel;
 
+        // Claim each of these labels for the rows about to be emitted, throwing
+        // ProofError if any is already taken (or if the pack repeats one): a label
+        // is how a proof step cites a row, so two rows sharing one leaves both
+        // uncitable. Called with the whole pack up front, rather than once per row,
+        // so a rejected pair does not leave its first row behind in the OPB.
+        //
+        // Called only from the ConstraintID-taking add_labelled_constraint
+        // overloads, so it covers the c[id][role] namespace and nothing else. The
+        // variable-encoding namespaces (@i[name][...], @po[index][...]) are out of
+        // scope on purpose: those rows may be deleted and re-emitted to keep the
+        // proof database small.
+        auto claim_labels(const std::vector<std::string> & labels) -> void;
+
         // Register a bits encoding (allocate/name the bit literals, track bounds)
         // without emitting anything to the OPB. The shared "register" half of
         // set_up_bits_variable_encoding and create_proof_only_integer_variable_in_proof;
@@ -140,6 +153,11 @@ namespace gcs::innards
          *
          * Returns `{LE-half, GE-half}`, as the unlabelled overload does.
          *
+         * Claims both labels through \ref claim_labels before emitting either, so
+         * a pair whose roles collide with an earlier row of the same constraint ---
+         * or with each other --- is rejected whole, rather than leaving the LE half
+         * behind in the OPB.
+         *
          * Part of moving every constraint reference off line numbers and onto
          * labels.
          */
@@ -151,6 +169,11 @@ namespace gcs::innards
          * that label as the ProofLine. `label` is the full label body (e.g.
          * \c i[X][ge0][f]); used for the variable-encoding @i labels, whose shape
          * (\c i[name][...][f|r]) the caller builds rather than the c[id][role] form.
+         *
+         * Does no label-uniqueness checking: that lives in the ConstraintID
+         * overload below, which is what every constraint uses. A caller reaching
+         * this overload directly is naming a row in some other namespace (a
+         * variable encoding, a flag definition), where a repeat may be deliberate.
          */
         auto add_labelled_constraint(
             const std::string & label, const WPBSumLE & ineq, const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;
@@ -160,6 +183,9 @@ namespace gcs::innards
          * half, each the full label body. For callers whose labels are not
          * c[id][role]-shaped (the tracker's view-link definitions); constraints
          * use the ConstraintID overload instead.
+         *
+         * As the single-label overload above, this does no uniqueness checking;
+         * the ConstraintID overload is where a constraint's roles are checked.
          */
         auto add_labelled_constraint(const std::string & label_le, const std::string & label_ge, const WPBSumEq & eq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> std::pair<ProofLine, ProofLine>;
@@ -177,6 +203,11 @@ namespace gcs::innards
          * \brief Like add_constraint for a single inequality, but emits @c[id][role]
          * and returns that label as the ProofLine, so the proof references it by
          * label. The role must match what \c cake_pb_cp emits.
+         *
+         * Claims the label through \ref claim_labels, so a role that does not name
+         * everything its loops vary over --- and therefore repeats --- throws
+         * ProofError at model-definition time rather than producing an .opb with
+         * repeated names (see #604).
          */
         auto add_labelled_constraint(const ConstraintID & constraint_id, const std::string & role, const WPBSumLE & ineq,
             const std::optional<HalfReifyOnConjunctionOf> & half_reif = std::nullopt) -> ProofLine;

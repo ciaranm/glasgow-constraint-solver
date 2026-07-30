@@ -113,6 +113,28 @@ that does install a child directly (`SeqPrecedeChain`'s `ValuePrecede`)
 must give it an identity, or id-keyed proof flags collide across
 instances (issue #449).
 
+The `role` half of `@c[id][role]` must name **everything the surrounding
+loops vary over**, not just the innermost thing. A role built from a
+position index inside a loop over values gives every value after the
+first the same labels as the first — several genuinely different rows
+under one name, none of them citable unambiguously (issue #604, where
+`ValuePrecede` spelled its upper-bound role `<i>ub` rather than
+`<i>ub_<v>`). This is a hard error, not a first-wins pick:
+`ProofModel::claim_labels` throws on a repeated label, so a role that is
+missing a key fails loudly at model-definition time rather than becoming
+an `.opb` with repeated names that nothing dereferences. It also means
+you cannot work around a collision by ordering the emissions; fix the
+role. The `role_le`/`role_ge` pair of the equality overload is covered
+too, and claimed together, so passing the same role for both halves is
+caught as well.
+
+The check is confined to the `c[id][role]` namespace — it runs in the
+`ConstraintID`-taking `add_labelled_constraint` overloads, which is what
+every constraint uses. The variable-encoding namespaces (`@i[name][...]`
+for a real variable, `@po[index][...]` for a proof-only one) are out of
+scope deliberately: those rows may be deleted and re-emitted to keep the
+proof database small, so a repeat there is by design.
+
 ## The header
 
 ```cpp
