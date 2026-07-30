@@ -4,12 +4,13 @@
 measured on synthetic AND real instances; suite-safe; committed on this branch;
 not default.** This note records the design for shrinking the integer
 order-encoding that VeriPB carries, plus the measured outcome and what is and
-isn't yet done. The full Brancher-API refactor (step 2, below) is now a
-**decided design, recorded in [brancher-design.md](brancher-design.md)** but not
-yet implemented; the current implementation wires deletion into the existing
-branch/backtrack flow via hoisting, and the sketch of the refactor further down
-this note is superseded by that decided design (see the note at "Design
-overview").
+isn't yet done. The full Brancher-API refactor (step 2, below) is a **decided design,
+recorded in [brancher-design.md](brancher-design.md), now partly implemented**: its
+stages A, B and B' have landed, B''/C/D/E have not. That note, not this one, is the
+authority on the refactor's staging and status. The shipped deletion path still wires
+into the existing branch/backtrack flow via hoisting, and the four-step sketch further
+down this note is superseded by the decided design (see the note at "Design overview"
+and at "Implementation staging").
 
 ## Results (measured)
 
@@ -276,10 +277,14 @@ owns the MiniZinc frontend proofs.
   split-branched ones anyway.
 - **`soli` objective atom** is hoisted to Top when the objective-improvement
   constraint is emitted (latent optimisation-mode bug fixed defensively).
-- **Not yet done:** the clean Brancher abstraction (below) — the current wiring
-  hoists guess/eq/aux references directly; the abstraction generalises and tidies
-  it. Also future: short-reason flag / deview-companion level-scoping (currently
-  inert), and the bridge redesign.
+- **In progress:** the clean Brancher abstraction (step 2). Stages A, B and B' have
+  landed — the `BranchDecision` / `BacktrackAdvance` types, the split families' bound
+  advances, and the eviction primitives plus their always-on residency bookkeeping — so
+  the direct guess/eq/aux hoist wiring is on its way out but is still what the shipped
+  path uses. Stages B''/C/D/E remain; [brancher-design.md](brancher-design.md) is the
+  authority on each. Also future: short-reason flag / deview-companion level-scoping
+  (currently inert), and the bridge redesign (deprioritised — step 1b measured it as
+  freeing 0 %).
 
 ## Next steps (prioritised)
 
@@ -312,9 +317,17 @@ builds long chains (seat-moving: median chain 12, max 98, despite maxdom 901), a
 the deletion machinery churns (22 857 deletes / 22 829 reintroductions, net 28) for
 nothing there.
 
-**2. Brancher-API refactor — DESIGN DECIDED (see
-[brancher-design.md](brancher-design.md)); not yet implemented.** The concrete,
-decided step-2 design lives in that note; it generalises consolidate-then-delete,
+**2. Brancher-API refactor — IN PROGRESS: stages A, B and B' landed; B'' is next.**
+The concrete, decided step-2 design and its staging live in
+[brancher-design.md](brancher-design.md), which is the authority on what is done and
+what each remaining stage owes. In summary: **A** added the `BranchDecision` /
+`BacktrackAdvance` types and ported every value order (byte-identical); **B** wired the
+split families' bound advances and the advance-RUP-driven deletion; **B'** added the
+always-on residency bookkeeping and the evict/hoist primitives the eq window and the
+objective `delc` both need (behaviour-neutral — nothing calls them yet). Remaining:
+**B''** the eq-atom window, **C** the objective/frontier exemption, **D** the
+objective-improvement `delc` + Top-eviction, **E** benchmark and cleanup. The design
+generalises consolidate-then-delete,
 tidies the current direct wiring, and is the natural home for the chain-gated
 deletion policy, the objective-variable exemption (from 2b, below), and the
 objective-improvement `delc` lifecycle. Five owner decisions are settled there:
@@ -348,8 +361,10 @@ Parameter: `ProofOptions::order_encoding_deletion_min_chain` (+ fluent setter), 
 override `GCS_DELETE_ORDER_ENCODING_MIN_CHAIN` (explicit-in-code wins). **`0` = gate
 off = byte-identical to the pre-gate Literals behaviour — the aggressive-testing
 mode: regression runs exercising the deletion machinery MUST set `MIN_CHAIN=0`,
-because tiny test domains never cross a nonzero gate.** The suite passes caps-off
-flag-ON at gate 0 and at 32 (525/525 each, 0 flag-induced failures). The stats dump
+because tiny test domains never cross a nonzero gate.** The suite passed caps-off
+flag-ON at gate 0 and at 32 when this landed (525/525 each, 0 flag-induced failures; the
+suite has grown since — the standing gate is "all of it, in each of the three modes",
+not a fixed number). The stats dump
 gains a `gate-held` cause and a per-variable chain-length distribution.
 
 **Default 16, chosen from measurement** (full tables in
@@ -392,9 +407,9 @@ win-recovery motivation is gone. Revisit only if a view/product-heavy
 *weak-propagation large-domain bound-split* workload appears — the only regime where
 freed chains would be long enough to matter.
 
-**Ordering decided (2026-07): 2b first (done, above), then step 2.** Step 2 is the
-next piece of work, and inherits the objective-variable-exemption follow-up from 2b;
-3 stays parked.
+**Ordering decided (2026-07): 2b first (done, above), then step 2.** Step 2 is under
+way — A, B and B' are in — and it inherits the objective-variable-exemption follow-up
+from 2b as its stage C; 3 stays parked.
 
 **Also:** decide productionisation (keep flag-gated vs default-on — current verdict:
 flag-gated), and — cleanup — the superseded dormant `Links` mode can be removed.
@@ -641,6 +656,12 @@ ship the internal helpers plus `Custom` and leave a polished power-user surface 
 a real use case lands.
 
 ## Implementation staging
+
+> **Superseded.** This was the original four-step sketch, written before the step-2
+> design was decided. Steps 1 and 2 are done (the hoist primitive, and the Brancher
+> abstraction through stage B'), and step 3's "replace the experimental Literals mode"
+> is now stage E's cleanup. Use **[brancher-design.md](brancher-design.md), "Migration
+> staging"** for what is actually left. Kept here for provenance.
 
 1. **Hoist primitive first.** It is foundational, independently testable, and needed
    by everything downstream. Build `hoist_literal_to_level` / `hoist_literal_to_top`

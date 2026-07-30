@@ -1096,14 +1096,16 @@ and can be prepared ahead (it reuses B''s primitives) and finished once wired.
 
 ## Implementation gates (not owner calls)
 
-Three unknowns remain; all are validated empirically against VeriPB, not decided by
-the owner:
+Three unknowns; all are validated empirically against VeriPB, not decided by the owner.
+Two are now resolved by the stages that owned them, and the remaining one belongs to
+B'':
 
-1. **Advance-RUP proof level (stage B).** The exact level at which the split-family
-   advance RUP and frontier hoist land, given the child has already
-   emitted-and-forgotten its own levels. *Resolution:* validate empirically in stage B
-   against VeriPB with the `order_jump_check` foundation as the anchor and
-   `MIN_CHAIN=0`; do not trust the level until a wide-gap split instance verifies.
+1. **Advance-RUP proof level (stage B). RESOLVED.** The exact level at which the
+   split-family advance RUP and frontier hoist land, given the child has already
+   emitted-and-forgotten its own levels. *Resolution:* settled empirically when stage B
+   landed — the caps-off suite verifies at `MIN_CHAIN=0` with the split families tagged,
+   and the synthetic split/UNSAT sweep preserves its win. Nothing about the level was
+   taken on trust; the gate was the suite, not an argument.
 
 2. **Real-solver eq advance re-confirmation (stage B'').** The eq analogue of gate 1.
    The driver commits the sibling `~g | ~eq(v)` via an order-hole `red` witness because
