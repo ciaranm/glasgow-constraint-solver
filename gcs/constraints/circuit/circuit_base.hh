@@ -45,6 +45,21 @@ namespace gcs::innards::circuit
     using ProofFlagDataMap = std::map<long, std::map<long, ProofFlagData>>;
     using PosVarDataMap = std::map<long, PosVarData>;
 
+    /**
+     * \brief The backtrackable state the circuit propagators keep, allocated by
+     * Circuit::prepare() -- allocating is a prepare-phase job -- and handed to
+     * whichever algorithm is installed.
+     *
+     * `chain` holds the incremental small-cycle chain endpoints, which only
+     * circuit::Prevent uses, so it is only allocated when that algorithm is
+     * selected: every constraint-state slot is deep-copied at every search node.
+     */
+    struct CircuitStateHandles
+    {
+        ConstraintStateHandle unassigned;
+        std::optional<ConstraintStateHandle> chain;
+    };
+
     struct ShiftedPosDataMaps
     {
         std::map<long, ProofFlagData> greater_than;

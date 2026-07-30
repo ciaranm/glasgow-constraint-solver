@@ -61,12 +61,13 @@ namespace gcs::innards::circuit
         const ConstraintStateHandle & unassigned_handle) -> void;
 
     /**
-     * \brief Set up the backtrackable state for the SCC circuit propagator and install it, given
-     * the position-variable proof data already produced by Circuit::set_up. Called from
-     * Circuit::install when the circuit::SCC algorithm is selected. Defined in circuit_scc.cc.
+     * \brief Install the SCC circuit propagator over the backtrackable state
+     * Circuit::prepare() allocated and the position-variable proof data
+     * Circuit::define_proof_model() produced. Called from Circuit::install_propagators() when
+     * the circuit::SCC algorithm is selected. Defined in circuit_scc.cc.
      */
-    auto install_circuit_scc(Propagators & propagators, State & initial_state, const ConstraintID & owner,
-        const std::vector<IntegerVariableID> & succ, const SCCOptions & scc_options, PosVarDataMap pos_var_data) -> void;
+    auto install_circuit_scc(Propagators & propagators, const ConstraintID & owner, const std::vector<IntegerVariableID> & succ,
+        const SCCOptions & scc_options, PosVarDataMap pos_var_data, const CircuitStateHandles & handles) -> void;
 }
 
 #endif // GLASGOW_CONSTRAINT_SOLVER_CIRCUIT_SCC_HH

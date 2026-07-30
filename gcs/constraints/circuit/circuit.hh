@@ -70,7 +70,17 @@ namespace gcs
         bool _gac_all_different = false;
         SCCOptions _scc_options{};
 
-        auto set_up(innards::Propagators &, innards::State &, innards::ProofModel * const) -> innards::circuit::PosVarDataMap;
+        // Backtrackable state allocated by prepare(), consumed by install_propagators().
+        innards::circuit::CircuitStateHandles _state_handles;
+
+        // The position-variable encoding, built by define_proof_model() and captured by
+        // the algorithm's propagator. Empty when proof logging is off, which is what
+        // both algorithms expect.
+        innards::circuit::PosVarDataMap _pos_var_data;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit Circuit(std::vector<IntegerVariableID> succ);
