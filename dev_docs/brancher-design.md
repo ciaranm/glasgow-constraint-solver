@@ -1405,8 +1405,17 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   the proof text that `#soli - #delc == 1` over a 21-incumbent descent (so the resident
   count is O(1), not O(#incumbents)), that each retirement emitted its two deletions in the
   load-bearing order, and that a find-first run emits nothing at all. Search is identical
-  mode-on vs mode-off on tour and talent; mode-off proofs and Literals-mode `solx` proofs
-  (crystal_maze, langford) are byte-identical to the stack's previous tip.
+  mode-on vs mode-off on colour, tour and talent; mode-off proofs and Literals-mode `solx`
+  proofs (crystal_maze, langford) are byte-identical to the stack's previous tip.
+
+  One correction to this stage's own oracle: **colour and knapsack are not many-incumbent
+  instances**, so they cannot carry the O(1) claim. Colour's objective is the largest colour
+  index and its first greedy colouring is already near-optimal, so it produces **2**
+  incumbents on graphs from 22 to 60 vertices alike (1321 to 227k recursions — the descent
+  length does not move it), and the knapsack example produces **1**. The instances that
+  actually exercise a descent are talent (**23**), `incumbent_retire_test` itself (**21**)
+  and tour (**4**). Colour and knapsack are still worth running, as different model shapes
+  under search-identity and `-c`; they are just not where the accumulation lives.
 
   **What it does not yet buy.** Verify time on tour and talent is unchanged (0.50s and
   1.30s either side, three runs each in one sitting): twenty constraints out of a database
