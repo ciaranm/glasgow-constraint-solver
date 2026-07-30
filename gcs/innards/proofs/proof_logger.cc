@@ -291,26 +291,39 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
         }
             .visit(var);
 
-    // The solx / soli line below is a permanent (Top) reference to every `var == val` it
-    // names, so the eq-atom window's hoist-out rule fires for any of them that is a live
-    // windowed definition: retain it at Top instead of letting the window's next tidy evict
-    // it, together with the two ge thresholds it names. This is the commonest permanent
-    // reference by far -- every solution takes one on each branched variable's current
-    // value. Guarded by the window rather than left to the no-op inside, because this is a
-    // per-solution walk of every variable and an enumeration takes it millions of times.
-    if (eq_window_active())
-        for (const auto & [var, val] : all_variables_and_values)
-            overloaded{
-                [&](const ConstantIntegerVariableID &) {}, //
-                [&](const SimpleIntegerVariableID & var) { names_and_ids_tracker().note_permanent_eq_reference(var, val); },
-                [&](const ViewOfIntegerVariableID & var) {
-                    // A view is named through its underlying, which is the variable that can
-                    // be windowed. A view that negates still deviews to an `==` condition.
-                    auto under = deview(var == val);
-                    names_and_ids_tracker().note_permanent_eq_reference(under.var, under.value);
-                } //
-            }
-                .visit(var);
+    // NOTE for the eq-atom window: the `solx` / `soli` line below names every `var == val`,
+    // but that is a *use*, not a permanent reference, so the window's hoist-out rule
+    // deliberately does NOT fire here. The constraint VeriPB keeps is built from the
+    // `preserved:` set alone -- our variables' BITS -- and never mentions an eq atom
+    // (veripb-checker solution_logging.rs, SolutionRuleOutput::Excluding builds its terms
+    // by walking preserved_variables; Improving builds them from the objective). The atoms
+    // on this line only have to be defined while it is being checked, which they are: they
+    // are what propagates the assignment out to the preserved bits. Afterwards nothing
+    // surviving references them and the window may evict them like any other.
+    //
+    // Retaining them here instead would be expensive and pointless: it would pin an atom on
+    // every branched variable at every solution, which is what stops the window engaging in
+    // an enumeration at all.
+    // Under OrderEncodingDeletion::Literals the objective-improvement constraint emitted
+    // below (soli, either branch) names the objective variable's `id < incumbent` order
+    // literal at ProofLevel::Top on every improving solution. Its definition sits at the
+    // deep Current level the search reached this solution at, so the very next backtrack's
+    // forget deletes it -- leaving this permanent Top line naming a deleted literal, which
+    // VeriPB rejects. Hoist that order literal to Top, exactly as the backtrack and nogood
+    // paths hoist their guess/decision literals, so its definition survives every later
+    // forget. A no-op in every other mode (and when the literal is already Top).
+    //
+    // BEFORE the `soli` line, not after: hoisting re-stitches the order chain, and those
+    // `pol` lines take constraint numbers. The `e` line further down cites the soli
+    // constraint by the relative hint `-1`, so anything emitted between the two misaddresses
+    // it -- which is exactly what happens on an objective the eq window has made deletable.
+    if (optional_minimise_variable_and_value)
+        visit(
+            [&](const auto & id) {
+                names_and_ids_tracker().hoist_live_order_literals_toward_level(
+                    std::vector<Literal>{Literal{id < optional_minimise_variable_and_value->second}}, 0, OrderEncodingResidencyCause::SoliHoist);
+            },
+            optional_minimise_variable_and_value->first);
 
     _imp->proof << (optional_minimise_variable_and_value ? "soli" : "solx");
 
@@ -349,22 +362,6 @@ auto ProofLogger::solution(const vector<pair<IntegerVariableID, Integer>> & all_
 
     _imp->proof << ";\n";
     record_proof_line(advance_proof_line_number(), ProofLevel::Top);
-
-    // Under OrderEncodingDeletion::Literals the objective-improvement constraint emitted
-    // below (soli, either branch) names the objective variable's `id < incumbent` order
-    // literal at ProofLevel::Top on every improving solution. Its definition sits at the
-    // deep Current level the search reached this solution at, so the very next backtrack's
-    // forget deletes it -- leaving this permanent Top line naming a deleted literal, which
-    // VeriPB rejects. Hoist that order literal to Top first, exactly as the backtrack and
-    // nogood paths hoist their guess/decision literals, so its definition survives every
-    // later forget. A no-op in every other mode (and when the literal is already Top).
-    if (optional_minimise_variable_and_value)
-        visit(
-            [&](const auto & id) {
-                names_and_ids_tracker().hoist_live_order_literals_toward_level(
-                    std::vector<Literal>{Literal{id < optional_minimise_variable_and_value->second}}, 0, OrderEncodingResidencyCause::SoliHoist);
-            },
-            optional_minimise_variable_and_value->first);
 
     if (optional_minimise_variable_and_value && _imp->assertion_level > AssertionLevel::Definitions)
         // soli and no links => have to assert the objective improving constraint
@@ -464,6 +461,41 @@ auto ProofLogger::emit_split_bound_advance(const vector<Literal> & guesses, cons
 auto ProofLogger::eq_window_active() const -> bool
 {
     return _imp->eq_window && bound_advances_active();
+}
+
+auto ProofLogger::note_top_eq_references(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> void
+{
+    // The eq-atom window's hoist-out rule, applied generally rather than site by site: a
+    // line about to land at ProofLevel::Top that names a windowed eq atom is a PERMANENT
+    // reference to it, so the atom -- and the two ge thresholds its definition names --
+    // must become permanent before the line is written.
+    //
+    // The design lists "a reified-constraint use that names id == v" among the permanent
+    // references, and this is what catches it. There is no closed list of such uses: any
+    // constraint may define a Top flag over the values a search branches on, and several do
+    // (a SmartTable tuple selector is `red ... i[x[0]][eq0] i[x[1]][eq0] ... f[..][sr] ...`
+    // at Top). Leaving those undetected strands the reference, and it is not theoretical --
+    // smart_table, tour and minizinc-cumulative all reject without this.
+    //
+    // Costs a walk of the terms per Top emission while a window is live, and nothing at all
+    // otherwise: eq_window_active() is false in every default configuration, and the
+    // tracker's own guard returns immediately when no variable is currently windowed.
+    if (level != ProofLevel::Top || ! eq_window_active())
+        return;
+
+    for (const auto & term : ineq.lhs.terms) {
+        const auto * lit = std::get_if<ProofLiteral>(&term.variable);
+        if (! lit)
+            continue;
+        const auto * cond = std::get_if<Literal>(lit);
+        if (! cond)
+            continue;
+        const auto * ivc = std::get_if<IntegerVariableCondition>(cond);
+        if (! ivc || (ivc->op != VariableConditionOperator::Equal && ivc->op != VariableConditionOperator::NotEqual))
+            continue;
+        if (const auto * sid = std::get_if<SimpleIntegerVariableID>(&ivc->var))
+            names_and_ids_tracker().note_permanent_eq_reference(*sid, ivc->value);
+    }
 }
 
 namespace
@@ -753,6 +785,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     const std::optional<AssertionAnnotation> & assertion_hint, const std::optional<ProofLineLabel> & label) -> ProofLine
 {
     log_stacktrace();
+    note_top_eq_references(ineq, level);
 
     LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
     auto & rule_line = lease.buffer();
@@ -816,6 +849,7 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
     log_stacktrace();
+    note_top_eq_references(ineq, level);
 
     LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
     auto & rule_line = lease.buffer();
@@ -1259,6 +1293,7 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessThanEqual<W
     ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs) -> ProofLine
 {
     log_stacktrace();
+    note_top_eq_references(ineq, level);
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     write_indent();
@@ -1277,6 +1312,7 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<W
     ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs) -> ProofLine
 {
     log_stacktrace();
+    note_top_eq_references(ineq, level);
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;

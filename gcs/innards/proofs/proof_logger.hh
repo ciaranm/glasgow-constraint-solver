@@ -59,6 +59,14 @@ namespace gcs::innards
 
         auto log_stacktrace() -> void;
 
+        // The eq-atom window's general hoist-out trigger: a line about to land at
+        // ProofLevel::Top that names a windowed eq atom is a permanent reference to it, so
+        // the atom (and the ge thresholds its definition names) has to become permanent
+        // before the line is written. Called from every emission funnel that renders a sum
+        // at a caller-chosen level; a no-op unless eq_window_active() and the line is at
+        // Top. See dev_docs/brancher-design.md, "The hoist-out rule".
+        auto note_top_eq_references(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.

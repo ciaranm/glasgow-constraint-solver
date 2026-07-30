@@ -280,7 +280,7 @@ Why the eq family splits the way it does:
   one-step frontier, evicting each `eq(v)`/`ge(v)` once the frontier has stepped
   past it, bounding the permanent proof objects per branched variable from
   O(domain-width) to O(1). That is the win; it is driver-backed and, since B'',
-  measured at **4.8× at domain 1000** (see "The eq-atom window").
+  measured at **4.7× at domain 1000** (see "The eq-atom window").
 
   A frontier that steps over a **hole** — consecutive branch values that are not
   adjacent, because propagation removed what lay between — is not a special case in
@@ -359,17 +359,17 @@ proof-only change requires. Best-of-3 `veripb` wall time:
 
 | domain | gate | off | on | speedup |
 |---|---|---|---|---|
-| 250 | 0 | 0.756 s | 0.329 s | **2.30×** |
-| 500 | 0 | 5.765 s | 1.634 s | **3.53×** |
-| 1000 | 0 | 45.92 s | 9.678 s | **4.74×** |
-| 250 | 16 | 0.892 s | 0.475 s | 1.88× |
-| 500 | 16 | 6.380 s | 2.337 s | 2.73× |
-| 1000 | 16 | 48.75 s | 13.22 s | 3.69× |
+| 250 | 0 | 0.746 s | 0.325 s | **2.30×** |
+| 500 | 0 | 5.707 s | 1.619 s | **3.53×** |
+| 1000 | 0 | 45.96 s | 9.788 s | **4.70×** |
+| 250 | 16 | 0.878 s | 0.468 s | 1.88× |
+| 500 | 16 | 6.272 s | 2.312 s | 2.71× |
+| 1000 | 16 | 48.85 s | 13.11 s | 3.73× |
 
 The speedup **grows with domain width**, which is the signature of a residency win
 rather than a constant-factor one — the same shape the split family's curve has. Note
 that the window makes the proof **bigger** (+31 % at every domain: the advances, the
-`del`s, and the re-mints are all extra bytes) and verifies it **4.8× faster**: this is
+`del`s, and the re-mints are all extra bytes) and verifies it **4.7× faster**: this is
 the mode's central SIZE≠TIME point, that what costs `veripb` time is the resident
 constraint database, not the file.
 
@@ -392,23 +392,26 @@ window-on proof is **byte-identical** to its window-off proof: when the window c
 engage it now costs nothing at all, rather than a little. That is Decision 5's
 transient-for-permanent trade turning out not even to arise on those models.
 
-**The second, larger limit: solutions retain atoms.** The `solx` blocking clause names
-`var == val` for every variable, so the hoist-out rule retains the windowed atom of every
-sibling whose subtree contained a solution — which in an *enumeration* is most of them.
-The window therefore engages fully on refutation search (the synthetic sweep above is
-`--unsat`) and only on the solution-free siblings of an enumeration:
-`eq_window_solve_test` gets 1–2 advances from a 2-solution search, not one per node. Two
-things follow, both stage E's:
+So the regime statement needs a second clause: weak propagation, large domain, **and the
+eq atoms named by search rather than by constraints**.
 
-- The regime statement needs a third clause: weak propagation, large domain, **and the eq
-  atoms named by search rather than by constraints** — plus, for the full win,
-  refutation-heavy rather than solution-heavy search.
-- Whether the solx retention is *needed* is worth measuring rather than assuming. It is
-  kept here because it is the conservative reading of "delete only when unreferenced", but
-  mutation says the small instances verify without it (the blocking clause carries
-  `~eq(v)`, which the re-introduction's falsify witness satisfies), and dropping it is the
-  single biggest lever on the window's reach. That is a soundness-adjacent change and
-  belongs to the owner, not to this stage.
+**A solution is a use of an eq atom, not a permanent reference to it — checked, not
+assumed.** The design lists "a solx blocking clause" first among the permanent references
+the hoist-out rule must catch, and an earlier revision of this stage duly retained an atom
+on every branched variable at every solution, which stopped the window engaging in an
+enumeration almost entirely. That is wrong, and reading VeriPB settles it: the constraint
+`solx` keeps is built **only from the `preserved:` set** — our variables' *bits* — and
+never mentions an eq atom (`veripb-checker/src/rules/solution_logging.rs`,
+`SolutionRuleOutput::Excluding` walks `preserved_variables`; `Improving` builds from the
+objective). The atoms listed on the line only need to be *defined while it is checked*,
+because they are what propagates the assignment out to those bits; afterwards nothing
+surviving names them. So `ProofLogger::solution` takes no hoist-out, and the window evicts
+after a solution like anywhere else. The remaining permanent-reference site is the learned
+nogood, whose Top clause genuinely does name the atom.
+
+(The `soli` order literal `id < incumbent` is a different matter and still hoisted: that
+one is named by the improvement line the *solver* emits, not by anything internal to
+VeriPB.)
 
 **Beware the bench's size.** The eq control enumerates the whole domain at every node,
 so it scales quite differently from the split default: `--size 16 --domain 250
@@ -435,13 +438,16 @@ Established by mutation, because a test suite's silence is not evidence:
   (The artifacts driver's D2c control remains the pure demonstration, with an opaque
   sibling clause and no bit-level hole; promoting it into `gcs/` is still stage E's job,
   #611.)
-- **The solx retention is defensive on the instances measured, and load-bearing in
-  reach.** Removing the `solution` trigger left talent's proof **byte-identical** (talent
-  windows nothing) and left the small enumerations verifying. It is kept anyway, because
-  "nothing on these instances noticed" is not an argument that a permanent reference to a
-  deleted definition is safe — but it is also what keeps the window from engaging in an
-  enumeration, so its cost is real and stage E should settle it with a measurement rather
-  than inherit the assumption.
+- **A retention that was never needed was masking a rule that was.** The solx hoist-out
+  cost most of the window's reach (removing it took `eq_window_solve_test` from 1–2
+  evictions to 3 — every refuted sibling, not only the solution-free ones), and reading the
+  checker shows it protects nothing. But removing it made 13 tests reject, because it had
+  been incidentally covering the *general* Top-reference rule that was missing: any
+  constraint may define a Top flag over a branched value, and a site list cannot enumerate
+  that. Two lessons, both about the same thing: "the design says this is a permanent
+  reference" is a claim about what the checker stores, and the checker is readable; and a
+  suite that passes because something unrelated is masking a gap will keep passing right up
+  until the unrelated thing changes.
 
 ### Mint-time lifetime tagging (the narrow API) — **as built**
 
@@ -571,29 +577,44 @@ stitches the chain **around** the retained interior ges (the genuine
 wrongly-evicted referenced ge except at a point of use (D4c vs D4c-silent), so this
 is a solver invariant, not something the checker enforces.
 
-**Detection, as built**, is `note_permanent_eq_reference(id, v)`, called at each
-reference site exactly as `note_order_literal_top_pin` is for the ge side —
-`hoist_eq_to_top` is the action, this is the trigger. The sites are the ones that
-put an eq atom into a line that outlives a backtrack:
+**Detection, as built**, is `note_permanent_eq_reference(id, v)` —
+`hoist_eq_to_top` is the action, this is the trigger — and it is **general, not a list
+of sites**. `ProofLogger::note_top_eq_references` runs on every emission funnel that
+renders a sum at a caller-chosen level (`emit`, `emit_under_reason`, and both halves of
+`emit_red_proof_lines_reifying`) and, for a line landing at `ProofLevel::Top`, walks its
+terms and retains every windowed eq atom it names. The eq⨯interval guard below is the
+one bulk case, collapsing a whole window at once.
 
-- **`ProofLogger::solution`** — the `solx` blocking clause and the `soli` witness
-  name `var == val` for *every* variable. This is by far the commonest permanent
-  reference: every solution takes one on each branched variable's current value, so
-  in an enumeration the window retains an atom at each solution rather than evicting
-  it. (A view is deviewed first; the underlying is the variable that can be
-  windowed.)
-- **`ProofLogger::emit_learned_nogood`** — a restart nogood's decision literals,
-  the eq analogue of the existing `NogoodHoist`.
-- The **eq⨯interval** guard below, which collapses a whole window at once rather
-  than one atom at a time.
+**A site list was tried first and is not enough.** The design names three permanent
+references — a solx blocking clause, a learned nogood, "a reified-constraint use that
+names `id == v`" — and only the first two are sites you can enumerate. The third is not:
+*any* constraint may define a Top flag over the values a search branches on, and several
+do — a SmartTable tuple selector is `red 1 i[x[0]][eq0] 1 i[x[1]][eq0] ... 4 ~f[16][sr]
+>= 4` at Top. With only the site list, `smart_table` (8 tests), `tour`,
+`scp_chain_smart_table_sat` and `minizinc-cumulative` all reject.
 
-An eq atom that acquires a permanent reference from anywhere *else* is not detected,
-and would be a stranded reference. That failure is **not silent**, which is what
-makes the enumerated list acceptable rather than a latent hole: the atom keeps its
-`XLiteral` identity across eviction, so a surviving line naming it and a later
-re-introduction collide — the fresh `red`'s falsify-witness against the pin — and
-VeriPB rejects, loudly, at the re-introduction. Contrast the ge/chain-clause leak,
-which really is silent.
+**`solx` / `soli` is deliberately *not* a permanent reference**, though the design lists
+it first. The line names `var == val` for every variable, but the constraint VeriPB
+*keeps* is built from the `preserved:` set alone — the bits — so those atoms are consumed
+while the line is checked and referenced by nothing afterwards. See "What it measures".
+(For a while an incidental hoist here was covering for the missing general rule: it
+protected exactly the atoms that happened to be solution values. That is the shape to
+watch for — a check that passes because something unrelated is masking the gap.)
+
+An eq atom that acquires a permanent reference the general rule cannot see — a line
+emitted as raw text rather than as a sum, say — would be a stranded reference. That
+failure is **not silent**: the atom keeps its `XLiteral` identity across eviction, so a
+surviving line naming it and a later re-introduction collide — the fresh `red`'s
+falsify-witness against the pin — and VeriPB rejects, loudly, at the re-introduction.
+Contrast the ge/chain-clause leak, which really is silent.
+
+**One ordering the hoist-out forced.** `ProofLogger::solution` hoists the objective's
+`id < incumbent` order literal, and hoisting re-stitches the order chain, and those `pol`
+lines take constraint numbers. The `e` line below cites the soli constraint by the
+relative hint `-1`, so *anything* emitted between the two misaddresses it. The hoist
+therefore has to run **before** the `soli` line, not after. It was latent until the window
+made an objective's thresholds deletable — before that the objective's eq atom was
+permanent, which hoisted its thresholds early and left the soli hoist with nothing to do.
 
 ### Bookkeeping mirrors
 

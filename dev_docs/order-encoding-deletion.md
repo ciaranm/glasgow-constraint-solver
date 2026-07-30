@@ -371,29 +371,29 @@ frontend proofs.
     frontier advance both live at. Left to the child it would land a level deeper and
     the child's own `forget` would delete it out from under both.
   - **Permanent references are detected at the reference site**
-    (`note_permanent_eq_reference`) and retain the atom rather than evicting it —
-    principally the `solx`/`soli` line, which names `var == val` for *every* variable, so
-    an enumeration retains an atom at each solution. The list of sites is enumerated
-    rather than general, which is acceptable only because getting it wrong is loud: the
-    atom keeps its `XLiteral` across eviction, so a surviving line naming it collides
-    with the re-introduction's `red` witness and VeriPB rejects.
+    (`note_permanent_eq_reference`) and retain the atom rather than evicting it. There is
+    exactly one such site plus the interval guard — a learned nogood's Top clause. A
+    `solx`/`soli` line names `var == val` too, but is **not** one: the constraint VeriPB
+    keeps is built from the `preserved:` set alone (our variables' bits), so those atoms
+    are consumed while the line is checked and referenced by nothing afterwards.
+    The list of sites is enumerated rather than general, which is acceptable only because
+    getting it wrong is loud: the atom keeps its `XLiteral` across eviction, so a
+    surviving line naming it collides with the re-introduction's `red` witness and VeriPB
+    rejects.
 
   **Measured** (figures and method in [brancher-design.md](brancher-design.md), "What it
   measures"): on ascending eq branching over a wide domain the window verifies **2.3× /
-  3.6× / 4.8× faster at domain 250 / 500 / 1000**, a speedup that grows with width — and
+  3.5× / 4.7× faster at domain 250 / 500 / 1000**, a speedup that grows with width — and
   it does so while making the proof **31 % bigger**, which is this mode's SIZE≠TIME point
   in its purest form.
 
   On the eq-heavy *real* instances it does not engage: talent windows **0** eq atoms and
-  crystal_maze **1**, against 3255 on the synthetic. The precondition the design did not
+  crystal_maze **2**, against 3255 on the synthetic. The precondition the design did not
   name is that **the window can only act on an eq atom the branch layer names first**, and
   on a model whose constraints reason per value the propagators have defined those atoms
   permanently long before the search reaches them. Where it cannot engage it now costs
-  nothing (talent's window-on proof is byte-identical to its window-off proof). A second
-  limit is that a `solx` blocking clause retains the atom of every sibling whose subtree
-  held a solution, so the full win needs refutation-heavy search as well. The window
-  therefore ships off, and stage E owns both the default and whether the solx retention is
-  really required.
+  nothing (talent's window-on proof is byte-identical to its window-off proof). The window
+  therefore ships off, and stage E owns whether the default changes.
 - **In progress:** the clean Brancher abstraction (step 2). Stages A, B, B' and B'' have
   landed — the `BranchDecision` / `BacktrackAdvance` types, the split families' bound
   advances, the eviction primitives plus their always-on residency bookkeeping, and the
