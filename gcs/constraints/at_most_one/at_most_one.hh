@@ -36,6 +36,7 @@ namespace gcs
         IntegerVariableID _val;
         std::vector<std::tuple<innards::ProofFlag, innards::ProofFlag, innards::ProofFlag>> _flags;
 
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 

@@ -57,13 +57,17 @@ auto AtMostOne::install(Propagators & propagators, State & initial_state, ProofM
     if (! prepare(propagators, initial_state, optional_model))
         return;
 
-    if (_vars.size() < 2)
-        return;
-
     if (optional_model)
         define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
+}
+
+auto AtMostOne::prepare(Propagators &, State &, ProofModel * const) -> bool
+{
+    // "at most one of fewer than two variables equals val" is vacuously true:
+    // nothing to encode and nothing to propagate.
+    return _vars.size() >= 2;
 }
 
 auto AtMostOne::define_proof_model(ProofModel & model, const State &) -> void
