@@ -480,7 +480,10 @@ Parameter: `ProofOptions::order_encoding_deletion_min_chain` (+ fluent setter), 
 override `GCS_DELETE_ORDER_ENCODING_MIN_CHAIN` (explicit-in-code wins). **`0` = gate
 off = byte-identical to the pre-gate Literals behaviour — the aggressive-testing
 mode: regression runs exercising the deletion machinery MUST set `MIN_CHAIN=0`,
-because tiny test domains never cross a nonzero gate.** The suite passed caps-off
+because tiny test domains never cross a nonzero gate.** A variable with a live eq
+window is exempt from the gate entirely (the `WindowedFrontier` slot): it is a frontier
+variable by construction, and holding its thresholds resident would collapse the window
+back to the baseline. The suite passed caps-off
 flag-ON at gate 0 and at 32 when this landed (525/525 each, 0 flag-induced failures; the
 suite has grown since — the standing gate is "all of it, in each of the three modes",
 not a fixed number). The stats dump
