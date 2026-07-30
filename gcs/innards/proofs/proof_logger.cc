@@ -568,9 +568,10 @@ auto ProofLogger::emit_eq_window_advance(const vector<Literal> & guesses, const 
 
     // Now the atom itself. Skipped when the sibling clause survived, because a live clause
     // naming an evicted atom is exactly the stranded reference the mode must not create.
-    // A refusal here is the hoist-out rule having retained the atom (a solution or a
-    // learned nogood took a permanent reference to it), which is correct and merely wins
-    // less -- and it leaves the stepped-over threshold pinned, so that eviction refuses too.
+    // The eviction cannot refuse here -- an atom the hoist-out rule retained was already
+    // turned away by the windowed check at the top, and nothing since then can have taken a
+    // permanent reference -- but it is a refusing primitive rather than an asserting one,
+    // so this reads as a condition rather than as an assumption.
     if (sibling_deleted && names_and_ids_tracker().evict_eq_literal(var, v)) {
         // The threshold the frontier has stepped over: ascending, ge(v) is now behind the
         // bound; descending, ge(v+1) is. Its definition and every chain clause naming it go,
