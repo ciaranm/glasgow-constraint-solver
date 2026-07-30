@@ -39,6 +39,7 @@ using std::nullopt;
 using std::ofstream;
 using std::optional;
 using std::pair;
+using std::set;
 using std::string;
 using std::variant;
 using std::vector;
@@ -76,6 +77,11 @@ struct ProofModel::Imp
 
     map<Integer, ProofModel::CakeConstantAtoms> cake_constant_atoms;
 
+    // Every c[id][role] label emitted so far. A label is how a proof step cites
+    // a row, so two constraint rows must never share one; see claim_labels, and
+    // note the variable-encoding namespaces are deliberately not tracked here.
+    set<string> emitted_labels;
+
     string opb_file;
     // Text not yet written out. Until write_preamble() runs this holds
     // everything emitted so far (the variable set-up rows); afterwards each
@@ -109,6 +115,35 @@ ProofModel::~ProofModel()
 auto ProofModel::advance_constraint_counter() -> ProofLineNumber
 {
     return ProofLineNumber{++_imp->number_of_constraints.number};
+}
+
+auto ProofModel::claim_labels(const vector<string> & labels) -> void
+{
+    // A label exists so that a proof step can cite this row, so no two rows in
+    // the c[id][role] namespace may carry the same one: with both spelled
+    // @c[id][role], a reference to either is ambiguous, and opbdiff
+    // --match-labels pairs the two encoders' rows by label. A duplicate is
+    // always a bug in the emitting define_proof_model -- a role that does not
+    // name everything the surrounding loops vary over (#604: ValuePrecede keyed
+    // its ub/ex roles by position but not by chain value, inside a loop over
+    // values) -- so it is a hard error rather than a first-wins or last-wins
+    // pick.
+    //
+    // Only the ConstraintID-taking overloads claim, which is what confines this
+    // to c[id][role]. The variable-encoding namespaces -- @i[name][...] for a
+    // real variable, @po[index] for a proof-only one -- are deliberately left
+    // out: a variable's encoding rows can be deleted and re-emitted to keep the
+    // proof database small, so a repeat there is by design rather than a naming
+    // bug. Their uniqueness is the namer's business, not this check's.
+    //
+    // The whole pack is claimed before any of it is emitted, so that the
+    // equality overload's two halves are all-or-nothing: a rejected pair must
+    // not leave its LE row behind in the OPB. Claiming them together is also
+    // what catches a caller passing the same role for both halves.
+    for (const auto & label : labels)
+        if (! _imp->emitted_labels.insert(label).second)
+            throw ProofError{"two OPB rows emitted under the same label '@" + label +
+                "': a role must name everything that varies, so that each row can be cited unambiguously"};
 }
 
 auto ProofModel::emit_constraint_label(const string & constraint_id, const string & role) -> ProofLineLabel
@@ -195,7 +230,11 @@ auto ProofModel::add_labelled_constraint(const ConstraintID & constraint_id, con
     const optional<HalfReifyOnConjunctionOf> & half_reif) -> pair<ProofLine, ProofLine>
 {
     auto id = as_string(constraint_id);
-    return add_labelled_constraint(emit_constraint_label(id, role_le).label, emit_constraint_label(id, role_ge).label, eq, half_reif);
+    auto label_le = emit_constraint_label(id, role_le).label;
+    auto label_ge = emit_constraint_label(id, role_ge).label;
+    // Both halves up front: a colliding pair must not leave its LE row behind.
+    claim_labels({label_le, label_ge});
+    return add_labelled_constraint(label_le, label_ge, eq, half_reif);
 }
 
 auto ProofModel::add_labelled_constraint(const string & label_le, const string & label_ge, const WPBSumEq & eq,
@@ -271,7 +310,9 @@ auto ProofModel::add_labelled_constraint(const string & label, const Literals & 
 auto ProofModel::add_labelled_constraint(
     const ConstraintID & constraint_id, const string & role, const WPBSumLE & ineq, const optional<HalfReifyOnConjunctionOf> & half_reif) -> ProofLine
 {
-    return add_labelled_constraint(emit_constraint_label(as_string(constraint_id), role).label, ineq, half_reif);
+    auto label = emit_constraint_label(as_string(constraint_id), role).label;
+    claim_labels({label});
+    return add_labelled_constraint(label, ineq, half_reif);
 }
 
 auto ProofModel::add_two_way_reified_constraint(const WPBSumLE & ineq, const ProofFlag & flag) -> pair<ProofLine, ProofLine>
