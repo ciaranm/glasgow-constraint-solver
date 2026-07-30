@@ -160,7 +160,7 @@ owns the MiniZinc frontend proofs.
 ## Implementation status
 
 - **Done, suite-safe:** the full caps-off test suite passes with the flag on (0
-  flag-induced VeriPB rejections; mode-off byte-identical; flag-off 536/536). The
+  flag-induced VeriPB rejections; mode-off byte-identical; flag-off 537/537). The
   hoist primitive, guess/eq/partition-atom hoisting, and the aux/view dispositions
   below are all in `gcs/innards/proofs/{names_and_ids_tracker,proof_logger,proof_model}.*`.
 - **A line must never name a literal whose definition has been deleted — and that is now
@@ -199,6 +199,46 @@ owns the MiniZinc frontend proofs.
     aliasing a DirectOnly `{0,1}` variable's `>= 1` atom to its bit, so every `ge` owns its
     own reification and `order_literal_aliased_to_bit` — which existed only to keep such a
     literal out of the re-introduction path — became dead and has been removed.
+- **Eviction: taking a definition out on demand, rather than waiting for a backtrack.**
+  Stage B' of the Brancher work ([brancher-design.md](brancher-design.md)) adds the mirror
+  of the hoist primitive — `NamesAndIDsTracker::evict_order_literal` — together with the
+  bookkeeping it needs, all **always-on under Literals** and all inert until something
+  calls it (nothing in the solver does yet; its consumers are the eq-atom window and the
+  objective-improvement `delc`). Three parts are worth knowing about even outside that
+  work:
+
+  - **`ge_top_pins`**, a per-threshold per-cause refcount of the *permanent* references
+    holding a `ge` at Top, which is what makes "may I delete this?" answerable. It is
+    counted **at the reference sites** rather than inside the hoist (which early-returns
+    for a threshold already at Top, so the second of two permanent atoms naming one `ge`
+    would be invisible — and `eq(v)` and `eq(v+1)` both name `ge(v+1)`), and **only for
+    thresholds a hoist put at Top**, so "level 0 with no entry" reads as structurally
+    resident and unevictable. `stats_ge_top_cause` remains the diagnostic's separate
+    first-cause-wins map.
+  - **`chain_clauses_by_level`**, the chain clauses currently present in the proof,
+    bucketed by proof level and then by variable. Nothing recorded these before, because
+    forgetting a level deleted them wholesale; eviction has to delete just the ones naming
+    one threshold. Recording is on the hot path of every chain emission, which is why the
+    shape is level-first and flat — see the stage-B' notes for the +12 % that keying it by
+    threshold pair cost, and the +4.7 % this one costs.
+  - **The eq analogue of atom retirement** (`VariableAtoms::retired_eq`,
+    `forget_eq_literals_at_level`), so a *deletable* eq definition — which only a windowed
+    variable has, and nothing is windowed yet — retires its atom on backtrack and is
+    re-introduced through `need_direct_encoding_for` with its identity intact. Both ge
+    traps recur verbatim: `eq_defs` keeps its entry and re-introduction must
+    `insert_or_assign`, and the `XLiteral` must be reused rather than re-minted.
+
+  **A finding worth carrying forward: VeriPB does not police a leaked chain clause.** A
+  chain clause left naming an evicted threshold stays a valid derived constraint, and
+  re-introducing that threshold's definition verifies with the stale clause still in the
+  database (measured by mutation against veripb 3.0.2 — the negated half of the
+  reification forces the neighbour's atom through its own definition, so the leftover
+  clause is implied under the witness). A missed deletion is therefore silent and costs
+  precisely the resident-database shrinkage this whole mode exists for, which is why
+  `chain_clauses_naming` exists and why `gcs/innards/proofs/order_evict_test.cc` asserts
+  it in C++ rather than trusting the checker. This is the same lesson as the two
+  solver-side invariants the design already records: **VeriPB polices the order encoding
+  only at a point of use.**
 - **Gate — randomized-test seed sweeps are part of the flag-ON gate.** A single caps-off
   suite run exercises only *one* random seed per data-driven test, and the fixed corpus
   missed a ~10 %-of-seeds VeriPB-rejection hole in divide/modulus (seed 3072268882 was one

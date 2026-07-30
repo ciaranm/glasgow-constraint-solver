@@ -477,6 +477,27 @@ resident* subset. An eq eviction mirrors the ge eviction's
   (or a sibling `forget_eq_literals_at_level`), called from the same
   `forget_proof_level` funnel.
 
+  **As implemented in B'**, with one deliberate asymmetry: these hold **only windowed
+  (deletable) eq defs**. Absence means "permanent, resident forever", which is what every
+  eq atom outside a window is — so both structures stay empty until something windows a
+  variable, and the index costs nothing on the eq-heavy instances whose eq atoms are not
+  branched on. (`live_order_literals` cannot do this: it records level-0 ge thresholds
+  because the chain walk and the stitch need them.) `forget_eq_literals_at_level` and
+  `forget_chain_lines_at_level` both hang off the same `forget_order_links_at_level`
+  funnel, after the ge sweep — which is what emits the level's stitches, and those land at
+  a *surviving* neighbour's level, never at the level being forgotten.
+
+  The producer of a windowed def is a defaulted argument,
+  `need_direct_encoding_for(id, v, EqAtomResidency::Windowed)`; `Permanent` is the default
+  and what every caller in the solver passes, so B' changes no emission. The request is
+  honoured only where a deletable def is meaningful (Literals, proof-time, assertions off,
+  real variable) and, per **(i-static)** below, is refused for a variable that already has
+  an interval partition or a containment tree — that half of the eq⨯interval guard is
+  cheap enough to ship with the primitive rather than with the window. B'' replaces the
+  argument with the variable's `WindowedEqScope` tag; until then it exists so
+  `hoist_eq_to_top` and the eq forget sweep have a producer to be VeriPB-checked against
+  (`order_evict_test`).
+
 ### WindowedFrontier vs FrontierExempt, and the chain gate
 
 The chain gate (`order_encoding_deletion_min_chain`) keeps *short-chain
@@ -752,48 +773,101 @@ Two load-bearing caveats:
    acceptance is not evidence the discipline held.
 
 These are two instances of the same fact — **VeriPB polices order-encoding soundness
-only at a point of use, not at deletion** — and the two solver-side invariants it
-will not police are:
+only at a point of use, not at deletion** — and the solver-side invariants it will not
+police are:
 
 - **Eviction ordering** (delc the improvement constraint before evicting its ge).
 - **ge-under-eq residency** (do not evict a ge a live Top eq atom names; the eq
   window's hoist-out rule).
+- **Chain-clause deletion on evict** (leave no clause naming an evicted threshold).
+  Added in stage B' once it was measured: a leftover clause stays *valid*, so the proof
+  verifies and the only loss is the shrinkage. See "The evict primitive" below.
 
 Both are exactly why the always-on residency-cause bookkeeping (below) is mandatory,
 not optional.
 
-### The evict-from-Top primitive — mirror of hoist
+### The evict primitive — mirror of hoist
 
-Hoist moves a def *to* Top and stitches it *in*. Evict moves a def *off* Top and
-stitches the chain *over* it:
+**Implemented in stage B'.** Hoist moves a def *to* a level and stitches it *in*.
+Evict deletes it and stitches the chain *over* it. As shipped:
 
 ```cpp
 // NamesAndIDsTracker
-// Evict a real variable's Top-resident ge threshold v: emit `del` for its two
-// reification def lines and its two Top chain links, stitch the surviving Top
-// neighbours lo,hi with a skip link ge(hi) -> ge(lo) (the run-stitch of
-// forget_order_literals_at_level, run for a single Top literal on demand), and drop
-// v from live_order_literals (leaving the atom and its ge_defs slot) so a later need_gevar reintroduces
-// it as a deletable interior literal. Precondition (asserted): v's only Top
-// residency cause is the one the caller names (e.g. SoliHoist).
-auto evict_order_literal_from_top(const SimpleIntegerVariableID & id, Integer v,
-    OrderEncodingResidencyCause expected_sole_cause) -> void;
+// Delete v's two reification def lines and every chain clause naming it, stitch its
+// surviving immediate neighbours lo,hi with a skip link ge(hi) -> ge(lo) (the run-stitch
+// of forget_order_literals_at_level, run for one literal on demand, landing at the deeper
+// neighbour's level exactly as there), drop v from live_order_literals and its level
+// index, release its Top pin, and RETIRE its atom -- so a later need_gevar re-introduces
+// it as a deletable interior literal and takes the retired XLiteral back.
+// Returns whether it was evicted; a refusal emits nothing and changes nothing.
+auto evict_order_literal(const SimpleIntegerVariableID & id, Integer v,
+    std::optional<OrderEncodingResidencyCause> expected_sole_top_cause) -> bool;
 ```
 
-This **requires the residency-cause bookkeeping to be always-on under Literals**,
-not stats-gated. Today `stats_ge_top_cause` is populated only when
-`collect_order_encoding_stats` (Literals *and* the env var). Payload 2's safety
-assertion needs a per-Top-ge cause record — a minimal cause set or a Top-pin
-refcount — populated whenever the mode is Literals, with the existing stats map
-layered on top; without it, eviction cannot safely fire and must conservatively skip
-(leaving the ge resident — correct, no win). This promotion is now stage B'
-(shared with the eq window), not a stage-D prerequisite.
+Three deltas from the sketch this replaces, each for a reason worth keeping:
+
+- **It retires the atom** rather than "leaving the atom and its `ge_defs` slot". The
+  sketch predates `a15d5757`, which made the naming rule structural on the ge side;
+  eviction is a second deletion path and must enforce it the same way.
+- **It returns a bool instead of asserting.** The precondition is *checked*, so a
+  caller whose bookkeeping disagrees with the tracker's gets a safe refusal (the
+  literal stays resident, costing only the win) rather than an abort. `nullopt` is the
+  mid-level (window tidy) case: a deletable literal has no Top pin by construction, so
+  naming a cause for one is refused too.
+- **It handles any level, not just Top**, because the window's per-iteration tidy
+  evicts Current-level defs. Hence the name loses `_from_top`.
+
+It **required the residency-cause bookkeeping to become always-on under Literals**,
+not stats-gated (`ge_top_pins`; `stats_ge_top_cause` stays as the diagnostic's
+first-cause-wins map, layered on top and still covering the born-Top structural
+causes that never hoist). It also required a **single-line deletion API**,
+`ProofLogger::delete_proof_lines_at_level`, which drops the lines from the level's
+bucket as well as `del`-ing them: `forget_proof_level` ends a bucket's final interval
+with a bare `del id`, and VeriPB errors on a `del id` naming an already-deleted line
+(only `del range` skips them), so a line evicted from a level that is later forgotten
+would otherwise be deleted twice.
+
+**A third thing VeriPB will not police.** A chain clause left naming an evicted
+threshold is still a *valid derived constraint* — it was derived from definitions the
+atom's stable identity lets a later `need_gevar` restore, and re-introducing that
+definition **verifies with the stale clause present** (measured by mutation against
+veripb 3.0.2: the negated half of the reification forces the neighbour's atom through
+its own definition, so the leftover clause is implied under the witness). So a missed
+chain-clause deletion is silent and costs exactly the resident-DB shrinkage the mode
+exists for. `chain_clauses_naming(id, v)` exists to make that postcondition
+observable, and `order_evict_test` checks it in C++ — the third solver-side invariant
+listed above, alongside eviction ordering and ge-under-eq residency.
 
 The evict primitive has **two consumers**: payload 2 (evict a superseded soli
 threshold) and the eq window's per-iteration tidy (evict a Current-level eq/ge def +
 re-stitch). Its hoist-out path needs the same always-on residency bookkeeping. So the
-primitive and the bookkeeping promotion are a shared stage B' (below), rather than
+primitive and the bookkeeping promotion were a shared stage B' (below), rather than
 payload 2 owning them.
+
+#### The Top-pin bookkeeping, and its two counter-intuitive rules
+
+`ge_top_pins`: per real variable, per ge threshold, a per-cause refcount of the
+permanent references pinning it at Top. Both rules were found by getting them wrong
+first (2026-07-29), and both are checked by mutation in `order_evict_test`:
+
+1. **Count at the reference site, not inside the hoist.**
+   `hoist_order_literal_to_level` early-returns when the def is already at the target
+   level, and `hoist_order_literal_to_top_if_live` early-returns at level 0 — so a
+   second permanent atom naming an already-Top ge does no hoisting at all, and would
+   record no pin. This is not a corner case: `eq(v)` and `eq(v+1)` both name
+   `ge(v+1)`. First-cause-wins is right for a diagnostic and *fatal* for an eviction
+   precondition, which is exactly a count.
+2. **Only a ge whose Top residency a hoist caused gets an entry.** A hoist never
+   fires on a level-0 ge, so "level 0 with no entry" means structurally resident
+   (model-time / boundary / aux / view / gate) — never evictable, and needing no
+   record. That keeps the map proportional to hoists rather than to the resident
+   majority, and it is load-bearing in the other direction too: recording pins for
+   structurally resident thresholds would make a *boundary* literal — a permanent
+   chain anchor — look evictable.
+
+A `GuessHoist` to level 0 deliberately takes no pin (it targets a positive level and
+is not a permanent reference), which leaves such a literal looking structurally
+resident. Eviction then refuses it: a lost win at worst, never wrong.
 
 ### Payload 3 — objective / frontier deletion exemption
 
@@ -927,13 +1001,55 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   validates the advance-RUP proof level against VeriPB.**
 
 - **Stage B' (shared prerequisite) — residency-cause bookkeeping + evict/hoist
-  primitives, always-on under Literals.**
-  Promote `stats_ge_top_cause` to a minimal always-on per-ge cause set/refcount; add
-  `evict_order_literal_from_top`, `hoist_eq_to_top`, and the eq analogues of the
-  live/level indices (`live_eq_literals` / `eq_literals_by_level`). **No behaviour
-  change yet** — the primitives are unused; **Oracle:** byte-identity + unit coverage
-  of the bookkeeping. This is the shared foundation for both the window (B'') and
-  payload 2 (D).
+  primitives, always-on under Literals. DONE.**
+  Shipped: `ge_top_pins` (the always-on per-ge Top-pin refcount, counted at the
+  reference sites — see "The Top-pin bookkeeping" above); `chain_clauses_by_level` (the
+  chain clauses currently in the proof, bucketed by level then variable, which eviction
+  needs and nothing previously recorded);
+  `evict_order_literal` (any level, refusing rather than asserting, retiring the atom);
+  `chain_clauses_naming` (its postcondition, made observable because VeriPB will not
+  police it); `hoist_eq_to_top`; `live_eq_literals` + `eq_literals_by_level` +
+  `forget_eq_literals_at_level` + `VariableAtoms::retired_eq` (the eq analogue of ge
+  retirement, so a windowed def's atom is retired on backtrack and re-introduced with
+  its identity intact); `EqAtomResidency` on `need_direct_encoding_for` as the minimal
+  producer of a windowed def; and `ProofLogger::delete_proof_lines_at_level`.
+  **No behaviour change**: nothing in the solver evicts, windows an eq atom, or passes a
+  non-default residency, so every emission is unchanged.
+  **Oracle (met):** caps-off suite in each of {None, Literals gate 0, Literals gate 16};
+  `None`-mode byte-identity vs plain main; the flag-ON seed sweeps; and a new
+  VeriPB-checked driver, `gcs/innards/proofs/order_evict_test.cc` (mode and gate set in
+  code, so it does not depend on the environment — and in particular runs at gate 0,
+  which the shipped default of 16 would make vacuous). It covers mid-level evict,
+  evict-from-Top under a sole pin, the three refusals (no cause / wrong cause /
+  two-eq-atoms-pinning-one-ge), the structurally-resident (boundary) refusal,
+  `hoist_eq_to_top` across a forget of the window's level, the eq forget sweep and
+  identity-preserving re-introduction, and the bucket-erasure shape that would otherwise
+  double-delete. Each of those was confirmed discriminating by mutation (8 of 9 mutations
+  caught; the ninth — erasing a chain clause's record without emitting its `del` — is
+  invisible to both VeriPB and the tracker, and was checked by reading the emitted
+  proof). This is the shared foundation for both the window (B'') and payload 2 (D).
+
+  **Cost.** The stage emits not one different byte (checked by `cmp` on a 15 MB proof as
+  well as by the byte-identity gate), so `veripb` time cannot move. The solver's own
+  proof-writing time does: the chain-clause index takes an insert per chain clause. On the
+  deletion-heaviest synthetic (`order_deletion_bench`, pairwise, d1000, gate 0, pinned and
+  solo) that is **+4.7 %** — 211.6 ms → 221.6 ms — of which the pin map, eq indices and
+  retirement plumbing account for +1.0 % and the index for the rest. Keying that index by
+  variable and then by threshold pair instead cost +12.0 %, which is why it is bucketed
+  level-first and flat. In end-to-end terms at d1000 the solver is ~0.22 s against
+  `veripb`'s ~1.55 s, so this is well under 1 %. Numbers and the rejected further
+  optimisation are in `.../order-encoding-deletion-artifacts/stage-bprime/NOTES.md`.
+
+  **What B'' still owes on top of it:** the `WindowedEqScope` tag (replacing the
+  `EqAtomResidency` argument), the per-iteration tidy that actually calls
+  `evict_order_literal`, the **eq-side eviction** (B' ships only the eq *forget* sweep and
+  `hoist_eq_to_top`; taking a windowed eq def out on demand needs the same
+  `delete_proof_lines_at_level` + retire pair, with the `get_if<ProofLine>` filter for a
+  DirectOnly `{0,1}` variable's `XLiteral`-valued `eq_defs`), the hoist-out rule's
+  *detection* of a permanent reference (`hoist_eq_to_top` is the action, not the trigger),
+  the `WindowedFrontier` residency slot in `need_gevar`'s ladder, the **(i-dynamic)** half
+  of the eq⨯interval guard, and tagging `smallest_first` / `largest_first` /
+  `smallest_in` / `largest_in`.
 
 - **Stage B'' — the eq-atom window.**
   The `WindowedEqScope` tag, `need_direct_encoding_for` Current-emission, the
@@ -1000,9 +1116,13 @@ the owner:
    — is expected to verify by symmetry but was not driver-tested; confirm before
    shipping the descending orders.)
 
-3. **Residency-bookkeeping promotion (stage B').** Eviction's "sole Top cause"
-   assertion needs always-on per-ge cause tracking under Literals. *Resolution:* ship a
-   minimal refcount/cause-set in stage B'; the stats map layers on top.
+3. **Residency-bookkeeping promotion (stage B'). RESOLVED.** Eviction's "sole Top cause"
+   precondition needs always-on per-ge cause tracking under Literals. *Resolution as
+   shipped:* `ge_top_pins`, a per-cause refcount counted at the reference sites and only
+   for hoisted thresholds (see "The Top-pin bookkeeping" for why each of those two
+   qualifiers is load-bearing); the diagnostic's `stats_ge_top_cause` layers on top,
+   unchanged. Eviction *checks* it and refuses rather than asserting, so a disagreement
+   costs a win instead of aborting.
 
 ## Deferred / future work
 

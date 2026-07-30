@@ -554,6 +554,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(invar_test PRIVATE glasgow_constraint_solver)
     add_test(NAME invar_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:invar_test>)
 
+    add_executable(order_evict_test innards/proofs/order_evict_test.cc)
+    target_link_libraries(order_evict_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME order_evict_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:order_evict_test>)
+
     add_executable(range_branch_test innards/proofs/range_branch_test.cc)
     target_link_libraries(range_branch_test PRIVATE glasgow_constraint_solver)
     add_test(NAME range_branch_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_branch_test>)

@@ -61,16 +61,51 @@ namespace gcs::innards
     };
 
     /**
+     * How long an eq atom's definition is meant to live, under
+     * OrderEncodingDeletion::Literals.
+     *
+     * `Permanent` is what every caller in the solver asks for (and the only thing any
+     * other mode can give): the definition lands at ProofLevel::Top, outlives every
+     * backtrack, and pins the two `ge` thresholds it names at Top with it.
+     *
+     * `Windowed` lands the definition at ProofLevel::Current instead, so a backtrack
+     * deletes it and retires the atom, and leaves the two `ge` thresholds it names
+     * deletable. It is the eq-atom window's residency (dev_docs/brancher-design.md, "The
+     * eq-atom window"): only the frontier owner may ask for it, because a windowed atom
+     * must not be named by any surviving Top line. Nothing in the solver asks for it yet
+     * -- the window itself is stage B'' -- so it exists here to give the stage-B'
+     * primitives (hoist_eq_to_top, the eq forget sweep) a producer to be checked
+     * against.
+     */
+    enum class EqAtomResidency
+    {
+        Permanent, ///< def at Top, never deleted; the ges it names are hoisted to Top.
+        Windowed   ///< def at Current, deleted (and the atom retired) on backtrack; its ges stay deletable.
+    };
+
+    /**
      * Why a real variable's proof-time `ge` order literal is resident (for
-     * GuessHoist, transiently resident at a positive backtrack level), used only by
-     * the `GCS_ORDER_ENCODING_STATS` pin-apportionment diagnostic under
+     * GuessHoist, transiently resident at a positive backtrack level), under
      * OrderEncodingDeletion::Literals. Threaded from the residency-deciding call sites
-     * (creation in need_gevar, and the hoist primitives) so the end-of-proof dump can
-     * attribute each Top-resident literal to the cause that pinned it -- first-cause-wins
-     * -- and split the pins into the classes the bridge-lifetime redesign (dev_docs
-     * step 3) would free (view_pin, aux_pin) versus those it would not (eq/invar/nogood/
-     * soli hoists) versus structural ones (boundary, model_time). Attribution is exact
-     * (set at the deciding site), never inferred from level numbers.
+     * (creation in need_gevar, and the hoist primitives).
+     *
+     * Two consumers, with different rules:
+     *
+     *  - The **always-on Top-pin bookkeeping** (`ge_top_pins`), which counts how many
+     *    permanent references of each cause pin a *hoisted* ge at Top. This is
+     *    `evict_order_literal`'s precondition -- "the cause the caller names is the only
+     *    one" -- so it cannot be diagnostic-gated, and it counts every reference rather
+     *    than only the first.
+     *  - The `GCS_ORDER_ENCODING_STATS` **pin-apportionment diagnostic**, which
+     *    attributes each Top-resident literal to the cause that pinned it *first*, and
+     *    also covers the born-Top structural causes (boundary, model_time, aux/view pin,
+     *    gate) that never hoist and so never take a pin. It splits the pins into the
+     *    classes the bridge-lifetime redesign (dev_docs step 3) would free (view_pin,
+     *    aux_pin) versus those it would not (eq/invar/nogood/soli hoists) versus
+     *    structural ones.
+     *
+     * Attribution is exact (set at the deciding site) in both, never inferred from level
+     * numbers.
      */
     enum class OrderEncodingResidencyCause
     {
@@ -189,6 +224,55 @@ namespace gcs::innards
         // level and indexed under it, so a forget of that level deletes and stitches it.
         auto record_live_order_literal(const SimpleIntegerVariableID & id, Integer v, bool top) -> void;
 
+        // Record a real variable's eq atom v as a live *deletable* (windowed) definition,
+        // tagged with the active proof level and indexed under it, so a forget of that
+        // level deletes its def lines and retires the atom. A permanent (Top) eq
+        // definition is deliberately NOT recorded: absence from live_eq_literals means
+        // "resident forever", which is what every eq atom outside a window is, so the
+        // index costs nothing until something windows a variable.
+        auto record_live_eq_literal(const SimpleIntegerVariableID & id, Integer v) -> void;
+
+        // Retirement pass for windowed eq definitions, driven from
+        // forget_order_links_at_level alongside the ge sweep: for every eq atom whose def
+        // was recorded at `level`, drop it from the live set and retire its atom out of
+        // the lookup table (mirroring the ge sweep -- see forget_order_literals_at_level
+        // for why retirement, rather than liveness tracking, is what enforces the naming
+        // rule). Emits nothing: forget_proof_level has already del'd the lines. Eq atoms
+        // carry no chain, so unlike the ge sweep there is nothing to stitch.
+        auto forget_eq_literals_at_level(int level) -> void;
+
+        // Record a permanent (Top) reference to real variable `id`'s ge threshold `v`,
+        // from the *reference site* -- the caller that is about to make (or has just
+        // made) a Top line name the literal. `evict_order_literal` refuses to evict a
+        // Top-resident literal unless the cause the caller names is the only one counted
+        // here, so this must run on every reference, always-on under Literals.
+        //
+        // Two rules, both of which cost a debugging cycle to find:
+        //
+        //  - It runs at the reference site, NOT inside the hoist. Both
+        //    hoist_order_literal_to_level (when the def is already at the target level)
+        //    and hoist_order_literal_to_top_if_live (at level 0) early-return, so a
+        //    second permanent atom naming an already-Top ge does no hoisting at all --
+        //    and eq(v) and eq(v+1) both name ge(v+1). First-cause-wins is right for the
+        //    diagnostic and fatal for an eviction precondition.
+        //  - Only a ge whose Top residency a hoist *caused* gets an entry. A hoist never
+        //    fires on a level-0 ge, so "level 0 with no entry" means structurally
+        //    resident (model-time / boundary / aux / view / gate) -- never evictable, and
+        //    needing no record. That keeps this map proportional to hoists rather than to
+        //    the resident majority.
+        auto note_order_literal_top_pin(const SimpleIntegerVariableID & id, Integer v, OrderEncodingResidencyCause cause) -> void;
+
+        // Record that a chain-link (or stitch) clause over real variable `id`'s threshold
+        // pair (lo, hi) was just emitted as `line`, landing at proof level `at_level`, so
+        // eviction can delete every clause that names an evicted threshold. Top clauses are
+        // recorded too: eviction, not forgetting, is what removes them. Always-on under
+        // Literals, on the hot path of every chain emission, and emits nothing.
+        auto record_live_chain_line(const SimpleIntegerVariableID & id, Integer lo, Integer hi, int at_level, const ProofLine & line) -> void;
+
+        // Drop the record of every chain clause recorded at `level`, called from the forget
+        // sweep once forget_proof_level has del'd that level's lines.
+        auto forget_chain_clauses_at_level(int level) -> void;
+
         // Emit, at ProofLevel::Current, the two chain links joining a real variable's
         // ge threshold v to its immediate *live* neighbours (below and above). Call
         // with v not yet in the live set. Used both for a fresh proof-time literal and
@@ -249,7 +333,7 @@ namespace gcs::innards
         // id is a real SimpleIntegerVariableID; harmlessly skips a threshold that is a
         // boundary/model-time literal (already Top) or not live.
         auto hoist_ges_named_by_top_atom(SimpleOrProofOnlyIntegerVariableID id, Integer lower_ge, Integer upper_ge,
-            std::optional<OrderEncodingResidencyCause> stats_cause = std::nullopt) -> void;
+            std::optional<OrderEncodingResidencyCause> cause = std::nullopt) -> void;
 
         // --- GCS_ORDER_ENCODING_STATS pin-apportionment diagnostic (Literals mode only) ---
         // Every one of these is a pure-bookkeeping no-op unless _imp->collect_order_encoding_stats
@@ -368,7 +452,7 @@ namespace gcs::innards
          * nogoods and parallel-search shared nogoods want.
          */
         auto hoist_order_literal_to_top(
-            const SimpleIntegerVariableID & id, Integer v, std::optional<OrderEncodingResidencyCause> stats_cause = std::nullopt) -> void;
+            const SimpleIntegerVariableID & id, Integer v, std::optional<OrderEncodingResidencyCause> cause = std::nullopt) -> void;
 
         /**
          * Hoist every literal in \p lits that is a live, deletable real-variable
@@ -386,7 +470,80 @@ namespace gcs::innards
          * replace the old delete-then-reintroduce path for the pinned case.
          */
         auto hoist_live_order_literals_toward_level(
-            const std::vector<Literal> & lits, int target_level, std::optional<OrderEncodingResidencyCause> stats_cause = std::nullopt) -> void;
+            const std::vector<Literal> & lits, int target_level, std::optional<OrderEncodingResidencyCause> cause = std::nullopt) -> void;
+
+        /**
+         * The mirror of hoist: take real variable \p id's live ge threshold \p v out of
+         * the proof. Hoist moves a definition *to* a level and stitches it *in*; eviction
+         * deletes it and stitches the chain *over* it.
+         *
+         * Emits `del` for the threshold's two reification lines and for every chain
+         * clause naming it, then stitches its surviving immediate neighbours with a skip
+         * link `ge(hi) -> ge(lo)` (the run-stitch of the forget sweep, run for one
+         * literal on demand, landing at the deeper neighbour's level exactly as there).
+         * Drops \p v from the live/level bookkeeping and **retires its atom**, so
+         * `find_condition` stops answering and the only route back to the literal is
+         * `need_gevar`, which re-introduces the definition as a deletable interior one and
+         * takes the retired `XLiteral` back -- the same structural enforcement of the
+         * naming rule the backtrack sweep relies on.
+         *
+         * \p expected_sole_top_cause is the residency precondition, checked against the
+         * always-on Top-pin bookkeeping rather than asserted blindly, because VeriPB
+         * polices a wrongly-evicted literal only at a later point of use:
+         *
+         *  - For a Top-resident (level 0) \p v the caller must name the cause it believes
+         *    pins it, and eviction happens only if that cause is the *only* pin and it is
+         *    held exactly once. A ge that two permanent atoms name, or one that is
+         *    structurally resident (boundary / model-time / aux / view / gate, which take
+         *    no pin), is refused.
+         *  - For a deletable (level > 0) \p v -- the eq-atom window's mid-level tidy --
+         *    pass `std::nullopt`: no Top line can name it, and eviction just deletes it
+         *    early instead of waiting for the backtrack that would.
+         *
+         * Returns whether \p v was evicted. A refusal emits nothing and changes nothing:
+         * the literal stays resident, which is always correct and merely wins less.
+         * Requires the mode to be Literals, the logger attached, and \p v to be currently
+         * live for \p id (all three throw, being caller errors rather than policy).
+         */
+        auto evict_order_literal(const SimpleIntegerVariableID & id, Integer v, std::optional<OrderEncodingResidencyCause> expected_sole_top_cause)
+            -> bool;
+
+        /**
+         * How many order-encoding chain clauses currently present in the proof name real
+         * variable \p id's ge threshold \p v. Always 0 unless the mode is Literals.
+         *
+         * This exists because it is `evict_order_literal`'s postcondition -- it must leave
+         * none -- and because **VeriPB cannot check that postcondition**. A chain clause
+         * left naming an evicted threshold is still a valid derived constraint: it was
+         * derived from definitions that the atom's stable identity lets a later
+         * `need_gevar` restore, and re-introducing that definition verifies with the stale
+         * clause present (measured against veripb 3.0.2, not assumed). So a missed
+         * deletion is silent, and costs exactly the resident-database shrinkage the mode
+         * exists for. This is a third instance of the pattern the design records for
+         * eviction ordering and ge-under-eq residency: VeriPB polices the order encoding
+         * only at a point of use, so the discipline has to be checked solver-side.
+         */
+        [[nodiscard]] auto chain_clauses_naming(const SimpleIntegerVariableID & id, Integer v) const -> long long;
+
+        /**
+         * Make a windowed (ProofLevel::Current) eq atom definition permanent: relocate its
+         * two reification lines to Top, exactly as hoist_order_literal_to_level relocates
+         * a ge definition (pure bookkeeping, emitting nothing -- re-emitting the `red` is
+         * what collides with a pin), and hoist the two ge thresholds it names to Top with
+         * it, so the now-permanent eq definition cannot be left naming a deleted literal.
+         *
+         * This is the eq-atom window's hoist-out rule (dev_docs/brancher-design.md): an
+         * `eq(v)` that acquires a permanent reference -- a solx blocking clause, a learned
+         * nogood's decision literal, a reified constraint naming `id == v` -- must be
+         * retained instead of evicted when the window steps past it. Eq atoms carry no
+         * chain, so there is nothing to re-stitch; the ges it names are re-stitched by
+         * their own hoists.
+         *
+         * A no-op for an atom that is not a live windowed definition (every eq atom
+         * outside a window is already permanent). Requires the mode to be Literals and the
+         * logger attached.
+         */
+        auto hoist_eq_to_top(const SimpleIntegerVariableID & id, Integer v) -> void;
 
         /**
          * If the `GCS_ORDER_ENCODING_STATS` diagnostic is active (OrderEncodingDeletion::Literals
@@ -473,8 +630,15 @@ namespace gcs::innards
 
         /**
          * Say that we will need the diect encoding to exist for a given variable.
+         *
+         * \p residency asks for the eq atom's definition to be permanent (the default,
+         * and what every caller in the solver wants) or windowed; see EqAtomResidency. It
+         * is honoured only where a deletable definition is meaningful -- under
+         * OrderEncodingDeletion::Literals, at proof-writing time, with assertions off, for
+         * a real variable -- and ignored (leaving the definition permanent) otherwise. It
+         * has no effect on an atom that already exists.
          */
-        auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
+        auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer, EqAtomResidency residency = EqAtomResidency::Permanent) -> void;
 
         /**
          * Say that we will need the range ("in") literal [lo, hi] for a variable,

@@ -792,6 +792,22 @@ auto ProofLogger::move_proof_lines_to_level(const vector<ProofLine> & lines, int
         }
 }
 
+auto ProofLogger::delete_proof_lines_at_level(const vector<ProofLine> & lines, int level) -> void
+{
+    auto & bucket = _imp->proof_lines_by_level.at(level);
+    // Same relative (negative) encoding forget_proof_level uses, and for the same reason:
+    // a constraint-count difference between our OPB and cake_pb_cp's re-derived one would
+    // misaddress an absolute id. `current` is taken once -- a `del` is not a numbered
+    // line, so emitting these does not move it.
+    auto current = _imp->proof_line.number;
+    for (const auto & l : lines)
+        if (const auto * n = std::get_if<ProofLineNumber>(&l)) {
+            bucket.erase(n->number);
+            write_indent();
+            _imp->proof << "del id " << (n->number - current - 1) << ";\n";
+        }
+}
+
 auto ProofLogger::hoist_literal_to_level(const SimpleIntegerVariableID & id, Integer v, int target_level) -> void
 {
     names_and_ids_tracker().hoist_order_literal_to_level(id, v, target_level);

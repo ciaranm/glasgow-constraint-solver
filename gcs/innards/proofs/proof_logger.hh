@@ -274,6 +274,27 @@ namespace gcs::innards
         auto move_proof_lines_to_level(const std::vector<ProofLine> & lines, int from_level, int target_level) -> void;
 
         /**
+         * \brief Emit a deletion for each of the given proof lines, which must all
+         * currently be tagged at \p level, and drop them from that level's bucket.
+         *
+         * The single-line counterpart of \c forget_proof_level, for the eviction
+         * primitive (see NamesAndIDsTracker::evict_order_literal): a definition and the
+         * clauses naming it go now, rather than when their level is eventually forgotten.
+         *
+         * Dropping them from the bucket is not just tidiness. \c forget_proof_level emits
+         * a bare `del id` for a bucket interval of length one, and VeriPB errors on a
+         * `del id` naming an already-deleted line (only `del range` skips them), so a
+         * line deleted here must not be left for the eventual forget to delete again.
+         *
+         * Lines that are labels rather than ids are skipped, as everywhere else. Passing
+         * a line that is *not* at \p level would leave it in its real bucket and get it
+         * deleted twice, so the caller owns that precondition -- for order literals it is
+         * the level the tracker records for the threshold, which the hoist keeps in step
+         * with the bucket the lines actually sit in.
+         */
+        auto delete_proof_lines_at_level(const std::vector<ProofLine> & lines, int level) -> void;
+
+        /**
          * Hoist a search-introduced order literal `id >= v` to \p target_level:
          * a thin wrapper over NamesAndIDsTracker::hoist_order_literal_to_level.
          */
