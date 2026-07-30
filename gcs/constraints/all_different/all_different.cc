@@ -98,7 +98,7 @@ auto AllDifferent::install(Propagators & propagators, State & initial_state, Pro
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -143,7 +143,7 @@ auto AllDifferent::prepare(Propagators &, State & initial_state, ProofModel * co
     return true;
 }
 
-auto AllDifferent::define_proof_model(ProofModel & model) -> void
+auto AllDifferent::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Identical for both consistency levels: the choice is a propagation-strength
     // knob and never changes the encoding.

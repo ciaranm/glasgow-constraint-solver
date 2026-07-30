@@ -75,7 +75,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, Stat
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -88,7 +88,7 @@ auto ReifiedCompareLessThanOrMaybeEqual::prepare(Propagators &, State & initial_
     return true;
 }
 
-auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model) -> void
+auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model, const State &) -> void
 {
     // `role` is the cake_pb_cp @c label role, or "" for the lines cake leaves
     // unlabelled (an unconditional comparison is a single bare inequality).

@@ -75,7 +75,7 @@ auto In::install(Propagators & propagators, State & initial_state, ProofModel * 
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -103,7 +103,7 @@ auto In::prepare(Propagators &, State & initial_state, ProofModel * const) -> bo
     return true;
 }
 
-auto In::define_proof_model(ProofModel & model) -> void
+auto In::define_proof_model(ProofModel & model, const State &) -> void
 {
     WPBSum sum;
 

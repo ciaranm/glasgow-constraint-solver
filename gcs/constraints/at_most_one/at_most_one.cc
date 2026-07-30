@@ -61,12 +61,12 @@ auto AtMostOne::install(Propagators & propagators, State & initial_state, ProofM
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
 
-auto AtMostOne::define_proof_model(ProofModel & model) -> void
+auto AtMostOne::define_proof_model(ProofModel & model, const State &) -> void
 {
     // For each var_i: define flag_i ⇔ (var_i = _val) via a Count-style
     // gt/lt/eq triple, then post sum_i flag_i ≤ 1.

@@ -114,7 +114,7 @@ auto Table::install(Propagators & propagators, State & initial_state, ProofModel
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -143,7 +143,7 @@ auto Table::prepare(Propagators &, State & initial_state, ProofModel * const) ->
     return true;
 }
 
-auto Table::define_proof_model(ProofModel & model) -> void
+auto Table::define_proof_model(ProofModel & model, const State &) -> void
 {
     if (_has_no_tuples) {
         // Morally equivalent to a selector with empty domain (`0 ≥ 1`).

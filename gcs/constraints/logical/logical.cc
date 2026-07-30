@@ -237,7 +237,7 @@ auto And::install(Propagators & propagators, State & initial_state, ProofModel *
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -248,7 +248,7 @@ auto And::prepare(Propagators &, State & initial_state, ProofModel * const) -> b
     return true;
 }
 
-auto And::define_proof_model(ProofModel & model) -> void
+auto And::define_proof_model(ProofModel & model, const State &) -> void
 {
     define_cake_logical(model, _constraint_id, _lits, _full_reif, true);
 }
@@ -291,7 +291,7 @@ auto Or::install(Propagators & propagators, State & initial_state, ProofModel * 
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -302,7 +302,7 @@ auto Or::prepare(Propagators &, State & initial_state, ProofModel * const) -> bo
     return true;
 }
 
-auto Or::define_proof_model(ProofModel & model) -> void
+auto Or::define_proof_model(ProofModel & model, const State &) -> void
 {
     define_cake_logical(model, _constraint_id, _lits, _full_reif, false);
 }

@@ -26,7 +26,7 @@ namespace gcs
         std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _abs_nonneg_lines;
         std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _abs_neg_lines;
 
-        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:

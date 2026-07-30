@@ -78,7 +78,7 @@ auto GlobalCardinality::clone() const -> unique_ptr<Constraint>
 auto GlobalCardinality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 
@@ -89,7 +89,7 @@ auto GlobalCardinality::install(Propagators & propagators, State & initial_state
             In{var, _values}.install(propagators, initial_state, optional_model);
 }
 
-auto GlobalCardinality::define_proof_model(ProofModel & model) -> void
+auto GlobalCardinality::define_proof_model(ProofModel & model, const State &) -> void
 {
     for (const auto & [j, value] : enumerate(_values)) {
         WPBSum sum;

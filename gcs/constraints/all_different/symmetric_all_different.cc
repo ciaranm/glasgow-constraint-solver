@@ -62,7 +62,7 @@ auto SymmetricAllDifferent::install(Propagators & propagators, State & initial_s
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -97,7 +97,7 @@ auto SymmetricAllDifferent::prepare(Propagators & propagators, State & initial_s
     return true;
 }
 
-auto SymmetricAllDifferent::define_proof_model(ProofModel & model) -> void
+auto SymmetricAllDifferent::define_proof_model(ProofModel & model, const State &) -> void
 {
     auto n = _vars.size();
 

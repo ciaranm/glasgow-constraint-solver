@@ -459,7 +459,7 @@ auto MDD::install(Propagators & propagators, State & initial_state, ProofModel *
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -485,7 +485,7 @@ auto MDD::prepare(Propagators &, State & initial_state, ProofModel * const) -> b
     return true;
 }
 
-auto MDD::define_proof_model(ProofModel & model) -> void
+auto MDD::define_proof_model(ProofModel & model, const State &) -> void
 {
     // state_at_pos_flags[i][q] means "the MDD path passes through node q in layer i".
     auto & flags = _bridge->state_at_pos_flags;

@@ -139,7 +139,7 @@ auto Plus::install(Propagators & propagators, State & initial_state, ProofModel 
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 
@@ -190,7 +190,7 @@ auto Plus::install(Propagators & propagators, State & initial_state, ProofModel 
     }
 }
 
-auto Plus::define_proof_model(ProofModel & model) -> void
+auto Plus::define_proof_model(ProofModel & model, const State &) -> void
 {
     // cake_pb_cp labels the two halves of the sum: @c[id][le] on the Z >= a + b
     // half (the LE half of the equality) and @c[id][ge] on the Z <= a + b half.

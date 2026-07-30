@@ -444,7 +444,7 @@ auto RegularLegacy::install(Propagators & propagators, State & initial_state, Pr
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -487,7 +487,7 @@ auto RegularLegacy::prepare(Propagators &, State & initial_state, ProofModel * c
     return true;
 }
 
-auto RegularLegacy::define_proof_model(ProofModel & model) -> void
+auto RegularLegacy::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Make 2D array of flags: state_at_pos_flags[i][q] means the DFA is in state q when it receives the
     // input value from vars[i], with an extra row of flags for the state after the last transition.

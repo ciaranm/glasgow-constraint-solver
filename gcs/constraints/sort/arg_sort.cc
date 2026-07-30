@@ -92,7 +92,7 @@ auto ArgSort::install(Propagators & propagators, State & initial_state, ProofMod
     install_sortedness_propagator(propagators, constraint_id(), _x, y_ids, _witness);
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -148,7 +148,7 @@ auto ArgSort::prepare(Propagators & propagators, State & initial_state, ProofMod
     return true;
 }
 
-auto ArgSort::define_proof_model(ProofModel & model) -> void
+auto ArgSort::define_proof_model(ProofModel & model, const State &) -> void
 {
     // These constraints conform to cake_pb_cp's cencode_argsort
     // (cp_to_ilp_sortingScript.sml); the inner sortedness blocks (before flags,

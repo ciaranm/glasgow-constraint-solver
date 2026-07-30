@@ -149,7 +149,7 @@ auto Minus::install(Propagators & propagators, State & initial_state, ProofModel
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 
@@ -200,7 +200,7 @@ auto Minus::install(Propagators & propagators, State & initial_state, ProofModel
     }
 }
 
-auto Minus::define_proof_model(ProofModel & model) -> void
+auto Minus::define_proof_model(ProofModel & model, const State &) -> void
 {
     // cake_pb_cp labels the two halves of the sum: @c[id][le] on the a - b <= c
     // half (-a + b + c >= 0) and @c[id][ge] on the a - b >= c half (a - b - c >= 0).

@@ -55,12 +55,12 @@ auto Count::install(Propagators & propagators, State & initial_state, ProofModel
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
 
-auto Count::define_proof_model(ProofModel & model) -> void
+auto Count::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Conform to cake_pb_cp's count encoding (#354): per position i, the
     // flags x[id][i][ge] ⇔ var ≥ val, x[id][i][le] ⇔ var ≤ val, and

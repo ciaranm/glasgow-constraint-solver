@@ -95,7 +95,7 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & initial
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators, initial_state);
 }
@@ -106,7 +106,7 @@ auto ReifiedLinearInequality::prepare(Propagators &, State & initial_state, Proo
     return true;
 }
 
-auto ReifiedLinearInequality::define_proof_model(ProofModel & model) -> void
+auto ReifiedLinearInequality::define_proof_model(ProofModel & model, const State &) -> void
 {
     WPBSum terms;
     for (auto & [c, v] : _coeff_vars.terms)

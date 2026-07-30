@@ -90,7 +90,7 @@ auto Disjunctive2D::install(Propagators & propagators, State & initial_state, Pr
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -165,7 +165,7 @@ auto Disjunctive2D::prepare(Propagators &, State & initial_state, ProofModel * c
     return true;
 }
 
-auto Disjunctive2D::define_proof_model(ProofModel & model) -> void
+auto Disjunctive2D::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Declarative pairwise OPB encoding (the diffn definition itself):
     //   for each axis d in {x, y} and ordered pair (i, j):

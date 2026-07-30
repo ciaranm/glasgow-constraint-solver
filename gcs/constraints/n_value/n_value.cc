@@ -54,7 +54,7 @@ auto NValue::install(Propagators & propagators, State & initial_state, ProofMode
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -68,7 +68,7 @@ auto NValue::prepare(Propagators &, State & initial_state, ProofModel * const) -
     return true;
 }
 
-auto NValue::define_proof_model(ProofModel & model) -> void
+auto NValue::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Conform to cake_pb_cp's nvalue encoding (#354): for each value v in the
     // union of the variables' domains, a fully-reified per-value occurrence flag

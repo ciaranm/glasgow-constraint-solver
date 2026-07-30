@@ -78,7 +78,7 @@ namespace gcs
         // growable catch-up is converted (issue #335, stage C-2).
         bool _refined;
 
-        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:

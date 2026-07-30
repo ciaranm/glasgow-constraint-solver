@@ -52,7 +52,7 @@ namespace gcs
         innards::EvaluatedReificationCondition _evaluated_cond = innards::evaluated_reif::Deactivated{};
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
-        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         // Takes State (unlike the base's Propagators-only hook) because the incremental
         // equality path registers backtrackable constraint state at install time.
         auto install_propagators(innards::Propagators &, innards::State &) -> void;
