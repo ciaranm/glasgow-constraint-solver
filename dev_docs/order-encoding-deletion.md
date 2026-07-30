@@ -387,7 +387,7 @@ re-measured from scratch on the current machine (see Results above). Verdict:
 The answer: **step 3 would free 0 % of the resident encoding on every real instance
 measured**; the win is absent on real models because propagation-strong search never
 builds long chains (seat-moving: median chain 12, max 98, despite maxdom 901), and
-the deletion machinery churns (22 857 deletes / 22 829 reintroductions, net 28) for
+the deletion machinery churns (37 644 deletes / 37 616 reintroductions, net 28) for
 nothing there.
 
 **2. Brancher-API refactor — IN PROGRESS: stages A, B and B' landed; B'' is next.**
