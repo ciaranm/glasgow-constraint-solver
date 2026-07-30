@@ -98,11 +98,19 @@ earlier campaign found:
 The earlier campaign reported a smaller saving that **inverted** at d2000, on the
 model that peak RSS = (the proof `veripb` must hold) + (the resident order database),
 so a several-fold-larger ON proof would swamp the database saving. That model does
-not survive measurement here: at d2000 the ON proof is 44.9 MB but ON peak RSS is
-31.9 MB, and at the depth point the ON proof is 373 MB against 50.7 MB of RSS.
-`veripb` **streams** the proof rather than holding it, so RSS tracks the resident
-constraint database alone — which is exactly the quantity this mode shrinks, and why
-the saving grows with domain instead of inverting.
+not hold here: at d2000 the ON proof is 44.9 MB but ON peak RSS is 31.9 MB, and at
+the depth point the ON proof is 373 MB against 50.7 MB of RSS. `veripb` **streams**
+the proof rather than holding it, so RSS tracks the resident constraint database
+alone — which is exactly the quantity this mode shrinks, and why the saving grows
+with domain instead of inverting.
+
+The likely cause of the change is upstream, not in this feature: VeriPB dropped
+mmapped proof input in favour of streaming (`59d948fb "Remove mmap"`, merged
+2026-05-28). Under mmap the proof file counts toward RSS, which is exactly the term
+the old model assumed; streaming removes it. Both campaigns report version 3.0.2 —
+the string did not change across that commit — so **the version number is not enough
+to tell the two behaviours apart**. If an RSS figure ever has to be compared against
+an older one, check the `veripb` build date against 2026-05-28 first.
 
 ### Real instances — the win did NOT generalise
 
@@ -172,7 +180,8 @@ The campaign's provisional read — that the view/product resident-by-design cla
 block the real-instance win, motivating the bridge-lifetime redesign (step 3) — is
 **overturned by measurement**. The `GCS_ORDER_ENCODING_STATS` diagnostic (below)
 attributes every resident `ge` to the site that pinned it, first-cause-wins;
-attribution is exact (recorded at the deciding call site, never inferred).
+attribution is exact (recorded at the deciding call site, never inferred). Campaign
+dumps in `real-instance-bench/apportionment/` (see Provenance).
 
 On **seat-moving** (the lone deep-yet-verifiable real case), of 4 697 proof-time ge
 atoms, 4 442 end Top-resident at gate 0:
@@ -218,8 +227,9 @@ mzn-challenge `2023/unit-commitment` is **REJECTED by veripb at `pbp:882`** ("no
 implied by reverse unit propagation") — but in **both** OFF and ON modes
 identically. It is a **pre-existing frontend/model proof-logging bug, out of this
 feature's scope**, not a deletion regression, and was excluded from the campaign.
-Flatten `mzn-challenge/2023/unit-commitment` to reproduce it, and flag it to whoever
-owns the MiniZinc frontend proofs.
+Flatten `mzn-challenge/2023/unit-commitment` to reproduce it (a repro `.fzn` is also
+kept under `real-instance-bench/fzn/`), and flag it to whoever owns the MiniZinc
+frontend proofs.
 
 ## Implementation status
 
@@ -311,7 +321,7 @@ owns the MiniZinc frontend proofs.
   ~200 fixed seeds, flag-ON at `GCS_DELETE_ORDER_ENCODING_MIN_CHAIN=0` (the gate-off,
   aggressive-testing mode — a nonzero gate hides short-chain shapes), each run isolated in
   its own working directory, **zero** rejections required. Report the before/after failure
-  counts.
+  counts. (Sweep harness + results under `divide-modulus-seed-bug/`.)
 - **Kept resident (not deletable), per the "delete only when unreferenced" rule,
   because their `ge`s are named by *permanent* Top constraints:**
   - divide/modulus in-proof-bit **aux-magnitude** variables (`register_state_variable_bits_in_proof`)
@@ -366,11 +376,11 @@ re-measured from scratch on the current machine (see Results above). Verdict:
 - **Conclusion: keep the feature flag-gated; default-on is NOT justified by these
   numbers** (real win unproven, measurable overhead on eq/value-heavy models) — but
   the mechanism is sound and correctness is solid.
-- The verification-only drivers `order_jump_check.cc` / `order_hoist_check.cc` were
-  never committed and did not survive the move between development machines. Stage E
-  owns re-deriving them as proper `gcs/` tests, which is where they should have been
-  in the first place: they regression-check the two verified foundations this whole
-  design rests on.
+- The verification-only drivers `order_jump_check.cc` / `order_hoist_check.cc` are
+  still uncommitted, in the artifacts directory (see Provenance). Stage E owns
+  promoting them to proper `gcs/` tests — they regression-check the two verified
+  foundations this whole design rests on, and until they are in-tree they survive only
+  by luck.
 
 **1b. Pin-apportionment instrumentation — DONE.** Implemented as the
 `GCS_ORDER_ENCODING_STATS` diagnostic and measured (see "Pin apportionment" above).
@@ -430,7 +440,8 @@ suite has grown since — the standing gate is "all of it, in each of the three 
 not a fixed number). The stats dump
 gains a `gate-held` cause and a per-variable chain-length distribution.
 
-**Default 16, chosen from measurement:**
+**Default 16, chosen from measurement** (the original full tables are in
+`chain-gate/gate-measurement.md`; the figures below are re-measured):
 
 Synthetic columns are verify speedup vs OFF; real columns are proof growth vs OFF and
 the extra `del` lines the mode emits (0 = byte-identical to `None`). Dashes are
@@ -457,7 +468,8 @@ Two measured caveats, stated plainly:
   **non-monotone in L**: at d1000 the gate-16 proof (15.54 MB) and the gate-32 proof
   (15.38 MB) are both *larger* than the un-gated 15.27 MB, before falling to 13.75 MB
   at 64 and 12.73 MB at 128. **Verify time — the target — erodes cleanly** across the
-  whole range, so the gate is chosen from the verify curve, not from size.
+  whole range, so the gate is chosen from the verify curve, not from size. See
+  `chain-gate/stitch-explosion.md`.
 - **A single long chain defeats the flat gate.** seat-moving's residual churn
   (20 784 delete/reintroduce at gate 16) is concentrated on its objective (chain
   98) and cost (76) variables, which any win-preserving gate leaves deletable. That
@@ -758,13 +770,18 @@ unchanged mode-off vs mode-on (a proof-only change must not perturb search).
 
 ## Provenance and artifacts
 
-- Journey and findings: see the `gcs-order-encoding-deletion` project memory.
-- Branch `delete-order-links-on-backtrack`: experimental `OrderEncodingDeletion`
-  flag (`GCS_DELETE_ORDER_ENCODING=literals`) demonstrating the delete-then-reintroduce
-  failure — to be reworked per this design.
-- `examples/order_deletion_bench/` — scalable eq-free linear/cumulative driver
-  (split branching, `--unsat`) for the benchmark.
-- `order_jump_check` — the VeriPB verification of the guess-reasoned bound jump and
-  its two controls.
+- **The artifacts directory** — currently `~/claude/tmp/order-encoding-deletion-artifacts/`.
+  Not version controlled and it does not travel with a clone, so check it is present
+  before relying on it. It holds `order_jump_check.cc` / `order_hoist_check.cc` (the two
+  verified foundations, still uncommitted — stage E promotes them), the phase-2 campaign
+  (`real-instance-bench/`, with the gate study in `chain-gate/`), the seed-bug sweep
+  (`divide-modulus-seed-bug/`), the per-stage gate logs (`stage-b/`, `stage-bprime/`,
+  `rebase-to-main-20260729/`), and the two self-contained VeriPB drivers the unbuilt
+  stages rest on: `eq-window/run.sh` (the eq-atom window, **8/8**) and
+  `objective-delc/run.sh` (the `delc` mechanics, **11/11**). Both need only `veripb`
+  3.0.2 on `PATH` — no GCS build — and both were re-run green on the current machine.
+  [brancher-design.md](brancher-design.md), "Provenance", says what each contains.
+- `benchmarks/order_deletion_bench/` — scalable eq-free linear/pairwise/cumulative
+  driver (split branching, `--unsat`) for the benchmark.
 - Background: McIlree PhD thesis, Chapter 3 (integer-literal propagation properties);
   [variable-encodings.md](variable-encodings.md); [reasons-improvement.md](reasons-improvement.md).

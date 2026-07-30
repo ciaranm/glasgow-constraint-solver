@@ -1144,13 +1144,13 @@ B'':
 
 ## Provenance
 
-The design drivers, raw findings, and validated `.pbp` scenarios were produced in an
-`order-encoding-deletion-artifacts/` scratch directory, outside this repository and
-**not carried between development machines** — so treat the list below as a record of
-what was checked and how, not as a path you can open. Anything load-bearing that a
-later stage needs must be re-derived (the drivers are small and the findings say what
-each one asserts) or promoted into `gcs/` as a real test, which is what stage E
-schedules for `order_jump_check` / `order_hoist_check`.
+The design drivers, raw findings, and validated `.pbp` scenarios live in an
+`order-encoding-deletion-artifacts/` scratch directory outside this repository
+(currently `~/claude/tmp/order-encoding-deletion-artifacts/`). It is **not** version
+controlled and does not travel with a clone, so confirm it is present before planning
+around it. Both `.pbp` drivers are self-contained — they need only `veripb` 3.0.2 on
+`PATH`, no GCS build — and both were re-run on the current machine: `eq-window/run.sh`
+**8/8**, `objective-delc/run.sh` **11/11**.
 
 - **`brancher-design/`** — `design.md`, the working design record this note
   consolidates (concrete C++ against the real code; the five owner decisions folded in).
@@ -1163,13 +1163,16 @@ schedules for `order_jump_check` / `order_hoist_check`.
   checks, both `delc` forms, the `-c`/downgrade correction, and the "veripb polices only
   at point of use" result), the `q*.pbp` scenarios, and `run.sh`.
 
-The same applies to the two verified foundations `order_jump_check` (guess-reasoned
-bound jump + its two must-fail controls) and `order_hoist_check`, which were never
-committed, and to the phase-2 real-instance campaign that motivated the objective
-exemption and the chain gate. The campaign's headline figures have since been
-re-measured from scratch — see
-[order-encoding-deletion.md](order-encoding-deletion.md), "Results" — so those stand on
-their own. Background: McIlree PhD thesis,
+The two verified foundations `order_jump_check.cc` (guess-reasoned bound jump + its
+two must-fail controls) and `order_hoist_check.cc` sit at the top of that directory,
+still uncommitted; stage E owns promoting them to proper `gcs/` tests, and until it
+does they are one `rm -rf` from being lost. The phase-2 real-instance campaign that
+motivated the objective exemption and the chain gate is under `real-instance-bench/`,
+with the gate study in `chain-gate/`. Its headline figures have since been re-measured
+from scratch on current hardware — see
+[order-encoding-deletion.md](order-encoding-deletion.md), "Results" — so the docs quote
+the new numbers and the campaign directory is now provenance rather than the live
+record. Background: McIlree PhD thesis,
 Chapter 3 (integer-literal propagation properties); [variable-encodings.md](variable-encodings.md);
 [reasons-improvement.md](reasons-improvement.md); the feature's standing dev-doc
 [order-encoding-deletion.md](order-encoding-deletion.md).

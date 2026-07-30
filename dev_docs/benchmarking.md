@@ -286,9 +286,15 @@ it grows with the run. The same solo verify of the same 17 MB proof
 measured 128.5 s in one sitting and 109.0-116.6 s in another an hour
 later — an ~18 % shift, against a ~7 % within-sitting spread. Short
 verifies were reproducible to ~3 % across the same two sittings, so the
-drift bites exactly where it costs most. Nothing in the guest can pin
+drift bites exactly where it costs most.
+
+The likeliest cause is **ambient temperature**: a long verify is a
+sustained single-core load, the host boosts it as thermal headroom
+allows, and on a hot day there is less. Nothing in the guest can pin
 turbo or the governor (`/sys/devices/system/cpu/cpufreq` does not
-exist), so this is not controllable from inside.
+exist), so this is not controllable from inside — it is a constraint to
+design measurements around, not a fault to fix. Long verifies taken
+weeks or seasons apart are not comparable at all.
 
 Rules of thumb:
 
