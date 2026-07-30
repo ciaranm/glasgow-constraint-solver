@@ -1,7 +1,8 @@
 # Step 2 — the Brancher-API refactor: concrete, decided design
 
-**Status: DESIGN, decided, not implemented.** Against worktree
-`gcs-links-worktree`, branch `delete-order-links-on-backtrack`, HEAD `c2f12525`.
+**Status: decided design, partly implemented — stages A, B and B' have landed
+(#606, #607); B''–E have not.** "Migration staging", below, is the authority on
+what each remaining stage owes, and tracking issue #612 indexes them.
 This note is the single committed record of the step-2 design: it turns the
 user-approved conceptual sketch in
 [order-encoding-deletion.md](order-encoding-deletion.md) ("Design overview"
@@ -871,10 +872,10 @@ resident. Eviction then refuses it: a lost win at worst, never wrong.
 
 ### Payload 3 — objective / frontier deletion exemption
 
-The 2b finding: seat-moving's residual ~20.8k delete/reintroduce churn at gate 16 is
+The 2b finding: seat-moving's residual 20 784 delete/reintroduce churn at gate 16 is
 concentrated on the **always-bound-tightened objective (chain 98) and cost (76)**
 variables, which any win-preserving flat gate leaves deletable, and which churn
-*verify-neutrally* (OFF 305.9 s ≈ L16 298.3 s) for **zero** shrinkage. The fix is a
+*verify-neutrally* (OFF 126.2 s ≈ L16 121.2 s) for **zero** shrinkage. The fix is a
 per-variable **deletion-exempt** policy hook, consulted in `need_gevar`'s residency
 decision:
 
@@ -1029,16 +1030,15 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   invisible to both VeriPB and the tracker, and was checked by reading the emitted
   proof). This is the shared foundation for both the window (B'') and payload 2 (D).
 
-  **Cost.** The stage emits not one different byte (checked by `cmp` on a 15 MB proof as
-  well as by the byte-identity gate), so `veripb` time cannot move. The solver's own
-  proof-writing time does: the chain-clause index takes an insert per chain clause. On the
-  deletion-heaviest synthetic (`order_deletion_bench`, pairwise, d1000, gate 0, pinned and
-  solo) that is **+4.7 %** — 211.6 ms → 221.6 ms — of which the pin map, eq indices and
-  retirement plumbing account for +1.0 % and the index for the rest. Keying that index by
-  variable and then by threshold pair instead cost +12.0 %, which is why it is bucketed
-  level-first and flat. In end-to-end terms at d1000 the solver is ~0.22 s against
-  `veripb`'s ~1.55 s, so this is well under 1 %. Numbers and the rejected further
-  optimisation are in `.../order-encoding-deletion-artifacts/stage-bprime/NOTES.md`.
+  **Cost.** The stage emits not one different byte — re-confirmed by `cmp` on both the
+  `.opb` and the 15 MB `.pbp` of the d1000 synthetic, stage-A/B build against stage-B' —
+  so `veripb` time cannot move. The solver's own proof-writing time does: the
+  chain-clause index takes an insert per chain clause. On the deletion-heaviest
+  synthetic (`order_deletion_bench`, pairwise, d1000, gate 0, pinned and solo) that is
+  **+4.1 %** — 68.8 ms → 71.7 ms, best of ten runs each. Keying that index by variable
+  and then by threshold pair instead cost +12.0 %, which is why it is bucketed
+  level-first and flat. In end-to-end terms at d1000 the solver is ~0.07 s against
+  `veripb`'s ~0.51 s, so the stage costs well under 1 % of the pipeline.
 
   **What B'' still owes on top of it:** the `WindowedEqScope` tag (replacing the
   `EqAtomResidency` argument), the per-iteration tidy that actually calls
@@ -1144,8 +1144,13 @@ B'':
 
 ## Provenance
 
-The design drivers, raw findings, and validated `.pbp` scenarios live under
-`/cluster/ciaran/claude/order-encoding-deletion-artifacts/`:
+The design drivers, raw findings, and validated `.pbp` scenarios were produced in an
+`order-encoding-deletion-artifacts/` scratch directory, outside this repository and
+**not carried between development machines** — so treat the list below as a record of
+what was checked and how, not as a path you can open. Anything load-bearing that a
+later stage needs must be re-derived (the drivers are small and the findings say what
+each one asserts) or promoted into `gcs/` as a real test, which is what stage E
+schedules for `order_jump_check` / `order_hoist_check`.
 
 - **`brancher-design/`** — `design.md`, the working design record this note
   consolidates (concrete C++ against the real code; the five owner decisions folded in).
@@ -1158,10 +1163,13 @@ The design drivers, raw findings, and validated `.pbp` scenarios live under
   checks, both `delc` forms, the `-c`/downgrade correction, and the "veripb polices only
   at point of use" result), the `q*.pbp` scenarios, and `run.sh`.
 
-Upstream, the two verified foundations `order_jump_check` (guess-reasoned bound jump +
-its two must-fail controls) and `order_hoist_check` are preserved uncommitted under the
-artifacts dir; the phase-2 real-instance campaign that motivated the objective exemption
-and the chain gate is under `real-instance-bench/`. Background: McIlree PhD thesis,
+The same applies to the two verified foundations `order_jump_check` (guess-reasoned
+bound jump + its two must-fail controls) and `order_hoist_check`, which were never
+committed, and to the phase-2 real-instance campaign that motivated the objective
+exemption and the chain gate. The campaign's headline figures have since been
+re-measured from scratch — see
+[order-encoding-deletion.md](order-encoding-deletion.md), "Results" — so those stand on
+their own. Background: McIlree PhD thesis,
 Chapter 3 (integer-literal propagation properties); [variable-encodings.md](variable-encodings.md);
 [reasons-improvement.md](reasons-improvement.md); the feature's standing dev-doc
 [order-encoding-deletion.md](order-encoding-deletion.md).
