@@ -77,16 +77,29 @@ auto GlobalCardinality::clone() const -> unique_ptr<Constraint>
 
 auto GlobalCardinality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
     if (optional_model)
         define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
+}
 
+auto GlobalCardinality::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
     // The closed restriction (every variable takes a cover value) is delegated
-    // to a certified In constraint per variable.
+    // to a certified In constraint per variable. Installing a child needs all
+    // three of propagators, state and model at once, so prepare() is the only
+    // phase that can do it; the children's OPB rows therefore now precede this
+    // constraint's own count rows rather than following them. The OPB is a
+    // conjunction, so that is a reordering and nothing more -- every line is
+    // still cited by the number it was actually emitted with.
     if (_closed)
         for (const auto & var : _vars)
             In{var, _values}.install(propagators, initial_state, optional_model);
+
+    return true;
 }
 
 auto GlobalCardinality::define_proof_model(ProofModel & model, const State &) -> void
