@@ -248,3 +248,16 @@ porting them to `examples/` is model-writing rather than propagator work, and
 would make the set self-contained. A port must reproduce the proof *shape* —
 `.opb` size, `.pbp` size and recursion count — against the `fzn-glasgow` run,
 not merely the answer, or it is not a substitute for the instance it replaces.
+
+Four such ports are tracked:
+
+- **#633** — a scheduling example (`Cumulative`, `Disjunctive`, makespan). The
+  most valuable of the four: it closes the gap above rather than replacing an
+  existing entry.
+- **#634** — `hitori`, which needs only `Count` and `AllDifferentExcept`.
+- **#635** — `seat-moving`, which needs only `AllDifferent` and
+  `AllDifferentExcept`, and which removes this set's dependence on a flattened
+  `.fzn` that is not under version control.
+- **#636** — `table-layout`, which would also give `Table` a representation at
+  a size where proof shape is measurable; `examples/tables` is a 10-recursion
+  toy.
