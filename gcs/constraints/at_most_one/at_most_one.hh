@@ -64,6 +64,8 @@ namespace gcs
         std::vector<IntegerVariableID> _vars;
         IntegerVariableID _val;
 
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+
     public:
         explicit AtMostOneSmartTable(std::vector<IntegerVariableID> vars, IntegerVariableID val);
 

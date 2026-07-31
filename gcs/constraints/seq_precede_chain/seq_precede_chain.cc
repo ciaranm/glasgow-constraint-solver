@@ -45,9 +45,22 @@ auto SeqPrecedeChain::clone() const -> unique_ptr<Constraint>
 
 auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
+
+    install_propagators(propagators);
+}
+
+auto SeqPrecedeChain::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
+{
+    // Either trivially satisfied, or delegated entirely to the ValuePrecede chain
+    // built below; see the note on Constraint::prepare about returning false.
     auto n = _vars.size();
     if (n == 0)
-        return;
+        return false;
 
     Integer max_upper = 0_i;
     for (const auto & v : _vars) {
@@ -57,7 +70,7 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
     }
 
     if (max_upper < 1_i)
-        return;
+        return false;
 
     Integer n_as_int{static_cast<long long>(n)};
     Integer effective_max = (max_upper < n_as_int) ? max_upper : n_as_int;
@@ -73,7 +86,7 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
     }
 
     if (effective_max < 2_i)
-        return;
+        return false;
 
     vector<Integer> chain;
     for (Integer i = 1_i; i <= effective_max; ++i)
@@ -86,6 +99,8 @@ auto SeqPrecedeChain::install(Propagators & propagators, State & initial_state, 
     ValuePrecede child{move(chain), move(_vars)};
     child.set_constraint_id(constraint_id());
     move(child).install(propagators, initial_state, optional_model);
+
+    return false;
 }
 
 auto SeqPrecedeChain::constraint_type() const -> std::string

@@ -32,6 +32,8 @@ namespace gcs
     private:
         std::vector<IntegerVariableID> _vars;
 
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+
     public:
         /**
          * \brief Construct from an array of variables.
