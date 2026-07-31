@@ -34,28 +34,39 @@ auto gcs::innards::stage_gate_holds(const State & state, const IntegerVariableCo
     }
 }
 
-auto gcs::innards::add_equality_stage(vector<LinearStage> & stages, ProofModel * const model, const ConstraintID & id, const WeightedSum & sum,
-    Integer value, const string & role) -> void
+auto gcs::innards::add_equality_stage(vector<StageSpec> & specs, const WeightedSum & sum, Integer value, const string & role) -> void
 {
-    pair<optional<ProofLine>, optional<ProofLine>> lines;
-    if (model) {
-        auto ll = model->add_labelled_constraint(id, role + "le", role + "ge", as_wpb(sum) == value);
-        lines = pair{optional{ll.first}, optional{ll.second}};
-    }
-    auto [tidied, modifier] = tidy_up_linear(sum);
-    stages.emplace_back(LinearStage{tidied, value + modifier, true, lines, nullopt});
+    specs.emplace_back(StageSpec{sum, value, true, role, nullopt});
 }
 
-auto gcs::innards::add_le_stage(vector<LinearStage> & stages, ProofModel * const model, const ConstraintID & id, const WeightedSum & sum,
-    Integer value, const string & role, const optional<IntegerVariableCondition> & gate) -> void
+auto gcs::innards::add_le_stage(
+    vector<StageSpec> & specs, const WeightedSum & sum, Integer value, const string & role, const optional<IntegerVariableCondition> & gate) -> void
 {
-    pair<optional<ProofLine>, optional<ProofLine>> lines;
-    if (model) {
-        if (gate)
-            lines.first = model->add_labelled_constraint(id, role, as_wpb(sum) <= value, HalfReifyOnConjunctionOf{Literal{*gate}});
+    specs.emplace_back(StageSpec{sum, value, false, role, gate});
+}
+
+auto gcs::innards::emit_stage_rows(ProofModel & model, const ConstraintID & id, vector<StageSpec> & specs) -> void
+{
+    for (auto & spec : specs) {
+        if (spec.equality) {
+            auto ll = model.add_labelled_constraint(id, spec.role + "le", spec.role + "ge", as_wpb(spec.sum) == spec.value);
+            spec.lines = pair{optional{ll.first}, optional{ll.second}};
+        }
+        else if (spec.gate)
+            spec.lines.first =
+                model.add_labelled_constraint(id, spec.role, as_wpb(spec.sum) <= spec.value, HalfReifyOnConjunctionOf{Literal{*spec.gate}});
         else
-            lines.first = model->add_labelled_constraint(id, role, as_wpb(sum) <= value);
+            spec.lines.first = model.add_labelled_constraint(id, spec.role, as_wpb(spec.sum) <= spec.value);
     }
-    auto [tidied, modifier] = tidy_up_linear(sum);
-    stages.emplace_back(LinearStage{tidied, value + modifier, false, lines, gate});
+}
+
+auto gcs::innards::make_stages(const vector<StageSpec> & specs) -> vector<LinearStage>
+{
+    vector<LinearStage> stages;
+    stages.reserve(specs.size());
+    for (const auto & spec : specs) {
+        auto [tidied, modifier] = tidy_up_linear(spec.sum);
+        stages.emplace_back(LinearStage{tidied, spec.value + modifier, spec.equality, spec.lines, spec.gate});
+    }
+    return stages;
 }

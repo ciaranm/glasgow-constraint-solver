@@ -15,6 +15,7 @@
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
+#include <util/enumerate.hh>
 #include <util/overloaded.hh>
 
 #include <algorithm>
@@ -76,7 +77,7 @@ auto Power::clone() const -> unique_ptr<Constraint>
     return cloned;
 }
 
-auto Power::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto Power::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
     auto a1 = affine_of(_base), a2 = affine_of(_exponent), a3 = affine_of(_result);
 
@@ -86,17 +87,14 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         PowerTable table{_base, _exponent, _result};
         table.set_constraint_id(constraint_id());
         move(table).install(propagators, initial_state, optional_model);
-        return;
+        return false;
     }
 
     auto k = a2.offset;
 
-    vector<LinearStage> stages;
-    auto add_equality = [&](const WeightedSum & sum, Integer value, const string & role) {
-        add_equality_stage(stages, optional_model, constraint_id(), sum, value, role);
-    };
+    auto add_equality = [&](const WeightedSum & sum, Integer value, const string & role) { add_equality_stage(_specs, sum, value, role); };
     auto add_le = [&](const WeightedSum & sum, Integer value, const string & role, const optional<IntegerVariableCondition> & gate) {
-        add_le_stage(stages, optional_model, constraint_id(), sum, value, role, gate);
+        add_le_stage(_specs, sum, value, role, gate);
     };
     auto add_gated_equality = [&](const IntegerVariableCondition & gate, Integer value, const string & role) {
         // an equality under a gate, as its two half-reified halves
@@ -104,17 +102,14 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         add_le(WeightedSum{} + -1_i * _result, -value, role + "lo", gate);
     };
 
-    // One multiplication link of the chain, with its own encoding block
-    // (role-prefixed) and persistent bit-product state.
-    auto links = make_shared<vector<signed_multiply::Data>>();
+    // One multiplication link of the chain: each is a signed multiplication encoded with
+    // cake's magnitude scheme, the same one Multiply uses, and `link` disambiguates the
+    // per-link flags. (cake has no power encoder, so this self-verifies rather than
+    // chain-verifying.) define_proof_model() emits the encoding blocks.
+    _links = make_shared<vector<signed_multiply::Data>>();
     auto add_link = [&](long long link, IntegerVariableID a, IntegerVariableID b, IntegerVariableID product) {
-        // Each chain link is a signed multiplication encoded with cake's magnitude scheme, the
-        // same one Multiply uses; `link` disambiguates the per-link flags. (cake has no power
-        // encoder, so this self-verifies rather than chain-verifying.)
-        links->emplace_back(signed_multiply::make_data(optional_model, initial_state, constraint_id(), a, b, product, link));
+        _links->emplace_back(signed_multiply::make_data(initial_state, a, b, product, link));
     };
-
-    bool prune_zero_base = false;
 
     if (! a1.var) {
         // Both base and exponent constant: the result is a single value, or
@@ -124,11 +119,11 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         else {
             // No representable result value exists (an overflowing power, or
             // zero to a negative power), so the constraint itself is the
-            // empty relation, like a Table with no tuples.
-            if (optional_model)
-                optional_model->add_constraint(WPBSum{} >= 1_i);
-            propagators.install_initial_contradiction("no representable power result", JustifyUsingRUP{hints::Power{constraint_id()}});
-            return;
+            // empty relation, like a Table with no tuples: define_proof_model()
+            // writes the trivially false row and install_propagators() installs a
+            // contradiction initialiser. Nothing else, tabulation included, runs.
+            _no_representable_result = true;
+            return true;
         }
     }
     else if (k == 0_i) {
@@ -146,9 +141,8 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         // representable power.
         auto parity = ((k.raw_value % 2) == 0) ? 1_i : -1_i;
         if (k < 0_i) {
-            if (optional_model)
-                optional_model->add_labelled_constraint(constraint_id(), "nonzero", WPBSum{} + 1_i * (_base >= 1_i) + 1_i * (_base < 0_i) >= 1_i);
-            prune_zero_base = true;
+            // The nonzero row is define_proof_model()'s, and precedes the stage rows there.
+            _prune_zero_base = true;
 
             add_gated_equality(_base >= 2_i, 0_i, "bigpos");
             add_gated_equality(_base < -1_i, 0_i, "bigneg");
@@ -189,8 +183,7 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
                 auto hi = max({saturating_product(plo, xlo, m), saturating_product(plo, xhi, m), saturating_product(phi, xlo, m),
                     saturating_product(phi, xhi, m)});
                 auto aux = initial_state.allocate_integer_variable_with_state(lo, hi);
-                if (optional_model)
-                    optional_model->set_up_integer_variable(aux, lo, hi, "aux_power" + to_string(aux.index), nullopt);
+                _aux_chain.emplace_back(aux, lo, hi);
                 t = aux;
             }
 
@@ -199,45 +192,12 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
         }
     }
 
-    if ((! stages.empty()) || (! links->empty()) || prune_zero_base) {
-        Triggers triggers;
-        vector<IntegerVariableID> watched;
-        auto watch = [&](const IntegerVariableID & v) {
-            if (! holds_alternative<ConstantIntegerVariableID>(v) && std::find(watched.begin(), watched.end(), v) == watched.end())
-                watched.push_back(v);
-        };
-        watch(_base);
-        watch(_result);
-        for (const auto & link : *links) {
-            watch(link.x);
-            watch(link.y);
-            watch(link.z);
-        }
-        triggers.on_bounds = watched;
-
-        propagators.install(
-            constraint_id(),
-            [stages = stages, links = links, prune_zero_base = prune_zero_base, base = _base, owner = constraint_id()](
-                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-                do {
-                    if (prune_zero_base && state.in_domain(base, 0_i))
-                        inference.infer(logger, base != 0_i, JustifyUsingRUP{hints::Power{owner}}, ExplicitReason{ReasonLiterals{}});
-
-                    if (! propagate_stages(stages, state, inference, logger, owner))
-                        return PropagatorState::Enable;
-
-                    for (auto & link : *links)
-                        signed_multiply::propagate(link, state, inference, logger, owner);
-                } while (inference.made_progress_since_last_check());
-
-                // Idempotent: the do-while ran the stages and multiply links to
-                // quiescence, so an immediate re-run is one no-op pass (see multiply.cc
-                // for the same argument). The mid-loop return above is the contradiction
-                // path and its state is ignored.
-                return PropagatorState::EnableButIdempotent;
-            },
-            triggers);
-    }
+    // A structurally constant base leaves nothing to enumerate: the case
+    // analysis above pinned the result to its one value, and that equality is
+    // already GAC. It also has no a1.var to enumerate over, so the tabulation
+    // below must not be reached -- it dereferenced the empty optional.
+    if (! a1.var)
+        return true;
 
     // Tabulation for GAC over the base and result (the exponent is constant
     // here). The auxiliary chain variables are not enumerated; they pin by
@@ -267,9 +227,97 @@ auto Power::install(Propagators & propagators, State & initial_state, ProofModel
             return want && *want == zv;
         };
 
-        install_tabulation<hints::Power>(
-            propagators, constraint_id(), enum_vars.vars(), move(determined), nullopt, accept, "powtab", "building GAC table for power");
+        _tabulation = TabulationPlan{enum_vars.vars(), move(determined), accept};
     }
+
+    return true;
+}
+
+auto Power::define_proof_model(ProofModel & model, const State & initial_state) -> void
+{
+    if (_no_representable_result) {
+        // Morally what an empty result domain encodes.
+        model.add_constraint(WPBSum{} >= 1_i);
+        return;
+    }
+
+    if (_prune_zero_base)
+        model.add_labelled_constraint(constraint_id(), "nonzero", WPBSum{} + 1_i * (_base >= 1_i) + 1_i * (_base < 0_i) >= 1_i);
+
+    emit_stage_rows(model, constraint_id(), _specs);
+
+    // Each link declares the intermediate variable it writes, then emits its
+    // encoding block, in the chain's order.
+    for (const auto & [index, link] : enumerate(*_links)) {
+        if (index < _aux_chain.size()) {
+            const auto & [aux, lo, hi] = _aux_chain[index];
+            model.set_up_integer_variable(aux, lo, hi, "aux_power" + to_string(aux.index), nullopt);
+        }
+        signed_multiply::emit_encoding(model, initial_state, constraint_id(), link);
+    }
+}
+
+auto Power::install_propagators(Propagators & propagators) -> void
+{
+    if (_no_representable_result) {
+        propagators.install_initial_contradiction("no representable power result", JustifyUsingRUP{hints::Power{constraint_id()}});
+        return;
+    }
+
+    if ((! _specs.empty()) || (! _links->empty()) || _prune_zero_base) {
+        Triggers triggers;
+        vector<IntegerVariableID> watched;
+        auto watch = [&](const IntegerVariableID & v) {
+            if (! holds_alternative<ConstantIntegerVariableID>(v) && std::find(watched.begin(), watched.end(), v) == watched.end())
+                watched.push_back(v);
+        };
+        watch(_base);
+        watch(_result);
+        for (const auto & link : *_links) {
+            watch(link.x);
+            watch(link.y);
+            watch(link.z);
+        }
+        triggers.on_bounds = watched;
+
+        propagators.install(
+            constraint_id(),
+            [stages = make_stages(_specs), links = _links, prune_zero_base = _prune_zero_base, base = _base, owner = constraint_id()](
+                const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+                do {
+                    if (prune_zero_base && state.in_domain(base, 0_i))
+                        inference.infer(logger, base != 0_i, JustifyUsingRUP{hints::Power{owner}}, ExplicitReason{ReasonLiterals{}});
+
+                    if (! propagate_stages(stages, state, inference, logger, owner))
+                        return PropagatorState::Enable;
+
+                    for (auto & link : *links)
+                        signed_multiply::propagate(link, state, inference, logger, owner);
+                } while (inference.made_progress_since_last_check());
+
+                // Idempotent: the do-while ran the stages and multiply links to
+                // quiescence, so an immediate re-run is one no-op pass (see multiply.cc
+                // for the same argument). The mid-loop return above is the contradiction
+                // path and its state is ignored.
+                return PropagatorState::EnableButIdempotent;
+            },
+            triggers);
+    }
+
+    if (_tabulation)
+        install_tabulation<hints::Power>(propagators, constraint_id(), move(_tabulation->enum_vars), move(_tabulation->determined), nullopt,
+            move(_tabulation->accept), "powtab", "building GAC table for power");
+}
+
+auto Power::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
+
+    install_propagators(propagators);
 }
 
 auto Power::constraint_type() const -> std::string

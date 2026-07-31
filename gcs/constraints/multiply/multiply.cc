@@ -75,7 +75,7 @@ auto Multiply::clone() const -> unique_ptr<Constraint>
     return cloned;
 }
 
-auto Multiply::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+auto Multiply::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
     auto a1 = affine_of(_v1), a2 = affine_of(_v2), a3 = affine_of(_result);
 
@@ -94,7 +94,8 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
                 // This mirrors want_tabulation's Auto rule, which cannot be
                 // called directly because LinearEqualityConsistency has no
                 // Auto to delegate; keep the two in step.
-                auto tidied = tidy_up_linear(sum).first;
+                auto tidied_and_modifier = tidy_up_linear(sum);
+                const auto & tidied = tidied_and_modifier.first;
                 return visit(
                     [&](const auto & cv) -> LinearEqualityConsistency {
                         Integer largest = 0_i;
@@ -123,7 +124,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
         resolved.with_consistency(linear_level);
         resolved.set_constraint_id(constraint_id());
         move(resolved).install(propagators, initial_state, optional_model);
-        return;
+        return false;
     }
 
     // Both operands are genuine variables, possibly through views, aliased
@@ -135,29 +136,7 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
     // exact square and square-root hull filtering (issue #232).
     auto u1 = *a1.var, u2 = *a2.var;
 
-    auto product_data =
-        make_shared<signed_multiply::Data>(signed_multiply::make_data(optional_model, initial_state, constraint_id(), _v1, _v2, _result));
-
-    Triggers triggers;
-    for (const auto & v : {_v1, _v2, _result})
-        if ((! is_constant_variable(v)) && triggers.on_bounds.end() == std::find(triggers.on_bounds.begin(), triggers.on_bounds.end(), v))
-            triggers.on_bounds.emplace_back(v);
-
-    propagators.install(
-        constraint_id(),
-        [product_data = product_data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            do {
-                signed_multiply::propagate(*product_data, state, inference, logger, owner);
-            } while (inference.made_progress_since_last_check());
-            // Idempotent: the do-while ran signed_multiply::propagate to quiescence
-            // (it exits only when a whole pass inferred nothing), so an immediate
-            // re-run is a single no-op pass. This needs no 1:1-trigger / non-aliasing
-            // assumption -- the loop reaches whatever fixpoint the true relation has,
-            // aliased or repeated operands (the square case) included, per the note at
-            // the scope above.
-            return PropagatorState::EnableButIdempotent;
-        },
-        triggers);
+    _data = make_shared<signed_multiply::Data>(signed_multiply::make_data(initial_state, _v1, _v2, _result));
 
     // Tabulation for GAC: enumerate over the distinct underlying variables,
     // mapping values back through the affine forms. The auxiliary variables
@@ -191,9 +170,54 @@ auto Multiply::install(Propagators & propagators, State & initial_state, ProofMo
             return product && *product == v3val;
         };
 
-        install_tabulation<hints::Multiply>(
-            propagators, constraint_id(), enum_vars.vars(), move(determined), nullopt, accept, "multtab", "building GAC table for multiplication");
+        _tabulation = TabulationPlan{enum_vars.vars(), move(determined), accept};
     }
+
+    return true;
+}
+
+auto Multiply::define_proof_model(ProofModel & model, const State & initial_state) -> void
+{
+    signed_multiply::emit_encoding(model, initial_state, constraint_id(), *_data);
+}
+
+auto Multiply::install_propagators(Propagators & propagators) -> void
+{
+    Triggers triggers;
+    for (const auto & v : {_v1, _v2, _result})
+        if ((! is_constant_variable(v)) && triggers.on_bounds.end() == std::find(triggers.on_bounds.begin(), triggers.on_bounds.end(), v))
+            triggers.on_bounds.emplace_back(v);
+
+    propagators.install(
+        constraint_id(),
+        [product_data = _data, owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            do {
+                signed_multiply::propagate(*product_data, state, inference, logger, owner);
+            } while (inference.made_progress_since_last_check());
+            // Idempotent: the do-while ran signed_multiply::propagate to quiescence
+            // (it exits only when a whole pass inferred nothing), so an immediate
+            // re-run is a single no-op pass. This needs no 1:1-trigger / non-aliasing
+            // assumption -- the loop reaches whatever fixpoint the true relation has,
+            // aliased or repeated operands (the square case) included, per the note in
+            // prepare().
+            return PropagatorState::EnableButIdempotent;
+        },
+        triggers);
+
+    if (_tabulation)
+        install_tabulation<hints::Multiply>(propagators, constraint_id(), move(_tabulation->enum_vars), move(_tabulation->determined), nullopt,
+            move(_tabulation->accept), "multtab", "building GAC table for multiplication");
+}
+
+auto Multiply::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
+{
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
+
+    install_propagators(propagators);
 }
 
 auto Multiply::constraint_type() const -> std::string

@@ -28,6 +28,9 @@ namespace gcs::innards::signed_multiply
         IntegerVariableID x = 0_c, y = 0_c, z = 0_c;
         Integer x_init_lo{0}, x_init_hi{0};
         Integer y_init_lo{0}, y_init_hi{0};
+        /// Which multiplication of a chain sharing a constraint id this is; unset when the
+        /// constraint owns just the one.
+        std::optional<long long> link{};
         std::optional<product_enc::MagnitudeChannel> chan_x, chan_y;
         product_enc::BitProductGrid grid{};
         std::optional<product_enc::ResultChannel> zchan;
@@ -35,16 +38,25 @@ namespace gcs::innards::signed_multiply
     };
 
     /**
-     * \brief Capture the operands and, when there is a model, emit cake's
-     * multiplication encoding for x * y = z: two magnitude channels, the
-     * bit-product grid, the result channel and the six sign clauses, exactly
-     * as cake_pb_cp does. `link` disambiguates one multiplication of a chain
-     * sharing a constraint id (Power's base^k).
+     * \brief Capture the operand handles and their initial bounds, which the
+     * propagation needs whether or not there are proofs. `link` disambiguates one
+     * multiplication of a chain sharing a constraint id (Power's base^k).
+     *
+     * This is prepare()'s half; emit_encoding() is define_proof_model()'s.
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto make_data(ProofModel * const optional_model, const State & initial_state, const ConstraintID & constraint_id,
-        IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, std::optional<long long> link = std::nullopt) -> Data;
+    [[nodiscard]] auto make_data(const State & initial_state, IntegerVariableID x, IntegerVariableID y, IntegerVariableID z,
+        std::optional<long long> link = std::nullopt) -> Data;
+
+    /**
+     * \brief Emit cake's multiplication encoding for x * y = z -- two magnitude
+     * channels, the bit-product grid, the result channel and the six sign clauses,
+     * exactly as cake_pb_cp does -- filling in the handles the justifications cite.
+     *
+     * \ingroup Innards
+     */
+    auto emit_encoding(ProofModel & model, const State & initial_state, const ConstraintID & constraint_id, Data & data) -> void;
 
     /**
      * \brief One pass of bounds consistent multiplication filtering for

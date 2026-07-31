@@ -3,8 +3,12 @@
 
 #include <gcs/consistency.hh>
 #include <gcs/constraint.hh>
+#include <gcs/constraints/innards/tabulation.hh>
+#include <gcs/constraints/multiply/signed_multiply.hh>
 #include <gcs/variable_id.hh>
 
+#include <memory>
+#include <optional>
 #include <variant>
 
 namespace gcs
@@ -52,6 +56,19 @@ namespace gcs
     private:
         IntegerVariableID _v1, _v2, _result;
         MultiplyConsistency _level = consistency::Auto{};
+
+        // The multiplication's operand handles and initial bounds, captured by
+        // prepare(); define_proof_model() adds cake's encoding handles, and the
+        // propagator holds the result. Unset when a constant operand made this a
+        // linear equality instead, which prepare() installs as a child.
+        std::shared_ptr<innards::signed_multiply::Data> _data;
+
+        /// Unset when the constraint is not tabulating.
+        std::optional<innards::TabulationPlan> _tabulation;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit Multiply(IntegerVariableID v1, IntegerVariableID v2, IntegerVariableID result);

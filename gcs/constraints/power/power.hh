@@ -3,9 +3,16 @@
 
 #include <gcs/consistency.hh>
 #include <gcs/constraint.hh>
+#include <gcs/constraints/innards/linear_stages.hh>
+#include <gcs/constraints/innards/tabulation.hh>
+#include <gcs/constraints/multiply/signed_multiply.hh>
 #include <gcs/variable_id.hh>
 
+#include <memory>
+#include <optional>
+#include <tuple>
 #include <variant>
+#include <vector>
 
 namespace gcs
 {
@@ -46,6 +53,31 @@ namespace gcs
     private:
         IntegerVariableID _base, _exponent, _result;
         PowerConsistency _level = consistency::Auto{};
+
+        // The case analysis prepare() settles on. The linear pieces travel as specs
+        // because their rows and their stages are wanted in different phases; the
+        // multiplication links of a base^k chain carry their operands from prepare()
+        // and their encoding handles from define_proof_model().
+        std::vector<innards::StageSpec> _specs;
+        std::shared_ptr<std::vector<innards::signed_multiply::Data>> _links;
+
+        // The chain's intermediate variables with the ranges to declare them by,
+        // one per link bar the last (which writes the result handle), so link i has
+        // _aux_chain[i] exactly when i is a valid index.
+        std::vector<std::tuple<SimpleIntegerVariableID, Integer, Integer>> _aux_chain;
+
+        /// A negative exponent has no support for a zero base, and says so by propagation.
+        bool _prune_zero_base = false;
+
+        /// Constant base and exponent with no representable power: the empty relation.
+        bool _no_representable_result = false;
+
+        /// Unset when the constraint is not tabulating.
+        std::optional<innards::TabulationPlan> _tabulation;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit Power(IntegerVariableID base, IntegerVariableID exponent, IntegerVariableID result);
