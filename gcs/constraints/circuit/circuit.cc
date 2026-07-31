@@ -119,7 +119,7 @@ auto Circuit::with_short_reasons(optional<bool> enable) -> Circuit &
     return *this;
 }
 
-auto Circuit::set_up(Propagators & propagators, State & initial_state, ProofModel * const model) -> PosVarDataMap
+auto Circuit::prepare(Propagators & propagators, State & initial_state, ProofModel * const model) -> bool
 {
     // Can't have negative values
     for (const auto & s : _succ)
@@ -129,69 +129,87 @@ auto Circuit::set_up(Propagators & propagators, State & initial_state, ProofMode
     for (const auto & s : _succ)
         propagators.define_bound(initial_state, model, s, Bound::Upper, Integer(static_cast<long long>(_succ.size() - 1)));
 
-    // Define all different, either gac or non-gac
+    // The GAC all-different is a child constraint, which needs propagators, state and
+    // model together, so it can only be installed from here. The non-GAC alternative
+    // is pure encoding and lives in define_proof_model(); either way the rows land
+    // before the position encoding, as they did before.
     if (_gac_all_different) {
         AllDifferent all_diff{_succ};
         std::move(all_diff).install(propagators, initial_state, model);
     }
-    else {
-        // Still need to define the all different encoding.
-        if (model)
-            define_clique_not_equals_encoding(*model, _constraint_id, _succ);
-    }
+
+    // Backtrackable state for whichever algorithm install_propagators() picks. Both
+    // track the unassigned successors; only Prevent keeps the incremental chain
+    // endpoints, so only Prevent pays for that slot.
+    NonGacAllDifferentUnassigned unassigned{};
+    for (auto v : _succ)
+        unassigned.emplace_back(v);
+    _state_handles.unassigned = initial_state.add_constraint_state(unassigned);
+
+    if (std::holds_alternative<Prevent>(_algorithm))
+        _state_handles.chain = initial_state.add_constraint_state(make_prevent_chain_data(_succ.size()));
+
+    return true;
+}
+
+auto Circuit::define_proof_model(ProofModel & model, const State &) -> void
+{
+    // The all-different encoding. Under the GAC option the child AllDifferent that
+    // prepare() installed has already emitted it.
+    if (! _gac_all_different)
+        define_clique_not_equals_encoding(model, _constraint_id, _succ);
 
     // Define encoding to eliminate sub-cycles
-    PosVarDataMap pos_var_data{};
+    auto & pos_var_data = _pos_var_data;
 
-    if (model) {
-        auto n = static_cast<long long>(_succ.size());
-        // Define encoding to eliminate sub-cycles
-        // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
-        // WLOG start at node 0, so pos[0] = 0
-        pos_var_data.emplace(0,
-            PosVarData{"p[0]", model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits),
+    auto n = static_cast<long long>(_succ.size());
+    // Need extra proof variable: pos[i] = j means "the ith node visited in the circuit is the jth var"
+    // WLOG start at node 0, so pos[0] = 0
+    pos_var_data.emplace(0,
+        PosVarData{"p[0]", model.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits),
+            map<long, PosVarLineData>{}});
+    model.add_constraint(WPBSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
+    // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
+    // cake_pb_cp labels these position relations @c[id][pos_suc_<i>_<j>_le/ge].
+    auto [leq_line, geq_line] = model.add_labelled_constraint(
+        _constraint_id, "pos_suc_0_0_le", "pos_suc_0_0_ge", WPBSum{} == Integer{n - 1}, HalfReifyOnConjunctionOf{{_succ[0] == 0_i}});
+
+    pos_var_data.at(0).plus_one_lines.emplace(0, PosVarLineData{leq_line, geq_line});
+
+    for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
+        pos_var_data.emplace(idx,
+            PosVarData{format("p[{}]", idx),
+                model.create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits),
                 map<long, PosVarLineData>{}});
-        model->add_constraint(WPBSum{} + 1_i * pos_var_data.at(0).var <= 0_i);
-        // Hence we can only have succ[0] = 0 (self cycle) if there is only one node i.e. n - 1 = 0
-        // cake_pb_cp labels these position relations @c[id][pos_suc_<i>_<j>_le/ge].
-        auto [leq_line, geq_line] = model->add_labelled_constraint(
-            _constraint_id, "pos_suc_0_0_le", "pos_suc_0_0_ge", WPBSum{} == Integer{n - 1}, HalfReifyOnConjunctionOf{{_succ[0] == 0_i}});
-
-        pos_var_data.at(0).plus_one_lines.emplace(0, PosVarLineData{leq_line, geq_line});
-
-        for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
-            pos_var_data.emplace(idx,
-                PosVarData{format("p[{}]", idx),
-                    model->create_proof_only_integer_variable(0_i, Integer{n - 1}, "pos0", IntegerVariableProofRepresentation::Bits),
-                    map<long, PosVarLineData>{}});
-        }
-
-        for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
-            // (succ[0] = i) -> pos[i] - pos[0] = 1
-            tie(leq_line, geq_line) =
-                model->add_labelled_constraint(_constraint_id, "pos_suc_0_" + std::to_string(idx) + "_le", "pos_suc_0_" + std::to_string(idx) + "_ge",
-                    WPBSum{} + 1_i * pos_var_data.at(idx).var + -1_i * 1_c == 0_i, HalfReifyOnConjunctionOf{{_succ[0] == Integer{idx}}});
-            pos_var_data.at(0).plus_one_lines.emplace(idx, PosVarLineData{leq_line, geq_line});
-
-            // (succ[i] = 0) -> pos[0] - pos[i] = 1-n
-            tie(leq_line, geq_line) =
-                model->add_labelled_constraint(_constraint_id, "pos_suc_" + std::to_string(idx) + "_0_le", "pos_suc_" + std::to_string(idx) + "_0_ge",
-                    WPBSum{} + 1_i * pos_var_data.at(0).var + -1_i * pos_var_data.at(idx).var == Integer{1 - n},
-                    HalfReifyOnConjunctionOf{{_succ[idx] == 0_i}});
-            pos_var_data.at(idx).plus_one_lines.emplace(0, PosVarLineData{leq_line, geq_line});
-
-            // (succ[i] = j) -> pos[j] = pos[i] + 1
-            for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
-                tie(leq_line, geq_line) =
-                    model->add_labelled_constraint(_constraint_id, "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_le",
-                        "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_ge",
-                        WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
-                        HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
-                pos_var_data.at(idx).plus_one_lines.emplace(jdx, PosVarLineData{leq_line, geq_line});
-            }
-        }
     }
 
+    for (unsigned int idx = 1; idx < _succ.size(); ++idx) {
+        // (succ[0] = i) -> pos[i] - pos[0] = 1
+        tie(leq_line, geq_line) =
+            model.add_labelled_constraint(_constraint_id, "pos_suc_0_" + std::to_string(idx) + "_le", "pos_suc_0_" + std::to_string(idx) + "_ge",
+                WPBSum{} + 1_i * pos_var_data.at(idx).var + -1_i * 1_c == 0_i, HalfReifyOnConjunctionOf{{_succ[0] == Integer{idx}}});
+        pos_var_data.at(0).plus_one_lines.emplace(idx, PosVarLineData{leq_line, geq_line});
+
+        // (succ[i] = 0) -> pos[0] - pos[i] = 1-n
+        tie(leq_line, geq_line) = model.add_labelled_constraint(_constraint_id, "pos_suc_" + std::to_string(idx) + "_0_le",
+            "pos_suc_" + std::to_string(idx) + "_0_ge", WPBSum{} + 1_i * pos_var_data.at(0).var + -1_i * pos_var_data.at(idx).var == Integer{1 - n},
+            HalfReifyOnConjunctionOf{{_succ[idx] == 0_i}});
+        pos_var_data.at(idx).plus_one_lines.emplace(0, PosVarLineData{leq_line, geq_line});
+
+        // (succ[i] = j) -> pos[j] = pos[i] + 1
+        for (unsigned int jdx = 1; jdx < _succ.size(); ++jdx) {
+            tie(leq_line, geq_line) =
+                model.add_labelled_constraint(_constraint_id, "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_le",
+                    "pos_suc_" + std::to_string(idx) + "_" + std::to_string(jdx) + "_ge",
+                    WPBSum{} + 1_i * pos_var_data.at(jdx).var + -1_i * pos_var_data.at(idx).var == 1_i,
+                    HalfReifyOnConjunctionOf{{_succ[idx] == Integer{jdx}}});
+            pos_var_data.at(idx).plus_one_lines.emplace(jdx, PosVarLineData{leq_line, geq_line});
+        }
+    }
+}
+
+auto Circuit::install_propagators(Propagators & propagators) -> void
+{
     // Infer succ[i] != i at top of search, but no other propagation defined here: use circuit::Prevent or circuit::SCC
     if (_succ.size() > 1) {
         propagators.install(
@@ -206,16 +224,21 @@ auto Circuit::set_up(Propagators & propagators, State & initial_state, ProofMode
             Triggers{});
     }
 
-    return pos_var_data;
+    overloaded{
+        [&](const SCC &) { install_circuit_scc(propagators, constraint_id(), _succ, _scc_options, std::move(_pos_var_data), _state_handles); }, //
+        [&](const Prevent &) { install_circuit_prevent(propagators, constraint_id(), _succ, std::move(_pos_var_data), _state_handles); }}
+        .visit(_algorithm);
 }
 
-auto Circuit::install(Propagators & propagators, State & initial_state, ProofModel * const model) && -> void
+auto Circuit::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    auto pos_var_data = set_up(propagators, initial_state, model);
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
 
-    overloaded{[&](const SCC &) { install_circuit_scc(propagators, initial_state, constraint_id(), _succ, _scc_options, std::move(pos_var_data)); },
-        [&](const Prevent &) { install_circuit_prevent(propagators, initial_state, constraint_id(), _succ, std::move(pos_var_data)); }}
-        .visit(_algorithm);
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
+
+    install_propagators(propagators);
 }
 
 auto Circuit::clone() const -> unique_ptr<Constraint>

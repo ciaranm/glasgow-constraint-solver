@@ -1091,15 +1091,10 @@ template auto gcs::innards::circuit::propagate_circuit_using_scc(const State & s
     ProofLogger * const logger, const ReasonLiterals & reason, const ConstraintID & owner, const std::vector<IntegerVariableID> & succ,
     const SCCOptions & scc_options, SCCPersistentData & persistent, const ConstraintStateHandle & unassigned_handle) -> void;
 
-auto gcs::innards::circuit::install_circuit_scc(Propagators & propagators, State & initial_state, const ConstraintID & owner,
-    const vector<IntegerVariableID> & succ, const SCCOptions & scc_options, PosVarDataMap pos_var_data) -> void
+auto gcs::innards::circuit::install_circuit_scc(Propagators & propagators, const ConstraintID & owner, const vector<IntegerVariableID> & succ,
+    const SCCOptions & scc_options, PosVarDataMap pos_var_data, const CircuitStateHandles & handles) -> void
 {
-    // Keep track of unassigned vars
-    NonGacAllDifferentUnassigned unassigned{};
-    for (auto v : succ) {
-        unassigned.emplace_back(v);
-    }
-    auto unassigned_handle = initial_state.add_constraint_state(unassigned);
+    auto unassigned_handle = handles.unassigned;
 
     // The position definitions and the two proof caches do not backtrack, so they are
     // captured rather than held in the State: the propagator mutates the caches through

@@ -20,20 +20,6 @@ using std::vector;
 
 namespace
 {
-    // Incremental "prevent" state: the fixed successor edges partition the nodes into
-    // simple paths (chains). For each node we record the chain it belongs to by its
-    // endpoints. These are maintained in O(1) as edges are fixed and restored on
-    // backtrack (held as backtrackable constraint state), rather than recomputed from
-    // scratch each call. orig[v] is valid when v is a chain *end*, dest[v]/len[v] when
-    // v is a chain *start* -- which is exactly how they are queried below.
-    struct PreventChainData
-    {
-        std::vector<long> orig;      // start node of the chain ending at this node
-        std::vector<long> dest;      // end node of the chain starting at this node
-        std::vector<long> len;       // number of fixed edges in the chain starting at this node
-        std::vector<long> unspliced; // node indices whose fixed successor edge is not yet folded in
-    };
-
     // Fold every newly-fixed edge into the chain endpoints and make the same inferences
     // the from-scratch prevent_small_cycles would: forbid a short chain from closing
     // (succ[end] != start), force the full chain to close (succ[end] == start), and
@@ -137,19 +123,8 @@ template auto gcs::innards::circuit::propagate_circuit_using_prevent(const std::
     const PosVarDataMap & pos_var_data, const ConstraintStateHandle & unassigned_handle, const ConstraintStateHandle & chain_handle,
     const State & state, EagerProofLoggingInferenceTracker & inference, ProofLogger * const logger) -> void;
 
-auto gcs::innards::circuit::install_circuit_prevent(Propagators & propagators, State & initial_state, const ConstraintID & owner,
-    const vector<IntegerVariableID> & succ, PosVarDataMap pos_var_data) -> void
+auto gcs::innards::circuit::make_prevent_chain_data(size_t num_nodes) -> PreventChainData
 {
-    // Keep track of unassigned vars
-    NonGacAllDifferentUnassigned unassigned{};
-    for (auto v : succ) {
-        unassigned.emplace_back(v);
-    }
-    auto unassigned_handle = initial_state.add_constraint_state(unassigned);
-
-    // Backtrackable chain endpoints for the incremental small-cycle prevention. Each
-    // node starts as its own length-zero chain; edges fold in as successors are fixed.
-    auto num_nodes = succ.size();
     PreventChainData chain;
     chain.orig.resize(num_nodes);
     chain.dest.resize(num_nodes);
@@ -160,7 +135,14 @@ auto gcs::innards::circuit::install_circuit_prevent(Propagators & propagators, S
         chain.dest[i] = static_cast<long>(i);
         chain.unspliced[i] = static_cast<long>(i);
     }
-    auto chain_handle = initial_state.add_constraint_state(std::move(chain));
+    return chain;
+}
+
+auto gcs::innards::circuit::install_circuit_prevent(Propagators & propagators, const ConstraintID & owner, const vector<IntegerVariableID> & succ,
+    PosVarDataMap pos_var_data, const CircuitStateHandles & handles) -> void
+{
+    auto unassigned_handle = handles.unassigned;
+    auto chain_handle = handles.chain.value();
 
     Triggers triggers;
     triggers.on_instantiated = {succ.begin(), succ.end()};
