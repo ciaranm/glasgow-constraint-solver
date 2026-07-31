@@ -64,7 +64,8 @@ Pairs that differ in one controlled way, for attributing a difference.
 | pair | what it controls for |
 |---|---|
 | `magic_square --size=4 --all-different gac` vs `--all-different vc` | **Identical search** — same recursions, same solution count — with propagation count differing about 6×. Any proof-side divergence is emission, not search. |
-| `p_dispersion --grid 8 -p 4 --variant tuple` vs `--variant min-distance-ps` | The same problem through a decomposition and through the global propagator. |
+| `knapsack_bench --instance 1` vs `--instance 1 --upfront` | **The clearest SIZE≠TIME demonstration in the set.** Identical search — 907 recursions, 454 solutions both ways — but `--upfront` writes a **5.9× smaller** proof (20.7 MB against 121.3 MB) that takes **4.5× longer** to check (9.9 s against 2.2 s). One flag, one instance, and the two axes move in opposite directions. |
+| `p_dispersion --grid 8 -p 4 --variant tuple` vs `--variant min-distance-ps` | The same problem through a decomposition and through the global propagator: 42.9 MB / 14.3 s against 0.8 MB / 0.8 s. At `--grid 10` the gap widens to 93× in proof size, and at `--grid 12` the decomposition stops verifying inside 1200 s while the global takes 15 s. |
 | `frequency_square 6 --all --consistency gac` vs `bc` | Propagation strength on one instance (also in group A). |
 | `langford --size=11` vs `--size=10` | Enumeration against UNSAT refutation on one model. |
 
@@ -184,8 +185,8 @@ repeated.
 | `tsp` (fixed default instance) | cap at 4 GB, and there is no size knob |
 | `qap --size=12` | cap; `--size=11` verifies but takes over 900 s |
 | `regular_random -n 9 --all`, `-n 10 --all` | cap |
-| `regular_random -n 7 --all` | 272 MB, but over 1200 s to verify; `-n 6` is 0.6 s |
-| `skeleton_puzzle` at 4×3, 4×4, 5×4 and the default 7×5 | cap at every shape tried |
+| `regular_random -n 7 --all` | over 1200 s to verify; `-n 6` is under a second. Note the `--seed` trap below — these were unseeded, so they are not one instance scaled |
+| `skeleton_puzzle` at 4×3, 4×4, 5×3, 5×4, 6×3 and the default 7×5 | cap or over 1200 s at every shape tried, with `--seed` and without |
 | `random_polynomial -n 12 -d 6` | cap; `-n 10 -d 5` is 426 MB |
 | `colour` on 42-vertex (50 % density) and 60-vertex graphs | cap — but a 46-vertex graph verifies in the band; see below |
 | `order_deletion_bench --problem cumulative --size 10 --domain 500` | cap |
@@ -217,12 +218,25 @@ Found the hard way, all of them producing an immediate parse error:
 - `skeleton_puzzle` refuses any non-default shape unless `--seed` is given.
 - `frequency_square` takes its size positionally, and the size must be divisible
   by `--lambda`.
+- **`--seed` defaults to `-1`, meaning a fresh random instance every run**, in
+  `regular_random`, `circuit_random`, `multiply_random`, `random_polynomial` and
+  `smart_table_random`. Three consecutive `regular_random -n 6 --all` runs give
+  32 664, 28 881 and 21 116 recursions — three different problems. Any use of
+  these binaries in a benchmark **must** pass an explicit `--seed`, and any two
+  numbers being compared must share it. This is easy to miss because the runs
+  succeed and the numbers look plausible; it silently turns a strategy
+  comparison into a comparison of unrelated instances.
 
 ## Known gaps
 
-- **`Regular` at scale**, for the reason above. `examples/nonogram` is the
-  documented structured alternative but does not search; `examples/rostering` is
-  a 23-recursion toy.
+- **`Regular` at scale.** `regular_random --all` has no comfortable size: n=6
+  checks in well under a second, n=7 takes many minutes, and n=9 exceeds an 8 GB
+  proof cap. `examples/nonogram` is the documented structured alternative but
+  does not search, and `examples/rostering` is a 23-recursion toy. The
+  `--bacchus` strategy may bring n=7 into range — it produced a far smaller
+  proof in piloting — but that observation was made against an unseeded run and
+  so compared two different instances; a seeded comparison is the way to settle
+  it.
 - **`Cumulative` and `Disjunctive` at scale** are reachable only through the
   MiniZinc frontend, because `examples/cumulative` is a fixed five-task toy.
   This is the most valuable gap to close.
