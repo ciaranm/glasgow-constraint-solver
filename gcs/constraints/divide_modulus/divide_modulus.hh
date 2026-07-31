@@ -3,6 +3,7 @@
 
 #include <gcs/consistency.hh>
 #include <gcs/constraint.hh>
+#include <gcs/constraints/divide_modulus/install_state.hh>
 #include <gcs/variable_id.hh>
 
 #include <variant>
@@ -56,6 +57,14 @@ namespace gcs
         IntegerVariableID _x, _y, _quotient;
         DivideConsistency _level = consistency::Auto{};
 
+        // The shared decomposition's install-time working state; the three phases
+        // themselves are shared code too, parameterised on the exposed slot.
+        innards::divide_modulus::InstallState _install;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+
     public:
         explicit Divide(IntegerVariableID x, IntegerVariableID y, IntegerVariableID quotient);
 
@@ -87,6 +96,13 @@ namespace gcs
     private:
         IntegerVariableID _x, _y, _remainder;
         ModulusConsistency _level = consistency::Auto{};
+
+        // As for Divide: the same three shared phases, with r exposed instead of q.
+        innards::divide_modulus::InstallState _install;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit Modulus(IntegerVariableID x, IntegerVariableID y, IntegerVariableID remainder);
