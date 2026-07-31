@@ -17,3 +17,7 @@ add_test(NAME difference_chain-global-refute COMMAND ${GCS_BASH} ${CMAKE_SOURCE_
 # a Problem built in-process, not through a posted model.
 add_test(NAME difference_chain-presolved-fixpoint COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-presolved-fixpoint $<TARGET_FILE:difference_chain> --mode fixpoint --variant presolved)
 add_test(NAME difference_chain-presolved-refute COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-presolved-refute $<TARGET_FILE:difference_chain> --mode refute --variant presolved)
+
+# And with the root simplification stage off, which is the configuration the
+# difference_chain measurements say to prefer on a dense system.
+add_test(NAME difference_chain-global-refute-nosimplify COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-global-refute-nosimplify $<TARGET_FILE:difference_chain> --mode refute --variant global --simplify off)
