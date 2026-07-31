@@ -5,6 +5,7 @@
 #include <gcs/constraint.hh>
 #include <gcs/variable_id.hh>
 
+#include <gcs/constraints/innards/tabulation.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 
 #include <optional>
@@ -39,6 +40,11 @@ namespace gcs
         PlusConsistency _level = consistency::Auto{};
         std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _sum_line;
 
+        // Decided by prepare() (it needs the initial domains), installed by
+        // install_propagators(). Empty means bounds consistency only.
+        std::optional<innards::TabulationPlan> _tabulation;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
