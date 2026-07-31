@@ -1073,7 +1073,7 @@ auto ProofLogger::forget_proof_level(int depth) -> void
     // emitted: the ge definitions, eq definitions and chain clauses recorded at this
     // level have now been del'd, so retire their atoms and stitch the chain back over
     // the survivors. A cheap no-op unless the order-encoding deletion mode is Literals.
-    names_and_ids_tracker().forget_order_links_at_level(depth);
+    names_and_ids_tracker().forget_order_encoding_at_level(depth);
 
     // The eq window's per-node records for this level went with those deletions. Dropping
     // them is not tidiness: the next node at this depth reuses the level number, and a

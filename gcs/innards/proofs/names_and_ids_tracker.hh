@@ -243,7 +243,7 @@ namespace gcs::innards
         auto record_live_eq_literal(const SimpleIntegerVariableID & id, Integer v) -> void;
 
         // Retirement pass for windowed eq definitions, driven from
-        // forget_order_links_at_level alongside the ge sweep: for every eq atom whose def
+        // forget_order_encoding_at_level alongside the ge sweep: for every eq atom whose def
         // was recorded at `level`, drop it from the live set and retire its atom out of
         // the lookup table (mirroring the ge sweep -- see forget_order_literals_at_level
         // for why retirement, rather than liveness tracking, is what enforces the naming
@@ -309,7 +309,7 @@ namespace gcs::innards
         auto emit_order_stitch(const SimpleIntegerVariableID & id, Integer lo, Integer hi, int at_level, int restore_level) -> void;
 
         // Deletion + stitch pass for the Literals mode, driven from
-        // forget_order_links_at_level: for every threshold whose def was recorded at
+        // forget_order_encoding_at_level: for every threshold whose def was recorded at
         // `level`, stitch the surviving neighbours around each deleted run and drop the
         // thresholds from the live set.
         auto forget_order_literals_at_level(int level) -> void;
@@ -429,11 +429,8 @@ namespace gcs::innards
          * bookkeeping that has to stay in step with them, plus the stitches. A cheap
          * no-op unless the order-encoding deletion mode is `Literals`. Intended to be
          * called from ProofLogger::forget_proof_level.
-         *
-         * Note: the `_links_` in this name predates the Literals mode -- it sweeps
-         * literals, not links -- and is left unchanged until the rename that follows.
          */
-        auto forget_order_links_at_level(int level) -> void;
+        auto forget_order_encoding_at_level(int level) -> void;
 
         /**
          * Hoist a search-introduced ge threshold `v` of real variable `id`

@@ -676,7 +676,7 @@ resident* subset. An eq eviction mirrors the ge eviction's
   variable, and the index costs nothing on the eq-heavy instances whose eq atoms are not
   branched on. (`live_order_literals` cannot do this: it records level-0 ge thresholds
   because the chain walk and the stitch need them.) `forget_eq_literals_at_level` and
-  `forget_chain_lines_at_level` both hang off the same `forget_order_links_at_level`
+  `forget_chain_clauses_at_level` both hang off the same `forget_order_encoding_at_level`
   funnel, after the ge sweep — which is what emits the level's stitches, and those land at
   a *surviving* neighbour's level, never at the level being forgotten.
 

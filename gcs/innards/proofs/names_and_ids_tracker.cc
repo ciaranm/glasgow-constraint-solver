@@ -358,13 +358,13 @@ struct NamesAndIDsTracker::Imp
     AssertionLevel assertion_level = AssertionLevel::Off;
 
     // Whether (and how) order-encoding chain links are deleted on backtrack.
-    OrderEncodingDeletion order_link_deletion_mode = OrderEncodingDeletion::None;
+    OrderEncodingDeletion order_encoding_deletion_mode = OrderEncodingDeletion::None;
     // Chain-length gate for OrderEncodingDeletion::Literals (order_encoding_deletion_min_chain):
     // a real variable's interior ge def is only emitted deletable-at-Current once the number
     // of ge thresholds ever named for it exceeds this value; at or below the gate the def is
     // kept resident at Top, exactly like the boundary/view/aux paths. 0 disables the gate --
     // deletion fires from the first threshold, byte-identically to the pre-gate behaviour.
-    // Read once here (not re-read per call), like order_link_deletion_mode.
+    // Read once here (not re-read per call), like order_encoding_deletion_mode.
     int order_encoding_deletion_min_chain = 0;
 
     // --- Literals mode (OrderEncodingDeletion::Literals) ---
@@ -476,14 +476,14 @@ NamesAndIDsTracker::NamesAndIDsTracker(const ProofOptions & proof_options) : _im
     _imp->verbose_names = proof_options.verbose_names;
     _imp->use_compact_boolean_encoding = proof_options.use_compact_boolean_encoding;
     _imp->assertion_level = proof_options.assertion_level;
-    _imp->order_link_deletion_mode = proof_options.order_encoding_deletion;
+    _imp->order_encoding_deletion_mode = proof_options.order_encoding_deletion;
     _imp->order_encoding_deletion_min_chain = proof_options.order_encoding_deletion_min_chain;
 
     // The pin-apportionment diagnostic collects only under OrderEncodingDeletion::Literals
     // (the only mode with deletable/hoistable order literals) AND when GCS_ORDER_ENCODING_STATS
     // holds any non-empty value. Cached once here; gates every stats hook so nothing runs on
     // the default (deletion-off) path or when the diagnostic is not requested.
-    if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals) {
+    if (_imp->order_encoding_deletion_mode == OrderEncodingDeletion::Literals) {
         const auto * const stats_env = std::getenv("GCS_ORDER_ENCODING_STATS");
         _imp->collect_order_encoding_stats = stats_env != nullptr && *stats_env != '\0';
     }
@@ -824,7 +824,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     // exist at all -- the Literals mode, at proof-writing time, with assertions off, for a
     // real variable -- and the request is ignored, leaving the definition permanent,
     // anywhere else.
-    bool windowed = _imp->minting_windowed_eq && _imp->order_link_deletion_mode == OrderEncodingDeletion::Literals && _imp->logger != nullptr &&
+    bool windowed = _imp->minting_windowed_eq && _imp->order_encoding_deletion_mode == OrderEncodingDeletion::Literals && _imp->logger != nullptr &&
         _imp->assertion_level == AssertionLevel::Off && std::holds_alternative<SimpleIntegerVariableID>(id);
 
     // The (i-static) half of the eq-by-interval guard (dev_docs/brancher-design.md, "The
@@ -861,7 +861,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     // `x<n>` with verbose names off); otherwise mint a fresh one. Only a windowed variable
     // ever retires an eq atom.
     auto eqvar = [&]() {
-        if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals) {
+        if (_imp->order_encoding_deletion_mode == OrderEncodingDeletion::Literals) {
             auto & atoms = _imp->atoms_for(id);
             if (auto retired = atoms.retired_eq.find(v.raw_value); retired != atoms.retired_eq.end()) {
                 auto reused = retired->second;
@@ -1096,7 +1096,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     // otherwise mint a fresh one. Only Literals mode ever retires anything.
     bool reintroducing = false;
     auto gevar = [&]() {
-        if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals) {
+        if (_imp->order_encoding_deletion_mode == OrderEncodingDeletion::Literals) {
             auto & atoms = _imp->atoms_for(id);
             if (auto retired = atoms.retired_ge.find(v.raw_value); retired != atoms.retired_ge.end()) {
                 auto reused = retired->second;
@@ -1117,7 +1117,7 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
     // trivially true/false and which serve as permanent chain anchors) and model-time
     // atoms (logger not yet attached) keep their def resident at Top, tagged level 0.
     // Computed here because the def is emitted just below, before the fix_bound block.
-    bool literals_real = _imp->order_link_deletion_mode == OrderEncodingDeletion::Literals && _imp->assertion_level == AssertionLevel::Off &&
+    bool literals_real = _imp->order_encoding_deletion_mode == OrderEncodingDeletion::Literals && _imp->assertion_level == AssertionLevel::Off &&
         std::holds_alternative<SimpleIntegerVariableID>(id);
     bool literals_proof_time = literals_real && _imp->logger != nullptr;
     bool def_at_current = false;
@@ -1512,9 +1512,9 @@ auto NamesAndIDsTracker::emit_order_link(const SimpleIntegerVariableID & id, Int
     emit_proof_line_now_or_at_start([pol](ProofLogger * const logger) { pol->emit(*logger, ProofLevel::Top); });
 }
 
-auto NamesAndIDsTracker::forget_order_links_at_level(int level) -> void
+auto NamesAndIDsTracker::forget_order_encoding_at_level(int level) -> void
 {
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals)
         return;
 
     forget_order_literals_at_level(level);
@@ -1549,7 +1549,7 @@ auto NamesAndIDsTracker::record_live_eq_literal(const SimpleIntegerVariableID & 
 
 auto NamesAndIDsTracker::note_order_literal_top_pin(const SimpleIntegerVariableID & id, Integer v, OrderEncodingResidencyCause cause) -> void
 {
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals)
         return;
 
     auto live_it = _imp->live_order_literals.find(id);
@@ -1568,7 +1568,7 @@ auto NamesAndIDsTracker::note_order_literal_top_pin(const SimpleIntegerVariableI
 auto NamesAndIDsTracker::record_live_chain_line(const SimpleIntegerVariableID & id, Integer lo, Integer hi, int at_level, const ProofLine & line)
     -> void
 {
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals)
         return;
 
     _imp->chain_clauses_by_level[at_level][id].emplace_back(Imp::ChainClause{lo, hi, line});
@@ -1692,7 +1692,7 @@ auto NamesAndIDsTracker::emit_order_stitch(const SimpleIntegerVariableID & id, I
 
 auto NamesAndIDsTracker::forget_order_literals_at_level(int level) -> void
 {
-    // Called from forget_order_links_at_level, itself called by
+    // Called from forget_order_encoding_at_level, itself called by
     // ProofLogger::forget_proof_level after it has emitted the `del`s for every line
     // recorded at `level` (which include the deleted literals' def and link lines).
     auto bucket_it = _imp->order_literals_by_level.find(level);
@@ -1835,7 +1835,7 @@ auto NamesAndIDsTracker::stitch_hoisted_order_literal(const SimpleIntegerVariabl
 auto NamesAndIDsTracker::hoist_order_literal_to_level(const SimpleIntegerVariableID & id, Integer v, int target_level, bool immediate_neighbours,
     optional<OrderEncodingResidencyCause> stats_cause) -> void
 {
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals)
         throw ProofError{"hoist_order_literal_to_level requires OrderEncodingDeletion::Literals"};
     if (! _imp->logger)
         throw ProofError{"hoist_order_literal_to_level requires the logger to be attached"};
@@ -1930,7 +1930,7 @@ auto NamesAndIDsTracker::hoist_ges_named_by_top_atom(
 {
     // Same guard the ge-def deletion in need_gevar uses: only proof-time, real-variable,
     // assertions-off Literals mode tracks deletable ge defs at all.
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger || _imp->assertion_level != AssertionLevel::Off)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger || _imp->assertion_level != AssertionLevel::Off)
         return;
     if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
         // Count both Top pins here, at the reference site, and before the hoists: the
@@ -1952,7 +1952,7 @@ auto NamesAndIDsTracker::hoist_live_order_literals_toward_level(
 {
     // Only the Literals mode has anything to hoist; other modes keep the whole
     // encoding resident at Top, and with no logger there is nothing emitted yet.
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger)
         return;
 
     for (const auto & lit : lits) {
@@ -2014,7 +2014,7 @@ auto NamesAndIDsTracker::chain_clauses_naming(const SimpleIntegerVariableID & id
 auto NamesAndIDsTracker::evict_order_literal(
     const SimpleIntegerVariableID & id, Integer v, optional<OrderEncodingResidencyCause> expected_sole_top_cause) -> bool
 {
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals)
         throw ProofError{"evict_order_literal requires OrderEncodingDeletion::Literals"};
     if (! _imp->logger)
         throw ProofError{"evict_order_literal requires the logger to be attached"};
@@ -2165,7 +2165,7 @@ auto NamesAndIDsTracker::evict_order_literal(
 
 auto NamesAndIDsTracker::hoist_eq_to_top(const SimpleIntegerVariableID & id, Integer v) -> void
 {
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals)
         throw ProofError{"hoist_eq_to_top requires OrderEncodingDeletion::Literals"};
     if (! _imp->logger)
         throw ProofError{"hoist_eq_to_top requires the logger to be attached"};
@@ -2219,7 +2219,7 @@ auto NamesAndIDsTracker::note_permanent_eq_reference(const SimpleIntegerVariable
     // Cheap enough to call unconditionally from every permanent-reference site: the mode
     // check rules out every proof that has no window at all, and live_eq_literals is empty
     // unless something is windowed right now.
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger || _imp->live_eq_literals.empty())
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger || _imp->live_eq_literals.empty())
         return;
 
     hoist_eq_to_top(id, v);
@@ -2227,7 +2227,7 @@ auto NamesAndIDsTracker::note_permanent_eq_reference(const SimpleIntegerVariable
 
 auto NamesAndIDsTracker::evict_eq_literal(const SimpleIntegerVariableID & id, Integer v) -> bool
 {
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals)
         throw ProofError{"evict_eq_literal requires OrderEncodingDeletion::Literals"};
     if (! _imp->logger)
         throw ProofError{"evict_eq_literal requires the logger to be attached"};
@@ -2284,7 +2284,7 @@ auto NamesAndIDsTracker::evict_eq_literal(const SimpleIntegerVariableID & id, In
 
 auto NamesAndIDsTracker::collapse_eq_window(const SimpleOrProofOnlyIntegerVariableID & id) -> void
 {
-    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger)
+    if (_imp->order_encoding_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger)
         return;
     const auto * sid_ptr = std::get_if<SimpleIntegerVariableID>(&id);
     if (! sid_ptr)
