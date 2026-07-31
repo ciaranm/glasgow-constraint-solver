@@ -46,12 +46,21 @@ local SSD. `veripb` 3.0.2.
 | `freqsq6_gac` | `frequency_square 6 --all --stats --consistency gac` | enum, 53 220 | 105 825 | 44 KB | 205 MB | 0.90 s | ×2.0 | **83.6 s** |
 | `freqsq6_bc` | `frequency_square 6 --all --stats --consistency bc` | enum, 53 220 | 105 825 | 44 KB | 80 MB | 1.10 s | ×1.3 | **81.2 s** |
 | `pdisp10_tuple` | `p_dispersion --grid 10 -p 4 --variant tuple --stats` | optimal | 1 037 | 12.6 MB | 158 MB | 0.10 s | ×4.0 | **88.8 s** |
-| `mzn_hitori` | `fzn-glasgow -s -a hitori.fzn` (Challenge 2025, `h5-1.dzn`) | optimal | 113 671 | 1.2 MB | **1 000 MB** | 1.20 s | ×3.1 | **273.3 s** |
-| `mzn_seatmoving` | `fzn-glasgow -s -n 1 2018_seat-moving.fzn` | first solution | 15 610 | 3.1 MB | 629 MB | 0.40 s | ×3.8 | **122.3 s** |
+| `hitori` | `hitori --size 5 --seed 1 --quiet --stats` | optimal | 72 361 | — | 937 MB | — | — | **260.5 s** |
+| `table_layout` | `table_layout --size 15 --seed 1 --stats` | optimal | 17 768 | — | 146 MB | — | — | **102.6 s** |
+| `seat_moving` | `seat_moving --dzn sm-10-12-00.dzn --quiet --stats` | first solution | 15 610 | 2.4 MB | 645 MB | — | — | **119.5 s** |
 
 `solve` is wall time with proof logging off; `+proof` is the multiplier when it
 is on. Note how far that varies — from ×1.2 on `colour46`, whose search dominates,
-to ×9.0 on `odb_cumulative8`. One pass over group A costs about 47 minutes.
+to ×9.0 on `odb_cumulative8`. One pass over group A costs about 55 minutes.
+
+The last three rows are the native ports from issues #633–#636; they carry no
+`solve`/`+proof` column yet because they were measured after the pinned pass.
+`hitori` and `seat_moving` replaced `fzn-glasgow` entries and were validated
+against them — **recursion counts match exactly** (113 671 and 15 610), so they
+reproduce the search rather than merely the answer. `table_layout` gives `Table`
+a size where proof shape is measurable at all; `examples/tables` is 10
+recursions.
 
 `langford11` at 11.0 minutes sits just outside the nominal ceiling. It is kept
 deliberately as the largest entry; with `langford10` at 60.4 s the pair brackets
@@ -92,6 +101,7 @@ Pairs that differ in one controlled way, for attributing a difference.
 | benchmark | command | why separate |
 |---|---|---|
 | `mzn_aircraft06` | `fzn-glasgow -s -a aircraft.fzn` (Challenge 2024, `B737NG-600-06-Anon.json.dzn`) | Needs about **19 GB of veripb resident memory**. It cannot share a 30 GB machine with anything else and will exhaust a smaller one. |
+| `rcpsp20` | `rcpsp --size 20 --seed 1 --stats` | Writes a **4.1 GB `.pbp`** and verifies in 699 s — over the nominal ceiling and heavy on disk. Kept because it is the only *realistic* `Cumulative` + `Disjunctive` entry; `odb_cumulative8` covers the propagator more cheaply but is synthetic. |
 
 `mzn_aircraft06` is worth the trouble because it is the only entry where the
 checker is bound by the **model encoding** rather than the derivation: a 2.5 GB
@@ -218,6 +228,9 @@ repeated.
 | `skeleton_puzzle` at 4×3, 4×4, 5×3, 5×4, 6×3 and the default 7×5 | cap or over 1200 s at every shape tried, with `--seed` and without |
 | `random_polynomial -n 12 -d 6` | cap; `-n 10 -d 5` is 426 MB |
 | `colour` on 42-vertex (50 % density) and 60-vertex graphs | cap — but a 46-vertex graph verifies in the band; see below |
+| `rcpsp --size` 12–19 and 22–24, several seeds | either trivial (≤139 MB, under 10 s) or cap. Only `--size 20 --seed 1` lands, at 4.1 GB |
+| `seat_moving --seats` 20, 30, 60, 100 | cap in find-first mode; `--optimise` caps from 20 seats up. 16 seats is 11 MB |
+| `hitori --size` 6, 7, 8, and `--size 6 --density 0.2` | cap. `--size 5` is 937 MB, `--size 4` is 5.7 MB |
 | `order_deletion_bench --problem cumulative --size 10 --domain 500` | cap |
 | Challenge `atsp`, `triangular`, `chessboard`, `tiny-cvrp`, `table-layout` | cap or over 1200 s, despite each solving in under 12 s with proofs off |
 | `nonogram --random N --all` | no search — 17 recursions at the size `benchmarking.md` suggests |
@@ -266,20 +279,27 @@ Found the hard way, all of them producing an immediate parse error:
   proof in piloting — but that observation was made against an unseeded run and
   so compared two different instances; a seeded comparison is the way to settle
   it.
-- **`Cumulative` and `Disjunctive` at scale** are reachable only through the
-  MiniZinc frontend, because `examples/cumulative` is a fixed five-task toy.
-  This is the most valuable gap to close.
+- **A comfortably-sized realistic `Cumulative` / `Disjunctive` instance.**
+  `examples/rcpsp` (issue #633) closed the "unreachable natively" half of this,
+  but its instances are **bimodal rather than scalable**: across `--size` 12–24
+  and three seeds, every instance was either trivial (≤139 MB, under 10 s) or
+  explosive (over 3 GB). Only `--size 20 --seed 1` lands in range, and it writes
+  4.1 GB. `odb_cumulative8` covers the propagator cheaply but synthetically.
+- **A generated `seat_moving` instance.** The port removed the dependence on an
+  unversioned flattened `.fzn`, but it still needs the Challenge `.dzn`:
+  generated instances jump from 11 MB at 16 seats to over 6 GB at 20, in both
+  find-first and `--optimise` modes.
 
 ## MiniZinc entries
 
-Three entries come through `fzn-glasgow` because nothing native reaches their
-shape: `mzn_hitori` (a realistic optimisation writing a 1 GB proof from under
-four seconds of solving), `mzn_aircraft06` (the model-encoding-bound extreme)
-and `mzn_seatmoving` (the deep find-first split search).
+One entry still comes through `fzn-glasgow`, because nothing native reaches its
+shape: `mzn_aircraft06`, the model-encoding-bound extreme. The other two — a
+realistic gigabyte-scale optimisation and the deep find-first split search — are
+now the native `hitori` and `seat_moving` examples.
 
-They carry a cost: a flattening step, `mznlib` drift between MiniZinc releases,
-and a dependence on a Challenge corpus that is not in this repository. Flatten
-once and keep the `.fzn`:
+The MiniZinc route carries a cost: a flattening step, `mznlib` drift between
+MiniZinc releases, and a dependence on a Challenge corpus that is not in this
+repository. Flatten once and keep the `.fzn`:
 
 ```shell
 minizinc --solver <glasgow.msc> -c --fzn model.fzn --no-output-ozn model.mzn data.dzn
@@ -292,15 +312,11 @@ would make the set self-contained. A port must reproduce the proof *shape* —
 `.opb` size, `.pbp` size and recursion count — against the `fzn-glasgow` run,
 not merely the answer, or it is not a substitute for the instance it replaces.
 
-Four such ports are tracked:
+Four such ports were done, as issues #633–#636 and PRs #638–#641:
+`examples/rcpsp`, `examples/hitori`, `examples/seat_moving` and
+`examples/table_layout`. Each takes a `--size`/`--seed` pair, and `hitori`,
+`seat_moving` and `table_layout` also read the original `.dzn` directly, which
+is what made the validation above possible.
 
-- **#633** — a scheduling example (`Cumulative`, `Disjunctive`, makespan). The
-  most valuable of the four: it closes the gap above rather than replacing an
-  existing entry.
-- **#634** — `hitori`, which needs only `Count` and `AllDifferentExcept`.
-- **#635** — `seat-moving`, which needs only `AllDifferent` and
-  `AllDifferentExcept`, and which removes this set's dependence on a flattened
-  `.fzn` that is not under version control.
-- **#636** — `table-layout`, which would also give `Table` a representation at
-  a size where proof shape is measurable; `examples/tables` is a 10-recursion
-  toy.
+The remaining MiniZinc dependency is `mzn_aircraft06`, whose 2.5 GB `.opb` is
+the point of the entry, and `seat_moving`'s `.dzn` — see "Known gaps".
