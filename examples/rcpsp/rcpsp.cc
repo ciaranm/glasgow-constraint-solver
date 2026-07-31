@@ -202,6 +202,11 @@ namespace
         IntegerVariableID from;
         IntegerVariableID to;
         Integer d;
+
+        // Set only for the pairwise machine decomposition under
+        // --machine=difference, where each disjunct holds only under its
+        // ordering Boolean. The temporal network's edges are unconditional.
+        std::optional<IntegerVariableCondition> cond = nullopt;
     };
 
     // How the temporal network reaches the solver. All three say exactly the
@@ -309,10 +314,12 @@ auto main(int argc, char * argv[]) -> int
             ("deadline", "Solve the decision variant: is there a schedule finishing by this time?", //
                 cxxopts::value<long long>())                                                        //
             ("machine",
-                "How to post the unary machine resource: disjunctive (the Disjunctive global, the " //
-                "default), cumulative (a Cumulative of capacity one), or pairwise (reified "        //
-                "non-overlap clauses)",                                                             //
-                cxxopts::value<string>()->default_value("disjunctive"))                             //
+                "How to post the unary machine resource: disjunctive (the Disjunctive global, the "   //
+                "default), cumulative (a Cumulative of capacity one), pairwise (reified non-overlap " //
+                "clauses), or difference (the same pairwise decomposition written as conditional "    //
+                "difference constraints, which is what puts the machine into the difference "         //
+                "network that --variant handles)",                                                    //
+                cxxopts::value<string>()->default_value("disjunctive"))                               //
             ("branch",
                 "Branching variable order: in-order (default), dom-then-deg, or dom-wdeg[:VARIANT]" //
                 " (VARIANT = classic / ia / ca / id / cd / ca.cd / chs)",                           //
@@ -466,6 +473,38 @@ auto main(int argc, char * argv[]) -> int
     auto edges = model_edges(instance, starts, makespan);
     auto presolver_stats = std::make_shared<DifferenceLogicStats>();
 
+    // --machine=difference puts the machine into that same network, as the
+    // pairwise disjunctive decomposition written in conditional edges: one
+    // Boolean per pair, and the two disjuncts as edges holding under it and
+    // under its negation. It has to be built before the network is posted so
+    // that both end up in the *same* DifferenceConstraints under
+    // --variant=global --- a cycle that closes only through an ordering
+    // decision spans both halves, and two separate propagators would never see
+    // it. Nothing here runs in any other --machine mode, so no other path
+    // creates a variable or posts a row it did not create or post before.
+    vector<IntegerVariableID> machine_starts;
+    vector<Integer> machine_durations;
+    for (auto & i : instance.machine_tasks) {
+        machine_starts.push_back(starts[i]);
+        machine_durations.push_back(instance.durations[i]);
+    }
+
+    auto machine_variant = options_vars["machine"].as<string>();
+    if (machine_variant != "disjunctive" && machine_variant != "cumulative" && machine_variant != "pairwise" && machine_variant != "difference") {
+        println(cerr, "Error: unknown --machine value '{}'. Supported: disjunctive, cumulative, pairwise, difference.", machine_variant);
+        return EXIT_FAILURE;
+    }
+
+    vector<IntegerVariableID> machine_order_vars;
+    if (machine_variant == "difference" && machine_starts.size() >= 2)
+        for (std::size_t a = 0; a < machine_starts.size(); ++a)
+            for (auto b = a + 1; b < machine_starts.size(); ++b) {
+                auto first = problem.create_integer_variable(0_i, 1_i, "machine_before" + to_string(a) + "_" + to_string(b));
+                machine_order_vars.push_back(first);
+                edges.push_back(ModelEdge{machine_starts[a], machine_starts[b], machine_durations[a], first == 1_i});
+                edges.push_back(ModelEdge{machine_starts[b], machine_starts[a], machine_durations[b], first == 0_i});
+            }
+
     switch (*variant) {
         using enum Variant;
     case Presolved:
@@ -475,8 +514,13 @@ auto main(int argc, char * argv[]) -> int
         // every one of these has been posted in since this example landed.
         // Changing it would give the same constraint a different WeightedSum
         // term order, and so a different OPB row, for no reason.
-        for (const auto & e : edges)
-            problem.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * e.to + -1_i * e.from, e.d});
+        for (const auto & e : edges) {
+            auto sum = WeightedSum{} + 1_i * e.to + -1_i * e.from;
+            if (e.cond)
+                problem.post(LinearGreaterThanEqualIf{sum, e.d, *e.cond});
+            else
+                problem.post(LinearGreaterThanEqual{sum, e.d});
+        }
         if (*variant == Presolved)
             problem.add_presolver(DifferenceLogic{presolver_stats});
         break;
@@ -488,7 +532,7 @@ auto main(int argc, char * argv[]) -> int
             vector<DifferenceEdge> difference_edges;
             difference_edges.reserve(edges.size());
             for (const auto & e : edges)
-                difference_edges.push_back(DifferenceEdge{e.from, e.to, -e.d});
+                difference_edges.push_back(DifferenceEdge{e.from, e.to, -e.d, e.cond});
             problem.post(DifferenceConstraints{difference_edges});
         }
         break;
@@ -534,22 +578,12 @@ auto main(int argc, char * argv[]) -> int
             problem.post(Cumulative{task_starts, task_durations, task_demands, instance.capacities[r]});
     }
 
-    vector<IntegerVariableID> machine_starts;
-    vector<Integer> machine_durations;
-    for (auto & i : instance.machine_tasks) {
-        machine_starts.push_back(starts[i]);
-        machine_durations.push_back(instance.durations[i]);
-    }
-
-    // The three ways of saying that the machine does one thing at a time. Every
+    // The four ways of saying that the machine does one thing at a time. Every
     // duration here is at least one, so the strict / non-strict distinction
     // does not arise, and the Cumulative form is exactly the Disjunctive one.
-    auto machine_variant = options_vars["machine"].as<string>();
-    if (machine_variant != "disjunctive" && machine_variant != "cumulative" && machine_variant != "pairwise") {
-        println(cerr, "Error: unknown --machine value '{}'. Supported: disjunctive, cumulative, pairwise.", machine_variant);
-        return EXIT_FAILURE;
-    }
-    if (machine_starts.size() >= 2) {
+    // The difference form was posted above, with the temporal network, because
+    // it has to share a propagator with it.
+    if (machine_variant != "difference" && machine_starts.size() >= 2) {
         if (machine_variant == "disjunctive")
             problem.post(Disjunctive{machine_starts, machine_durations});
         else if (machine_variant == "cumulative")
@@ -577,7 +611,17 @@ auto main(int argc, char * argv[]) -> int
     if (! all && ! deadline)
         problem.minimise(makespan);
 
-    auto branch_vars = starts;
+    // Under --machine=difference the ordering Booleans have to be branched on,
+    // and first. DifferenceConstraints makes no inference about an edge's
+    // condition at all --- that is the paper's IncImp, deliberately not
+    // implemented (see dev_docs/difference-logic.md) --- so an edge whose
+    // Boolean is unfixed simply does not constrain, and leaving them out of the
+    // branch list would let the solver report a schedule that runs two machine
+    // tasks at once. The reified linear forms do infer their condition, which is
+    // why --machine=pairwise is sound without them; relying on that here would
+    // be relying on the very thing this variant is meant to exercise.
+    auto branch_vars = machine_order_vars;
+    branch_vars.insert(branch_vars.end(), starts.begin(), starts.end());
     branch_vars.push_back(makespan);
 
     auto var_order = variable_order_from_string(options_vars["branch"].as<string>(), branch_vars);

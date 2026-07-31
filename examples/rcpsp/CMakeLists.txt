@@ -66,3 +66,17 @@ add_test(NAME rcpsp_presolved COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_a
 # refutation that sums the cycle's edge rows rather than crawling bounds.
 add_test(NAME rcpsp_global_infeasible COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_global_infeasible
     $<TARGET_FILE:rcpsp> --size 8 --seed 1 --infeasible --variant global)
+
+# --machine=difference, which is what puts *conditional* edges into the network,
+# in each of the three variants. All three must reach the same optimum as
+# --machine=disjunctive and --machine=pairwise --- they say the same thing --- but
+# unlike the unconditional network they do not search alike: the reified linears
+# infer their condition and DifferenceConstraints does not (IncImp is deliberately
+# absent), so global explores more nodes with fewer propagations. That divergence
+# is the point of having all three.
+add_test(NAME rcpsp_machine_difference COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_machine_difference
+    $<TARGET_FILE:rcpsp> --size 10 --seed 5 --machine-fraction 0.7 --machine difference)
+add_test(NAME rcpsp_machine_difference_global COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_machine_difference_global
+    $<TARGET_FILE:rcpsp> --size 10 --seed 5 --machine-fraction 0.7 --machine difference --variant global)
+add_test(NAME rcpsp_machine_difference_presolved COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_machine_difference_presolved
+    $<TARGET_FILE:rcpsp> --size 10 --seed 5 --machine-fraction 0.7 --machine difference --variant presolved)
