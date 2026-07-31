@@ -5,8 +5,9 @@ measured on synthetic AND real instances; suite-safe; committed on this branch;
 not default.** This note records the design for shrinking the integer
 order-encoding that VeriPB carries, plus the measured outcome and what is and
 isn't yet done. The full Brancher-API refactor (step 2, below) is a **decided design,
-recorded in [brancher-design.md](brancher-design.md), now partly implemented**: its
-stages A, B, B', B'' and C have landed, D/E have not. That note, not this one, is the
+recorded in [brancher-design.md](brancher-design.md), now fully implemented**: stages
+A, B, B', B'', C, D and E have all landed, and stage E's campaign — the go/no-go for
+the whole stack — is the source of the figures below. That note, not this one, is the
 authority on the refactor's staging and status. The shipped deletion path still wires
 into the existing branch/backtrack flow via hoisting, and the four-step sketch further
 down this note is superseded by the decided design (see the note at "Design overview"
@@ -16,10 +17,11 @@ and at "Implementation staging").
 
 All numbers below were measured on the development VM (KVM guest, AMD Ryzen 9
 9950X3D, 32 vCPUs, 30 GB RAM, `veripb` 3.0.2): each timed run pinned to one core
-with `taskset` and ASLR off via `setarch -R`, all timed proof I/O on the `/tmp`
-tmpfs, every verify run **solo** on an otherwise idle machine, and each figure the
-**minimum of three runs** (two above a minute, one for the multi-minute depth-point
-rows). The guest exposes no `cpufreq` interface, so turbo cannot be pinned off;
+with `taskset` and ASLR off via `setarch -R`, all timed proof I/O on tmpfs
+(`/dev/shm`), every verify run **solo** on an otherwise idle machine, and each figure
+the **minimum of three runs** (five for the solve-side times, which are small enough
+that process startup is a visible share of them). The guest exposes no `cpufreq`
+interface, so turbo cannot be pinned off;
 taking a minimum rather than a mean is the compensation. Peak RSS via
 `/usr/bin/time -v`. **The whole synthetic sweep was taken in one contiguous
 sitting**, because this machine drifts by up to ~18 % between sittings on the
@@ -36,6 +38,11 @@ both proofs VeriPB-**VERIFIED**.
 > in turn been replaced by the figures below, re-measured from scratch on the
 > current machine. Only one set of numbers is kept, because absolute verify times do
 > not transfer between machines and two sets invite comparing across them.
+>
+> Every table below was taken again at the **end of the step-2 stack** (stage E's
+> go/no-go campaign, one sitting), with stages B″, C and D all in. They reproduce
+> the pre-stack figures to a couple of percent, which is itself a result: **the
+> later stages cost the headline win nothing.**
 
 ### Synthetic win curve (committed driver)
 
@@ -51,16 +58,23 @@ tree must be searched.) ON rows are `GCS_DELETE_ORDER_ENCODING=literals` at
 
 | D    | recursions | verify OFF | verify ON | speedup    | pbp OFF | pbp ON  | pbp growth |
 |-----:|-----------:|-----------:|----------:|-----------:|--------:|--------:|-----------:|
-| 250  |        393 | 0.335 s    | 0.067 s   | **5.04×**  | 1.13 MB | 2.32 MB | +105 %     |
-| 500  |        919 | 1.669 s    | 0.171 s   | **9.79×**  | 2.59 MB | 5.74 MB | +121 %     |
-| 1000 |      2 397 | 10.576 s   | 0.507 s   | **20.87×** | 6.34 MB | 15.3 MB | +141 %     |
-| 2000 |      6 979 | 101.81 s   | 1.852 s   | **54.98×** | 17.1 MB | 44.9 MB | +163 %     |
+| 250  |        393 | 0.337 s    | 0.067 s   | **5.03×**  | 1.13 MB | 2.32 MB | +105 %     |
+| 500  |        919 | 1.711 s    | 0.173 s   | **9.89×**  | 2.59 MB | 5.74 MB | +121 %     |
+| 1000 |      2 397 | 10.015 s   | 0.504 s   | **19.87×** | 6.34 MB | 15.3 MB | +141 %     |
+| 2000 |      6 979 | 107.88 s   | 1.859 s   | **58.03×** | 17.1 MB | 44.9 MB | +163 %     |
+
+At the **shipped gate of 16** rather than the gate-off ceiling, the same rows give
+0.106 s / 0.277 s / 0.805 s / 2.792 s — **3.18× / 6.18× / 12.44× / 38.64×**. The gate
+costs roughly a third of the win and buys strictly-no-harm on short-chain models,
+which is the trade it was chosen for.
 
 The speedup **grows monotonically with domain**, at least doubling per domain
 doubling. A depth point isolates search depth from domain: same domain 1000 but
 `--tightness 95`, **72 341 recursions** (~30× deeper than the 2 397 at tightness 90),
 gives **26.41×** (443.78 s → 16.81 s) — above the tightness-90 d1000 point, so deeper
-search at the same domain also wins; the effect is not merely a domain artefact.
+search at the same domain also wins; the effect is not merely a domain artefact. (That
+row is the one figure in this section carried over from the pre-stack sitting rather
+than re-taken at the tip.)
 
 **The d2000 row is superlinear, and it is the least portable number here.** The
 smaller rows double per domain doubling; d1000→d2000 gains 2.6×. The asymmetry is
@@ -78,10 +92,18 @@ verify across machines or across sittings.
 ON proofs are **+105 %…+224 % larger** (the +224 % is the tightness-95 depth point)
 yet verify far faster — the design's central claim confirmed: **resident chain
 length, not proof line count, dominates VeriPB's cost.** The honest cost on the win
-rows: solver-side proof-*writing* overhead is **+101 % at d1000 and +123 % at d2000**
-(and +200 % on the depth point) — largest exactly where the verify win is largest, a
-genuine trade rather than a free one. It stays a good trade in absolute terms: at
-d2000 the solver pays 0.087 s → 0.194 s to save 100 s of verification.
+rows: solver-side proof-*writing* overhead is **+109 % at d1000 and +132 % at d2000**
+(re-measured at the stack tip; +67 % at d250 and +88 % at d500) — largest exactly
+where the verify win is largest, a genuine trade rather than a free one. It stays a
+good trade in absolute terms: at d2000 the solver pays 0.084 s → 0.195 s to save 106 s
+of verification.
+
+**The whole stack's solver-side cost is that trade and nothing more.** Stage E
+re-measured it end to end, which nobody had done since stage A. With the mode **off**
+the stack is byte-identical to its predecessor across every deterministic example in
+each of the three live configurations (75/75 comparisons), so there is nothing for it
+to cost; with the mode on, the figures above are the cost, and they are the same
+figures the pre-B″ stack had.
 
 **Peak `veripb` RSS falls, and the saving grows with domain** — the "resident
 database is smaller" prediction confirmed directly, and more strongly than the
@@ -89,16 +111,16 @@ earlier campaign found:
 
 | D | RSS OFF | RSS ON | change |
 |--:|--:|--:|--:|
-| 250  | 14.6 MB | 10.2 MB | −30 % |
-| 500  | 21.6 MB | 12.3 MB | −43 % |
-| 1000 | 39.6 MB | 20.7 MB | −48 % |
-| 2000 | 73.4 MB | 31.9 MB | −57 % |
+| 250  | 14.3 MB | 10.0 MB | −30 % |
+| 500  | 21.2 MB | 12.0 MB | −43 % |
+| 1000 | 38.5 MB | 20.3 MB | −47 % |
+| 2000 | 71.2 MB | 31.4 MB | −56 % |
 | 1000 @ t95 | 74.8 MB | 50.7 MB | −32 % |
 
 The earlier campaign reported a smaller saving that **inverted** at d2000, on the
 model that peak RSS = (the proof `veripb` must hold) + (the resident order database),
 so a several-fold-larger ON proof would swamp the database saving. That model does
-not hold here: at d2000 the ON proof is 44.9 MB but ON peak RSS is 31.9 MB, and at
+not hold here: at d2000 the ON proof is 44.9 MB but ON peak RSS is 31.4 MB, and at
 the depth point the ON proof is 373 MB against 50.7 MB of RSS. `veripb` **streams**
 the proof rather than holding it, so RSS tracks the resident constraint database
 alone — which is exactly the quantity this mode shrinks, and why the saving grows
@@ -112,6 +134,40 @@ the string did not change across that commit — so **the version number is not 
 to tell the two behaviours apart**. If an RSS figure ever has to be compared against
 an older one, check the `veripb` build date against 2026-05-28 first.
 
+### The second win regime: ascending eq branching (the eq-atom window)
+
+Everything above is the **split** family: the branch layer advances a bound, and what
+gets deleted is a `ge` definition. Step 2's stage B″ added the **eq-atom sliding
+window**, which does the same for the contiguous eq value orders (`smallest_first` /
+`largest_first` / `smallest_in` / `largest_in`) — one live windowed eq definition per
+branched variable instead of one per value tried. Before it, eq branching had no
+frontier to advance and deletion did nothing for it.
+
+Same driver, eq-minting value order, `--size 6` (the eq control enumerates the whole
+domain at every node, so it scales quite differently — `--size 16 --domain 250` wrote
+12 GB of proof in three minutes without finishing):
+
+    order_deletion_bench --problem pairwise --size 6 --domain D --window D \
+        --tightness 90 --unsat --value-order smallest
+
+| D    | recursions | mode None | Literals, window off | window on | window's win | vs None    |
+|-----:|-----------:|----------:|---------------------:|----------:|-------------:|-----------:|
+| 250  |      3 280 | 1.736 s   | 0.760 s              | 0.327 s   | **2.32×**    | **5.31×**  |
+| 500  |     12 527 | 14.569 s  | 5.698 s              | 1.610 s   | **3.54×**    | **9.05×**  |
+| 1000 |     49 352 | 142.82 s  | 44.931 s             | 9.216 s   | **4.87×**    | **15.50×** |
+
+(gate 0; at the shipped gate of 16 the window is worth 1.87× / 2.70× / 3.77×, and
+3.69× / 6.28× / 11.27× against mode None.) The same signature as the split curve —
+**the win grows with domain width**, which is what a residency win looks like and a
+constant-factor one does not — and the same SIZE≠TIME shape: the window makes the
+proof **+31 %…+33 % larger** at every domain and verifies it up to 4.9× faster.
+
+Two thirds of the 15.5× is deletion itself and one third is the window, so this is not
+a separate feature so much as the eq half of the same one. It is also the one place
+where the step-2 stack **opened ground the pre-stack feature did not have**: without
+the window, `--value-order smallest` at d1000 verifies in 44.9 s against mode None's
+142.8 s; with it, 9.2 s.
+
 ### Real instances — the win did NOT generalise
 
 On **no reachable real instance** did the synthetic win materialise. The rows below
@@ -120,37 +176,64 @@ propagation counts equal OFF vs ON) and VeriPB-VERIFIED in every mode.
 
 - **seat-moving 2018** (`2018/seat-moving/sm-10-12-00.dzn`, flattened and run under
   `fzn-glasgow -n 1`) — the one deep-yet-verifiable real split case: 15 610-node
-  find-first, `indomain_split`, maxdom 901. **Neutral.**
+  find-first, `indomain_split`, maxdom 901. **Neutral, and it stayed neutral through
+  stages C and D**, which were the stages that could have moved it.
 
-  | mode | verify | vs OFF | pbp | `del` lines |
-  |---|--:|--:|--:|--:|
-  | OFF          | 126.17 s | —          | 629.4 MB | 931 708 |
-  | gate 0       | 119.52 s | **1.06×**  | 643.8 MB (+2.3 %) | 938 632 |
-  | gate 16      | 121.24 s | **1.04×**  | 639.3 MB (+1.6 %) | 935 062 |
-  | gate 64      | 120.55 s | **1.05×**  | 636.2 MB (+1.1 %) | 935 295 |
+  | mode | verify | vs OFF | pbp |
+  |---|--:|--:|--:|
+  | OFF     | 124.63 s | —         | 629.4 MB |
+  | gate 0  | 126.82 s | **0.98×** | 637.5 MB (+1.3 %) |
+  | gate 16 | 126.80 s | **0.98×** | 633.0 MB (+0.6 %) |
 
-  A few percent either way is inside what an unpinnable-turbo VM can resolve, so read
-  this as neutral rather than as a small win. The del-count proxy says why: ON emits
-  only **+0.7 %** more `del` lines even at the aggressive gate — deletion barely
-  fires. Not because the model lacks long chains (it has maxdom-901 split variables)
-  but because it is reif/element/view-heavy and its order encoding is **pinned
-  resident by design** (viewed variables held by the always-at-Top view bridges,
-  product/aux magnitudes by the product-justification caches — the "delete only when
-  unreferenced" rule).
+  Measured at the stack tip; the pre-stack sitting had the same instance at 126.17 s
+  OFF against 119.52 s / 121.24 s ON, i.e. a few percent the *other* way. Two percent
+  either way is inside what an unpinnable-turbo VM can resolve, so the honest reading
+  of both sittings together is **neutral** — and specifically that stage C's objective
+  exemption and stage D's incumbent retirement, both of which do measurably fire, buy
+  **no verify time here**. What stage C did buy is visible in the proof: the ON growth
+  fell from +2.3 %/+1.6 % to +1.3 %/+0.6 %, which is the suppressed objective churn.
+
+  Why deletion cannot win here is unchanged and is the important part: the model is
+  reif/element/view-heavy and its order encoding is **pinned resident by design**
+  (viewed variables held by the always-at-Top view bridges, product/aux magnitudes by
+  the product-justification caches — the "delete only when unreferenced" rule), and
+  its chains are tiny whatever its domains are (see "Pin apportionment" below).
 
 - **Expected-bad, confirmed and bounded.** The two eq-enumeration examples:
 
-  | instance | OFF verify | gate 0 | pbp growth, gate 0 / 16 / 32 / 64 |
-  |---|--:|--:|---|
-  | `crystal_maze` | 0.0306 s | 0.0322 s (**0.95×**) | +48.5 % / **0 %** / 0 % / 0 % |
-  | `talent`       | 1.2649 s | 1.3197 s (**0.96×**) | +35.8 % / +5.8 % / +1.6 % / **0 %** |
+  | instance | OFF verify | gate 0 | gate 16 | pbp growth, gate 0 / 16 |
+  |---|--:|--:|--:|---|
+  | `crystal_maze` | 0.030 s | 0.032 s (**0.94×**) | 0.030 s (**1.00×**) | +48.5 % / **0 %** |
+  | `talent`       | 1.258 s | 1.294 s (**0.97×**) | 1.259 s (**1.00×**) | +31.9 % / +2.8 % |
 
-  The `0 %` entries are not rounding: the proof is **byte-identical to `None`**
-  (checked by digest), which is the strongest strictly-no-harm form. crystal_maze
-  reaches it already at the shipped gate of 16 because its longest chain is 16;
-  talent needs 64. So the downside on eq/small-domain models is a low-single-digit
-  verify slowdown and +35–50 % proof size **at gate 0 only**, and the shipped gate
-  removes most of it.
+  The `0 %` entry is not rounding: the proof is **byte-identical to `None`**, which is
+  the strongest strictly-no-harm form. crystal_maze reaches it already at the shipped
+  gate of 16 because its longest chain is 16; talent needs 64. So the downside on
+  eq/small-domain models is a low-single-digit verify slowdown and +32–50 % proof size
+  **at gate 0 only**, and the shipped gate removes most of it. The churn counters say
+  why the gate works: at gate 16 talent's deletes fall from 7 646 to 365, and
+  crystal_maze's to **zero**.
+
+- **The eq window on real eq models: it barely engages, and costs accordingly.** The
+  window needs the *branch layer* to be the first to name an eq atom, and on a model
+  whose constraints reason per value the propagators got there first (see
+  brancher-design.md, "What it measures"). Measured directly: the d1000 synthetic above
+  evicts **49 260** windowed eq definitions, crystal_maze evicts **2**, talent **0**.
+  What that costs where it cannot engage:
+
+  | instance | window off | window on | cost |
+  |---|--:|--:|--:|
+  | `talent`, `langford`   | — | — | **byte-identical** |
+  | `colour` (40 vertices, 131 741 recursions, 188 MB proof) | 72.750 s | 72.971 s | **+0.30 %** |
+  | `colour` (30 vertices, 12 151 recursions, 13 MB proof)   | 3.199 s  | 3.310 s  | +3.4 % |
+  | `crystal_maze` / `sudoku` / `money` proof size | — | — | +0.1 %…+1.4 % |
+
+  Min-of-3 each. The cost is a **small-proof effect that washes out with scale** —
+  +3.4 % on a three-second verify, +0.30 % on a seventy-three-second one — and on the
+  models where the window cannot engage at all it is exactly nothing. That is the
+  measurement owner decision 5 was deferred to, and it is why the window now defaults
+  **on** wherever `Literals` is on (`GCS_DELETE_ORDER_ENCODING_EQ_WINDOW=0` turns it
+  back off).
 
 - **Not re-measured on this machine**, and carried over as qualitative findings only:
   mrcpsp 2023 and the `tour` circuit example (both recorded as exact no-ops — eq
@@ -234,7 +317,8 @@ frontend proofs.
 ## Implementation status
 
 - **Done, suite-safe:** the full caps-off test suite passes with the flag on (0
-  flag-induced VeriPB rejections; mode-off byte-identical; flag-off 537/537). The
+  flag-induced VeriPB rejections; mode-off byte-identical; 557/557 in each of {None,
+  Literals gate 0, Literals gate 16} at the end of the step-2 stack). The
   hoist primitive, guess/eq/partition-atom hoisting, and the aux/view dispositions
   below are all in `gcs/innards/proofs/{names_and_ids_tracker,proof_logger,proof_model}.*`.
 - **A line must never name a literal whose definition has been deleted — and that is now
@@ -393,7 +477,9 @@ frontend proofs.
   on a model whose constraints reason per value the propagators have defined those atoms
   permanently long before the search reaches them. Where it cannot engage it now costs
   nothing (talent's window-on proof is byte-identical to its window-off proof). The window
-  therefore ships off, and stage E owns whether the default changes.
+  therefore shipped off, and **stage E's measurement turned it on** wherever `Literals` is
+  on: up to 4.87x where it engages, +0.30 % on a seventy-three-second real verify where it
+  cannot. `GCS_DELETE_ORDER_ENCODING_EQ_WINDOW=0` turns it back off.
 - **The frontier deletion exemption (stage C).** `ProofModel::minimise` marks the objective
   `note_deletion_exempt`, so under Literals its whole `ge` encoding stays resident however
   long its chain grows. Branch-and-bound re-tightens the objective at every improving
@@ -414,12 +500,12 @@ frontend proofs.
   the descent's length. From this stage on both verification funnels pass **`-c`
   (`--force-checked-deletion`)**, so a deletion whose implication does not hold fails at the
   deletion rather than at a distant conclusion.
-- **In progress:** the clean Brancher abstraction (step 2). Stages A, B, B', B'', C and D
-  have landed — the `BranchDecision` / `BacktrackAdvance` types, the split families' bound
-  advances, the eviction primitives plus their always-on residency bookkeeping, the
-  eq-atom window, the objective exemption and the incumbent retirement — so the direct
-  guess/eq/aux hoist wiring is on its way out but is still what the shipped path uses.
-  Only stage E remains, and it is the go/no-go gate for the whole stack;
+- **Complete:** the clean Brancher abstraction (step 2). Stages A, B, B', B'', C, D and E
+  have all landed — the `BranchDecision` / `BacktrackAdvance` types, the split families'
+  bound advances, the eviction primitives plus their always-on residency bookkeeping, the
+  eq-atom window, the objective exemption, the incumbent retirement, and stage E's cleanup
+  and go/no-go campaign — so the direct guess/eq/aux hoist wiring is on its way out but is
+  still what the shipped path uses.
   [brancher-design.md](brancher-design.md) is the authority on each. Also future:
   short-reason flag / deview-companion level-scoping (currently inert), and the bridge
   redesign (deprioritised — step 1b measured it as freeing 0 %).
@@ -428,13 +514,16 @@ frontend proofs.
 
 **1. Real-instance benchmarking — DONE.** Completed as the phase-2 campaign, and
 re-measured from scratch on the current machine (see Results above). Verdict:
-- The **synthetic mechanism is validated**, **5.0×→55× across domain d250→d2000**
+- The **synthetic mechanism is validated**, **5.0×→58× across domain d250→d2000**
   (and 26× at the depth point), driven by resident-chain shrinkage — the design's
-  central claim holds.
+  central claim holds. Step 2's eq window extends it to the eq branching families,
+  **5.3×→15.5×** on the ascending-eq control.
 - The **real-instance win is unproven**: no reachable real instance triggered it. The
   one deep-yet-verifiable real case (seat-moving) is neutral because its chains are
   pinned resident by view/reif bridges, and the tractable-real-win hunt found nothing
-  (real instances are either shallow-neutral or intractably deep).
+  (real instances are either shallow-neutral or intractably deep). Stage E re-took that
+  row with the objective exemption and incumbent retirement in, and it is still
+  neutral.
 - The **downside is bounded**: a few-percent verify slowdown and +20–50 % proof size
   on eq/small-domain models, and roughly a doubling of solver-side proof-writing on
   the win rows.
@@ -442,11 +531,10 @@ re-measured from scratch on the current machine (see Results above). Verdict:
 - **Conclusion: keep the feature flag-gated; default-on is NOT justified by these
   numbers** (real win unproven, measurable overhead on eq/value-heavy models) — but
   the mechanism is sound and correctness is solid.
-- The verification-only drivers `order_jump_check.cc` / `order_hoist_check.cc` are
-  still uncommitted, in the artifacts directory (see Provenance). Stage E owns
-  promoting them to proper `gcs/` tests — they regression-check the two verified
-  foundations this whole design rests on, and until they are in-tree they survive only
-  by luck.
+- The verification-only drivers `order_jump_check.cc` / `order_hoist_check.cc` are now
+  in-tree as `order_jump_test` and `order_hoist_test` (stage E), with their must-fail
+  controls, so the two verified foundations this whole design rests on are
+  regression-checked rather than surviving by luck.
 
 **1b. Pin-apportionment instrumentation — DONE.** Implemented as the
 `GCS_ORDER_ENCODING_STATS` diagnostic and measured (see "Pin apportionment" above).
@@ -556,12 +644,18 @@ win-recovery motivation is gone. Revisit only if a view/product-heavy
 *weak-propagation large-domain bound-split* workload appears — the only regime where
 freed chains would be long enough to matter.
 
-**Ordering decided (2026-07): 2b first (done, above), then step 2.** Step 2 is under
-way — A, B, B', B'', C and D are in — and it inherited the objective-variable-exemption
-follow-up from 2b as its stage C; 3 stays parked.
+**Ordering decided (2026-07): 2b first (done, above), then step 2.** Step 2 is
+complete — A, B, B', B'', C, D and E are all in — and it inherited the
+objective-variable-exemption follow-up from 2b as its stage C; 3 stays parked.
 
-**Also:** decide productionisation (keep flag-gated vs default-on — current verdict:
-flag-gated). The superseded dormant `Links` mode has now been removed, in stage E.
+**Productionisation, settled by stage E's campaign: the feature stays flag-gated and
+off by default.** No reachable real instance wins, and the one deep-yet-verifiable
+real case (seat-moving) is neutral even with stages C and D in, so there is nothing to
+justify making everyone pay the +105 %…+163 % proof and the doubled proof-writing time.
+With the flag off the whole stack is byte-identical, so nothing is paid for keeping it.
+The one default that *did* change is the eq-atom window, which now follows `Literals`
+rather than needing a second flag — see "The eq window on real eq models" above for the
+measurement that decided it. The superseded dormant `Links` mode has been removed.
 
 ## The problem
 
@@ -806,11 +900,12 @@ a real use case lands.
 
 ## Implementation staging
 
-> **Superseded.** This was the original four-step sketch, written before the step-2
-> design was decided. Steps 1 and 2 are done (the hoist primitive, and the Brancher
-> abstraction through stage B'), and step 3's "replace the experimental Literals mode"
-> is now stage E's cleanup. Use **[brancher-design.md](brancher-design.md), "Migration
-> staging"** for what is actually left. Kept here for provenance.
+> **Superseded, and now finished.** This was the original four-step sketch, written
+> before the step-2 design was decided. All four are done: the hoist primitive, the
+> Brancher abstraction (stages A through D), the deletion wiring, and the benchmark —
+> which became stage E's go/no-go campaign. Use
+> **[brancher-design.md](brancher-design.md), "Migration staging"** for the record of
+> each stage. Kept here for provenance.
 
 1. **Hoist primitive first.** It is foundational, independently testable, and needed
    by everything downstream. Build `hoist_literal_to_level` / `hoist_literal_to_top`
@@ -843,7 +938,8 @@ unchanged mode-off vs mode-on (a proof-only change must not perturb search).
 - **The artifacts directory** — currently `~/claude/tmp/order-encoding-deletion-artifacts/`.
   Not version controlled and it does not travel with a clone, so check it is present
   before relying on it. It holds `order_jump_check.cc` / `order_hoist_check.cc` (the two
-  verified foundations, still uncommitted — stage E promotes them), the phase-2 campaign
+  verified foundations, promoted in stage E to `order_jump_test` / `order_hoist_test`
+  and kept here as provenance), the phase-2 campaign
   (`real-instance-bench/`, with the gate study in `chain-gate/`), the seed-bug sweep
   (`divide-modulus-seed-bug/`), the per-stage gate logs (`stage-b/`, `stage-bprime/`,
   `rebase-to-main-20260729/`), and the two self-contained VeriPB drivers the unbuilt

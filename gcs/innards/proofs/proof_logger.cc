@@ -568,8 +568,9 @@ auto ProofLogger::note_top_eq_references(const SumLessThanEqual<Weighted<PseudoB
     // smart_table, tour and minizinc-cumulative all reject without this.
     //
     // Costs a walk of the terms per Top emission while a window is live, and nothing at all
-    // otherwise: eq_window_active() is false in every default configuration, and the
-    // tracker's own guard returns immediately when no variable is currently windowed.
+    // otherwise: eq_window_active() is false unless order-encoding deletion is on (which it
+    // is not by default), and the tracker's own guard returns immediately when no variable
+    // is currently windowed.
     if (level != ProofLevel::Top || ! eq_window_active())
         return;
 

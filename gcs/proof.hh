@@ -97,15 +97,21 @@ namespace gcs
         int order_encoding_deletion_min_chain = 16;                    ///< Min ge chain length before Literals-mode deletion engages (0 = gate off)
         bool order_encoding_deletion_min_chain_set_explicitly = false; ///< Was the gate set in code (so it overrides the env var)?
         // The eq-atom sliding window for the four contiguous eq value orders
-        // (smallest_first / largest_first / smallest_in / largest_in), under
-        // OrderEncodingDeletion::Literals. Off by default: the window trades transient work
-        // (a per-iteration tidy, and a re-mint whenever a refuted value is named again) for
-        // permanent residency, and whether that pays on eq-heavy models is a measurement,
-        // not an assumption. With it off those value orders behave exactly as they always
-        // have -- their Bound advance tags stay inert, no eq definition is ever windowed,
-        // and their proofs are byte-identical to the untagged ones. See
-        // dev_docs/brancher-design.md, "The eq-atom window".
-        bool order_encoding_deletion_eq_window = false;                ///< Window eq-branching atoms under Literals (default off)
+        // (smallest_first / largest_first / smallest_in / largest_in). Inert in every mode
+        // but OrderEncodingDeletion::Literals, and ON with it: the window trades transient
+        // work (a per-iteration tidy, and a re-mint whenever a refuted value is named
+        // again) for permanent residency, and stage E measured that trade rather than
+        // arguing it. Where it engages -- ascending eq branching over a large domain -- it
+        // is worth 2.3x to 4.9x of veripb time; where it cannot, it costs +0.30 % on a
+        // 73 s real verify and nothing at all (byte-identical) on talent and langford. A
+        // caller who has turned Literals on is in the regime the window was built for, so
+        // making them turn on a second flag to get the eq half of the same feature would be
+        // a tunable rather than a design input. Set it to false, or
+        // GCS_DELETE_ORDER_ENCODING_EQ_WINDOW=0, to go back to the untagged behaviour --
+        // with it off those value orders are byte-identical to the untagged ones, which is
+        // what made the tags free to add. See dev_docs/brancher-design.md, "The eq-atom
+        // window", and dev_docs/order-encoding-deletion.md, "Results".
+        bool order_encoding_deletion_eq_window = true;                 ///< Window eq-branching atoms under Literals (default on)
         bool order_encoding_deletion_eq_window_set_explicitly = false; ///< Was the window set in code (so it overrides the env var)?
 
         /// Write annotated assertions instead of full justifications.
@@ -134,9 +140,10 @@ namespace gcs
             order_encoding_deletion_min_chain_set_explicitly = true;
             return *this;
         }
-        /// Turn the eq-atom sliding window on for the four contiguous eq value orders
-        /// under OrderEncodingDeletion::Literals, making them O(1)-resident in the proof
-        /// rather than O(domain width). Off by default; inert in every other mode.
+        /// Turn the eq-atom sliding window on or off for the four contiguous eq value
+        /// orders under OrderEncodingDeletion::Literals, which makes them O(1)-resident in
+        /// the proof rather than O(domain width). On by default under that mode, and inert
+        /// in every other; pass false to get the untagged behaviour back.
         ProofOptions & set_order_encoding_deletion_eq_window(bool w = true)
         {
             order_encoding_deletion_eq_window = w;
