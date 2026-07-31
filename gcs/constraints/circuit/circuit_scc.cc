@@ -86,8 +86,8 @@ namespace
     struct SCCProofData
     {
         PosVarDataMap & pos_var_data;
-        ConstraintStateHandle proof_flag_data_handle;
-        ConstraintStateHandle pos_alldiff_data_handle;
+        map<long, ShiftedPosDataMaps> & proof_flag_data;
+        PosAllDiffData & pos_alldiff_data;
     };
 
     struct SCCProofContext
@@ -106,9 +106,7 @@ namespace
         SCCProofContext(const State & state, ProofLogger & logger, const ReasonLiterals & reason, const vector<IntegerVariableID> & succ,
             SCCProofData & proof_data, const long root, const SCCOptions & options) :
             state(state), logger(logger), reason(reason), succ(succ), root(root), pos_var_data(proof_data.pos_var_data),
-            flag_data(any_cast<map<long, ShiftedPosDataMaps> &>(state.get_persistent_constraint_state(proof_data.proof_flag_data_handle))),
-            root_flag_data(flag_data[root]),
-            pos_alldiff_data(any_cast<PosAllDiffData &>(state.get_persistent_constraint_state(proof_data.pos_alldiff_data_handle))), options(options)
+            flag_data(proof_data.proof_flag_data), root_flag_data(flag_data[root]), pos_alldiff_data(proof_data.pos_alldiff_data), options(options)
         {
         }
 
@@ -1065,13 +1063,12 @@ namespace
 
 auto gcs::innards::circuit::propagate_circuit_using_scc(const State & state, auto & inference, ProofLogger * const logger,
     const ReasonLiterals & reason, const ConstraintID & owner, const std::vector<IntegerVariableID> & succ, const SCCOptions & scc_options,
-    const ConstraintStateHandle & pos_var_data_handle, const ConstraintStateHandle & proof_flag_data_handle,
-    const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void
+    SCCPersistentData & persistent, const ConstraintStateHandle & unassigned_handle) -> void
 {
-    auto & pos_var_data = any_cast<PosVarDataMap &>(state.get_persistent_constraint_state(pos_var_data_handle));
+    auto & pos_var_data = persistent.pos_var_data;
     if (! propagate_non_gac_alldifferent(unassigned_handle, state, inference, logger, owner))
         return; // contradiction: the SCC check below would read junk state; the loop sees contradicted()
-    auto proof_data = SCCProofData{pos_var_data, proof_flag_data_handle, pos_alldiff_data_handle};
+    auto proof_data = SCCProofData{pos_var_data, persistent.proof_flag_data, persistent.pos_alldiff_data};
     check_sccs(state, inference, logger, reason, owner, succ, scc_options, proof_data);
     auto & unassigned = any_cast<NonGacAllDifferentUnassigned &>(state.get_constraint_state(unassigned_handle));
     // Remove any newly assigned vals from unassigned (swap-and-pop; order is irrelevant).
@@ -1088,13 +1085,11 @@ auto gcs::innards::circuit::propagate_circuit_using_scc(const State & state, aut
 
 template auto gcs::innards::circuit::propagate_circuit_using_scc(const State & state, SimpleInferenceTracker & inference, ProofLogger * const logger,
     const ReasonLiterals & reason, const ConstraintID & owner, const std::vector<IntegerVariableID> & succ, const SCCOptions & scc_options,
-    const ConstraintStateHandle & pos_var_data_handle, const ConstraintStateHandle & proof_flag_data_handle,
-    const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void;
+    SCCPersistentData & persistent, const ConstraintStateHandle & unassigned_handle) -> void;
 
 template auto gcs::innards::circuit::propagate_circuit_using_scc(const State & state, EagerProofLoggingInferenceTracker & inference,
     ProofLogger * const logger, const ReasonLiterals & reason, const ConstraintID & owner, const std::vector<IntegerVariableID> & succ,
-    const SCCOptions & scc_options, const ConstraintStateHandle & pos_var_data_handle, const ConstraintStateHandle & proof_flag_data_handle,
-    const ConstraintStateHandle & pos_alldiff_data_handle, const ConstraintStateHandle & unassigned_handle) -> void;
+    const SCCOptions & scc_options, SCCPersistentData & persistent, const ConstraintStateHandle & unassigned_handle) -> void;
 
 auto gcs::innards::circuit::install_circuit_scc(Propagators & propagators, State & initial_state, const ConstraintID & owner,
     const vector<IntegerVariableID> & succ, const SCCOptions & scc_options, PosVarDataMap pos_var_data) -> void
@@ -1104,18 +1099,19 @@ auto gcs::innards::circuit::install_circuit_scc(Propagators & propagators, State
     for (auto v : succ) {
         unassigned.emplace_back(v);
     }
-    auto pos_var_data_handle = initial_state.add_persistent_constraint_state(std::move(pos_var_data));
     auto unassigned_handle = initial_state.add_constraint_state(unassigned);
-    auto proof_flag_data_handle = initial_state.add_persistent_constraint_state(map<long, ShiftedPosDataMaps>{});
-    auto pos_alldiff_data_handle = initial_state.add_persistent_constraint_state(PosAllDiffData{});
+
+    // The position definitions and the two proof caches do not backtrack, so they are
+    // captured rather than held in the State: the propagator mutates the caches through
+    // the shared_ptr and they stay valid at every later node.
+    auto persistent = std::make_shared<SCCPersistentData>(std::move(pos_var_data), map<long, ShiftedPosDataMaps>{}, PosAllDiffData{});
 
     Triggers triggers;
     triggers.on_change = {succ.begin(), succ.end()};
     propagators.install(
         owner,
-        [succ, owner, pos_var_data_handle = pos_var_data_handle, proof_flag_data_handle = proof_flag_data_handle,
-            pos_alldiff_data_handle = pos_alldiff_data_handle, unassigned_handle = unassigned_handle,
-            options = scc_options](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [succ, owner, persistent = persistent, unassigned_handle = unassigned_handle, options = scc_options](
+            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             ReasonLiterals reason = eager_reason(generic_reason(succ), state);
 
             if (logger && options.short_reasons) {
@@ -1130,8 +1126,7 @@ auto gcs::innards::circuit::install_circuit_scc(Propagators & propagators, State
                 reason = eager_reason(singleton_reason(reason_short), state);
             }
 
-            propagate_circuit_using_scc(state, inference, logger, reason, owner, succ, options, pos_var_data_handle, proof_flag_data_handle,
-                pos_alldiff_data_handle, unassigned_handle);
+            propagate_circuit_using_scc(state, inference, logger, reason, owner, succ, options, *persistent, unassigned_handle);
             return PropagatorState::Enable;
         },
         triggers);

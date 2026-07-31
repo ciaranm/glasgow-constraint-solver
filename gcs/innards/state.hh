@@ -555,25 +555,19 @@ namespace gcs::innards
         /**
          * Store a given std::any value as a constraint state that is accessible via
          * the returned handle and restores on backtrack.
+         *
+         * Every slot added here is deep-copied on entry to each search node, so only
+         * add state that genuinely has to backtrack. Data that must survive
+         * backtracking (a cache of proof lines already emitted, say) or that never
+         * changes after install is not constraint state at all: capture it in the
+         * propagator, by shared_ptr if it is mutable.
          */
         [[nodiscard]] auto add_constraint_state(const ConstraintState c) -> ConstraintStateHandle;
-
-        /**
-         * Store a given std::any value as a constraint state that is accessible via
-         * the returned handle and does not restore on backtrack.
-         */
-        [[nodiscard]] auto add_persistent_constraint_state(const ConstraintState c) -> ConstraintStateHandle;
 
         /**
          * Return the constraint state for the given handle.
          */
         [[nodiscard]] auto get_constraint_state(const ConstraintStateHandle h) const -> ConstraintState &;
-
-        /**
-         * Return the persistent constraint state for the given handle.
-         *
-         */
-        [[nodiscard]] auto get_persistent_constraint_state(const ConstraintStateHandle h) const -> ConstraintState &;
 
         ///@}
     };
