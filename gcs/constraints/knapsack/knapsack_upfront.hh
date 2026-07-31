@@ -6,6 +6,7 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <memory>
 #include <vector>
 
 namespace gcs::innards
@@ -24,8 +25,28 @@ namespace gcs::innards
      * proof differs (3–6× smaller, but 3.6–18× slower to verify). See
      * `dev_docs/knapsack.md`.
      */
-    auto install_knapsack_upfront(Propagators & propagators, State & initial_state, ProofModel * const optional_model, const ConstraintID & owner,
-        std::vector<std::vector<Integer>> coeffs, std::vector<IntegerVariableID> vars, std::vector<IntegerVariableID> totals) -> void;
+    struct KnapsackUpfrontData;
+
+    /**
+     * \brief Validate the arguments, build the statically-reduced DAG from the
+     * initial domains, and allocate the dead-state cache. Knapsack::prepare() calls
+     * this; the returned data carries everything the other two phases need.
+     */
+    [[nodiscard]] auto knapsack_upfront_prepare(State & initial_state, std::vector<std::vector<Integer>> coeffs, std::vector<IntegerVariableID> vars,
+        std::vector<IntegerVariableID> totals) -> std::shared_ptr<KnapsackUpfrontData>;
+
+    /**
+     * \brief Emit the per-equation totals equalities, recording their lines for the
+     * propagator's pol steps. Knapsack::define_proof_model() calls this.
+     */
+    auto knapsack_upfront_define_proof_model(ProofModel & model, const ConstraintID & owner, KnapsackUpfrontData & data) -> void;
+
+    /**
+     * \brief Install the root scaffolding initialiser and the propagator.
+     * Knapsack::install_propagators() calls this.
+     */
+    auto knapsack_upfront_install_propagators(
+        Propagators & propagators, const ConstraintID & owner, const std::shared_ptr<KnapsackUpfrontData> & data) -> void;
 }
 
 #endif

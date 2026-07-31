@@ -32,9 +32,10 @@ solutions found.
 
 The public `Regular` front-end (`gcs/constraints/regular/regular.{cc,hh}`)
 *is* the `Upfront` implementation; for `PerCall` and `Bacchus` its
-`install()` constructs and delegates to the sibling implementations,
-which are internal to the constraint (not part of the public API — they
-are no longer named in `gcs/constraints/regular.hh`). Everything posts
+`prepare()` constructs the sibling implementation, installs it in full,
+and returns false so none of `Regular`'s own phases run. Those siblings
+are internal to the constraint (not part of the public API — they are no
+longer named in `gcs/constraints/regular.hh`). Everything posts
 `Regular`; benchmarking picks a strategy with `with_proof_strategy(...)`.
 
 ## Default: `proof_strategy::Upfront`
