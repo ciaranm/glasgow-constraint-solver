@@ -17,8 +17,10 @@ and at "Implementation staging").
 
 All numbers below were measured on the development VM (KVM guest, AMD Ryzen 9
 9950X3D, 32 vCPUs, 30 GB RAM, `veripb` 3.0.2): each timed run pinned to one core
-with `taskset` and ASLR off via `setarch -R`, all timed proof I/O on tmpfs
-(`/dev/shm`), every verify run **solo** on an otherwise idle machine, and each figure
+with `taskset` and ASLR off via `setarch -R`, all timed proof I/O on tmpfs (both
+`/tmp` and `/dev/shm` are one, 16 GB each and sharing the guest's 30 GB of RAM — so a
+multi-gigabyte proof does not belong on either), every verify run **solo** on an
+otherwise idle machine, and each figure
 the **minimum of three runs** (five for the solve-side times, which are small enough
 that process startup is a visible share of them). The guest exposes no `cpufreq`
 interface, so turbo cannot be pinned off;
