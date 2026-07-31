@@ -30,20 +30,32 @@ runtimes on purpose and a sweep that only ran one group would be misleading.
 
 These verify slowly enough that a single-digit-percent change is resolvable.
 
-| benchmark | command | outcome |
-|---|---|---|
-| `odb_split2000` | `order_deletion_bench --problem pairwise --size 8 --domain 2000 --window 2000 --tightness 90 --unsat` | UNSAT |
-| `odb_eq1000` | `order_deletion_bench --problem pairwise --size 6 --domain 1000 --window 1000 --tightness 90 --unsat --value-order smallest` | UNSAT |
-| `qap10` | `qap --size=10` | optimal |
-| `colour46` | `colour --file <46-vertex random graph>` | optimal |
-| `nqueens12` | `n_queens --size=12 --all` | enumeration |
-| `langford11` | `langford --size=11 --stats` | enumeration |
-| `langford10` | `langford --size=10 --stats` | UNSAT |
-| `freqsq6_gac` | `frequency_square 6 --all --stats --consistency gac` | enumeration |
-| `freqsq6_bc` | `frequency_square 6 --all --stats --consistency bc` | enumeration |
-| `pdisp10_tuple` | `p_dispersion --grid 10 -p 4 --variant tuple --stats` | optimal |
-| `mzn_hitori` | `fzn-glasgow -s -a hitori.fzn` (Challenge 2025, `h5-1.dzn`) | optimal |
-| `mzn_seatmoving` | `fzn-glasgow -s -n 1 2018_seat-moving.fzn` | first solution |
+Measured solo, pinned to one core with ASLR off, minimum of three runs, on the
+local SSD. `veripb` 3.0.2.
+
+| benchmark | command | outcome | recs | `.opb` | `.pbp` | solve | +proof | verify |
+|---|---|---|--:|--:|--:|--:|--:|--:|
+| `odb_eq1000` | `order_deletion_bench --problem pairwise --size 6 --domain 1000 --window 1000 --tightness 90 --unsat --value-order smallest` | UNSAT | 49 352 | 11 KB | 37 MB | 0.10 s | ×2.0 | **139.5 s** |
+| `odb_split2000` | `order_deletion_bench --problem pairwise --size 8 --domain 2000 --window 2000 --tightness 90 --unsat` | UNSAT | 6 979 | 20 KB | 17 MB | 0.10 s | — | **~110 s** |
+| `odb_cumulative8` | `order_deletion_bench --problem cumulative --size 8 --domain 250 --window 250 --tightness 90 --unsat` | UNSAT | 33 959 | 1.9 MB | 454 MB | 0.10 s | ×9.0 | **314.7 s** |
+| `qap10` | `qap --size=10` | optimal | 10 985 | 3.5 MB | 504 MB | 0.20 s | ×6.0 | **283.8 s** |
+| `colour46` | `colour --file <46-vertex random graph>` | optimal | 313 109 | 0.4 MB | 736 MB | 12.31 s | ×1.2 | **347.6 s** |
+| `nqueens12` | `n_queens --size=12 --all` | enum, 14 200 | 232 163 | 0.2 MB | 208 MB | 0.50 s | ×2.2 | **219.8 s** |
+| `langford11` | `langford --size=11 --stats` | enum, 35 584 | 256 593 | 0.4 MB | 669 MB | 3.80 s | ×1.9 | **662.9 s** |
+| `langford10` | `langford --size=10 --stats` | UNSAT | 43 514 | 0.3 MB | 101 MB | 0.60 s | ×1.8 | **60.4 s** |
+| `freqsq6_gac` | `frequency_square 6 --all --stats --consistency gac` | enum, 53 220 | 105 825 | 44 KB | 205 MB | 0.90 s | ×2.0 | **83.6 s** |
+| `freqsq6_bc` | `frequency_square 6 --all --stats --consistency bc` | enum, 53 220 | 105 825 | 44 KB | 80 MB | 1.10 s | ×1.3 | **81.2 s** |
+| `pdisp10_tuple` | `p_dispersion --grid 10 -p 4 --variant tuple --stats` | optimal | 1 037 | 12.6 MB | 158 MB | 0.10 s | ×4.0 | **88.8 s** |
+| `mzn_hitori` | `fzn-glasgow -s -a hitori.fzn` (Challenge 2025, `h5-1.dzn`) | optimal | 113 671 | 1.2 MB | **1 000 MB** | 1.20 s | ×3.1 | **273.3 s** |
+| `mzn_seatmoving` | `fzn-glasgow -s -n 1 2018_seat-moving.fzn` | first solution | 15 610 | 3.1 MB | 629 MB | 0.40 s | ×3.8 | **122.3 s** |
+
+`solve` is wall time with proof logging off; `+proof` is the multiplier when it
+is on. Note how far that varies — from ×1.2 on `colour46`, whose search dominates,
+to ×9.0 on `odb_cumulative8`. One pass over group A costs about 47 minutes.
+
+`langford11` at 11.0 minutes sits just outside the nominal ceiling. It is kept
+deliberately as the largest entry; with `langford10` at 60.4 s the pair brackets
+the whole band from one binary, one as an enumeration and one as a refutation.
 
 ### Group B — proof writing
 
@@ -51,11 +63,16 @@ These verify in seconds but write hundreds of megabytes. They are the only
 entries that isolate emission cost, and they must not be dropped for being
 quick to check — see "The axis that matters most".
 
-| benchmark | command | outcome |
-|---|---|---|
-| `polynomial10` | `random_polynomial -n 10 -d 5 --seed 1 --stats` | optimal |
-| `knapsack2` | `knapsack_bench --instance 2 --stats` | enumeration |
-| `nfractions` | `n_fractions --unsat --stats` | UNSAT |
+| benchmark | command | outcome | recs | `.pbp` | solve | +proof | verify | s/MB |
+|---|---|---|--:|--:|--:|--:|--:|--:|
+| `polynomial10` | `random_polynomial -n 10 -d 5 --seed 1 --stats` | optimal | 1 577 | 426 MB | 0.10 s | **×13** | 26.0 s | 0.06 |
+| `nfractions` | `n_fractions --unsat --stats` | UNSAT | 112 | 146 MB | 0.10 s | ×5.0 | 3.2 s | **0.02** |
+| `knapsack2` | `knapsack_bench --instance 2 --stats` | enum, 328 | 655 | 138 MB | 0.10 s | ×9.0 | 2.4 s | **0.02** |
+
+All three check in seconds and cost between five and thirteen times the bare
+solve to write. `polynomial10` writes 426 MB from 1 577 recursions; `nfractions`
+writes 146 MB from **112**. Group A's `odb_eq1000`, by contrast, writes 37 MB
+and spends 139 s checking it. That is the whole point of keeping both groups.
 
 ### Group C — controls
 
@@ -63,11 +80,12 @@ Pairs that differ in one controlled way, for attributing a difference.
 
 | pair | what it controls for |
 |---|---|
-| `magic_square --size=4 --all-different gac` vs `--all-different vc` | **Identical search** — same recursions, same solution count — with propagation count differing about 6×. Any proof-side divergence is emission, not search. |
+| `frequency_square 6 --all --consistency gac` vs `bc` | **Identical search** — 105 825 recursions and 53 220 solutions both ways — with the GAC proof **2.6× larger** (204.6 MB against 80.2 MB) and **the same verify time** (83.6 s against 81.2 s). The cleanest same-search pair in the set, and a SIZE≠TIME case on its own. |
+| `knapsack_bench --instance 1` vs `--instance 1 --upfront` | Identical search — 907 recursions, 454 solutions — with `--upfront` writing a **5.9× smaller** proof (20.7 MB against 121.3 MB) that takes **3.5× longer** to check (7.0 s against 2.0 s). One flag, and the two axes move in opposite directions. |
 | `knapsack_bench --instance 1` vs `--instance 1 --upfront` | **The clearest SIZE≠TIME demonstration in the set.** Identical search — 907 recursions, 454 solutions both ways — but `--upfront` writes a **5.9× smaller** proof (20.7 MB against 121.3 MB) that takes **4.5× longer** to check (9.9 s against 2.2 s). One flag, one instance, and the two axes move in opposite directions. |
-| `p_dispersion --grid 8 -p 4 --variant tuple` vs `--variant min-distance-ps` | The same problem through a decomposition and through the global propagator: 42.9 MB / 14.3 s against 0.8 MB / 0.8 s. At `--grid 10` the gap widens to 93× in proof size, and at `--grid 12` the decomposition stops verifying inside 1200 s while the global takes 15 s. |
-| `frequency_square 6 --all --consistency gac` vs `bc` | Propagation strength on one instance (also in group A). |
-| `langford --size=11` vs `--size=10` | Enumeration against UNSAT refutation on one model. |
+| `p_dispersion --grid 8 -p 4 --variant tuple` vs `--variant min-distance-ps` | Identical search — 551 recursions, 7 solutions — through a decomposition and through the global propagator: **42.9 MB / 9.7 s against 0.8 MB / 0.7 s**. At `--grid 10` the proof-size gap widens to 93×, and at `--grid 12` the decomposition stops verifying inside 1200 s while the global takes 15 s. |
+| `langford --size=11` vs `--size=10` | Enumeration against UNSAT refutation on one model, and the pair brackets the whole target band: 662.9 s and 60.4 s. |
+| `magic_square --size=4 --all-different gac` vs `vc` | **Not** a same-search pair, despite looking like one: GAC searches 77 983 recursions against VC's 87 377. Listed so nobody mistakes it for one — `--all-different` defaults to `vc`, so comparing the default against explicit `vc` gives a spurious match. |
 
 ### Group D — opt-in, needs a big machine
 
@@ -85,17 +103,18 @@ produces is 12.6 MB.
 Two derived ratios separate proofs far better than any qualitative label, and
 the set is chosen to span both.
 
-**Verify seconds per megabyte of `.pbp`** ranges over roughly 500× across the
-set. At one end `order_deletion_bench --domain 2000` writes 17 MB and takes
-around 110 s to check; at the other `knapsack_bench --instance 2` writes 138 MB
-and checks in under 2 s. High values mean the checker is working through long
-RUP chains over a wide resident database; low values mean it is streaming a
-large but individually-trivial derivation.
+**Verify seconds per megabyte of `.pbp`** ranges over about 190× within the
+chosen set, and 1700× across everything screened. `odb_split1000` writes 6 MB
+and spends 10.2 s checking it (1.61 s/MB); `knapsack_bench --instance 2` writes
+138 MB and checks in 2.4 s (0.017 s/MB). High values mean the checker is working
+through long RUP chains over a wide resident database; low values mean it is
+streaming a large but individually-trivial derivation.
 
-**Kilobytes of `.pbp` per recursion** ranges over roughly 3000×, from under
-1 KB (`frequency_square`, `n_queens`) to about 1.3 MB (`n_fractions`). This is
-the wide-versus-deep axis: high values mean the proof is dominated by upfront
-definitional material rather than by search.
+**Kilobytes of `.pbp` per recursion** ranges over roughly 1500×, from under
+1 KB (`frequency_square`, `n_queens`, `colour46`) to 1.3 MB (`n_fractions`,
+which writes 146 MB from 112 recursions). This is the wide-versus-deep axis:
+high values mean the proof is dominated by upfront definitional material rather
+than by search.
 
 Beyond those two, the set spans:
 
@@ -115,8 +134,12 @@ Group A and group B are not "big" and "small". They are opposite failure modes,
 and a change that improves one commonly worsens the other — trading proof bytes
 for checking time is the normal shape of a proof-side optimisation. Measuring
 only group A rewards writing more proof to check it faster; measuring only
-group B rewards the reverse. The two groups differ by around **550×** in
-checking cost per byte, so neither substitutes for the other.
+group B rewards the reverse.
+
+`knapsack_bench --instance 1` versus the same instance under `--upfront` shows
+this on one binary with one flag, at **identical search**: the `--upfront` proof
+is 5.9× smaller and takes 3.5× longer to check. Whichever axis a sweep measures,
+that pair moves the other way.
 
 ## What to capture
 
@@ -153,12 +176,18 @@ are easy to get wrong:
   a sitting are sound; absolute times across sittings are not.
 - **Take the minimum of several runs**, not the mean.
 
-One refinement this set adds: **concurrency inflates small proofs far more than
-large ones**, so a sweep run in parallel does not merely scale — it reorders.
-Measured here against solo baselines, a 17 MB proof inflated about 1.7× under a
-four-way load while a 188 MB proof inflated about 1.07×. Extrapolating a solo
-time from a loaded one with a single correction factor is therefore wrong across
-the range of this set.
+One refinement this set adds, and it is stronger than "small proofs degrade
+worse": **a verify time measured under load cannot be corrected, only
+discarded.** Measured against solo baselines on this set, the inflation under a
+three- or four-way load ran from **1.07×** (`colour` g40, 188 MB) to **2.99×**
+(`freqsq6_gac`, 205 MB) — two proofs of similar size at opposite ends of the
+range. Proof size does not predict it. Budget for running a sweep solo end to
+end; there is no shortcut that scales a parallel pass back down.
+
+A worked example of why it matters: under pilot load `freqsq6_gac` and
+`freqsq6_bc` looked 27 % apart. Solo they are **3 % apart** (83.6 s against
+81.2 s) despite the GAC proof being 2.6× larger. The entire apparent difference
+was contention.
 
 **On filesystems**: on a machine with a local SSD, write the proofs wherever is
 convenient. The advice elsewhere to put timed proof I/O on tmpfs was formed
