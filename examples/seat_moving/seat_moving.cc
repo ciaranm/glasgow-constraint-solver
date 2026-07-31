@@ -25,7 +25,7 @@
 
 #include <cxxopts.hpp>
 
-#include "../benchmark_cli.hh"
+#include <examples/benchmark_cli.hh>
 
 #include <version>
 

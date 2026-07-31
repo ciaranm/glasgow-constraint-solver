@@ -7,4 +7,5 @@ target_link_libraries(seat_moving PRIVATE cxxopts)
 # reference one, sm-10-12-00, writes a 645MB proof and is nowhere near a ctest.
 add_test(NAME seat_moving COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename seat_moving $<TARGET_FILE:seat_moving>)
 add_test(NAME seat_moving-not-equals COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename seat_moving-not-equals $<TARGET_FILE:seat_moving> --all-different not-equals)
+add_test(NAME seat_moving-vc COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename seat_moving-vc $<TARGET_FILE:seat_moving> --all-different vc)
 add_test(NAME seat_moving-random COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename seat_moving-random $<TARGET_FILE:seat_moving> --seats 7 --people 4 --seed 1)
