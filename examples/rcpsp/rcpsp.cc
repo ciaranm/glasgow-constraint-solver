@@ -75,8 +75,10 @@
 
 #include <gcs/constraints/comparison.hh>
 #include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/difference.hh>
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/linear.hh>
+#include <gcs/presolvers/difference_logic.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
@@ -88,6 +90,7 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -193,13 +196,33 @@ namespace
 
     // One difference constraint, s_from + d <= s_to, over the model's variables
     // rather than over task indices, so that the makespan bounds are the same
-    // kind of thing as the time lags. Posted below as a two-term linear.
+    // kind of thing as the time lags.
     struct ModelEdge
     {
         IntegerVariableID from;
         IntegerVariableID to;
         Integer d;
     };
+
+    // How the temporal network reaches the solver. All three say exactly the
+    // same thing, over the same edges in the same order.
+    enum struct Variant
+    {
+        Decomposed, ///< One two-term LinearGreaterThanEqual per edge.
+        Presolved,  ///< As Decomposed, plus the DifferenceLogic presolver, which lifts them back.
+        Global      ///< The whole network as one DifferenceConstraints.
+    };
+
+    auto variant_from_string(const string & spec) -> optional<Variant>
+    {
+        if (spec == "decomposed")
+            return Variant::Decomposed;
+        if (spec == "presolved")
+            return Variant::Presolved;
+        if (spec == "global")
+            return Variant::Global;
+        return nullopt;
+    }
 
     // Every difference constraint in the model, in one list and in posting
     // order: the plain precedences, then any generalised lags, then the
@@ -310,6 +333,13 @@ auto main(int argc, char * argv[]) -> int
             ("all",
                 "Enumerate every feasible schedule instead of minimising the makespan, posting " //
                 "no objective")                                                                  //
+            ("variant",
+                "How to post the temporal network --- the precedences, the time lags and the "     //
+                "makespan bounds, which are all difference constraints. decomposed (the default) " //
+                "posts one two-term LinearGreaterThanEqual per edge; global posts the whole "      //
+                "network as one DifferenceConstraints; presolved posts it decomposed and lets "    //
+                "the DifferenceLogic presolver lift it back",                                      //
+                cxxopts::value<string>()->default_value("decomposed"))                             //
             ;
 
         options_vars = options.parse(argc, argv);
@@ -423,12 +453,46 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
-    // The temporal network, as one two-term linear per edge. Spelled
-    // GreaterThanEqual with the head first, which is the direction a precedence
-    // reads in, and which every one of these has been posted in since this
-    // example landed.
-    for (const auto & e : model_edges(instance, starts, makespan))
-        problem.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * e.to + -1_i * e.from, e.d});
+    auto variant_name = options_vars["variant"].as<string>();
+    auto variant = variant_from_string(variant_name);
+    if (! variant) {
+        println(cerr, "Error: unknown --variant value '{}'. Supported: decomposed, presolved, global.", variant_name);
+        return EXIT_FAILURE;
+    }
+
+    // The temporal network. --variant decides how it reaches the solver, over
+    // the identical edge list in the identical order, so a comparison between
+    // the three is between the handling and nothing else.
+    auto edges = model_edges(instance, starts, makespan);
+    auto presolver_stats = std::make_shared<DifferenceLogicStats>();
+
+    switch (*variant) {
+        using enum Variant;
+    case Presolved:
+    case Decomposed:
+        // One two-term linear per edge, spelled GreaterThanEqual with the head
+        // first, which is the direction a precedence reads in and the spelling
+        // every one of these has been posted in since this example landed.
+        // Changing it would give the same constraint a different WeightedSum
+        // term order, and so a different OPB row, for no reason.
+        for (const auto & e : edges)
+            problem.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * e.to + -1_i * e.from, e.d});
+        if (*variant == Presolved)
+            problem.add_presolver(DifferenceLogic{presolver_stats});
+        break;
+
+    case Global:
+        // The whole network as one propagator. A ModelEdge is s_from + d <= s_to,
+        // and a DifferenceEdge is x - y <= d, so the weight flips sign.
+        {
+            vector<DifferenceEdge> difference_edges;
+            difference_edges.reserve(edges.size());
+            for (const auto & e : edges)
+                difference_edges.push_back(DifferenceEdge{e.from, e.to, -e.d});
+            problem.post(DifferenceConstraints{difference_edges});
+        }
+        break;
+    }
 
     // A .sch instance's dummy source is pinned at time zero: the file's arc
     // weights are all relative to it.
@@ -566,6 +630,11 @@ auto main(int argc, char * argv[]) -> int
     println("machine tasks: {}", instance.machine_tasks.size());
     println("machine posted as: {}", machine_variant);
     println("unary posted as: {}", unary_variant);
+    println("variant: {}", variant_name);
+    if (*variant == Variant::Presolved) {
+        println("presolver_edges_lifted: {}", presolver_stats->edges_lifted);
+        println("presolver_nodes: {}", presolver_stats->nodes);
+    }
     println("critical path: {}", critical_path);
     println("horizon: {}", horizon);
     println("all: {}", all ? "yes" : "no");

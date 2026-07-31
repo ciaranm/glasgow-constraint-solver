@@ -51,3 +51,18 @@ add_test(NAME rcpsp_all COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_ver
 # covers the Disjunctive proof path over a resource rather than over the machine.
 add_test(NAME rcpsp_unary COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_unary
     $<TARGET_FILE:rcpsp> --size 10 --seed 4 --resources 1 --capacity 1 --max-demand 1 --unary disjunctive)
+
+# The temporal network through the global propagator, and through the presolver
+# that lifts it back out of the decomposition, on the same maximum-lag instance
+# rcpsp_max_lags posts decomposed. All three reach makespan 14 in 61 recursions
+# --- --branch is a static order, so the search is an invariant across variants
+# --- and differ only in propagations, which is the point of the comparison.
+add_test(NAME rcpsp_global COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_global
+    $<TARGET_FILE:rcpsp> --size 12 --seed 3 --max-lag-density 0.3 --variant global)
+add_test(NAME rcpsp_presolved COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_presolved
+    $<TARGET_FILE:rcpsp> --size 12 --seed 3 --max-lag-density 0.3 --variant presolved)
+
+# The negative cycle through the global propagator: refuted at the root, with a
+# refutation that sums the cycle's edge rows rather than crawling bounds.
+add_test(NAME rcpsp_global_infeasible COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_global_infeasible
+    $<TARGET_FILE:rcpsp> --size 8 --seed 1 --infeasible --variant global)
