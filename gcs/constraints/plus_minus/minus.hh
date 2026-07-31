@@ -47,7 +47,6 @@ namespace gcs
         /// domains are small. Requesting an unsupported level is a compile-time error.
         auto with_consistency(MinusConsistency level) -> Minus &;
 
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;

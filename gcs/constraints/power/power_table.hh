@@ -30,7 +30,6 @@ namespace gcs::innards
     public:
         explicit PowerTable(IntegerVariableID base, IntegerVariableID exponent, IntegerVariableID result);
 
-        virtual auto install(Propagators &, State &, ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const ProofModel * const) const -> SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;

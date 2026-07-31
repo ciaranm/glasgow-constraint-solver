@@ -17,17 +17,19 @@ For exposing a finished constraint to MiniZinc, see
 ## The big picture
 
 A `Constraint` is a user-facing object posted on a `Problem`. When the
-solver starts, each constraint's `install` method runs once. It does two
-things:
+solver starts, each constraint is installed once, in three phases:
 
-1. Optionally describes the constraint in PB terms by calling
-   `optional_model->add_constraint(...)` zero or more times. This
-   block is guarded by `if (optional_model)` and is what VeriPB sees.
-2. Registers one or more propagators with the `Propagators` object. A
-   propagator is a callable that gets invoked at search time to enforce
-   the constraint by tightening variable domains.
+1. `prepare` validates the arguments, reads the initial domains, and allocates
+   whatever the other two phases need — auxiliary variables, backtrackable
+   constraint state, child constraints.
+2. `define_proof_model` describes the constraint in PB terms by calling
+   `model.add_constraint(...)` zero or more times. It runs only when proofs are
+   being logged, and is what VeriPB sees.
+3. `install_propagators` registers one or more propagators with the
+   `Propagators` object. A propagator is a callable that gets invoked at search
+   time to enforce the constraint by tightening variable domains.
 
-After install, the constraint object itself is gone — only the
+After installing, the constraint object itself is gone — only the
 propagators (with their captured state) and the OPB definition remain.
 
 ## File layout
@@ -38,7 +40,7 @@ Every constraint lives in its own directory. For a constraint named
 ```
 gcs/constraints/foo.hh             public umbrella header
 gcs/constraints/foo/foo.hh         public class declaration
-gcs/constraints/foo/foo.cc         install method + propagator
+gcs/constraints/foo/foo.cc         install phases + propagator
 gcs/constraints/foo/foo_test.cc    enumeration tests
 ```
 
@@ -128,11 +130,16 @@ namespace gcs
     private:
         // Captured arguments (vars and constants).
 
+        // The three install phases, in the order they run.
+        virtual auto prepare(innards::Propagators &, innards::State &,
+            innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &,
+            const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
+
     public:
         explicit Foo(/* arguments */);
 
-        virtual auto install(innards::Propagators &, innards::State &,
-            innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(
             const innards::ProofModel * const) const -> innards::SExpr override;
@@ -140,42 +147,59 @@ namespace gcs
 }
 ```
 
-`install` is rvalue-qualified (`&&`) — it consumes the Constraint
-object. `clone` produces a fresh independent copy (used by some search
+`clone` produces a fresh independent copy (used by some search
 strategies). `s_expr` returns the constraint's `.scp` entry as a structured
 s-expression term `(name op args...)` (built with `innards::SExpr::list`/`atom`
 and `NamesAndIDsTracker::s_expr_term_of`); `innards::write_scp` serialises it.
 
-## install: the entry point
+## The three install phases
 
-The recommended shape splits `install` into three phases, each
-override-able as a protected virtual on `Constraint`:
+`Constraint::install` is not virtual and is not yours to write. It is
+rvalue-qualified (`&&`) — it consumes the Constraint object — and all it does is
+run the three phases:
 
 ```cpp
-auto Foo::install(Propagators & propagators, State & initial_state,
+auto Constraint::install(Propagators & propagators, State & initial_state,
     ProofModel * const optional_model) && -> void
 {
     if (! prepare(propagators, initial_state, optional_model))
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
+```
 
+A constraint overrides the phases it needs; each has a do-nothing default, so a
+constraint with no OPB definition simply does not override
+`define_proof_model`.
+
+```cpp
 auto Foo::prepare(Propagators &, State & initial_state,
     ProofModel * const) -> bool
 {
-    // Early-out for trivial cases; precompute state shared by the
-    // next two phases. Return false to skip them.
+    // Validate the arguments; read the initial domains; allocate auxiliary
+    // variables and backtrackable constraint state; install child constraints.
+    // This is the only phase holding all three of the propagators, the mutable
+    // State and the model at once, so it is the only one that can allocate or
+    // install a child. Return false to say the other two must not run --
+    // whether because the constraint is trivially satisfied, because a
+    // contradiction initialiser has been installed, or because the whole
+    // constraint has been delegated to a child.
     return /* not trivially satisfied */;
 }
 
-auto Foo::define_proof_model(ProofModel & model) -> void
+auto Foo::define_proof_model(ProofModel & model,
+    const State & initial_state) -> void
 {
-    // OPB definition only. State precomputed in prepare() may be
-    // referenced via private members.
+    // The OPB definition, and nothing else. The State is the *declared*
+    // domains -- nothing at install time narrows one -- so an encoding whose
+    // shape depends on them (bit widths, a row per value, a flag per tuple)
+    // can read them here rather than having prepare() snapshot them first. It
+    // is const because this phase must only describe the constraint, never
+    // allocate.
 }
 
 auto Foo::install_propagators(Propagators & propagators) -> void
@@ -782,10 +806,11 @@ in `constraints_test_utils.hh`.
 
 ## Adding a new constraint: checklist
 
-1. Header file with class declaration, Doxygen comments, the standard
-   trio of virtual methods.
-2. `.cc` file with constructor, `install` method (OPB block + propagator
-   registration), `clone`, `s_expr`.
+1. Header file with class declaration, Doxygen comments, the phases it
+   overrides, and `clone` / `s_expr` / `constraint_type`.
+2. `.cc` file with constructor, the three phases (`prepare`,
+   `define_proof_model` for the OPB block, `install_propagators`), `clone`,
+   `s_expr`.
 3. Test file with the standard `for (bool proofs : {false, true})`
    loop and a `can_run_veripb()` gate on the proofs leg. Split into
    multiple ctest entries via an argv mode if the test gets slow.

@@ -69,17 +69,6 @@ auto ReifiedCompareLessThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
     return make_unique<ReifiedCompareLessThanOrMaybeEqual>(_v1, _v2, _reif_cond, _or_equal, _vars_swapped);
 }
 
-auto ReifiedCompareLessThanOrMaybeEqual::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto ReifiedCompareLessThanOrMaybeEqual::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _v1_is_constant = initial_state.optional_single_value(_v1);

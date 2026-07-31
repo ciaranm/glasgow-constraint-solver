@@ -24,7 +24,7 @@ library. For an introduction to *using* the solver, start with the top-level
   introduced in-proof. Read when choosing how to create an auxiliary for a
   proof-logged constraint.
 - [Implementing a constraint](constraints.md) — the structural pattern every
-  constraint follows: class shape, the `install` method, the propagator
+  constraint follows: class shape, the three install phases, the propagator
   framework, triggers, the inference and justification APIs, OPB encoding
   building blocks, and the testing pattern. Start here when adding any new
   constraint.

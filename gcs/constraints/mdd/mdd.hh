@@ -78,7 +78,6 @@ namespace gcs
         explicit MDD(std::vector<IntegerVariableID> vars, std::vector<std::vector<std::unordered_map<Integer, long>>> layer_transitions,
             std::vector<long> nodes_per_layer, std::vector<long> accepting_terminals);
 
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;

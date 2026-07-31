@@ -169,17 +169,6 @@ auto ReifiedLinearEquality::with_incremental_threshold(std::optional<std::size_t
     return *this;
 }
 
-auto ReifiedLinearEquality::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto ReifiedLinearEquality::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _evaluated_cond = test_reification_condition(initial_state, _reif_cond);

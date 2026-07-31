@@ -133,7 +133,6 @@ namespace gcs
         /// effect under consistency::BC or with proof logging off.
         auto with_proof_strategy(BinPackingProofStrategy strategy) -> BinPacking &;
 
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;

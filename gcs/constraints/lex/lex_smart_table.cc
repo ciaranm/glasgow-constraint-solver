@@ -42,17 +42,6 @@ auto LexSmartTable::clone() const -> unique_ptr<Constraint>
     return make_unique<LexSmartTable>(_vars_1, _vars_2);
 }
 
-auto LexSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto LexSmartTable::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
     // Delegates entirely to the SmartTable built below; see the note on

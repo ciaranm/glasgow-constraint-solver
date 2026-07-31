@@ -66,17 +66,6 @@ auto ParityOdd::clone() const -> unique_ptr<Constraint>
     return make_unique<ParityOdd>(_lits);
 }
 
-auto ParityOdd::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto ParityOdd::define_proof_model(ProofModel & model, const State &) -> void
 {
     // cake_pb_cp's accumulator scheme, over the literals as cake reads them

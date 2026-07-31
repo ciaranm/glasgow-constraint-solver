@@ -471,17 +471,6 @@ auto LexCompareGreaterThanOrMaybeEqual::clone() const -> unique_ptr<Constraint>
     return make_unique<LexCompareGreaterThanOrMaybeEqual>(_vars_1, _vars_2, _reif_cond, _or_equal, _vars_swapped);
 }
 
-auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto LexCompareGreaterThanOrMaybeEqual::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _evaluated_cond = test_reification_condition(initial_state, _reif_cond);

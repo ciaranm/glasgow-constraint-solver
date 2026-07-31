@@ -110,13 +110,16 @@ namespace gcs
          */
         [[nodiscard]] virtual auto constraint_type() const -> std::string = 0;
         /**
-         * Called internally to install the constraint. A Constraint is expected
-         * to define zero or more propagators, and to provide a description of
-         * its meaning for proof logging. This is a destructive operation which
-         * can only be called once, and after calling it neither install() nor
-         * clone() may be called on this instance.
+         * Called internally to install the constraint, by running its three
+         * phases in order: prepare(), then define_proof_model() if proofs are
+         * being logged, then install_propagators(). A Constraint is expected to
+         * define zero or more propagators, and to provide a description of its
+         * meaning for proof logging; it does so by overriding those phases, not
+         * this. This is a destructive operation which can only be called once,
+         * and after calling it neither install() nor clone() may be called on
+         * this instance.
          */
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void = 0;
+        auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void;
 
         /**
          * Create a copy of the constraint. To be used internally.

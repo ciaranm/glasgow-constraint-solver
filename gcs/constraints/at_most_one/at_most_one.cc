@@ -52,17 +52,6 @@ auto AtMostOne::clone() const -> unique_ptr<Constraint>
     return make_unique<AtMostOne>(_vars, _val);
 }
 
-auto AtMostOne::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto AtMostOne::prepare(Propagators &, State &, ProofModel * const) -> bool
 {
     // "at most one of fewer than two variables equals val" is vacuously true:
@@ -174,17 +163,6 @@ AtMostOneSmartTable::AtMostOneSmartTable(vector<IntegerVariableID> vars, Integer
 auto AtMostOneSmartTable::clone() const -> unique_ptr<Constraint>
 {
     return make_unique<AtMostOneSmartTable>(_vars, _val);
-}
-
-auto AtMostOneSmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
 }
 
 auto AtMostOneSmartTable::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool

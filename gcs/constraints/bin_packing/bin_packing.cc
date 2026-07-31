@@ -1074,17 +1074,6 @@ auto BinPacking::clone() const -> unique_ptr<Constraint>
     return cloned;
 }
 
-auto BinPacking::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     if (_items.size() != _sizes.size())

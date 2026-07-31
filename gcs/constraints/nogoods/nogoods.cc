@@ -77,17 +77,6 @@ auto Nogoods::clone() const -> unique_ptr<Constraint>
     return make_unique<Nogoods>(_store, _trigger_vars, _refined);
 }
 
-auto Nogoods::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto Nogoods::define_proof_model(ProofModel & model, const State &) -> void
 {
     // A nogood forbids a conjunction of literals, so its definition is the clause

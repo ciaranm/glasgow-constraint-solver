@@ -62,7 +62,6 @@ namespace gcs
         explicit RegularBacchus(std::vector<IntegerVariableID> vars, long num_states, std::vector<std::vector<long>> transitions,
             std::vector<long> final_states, bool short_reasons = true);
 
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;

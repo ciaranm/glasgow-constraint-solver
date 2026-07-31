@@ -27,7 +27,6 @@ namespace gcs
     public:
         explicit Table(std::vector<IntegerVariableID> vars, ExtensionalTuples tuples);
 
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;

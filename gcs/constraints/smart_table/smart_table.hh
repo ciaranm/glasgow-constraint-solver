@@ -88,7 +88,6 @@ namespace gcs
         auto with_short_reasons(std::optional<bool> short_reasons = true) -> SmartTable &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
 
         [[nodiscard]] static inline auto equals(const IntegerVariableID & a, const IntegerVariableID & b) -> SmartEntry
         {

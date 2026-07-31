@@ -38,17 +38,6 @@ auto ArrayMinMax::clone() const -> unique_ptr<Constraint>
     return make_unique<ArrayMinMax>(_vars, _result, _min);
 }
 
-auto ArrayMinMax::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto ArrayMinMax::prepare(Propagators &, State &, ProofModel * const) -> bool
 {
     if (_vars.empty())

@@ -1319,17 +1319,6 @@ auto Divide::install_propagators(Propagators & propagators) -> void
     install_propagators_divide_modulus<hints::Divide>(_install, constraint_id(), true, _x, _y, _quotient, propagators);
 }
 
-auto Divide::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto Divide::constraint_type() const -> std::string
 {
     return "divide";
@@ -1374,17 +1363,6 @@ auto Modulus::define_proof_model(ProofModel & model, const State &) -> void
 auto Modulus::install_propagators(Propagators & propagators) -> void
 {
     install_propagators_divide_modulus<hints::Modulus>(_install, constraint_id(), false, _x, _y, _remainder, propagators);
-}
-
-auto Modulus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
 }
 
 auto Modulus::constraint_type() const -> std::string

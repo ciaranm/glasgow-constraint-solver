@@ -66,17 +66,6 @@ auto Sort::clone() const -> unique_ptr<Constraint>
     return make_unique<Sort>(_x, _y);
 }
 
-auto Sort::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto Sort::prepare(Propagators &, State &, ProofModel * const) -> bool
 {
     if (_x.size() != _y.size())
