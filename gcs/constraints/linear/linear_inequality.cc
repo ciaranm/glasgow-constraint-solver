@@ -97,12 +97,63 @@ auto ReifiedLinearInequality::install(Propagators & propagators, State & initial
     if (optional_model)
         define_proof_model(*optional_model, initial_state);
 
-    install_propagators(propagators, initial_state);
+    install_propagators(propagators);
 }
 
 auto ReifiedLinearInequality::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _evaluated_cond = test_reification_condition(initial_state, _reif_cond);
+
+    std::tie(_sanitised, _modifier) = tidy_up_linear(_coeff_vars);
+
+    auto neg_coeff_vars = _coeff_vars;
+    for (auto & v : neg_coeff_vars.terms)
+        v.coefficient = -v.coefficient;
+    std::tie(_sanitised_neg, _neg_modifier) = tidy_up_linear(neg_coeff_vars);
+
+    auto n_terms = [](const TidiedUpLinear & cv) { return visit([](const auto & c) { return c.terms.size(); }, cv); };
+
+    // Give a direction a fold state only if the dispatcher can reach it: must-hold
+    // for everything but an unconditional must-not-hold; must-not-hold only for an
+    // unconditional must-not-hold or a full Iff (a half-reified If/NotIf deactivates
+    // rather than enforcing the negation). Within a subtree only one direction runs,
+    // and each state backtracks on its own handle, so an under-folded state is still
+    // correct -- it just re-folds on its next run. Allocating one for a direction
+    // that can never run would not be free: State::new_epoch deep-copies every
+    // constraint-state slot at every search node.
+    const auto threshold = _incremental_threshold.value_or(default_linear_incremental_threshold());
+    const bool und = holds_alternative<evaluated_reif::Undecided>(_evaluated_cond);
+    const bool may_must_hold = holds_alternative<evaluated_reif::MustHold>(_evaluated_cond) || und;
+    const bool may_must_not_hold =
+        holds_alternative<evaluated_reif::MustNotHold>(_evaluated_cond) || (und && holds_alternative<reif::Iff>(_reif_cond));
+
+    if (may_must_hold && n_terms(_sanitised) >= threshold)
+        _incremental_must_hold = initial_state.add_constraint_state(LinearIncrementalState{n_terms(_sanitised), 0_i});
+    if (may_must_not_hold && n_terms(_sanitised_neg) >= threshold)
+        _incremental_must_not_hold = initial_state.add_constraint_state(LinearIncrementalState{n_terms(_sanitised_neg), 0_i});
+
+    // Slack-based waking, for a direction already decided at install time that is
+    // long enough and loose enough that most coarse wakes could not propagate
+    // anyway. Sizing the covering set reads the initial domains, so the decision
+    // belongs here; install_propagators() just acts on it.
+    const auto slack_threshold = default_linear_slack_watch_threshold();
+    const auto slack_cover_percent = default_linear_slack_watch_cover_percent();
+    auto want_slack = [&](const TidiedUpLinear & cv, Integer val) -> bool {
+        return visit(
+            [&](const auto & c) {
+                const auto len = c.terms.size();
+                if (len < slack_threshold)
+                    return false;
+                return linear_slack_cover_size(c, val, initial_state) * 100 <= slack_cover_percent * len;
+            },
+            cv);
+    };
+
+    if (holds_alternative<evaluated_reif::MustHold>(_evaluated_cond))
+        _slack_watch_must_hold = want_slack(_sanitised, _value + _modifier);
+    if (holds_alternative<evaluated_reif::MustNotHold>(_evaluated_cond))
+        _slack_watch_must_not_hold = want_slack(_sanitised_neg, -_value + _neg_modifier - 1_i);
+
     return true;
 }
 
@@ -140,17 +191,15 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model, const State
         .visit(_reif_cond);
 }
 
-auto ReifiedLinearInequality::install_propagators(Propagators & propagators, State & initial_state) -> void
+auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> void
 {
     auto proof_lines = _proof_lines;
     auto proof_lines_swapped = pair{_proof_lines.second, _proof_lines.first};
 
-    auto [sanitised_cv, modifier] = tidy_up_linear(_coeff_vars);
-
-    auto neg_coeff_vars = _coeff_vars;
-    for (auto & v : neg_coeff_vars.terms)
-        v.coefficient = -v.coefficient;
-    auto [sanitised_neg_cv, neg_modifier] = tidy_up_linear(neg_coeff_vars);
+    const auto & sanitised_cv = _sanitised;
+    const auto & sanitised_neg_cv = _sanitised_neg;
+    const auto modifier = _modifier;
+    const auto neg_modifier = _neg_modifier;
 
     vector<IntegerVariableID> vars;
     visit(
@@ -187,29 +236,20 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
             // one subtree only one direction runs, and each state backtracks on its own
             // ConstraintStateHandle, so an under-folded state (vars instantiated while the
             // other direction was active) is still correct -- it just re-folds them on its
-            // next run. Set up a state only for a direction the dispatcher can actually
-            // reach: must-hold for everything but an unconditional must-not-hold; must-not-
-            // hold only for an unconditional must-not-hold or a full Iff (a half-reified
-            // If/NotIf deactivates rather than enforcing the negation).
-            const auto threshold = _incremental_threshold.value_or(default_linear_incremental_threshold());
-            const bool und = std::holds_alternative<evaluated_reif::Undecided>(_evaluated_cond);
-            const bool may_must_hold = std::holds_alternative<evaluated_reif::MustHold>(_evaluated_cond) || und;
-            const bool may_must_not_hold =
-                std::holds_alternative<evaluated_reif::MustNotHold>(_evaluated_cond) || (und && std::holds_alternative<reif::Iff>(_reif_cond));
-
-            auto setup_inc = [&](const auto & cv) -> std::pair<std::shared_ptr<std::vector<std::size_t>>, ConstraintStateHandle> {
+            // next run. prepare() decided which directions get one, and allocated them.
+            auto setup_inc = [&](const auto & cv,
+                                 ConstraintStateHandle handle) -> std::pair<std::shared_ptr<std::vector<std::size_t>>, ConstraintStateHandle> {
                 auto active = make_shared<std::vector<std::size_t>>(cv.terms.size());
                 for (std::size_t i = 0; i != cv.terms.size(); ++i)
                     (*active)[i] = i;
-                auto handle = initial_state.add_constraint_state(LinearIncrementalState{cv.terms.size(), 0_i});
                 return std::pair{active, handle};
             };
 
             std::optional<std::pair<std::shared_ptr<std::vector<std::size_t>>, ConstraintStateHandle>> inc_must_hold, inc_must_not_hold;
-            if (may_must_hold && sanitised_cv.terms.size() >= threshold)
-                inc_must_hold = setup_inc(sanitised_cv);
-            if (may_must_not_hold && sanitised_neg_cv.terms.size() >= threshold)
-                inc_must_not_hold = setup_inc(sanitised_neg_cv);
+            if (_incremental_must_hold)
+                inc_must_hold = setup_inc(sanitised_cv, *_incremental_must_hold);
+            if (_incremental_must_not_hold)
+                inc_must_not_hold = setup_inc(sanitised_neg_cv, *_incremental_must_not_hold);
 
             auto enforce_constraint_must_hold = [sanitised_cv, value = _value, modifier = modifier, proof_lines, inc_must_hold](const State & state,
                                                     auto & inference, ProofLogger * const logger, const Literal & cond) -> PropagatorState {
@@ -276,14 +316,8 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
             // bypass the dispatcher for that single direction and run the sweep
             // directly, re-arming the covering set after each clean wake. The
             // genuinely-undecided reified case (and equality) keep the coarse path.
-            const auto slack_threshold = default_linear_slack_watch_threshold();
-            const auto slack_cover_percent = default_linear_slack_watch_cover_percent();
-            auto want_slack = [&](const auto & cv, Integer val) -> bool {
-                const auto len = cv.terms.size();
-                if (len < slack_threshold)
-                    return false;
-                return linear_slack_cover_size(cv, val, initial_state) * 100 <= slack_cover_percent * len;
-            };
+            // prepare() made the decision, since sizing the covering set needs the
+            // initial domains.
             auto install_slack_watched = [&](const auto & cv, Integer val, const Literal & cond, const auto & dir_proof_lines) {
                 Triggers slack_triggers;
                 for (const auto & term : cv.terms)
@@ -303,12 +337,11 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators, Sta
                     std::move(slack_triggers));
             };
 
-            if (auto mh = std::get_if<evaluated_reif::MustHold>(&_evaluated_cond); mh && want_slack(sanitised_cv, _value + modifier)) {
+            if (auto mh = std::get_if<evaluated_reif::MustHold>(&_evaluated_cond); mh && _slack_watch_must_hold) {
                 install_slack_watched(sanitised_cv, _value + modifier, mh->cond, proof_lines);
                 return;
             }
-            if (auto mnh = std::get_if<evaluated_reif::MustNotHold>(&_evaluated_cond);
-                mnh && want_slack(sanitised_neg_cv, -_value + neg_modifier - 1_i)) {
+            if (auto mnh = std::get_if<evaluated_reif::MustNotHold>(&_evaluated_cond); mnh && _slack_watch_must_not_hold) {
                 install_slack_watched(sanitised_neg_cv, -_value + neg_modifier - 1_i, mnh->cond, proof_lines_swapped);
                 return;
             }

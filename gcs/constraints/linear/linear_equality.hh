@@ -4,9 +4,11 @@
 #include <gcs/consistency.hh>
 #include <gcs/constraint.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/linear/utils.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/reification.hh>
 
 #include <cstddef>
@@ -51,11 +53,22 @@ namespace gcs
         std::optional<std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>>> _proof_line;
         innards::EvaluatedReificationCondition _evaluated_cond = innards::evaluated_reif::Deactivated{};
 
+        // tidy_up_linear() of _coeff_vars: computed once in prepare(), because both
+        // the incremental-state decision below and install_propagators() need it.
+        innards::TidiedUpLinear _sanitised;
+        Integer _modifier = 0_i;
+
+        // The incremental propagator's backtrackable fold state, allocated in
+        // prepare() and consumed by install_propagators(). Unset means this
+        // constraint is not folding: either it is too narrow to pay for it, or the
+        // dispatcher can never reach a branch that would use it. Keeping that
+        // conditional matters -- every constraint-state slot is deep-copied at every
+        // search node, so one allocated for an unreachable branch is a real cost.
+        std::optional<innards::ConstraintStateHandle> _incremental_handle;
+
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
-        // Takes State (unlike the base's Propagators-only hook) because the incremental
-        // equality path registers backtrackable constraint state at install time.
-        auto install_propagators(innards::Propagators &, innards::State &) -> void;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         // flipped_cond is internal reification plumbing, set by the derived NotEqualsIff

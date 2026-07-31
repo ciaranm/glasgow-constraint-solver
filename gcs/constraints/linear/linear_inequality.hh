@@ -3,10 +3,12 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/constraints/innards/reified_state.hh>
+#include <gcs/constraints/linear/utils.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/literal.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/propagators-fwd.hh>
+#include <gcs/innards/state.hh>
 #include <gcs/reification.hh>
 
 #include <cstddef>
@@ -37,11 +39,28 @@ namespace gcs
         // means use innards::default_linear_incremental_threshold().
         std::optional<std::size_t> _incremental_threshold;
 
+        // tidy_up_linear() of _coeff_vars and of its negation, computed once in
+        // prepare(), because the decisions below and install_propagators() all need
+        // them.
+        innards::TidiedUpLinear _sanitised, _sanitised_neg;
+        Integer _modifier = 0_i, _neg_modifier = 0_i;
+
+        // The two directions' backtrackable fold states, allocated in prepare() and
+        // consumed by install_propagators(). Each is set only for a direction the
+        // dispatcher can actually reach and that is wide enough to pay for folding:
+        // every constraint-state slot is deep-copied at every search node, so one
+        // allocated for an unreachable direction is a real cost.
+        std::optional<innards::ConstraintStateHandle> _incremental_must_hold, _incremental_must_not_hold;
+
+        // Whether a direction is decided at install time and loose enough to wake on
+        // slack watches rather than on every bound of every term. Deciding needs the
+        // initial domains (linear_slack_cover_size sizes the covering set against
+        // them), so it happens in prepare().
+        bool _slack_watch_must_hold = false, _slack_watch_must_not_hold = false;
+
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
-        // Takes State (unlike the base's Propagators-only hook) because the incremental
-        // must-hold path registers backtrackable constraint state at install time.
-        auto install_propagators(innards::Propagators &, innards::State &) -> void;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit ReifiedLinearInequality(
