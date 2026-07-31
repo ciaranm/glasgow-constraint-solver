@@ -48,9 +48,7 @@ namespace gcs
      * ProofLevel::Current (and so deleted on backtrack and re-emitted on demand)
      * rather than resident at ProofLevel::Top.
      *
-     * \c None keeps everything resident at Top, as always. \c Links (the earlier,
-     * unsound experiment) emits only the derived adjacent-threshold chain links at
-     * Current, keeping the ge atom definitions resident. \c Literals deletes whole
+     * \c None keeps everything resident at Top, as always. \c Literals deletes whole
      * search-introduced order literals -- each real variable's non-boundary ge
      * *definition* together with its chain links is emitted at Current, so a
      * backtrack deletes it; when an interior literal between two surviving
@@ -62,7 +60,6 @@ namespace gcs
     enum class OrderEncodingDeletion
     {
         None,     /// Everything resident at Top, as always (the default)
-        Links,    /// Emit the order-encoding chain links at Current; delete on backtrack, re-emit on demand (unsound; dormant)
         Literals, /// Delete whole search-introduced order literals (def + links) on backtrack, stitching the chain over survivors
     };
 
@@ -129,8 +126,8 @@ namespace gcs
         }
         /// Set the chain-length gate for OrderEncodingDeletion::Literals: interior ge
         /// definitions are only made deletable once a variable has named more than \p m
-        /// ge thresholds. 0 (the default) disables the gate, deleting from the first
-        /// threshold exactly as the pre-gate Literals mode did.
+        /// ge thresholds. 0 disables the gate, deleting from the first threshold exactly
+        /// as the pre-gate Literals mode did; the default is 16.
         ProofOptions & set_order_encoding_deletion_min_chain(int m)
         {
             order_encoding_deletion_min_chain = m;

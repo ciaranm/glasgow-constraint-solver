@@ -561,7 +561,7 @@ way — A, B, B', B'', C and D are in — and it inherited the objective-variabl
 follow-up from 2b as its stage C; 3 stays parked.
 
 **Also:** decide productionisation (keep flag-gated vs default-on — current verdict:
-flag-gated), and — cleanup — the superseded dormant `Links` mode can be removed.
+flag-gated). The superseded dormant `Links` mode has now been removed, in stage E.
 
 ## The problem
 

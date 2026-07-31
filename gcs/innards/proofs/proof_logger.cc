@@ -1069,10 +1069,10 @@ auto ProofLogger::forget_proof_level(int depth) -> void
     }
     lines.clear();
 
-    // Keep the tracker's live order-link structure in sync with the deletions just
-    // emitted: any order-encoding chain links recorded at this level have now been
-    // del'd, so drop them from the live set so a later need_gevar re-emits them if
-    // required. A cheap no-op when the order-link deletion mode is off.
+    // Keep the tracker's live order-encoding structures in sync with the deletions just
+    // emitted: the ge definitions, eq definitions and chain clauses recorded at this
+    // level have now been del'd, so retire their atoms and stitch the chain back over
+    // the survivors. A cheap no-op unless the order-encoding deletion mode is Literals.
     names_and_ids_tracker().forget_order_links_at_level(depth);
 
     // The eq window's per-node records for this level went with those deletions. Dropping

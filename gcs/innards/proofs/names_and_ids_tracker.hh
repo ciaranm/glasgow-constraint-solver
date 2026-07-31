@@ -216,24 +216,15 @@ namespace gcs::innards
         // Build the pol line deriving the order-encoding chain link clause
         // (cond1 OR cond2) from the resident (Top) bit-definitions of ~cond1 and
         // ~cond2. Shared by the initial chain-link emission in need_gevar and the
-        // on-demand re-emission used by the order-link deletion mode.
+        // deletable links, stitches and hoists of the order-encoding deletion mode.
         [[nodiscard]] auto make_pol_chain_line(IntegerVariableCondition cond1, IntegerVariableCondition cond2) -> std::shared_ptr<PolBuilder>;
 
-        // Emit the adjacent-threshold (lo < hi) order-encoding chain link
-        // ge(hi) -> ge(lo) for a real variable. With order-link deletion on and the
-        // logger attached the link lands at ProofLevel::Current (so a backtrack
-        // deletes it) and is recorded as live tagged with the active proof level;
-        // otherwise it lands at Top exactly as before. Model-building emissions
-        // (logger not yet attached) always land at Top.
-        auto emit_and_maybe_track_order_link(const SimpleIntegerVariableID & id, Integer lo, Integer hi) -> void;
-
-        // Fast-path helper for need_gevar when a real variable's ge atom already
-        // exists: reconnect the variable's entire order chain by re-emitting every
-        // currently-missing adjacent-threshold link across its existing thresholds,
-        // so a RUP needing multi-hop order propagation has the full chain available
-        // (as the baseline keeps permanently resident). Emission fires only for
-        // genuinely-missing links. No-op unless the order-link deletion mode is on.
-        auto ensure_order_chain_connected(const SimpleIntegerVariableID & id) -> void;
+        // Emit the permanent (Top) adjacent-threshold (lo < hi) order-encoding chain
+        // link ge(hi) -> ge(lo) for a real variable. This is the emission used with
+        // deletion off, and at model-building time (logger not yet attached) in every
+        // mode. Literals mode's deletable links come from
+        // link_order_literal_to_live_neighbours instead.
+        auto emit_order_link(const SimpleIntegerVariableID & id, Integer lo, Integer hi) -> void;
 
         // --- Literals mode (OrderEncodingDeletion::Literals) ---
 
@@ -430,18 +421,17 @@ namespace gcs::innards
         auto need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void;
 
         /**
-         * Drop from the live order-link structure every order-encoding chain link
-         * tagged with the given proof level. Emits nothing: the matching `del` lines
-         * are produced by ProofLogger::forget_proof_level's own deletion loop (the
-         * links were recorded at Current == that level). This just keeps the live
-         * structure in sync so a later need_gevar re-emits any that are needed again.
-         * A cheap no-op when the order-link deletion mode is off. Intended to be
+         * Sweep the order encoding recorded at the given proof level, which is about to
+         * be forgotten: forget_order_literals_at_level (which retires each deleted ge
+         * literal and re-stitches the chain around each deleted run), then the eq and
+         * chain-clause analogues. The `del` lines themselves are produced by
+         * ProofLogger::forget_proof_level's own deletion loop; what happens here is the
+         * bookkeeping that has to stay in step with them, plus the stitches. A cheap
+         * no-op unless the order-encoding deletion mode is `Literals`. Intended to be
          * called from ProofLogger::forget_proof_level.
          *
-         * Note: in `Literals` mode this dispatches to forget_order_literals_at_level
-         * (which deletes literals and re-stitches the chain around each deleted run),
-         * not links. The `_links_` in this name predates the Literals mode; it is left
-         * unchanged until the planned Brancher refactor renames it.
+         * Note: the `_links_` in this name predates the Literals mode -- it sweeps
+         * literals, not links -- and is left unchanged until the rename that follows.
          */
         auto forget_order_links_at_level(int level) -> void;
 
