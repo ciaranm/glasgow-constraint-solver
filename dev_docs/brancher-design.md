@@ -1513,9 +1513,16 @@ around it. Both `.pbp` drivers are self-contained — they need only `veripb` 3.
   at point of use" result), the `q*.pbp` scenarios, and `run.sh`.
 
 The two verified foundations `order_jump_check.cc` (guess-reasoned bound jump + its
-two must-fail controls) and `order_hoist_check.cc` sit at the top of that directory,
-still uncommitted; stage E owns promoting them to proper `gcs/` tests, and until it
-does they are one `rm -rf` from being lost. The phase-2 real-instance campaign that
+two must-fail controls) and `order_hoist_check.cc` sat at the top of that directory,
+uncommitted, until stage E promoted them to `gcs/innards/proofs/order_jump_test.cc`
+and `order_hoist_test.cc`. The copies there are now provenance; the tests are the
+live record, and their must-fail controls run through the new
+`run_test_and_expect_rejection.bash`. Promotion changed two things beyond
+packaging: the controls capture their probe's text while the atom is still live
+(deletion now *retires* the atom, so naming it afterwards throws instead of
+producing a line for VeriPB to reject), and the `multi` hoist scenario gained a
+second hoist, without which the corrupted level bucket it exists to catch is never
+queried and the scenario passes against the broken code. The phase-2 real-instance campaign that
 motivated the objective exemption and the chain gate is under `real-instance-bench/`,
 with the gate study in `chain-gate/`. Its headline figures have since been re-measured
 from scratch on current hardware — see

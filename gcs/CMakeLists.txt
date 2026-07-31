@@ -591,6 +591,40 @@ if(GCS_BUILD_TESTS)
         endforeach()
     endforeach()
 
+    # The two verified foundations the order-encoding-deletion design rests on: that a bound
+    # jump over a run of holes is RUP from a guesses-only reason, and that hoisting a `ge`
+    # definition to a shallower level leaves it live AND chained. Both were established with
+    # standalone VeriPB drivers while the design was being written; these are those drivers,
+    # promoted, so that a checker or an encoding change that stopped closing them is caught
+    # here rather than as a mystery rejection somewhere in the suite.
+    #
+    # Each carries its must-fail controls, and a control is a separate ctest entry through
+    # run_test_and_expect_rejection.bash rather than a mode of the positive test, because
+    # what it asserts is a property of veripb's verdict, not of the binary's exit code.
+    # Distinct basenames throughout: a parallel ctest would otherwise race over one set of
+    # proof files (issue #562).
+    add_executable(order_jump_test innards/proofs/order_jump_test.cc)
+    target_link_libraries(order_jump_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME order_jump_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash
+        $<TARGET_FILE:order_jump_test> --scenario jump)
+    foreach(scenario no_flag over_jump)
+        add_test(NAME order_jump_${scenario}_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_rejection.bash
+            --basename order_jump_${scenario}_test --expect "not implied by reverse unit propagation"
+            $<TARGET_FILE:order_jump_test> --scenario ${scenario})
+    endforeach()
+
+    add_executable(order_hoist_test innards/proofs/order_hoist_test.cc)
+    target_link_libraries(order_hoist_test PRIVATE glasgow_constraint_solver)
+    foreach(scenario top level multi)
+        add_test(NAME order_hoist_${scenario}_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash
+            --basename order_hoist_${scenario}_test $<TARGET_FILE:order_hoist_test> --scenario ${scenario})
+    endforeach()
+    foreach(scenario no_hoist level_gone)
+        add_test(NAME order_hoist_${scenario}_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_rejection.bash
+            --basename order_hoist_${scenario}_test --expect "not implied by reverse unit propagation"
+            $<TARGET_FILE:order_hoist_test> --scenario ${scenario})
+    endforeach()
+
     add_executable(range_branch_test innards/proofs/range_branch_test.cc)
     target_link_libraries(range_branch_test PRIVATE glasgow_constraint_solver)
     add_test(NAME range_branch_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:range_branch_test>)
