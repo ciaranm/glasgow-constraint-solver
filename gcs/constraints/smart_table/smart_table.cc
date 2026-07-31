@@ -617,7 +617,7 @@ namespace
 
     // For PB model
     [[nodiscard]] auto make_binary_entry_flag(
-        State &, ProofModel & model, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const SmartEntryConstraint & c) -> ProofFlag
+        ProofModel & model, const IntegerVariableID & var_1, const IntegerVariableID & var_2, const SmartEntryConstraint & c) -> ProofFlag
     {
         switch (c) {
             using enum SmartEntryConstraint;
@@ -689,7 +689,7 @@ auto provable_entry_member(IntegerVariableID v) -> bool
         .visit(v);
 }
 
-auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vector<SmartEntry>
+auto consolidate_unary_entries(const State & state, vector<SmartEntry> tuple) -> vector<SmartEntry>
 {
     // TODO:
     //  Using an IntervalSet data structure we could do this in a much better way, but this
@@ -716,7 +716,7 @@ auto consolidate_unary_entries(State & state, vector<SmartEntry> tuple) -> vecto
         const auto & entries = var_and_entries.second;
         vector<Integer> allowed_vals{};
 
-        for (auto v : state.each_value_mutable(var)) {
+        for (auto v : state.each_value_immutable(var)) {
             bool val_allowed = true;
             for (auto & entry : entries) {
                 overloaded{
@@ -778,90 +778,106 @@ auto SmartTable::clone() const -> unique_ptr<Constraint>
 
 auto SmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
-    vector<IntegerVariableID> selectors;
-    vector<ProofFlag> pb_selectors;
+    if (! prepare(propagators, initial_state, optional_model))
+        return;
+
+    if (optional_model)
+        define_proof_model(*optional_model, initial_state);
+
+    install_propagators(propagators);
+}
+
+auto SmartTable::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
+{
+    // One 0/1 selector variable per tuple: allocating is a prepare() job.
+    for (unsigned int i = 0; i < _tuples.size(); ++i)
+        _selectors.emplace_back(initial_state.allocate_integer_variable_with_state(0_i, 1_i));
+
+    return true;
+}
+
+auto SmartTable::define_proof_model(ProofModel & model, const State & initial_state) -> void
+{
+    auto & pb_selectors = _pb_selectors;
 
     for (unsigned int i = 0; i < _tuples.size(); ++i) {
-        selectors.emplace_back(initial_state.allocate_integer_variable_with_state(0_i, 1_i));
+        pb_selectors.emplace_back(model.create_proof_flag(format("t{}", i)));
     }
+    WPBSum sum_pb_selectors{};
 
-    if (optional_model) {
-        for (unsigned int i = 0; i < _tuples.size(); ++i) {
-            pb_selectors.emplace_back(optional_model->create_proof_flag(format("t{}", i)));
-        }
-        WPBSum sum_pb_selectors{};
+    for (const auto & s : pb_selectors)
+        sum_pb_selectors += 1_i * s;
 
-        for (const auto & s : pb_selectors)
-            sum_pb_selectors += 1_i * s;
+    model.add_constraint(sum_pb_selectors >= 1_i);
 
-        optional_model->add_constraint(sum_pb_selectors >= 1_i);
+    // Would need a hash function for unordered map, but this shouldn't be too slow
+    map<BinaryEntryData, ProofFlag> smart_entry_flags;
 
-        // Would need a hash function for unordered map, but this shouldn't be too slow
-        map<BinaryEntryData, ProofFlag> smart_entry_flags;
+    for (unsigned int tuple_idx = 0; tuple_idx < _tuples.size(); ++tuple_idx) {
+        WPBSum entry_flags_sum{};
+        WPBSum entry_flags_neg_sum{};
+        for (const auto & entry : consolidate_unary_entries(initial_state, _tuples[tuple_idx])) {
+            overloaded{
+                [&](BinaryEntry binary_entry) {
+                    //                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
+                    //                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
+                    //                        }
+                    auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+                    if (! smart_entry_flags.contains(binary_entry_data))
+                        smart_entry_flags[binary_entry_data] =
+                            make_binary_entry_flag(model, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
 
-        for (unsigned int tuple_idx = 0; tuple_idx < _tuples.size(); ++tuple_idx) {
-            WPBSum entry_flags_sum{};
-            WPBSum entry_flags_neg_sum{};
-            for (const auto & entry : consolidate_unary_entries(initial_state, _tuples[tuple_idx])) {
-                overloaded{
-                    [&](BinaryEntry binary_entry) {
-                        //                        if(!provable_entry_member(binary_entry.var_1) || !provable_entry_member(binary_entry.var_2)) {
-                        //                            throw UnimplementedException{"Can only proof log smart table binary entries of form <var> <op> <var> + b where b >= 0."};
-                        //                        }
-                        auto binary_entry_data = make_tuple(binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
-                        if (! smart_entry_flags.contains(binary_entry_data))
-                            smart_entry_flags[binary_entry_data] = make_binary_entry_flag(
-                                initial_state, *optional_model, binary_entry.var_1, binary_entry.var_2, binary_entry.constraint_type);
+                    entry_flags_sum += 1_i * smart_entry_flags[binary_entry_data];
+                    entry_flags_neg_sum += -1_i * smart_entry_flags[binary_entry_data];
+                }, //
+                [&](const UnarySetEntry & unary_set_entry) {
+                    auto var = unary_set_entry.var;
+                    auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? model.create_proof_flag("inset")
+                                                                                            : model.create_proof_flag("notinset");
 
-                        entry_flags_sum += 1_i * smart_entry_flags[binary_entry_data];
-                        entry_flags_neg_sum += -1_i * smart_entry_flags[binary_entry_data];
-                    }, //
-                    [&](const UnarySetEntry & unary_set_entry) {
-                        auto var = unary_set_entry.var;
-                        auto flag = unary_set_entry.constraint_type == SmartEntryConstraint::In ? optional_model->create_proof_flag("inset")
-                                                                                                : optional_model->create_proof_flag("notinset");
-
-                        // InSet {<empty>} is the same as False
-                        if (unary_set_entry.values.empty() && unary_set_entry.constraint_type == SmartEntryConstraint::In) {
-                            optional_model->add_constraint(WPBSum{} + 1_i * ! flag >= 1_i);
-                            entry_flags_sum += 1_i * flag;
-                            entry_flags_neg_sum += -1_i * flag;
-                            return;
-                        }
-                        WPBSum set_value_sum{};
-                        WPBSum neg_set_value_sum{};
-                        for (auto val : initial_state.each_value_immutable(var)) {
-                            if (! count(unary_set_entry.values.begin(), unary_set_entry.values.end(), val))
-                                set_value_sum += 1_i * (var != val);
-                        }
-
-                        for (const auto & val : unary_set_entry.values)
-                            neg_set_value_sum += 1_i * (var != val);
-
-                        auto set_rhs = Integer{static_cast<long long>(set_value_sum.terms.size())};
-                        auto neg_set_rhs = Integer{static_cast<long long>(neg_set_value_sum.terms.size())};
-                        optional_model->add_constraint(move(set_value_sum) >= set_rhs,
-                            HalfReifyOnConjunctionOf{{unary_set_entry.constraint_type == SmartEntryConstraint::In ? flag : ! flag}});
-                        optional_model->add_constraint(move(neg_set_value_sum) >= neg_set_rhs,
-                            HalfReifyOnConjunctionOf{{unary_set_entry.constraint_type == SmartEntryConstraint::In ? ! flag : flag}});
-
+                    // InSet {<empty>} is the same as False
+                    if (unary_set_entry.values.empty() && unary_set_entry.constraint_type == SmartEntryConstraint::In) {
+                        model.add_constraint(WPBSum{} + 1_i * ! flag >= 1_i);
                         entry_flags_sum += 1_i * flag;
                         entry_flags_neg_sum += -1_i * flag;
-                    }, //
-                    [&](UnaryValueEntry unary_value_entry) {
-                        Literal l = literal_from_unary_entry(unary_value_entry);
-                        entry_flags_sum += 1_i * l;
-                        entry_flags_neg_sum += -1_i * l;
-                    } //
-                }
-                    .visit(entry);
-            }
-            auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.terms.size())};
-            optional_model->add_constraint(move(entry_flags_sum) >= tuple_len, HalfReifyOnConjunctionOf{{pb_selectors[tuple_idx]}});
-            optional_model->add_constraint(move(entry_flags_neg_sum) >= -tuple_len + 1_i, HalfReifyOnConjunctionOf{{! pb_selectors[tuple_idx]}});
-        }
-    }
+                        return;
+                    }
+                    WPBSum set_value_sum{};
+                    WPBSum neg_set_value_sum{};
+                    for (auto val : initial_state.each_value_immutable(var)) {
+                        if (! count(unary_set_entry.values.begin(), unary_set_entry.values.end(), val))
+                            set_value_sum += 1_i * (var != val);
+                    }
 
+                    for (const auto & val : unary_set_entry.values)
+                        neg_set_value_sum += 1_i * (var != val);
+
+                    auto set_rhs = Integer{static_cast<long long>(set_value_sum.terms.size())};
+                    auto neg_set_rhs = Integer{static_cast<long long>(neg_set_value_sum.terms.size())};
+                    model.add_constraint(move(set_value_sum) >= set_rhs,
+                        HalfReifyOnConjunctionOf{{unary_set_entry.constraint_type == SmartEntryConstraint::In ? flag : ! flag}});
+                    model.add_constraint(move(neg_set_value_sum) >= neg_set_rhs,
+                        HalfReifyOnConjunctionOf{{unary_set_entry.constraint_type == SmartEntryConstraint::In ? ! flag : flag}});
+
+                    entry_flags_sum += 1_i * flag;
+                    entry_flags_neg_sum += -1_i * flag;
+                }, //
+                [&](UnaryValueEntry unary_value_entry) {
+                    Literal l = literal_from_unary_entry(unary_value_entry);
+                    entry_flags_sum += 1_i * l;
+                    entry_flags_neg_sum += -1_i * l;
+                } //
+            }
+                .visit(entry);
+        }
+        auto tuple_len = Integer{static_cast<long long>(entry_flags_sum.terms.size())};
+        model.add_constraint(move(entry_flags_sum) >= tuple_len, HalfReifyOnConjunctionOf{{pb_selectors[tuple_idx]}});
+        model.add_constraint(move(entry_flags_neg_sum) >= -tuple_len + 1_i, HalfReifyOnConjunctionOf{{! pb_selectors[tuple_idx]}});
+    }
+}
+
+auto SmartTable::install_propagators(Propagators & propagators) -> void
+{
     // Trigger when any var changes? Is this over-kill?
     Triggers triggers;
     triggers.on_change = {_vars.begin(), _vars.end()};
@@ -870,7 +886,8 @@ auto SmartTable::install(Propagators & propagators, State & initial_state, Proof
 
     propagators.install(
         constraint_id(),
-        [selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(pb_selectors), short_reasons = _short_reasons,
+        [selectors = _selectors, vars = _vars, tuples = move(_tuples), forests = move(forests), pb_selectors = move(_pb_selectors),
+            short_reasons = _short_reasons,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto reason = eager_reason(generic_reason(vars), state);
             propagate_using_smart_str(selectors, vars, tuples, forests, state, inference, reason, pb_selectors, logger, short_reasons, owner);

@@ -3,6 +3,7 @@
 
 #include <gcs/constraint.hh>
 #include <gcs/extensional.hh>
+#include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/variable_id.hh>
 
 #include <optional>
@@ -67,6 +68,16 @@ namespace gcs
         const std::vector<IntegerVariableID> _vars;
         SmartTuples _tuples;
         bool _short_reasons = true;
+
+        // One 0/1 selector variable per tuple, allocated by prepare(); the matching
+        // proof flags are created by define_proof_model(). Both are consumed by the
+        // propagator.
+        std::vector<IntegerVariableID> _selectors;
+        std::vector<innards::ProofFlag> _pb_selectors;
+
+        virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
+        virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:
         explicit SmartTable(std::vector<IntegerVariableID> vars, SmartTuples tuples);
