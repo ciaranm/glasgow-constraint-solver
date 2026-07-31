@@ -221,7 +221,8 @@ re-dispatch inside the Undecided arm.
 
 ## Worked example: `LessThan` (in `comparison/comparison.cc`)
 
-A boiled-down outline of `ReifiedCompareLessThanOrMaybeEqual::install`:
+A boiled-down outline of `ReifiedCompareLessThanOrMaybeEqual`'s
+`define_proof_model` and `install_propagators`:
 
 ```cpp
 // 1. OPB encoding (one or two add_constraint calls per reif kind)
@@ -297,12 +298,12 @@ being inferred. Lex currently only fully supports the Iff polarity for
 its scaffolded inferences; the NotIf case is latent (and not exposed in
 the public API).
 
-### Capture-by-reference inside the install function
+### Capture-by-reference inside install_propagators
 
 The three callables passed to `install_reified_dispatcher` are stored
 inside the propagator's lambda (which lives until the constraint is torn
-down). They must capture by *value* (not reference) anything from the
-install function's local scope — the install function returns long
+down). They must capture by *value* (not reference) anything from
+`install_propagators`'s local scope — that phase returns long
 before the propagator first runs. Look for `[v1 = _v1, v2 = _v2, ...]`
 init-capture style.
 

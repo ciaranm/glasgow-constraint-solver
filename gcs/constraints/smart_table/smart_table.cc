@@ -776,17 +776,6 @@ auto SmartTable::clone() const -> unique_ptr<Constraint>
     return cloned;
 }
 
-auto SmartTable::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto SmartTable::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     // One 0/1 selector variable per tuple: allocating is a prepare() job.

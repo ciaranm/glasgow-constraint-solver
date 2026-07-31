@@ -83,7 +83,7 @@ namespace
             return SExpr::atom("observer");
         }
 
-        auto install(Propagators & propagators, State &, ProofModel * const) && -> void override
+        auto install_propagators(Propagators & propagators) -> void override
         {
             auto wakes = _wakes;
             if (_mode == Mode::Coarse) {

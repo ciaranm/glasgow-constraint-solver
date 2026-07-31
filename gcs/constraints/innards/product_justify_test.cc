@@ -38,6 +38,7 @@ using std::nullopt;
 using std::optional;
 using std::pair;
 using std::set;
+using std::shared_ptr;
 using std::tuple;
 using std::unique_ptr;
 using std::vector;
@@ -107,6 +108,9 @@ namespace
         SimpleIntegerVariableID _v1, _v2, _v3;
         Fragment _fragment;
 
+        // Empty when proofs are off, which is what the fragment runner checks for.
+        shared_ptr<optional<FragmentEncoding>> _encoding = make_shared<optional<FragmentEncoding>>(nullopt);
+
     public:
         ProductFragmentForTest(SimpleIntegerVariableID v1, SimpleIntegerVariableID v2, SimpleIntegerVariableID v3, Fragment fragment) :
             _v1(v1), _v2(v2), _v3(v3), _fragment(fragment)
@@ -118,21 +122,21 @@ namespace
             return make_unique<ProductFragmentForTest>(_v1, _v2, _v3, _fragment);
         }
 
-        auto install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void override
+        auto define_proof_model(ProofModel & model, const State & initial_state) -> void override
         {
-            auto encoding = make_shared<optional<FragmentEncoding>>(nullopt);
-            if (optional_model) {
-                auto naming = product_enc::LinkNaming{};
-                auto chan1 = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id(), _v1, 0, "X", naming);
-                auto chan2 = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id(), _v2, 1, "Y", naming);
-                auto grid = product_enc::emit_bit_product_grid(*optional_model, constraint_id(), chan1.mag, chan2.mag, naming);
-                auto zchan = product_enc::emit_result_channel(*optional_model, constraint_id(), _v3, grid, naming);
-                auto signs = product_enc::emit_sign_clauses(*optional_model, constraint_id(), _v1, _v2, _v3, naming);
-                *encoding = FragmentEncoding{chan1, chan2, grid, zchan, signs};
-            }
+            auto naming = product_enc::LinkNaming{};
+            auto chan1 = product_enc::emit_magnitude_channel(model, initial_state, constraint_id(), _v1, 0, "X", naming);
+            auto chan2 = product_enc::emit_magnitude_channel(model, initial_state, constraint_id(), _v2, 1, "Y", naming);
+            auto grid = product_enc::emit_bit_product_grid(model, constraint_id(), chan1.mag, chan2.mag, naming);
+            auto zchan = product_enc::emit_result_channel(model, constraint_id(), _v3, grid, naming);
+            auto signs = product_enc::emit_sign_clauses(model, constraint_id(), _v1, _v2, _v3, naming);
+            *_encoding = FragmentEncoding{chan1, chan2, grid, zchan, signs};
+        }
 
+        auto install_propagators(Propagators & propagators) -> void override
+        {
             propagators.install_initialiser(
-                [encoding = encoding, v1 = _v1, v2 = _v2, v3 = _v3, fragment = _fragment](State & state, auto &, ProofLogger * const logger) {
+                [encoding = _encoding, v1 = _v1, v2 = _v2, v3 = _v3, fragment = _fragment](State & state, auto &, ProofLogger * const logger) {
                     if (! logger)
                         return;
                     auto & enc = **encoding;

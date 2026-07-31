@@ -83,7 +83,7 @@ namespace
             return make_unique<TabulateProductForTest>(_v1, _v2, _v3, _claim_determined);
         }
 
-        auto install(Propagators & propagators, State &, ProofModel * const) && -> void override
+        auto install_propagators(Propagators & propagators) -> void override
         {
             Triggers triggers;
             triggers.on_change = {_v1, _v2, _v3};

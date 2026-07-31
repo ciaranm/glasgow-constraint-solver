@@ -46,7 +46,6 @@ namespace gcs
         explicit ReifiedCompareLessThanOrMaybeEqual(
             const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal, bool vars_swapped = false);
 
-        virtual auto install(innards::Propagators &, innards::State &, innards::ProofModel * const) && -> void override;
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;

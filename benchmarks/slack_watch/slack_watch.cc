@@ -107,7 +107,7 @@ namespace
             return SExpr::atom("sum_leq_watched"); // unused: proofs are off
         }
 
-        auto install(Propagators & propagators, State &, ProofModel * const) && -> void override
+        auto install_propagators(Propagators & propagators) -> void override
         {
             if (_watched)
                 install_watched(propagators);

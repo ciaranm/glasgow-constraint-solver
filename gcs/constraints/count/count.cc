@@ -49,17 +49,6 @@ auto Count::clone() const -> unique_ptr<Constraint>
     return make_unique<Count>(_vars, _value_of_interest, _how_many);
 }
 
-auto Count::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto Count::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Conform to cake_pb_cp's count encoding (#354): per position i, the

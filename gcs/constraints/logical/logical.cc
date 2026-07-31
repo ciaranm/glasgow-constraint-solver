@@ -231,17 +231,6 @@ auto And::clone() const -> unique_ptr<Constraint>
     return make_unique<And>(_lits, _full_reif);
 }
 
-auto And::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto And::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _reif_state = initial_state.test_literal(_full_reif);
@@ -283,17 +272,6 @@ Or::Or(Literals l, const Literal & full_reif) : _lits(move(l)), _full_reif(full_
 auto Or::clone() const -> unique_ptr<Constraint>
 {
     return make_unique<Or>(_lits, _full_reif);
-}
-
-auto Or::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
 }
 
 auto Or::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool

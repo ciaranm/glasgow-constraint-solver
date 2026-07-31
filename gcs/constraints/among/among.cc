@@ -75,17 +75,6 @@ auto Among::clone() const -> unique_ptr<Constraint>
     return make_unique<Among>(_vars, _values_of_interest, _how_many);
 }
 
-auto Among::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto Among::define_proof_model(ProofModel & model, const State &) -> void
 {
     // very easy PB encoding: sum up over the condition that each variable equals one of the

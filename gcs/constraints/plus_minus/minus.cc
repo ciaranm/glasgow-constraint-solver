@@ -143,17 +143,6 @@ auto Minus::clone() const -> unique_ptr<Constraint>
     return cloned;
 }
 
-auto Minus::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto Minus::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     // Tabulation for GAC: enumerate the distinct underlying variables, mapping

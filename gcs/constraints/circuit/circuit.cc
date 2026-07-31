@@ -230,17 +230,6 @@ auto Circuit::install_propagators(Propagators & propagators) -> void
         .visit(_algorithm);
 }
 
-auto Circuit::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto Circuit::clone() const -> unique_ptr<Constraint>
 {
     auto cloned = make_unique<Circuit>(_succ);

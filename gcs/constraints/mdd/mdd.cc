@@ -453,17 +453,6 @@ auto MDD::clone() const -> unique_ptr<Constraint>
     return make_unique<MDD>(_vars, _layer_transitions, _nodes_per_layer, _accepting_terminals);
 }
 
-auto MDD::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto MDD::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
     _bridge = make_shared<Bridge>();

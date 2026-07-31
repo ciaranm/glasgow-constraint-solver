@@ -106,30 +106,40 @@ namespace
         Integer _value;
         Mode _mode;
 
+        // The terms and the triggers, worked out by prepare() because the refined
+        // watches are stated against the initial upper bounds.
+        vector<pair<Integer, IntegerVariableID>> _terms;
+        Triggers _triggers;
+
     public:
         explicit MiniLinearGreaterEqual(WeightedSum coeff_vars, Integer value, Mode mode = Mode::RefinedAll) :
             _coeff_vars(move(coeff_vars)), _value(value), _mode(mode)
         {
         }
 
-        auto install(Propagators & propagators, State & initial_state, ProofModel * const) && -> void override
+        auto prepare(Propagators &, State & initial_state, ProofModel * const) -> bool override
         {
-            vector<pair<Integer, IntegerVariableID>> terms;
             for (const auto & [coeff, var] : _coeff_vars.terms)
-                terms.emplace_back(coeff, var);
+                _terms.emplace_back(coeff, var);
 
             // Coarse triggers on every variable's bounds. Both refined modes arm an
             // upper-bound watch (x_i < ub(x_i), entailed exactly when x_i's upper
             // bound drops) on every variable at install -- so scope and degree match
             // coarse (identical search tree), and WatchedSet then sheds the watches it
             // does not need. Payload = the variable's index into terms.
-            Triggers triggers;
             if (_mode == Mode::Coarse)
-                for (const auto & term : terms)
-                    triggers.on_bounds.push_back(term.second);
+                for (const auto & term : _terms)
+                    _triggers.on_bounds.push_back(term.second);
             else
-                for (const auto & [idx, term] : enumerate(terms))
-                    triggers.refined.emplace_back(term.second < initial_state.upper_bound(term.second), static_cast<std::uint32_t>(idx));
+                for (const auto & [idx, term] : enumerate(_terms))
+                    _triggers.refined.emplace_back(term.second < initial_state.upper_bound(term.second), static_cast<std::uint32_t>(idx));
+
+            return true;
+        }
+
+        auto install_propagators(Propagators & propagators) -> void override
+        {
+            auto terms = move(_terms);
 
             propagators.install(
                 constraint_id(),
@@ -190,7 +200,7 @@ namespace
                     }
                     return PropagatorState::Enable;
                 },
-                triggers);
+                _triggers);
         }
 
         auto clone() const -> unique_ptr<Constraint> override

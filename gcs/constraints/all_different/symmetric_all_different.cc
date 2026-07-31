@@ -56,17 +56,6 @@ auto SymmetricAllDifferent::clone() const -> unique_ptr<Constraint>
     return make_unique<SymmetricAllDifferent>(_vars, _start);
 }
 
-auto SymmetricAllDifferent::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
-{
-    if (! prepare(propagators, initial_state, optional_model))
-        return;
-
-    if (optional_model)
-        define_proof_model(*optional_model, initial_state);
-
-    install_propagators(propagators);
-}
-
 auto SymmetricAllDifferent::prepare(Propagators & propagators, State & initial_state, ProofModel * const optional_model) -> bool
 {
     auto n = _vars.size();
