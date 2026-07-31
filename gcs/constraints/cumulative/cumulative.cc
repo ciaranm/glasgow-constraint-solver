@@ -105,7 +105,7 @@ auto Cumulative::install(Propagators & propagators, State & initial_state, Proof
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -177,7 +177,7 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     return true;
 }
 
-auto Cumulative::define_proof_model(ProofModel & model) -> void
+auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Time-table OPB encoding:
     //   for each task i and each time point t in its possible-active range:

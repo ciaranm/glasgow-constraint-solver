@@ -175,7 +175,7 @@ auto ReifiedLinearEquality::install(Propagators & propagators, State & initial_s
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators, initial_state);
 }
@@ -186,7 +186,7 @@ auto ReifiedLinearEquality::prepare(Propagators &, State & initial_state, ProofM
     return true;
 }
 
-auto ReifiedLinearEquality::define_proof_model(ProofModel & model) -> void
+auto ReifiedLinearEquality::define_proof_model(ProofModel & model, const State &) -> void
 {
     WPBSum terms;
     for (auto & [c, v] : _coeff_vars.terms)

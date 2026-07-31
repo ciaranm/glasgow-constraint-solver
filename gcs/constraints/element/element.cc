@@ -172,7 +172,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::install(
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -205,7 +205,7 @@ auto NDimensionalElement<EntryType_, dimensions_>::prepare(Propagators & propaga
 }
 
 template <typename EntryType_, unsigned dimensions_>
-auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel & model) -> void
+auto NDimensionalElement<EntryType_, dimensions_>::define_proof_model(ProofModel & model, const State &) -> void
 {
     if (_has_empty_dim) {
         // No valid assignment: emit a trivially-false constraint so the OPB

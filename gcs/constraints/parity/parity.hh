@@ -20,7 +20,7 @@ namespace gcs
     private:
         const innards::Literals _lits;
 
-        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
     public:

@@ -72,7 +72,7 @@ auto Sort::install(Propagators & propagators, State & initial_state, ProofModel 
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -173,7 +173,7 @@ auto gcs::innards::define_sortedness_proof_model(ProofModel & model, const Const
     return w;
 }
 
-auto Sort::define_proof_model(ProofModel & model) -> void
+auto Sort::define_proof_model(ProofModel & model, const State &) -> void
 {
     _witness = define_sortedness_proof_model(model, _constraint_id, _x, _y);
 }

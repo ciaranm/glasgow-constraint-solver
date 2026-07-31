@@ -102,7 +102,7 @@ namespace gcs
         Integer _z_lower = 0_i, _z_upper = 0_i;
 
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
-        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
         auto install_check_only_propagator(innards::Propagators &) -> void;
         auto install_forward_propagator(innards::Propagators &, bool pair_support) -> void;

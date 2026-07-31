@@ -80,7 +80,7 @@ auto Inverse::install(Propagators & propagators, State & initial_state, ProofMod
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -103,7 +103,7 @@ auto Inverse::prepare(Propagators & propagators, State & initial_state, ProofMod
     return true;
 }
 
-auto Inverse::define_proof_model(ProofModel & model) -> void
+auto Inverse::define_proof_model(ProofModel & model, const State &) -> void
 {
     for (const auto & [i, x_i] : enumerate(_x))
         for (const auto & [j, y_j] : enumerate(_y)) {

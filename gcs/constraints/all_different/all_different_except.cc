@@ -65,7 +65,7 @@ auto AllDifferentExcept::install(Propagators & propagators, State & initial_stat
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -123,7 +123,7 @@ auto AllDifferentExcept::prepare(Propagators &, State & initial_state, ProofMode
     return true;
 }
 
-auto AllDifferentExcept::define_proof_model(ProofModel & model) -> void
+auto AllDifferentExcept::define_proof_model(ProofModel & model, const State &) -> void
 {
     _value_am1_constraint_numbers = make_shared<map<Integer, ProofLine>>();
     // Encode from the original exception list, matching cake_pb_cp: an

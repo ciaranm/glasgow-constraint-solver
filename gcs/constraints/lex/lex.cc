@@ -477,7 +477,7 @@ auto LexCompareGreaterThanOrMaybeEqual::install(Propagators & propagators, State
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -489,7 +489,7 @@ auto LexCompareGreaterThanOrMaybeEqual::prepare(Propagators &, State & initial_s
     return true;
 }
 
-auto LexCompareGreaterThanOrMaybeEqual::define_proof_model(ProofModel & model) -> void
+auto LexCompareGreaterThanOrMaybeEqual::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Decide which directions of the encoding we need based on the
     // reification type. If always picks just the constraint direction;

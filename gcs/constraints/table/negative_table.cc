@@ -135,7 +135,7 @@ auto NegativeTable::install(Propagators & propagators, State & initial_state, Pr
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -152,7 +152,7 @@ auto NegativeTable::prepare(Propagators &, State &, ProofModel * const) -> bool
     return true;
 }
 
-auto NegativeTable::define_proof_model(ProofModel & model) -> void
+auto NegativeTable::define_proof_model(ProofModel & model, const State &) -> void
 {
     visit(
         [&](auto & tuples) {

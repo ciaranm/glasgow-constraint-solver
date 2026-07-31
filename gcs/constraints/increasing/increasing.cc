@@ -53,7 +53,7 @@ auto IncreasingChain::install(Propagators & propagators, State & initial_state, 
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -68,7 +68,7 @@ auto IncreasingChain::prepare(Propagators &, State &, ProofModel * const) -> boo
     return _ordered_vars.size() > 1;
 }
 
-auto IncreasingChain::define_proof_model(ProofModel & model) -> void
+auto IncreasingChain::define_proof_model(ProofModel & model, const State &) -> void
 {
     auto offset = _strict ? -1_i : 0_i;
     for (size_t i = 0; i + 1 < _ordered_vars.size(); ++i)

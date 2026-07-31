@@ -38,7 +38,20 @@ namespace gcs
         ConstraintID _constraint_id;
         Constraint() : _constraint_id(CurrentlyUnnamedConstraint{}) {};
         explicit Constraint(ConstraintID constraint_id) : _constraint_id(std::move(constraint_id)) {};
-        virtual auto define_proof_model(innards::ProofModel &) -> void {};
+        /**
+         * \brief Write this constraint's OPB definition, and nothing else.
+         *
+         * The State is the *declared* domains: install runs before search, and
+         * nothing at install time narrows an existing domain (Propagators::define_bound
+         * takes a const State and installs a RUP initialiser rather than trimming).
+         * So an encoding whose shape depends on the domains -- bit widths, a row per
+         * value, a flag per tuple -- can read them directly here, instead of having
+         * prepare() snapshot them into members first.
+         *
+         * It is const because this phase must only describe the constraint, never
+         * allocate: variables and constraint state belong to prepare().
+         */
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void {};
         virtual auto install_propagators(innards::Propagators &) -> void {};
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool
         {

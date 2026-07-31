@@ -52,7 +52,7 @@ auto AllEqual::install(Propagators & propagators, State & initial_state, ProofMo
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -62,7 +62,7 @@ auto AllEqual::prepare(Propagators &, State &, ProofModel * const) -> bool
     return _vars.size() > 1;
 }
 
-auto AllEqual::define_proof_model(ProofModel & model) -> void
+auto AllEqual::define_proof_model(ProofModel & model, const State &) -> void
 {
     // cake_pb_cp labels each consecutive-pair equality's two halves
     // @c[id][<i>le] (vars[i+1] - vars[i] >= 0) and @c[id][<i>ge]

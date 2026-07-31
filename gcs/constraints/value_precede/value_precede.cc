@@ -46,7 +46,7 @@ auto ValuePrecede::install(Propagators & propagators, State & initial_state, Pro
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -56,7 +56,7 @@ auto ValuePrecede::prepare(Propagators &, State &, ProofModel * const) -> bool
     return _chain.size() >= 2;
 }
 
-auto ValuePrecede::define_proof_model(ProofModel & model) -> void
+auto ValuePrecede::define_proof_model(ProofModel & model, const State &) -> void
 {
     auto n = _vars.size();
     if (n == 0)

@@ -83,12 +83,12 @@ auto Nogoods::install(Propagators & propagators, State & initial_state, ProofMod
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
 
-auto Nogoods::define_proof_model(ProofModel & model) -> void
+auto Nogoods::define_proof_model(ProofModel & model, const State &) -> void
 {
     // A nogood forbids a conjunction of literals, so its definition is the clause
     // of their negations. Only the nogoods present at install are declared here;

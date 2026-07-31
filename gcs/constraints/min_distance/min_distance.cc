@@ -48,7 +48,7 @@ auto MinDistance::install(Propagators & propagators, State & initial_state, Proo
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -127,7 +127,7 @@ auto MinDistance::prepare(Propagators & propagators, State & initial_state, Proo
     return true;
 }
 
-auto MinDistance::define_proof_model(ProofModel & model) -> void
+auto MinDistance::define_proof_model(ProofModel & model, const State &) -> void
 {
     const auto p = _x.size();
     const auto & D = *_distances;

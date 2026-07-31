@@ -263,7 +263,7 @@ auto RegularBacchus::install(Propagators & propagators, State & initial_state, P
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -281,7 +281,7 @@ auto RegularBacchus::prepare(Propagators &, State & initial_state, ProofModel * 
     return true;
 }
 
-auto RegularBacchus::define_proof_model(ProofModel & model) -> void
+auto RegularBacchus::define_proof_model(ProofModel & model, const State &) -> void
 {
     // OPB stays identical to Regular: the human reads DFA semantics, not
     // Bacchus internals. The Bacchus encoding is derived in the initialiser

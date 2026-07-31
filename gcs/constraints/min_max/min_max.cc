@@ -44,7 +44,7 @@ auto ArrayMinMax::install(Propagators & propagators, State & initial_state, Proo
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -56,7 +56,7 @@ auto ArrayMinMax::prepare(Propagators &, State &, ProofModel * const) -> bool
     return true;
 }
 
-auto ArrayMinMax::define_proof_model(ProofModel & model) -> void
+auto ArrayMinMax::define_proof_model(ProofModel & model, const State &) -> void
 {
     // (for min) each var >= result, i.e. var - result >= 0
     for (const auto & v : _vars) {

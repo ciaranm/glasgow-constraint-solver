@@ -1080,7 +1080,7 @@ auto BinPacking::install(Propagators & propagators, State & initial_state, Proof
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -1159,7 +1159,7 @@ auto BinPacking::prepare(Propagators &, State & initial_state, ProofModel * cons
     return true;
 }
 
-auto BinPacking::define_proof_model(ProofModel & model) -> void
+auto BinPacking::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Natural definition: for each bin b,
     //   sum_i { sizes[i] * [items[i] == b] } == loads[b]   (variable-load form)

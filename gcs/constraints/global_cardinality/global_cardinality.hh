@@ -51,7 +51,7 @@ namespace gcs
         // Sum_i (x_i == values[j]) == counts[j], stored as {LE-half, GE-half}.
         std::vector<std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>>> _count_lines;
 
-        virtual auto define_proof_model(innards::ProofModel &) -> void override;
+        virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
 
         // The bounds propagator's Hall-interval reasoning ranges over contiguous

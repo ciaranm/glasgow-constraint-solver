@@ -72,12 +72,12 @@ auto ParityOdd::install(Propagators & propagators, State & initial_state, ProofM
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
 
-auto ParityOdd::define_proof_model(ProofModel & model) -> void
+auto ParityOdd::define_proof_model(ProofModel & model, const State &) -> void
 {
     // cake_pb_cp's accumulator scheme, over the literals as cake reads them
     // (each operand tuple maps to the same ge / eq atom our proof uses):

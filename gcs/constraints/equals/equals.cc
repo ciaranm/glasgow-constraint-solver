@@ -209,7 +209,7 @@ auto ReifiedEquals::install(Propagators & propagators, State & initial_state, Pr
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -220,7 +220,7 @@ auto ReifiedEquals::prepare(Propagators &, State & initial_state, ProofModel * c
     return true;
 }
 
-auto ReifiedEquals::define_proof_model(ProofModel & model) -> void
+auto ReifiedEquals::define_proof_model(ProofModel & model, const State &) -> void
 {
     overloaded{
         [&](const reif::MustHold &) {

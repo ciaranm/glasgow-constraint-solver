@@ -84,7 +84,7 @@ auto Disjunctive::install(Propagators & propagators, State & initial_state, Proo
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
@@ -135,7 +135,7 @@ auto Disjunctive::prepare(Propagators &, State & initial_state, ProofModel * con
     return true;
 }
 
-auto Disjunctive::define_proof_model(ProofModel & model) -> void
+auto Disjunctive::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Declarative pairwise OPB encoding:
     //   for each unordered pair (i, j) of participating tasks:

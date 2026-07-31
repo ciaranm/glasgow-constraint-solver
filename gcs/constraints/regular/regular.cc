@@ -525,7 +525,7 @@ auto Regular::install(Propagators & propagators, State & initial_state, ProofMod
                    if (! prepare(propagators, initial_state, optional_model))
                        return;
                    if (optional_model)
-                       define_proof_model(*optional_model);
+                       define_proof_model(*optional_model, initial_state);
                    install_propagators(propagators);
                },
         [&](const proof_strategy::PerCall &) {
@@ -592,7 +592,7 @@ auto Regular::prepare(Propagators &, State & initial_state, ProofModel * const) 
     return true;
 }
 
-auto Regular::define_proof_model(ProofModel & model) -> void
+auto Regular::define_proof_model(ProofModel & model, const State &) -> void
 {
     // state_at_pos_flags[i][q] means "after reading the first i symbols, the
     // automaton's chosen accepting run is in state q". Layer i takes input

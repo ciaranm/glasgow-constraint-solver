@@ -81,12 +81,12 @@ auto Among::install(Propagators & propagators, State & initial_state, ProofModel
         return;
 
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
 
-auto Among::define_proof_model(ProofModel & model) -> void
+auto Among::define_proof_model(ProofModel & model, const State &) -> void
 {
     // very easy PB encoding: sum up over the condition that each variable equals one of the
     // value of interest options, and make that equal the how many variable.

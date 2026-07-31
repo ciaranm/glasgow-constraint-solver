@@ -81,15 +81,15 @@ auto Abs::clone() const -> unique_ptr<Constraint>
     return make_unique<Abs>(_v1, _v2);
 }
 
-auto Abs::install(Propagators & propagators, State &, ProofModel * const optional_model) && -> void
+auto Abs::install(Propagators & propagators, State & initial_state, ProofModel * const optional_model) && -> void
 {
     if (optional_model)
-        define_proof_model(*optional_model);
+        define_proof_model(*optional_model, initial_state);
 
     install_propagators(propagators);
 }
 
-auto Abs::define_proof_model(ProofModel & model) -> void
+auto Abs::define_proof_model(ProofModel & model, const State &) -> void
 {
     // Labels match cake_pb_cp's. cake names the V2 >= V1 half [posle] and the
     // V2 <= V1 half [posge] (i.e. its le/ge track the slack direction, opposite
