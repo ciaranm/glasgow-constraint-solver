@@ -28,9 +28,10 @@ namespace gcs::innards
      * gate is also the extra reason literal, and the emitted OPB line is
      * half-reified on it.
      *
-     * A compound constraint that emits one flat OPB block (issue #448) builds
-     * a list of these with add_equality_stage() / add_le_stage(), and its
-     * propagator runs them with propagate_stages().
+     * A compound constraint that emits one flat OPB block (issue #448) decides on
+     * a list of StageSpecs, has define_proof_model() emit their rows and
+     * install_propagators() turn them into these, and its propagator runs them
+     * with propagate_stages().
      *
      * \ingroup Innards
      */
@@ -44,6 +45,30 @@ namespace gcs::innards
     };
 
     /**
+     * \brief One stage as decided on, before its OPB rows exist: the untidied sum
+     * and value the rows state, the role naming them, and the gate they are
+     * half-reified on.
+     *
+     * The rows and the LinearStage are wanted in different install phases -- the
+     * rows only with proofs on, the stage always -- so a constraint decides on
+     * these in prepare(), emits the rows from define_proof_model() with
+     * emit_stage_rows(), and builds the stages from make_stages() in
+     * install_propagators().
+     *
+     * \ingroup Innards
+     */
+    struct StageSpec
+    {
+        WeightedSum sum;
+        Integer value;
+        bool equality;
+        std::string role;
+        std::optional<IntegerVariableCondition> gate;
+        /// Filled in by emit_stage_rows(); empty with proofs off.
+        std::pair<std::optional<ProofLine>, std::optional<ProofLine>> lines{};
+    };
+
+    /**
      * \brief Is a stage's gating condition currently established? Only the
      * operators the fused constraints gate on are supported.
      *
@@ -51,24 +76,28 @@ namespace gcs::innards
      */
     [[nodiscard]] auto stage_gate_holds(const State & state, const IntegerVariableCondition & cond) -> bool;
 
-    /**
-     * \brief Append an ungated equality stage, emitting its OPB lines
-     * `@c[label][<role>le]` / `@c[label][<role>ge]` when model is non-null.
-     *
-     * \ingroup Innards
-     */
-    auto add_equality_stage(std::vector<LinearStage> & stages, ProofModel * const model, const ConstraintID & id, const WeightedSum & sum,
-        Integer value, const std::string & role) -> void;
+    /// Decide on an ungated equality stage, whose rows are `@c[label][<role>le]` / `@c[label][<role>ge]`.
+    auto add_equality_stage(std::vector<StageSpec> & specs, const WeightedSum & sum, Integer value, const std::string & role) -> void;
+
+    /// Decide on a less-than-or-equal stage, whose row is `@c[label][<role>]`, half-reified on the gate if one is given.
+    auto add_le_stage(std::vector<StageSpec> & specs, const WeightedSum & sum, Integer value, const std::string & role,
+        const std::optional<IntegerVariableCondition> & gate) -> void;
 
     /**
-     * \brief Append a less-than-or-equal stage, emitting its OPB line
-     * `@c[label][<role>]` when model is non-null, half-reified on the gate if
-     * one is given.
+     * \brief Emit every spec's OPB rows, in order, keeping the line handles on the
+     * specs. define_proof_model()'s half.
      *
      * \ingroup Innards
      */
-    auto add_le_stage(std::vector<LinearStage> & stages, ProofModel * const model, const ConstraintID & id, const WeightedSum & sum, Integer value,
-        const std::string & role, const std::optional<IntegerVariableCondition> & gate) -> void;
+    auto emit_stage_rows(ProofModel & model, const ConstraintID & id, std::vector<StageSpec> & specs) -> void;
+
+    /**
+     * \brief Turn the specs into the propagator's stages, citing whatever rows
+     * emit_stage_rows() left on them. install_propagators()'s half.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto make_stages(const std::vector<StageSpec> & specs) -> std::vector<LinearStage>;
 
     /**
      * \brief Run each currently-active stage once through propagate_linear.

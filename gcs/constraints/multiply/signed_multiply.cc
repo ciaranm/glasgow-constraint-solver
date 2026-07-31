@@ -25,32 +25,35 @@ using std::vector;
 
 namespace pj = gcs::innards::product_justify;
 
-auto gcs::innards::signed_multiply::make_data(ProofModel * const optional_model, const State & initial_state, const ConstraintID & constraint_id,
-    IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, optional<long long> link) -> Data
+auto gcs::innards::signed_multiply::make_data(
+    const State & initial_state, IntegerVariableID x, IntegerVariableID y, IntegerVariableID z, optional<long long> link) -> Data
 {
     Data data;
     data.x = x;
     data.y = y;
     data.z = z;
+    data.link = link;
     std::tie(data.x_init_lo, data.x_init_hi) = initial_state.bounds(x);
     std::tie(data.y_init_lo, data.y_init_hi) = initial_state.bounds(y);
 
-    if (optional_model) {
-        // cake_pb_cp's multiplication encoding: a magnitude channel per
-        // operand slot (axis 0 -> "X", 1 -> "Y", a fresh proof-only magnitude
-        // each, even for a repeated operand), the bit-product grid, the
-        // result channel pinning |z| to the grid sum, and the six sign
-        // clauses (all entailed for non-negative operands, but cake always
-        // emits them, so the labels resolve in the chain).
-        product_enc::LinkNaming naming{link};
-        data.chan_x = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id, x, 0, "X", naming);
-        data.chan_y = product_enc::emit_magnitude_channel(*optional_model, initial_state, constraint_id, y, 1, "Y", naming);
-        data.grid = product_enc::emit_bit_product_grid(*optional_model, constraint_id, data.chan_x->mag, data.chan_y->mag, naming);
-        data.zchan = product_enc::emit_result_channel(*optional_model, constraint_id, z, data.grid, naming);
-        data.sign_lines = product_enc::emit_sign_clauses(*optional_model, constraint_id, x, y, z, naming);
-    }
-
     return data;
+}
+
+auto gcs::innards::signed_multiply::emit_encoding(ProofModel & model, const State & initial_state, const ConstraintID & constraint_id, Data & data)
+    -> void
+{
+    // cake_pb_cp's multiplication encoding: a magnitude channel per
+    // operand slot (axis 0 -> "X", 1 -> "Y", a fresh proof-only magnitude
+    // each, even for a repeated operand), the bit-product grid, the
+    // result channel pinning |z| to the grid sum, and the six sign
+    // clauses (all entailed for non-negative operands, but cake always
+    // emits them, so the labels resolve in the chain).
+    product_enc::LinkNaming naming{data.link};
+    data.chan_x = product_enc::emit_magnitude_channel(model, initial_state, constraint_id, data.x, 0, "X", naming);
+    data.chan_y = product_enc::emit_magnitude_channel(model, initial_state, constraint_id, data.y, 1, "Y", naming);
+    data.grid = product_enc::emit_bit_product_grid(model, constraint_id, data.chan_x->mag, data.chan_y->mag, naming);
+    data.zchan = product_enc::emit_result_channel(model, constraint_id, data.z, data.grid, naming);
+    data.sign_lines = product_enc::emit_sign_clauses(model, constraint_id, data.x, data.y, data.z, naming);
 }
 
 namespace

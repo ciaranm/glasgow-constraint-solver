@@ -189,6 +189,48 @@ auto run_power_pinned_test(
         verify_proof_and_clean_up(*proof_name);
 }
 
+// A structurally constant base and exponent: the result is one value, or the
+// power is not representable at all (zero to a negative power, or an
+// overflowing one) and the constraint is the empty relation.
+auto run_power_both_constant_test(bool proofs, Integer base, Integer exp, pair<long long, long long> result_range, optional<Integer> expected_result)
+    -> void
+{
+    print(cerr, "power both constant base={} exp={} result_range={} expected={} {}", base, exp, result_range,
+        expected_result ? std::to_string(expected_result->raw_value) : "<none>", proofs ? "with proofs:" : ":");
+    cerr << flush;
+
+    Problem p;
+    auto v3 = p.create_integer_variable(Integer(result_range.first), Integer(result_range.second));
+    p.post(Power{constant_variable(base), constant_variable(exp), v3});
+
+    auto proof_name = proofs ? make_optional<string>("power_test" + test_proof_suffix) : nullopt;
+
+    set<long long> actual_results;
+    solve_with(p,      //
+        SolveCallbacks{//
+            .solution = [&](const CurrentState & s) -> bool {
+                actual_results.insert(s(v3).raw_value);
+                return true;
+            }},
+        proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+
+    println(cerr, " got {} solutions", actual_results.size());
+
+    if (expected_result) {
+        if (actual_results.size() != 1 || *actual_results.begin() != expected_result->raw_value) {
+            println(cerr, "expected solution {}, got {}", expected_result->raw_value, actual_results);
+            throw UnexpectedException{"power both-constant test produced wrong result"};
+        }
+    }
+    else if (! actual_results.empty()) {
+        println(cerr, "expected no solutions, got {}", actual_results);
+        throw UnexpectedException{"power both-constant test produced unexpected solutions"};
+    }
+
+    if (proof_name)
+        verify_proof_and_clean_up(*proof_name);
+}
+
 // A constant base with a view exponent still goes through PowerTable, and
 // negative exponents in the view's range now mean zero results, not gaps.
 auto run_power_const_base_view_exp_test(bool proofs, int base, pair<int, int> exp_range, int exp_offset, pair<int, int> result_range) -> void
@@ -325,6 +367,13 @@ auto main(int argc, char * argv[]) -> int
         run_power_const_base_view_exp_test(proofs, 2, {0, 5}, 1, {0, 64});
         run_power_const_base_view_exp_test(proofs, 2, {0, 5}, 0, {0, 20});
         run_power_const_base_view_exp_test(proofs, 2, {0, 5}, -2, {-2, 8});
+
+        // Both base and exponent structurally constant: one pinned value, or no
+        // representable power at all.
+        run_power_both_constant_test(proofs, 2_i, 3_i, {-10, 10}, make_optional(8_i));
+        run_power_both_constant_test(proofs, Integer{-2}, 3_i, {-10, 10}, make_optional(Integer{-8}));
+        run_power_both_constant_test(proofs, 0_i, Integer{-2}, {-10, 10}, nullopt);
+        run_power_both_constant_test(proofs, 3_i, 100_i, {-10, 10}, nullopt);
     }
 
     return EXIT_SUCCESS;
