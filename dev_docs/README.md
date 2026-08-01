@@ -72,6 +72,16 @@ library. For an introduction to *using* the solver, start with the top-level
   scaffolding at all. Covers the per-blocker push chains, variable
   durations without in-proof end variables, and the same recipe one
   dimension up for `Disjunctive2D`.
+- [Difference logic](difference-logic.md) — design note for
+  `DifferenceConstraints`, the global propagator for systems of `x - y <= d`:
+  the constraint-graph formulation, the two Bellman-Ford directions, why every
+  operand is canonicalised to a bare variable before the OPB row is emitted
+  (representation consistency, without which nothing cancels), the two proof
+  shapes — a negative cycle refuted by one telescoping `pol`, a bound push
+  justified per edge along the predecessor forest — the source paper's
+  pseudocode defects, the measured order-independence and proof-size results,
+  and what is deferred (incrementality, half-reification, presolver, root
+  simplification).
 - [Range ("in") literals](range_literals_spec.md) — the design specification
   for the interval-literal proof layer: reifying `[X∈[a,b]]` to its
   order-chain cuts, the always-covered partition invariant, interval-tree
