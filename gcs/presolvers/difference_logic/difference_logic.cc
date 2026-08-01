@@ -5,7 +5,7 @@
 #include <gcs/constraints/linear/linear_less_than_equal.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/propagators.hh>
-#include <gcs/presolvers/difference_logic.hh>
+#include <gcs/presolvers/difference_logic/difference_logic.hh>
 #include <gcs/problem.hh>
 #include <gcs/reification.hh>
 
@@ -76,7 +76,7 @@ namespace
                 " of them. DETECTION is what needs fixing here, not this check. The likely cause is a change to Constraint::clone() or to the class "
                 "hierarchy, so that a posted constraint is no longer stored as its family base (see PR #585). Do NOT relax this check: a presolver "
                 "that lifts nothing still passes every solution-equivalence, OPB byte-diff and VeriPB check, so this is the only thing standing "
-                "between a silent regression and shipping. Fix gcs/presolvers/difference_logic.cc."};
+                "between a silent regression and shipping. Fix gcs/presolvers/difference_logic/difference_logic.cc."};
         };
 
         if (linears_by_type > linears_seen)

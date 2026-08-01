@@ -27,7 +27,8 @@ library. For an introduction to *using* the solver, start with the top-level
   constraint follows: class shape, the three install phases, the propagator
   framework, triggers, the inference and justification APIs, OPB encoding
   building blocks, and the testing pattern. Start here when adding any new
-  constraint.
+  constraint — and for the umbrella-header directory layout, which presolvers
+  under `gcs/presolvers/` share.
 - [Reification](reification.md) — additional machinery for *reified* constraints:
   the `ReificationCondition` static and `EvaluatedReificationCondition` runtime
   types, the `install_reified_dispatcher` helper, the OPB encoding pattern,

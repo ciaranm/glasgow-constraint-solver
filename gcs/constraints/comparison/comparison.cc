@@ -93,7 +93,8 @@ auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model, 
     // them too. It states the *negated* inequality, which is still a single
     // difference inequality with the operands the other way round; anything
     // citing @c[<id>] must therefore look at the reification condition to know
-    // which inequality it got (see gcs/presolvers/difference_logic.cc).
+    // which inequality it got (see
+    // gcs/presolvers/difference_logic/difference_logic.cc).
     auto do_less = [&](IntegerVariableID v1, IntegerVariableID v2, optional<HalfReifyOnConjunctionOf> cond, bool or_equal, const string & role) {
         model.add_labelled_constraint(_constraint_id, role, WPBSum{} + 1_i * v1 + -1_i * v2 <= (or_equal ? 0_i : -1_i), cond);
     };
