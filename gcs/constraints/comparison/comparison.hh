@@ -4,12 +4,14 @@
 #include <gcs/constraint.hh>
 #include <gcs/constraints/innards/reified_state.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/innards/proofs/constraint_proof_model_data.hh>
 #include <gcs/integer.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
 #include <gcs/variable_id.hh>
 
 #include <optional>
+#include <string>
 
 namespace gcs
 {
@@ -109,6 +111,34 @@ namespace gcs
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;
+    };
+
+    /**
+     * \brief The rows ReifiedCompareLessThanOrMaybeEqual commits to keeping
+     * citable.
+     *
+     * \ingroup Innards
+     */
+    template <>
+    struct innards::ConstraintProofModelData<ReifiedCompareLessThanOrMaybeEqual>
+    {
+        /**
+         * \brief The role of the row stating `left <= right` (or `<`, per
+         * or_equal()), under the reification condition if there is one.
+         *
+         * Public API: the difference-logic presolver builds `pol`s on this row.
+         * Changing which row this names is a breaking change. Note that
+         * cake_pb_cp is the other end of these labels and re-derives the same
+         * ones, so a rename is a cross-tool break, not merely an internal one.
+         *
+         * MustHold and If both use the empty role, giving `@c[<id>]`.
+         * MustNotHold and NotIf share that role but state the *negated*
+         * inequality, with the operands the other way round, and Iff's halves
+         * are `r` and `f`; none of the three is the row a citer asking for
+         * `left <= right` means, so this returns nullopt for them rather than
+         * naming a row that says something else.
+         */
+        [[nodiscard]] static auto primary_row_role(const ReifiedCompareLessThanOrMaybeEqual &) -> std::optional<std::string>;
     };
 
     /**

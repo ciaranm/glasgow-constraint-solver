@@ -4,6 +4,7 @@
 #include <gcs/constraint.hh>
 #include <gcs/exception.hh>
 #include <gcs/expression.hh>
+#include <gcs/innards/proofs/constraint_proof_model_data.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/state-fwd.hh>
@@ -277,6 +278,47 @@ namespace gcs
             for (const auto & c : each_constraint())
                 if (auto typed = dynamic_cast<const Constraint_ *>(&c))
                     co_yield *typed;
+        }
+
+        /**
+         * \brief As each_constraint_of_type, but pairing each constraint with
+         * the label of the OPB row it publishes, for a caller that means to
+         * build proof steps on that row.
+         *
+         * The label comes from asking the constraint which role names its
+         * primary row (innards::ConstraintProofModelData, specialised in the
+         * constraint's own header) and then asking the tracker whether a row was
+         * emitted under that `(id, role)`. Neither half guesses: a caller that
+         * built the label itself would be hard-coding another constraint's
+         * naming scheme, which is what this exists to stop.
+         *
+         * The label is nullopt when the constraint publishes no primary row for
+         * the reification kind it was posted with, when no row was emitted under
+         * the published role, or when `logger` is null because proofs are off.
+         * All three mean the same thing to a caller --- there is nothing to cite,
+         * so do not do the thing that would need citing.
+         *
+         * Asking for a `Constraint_` that has no ConstraintProofModelData
+         * specialisation is a compile error naming the type, which is the point:
+         * a constraint publishes its stable rows deliberately or not at all.
+         *
+         * \warning The same warnings as each_constraint_of_type apply: ask for
+         * the type Problem *stores*, and the yielded references alias objects
+         * owned by this Problem.
+         */
+        template <std::derived_from<Constraint> Constraint_>
+        [[nodiscard]] auto each_constraint_of_type_with_proof_data(const innards::ProofLogger * const logger) const
+            -> std::generator<std::pair<const Constraint_ &, std::optional<innards::ProofLineLabel>>>
+        {
+            for (const auto & c : each_constraint_of_type<Constraint_>()) {
+                std::optional<innards::ProofLineLabel> label;
+                if (logger) {
+                    auto role = innards::ConstraintProofModelData<Constraint_>::primary_row_role(c);
+                    if (role)
+                        label = innards::constraint_row_label_from(*logger, c.constraint_id(), *role);
+                }
+                co_yield {c, label};
+            }
         }
 
         /**

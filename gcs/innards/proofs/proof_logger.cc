@@ -719,6 +719,11 @@ auto ProofLogger::names_and_ids_tracker() -> NamesAndIDsTracker &
     return _imp->tracker;
 }
 
+auto ProofLogger::names_and_ids_tracker() const -> const NamesAndIDsTracker &
+{
+    return _imp->tracker;
+}
+
 auto ProofLogger::emit_subproofs(const map<ProofGoal, Subproof> & subproofs)
 {
     _imp->proof << " : subproof\n";

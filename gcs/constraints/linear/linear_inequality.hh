@@ -6,6 +6,7 @@
 #include <gcs/constraints/linear/utils.hh>
 #include <gcs/expression.hh>
 #include <gcs/innards/literal.hh>
+#include <gcs/innards/proofs/constraint_proof_model_data.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/innards/state.hh>
@@ -118,6 +119,42 @@ namespace gcs
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;
+    };
+
+    /**
+     * \brief The rows ReifiedLinearInequality commits to keeping citable.
+     *
+     * \ingroup Innards
+     */
+    template <>
+    struct innards::ConstraintProofModelData<ReifiedLinearInequality>
+    {
+        /**
+         * \brief The role of the row stating `sum <= value`, under the
+         * reification condition if there is one.
+         *
+         * Public API: the difference-logic presolver builds `pol`s on this row.
+         * Changing which row this names is a breaking change.
+         *
+         * MustHold and If both use the empty role, so both come out as
+         * `@c[<id>]`. The other three publish nothing. MustNotHold's empty-role
+         * row states the integer negation and Iff's `r` / `f` halves state the
+         * two directions of the equivalence, so neither is the row a citer
+         * asking for `sum <= value` means. NotIf is excluded for a different and
+         * less comfortable reason: its `ltn` row is emitted as
+         * `cond -> sum <= value`, which is what the constraint says must *not*
+         * hold, so the row as written looks wrong rather than merely unwanted.
+         * Nothing in gcs constructs a ReifiedLinearInequality with either
+         * negated kind --- the six derived classes cover MustHold, If and Iff,
+         * and scp_reader builds only those --- so this publishes nothing rather
+         * than committing to a row that has never been exercised.
+         *
+         * A nullopt here means "no such row exists", which is different from a
+         * nullopt out of NamesAndIDsTracker::constraint_row_label, where the row
+         * exists in principle but was not emitted (no proof was being logged,
+         * say).
+         */
+        [[nodiscard]] static auto primary_row_role(const ReifiedLinearInequality &) -> std::optional<std::string>;
     };
 }
 

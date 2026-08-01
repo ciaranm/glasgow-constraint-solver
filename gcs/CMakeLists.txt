@@ -98,6 +98,7 @@ add_library(glasgow_constraint_solver
         innards/literal.cc
         innards/power.cc
         innards/proofs/bits_encoding.cc
+        innards/proofs/constraint_proof_model_data.cc
         innards/proofs/emit_inequality_to.cc
         innards/proofs/names_and_ids_tracker.cc
         innards/proofs/pol_builder.cc

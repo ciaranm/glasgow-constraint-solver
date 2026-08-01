@@ -113,6 +113,25 @@ auto ReifiedCompareLessThanOrMaybeEqual::define_proof_model(ProofModel & model, 
         .visit(_reif_cond);
 }
 
+auto innards::ConstraintProofModelData<ReifiedCompareLessThanOrMaybeEqual>::primary_row_role(const ReifiedCompareLessThanOrMaybeEqual & c)
+    -> optional<string>
+{
+    // Deliberately a second visit over the same ReificationCondition that
+    // define_proof_model visits, rather than a field it sets: define_proof_model
+    // does not run when proofs are off, and a presolver that asks this must get
+    // the same answer either way. The two are kept honest by
+    // constraint_row_test.cc, which posts each kind and checks that a published
+    // role resolves to a label the .opb actually contains.
+    return overloaded{
+        [&](const reif::MustHold &) -> optional<string> { return ""; },         //
+        [&](const reif::If &) -> optional<string> { return ""; },               //
+        [&](const reif::MustNotHold &) -> optional<string> { return nullopt; }, //
+        [&](const reif::NotIf &) -> optional<string> { return nullopt; },       //
+        [&](const reif::Iff &) -> optional<string> { return nullopt; }          //
+    }
+        .visit(c.reification_condition());
+}
+
 auto ReifiedCompareLessThanOrMaybeEqual::install_propagators(Propagators & propagators) -> void
 {
     if (_v1_is_constant && _v2_is_constant) {
