@@ -1,0 +1,30 @@
+<!-- Top-level orderings whose operands are affine, which the binding posts as
+     a single linear inequality over the instance's own variables rather than
+     inventing an auxiliary variable per compound operand. All four order
+     types are here, with the compound operand on each side in turn, plus the
+     two shapes the peephole must handle without getting the signs wrong:
+     a negated operand (which is a linear inequality but not a difference
+     constraint), and a non-affine operand (which falls back to the ordinary
+     tree walk). -->
+<instance format="XCSP3" type="CSP">
+    <variables>
+        <var id="x"> 0..3 </var>
+        <var id="y"> 0..3 </var>
+        <var id="z"> 0..3 </var>
+    </variables>
+    <constraints>
+        <!-- x - y <= 1 -->
+        <intension> le(sub(x,y),1) </intension>
+        <!-- y - z < 2, i.e. y - z <= 1 -->
+        <intension> lt(sub(y,z),2) </intension>
+        <!-- z >= x - 2, i.e. x - z <= 2: compound operand on the right -->
+        <intension> ge(z,sub(x,2)) </intension>
+        <!-- x + 3 > z, i.e. z - x <= 2: compound operand on the left -->
+        <intension> gt(add(x,3),z) </intension>
+        <!-- -x <= y - 3, i.e. -x - y <= -3: both coefficients negative, so a
+             two-term linear inequality but not a difference constraint -->
+        <intension> le(neg(x),sub(y,3)) </intension>
+        <!-- not affine: no peephole, walked the ordinary way -->
+        <intension> ge(mul(x,y),2) </intension>
+    </constraints>
+</instance>

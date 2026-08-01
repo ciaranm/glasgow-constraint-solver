@@ -2019,6 +2019,64 @@ plus a heap is not much cheaper than a Bellman-Ford pass that early-exits after
 two rounds, and the win is correspondingly modest. The win is large exactly where
 the asymptotics say it should be: `|E| >> n`, or long chains.
 
+## Frontends
+
+Both `fzn-glasgow` and `xcsp_glasgow_constraint_solver` expose the presolver as
+`--difference-logic` (off by default, matching `gcs::DifferenceLogic`) plus
+`--difference-logic-simplify on|off` (on by default, matching
+`simplifying_at_root`). Neither gained a predicate or a constraint tag, and that
+is the point: what the presolver detects is a shape both modelling languages
+already produce, so a Glasgow-only vocabulary for it would let a model ask for
+nothing it cannot ask for anyway. See
+[frontend-support-matrix.md](frontend-support-matrix.md).
+
+**MiniZinc** needed nothing else. MiniZinc 2.10's flattener emits
+`int_lin_le([1,-1],[x,y],d)` for `x - y <= d`, for `x + k <= y`, and even for a
+bare `x <= y`, which is exactly the two-term `LinearLessThanEqual` the presolver
+lifts. `minizinc/tests/differencelogic.mzn` gets four edges over four nodes out
+of a four-event time-lag network, with the two deliberately non-difference
+constraints landing in `skipped_not_two_terms` and `skipped_coefficients`.
+
+**XCSP3** got one change alongside, which is a win in its own right rather than
+scaffolding for this. `le(sub(x,y),d)` walks as an `OSUB` — or, after the
+parser canonicalises it, as an `OADD` — inventing an auxiliary variable, posting
+its defining linear equality, and comparing the auxiliary. An affine peephole in
+`post_intension_top_level` posts one `LinearLessThanEqual` over the instance's
+own variables instead. It is described in [xcsp.md](xcsp.md); measured on its
+own, with no presolver in play:
+
+| instance | int vars | OPB lines/bytes | proof lines/bytes |
+|---|---|---|---|
+| `difference_logic.xml` (4 edges + 1 three-term) | 9 → **4** | 44 / 5,209 → **19 / 1,500** | 928 / 45,476 → **451 / 15,492** |
+| `intension_ordering.xml` (6 constraints) | 10 → **4** | 92 / 7,942 → **62 / 4,832** | 1,484 / 105,911 → **935 / 72,849** |
+| `cop_maximize_sum.xml` (one `le(add(x,y),5)`) | 4 → **3** | 18 / 1,397 → **13 / 860** | 270 / 13,012 → **180 / 8,127** |
+| 12 variables, 31 difference constraints | 43 → **12** | 242 / 40,137 → **87 / 9,309** | 3,082 / 245,462 → **846 / 45,475** |
+
+Solution sets are identical in every case and every proof verifies. Across the
+existing 36-instance XCSP3 test suite `cop_maximize_sum` is the *only* instance
+that changes at all; the other 35 produce OPB and proof files identical in line
+and byte count. That is what the peephole's reach predicts: the only other
+top-level ordering anywhere in the suite is `intension_arithmetic`'s
+`ge(mul(x,y),6)`, which is not affine and falls back.
+
+What the peephole does **not** do is make the presolver reachable. Since #596
+labelled `Comparison`'s rows, the auxiliary form is liftable too: on
+`xcsp/tests/difference_logic.xml` the presolver gets the same four edges either
+way. What changes is what the graph is over — seven nodes without the peephole
+(four instance variables plus three auxiliaries) against four with it, and all
+four counted under `comparison_edges_lifted` rather than arriving as the two-term
+linears they are. The `xcsp_difference_logic` test asserts both numbers, so a
+regression in the peephole shows up as a count rather than as nothing at all.
+
+**Half-reified edges are out of reach from either frontend**, which is worth
+being explicit about, because they are where the paper's scheduling wins come
+from. `minizinc/mznlib/` declares no `*_imp` predicates, so MiniZinc's flattener
+never half-reifies and emits `int_lin_le_reif`, which the presolver counts under
+`skipped_reified`; and the XCSP3 binding turns a top-level `imp(b, le(...))`
+into an `Or` over a fully-reified control. Declaring `int_lin_le_imp` in
+`mznlib/` is the obvious next step, but it changes flattening for every MiniZinc
+model, so it wants measuring as its own piece of work.
+
 ## Deliberately deferred
 
 - **`IncImp`** (implication checking, to disentail half-reified edges). It needs
@@ -2055,6 +2113,9 @@ the asymptotics say it should be: `|E| >> n`, or long chains.
 
 - [Implementing a constraint](constraints.md) — the structural pattern this
   follows.
+- [Frontend support matrix](frontend-support-matrix.md), and the
+  [MiniZinc](minizinc.md) and [XCSP3](xcsp.md) binding notes — how each frontend
+  reaches this, and why neither gained a predicate for it.
 - [View proof-logging support](view-proof-logging.md) — invariant 1 is why the
   OPB rows are canonicalised; invariant 3 is why the bound push needs an
   explicit `pol`.

@@ -72,6 +72,16 @@ Internally:
   into `gcs::Problem`. Domain is either a range (`lower`, `upper`) or
   an explicit value list (`values`).
 
+- **`create_aux_variable(lower, upper, role)`** — the only way this file
+  should invent a variable. Auxiliary variables need names, because that
+  is what the OPB and the proof log call them, and `Problem` rejects a
+  duplicate name outright; the names used to be literals, so two
+  `<intension>`s each wanting an `addresult` — or two `abs` anywhere in
+  the instance, or a second bin packing — threw `NamingError` and killed
+  the process before search began. The helper serial-numbers them.
+  Variables the instance declares keep their own names (they are unique
+  by construction and are what the solution output prints).
+
 - **`ExprResult`** (struct) — what the intension tree walker returns:
   the `IntegerVariableID` holding the expression's value plus the
   `lower`/`upper` bounds we computed for it. Bounds drive the size of
@@ -125,6 +135,70 @@ methods:
   rather than reifying to a 0/1 variable and asserting it equals 1.
   Anything else falls through to `walk_intension` and gets asserted
   to be 1.
+
+### The affine peephole
+
+Before `post_intension_top_level` walks the children of `OLE`, `OLT`,
+`OGE` or `OGT`, it tries `try_post_ordering_as_linear`. That folds both
+operands into a single `AffineForm` — variable occurrences with integer
+coefficients, plus a constant — using `accumulate_affine`, which handles
+`ODECIMAL`, `OVAR`, `OADD`, `OSUB` and `ONEG` and refuses everything
+else. If both sides fold, the whole constraint is posted as one
+`LinearLessThanEqual` over the instance's own variables; otherwise
+nothing has been created and the ordinary walk runs instead.
+
+`accumulate_affine` is deliberately side-effect free — it does not even
+call `need_variable` — precisely so that a refusal can fall back
+cleanly.
+
+Why it is worth having:
+
+- `le(sub(x,y),d)` is how XCSP3 spells a difference constraint. Without
+  the peephole it walks as an `OSUB` (or, after the parser's own
+  canonicalisation, an `OADD`), inventing an auxiliary variable, posting
+  its defining linear equality, and then comparing the auxiliary. That is
+  an extra variable, an extra propagator, and a whole extra integer's
+  worth of OPB bit variables and bound rows per constraint. On a
+  12-variable network of 31 such constraints the peephole removes 31
+  auxiliary variables, takes the OPB from 242 lines / 40.1 kB to 87 /
+  9.3 kB, and the proof from 3,082 lines / 245 kB to 846 / 45 kB.
+- It also decides what the difference-logic presolver builds its graph
+  *over*. The auxiliary form is not invisible to it — since #596 gave
+  `Comparison` labelled rows, `subresult <= t` is a perfectly liftable
+  comparison donor — but the edge then spans the invented variable rather
+  than the instance's own. Measured on `tests/difference_logic.xml` with
+  `--difference-logic`: the same four edges either way, but over seven
+  graph nodes without the peephole and four with it, and all four
+  counted under `comparison_edges_lifted` rather than arriving as the
+  two-term linears they are.
+
+Two rules it must not break:
+
+- **Only the four orderings.** `OEQ` is excluded on purpose: `Equals`
+  over two variables is domain-consistent, and a linear equality is only
+  bounds-consistent, so rewriting it would silently weaken propagation.
+  `Comparison` and a two-term linear inequality are both
+  bounds-consistent, so for `le` / `lt` / `ge` / `gt` there is nothing to
+  lose.
+- **Signs, in both operand orders.** `ge` and `gt` call the helper with
+  the arguments swapped, and strictness becomes a slack of `-1`. A
+  negated operand (`le(neg(x), sub(y,3))`, i.e. `-x - y <= -3`) is still
+  a perfectly good linear inequality, so it *is* posted — it is simply
+  not a difference constraint, and the presolver counts it under
+  `skipped_coefficients` rather than lifting it.
+  `tests/intension_ordering.xml` covers all four orderings, both operand
+  orders, the negated form, and a non-affine operand that must fall back.
+
+The parser's own `recognizeSpecialIntensionCases` was left off in favour
+of this, for three reasons. It would reroute `eq(x,k)` and `ne(x,k)` to
+`buildConstraintExtension` — a one-variable `Table` where we currently
+post `Equals` / `NotEquals`, which is a pessimisation. Its pattern list
+(`XCSP3Manager.cc`, `createPrimitivePatterns`) is `x op k`, `k op x`,
+`x in {…}`, `x in [min,max]`, `x op y`, `x+k op y`, `y op x+k`,
+`y+z op x` and `x*y=z`, so it catches less than the peephole does:
+`le(add(x,y),k)` matches nothing there and would still invent an
+`addresult`. And it splits intension handling across two entry points,
+which is the property this file was deliberately built without.
 
 Two helpers reduce duplication:
 
@@ -202,6 +276,22 @@ code 66) rather than failed: caches are populated explicitly via
 `xcsp/regenerate_expected.bash`, not silently as a side effect of
 `ctest`. The harness is therefore decoupled from ACE — installing
 ACE is only required to populate or refresh the cache.
+
+### Extra flags and required output patterns
+
+`add_xcsp_test(<name> [<solverflags> [<requiredpattern>...]])` passes
+anything after the name straight to the harness. `<solverflags>` is a
+whitespace-separated list of flags for the binding only — ACE never sees
+them, so the cache stays a genuine cross-check — and each
+`<requiredpattern>` is an extended regex that must match a line of the
+binding's output.
+
+That second part exists because some things are invisible to every other
+check the harness makes. A presolver preserves the solution set, adds no
+OPB content and leaves the proof verifying whether it fired or not, so a
+presolver that silently lifted nothing would pass the enumeration diff
+and VeriPB alike. `xcsp_difference_logic` therefore asserts on the
+`d DIFFERENCE LOGIC …` counters as well.
 
 ### Cache format
 

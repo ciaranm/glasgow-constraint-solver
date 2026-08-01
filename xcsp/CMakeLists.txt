@@ -20,6 +20,11 @@ target_link_libraries(xcsp_glasgow_constraint_solver PRIVATE
 # output committed under tests/expected/<name>.sols. If the cache is
 # missing, the test skips (ctest exit code 66) rather than failing.
 #
+# Anything after the name is passed straight on: the first extra argument
+# is a whitespace-separated list of solver flags (ACE never sees them, so
+# the cache stays a genuine cross-check), and the rest are extended
+# regexes that must each match a line of the binding's output.
+#
 # Under the sanitize build these tests would also report a leak that is not ours:
 # the parser allocates an XVariable per variable and never frees them, so point
 # LeakSanitizer at the suppressions file that ignores exactly that (and nothing
@@ -31,7 +36,8 @@ function(add_xcsp_test name)
         COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/xcsp/run_xcsp_test.bash
             $<TARGET_FILE:xcsp_glasgow_constraint_solver>
             ${CMAKE_SOURCE_DIR}/xcsp/tests/
-            ${name})
+            ${name}
+            ${ARGN})
     set_tests_properties(xcsp_${name} PROPERTIES
         SKIP_RETURN_CODE 66
         ENVIRONMENT "LSAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/lsan_suppressions.txt:print_suppressions=0")
@@ -52,6 +58,20 @@ add_xcsp_test(count)
 add_xcsp_test(count_among)
 add_xcsp_test(cumulative)
 add_xcsp_test(cumulative_var)
+# The presolver is invisible to solution equivalence and to proof
+# verification alike, so this one also asserts on its counters. The two
+# zeroes are not padding: COMPARISON EDGES LIFTED 0 says all four edges
+# arrived as two-term linears over the instance's own variables, which is
+# the peephole's doing --- without it they would arrive as comparisons
+# over invented auxiliaries instead --- and SKIPPED UNCITABLE ROW 0 says
+# no donor of the right shape was dropped for want of a citable OPB row.
+add_xcsp_test(difference_logic "--difference-logic"
+    "^d DIFFERENCE LOGIC EDGES LIFTED 4$"
+    "^d DIFFERENCE LOGIC COMPARISON EDGES LIFTED 0$"
+    "^d DIFFERENCE LOGIC NODES 4$"
+    "^d DIFFERENCE LOGIC SKIPPED NOT TWO TERMS 1$"
+    "^d DIFFERENCE LOGIC SKIPPED UNCITABLE ROW 0$"
+    "^d DIFFERENCE LOGIC SIMPLIFY RAN 1$")
 add_xcsp_test(disjunctive)
 add_xcsp_test(no_overlap_var)
 add_xcsp_test(no_overlap_2d)
@@ -60,6 +80,7 @@ add_xcsp_test(instantiation)
 add_xcsp_test(intension_arithmetic)
 add_xcsp_test(intension_basic)
 add_xcsp_test(intension_boolean)
+add_xcsp_test(intension_ordering)
 add_xcsp_test(intension_reified)
 add_xcsp_test(lex)
 add_xcsp_test(lex_matrix)

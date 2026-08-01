@@ -55,6 +55,23 @@ set_tests_properties(minizinc-cumulative-mode PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-cumulative-var COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativevartest true true)
 set_tests_properties(minizinc-cumulative-var PROPERTIES SKIP_RETURN_CODE 66)
 
+# The difference-logic presolver is invisible to solution equivalence and to
+# proof verification alike, so this one also asserts on its counters: four
+# lifted edges over four nodes, and the two constraints that are not
+# difference-shaped classified rather than quietly ignored. The zero says
+# all four arrived as `int_lin_le`, which is the whole reason this needs no
+# predicate of its own; a flattener that started emitting `int_le` would
+# still lift four edges, but they would be counted here instead.
+add_test(NAME minizinc-differencelogic COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ differencelogic true true
+    "-s --difference-logic"
+    "^%%%mzn-stat: differenceLogicEdgesLifted=4$"
+    "^%%%mzn-stat: differenceLogicComparisonEdgesLifted=0$"
+    "^%%%mzn-stat: differenceLogicNodes=4$"
+    "^%%%mzn-stat: differenceLogicSkippedNotTwoTerms=1$"
+    "^%%%mzn-stat: differenceLogicSkippedCoefficients=1$"
+    "^%%%mzn-stat: differenceLogicSimplifyRan=1$")
+set_tests_properties(minizinc-differencelogic PROPERTIES SKIP_RETURN_CODE 66)
+
 add_test(NAME minizinc-disjunctive COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctivetest true true)
 set_tests_properties(minizinc-disjunctive PROPERTIES SKIP_RETURN_CODE 66)
 
