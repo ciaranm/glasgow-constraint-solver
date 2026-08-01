@@ -14,21 +14,28 @@ and at "Implementation staging").
 
 ## Results (measured)
 
-Data home for everything below:
-`/cluster/ciaran/claude/order-encoding-deletion-artifacts/real-instance-bench/`
-(`campaign-report.md`, `results.tsv`, `scoping-report.md`). All numbers are from
-the phase-2 campaign on the tuned node **fataepyc-10** (each timed run pinned to a
-single physical core with `numactl`/`taskset`/`setarch -R`, turbo boost OFF,
-governor `performance`, all timed proof I/O on tmpfs, `veripb` 3.0.2 verify time via
-`hyperfine`, peak RSS via `/usr/bin/time -v`). Every measured row cleared the gate:
-search statistics **IDENTICAL** OFF vs ON and both proofs VeriPB-**VERIFIED**.
+All numbers below were measured on the development VM (KVM guest, AMD Ryzen 9
+9950X3D, 32 vCPUs, 30 GB RAM, `veripb` 3.0.2): each timed run pinned to one core
+with `taskset` and ASLR off via `setarch -R`, all timed proof I/O on the `/tmp`
+tmpfs, every verify run **solo** on an otherwise idle machine, and each figure the
+**minimum of three runs** (two above a minute, one for the multi-minute depth-point
+rows). The guest exposes no `cpufreq` interface, so turbo cannot be pinned off;
+taking a minimum rather than a mean is the compensation. Peak RSS via
+`/usr/bin/time -v`. **The whole synthetic sweep was taken in one contiguous
+sitting**, because this machine drifts by up to ~18 % between sittings on the
+longest runs — see [benchmarking.md](benchmarking.md).
 
-> **Superseded.** The earlier hand-written table that used to sit here (domain
-> 100…4000, "~+89 % larger", ~60× at d4000) came from a *pre-commit* iteration of
-> the `order_deletion_bench` driver and is **not reproducible with the committed
-> driver**: that driver's defaults and `--problem linear` root-refute in ≤3
-> recursions and produce no search signal (scoping report §7). Those numbers are
-> retired; use the campaign figures below.
+Every measured row cleared the gate: search statistics **IDENTICAL** OFF vs ON and
+both proofs VeriPB-**VERIFIED**.
+
+> **Superseded, twice.** The oldest hand-written table here (domain 100…4000,
+> "~+89 % larger", ~60× at d4000) came from a *pre-commit* iteration of the
+> `order_deletion_bench` driver and is not reproducible with the committed driver,
+> whose `--problem linear` defaults root-refute in ≤3 recursions and produce no
+> search signal. It was replaced by a campaign run on different hardware, which has
+> in turn been replaced by the figures below, re-measured from scratch on the
+> current machine. Only one set of numbers is kept, because absolute verify times do
+> not transfer between machines and two sets invite comparing across them.
 
 ### Synthetic win curve (committed driver)
 
@@ -39,60 +46,121 @@ Exact invocation, `--domain` and `--window` swept together:
 
 (`pairwise` is the only mode that searches deeply on this build; `--window D`
 disables the per-variable windows, `--tightness 90` sits just inside UNSAT so the
-tree must be searched.)
+tree must be searched.) ON rows are `GCS_DELETE_ORDER_ENCODING=literals` at
+`MIN_CHAIN=0` — the gate-off ceiling.
 
-| D    | verify OFF | verify ON | speedup    | pbp growth |
-|-----:|-----------:|----------:|-----------:|-----------:|
-| 250  | 0.939 s    | 0.199 s   | **4.73×**  | +101 %     |
-| 500  | 4.833 s    | 0.517 s   | **9.36×**  | +117 %     |
-| 1000 | 27.415 s   | 1.528 s   | **17.94×** | +135 %     |
-| 2000 | 194.76 s   | 5.692 s   | **34.22×** | +155 %     |
+| D    | recursions | verify OFF | verify ON | speedup    | pbp OFF | pbp ON  | pbp growth |
+|-----:|-----------:|-----------:|----------:|-----------:|--------:|--------:|-----------:|
+| 250  |        393 | 0.335 s    | 0.067 s   | **5.04×**  | 1.13 MB | 2.32 MB | +105 %     |
+| 500  |        919 | 1.669 s    | 0.171 s   | **9.79×**  | 2.59 MB | 5.74 MB | +121 %     |
+| 1000 |      2 397 | 10.576 s   | 0.507 s   | **20.87×** | 6.34 MB | 15.3 MB | +141 %     |
+| 2000 |      6 979 | 101.81 s   | 1.852 s   | **54.98×** | 17.1 MB | 44.9 MB | +163 %     |
 
-The speedup **grows monotonically with domain** (roughly doubling per domain
-doubling). A depth point isolates search depth from domain: same domain 1000 but
+The speedup **grows monotonically with domain**, at least doubling per domain
+doubling. A depth point isolates search depth from domain: same domain 1000 but
 `--tightness 95`, **72 341 recursions** (~30× deeper than the 2 397 at tightness 90),
-gives **20.22×** — slightly *above* the tightness-90 d1000 point, so deeper search at
-the same domain also wins; the effect is not merely a domain artefact.
+gives **26.41×** (443.78 s → 16.81 s) — above the tightness-90 d1000 point, so deeper
+search at the same domain also wins; the effect is not merely a domain artefact.
 
-ON proofs are **+101 %…+213 % larger** (the +213 % is the tightness-95 depth point)
+**The d2000 row is superlinear, and it is the least portable number here.** The
+smaller rows double per domain doubling; d1000→d2000 gains 2.6×. The asymmetry is
+entirely on the OFF side: relative to the older campaign hardware this machine runs
+the ON verifies about 3× faster but the d2000 OFF verify under 2× faster, which is
+what to expect when a large L3 keeps the ON run's working set resident while the OFF
+run's much larger resident database misses to DRAM either way. That row is also the
+one with real measurement noise — the same solo d2000 OFF verify came out at 128.5 s
+in one sitting and 101.8-116.6 s in others, so its speedup moves between roughly 55×
+and 68× depending on when it is taken, while every other row reproduces to a couple
+of percent. Read it as "the curve keeps climbing", not as a constant, and see the
+timing caveat in [benchmarking.md](benchmarking.md) before comparing any large-proof
+verify across machines or across sittings.
+
+ON proofs are **+105 %…+224 % larger** (the +224 % is the tightness-95 depth point)
 yet verify far faster — the design's central claim confirmed: **resident chain
-length, not proof line count, dominates VeriPB's cost.** The honest costs on the win
-rows: solver-side proof-*writing* overhead is **+55 %…+140 %** (largest exactly where
-the verify win is largest — a genuine trade, not free). Peak RSS is *smaller* for ON
-on the modest-growth wins (−22 % d250, −20 % d500, −13 % d1000), directly confirming
-the "resident DB is smaller" prediction; the sign **inverts once ON's proof grows
-several-fold** (d2000 is the transition at +2 %; the tightness-95 row's 360 MB ON
-proof vs 115 MB OFF pushes ON RSS well above OFF), because peak RSS = (proof veripb
-must hold) + (resident order DB) and the proof-size term swamps the resident-DB
-saving when growth is large.
+length, not proof line count, dominates VeriPB's cost.** The honest cost on the win
+rows: solver-side proof-*writing* overhead is **+101 % at d1000 and +123 % at d2000**
+(and +200 % on the depth point) — largest exactly where the verify win is largest, a
+genuine trade rather than a free one. It stays a good trade in absolute terms: at
+d2000 the solver pays 0.087 s → 0.194 s to save 100 s of verification.
+
+**Peak `veripb` RSS falls, and the saving grows with domain** — the "resident
+database is smaller" prediction confirmed directly, and more strongly than the
+earlier campaign found:
+
+| D | RSS OFF | RSS ON | change |
+|--:|--:|--:|--:|
+| 250  | 14.6 MB | 10.2 MB | −30 % |
+| 500  | 21.6 MB | 12.3 MB | −43 % |
+| 1000 | 39.6 MB | 20.7 MB | −48 % |
+| 2000 | 73.4 MB | 31.9 MB | −57 % |
+| 1000 @ t95 | 74.8 MB | 50.7 MB | −32 % |
+
+The earlier campaign reported a smaller saving that **inverted** at d2000, on the
+model that peak RSS = (the proof `veripb` must hold) + (the resident order database),
+so a several-fold-larger ON proof would swamp the database saving. That model does
+not hold here: at d2000 the ON proof is 44.9 MB but ON peak RSS is 31.9 MB, and at
+the depth point the ON proof is 373 MB against 50.7 MB of RSS. `veripb` **streams**
+the proof rather than holding it, so RSS tracks the resident constraint database
+alone — which is exactly the quantity this mode shrinks, and why the saving grows
+with domain instead of inverting.
+
+The likely cause of the change is upstream, not in this feature: VeriPB dropped
+mmapped proof input in favour of streaming (`59d948fb "Remove mmap"`, merged
+2026-05-28). Under mmap the proof file counts toward RSS, which is exactly the term
+the old model assumed; streaming removes it. Both campaigns report version 3.0.2 —
+the string did not change across that commit — so **the version number is not enough
+to tell the two behaviours apart**. If an RSS figure ever has to be compared against
+an older one, check the `veripb` build date against 2026-05-28 first.
 
 ### Real instances — the win did NOT generalise
 
-On **no reachable real instance** did the synthetic win materialise.
+On **no reachable real instance** did the synthetic win materialise. The rows below
+were re-measured on the current machine; each was checked search-identical (node and
+propagation counts equal OFF vs ON) and VeriPB-VERIFIED in every mode.
 
-- **seat-moving 2018** — the one deep-yet-verifiable real split case (15 610-node
-  find-first, `indomain_split`, maxdom 901): **1.02× = neutral**. The del-count proxy
-  explains it precisely: ON emits only **+0.55 %** more `del` lines (936 818 vs
-  931 708) and the proof grows **+1.7 %** — deletion barely fires. Not because the
-  model lacks long chains (it has maxdom-901 split variables) but because it is
-  reif/element/view-heavy and its order encoding is **pinned resident by design**
-  (viewed variables held by the always-at-Top view bridges, product/aux magnitudes by
-  the product-justification caches — the "delete only when unreferenced" rule).
+- **seat-moving 2018** (`2018/seat-moving/sm-10-12-00.dzn`, flattened and run under
+  `fzn-glasgow -n 1`) — the one deep-yet-verifiable real split case: 15 610-node
+  find-first, `indomain_split`, maxdom 901. **Neutral.**
 
-- **mrcpsp 2023** (eq scheduling, `indomain_max/min`): **1.00×**, del delta **exactly
-  0** (1540→1540) — eq branching has no split frontier to advance, nothing is
-  deletable. Clean no-op; the `tour` circuit example is likewise 1.00×.
+  | mode | verify | vs OFF | pbp | `del` lines |
+  |---|--:|--:|--:|--:|
+  | OFF          | 126.17 s | —          | 629.4 MB | 931 708 |
+  | gate 0       | 119.52 s | **1.06×**  | 643.8 MB (+2.3 %) | 938 632 |
+  | gate 16      | 121.24 s | **1.04×**  | 639.3 MB (+1.6 %) | 935 062 |
+  | gate 64      | 120.55 s | **1.05×**  | 636.2 MB (+1.1 %) | 935 295 |
 
-- **Expected-bad, confirmed and bounded:** talent (eq enumeration) **0.98×**,
-  +22.6 % proof; crystal_maze (eq enum) **0.92×**, +48.5 % proof (the worst *relative*
-  growth, but tiny absolute times); sudoku_fixed (split but maxdom 16) **0.98×**, del
-  delta 0. The downside is a low-single-digit-percent verify slowdown plus +20–50 %
-  proof size on eq/small-domain models.
+  A few percent either way is inside what an unpinnable-turbo VM can resolve, so read
+  this as neutral rather than as a small win. The del-count proxy says why: ON emits
+  only **+0.7 %** more `del` lines even at the aggressive gate — deletion barely
+  fires. Not because the model lacks long chains (it has maxdom-901 split variables)
+  but because it is reif/element/view-heavy and its order encoding is **pinned
+  resident by design** (viewed variables held by the always-at-Top view bridges,
+  product/aux magnitudes by the product-justification caches — the "delete only when
+  unreferenced" rule).
 
-- **scp divide_sat control** (`--all`, 21 solutions): **0.97×**, +1.2 % — the
-  divide/modulus in-proof aux magnitudes stay resident by design (product caches):
-  correct, no win, no harm. A small-scale isolation of the same resident-by-design
-  mechanism that makes seat-moving neutral.
+- **Expected-bad, confirmed and bounded.** The two eq-enumeration examples:
+
+  | instance | OFF verify | gate 0 | pbp growth, gate 0 / 16 / 32 / 64 |
+  |---|--:|--:|---|
+  | `crystal_maze` | 0.0306 s | 0.0322 s (**0.95×**) | +48.5 % / **0 %** / 0 % / 0 % |
+  | `talent`       | 1.2649 s | 1.3197 s (**0.96×**) | +35.8 % / +5.8 % / +1.6 % / **0 %** |
+
+  The `0 %` entries are not rounding: the proof is **byte-identical to `None`**
+  (checked by digest), which is the strongest strictly-no-harm form. crystal_maze
+  reaches it already at the shipped gate of 16 because its longest chain is 16;
+  talent needs 64. So the downside on eq/small-domain models is a low-single-digit
+  verify slowdown and +35–50 % proof size **at gate 0 only**, and the shipped gate
+  removes most of it.
+
+- **Not re-measured on this machine**, and carried over as qualitative findings only:
+  mrcpsp 2023 and the `tour` circuit example (both recorded as exact no-ops — eq
+  branching has no split frontier to advance, so nothing is deletable), sudoku_fixed
+  (split but maxdom 16, del delta 0), and the scp `divide_sat` control (no win, no
+  harm — the divide/modulus in-proof aux magnitudes stay resident by design). A
+  find-first mrcpsp run under `--prove` here wrote **over 12 GB of proof** without
+  finishing, so whatever bounded configuration produced the original 1 540-`del` row
+  was not recorded and could not be reconstructed; treat mrcpsp as outside the
+  verifiable set until someone pins down an instance and budget that lands.
 
 - **Hunt for a tractable real win — none exists in the reachable set.** Screened
   radiation (2012/2013), on-call-rostering (2013/2018) and mspsp on top of the scoping
@@ -102,8 +170,8 @@ On **no reachable real instance** did the synthetic win materialise.
   of proof before completion**, far outside any verify budget. seat-moving stands as
   the lone deep-yet-verifiable real case, and it is neutral.
 
-**Correctness gate (the whole point of a proof-only change):** all 12 measured rows
-were search-**identical** OFF vs ON, both modes **VERIFIED** with identical
+**Correctness gate (the whole point of a proof-only change):** every measured row was
+search-**identical** OFF vs ON, both modes **VERIFIED** with identical
 bounds/solution counts. No ON-only failure, no divergence anywhere.
 
 ### Pin apportionment (step 1b, measured) — the real reason the win does not generalise
@@ -112,20 +180,24 @@ The campaign's provisional read — that the view/product resident-by-design cla
 block the real-instance win, motivating the bridge-lifetime redesign (step 3) — is
 **overturned by measurement**. The `GCS_ORDER_ENCODING_STATS` diagnostic (below)
 attributes every resident `ge` to the site that pinned it, first-cause-wins;
-attribution is exact (recorded at the deciding call site, never inferred). Dumps in
-`.../real-instance-bench/apportionment/`.
+attribution is exact (recorded at the deciding call site, never inferred). Campaign
+dumps in `real-instance-bench/apportionment/` (see Provenance).
 
-On **seat-moving** (the lone deep-yet-verifiable real case), of 4 617 proof-time ge
-atoms, 4 442 end Top-resident:
+On **seat-moving** (the lone deep-yet-verifiable real case), of 4 697 proof-time ge
+atoms, 4 442 end Top-resident at gate 0:
 
 - **view_pin + aux_pin (what step 3 would free): 0 — 0.0 %.** No view-underlying or
-  aux-magnitude variable has *any* tracked ge. The same is true on mrcpsp and talent.
-  (The attribution mechanism itself is validated: a view-wrapped comparison test shows
-  view_pin up to 84.6 %, and scp divide_sat shows aux_pin > 0.)
+  aux-magnitude variable has *any* tracked ge. The same was true on mrcpsp and talent
+  when those were measured. (The attribution mechanism itself is validated: a
+  view-wrapped comparison test shows view_pin up to 84.6 %, and scp divide_sat shows
+  aux_pin > 0.)
 - eq_hoist: 1 962 (44.2 %); structural (model_time 1 858 + boundary 622): 55.8 %.
-- Churn: **22 857 deletions but 22 829 reintroductions — net 28**. Split branching
+- Churn: **37 644 deletions but 37 616 reintroductions — net 28**. Split branching
   constantly re-touches deleted thresholds; deletion does enormous work for zero net
-  shrinkage. This churn *is* the +1.7 % proof and +5.6 % solver overhead.
+  shrinkage. This churn *is* the +2.3 % proof and the solver-side overhead. At the
+  shipped gate of 16 the churn drops to **20 784 deletions** and 45.5 % of the
+  Top-resident encoding is held by the gate itself — still churning, still for
+  nothing, which is what stage C (#609) exists to fix.
 
 And the deeper cause, measured directly from the proof (distinct `ge` thresholds
 ever named, per variable): seat-moving's chains are **tiny** — median 12, p99 13,
@@ -155,8 +227,9 @@ mzn-challenge `2023/unit-commitment` is **REJECTED by veripb at `pbp:882`** ("no
 implied by reverse unit propagation") — but in **both** OFF and ON modes
 identically. It is a **pre-existing frontend/model proof-logging bug, out of this
 feature's scope**, not a deletion regression, and was excluded from the campaign.
-Repro kept at `real-instance-bench/fzn/2023_unit-commitment.fzn`; flag it to whoever
-owns the MiniZinc frontend proofs.
+Flatten `mzn-challenge/2023/unit-commitment` to reproduce it (a repro `.fzn` is also
+kept under `real-instance-bench/fzn/`), and flag it to whoever owns the MiniZinc
+frontend proofs.
 
 ## Implementation status
 
@@ -221,7 +294,7 @@ owns the MiniZinc frontend proofs.
     forgetting a level deleted them wholesale; eviction has to delete just the ones naming
     one threshold. Recording is on the hot path of every chain emission, which is why the
     shape is level-first and flat — see the stage-B' notes for the +12 % that keying it by
-    threshold pair cost, and the +4.7 % this one costs.
+    threshold pair cost, and the +4.1 % this one costs.
   - **The eq analogue of atom retirement** (`VariableAtoms::retired_eq`,
     `forget_eq_literals_at_level`), so a *deletable* eq definition — which only a windowed
     variable has, and nothing is windowed yet — retires its atom on backtrack and is
@@ -248,8 +321,7 @@ owns the MiniZinc frontend proofs.
   ~200 fixed seeds, flag-ON at `GCS_DELETE_ORDER_ENCODING_MIN_CHAIN=0` (the gate-off,
   aggressive-testing mode — a nonzero gate hides short-chain shapes), each run isolated in
   its own working directory, **zero** rejections required. Report the before/after failure
-  counts. (Sweep harness + results live under
-  `.../order-encoding-deletion-artifacts/divide-modulus-seed-bug/`.)
+  counts. (Sweep harness + results under `divide-modulus-seed-bug/`.)
 - **Kept resident (not deletable), per the "delete only when unreferenced" rule,
   because their `ge`s are named by *permanent* Top constraints:**
   - divide/modulus in-proof-bit **aux-magnitude** variables (`register_state_variable_bits_in_proof`)
@@ -288,33 +360,34 @@ owns the MiniZinc frontend proofs.
 
 ## Next steps (prioritised)
 
-**1. Real-instance benchmarking — DONE.** Completed as the phase-2 campaign (see
-Results above; data under
-`.../order-encoding-deletion-artifacts/real-instance-bench/`). Verdict:
-- The **synthetic mechanism is validated**, **4.7×→34× across domain d250→d2000**
-  (and 20× at the depth point), driven by resident-chain shrinkage — the design's
+**1. Real-instance benchmarking — DONE.** Completed as the phase-2 campaign, and
+re-measured from scratch on the current machine (see Results above). Verdict:
+- The **synthetic mechanism is validated**, **5.0×→55× across domain d250→d2000**
+  (and 26× at the depth point), driven by resident-chain shrinkage — the design's
   central claim holds.
 - The **real-instance win is unproven**: no reachable real instance triggered it. The
   one deep-yet-verifiable real case (seat-moving) is neutral because its chains are
   pinned resident by view/reif bridges, and the tractable-real-win hunt found nothing
   (real instances are either shallow-neutral or intractably deep).
 - The **downside is bounded**: a few-percent verify slowdown and +20–50 % proof size
-  on eq/small-domain models, +55–140 % solver-side proof-writing on the win rows.
+  on eq/small-domain models, and roughly a doubling of solver-side proof-writing on
+  the win rows.
 - **Correctness is clean** (every row search-identical OFF vs ON, both VERIFIED).
 - **Conclusion: keep the feature flag-gated; default-on is NOT justified by these
   numbers** (real win unproven, measurable overhead on eq/value-heavy models) — but
   the mechanism is sound and correctness is solid.
-- Verification-only drivers `order_jump_check.cc` / `order_hoist_check.cc` and the raw
-  hyperfine TSV are preserved (uncommitted) under the artifacts dir above; promote
-  them to proper `gcs/` tests when convenient (they regression-check the two verified
-  foundations).
+- The verification-only drivers `order_jump_check.cc` / `order_hoist_check.cc` are
+  still uncommitted, in the artifacts directory (see Provenance). Stage E owns
+  promoting them to proper `gcs/` tests — they regression-check the two verified
+  foundations this whole design rests on, and until they are in-tree they survive only
+  by luck.
 
 **1b. Pin-apportionment instrumentation — DONE.** Implemented as the
 `GCS_ORDER_ENCODING_STATS` diagnostic and measured (see "Pin apportionment" above).
 The answer: **step 3 would free 0 % of the resident encoding on every real instance
 measured**; the win is absent on real models because propagation-strong search never
 builds long chains (seat-moving: median chain 12, max 98, despite maxdom 901), and
-the deletion machinery churns (22 857 deletes / 22 829 reintroductions, net 28) for
+the deletion machinery churns (37 644 deletes / 37 616 reintroductions, net 28) for
 nothing there.
 
 **2. Brancher-API refactor — IN PROGRESS: stages A, B and B' landed; B'' is next.**
@@ -367,16 +440,20 @@ suite has grown since — the standing gate is "all of it, in each of the three 
 not a fixed number). The stats dump
 gains a `gate-held` cause and a per-variable chain-length distribution.
 
-**Default 16, chosen from measurement** (full tables in
-`.../real-instance-bench/chain-gate/gate-measurement.md`):
+**Default 16, chosen from measurement** (the original full tables are in
+`chain-gate/gate-measurement.md`; the figures below are re-measured):
 
-| min_chain | pairwise d250 | d1000 | crystal_maze proof/deletes | talent | seat-moving |
+Synthetic columns are verify speedup vs OFF; real columns are proof growth vs OFF and
+the extra `del` lines the mode emits (0 = byte-identical to `None`). Dashes are
+combinations not measured.
+
+| min_chain | pairwise d250 | d1000 | crystal_maze | talent | seat-moving |
 |--:|--:|--:|--|--|--|
-| 0 | 4.70× | 17.87× | +48.5 % / 774 | +22.6 % | +1.7 % / 22.8 k |
-| **16** | **2.97×** | **11.33×** | **+0.0 % / 0 (byte-identical to None)** | +5.8 % | +1.6 % / 20.8 k |
-| 32 | 2.29× | 8.43× | +0.0 % / 0 | +1.6 % | +1.6 % / 20.7 k |
-| 64 | 1.61× | 5.74× | +0.0 % / 0 | −0.0 % / 0 | +1.1 % / 13.1 k |
-| 128 | 1.04× | 3.43× | — | — | — |
+| 0 | 5.04× | 20.87× | +48.5 % / 344 | +35.8 % | +2.3 % / 6 924 |
+| **16** | **3.19×** | **13.24×** | **+0.0 % / 0 (byte-identical to None)** | +5.8 % | +1.6 % / 3 354 |
+| 32 | 2.40× | 9.59× | +0.0 % / 0 | +1.6 % | — |
+| 64 | 1.64× | 6.31× | +0.0 % / 0 | **+0.0 % / 0** | +1.1 % / 3 587 |
+| 128 | 1.05× | 3.71× | — | — | — |
 
 Search identical OFF vs ON at every gate; every proof VERIFIED. An infinite gate
 reproduces the mode-None proof **byte-for-byte** (measured two anchors) — the
@@ -387,15 +464,17 @@ longest chain is 16). The synthetic-win tables in Results above are the gate-off
 Two measured caveats, stated plainly:
 - **Stitch explosion (proof-size only).** Under split branching the first ~L
   thresholds are named in binary-split order, so resident anchors are spread and
-  fragment each deleted run into per-sub-run stitches (d1000 stitches triple at
-  L=16; the proof is briefly *larger* than un-gated at L=16/32). Proof size is
-  non-monotone in L; **verify time — the target — erodes cleanly**, so the gate is
-  chosen from the verify curve, not size. See `chain-gate/stitch-explosion.md`.
+  fragment each deleted run into per-sub-run stitches. Proof size is therefore
+  **non-monotone in L**: at d1000 the gate-16 proof (15.54 MB) and the gate-32 proof
+  (15.38 MB) are both *larger* than the un-gated 15.27 MB, before falling to 13.75 MB
+  at 64 and 12.73 MB at 128. **Verify time — the target — erodes cleanly** across the
+  whole range, so the gate is chosen from the verify curve, not from size. See
+  `chain-gate/stitch-explosion.md`.
 - **A single long chain defeats the flat gate.** seat-moving's residual churn
-  (~20.8 k delete/reintroduce at gate 16) is concentrated on its objective (chain
+  (20 784 delete/reintroduce at gate 16) is concentrated on its objective (chain
   98) and cost (76) variables, which any win-preserving gate leaves deletable. That
-  churn is verify-neutral (OFF 305.9 s ≈ L16 298.3 s ≈ L64 299.4 s, all VERIFIED)
-  and costs only +1.6 % proof / ~+5 % solve. Follow-up recorded for step 2: a
+  churn is verify-neutral (OFF 126.2 s ≈ L16 121.2 s ≈ L64 120.6 s, all VERIFIED)
+  and costs only +1.6 % proof. Follow-up recorded for step 2: a
   **targeted objective-variable exemption** (never delete, or gate separately, the
   bound-tightened objective) would remove most remaining real-model churn at zero
   win cost — it belongs where the backtrack-constraint owner knows the bound
@@ -691,13 +770,18 @@ unchanged mode-off vs mode-on (a proof-only change must not perturb search).
 
 ## Provenance and artifacts
 
-- Journey and findings: see the `gcs-order-encoding-deletion` project memory.
-- Branch `delete-order-links-on-backtrack`: experimental `OrderEncodingDeletion`
-  flag (`GCS_DELETE_ORDER_ENCODING=literals`) demonstrating the delete-then-reintroduce
-  failure — to be reworked per this design.
-- `examples/order_deletion_bench/` — scalable eq-free linear/cumulative driver
-  (split branching, `--unsat`) for the benchmark.
-- `order_jump_check` — the VeriPB verification of the guess-reasoned bound jump and
-  its two controls.
+- **The artifacts directory** — currently `~/claude/tmp/order-encoding-deletion-artifacts/`.
+  Not version controlled and it does not travel with a clone, so check it is present
+  before relying on it. It holds `order_jump_check.cc` / `order_hoist_check.cc` (the two
+  verified foundations, still uncommitted — stage E promotes them), the phase-2 campaign
+  (`real-instance-bench/`, with the gate study in `chain-gate/`), the seed-bug sweep
+  (`divide-modulus-seed-bug/`), the per-stage gate logs (`stage-b/`, `stage-bprime/`,
+  `rebase-to-main-20260729/`), and the two self-contained VeriPB drivers the unbuilt
+  stages rest on: `eq-window/run.sh` (the eq-atom window, **8/8**) and
+  `objective-delc/run.sh` (the `delc` mechanics, **11/11**). Both need only `veripb`
+  3.0.2 on `PATH` — no GCS build — and both were re-run green on the current machine.
+  [brancher-design.md](brancher-design.md), "Provenance", says what each contains.
+- `benchmarks/order_deletion_bench/` — scalable eq-free linear/pairwise/cumulative
+  driver (split branching, `--unsat`) for the benchmark.
 - Background: McIlree PhD thesis, Chapter 3 (integer-literal propagation properties);
   [variable-encodings.md](variable-encodings.md); [reasons-improvement.md](reasons-improvement.md).

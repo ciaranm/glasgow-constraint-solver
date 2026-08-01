@@ -262,33 +262,60 @@ the three-way `Regular` / `RegularBacchus` / `RegularLegacy`
 comparison, plus a discussion of when each pattern wins. It's a useful
 template for similar three-variant proof-logging work.
 
-### veripb timing: memory-bandwidth caveat
+### veripb timing: contention and run-to-run noise
 
-VeriPB verify time does not obey the usual "pin a core, disable turbo,
-run several in parallel" recipe once the proof is large. On
-`fataepyc-10`, a proof whose working set exceeds the per-CCX L3
-(~32 MB) is **DRAM-bandwidth-bound**, so its verify time depends on what
-*else* is streaming memory — it is **not** load-independent even with
-turbo off and a dedicated pinned core. A `d2000`-scale
-`order_deletion_bench` verify measured ~**195 s solo** but rose to
-~**560 s** under heavy concurrent load on other cores: a near-3× spread
-from memory contention alone, nothing to do with the proof.
+VeriPB verify time does **not** obey the usual "pin a core, run several
+in parallel" recipe, and on the development VM it does not obey it for
+*any* proof size. Measured there — subject pinned to one core, aggressor
+= eight concurrent verifies of a 17 MB proof on eight other cores:
 
-Cache-resident proofs behave normally: a proof of ≲ 6 MB (working set
-inside L3) is load-independent to ~**0.1 %** — the same verify read
-27.393 s under a sustained large-proof aggressor vs 27.415 s solo.
+| subject | solo | under aggressor | inflation |
+|---|--:|--:|--:|
+| 17 MB proof (73 MB veripb RSS) | 108.4 s | 206.3 s | **1.90×** |
+| 6 MB proof (40 MB veripb RSS)  | 10.2 s  | 34.2 s  | **3.34×** |
 
-Rules of thumb for veripb timing on this node:
+Note that the *small* proof degrades worse. On bare metal the story is
+DRAM bandwidth, and it only bites once the working set outgrows
+last-level cache; here the guest's vCPUs are not dedicated host cores,
+so concurrent load costs scheduling time as well as bandwidth and the
+cache-resident case gets no protection. Either way the conclusion for
+this machine is the blunt one: **run one timed verify at a time.**
 
-- **Time large-proof veripb runs SOLO — one at a time, machine otherwise
-  quiet.** Do not trust a large verify measured alongside other
-  memory-heavy work; re-measure it alone.
-- **Small (cache-resident, ≲ 6 MB) proofs may run concurrently**, pinned
-  to distinct physical cores, without contention error.
-- **`/cluster` is NFS.** Do all timed proof I/O on **local tmpfs**
-  (`/tmp`), so the numbers measure verify cost and not the network
-  filesystem: copy the inputs over first and write the `.opb`/`.pbp`
-  there.
+There is also **between-session drift that pinning cannot remove**, and
+it grows with the run. The same solo verify of the same 17 MB proof
+measured 128.5 s in one sitting and 109.0-116.6 s in another an hour
+later — an ~18 % shift, against a ~7 % within-sitting spread. Short
+verifies were reproducible to ~3 % across the same two sittings, so the
+drift bites exactly where it costs most.
+
+The likeliest cause is **ambient temperature**: a long verify is a
+sustained single-core load, the host boosts it as thermal headroom
+allows, and on a hot day there is less. Nothing in the guest can pin
+turbo or the governor (`/sys/devices/system/cpu/cpufreq` does not
+exist), so this is not controllable from inside — it is a constraint to
+design measurements around, not a fault to fix. Long verifies taken
+weeks or seasons apart are not comparable at all.
+
+Rules of thumb:
+
+- **Time veripb runs SOLO — one at a time, machine otherwise quiet.**
+  Do not trust a verify measured alongside a build, a flatten, or
+  another verify, whatever the proof size.
+- **Measure every row of a comparison in one contiguous sitting.**
+  Ratios within a sitting are sound; absolute times across sittings are
+  not, so never take an OFF baseline from one session and an ON number
+  from another. This is easy to get wrong when a sweep is extended
+  later.
+- **Take the minimum of several runs**, not the mean — it is the closest
+  thing available to a noise-free sample.
+- **Do all timed proof I/O on tmpfs** (`/tmp` is a tmpfs on the
+  development VM), so the numbers measure verify cost rather than the
+  filesystem: write the `.opb`/`.pbp` there, and copy inputs over first
+  if they live anywhere slower. Watch the free space — a runaway
+  `--prove` run can fill a 16 GB tmpfs and wedge the machine.
+- **Re-measure the two rows above on any new machine** before trusting
+  a concurrent timing there; the crossover is a property of the host,
+  not of the proof.
 
 ## Profiling with `perf`
 
