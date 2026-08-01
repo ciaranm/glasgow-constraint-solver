@@ -4,9 +4,12 @@
 measured on synthetic AND real instances; suite-safe; committed on this branch;
 not default.** This note records the design for shrinking the integer
 order-encoding that VeriPB carries, plus the measured outcome and what is and
-isn't yet done. The full Brancher-API refactor (below) is still a proposal; the
-current implementation wires deletion into the existing branch/backtrack flow via
-hoisting.
+isn't yet done. The full Brancher-API refactor (step 2, below) is now a
+**decided design, recorded in [brancher-design.md](brancher-design.md)** but not
+yet implemented; the current implementation wires deletion into the existing
+branch/backtrack flow via hoisting, and the sketch of the refactor further down
+this note is superseded by that decided design (see the note at "Design
+overview").
 
 ## Results (measured)
 
@@ -157,17 +160,80 @@ owns the MiniZinc frontend proofs.
 ## Implementation status
 
 - **Done, suite-safe:** the full caps-off test suite passes with the flag on (0
-  flag-induced VeriPB rejections; mode-off byte-identical; flag-off 525/525). The
+  flag-induced VeriPB rejections; mode-off byte-identical; flag-off 536/536). The
   hoist primitive, guess/eq/partition-atom hoisting, and the aux/view dispositions
   below are all in `gcs/innards/proofs/{names_and_ids_tracker,proof_logger,proof_model}.*`.
+- **A line must never name a literal whose definition has been deleted — and that is now
+  structural, not a discipline.** Deletion makes a `ge` atom's *definition* transient, so
+  "the atom exists" does not imply "a line may name it". Rather than requiring every
+  naming path to remember to consult a liveness check, deletion **retires the atom**: the
+  sweep in `forget_order_literals_at_level` moves the `XLiteral` out of `VariableAtoms::ge`
+  into `VariableAtoms::retired_ge`, so `find_condition` stops answering for it. The only
+  route back to the literal is `need_gevar`, which re-introduces the definition and takes
+  the retired `XLiteral` back — so the atom keeps its identity and its PB name across
+  delete/re-introduce cycles. Anything that tries to render it without going through
+  `need_gevar` now hits the const `xliteral_for`, which **throws** rather than silently
+  emitting a stale name: a bypass fails loudly at emission instead of becoming a VeriPB
+  rejection hundreds of lines downstream.
+
+  Why it is written this way. The `proof-writing-perf` stack fused name introduction into
+  line rendering (`834b7029`), and its `xliteral_for_ensuring` introduces a name **only
+  when the atom is missing** — correct for every other mode. When the atom stayed put and
+  only its definition was deleted, that check passed and re-introduction never fired:
+  rebasing onto the stack turned 0 flag-induced rejections into **37** across the caps-off
+  suite, every one a line naming a `ge` whose definition had gone, with the re-introduction
+  appearing a few lines *later*, triggered by whatever next needed the atom. Retiring the
+  atom makes "missing" true exactly when it should be, so the renderer's own check is the
+  enforcement and no mode-specific special case is needed.
+
+  Two traps worth carrying forward:
+
+  - `ge_defs` keeps its entry when a threshold is retired, and the re-introduction must
+    **`insert_or_assign`, not `try_emplace`**. The stale entry holds the deleted
+    definition's line numbers, and every chain `pol` resolves its operands through them
+    (`need_pol_item_defining_literal`), so `try_emplace` leaves the links pointing at
+    deleted lines. That entry is deliberately never erased: it keeps `ge_defs` monotone,
+    which is what makes it a sound basis for the chain gate's "thresholds ever named"
+    count.
+  - There is no longer an aliased-`ge` exception. Issue #554's fix deliberately stopped
+    aliasing a DirectOnly `{0,1}` variable's `>= 1` atom to its bit, so every `ge` owns its
+    own reification and `order_literal_aliased_to_bit` — which existed only to keep such a
+    literal out of the re-introduction path — became dead and has been removed.
+- **Gate — randomized-test seed sweeps are part of the flag-ON gate.** A single caps-off
+  suite run exercises only *one* random seed per data-driven test, and the fixed corpus
+  missed a ~10 %-of-seeds VeriPB-rejection hole in divide/modulus (seed 3072268882 was one
+  such seed). So any change to the deletion machinery, and any new resident/hoist
+  disposition, must additionally clear a **seed sweep** of the affected randomized tests:
+  ~200 fixed seeds, flag-ON at `GCS_DELETE_ORDER_ENCODING_MIN_CHAIN=0` (the gate-off,
+  aggressive-testing mode — a nonzero gate hides short-chain shapes), each run isolated in
+  its own working directory, **zero** rejections required. Report the before/after failure
+  counts. (Sweep harness + results live under
+  `.../order-encoding-deletion-artifacts/divide-modulus-seed-bug/`.)
 - **Kept resident (not deletable), per the "delete only when unreferenced" rule,
   because their `ge`s are named by *permanent* Top constraints:**
   - divide/modulus in-proof-bit **aux-magnitude** variables (`register_state_variable_bits_in_proof`)
     — pinned by the product-justification caches;
+  - the **real operands** of the magnitude-product constraints — divide/modulus `x, y, out`
+    and multiply/power `x, y, z` (marked in `install_divide_modulus` and in
+    `signed_multiply::make_data`, which multiply and power both route through) — pinned by
+    the permanent identity / remainder / magnitude-channel / **sign-clause** rows
+    (`product_encoding.cc`) and the `pol`/`rup` product reasons derived over them, all of
+    which name these operands' order/eq literals (e.g. an `emit_sign_clauses` row naming
+    `v >= 0` / `v < 1`, or a `mult_bc` reason naming `31 i[out][ge1]`). Without this an
+    interior operand `ge` is born deletable, a backtrack deletes it while a pinning row
+    stays live, a later reference **re-introduces** it, and the re-introduction's
+    falsify-witness `ge := 0` collides with the pin — VeriPB rejects the proofgoal. (This
+    was the divide/modulus seed-3072268882 bug: a ~10 %-of-random-seeds hole the fixed test
+    corpus missed. Multiply/power share the identical pin mechanism; the fix is applied to
+    them as a latent-bug closure — see the seed-sweep note under Gates.);
   - **viewed** variables (underlying of a registered view) — pinned by the
     always-at-Top view-bridge `pol`s in `need_gevar`.
-  These get no deletion win, but are correct. Making them deletable needs the
-  bridge-lifetime redesign (Future work).
+  These get no deletion win, but are correct. **This narrows the win scope: any variable
+  appearing as an operand of a divide/modulus/multiply/power constraint is now wholly
+  resident, so it contributes no chain-shrinkage win** (its long chains, if any, are
+  recoverable only by the parked bridge-lifetime redesign — Future work). In the win regime
+  (weak-propagation, large-domain, bound-split) such variables are typically not the
+  split-branched ones anyway.
 - **`soli` objective atom** is hoisted to Top when the objective-improvement
   constraint is emitted (latent optimisation-mode bug fixed defensively).
 - **Not yet done:** the clean Brancher abstraction (below) — the current wiring
@@ -206,17 +272,33 @@ builds long chains (seat-moving: median chain 12, max 98, despite maxdom 901), a
 the deletion machinery churns (22 857 deletes / 22 829 reintroductions, net 28) for
 nothing there.
 
-**2. Brancher-API refactor** (the abstraction below) to generalise
-consolidate-then-delete and tidy the current direct wiring. Its value was always
-design quality, not measured performance; that stands. It is also the natural home
-for the chain-length-gated deletion policy below.
+**2. Brancher-API refactor — DESIGN DECIDED (see
+[brancher-design.md](brancher-design.md)); not yet implemented.** The concrete,
+decided step-2 design lives in that note; it generalises consolidate-then-delete,
+tidies the current direct wiring, and is the natural home for the chain-gated
+deletion policy, the objective-variable exemption (from 2b, below), and the
+objective-improvement `delc` lifecycle. Five owner decisions are settled there:
+the per-node object stays a `std::generator` (not a virtual class) until it shows
+as a benchmark hotspot; the pre-0.1 public yield-type source break is accepted
+(the implicit `IntegerVariableCondition → BranchDecision` conversion is the
+bridge); the objective is handled by exemption for its ges *and* an unconditional
+delete-all-but-the-most-recent improvement constraint; the value-order mapping is
+final; and the eq-atom window ships default-off pending a stage-E measurement.
+
+Crucially, the design adds an **eq-atom sliding window** (validated 8/8 in VeriPB
+3.0.2) that moves the four contiguous in-order/eq value orders —
+`smallest_first`, `largest_first`, `smallest_in`, `largest_in` — into the win
+regime as *O(1)-resident* (evict each eq/ge once the frontier steps past it),
+**superseding this note's earlier claim that only split wins**: split still wins
+by the bound *jump*, but ascending/descending eq now wins too, by the window.
 
 **2b. Chain-length-gated deletion — DONE (implemented + measured; default gate 16).**
 
 Under `OrderEncodingDeletion::Literals`, a real variable's interior (non-boundary)
 `ge` definition is only emitted deletable-at-`Current` once the variable has crossed
 a chain-length gate: when the number of `ge` thresholds ever named for it (its
-`gevars_that_exist[id]` count at decision time in `need_gevar` — model-time atoms
+`ge_defs` count for it at decision time in `need_gevar`, taken before this threshold is
+inserted — model-time atoms
 included) exceeds `min_chain`. At or below the gate the def stays resident at `Top`,
 exactly like the boundary / view-pin / aux-pin paths. The gate is monotone (the
 count only grows; once crossed, stays crossed; below-gate residents are never
@@ -355,6 +437,19 @@ Two consequences that shape the design:
    *resident* database is smaller, so every *other* RUP's closure shrinks.
 
 ## Design overview: consolidate -> hoist -> delete
+
+> **Historical sketch — superseded by [brancher-design.md](brancher-design.md).**
+> The sections from here through "Implementation staging" are the original
+> user-approved *conceptual* sketch; the concrete, decided step-2 design (grounded
+> in the real code, with the five owner decisions and the eq-atom window folded in)
+> is [brancher-design.md](brancher-design.md). In particular the "Mapping the
+> existing heuristics" table below is **wrong** and superseded: its in-order/eq rows
+> claimed `smallest_first`/`smallest_in`/`largest_first`/`largest_in` win by an
+> "O(1) pin" bound-jump, but eq branching has no gap to jump and an eq atom pins
+> both ges — those orders instead win via the **eq-atom window** (evict behind a
+> one-step frontier), while the bound-*jump* win is the `split_*` family only. The
+> foundation above this note ("The verified foundation: guess-reasoned bound jumps")
+> stands. The prose below is kept for provenance; do not treat it as current.
 
 A brancher maintains a compact **backtrack constraint** — the "what we'll use to
 backtrack" fact, i.e. the weakest constraint it has proven must hold given every

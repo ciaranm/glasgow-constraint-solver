@@ -13,6 +13,7 @@
 #include <gcs/solve.hh>
 
 #include <util/enumerate.hh>
+#include <util/overloaded.hh>
 
 #include <cstdlib>
 #include <limits>
@@ -65,6 +66,59 @@ namespace
         unsigned long long cutoff;
         bool enabled;
     };
+
+    /**
+     * The node's standing backtrack constraint: the framework's internal fold of
+     * the BranchDecision advances refuted so far at this node (design 1.1). It is
+     * derived, not a public type, and lives as a stack local for one frame.
+     *
+     * Stage A folds only backtrack_advance::Exclude, so the constraint never
+     * leaves the ExcludedSet (monostate) arm: the node's refutation lemma stays
+     * today's ~state.guesses(), emitted verbatim at node close. The Bound arm and
+     * its terminal-bound lemma are wired in stage B; they are structurally present
+     * here but behaviourally inert.
+     */
+    struct BacktrackConstraint final
+    {
+        std::variant<std::monostate, std::pair<SimpleIntegerVariableID, Integer>> state = std::monostate{};
+        bool is_lower = true; // meaningful only in the Bound arm
+
+        // Switch the node's standing constraint to a monotone bound on the branched
+        // variable at the new frontier threshold (the refuted split guess's own value:
+        // `var <= v` == `var < v+1` and `var > v` == `var >= v+1` both carry threshold
+        // v+1). Recorded only for a real (Simple) variable; other kinds leave the
+        // ExcludedSet arm. See fold() for why stage B does not yet consume this.
+        auto note_bound(const IntegerVariableID & var, Integer threshold, bool lower) -> void
+        {
+            if (const auto * sid = std::get_if<SimpleIntegerVariableID>(&var)) {
+                state = std::pair{*sid, threshold};
+                is_lower = lower;
+            }
+        }
+
+        auto fold(const BranchDecision & decision) -> void
+        {
+            overloaded{//
+                [&](const backtrack_advance::Exclude &) {
+                    // Accumulate ~guess into the excluded set: nothing to record here,
+                    // the ExcludedSet lemma is state.guesses() emitted at node close.
+                },
+                [&](const backtrack_advance::LowerBound & lb) { note_bound(lb.var, decision.guess.value, /*lower=*/true); },
+                [&](const backtrack_advance::UpperBound & ub) { note_bound(ub.var, decision.guess.value, /*lower=*/false); },
+                [&](const backtrack_advance::Custom &) {
+                    // Escape hatch; no consumer in stage B.
+                }}
+                .visit(decision.on_refuted);
+        }
+    };
+
+    // A refuted split sibling carries a Bound (Lower/Upper) advance; every other value
+    // order stays Exclude. The framework emits a guess-reasoned frontier advance only
+    // for the Bound siblings.
+    [[nodiscard]] auto is_bound_advance(const BacktrackAdvance & advance) -> bool
+    {
+        return std::holds_alternative<backtrack_advance::LowerBound>(advance) || std::holds_alternative<backtrack_advance::UpperBound>(advance);
+    }
 
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, Propagators & propagators, State & state,
         const optional<Literal> & this_branch_guess, SolveCallbacks & callbacks, const BranchCallback & branch_callback, ProofLogger * const logger,
@@ -184,10 +238,21 @@ namespace
                     // re-derives it on the next pass. Every other descended sibling
                     // (a first sibling, or any d-way value) is a free positive
                     // decision and extends the prefix.
+                    // The framework's fold of this node's backtrack advances. A split
+                    // family folds Lower/UpperBound (recorded in the Bound arm); every
+                    // other value order folds Exclude. The node-close lemma below stays
+                    // today's ~state.guesses() either way (a two-way split is closed by
+                    // complementarity), so the fold's Bound state is not yet consumed at
+                    // close; the per-sibling advances are emitted inside the loop.
+                    BacktrackConstraint backtrack_constraint;
                     optional<IntegerVariableCondition> first_sibling;
                     unsigned long long sibling_index = 0;
-                    for (; branch_iter != branch_generator.end(); ++branch_iter) {
-                        auto guess = *branch_iter;
+                    while (branch_iter != branch_generator.end()) {
+                        auto decision = *branch_iter;
+                        // The nld-nogood prefix and negative-flip detection operate on
+                        // the decision's guess (still an IntegerVariableCondition), not
+                        // on its backtrack advance (design 3).
+                        const auto & guess = decision.guess;
                         // Only maintain the reduced prefix when we are actually
                         // learning nogoods: otherwise reduced_prefix stays empty and
                         // the copy is free, so ordinary search pays nothing.
@@ -208,9 +273,31 @@ namespace
                             result = SearchResult::RestartCutoffHit;
                             break;
                         }
-                        // Complete: this sibling's subtree was refuted under the
-                        // current path, so record it for restart-nogood learning.
+                        // Complete: this sibling's subtree was refuted under the current
+                        // path. Fold its backtrack advance into the node's standing
+                        // constraint, and record it for restart-nogood learning.
+                        backtrack_constraint.fold(decision);
                         refuted_siblings.push_back(guess);
+
+                        // Advance the brancher, then --- under Literals, for a refuted
+                        // sibling carrying a Bound advance that is NOT the node's last ---
+                        // emit the guess-reasoned frontier advance. It lands at the
+                        // sibling's backtrack level (the active level here), reasoning from
+                        // the decision stack below this node (state.guesses(); the sibling
+                        // itself already backtracked), while the child's backtrack clause is
+                        // still live below the parent forget. The last refuted sibling emits
+                        // none: its refutation closes the node via complementarity, and the
+                        // node-close backtrack clause subsumes it (see the tail). Under None
+                        // / Exclude the whole block is skipped, so flag-off search does no
+                        // extra work and its proof is byte-identical.
+                        ++branch_iter;
+                        if (logger && logger->bound_advances_active() && is_bound_advance(decision.on_refuted) &&
+                            branch_iter != branch_generator.end()) {
+                            vector<Literal> guesses;
+                            for (const auto & g : state.guesses())
+                                guesses.push_back(g);
+                            logger->emit_split_bound_advance(guesses, guess);
+                        }
                     }
                 }
             }
@@ -265,7 +352,15 @@ namespace
             else {
                 // A normal backtrack: the subtree under these guesses was refuted,
                 // so we may assert the negation of the guess set (RUP from the
-                // refutation that the forget below then discards).
+                // refutation that the forget below then discards). This is also the
+                // node-close lemma for a Bound (split-family) node: a two-way split's
+                // second sibling is the first's complement, so the two children's
+                // still-live backtrack clauses make ~guesses RUP exactly as today ---
+                // byte-identical to what the parent level expects. The split family
+                // never advances a single monotone frontier past the domain, so the
+                // design's "terminal advance in place of ~guesses" close is not produced
+                // here (it is the d-way / eq-window shape, deferred); the folded Bound
+                // state is maintained but not consumed at close in stage B.
                 vector<Literal> guesses;
                 for (const auto & g : state.guesses())
                     guesses.push_back(g);

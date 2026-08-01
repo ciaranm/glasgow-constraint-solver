@@ -78,8 +78,11 @@ namespace
                 for (; branch_iter != brancher.end(); ++branch_iter) {
                     auto timestamp = state.new_epoch();
                     auto branch = *branch_iter;
-                    state.guess(branch);
-                    solve_subproblem(depth + 1, tuples, vars, propagators, state, branch, branch_callback, logger, selector_var_id);
+                    // AutoTable maintains no BacktrackConstraint: it takes the Exclude
+                    // path, so it only needs the decision's guess (its logger->backtrack
+                    // below is verbatim today's ~guesses).
+                    state.guess(branch.guess);
+                    solve_subproblem(depth + 1, tuples, vars, propagators, state, branch.guess, branch_callback, logger, selector_var_id);
                     state.backtrack(timestamp);
                 }
             }

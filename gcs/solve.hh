@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <functional>
+#include <variant>
 #include <version>
 
 #ifdef __cpp_lib_generator
@@ -50,11 +51,108 @@ namespace gcs
     using TraceCallback = std::function<auto(const CurrentState &)->bool>;
 
     /**
+     * \defgroup BranchDecisions Branch decisions and their backtrack advances
+     *
+     * A branching generator yields BranchDecision instances. Each pairs the
+     * IntegerVariableCondition to branch on (the \c guess) with a declaration of
+     * how the node's backtrack constraint tightens once that decision's subtree
+     * is refuted (the \c on_refuted BacktrackAdvance). The framework folds those
+     * advances; branchers never write raw proof bookkeeping.
+     *
+     * \ingroup SolveCallbacks
+     */
+
+    /**
+     * \brief The backtrack-advance kinds a BranchDecision can declare.
+     *
+     * \ingroup BranchDecisions
+     */
+    namespace backtrack_advance
+    {
+        /**
+         * \brief Refuting this decision's subtree entails a new lower bound on
+         * \c var: the node's backtrack constraint tightens to \c var >= (next
+         * live threshold), naming ONE order literal.
+         */
+        struct LowerBound final
+        {
+            IntegerVariableID var;
+        };
+
+        /**
+         * \brief Symmetric to LowerBound: refuting entails \c var <= (next live
+         * threshold), i.e. \c var < t.
+         */
+        struct UpperBound final
+        {
+            IntegerVariableID var;
+        };
+
+        /**
+         * \brief The generic fallback: accumulate \c !guess into the node's
+         * excluded set. This is exactly today's \c ~(all guesses) backtrack
+         * clause; it names a growing set, so nothing is deletable for that
+         * variable. The default advance.
+         */
+        struct Exclude final
+        {
+        };
+
+        /**
+         * \brief Escape hatch for exotic branchers that prove their own backtrack
+         * constraint.
+         *
+         * Placeholder for now: the design's sketched WPBSum callback is "not
+         * fleshed out until a use case appears" (dev-doc "Extensibility"), and
+         * spelling it would drag the proof-innards WPBSumLE type into this public
+         * header. Stage A ships an empty struct so BacktrackAdvance's variant is
+         * exhaustive and compiles; nothing constructs it yet.
+         */
+        struct Custom final
+        {
+        };
+    }
+
+    /**
+     * \brief How a BranchDecision's backtrack constraint tightens when its
+     * subtree is refuted.
+     *
+     * \ingroup BranchDecisions
+     */
+    using BacktrackAdvance =
+        std::variant<backtrack_advance::LowerBound, backtrack_advance::UpperBound, backtrack_advance::Exclude, backtrack_advance::Custom>;
+
+    /**
+     * \brief A single branching decision: what to branch on, plus how the node's
+     * backtrack constraint advances if that decision's subtree is refuted.
+     *
+     * An IntegerVariableCondition converts implicitly to a BranchDecision
+     * defaulting to backtrack_advance::Exclude, so an existing branch generator
+     * that yields bare conditions keeps compiling and, under the default advance,
+     * keeps its proof byte-identical.
+     *
+     * \ingroup BranchDecisions
+     */
+    struct BranchDecision final
+    {
+        IntegerVariableCondition guess;                             ///< What to branch on.
+        BacktrackAdvance on_refuted = backtrack_advance::Exclude{}; ///< How the node advances if refuted.
+
+        BranchDecision(IntegerVariableCondition c) : guess(c)
+        {
+        }
+
+        BranchDecision(IntegerVariableCondition c, BacktrackAdvance a) : guess(c), on_refuted(a)
+        {
+        }
+    };
+
+    /**
      * \brief Called by gcs::solve_with() to determine branching when
-     * searching, should return a generator of IntegerVariableCondition
-     * instances (which may be range conditions, for interval accept/reject
-     * branching) that corresponds to a complete branching choice, or that
-     * yields nothing if every variable is instantiated.
+     * searching, should return a generator of BranchDecision instances (each
+     * carrying an IntegerVariableCondition, which may be a range condition for
+     * interval accept/reject branching) that corresponds to a complete branching
+     * choice, or that yields nothing if every variable is instantiated.
      *
      * \warning The CurrentState and Propagators references are into live
      * solver internals, and are valid only for the duration of the call.
@@ -62,7 +160,7 @@ namespace gcs
      * \ingroup SolveCallbacks
      * \sa SearchHeuristics
      */
-    using BranchCallback = std::function<std::generator<IntegerVariableCondition>(const CurrentState &, const innards::Propagators &)>;
+    using BranchCallback = std::function<std::generator<BranchDecision>(const CurrentState &, const innards::Propagators &)>;
 
     /**
      * \brief The branching heuristic for gcs::solve_with(): given a search's

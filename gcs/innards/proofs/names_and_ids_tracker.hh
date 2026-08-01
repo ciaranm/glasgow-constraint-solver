@@ -153,17 +153,6 @@ namespace gcs::innards
         // exist and lb <= p <= ub+1.
         auto ensure_partition_cut(SimpleOrProofOnlyIntegerVariableID id, Integer p) -> void;
 
-        // True iff the order literal `id >= v` is aliased directly to one of `id`'s
-        // preserved encoding bits -- the DirectOnly {0,1} case, where
-        // set_up_direct_only_variable_encoding registers `id >= 1` as the lone bit b0
-        // rather than a distinct `ge` atom. Such a ge has no proof-time reification of
-        // its own (its meaning is the model-time OPB bit), so under the Literals mode it
-        // must never be treated as a deletable/reintroducible order literal: re-emitting
-        // a reification would place the preserved bit in a `red` witness, which VeriPB
-        // rejects at a derived proof level. A distinct-atom ge (e.g. a Bits-encoded
-        // variable's `ge1`) is not aliased and returns false, staying reintroducible.
-        [[nodiscard]] auto order_literal_aliased_to_bit(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> bool;
-
         // First interval request for `id`: set up the always-covered partition, with a
         // singleton cell for every pre-existing eq atom (earlier per-value conclusions
         // must be reachable from later coverings), define a literal for every cell, and
@@ -206,11 +195,6 @@ namespace gcs::innards
         // for a re-introduced one; linking to live (not gevars) neighbours keeps the
         // chain valid across deleted thresholds.
         auto link_order_literal_to_live_neighbours(const SimpleIntegerVariableID & id, Integer v) -> void;
-
-        // Fast-path helper for need_gevar when a real variable's ge atom already exists
-        // but its Current-level def was deleted on backtrack: re-emit the def at
-        // Current, re-link to live neighbours, and re-record as live.
-        auto reintroduce_order_literal(const SimpleIntegerVariableID & id, Integer v) -> void;
 
         // Emit the stitch link ge(hi) -> ge(lo) skipping a deleted run of thresholds,
         // recorded at at_level (= max(level(lo), level(hi))), restoring the logger's
