@@ -844,6 +844,45 @@ win). An excluded-set constraint names many, so many are hoisted (no win, but
 correct). Retention is therefore automatic and exactly as tight as the brancher's
 backtrack constraint — there is no separate "retained set" to maintain.
 
+**But those are not the only surviving constraints, and the implementation only tracks
+some of them.** A propagator's own justification is a surviving constraint too: it is
+emitted at `ProofLevel::Current` and lives until its level is forgotten. The residency
+bookkeeping (`ge_top_pins`, and the hoists that record it) tracks references from **Top**
+lines only, so for a reference from an intermediate level there is no pin to consult, and
+`pins == nullptr` does not mean "unreferenced".
+
+`evict_order_literal` therefore adds a second, structural condition alongside the pin
+check:
+
+> Evict only a definition minted at the level the search is standing at. A definition at
+> an **ancestor** level outlives this subtree, so refuse it.
+
+This is deliberately conservative — it refuses some evictions that would have been safe,
+because the information needed to tell them apart is not kept. It was measured, on the
+ascending-eq synthetic where the window does its work, to cost **nothing**: at d250/500/1000
+the gate-0 speedups are 5.26×/8.90×/14.70× with the rule and 5.25×/8.88×/14.59× without
+(same sitting, min of 3), the proofs are 97–101 bytes *smaller* with it, and at gate 16 and
+on crystal_maze and talent they are byte-identical.
+
+What it buys is `table_layout`, which rejects at gate 0 without it: the eq-window advance
+retired `rowheight[1] >= 81`, minted at level 4, while standing at level 20, and the
+objective lower-bound row that named it —
+`totalheight>=295 \/ ~rowheight[0]>=90 \/ ~rowheight[1]>=81 \/ ~rowheight[2]>=27 \/ ~rowheight[3]>=97`,
+emitted back at level 4 — stayed live for another 239 backtracks. The atom was therefore
+not free, and its later "re-introduction" was a redundance step whose `ge81 -> 1` witness
+had to discharge that row and could not. The `-> 0` half passes, because `~ge81` satisfies
+the row trivially: **a one-sided redundance failure is the signature of a stale reference
+rather than a bad definition.**
+
+The `t` scenario in `order_evict_test` is this shape reduced, and fails both ways without
+the rule (return values first, then the proof itself).
+
+The remaining gap, unclosed and so far theoretical: a `pol` line's result names literals
+that are a function of the derivation, which we do not evaluate, so nothing can detect a
+reference from one. All 28 `PolBuilder::emit(..., ProofLevel::Top)` call sites would need
+to declare what they name for that to be checkable. The ancestor rule does not depend on
+knowing, which is why it was preferred to extending the pin bookkeeping.
+
 ## Mapping the existing heuristics
 
 Helpers make each existing `value_order::` a one-liner:

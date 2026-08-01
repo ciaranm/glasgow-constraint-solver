@@ -49,12 +49,13 @@ auto main() -> int
     ProofModel model(proof_options, tracker);
 
     // One variable per scenario, so the scenarios cannot perturb each other's chains.
-    SimpleIntegerVariableID x{0}, y{1}, z{2}, w{3}, u{4};
+    SimpleIntegerVariableID x{0}, y{1}, z{2}, w{3}, u{4}, t{5};
     model.set_up_integer_variable(x, 0_i, 100_i, "x", nullopt);
     model.set_up_integer_variable(y, 0_i, 100_i, "y", nullopt);
     model.set_up_integer_variable(z, 0_i, 100_i, "z", nullopt);
     model.set_up_integer_variable(w, 0_i, 100_i, "w", nullopt);
     model.set_up_integer_variable(u, 0_i, 100_i, "u", nullopt);
+    model.set_up_integer_variable(t, 0_i, 100_i, "t", nullopt);
 
     model.finalise();
 
@@ -193,6 +194,54 @@ auto main() -> int
     tracker.need_gevar(u, 50_i);
     tracker.need_gevar(u, 60_i);
     check(tracker.evict_order_literal(u, 60_i, nullopt));
+    logger.forget_proof_level(1);
+
+    // ---- t: an ancestor's definition is not this subtree's to evict ----
+    // The window tidies from wherever the search currently stands, which is not necessarily
+    // the level that minted the atom. A definition at an ancestor level outlives this
+    // subtree, and lines emitted anywhere between that level and here may name it -- only
+    // Top references are tracked, so for those intermediate levels there is no pin to
+    // consult and "no pin" cannot be read as "unreferenced".
+    //
+    // This is table_layout's shape, reduced: it retired `rowheight[1] >= 81`, minted at
+    // level 4, from level 20, while the objective lower-bound row that named it -- emitted
+    // back at level 4 -- stayed live for another 239 backtracks. The re-introduction was
+    // then not a re-introduction at all, and its `-> 1` witness could not discharge that
+    // still-live row.
+    //
+    // The level-1 line below is what makes this discriminating rather than decorative: it is
+    // a reference that survives the level-2 subtree, so evicting either threshold at level 2
+    // strands it, and the `need_gevar` after the forget then re-emits the `red` pair the
+    // stranded line refutes.
+    //
+    // Measured by mutation, stubbing the ancestor rule out fails this test twice over: the
+    // two return-value checks below go first (which is what the harness reports, since it
+    // runs veripb only on a zero exit), and with those neutered as well the proof itself is
+    // rejected -- `Proofgoal ... could not be autoproven`, the same signature, from the same
+    // cause, as table_layout at gate 0.
+    logger.enter_proof_level(1);
+    tracker.need_gevar(t, 30_i);
+    tracker.need_gevar(t, 70_i);
+    logger.emit_rup_proof_line(WPBSum{} + 1_i * (t < 70_i) + 1_i * (t >= 30_i) >= 1_i, ProofLevel::Current);
+
+    logger.enter_proof_level(2);
+    // Standing one level deeper, both thresholds belong to the ancestor: refused.
+    check(! tracker.evict_order_literal(t, 30_i, nullopt));
+    check(! tracker.evict_order_literal(t, 70_i, nullopt));
+    // A definition minted here is this subtree's own, and stays evictable -- the rule must
+    // cost the window only what it has to.
+    tracker.need_gevar(t, 50_i);
+    check(tracker.evict_order_literal(t, 50_i, nullopt));
+    logger.forget_proof_level(2);
+
+    // Still live, so no `red` pair is written here -- unless the ancestor rule let level 2
+    // take it, in which case this is the re-introduction that strands the line above.
+    tracker.need_gevar(t, 70_i);
+
+    // And a threshold this level minted, named by nothing, is still the window's to take:
+    // the rule is about ancestry, not a blanket refusal.
+    tracker.need_gevar(t, 90_i);
+    check(tracker.evict_order_literal(t, 90_i, nullopt));
     logger.forget_proof_level(1);
 
     logger.enter_proof_level(0);
