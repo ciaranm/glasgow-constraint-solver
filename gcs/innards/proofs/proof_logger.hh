@@ -352,6 +352,13 @@ namespace gcs::innards
         [[nodiscard]] auto names_and_ids_tracker() -> NamesAndIDsTracker &;
 
         /**
+         * As above, for a caller that only reads. Exists so that resolving a
+         * constraint row's label --- which is a const query on the tracker ---
+         * does not have to launder away constness to ask.
+         */
+        [[nodiscard]] auto names_and_ids_tracker() const -> const NamesAndIDsTracker &;
+
+        /**
          * Delete a specified range of ids.
          * NB: This uses half-open range semantics, so "from" is included but "up_to" is excluded.
          */

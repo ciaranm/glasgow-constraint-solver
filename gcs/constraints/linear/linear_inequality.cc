@@ -180,6 +180,21 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model, const State
         .visit(_reif_cond);
 }
 
+auto innards::ConstraintProofModelData<ReifiedLinearInequality>::primary_row_role(const ReifiedLinearInequality & c) -> optional<string>
+{
+    // As for the comparison family, this re-visits the ReificationCondition
+    // rather than reading anything define_proof_model left behind: a presolver
+    // asking must get the same answer whether or not proofs are being logged.
+    return overloaded{
+        [&](const reif::MustHold &) -> optional<string> { return ""; },         //
+        [&](const reif::If &) -> optional<string> { return ""; },               //
+        [&](const reif::MustNotHold &) -> optional<string> { return nullopt; }, //
+        [&](const reif::NotIf &) -> optional<string> { return nullopt; },       //
+        [&](const reif::Iff &) -> optional<string> { return nullopt; }          //
+    }
+        .visit(c.reification_condition());
+}
+
 auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> void
 {
     auto proof_lines = _proof_lines;

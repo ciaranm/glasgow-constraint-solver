@@ -98,6 +98,7 @@ add_library(glasgow_constraint_solver
         innards/literal.cc
         innards/power.cc
         innards/proofs/bits_encoding.cc
+        innards/proofs/constraint_proof_model_data.cc
         innards/proofs/emit_inequality_to.cc
         innards/proofs/names_and_ids_tracker.cc
         innards/proofs/pol_builder.cc
@@ -194,6 +195,10 @@ if(GCS_BUILD_TESTS)
     add_executable(constraint_enumeration_test constraint_enumeration_test.cc)
     target_link_libraries(constraint_enumeration_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME constraint_enumeration_test COMMAND $<TARGET_FILE:constraint_enumeration_test>)
+
+    add_executable(constraint_row_test constraint_row_test.cc)
+    target_link_libraries(constraint_row_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME constraint_row_test COMMAND $<TARGET_FILE:constraint_row_test>)
 
     add_executable(array_param_test array_param_test.cc)
     target_link_libraries(array_param_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)

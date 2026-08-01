@@ -3,6 +3,7 @@
 
 #include <gcs/constraint_id.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
+#include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_model-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables-fwd.hh>
@@ -497,6 +498,42 @@ namespace gcs::innards
          * are forced model-time under @i labels.
          */
         auto note_recover_atom_labels_in_proof(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
+
+        /**
+         * \brief Claim each of these `c[id][role]` labels for rows about to be
+         * emitted, throwing ProofError if any is already taken or if the pack
+         * repeats one.
+         *
+         * Called only by ProofModel::add_labelled_constraint's ConstraintID
+         * overloads, which is what confines the set to the `c[id][role]`
+         * namespace; the variable-encoding namespaces are deliberately out of
+         * scope, because those rows may be deleted and re-emitted. It lives here
+         * rather than in ProofModel because \ref constraint_row_label reads it,
+         * and its reader is a presolver, which holds a ProofLogger and no
+         * ProofModel --- and both are constructed with this same tracker.
+         */
+        auto claim_constraint_row_labels(const std::vector<std::string> & labels) -> void;
+
+        /**
+         * \brief The label of the row this constraint emitted under this role,
+         * or nullopt if it emitted none.
+         *
+         * Answers "can I cite this?", not "what does it say". A label is a pure
+         * function of `(id, role)`, so this needs no per-solve state beyond the
+         * claimed set, and every clone of a constraint in every thread computes
+         * the same answer.
+         *
+         * A `yes` always names exactly one row:
+         * \ref claim_constraint_row_labels rejects two rows under one label at
+         * emission time (#613), so the ambiguity a "look it up" answer would
+         * otherwise have to worry about cannot exist by the time this is asked.
+         *
+         * Pair it with innards::ConstraintProofModelData, which is how a
+         * constraint publishes *which* role names the row a citer wants;
+         * constructing a role string here instead would be guessing at another
+         * constraint's naming scheme.
+         */
+        [[nodiscard]] auto constraint_row_label(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLineLabel>;
 
         /**
          * Create a proof flag with a new identifier, named `f[index][stem]`.

@@ -630,12 +630,21 @@ The other three reification kinds are *also* difference constraints:
   stand.
 - `reif::MustNotHold` and `reif::NotIf` state the integer negation,
   `y - x <= -d-1`. For a comparison, and for a linear `MustNotHold`, that row
-  goes out under the same empty role and so *is* citable; a linear `NotIf` uses
-  the role `ltn`. These are therefore a **deliberate gap, not an
-  impossibility** — nothing in gcs constructs a comparison with either (there is
-  no user-facing class, and `s_expr()` throws on both, so they have no `.scp`
-  spelling), and closing the gap is worth doing for both donor families at once
-  rather than for one of them.
+  goes out under the same empty role and so *is* citable. These are therefore a
+  **deliberate gap, not an impossibility** — nothing in gcs constructs either
+  form of either family (there is no user-facing class, and for a comparison
+  `s_expr()` throws on both, so they have no `.scp` spelling), and closing the
+  gap is worth doing for both donor families at once rather than for one of them.
+
+  A linear `NotIf` is a special case and not a citable one. Its row goes out
+  under the role `ltn`, but what that row *says* is `cond -> sum <= value` —
+  which is the thing the constraint states must **not** hold. Nothing constructs
+  a `ReifiedLinearInequality` with `NotIf` (the six derived classes cover
+  `MustHold`, `If` and `Iff`, and `scp_reader` builds only those), so the branch
+  is unreachable and the discrepancy has never been observable; it is recorded
+  here rather than fixed because fixing an unreachable proof path belongs with
+  whatever first makes it reachable. `ConstraintProofModelData` publishes nothing
+  for it, so the presolver cannot cite it by accident.
 
 All three are counted in `skipped_reified` rather than guessed at. Two exclusions
 remain soundness requirements rather than mere incompleteness:
@@ -716,6 +725,112 @@ of each of the five reification forms and counts the `@c[`-prefixed rows in the
 `add_constraint` branch is caught by that check and by VeriPB, and by **nothing
 else**: the detection, equivalence and tripwire modes all still pass, because
 none of them looks at a proof.
+
+### Citing the donor's row: published roles, not a constructed label
+
+The presolver builds `pol`s on rows it did not emit. That is an inherent
+dependency — you cannot cite somebody else's row without depending on how they
+defined their model — so the goal is not to remove the coupling but to make it
+typed, narrow and visible from both ends.
+
+For one PR it was none of those. The presolver built the label itself:
+
+```cpp
+graph.edge_lines.push_back(ProofLineLabel{"c[" + as_string(id) + "]"});
+```
+
+which hard-codes the assumption that the donor's interesting row is the one under
+the *empty* role. That happens to be true for the two kinds the presolver lifts,
+and it is silently wrong for two of the three it does not: a comparison's
+`MustNotHold` and `NotIf` rows go out under the empty role too, and they state
+the *negated* inequality with the operands the other way round. The loop is
+correct today only because it filters on the reification condition first. Nothing
+would have caught it if that filter had ever been widened, and nothing at all
+would have caught a donor renaming its roles.
+
+Two facts make the fix small. Citation is already by label: `ProofLine` is
+`variant<ProofLineNumber, ProofLineLabel>`, so nothing needs new plumbing. And a
+label is a pure function of `(ConstraintID, role)` — clone-independent,
+thread-independent, identical in every thread by construction — where a line
+*number* is a position in a file.
+
+So the constraint publishes the role, and the tracker answers whether a row went
+out under it:
+
+```cpp
+// in the constraint's own header, beside its posted-argument accessors
+template <>
+struct innards::ConstraintProofModelData<ReifiedCompareLessThanOrMaybeEqual>
+{
+    [[nodiscard]] static auto primary_row_role(const ReifiedCompareLessThanOrMaybeEqual &) -> std::optional<std::string>;
+};
+```
+
+```cpp
+// NamesAndIDsTracker
+[[nodiscard]] auto constraint_row_label(const ConstraintID &, const std::string & role) const
+    -> std::optional<ProofLineLabel>;
+```
+
+and `Problem::each_constraint_of_type_with_proof_data` hands a presolver the pair,
+so the dependency is visible at the point of use rather than buried in a lookup.
+
+Four things this buys, in rough order of how much they matter.
+
+**A constraint that publishes nothing cannot be asked.** The primary template is
+declared and deliberately left undefined, so `ConstraintProofModelData<Foo>` for
+an unpublished `Foo` is a compile error naming the type, not a `nullopt` to
+handle. Publishing a row is a deliberate act.
+
+**The role names the row a citer *means*, so the negated forms drop out by
+construction.** `primary_row_role` returns nullopt for `MustNotHold`, `NotIf` and
+`Iff`, and it does so in `comparison.cc`, where someone changing what those rows
+say is looking. The presolver's condition filter is now a second line of defence
+rather than the only one.
+
+**"Can I cite this?" is answered by the emission path itself.** The set the
+tracker consults is the one `claim_labels` claims into, which exists anyway for
+#613's duplicate-label check. There is no second container to keep in step, and a
+`yes` always names exactly one row — two rows under one label is a hard error at
+emission time, so the ambiguity a lookup would have to worry about cannot survive
+to be asked about. That set moved from `ProofModel::Imp` into the tracker for the
+one reason that made the move worth making: a presolver holds a `ProofLogger` and
+no `ProofModel`, and both are constructed with the same tracker.
+
+**Nothing is stored per solve.** Under the intended multi-threading model — one
+OPB file, N threads each with their own constraint clones —
+`define_proof_model` runs once before the fork and `install_propagators` runs per
+thread. `emitted_labels` is write-only during model definition and read-only
+afterwards, and a label is derived from `(id, role)`, so every thread computes
+the same answer without sharing anything. A publication slot on the `Constraint`
+base would also have worked and is the fallback if the payload ever outgrows a
+role name, but it is shared mutable state and would need a write-once assert to
+stay safe. Not worth it for two strings.
+
+The residual is that `primary_row_role` is a *second* visit over the same
+`ReificationCondition` that `define_proof_model` visits, so the two can drift
+apart. It is deliberately not a field `define_proof_model` sets, because
+`define_proof_model` does not run when proofs are off and the answer must not
+depend on that. `gcs/constraint_row_test.cc` is what keeps them together: it
+posts one constraint of every reification kind of both families, resolves the
+label through the real API from inside a presolver, and checks the answer against
+the `.opb` text — a resolved label must name a row the file contains, and a
+nullopt must mean no row under that name is in it. Mutation-tested, both
+directions: publishing `""` for a comparison's `NotIf` (the mistake the old
+constructed label made) fails it, and dropping the `contains` check from
+`constraint_row_label` so it returns a constructed label unconditionally fails it.
+
+The end-to-end check is the one the registry design was validated against, and
+the outcome is unchanged: revert #596 so `Comparison` emits through the
+void-returning `add_constraint` again, and the presolver declines to lift rather
+than citing a label the `.opb` lacks. On `difference_chain --mode refute -n 40
+-k 8 --variant presolved --donor comparison --prove` that is 901 comparison edges
+lifted before and **0** after, all of them counted in `skipped_uncitable_row`,
+and VeriPB still verifies the resulting proof. That last part is the point: the
+failure mode being defended against is an *invalid* proof, not a weaker one, so
+"declines and stays verifiable" is the outcome to want. (With proofs off the same
+model lifts all 901 either way, which is also right — there is nothing to cite,
+so there is nothing to be uncitable.)
 
 ### Deview mode is the one thing the shared propagator needed
 
@@ -1919,11 +2034,14 @@ the asymptotics say it should be: `|E| >> n`, or long chains.
 - **Lifting `Iff` donors** of either family, which needs the `r` and `f` rows
   rather than the empty-role row the two supported kinds share. This one is a
   real obstacle, not a choice.
-- **Lifting `MustNotHold` and `NotIf` donors** of either family. Their rows state
-  the integer negation and are citable (empty role, except a linear `NotIf`'s
-  `ltn`), so this is a gap rather than an obstacle — deferred so that it is
-  closed for both families at once, and because nothing in gcs currently
-  constructs a comparison with either.
+- **Lifting `MustNotHold` and `NotIf` donors** of either family. A comparison's
+  rows, and a linear `MustNotHold`'s, state the integer negation under the empty
+  role and are citable, so this is a gap rather than an obstacle — deferred so
+  that it is closed for both families at once, and because nothing in gcs
+  currently constructs either form. A linear `NotIf` needs its row looked at
+  first: see the presolver section above for why the `ltn` row does not say what
+  a citer would want it to. Doing any of this means publishing the extra roles
+  through `ConstraintProofModelData`, which is where the decision now belongs.
 - **Zero-weight-cycle unification**, the fourth of the root simplification
   stage's sub-steps. The other three are implemented; see the section on it
   above, which also reports how often a zero-weight cycle actually turns up.

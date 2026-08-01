@@ -77,11 +77,6 @@ struct ProofModel::Imp
 
     map<Integer, ProofModel::CakeConstantAtoms> cake_constant_atoms;
 
-    // Every c[id][role] label emitted so far. A label is how a proof step cites
-    // a row, so two constraint rows must never share one; see claim_labels, and
-    // note the variable-encoding namespaces are deliberately not tracked here.
-    set<string> emitted_labels;
-
     string opb_file;
     // Text not yet written out. Until write_preamble() runs this holds
     // everything emitted so far (the variable set-up rows); afterwards each
@@ -119,31 +114,15 @@ auto ProofModel::advance_constraint_counter() -> ProofLineNumber
 
 auto ProofModel::claim_labels(const vector<string> & labels) -> void
 {
-    // A label exists so that a proof step can cite this row, so no two rows in
-    // the c[id][role] namespace may carry the same one: with both spelled
-    // @c[id][role], a reference to either is ambiguous, and opbdiff
-    // --match-labels pairs the two encoders' rows by label. A duplicate is
-    // always a bug in the emitting define_proof_model -- a role that does not
-    // name everything the surrounding loops vary over (#604: ValuePrecede keyed
-    // its ub/ex roles by position but not by chain value, inside a loop over
-    // values) -- so it is a hard error rather than a first-wins or last-wins
-    // pick.
-    //
-    // Only the ConstraintID-taking overloads claim, which is what confines this
-    // to c[id][role]. The variable-encoding namespaces -- @i[name][...] for a
-    // real variable, @po[index] for a proof-only one -- are deliberately left
-    // out: a variable's encoding rows can be deleted and re-emitted to keep the
-    // proof database small, so a repeat there is by design rather than a naming
-    // bug. Their uniqueness is the namer's business, not this check's.
-    //
-    // The whole pack is claimed before any of it is emitted, so that the
-    // equality overload's two halves are all-or-nothing: a rejected pair must
-    // not leave its LE row behind in the OPB. Claiming them together is also
-    // what catches a caller passing the same role for both halves.
-    for (const auto & label : labels)
-        if (! _imp->emitted_labels.insert(label).second)
-            throw ProofError{"two OPB rows emitted under the same label '@" + label +
-                "': a role must name everything that varies, so that each row can be cited unambiguously"};
+    // The set itself lives in the tracker, not here, because it has a second
+    // reader: NamesAndIDsTracker::constraint_row_label answers "was a row
+    // emitted under this (id, role), so may I cite it?", and its caller is a
+    // presolver, which holds a ProofLogger and no ProofModel. Both objects are
+    // constructed with the same tracker, so moving the set there is what puts it
+    // in reach of both without handing anyone a ProofModel after the model is
+    // closed. The claiming rule, and the reasons for it, are documented on
+    // NamesAndIDsTracker::claim_constraint_row_labels.
+    _imp->tracker.claim_constraint_row_labels(labels);
 }
 
 auto ProofModel::emit_constraint_label(const string & constraint_id, const string & role) -> ProofLineLabel
