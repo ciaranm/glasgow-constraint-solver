@@ -56,6 +56,7 @@ using std::min;
 using std::nullopt;
 using std::optional;
 using std::pair;
+using std::set;
 using std::shared_ptr;
 using std::string;
 using std::stringstream;
@@ -139,6 +140,14 @@ struct NamesAndIDsTracker::Imp
 {
     ProofModel * model = nullptr;
     ProofLogger * logger = nullptr;
+
+    // Every c[id][role] label emitted so far. A label is how a proof step cites
+    // a row, so two constraint rows must never share one; see
+    // claim_constraint_row_labels, and note the variable-encoding namespaces are
+    // deliberately not tracked here. Write-only while the model is being
+    // defined, read-only afterwards, and derived entirely from (id, role) --- so
+    // it needs no synchronisation under the intended one-OPB, N-thread model.
+    set<string> emitted_constraint_row_labels;
 
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     // Indexed by variable index (variables are allocated with sequential
@@ -1562,6 +1571,46 @@ auto NamesAndIDsTracker::note_bounds_not_trivially_derivable(const SimpleOrProof
 auto NamesAndIDsTracker::note_recover_atom_labels_in_proof(const SimpleOrProofOnlyIntegerVariableID & id) -> void
 {
     _imp->vars_recover_labels.insert(id);
+}
+
+auto NamesAndIDsTracker::claim_constraint_row_labels(const vector<string> & labels) -> void
+{
+    // A label exists so that a proof step can cite this row, so no two rows in
+    // the c[id][role] namespace may carry the same one: with both spelled
+    // @c[id][role], a reference to either is ambiguous, and opbdiff
+    // --match-labels pairs the two encoders' rows by label. A duplicate is
+    // always a bug in the emitting define_proof_model -- a role that does not
+    // name everything the surrounding loops vary over (#604: ValuePrecede keyed
+    // its ub/ex roles by position but not by chain value, inside a loop over
+    // values) -- so it is a hard error rather than a first-wins or last-wins
+    // pick.
+    //
+    // Only the ConstraintID-taking overloads claim, which is what confines this
+    // to c[id][role]. The variable-encoding namespaces -- @i[name][...] for a
+    // real variable, @po[index] for a proof-only one -- are deliberately left
+    // out: a variable's encoding rows can be deleted and re-emitted to keep the
+    // proof database small, so a repeat there is by design rather than a naming
+    // bug. Their uniqueness is the namer's business, not this check's.
+    //
+    // The whole pack is claimed before any of it is emitted, so that the
+    // equality overload's two halves are all-or-nothing: a rejected pair must
+    // not leave its LE row behind in the OPB. Claiming them together is also
+    // what catches a caller passing the same role for both halves.
+    for (const auto & label : labels)
+        if (! _imp->emitted_constraint_row_labels.insert(label).second)
+            throw ProofError{"two OPB rows emitted under the same label '@" + label +
+                "': a role must name everything that varies, so that each row can be cited unambiguously"};
+}
+
+auto NamesAndIDsTracker::constraint_row_label(const ConstraintID & id, const string & role) const -> optional<ProofLineLabel>
+{
+    // Built the same way ProofModel::emit_constraint_label builds it, because it
+    // has to be the same string: that is what makes this a pure function of
+    // (id, role) rather than a lookup into per-solve state.
+    auto label = "c[" + as_string(id) + "]" + (role.empty() ? "" : "[" + role + "]");
+    if (! _imp->emitted_constraint_row_labels.contains(label))
+        return nullopt;
+    return ProofLineLabel{label};
 }
 
 auto NamesAndIDsTracker::create_proof_flag(const string & name) -> ProofFlag
