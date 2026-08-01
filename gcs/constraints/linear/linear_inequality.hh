@@ -66,6 +66,55 @@ namespace gcs
         explicit ReifiedLinearInequality(
             WeightedSum coeff_vars, Integer value, ReificationCondition cond, std::optional<std::size_t> incremental_threshold = std::nullopt);
 
+        /**
+         * \name Posted arguments, for presolvers.
+         *
+         * These read back the constraint exactly as it was constructed, so that
+         * a presolver enumerating a Problem (see Problem::each_constraint_of_type)
+         * can recognise a shape it knows how to improve upon --- for example, a
+         * two-term `+1` / `-1` inequality is a difference constraint. They are
+         * deliberately the constructor's arguments and nothing else: no
+         * prepare()-time snapshot is exposed, because a presolver runs with a
+         * State and can ask that for current bounds itself.
+         *
+         * Note that this is the *normalised* form. LinearGreaterThanEqual and
+         * friends negate their coefficients and their right-hand side in their
+         * constructors, so they read back as the `<=` they became; and because
+         * clone() (which is what Problem stores) returns a
+         * ReifiedLinearInequality whatever the derived type was, the reification
+         * condition, not the C++ type, is what distinguishes the plain form from
+         * the `If` and `Iff` ones.
+         *
+         * @{
+         */
+
+        /**
+         * \brief The weighted terms on the left hand side, as posted, with
+         * constants appearing as ConstantIntegerVariableID.
+         */
+        [[nodiscard]] auto coefficients_and_variables() const GCS_LIFETIME_BOUND -> const WeightedSum &
+        {
+            return _coeff_vars;
+        }
+
+        /**
+         * \brief The right hand side, as posted.
+         */
+        [[nodiscard]] auto value() const -> Integer
+        {
+            return _value;
+        }
+
+        /**
+         * \brief The reification condition, as posted: reif::MustHold for a
+         * plain LinearLessThanEqual, reif::If for the `If` form, and so on.
+         */
+        [[nodiscard]] auto reification_condition() const GCS_LIFETIME_BOUND -> const ReificationCondition &
+        {
+            return _reif_cond;
+        }
+
+        ///@}
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;

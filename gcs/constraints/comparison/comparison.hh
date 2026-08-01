@@ -46,6 +46,66 @@ namespace gcs
         explicit ReifiedCompareLessThanOrMaybeEqual(
             const IntegerVariableID v1, const IntegerVariableID v2, ReificationCondition cond, bool or_equal, bool vars_swapped = false);
 
+        /**
+         * \name Posted arguments, for presolvers.
+         *
+         * These read back the constraint exactly as it was constructed, so that
+         * a presolver enumerating a Problem (see Problem::each_constraint_of_type)
+         * can recognise a shape it knows how to improve upon --- for example,
+         * `x <= y + d`, where the offset is a view, is a difference constraint.
+         * They are deliberately the constructor's arguments and nothing else: no
+         * prepare()-time snapshot is exposed, because a presolver runs with a
+         * State and can ask that for current bounds itself.
+         *
+         * Note that this is the *normalised* form: the whole family is stored as
+         * `left <` or `left <=` `right`, so GreaterThan(a, b) reads back as
+         * left = b, right = a. (The `vars_swapped` flag that remembers which way
+         * round it was posted is not exposed: it only affects the constraint's
+         * .scp spelling, and no presolver has any use for it.) Because clone()
+         * --- which is what Problem stores --- returns a
+         * ReifiedCompareLessThanOrMaybeEqual whatever the derived type was, the
+         * reification condition and or_equal(), not the C++ type, are what
+         * distinguish LessThan from LessThanEqualIff and the rest.
+         *
+         * @{
+         */
+
+        /**
+         * \brief The operand on the smaller side of the comparison, as posted,
+         * which may be a constant or a view.
+         */
+        [[nodiscard]] auto left_variable() const -> IntegerVariableID
+        {
+            return _v1;
+        }
+
+        /**
+         * \brief The operand on the larger side of the comparison, as posted,
+         * which may be a constant or a view.
+         */
+        [[nodiscard]] auto right_variable() const -> IntegerVariableID
+        {
+            return _v2;
+        }
+
+        /**
+         * \brief Is this the `<=` form (rather than the `<` form)?
+         */
+        [[nodiscard]] auto or_equal() const -> bool
+        {
+            return _or_equal;
+        }
+
+        /**
+         * \brief The reification condition, as posted: reif::MustHold for a
+         * plain LessThan, reif::If for the `If` form, and so on.
+         */
+        [[nodiscard]] auto reification_condition() const GCS_LIFETIME_BOUND -> const ReificationCondition &
+        {
+            return _reif_cond;
+        }
+
+        ///@}
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;

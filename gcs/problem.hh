@@ -15,6 +15,7 @@
 #include <gcs/variable_id.hh>
 
 #include <array>
+#include <concepts>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -221,10 +222,62 @@ namespace gcs
         [[nodiscard]] auto each_presolver() const -> std::generator<Presolver &>;
 
         /**
+         * \brief Yields every constraint posted to this Problem so far, in
+         * posting order.
+         *
+         * The yielded object is the clone Problem::post() made, not the caller's
+         * instance, and it is never moved from: installation clones again (see
+         * create_propagators), so the arguments read back here are exactly what
+         * was posted, however many searches have been run over this Problem.
+         *
+         * \par What a Presolver sees
+         *
+         * Presolvers run after create_propagators and after the proof model has
+         * been finalised (see solve_with in solve.cc), so at Presolver::run time
+         * this yields precisely the constraints that were installed as
+         * propagators and written to the OPB, and it keeps yielding them for
+         * every later presolver: nothing removes a posted constraint. A
+         * presolver that posts a *new* constraint will be seen by presolvers
+         * that run after it, but that constraint gets no propagator and no OPB
+         * row --- both of those doors have already closed --- so a presolver
+         * that wants to add propagation must install it into the Propagators it
+         * is handed, exactly as AutoTable does.
+         *
          * \warning The yielded references alias objects owned by this Problem,
          * and are valid only while the Problem is alive.
          */
         [[nodiscard]] auto each_constraint() const -> std::generator<const Constraint &>;
+
+        /**
+         * \brief Yields every posted constraint that is dynamically a
+         * `Constraint_`, in posting order: each_constraint() filtered and
+         * downcast.
+         *
+         * This is the enumeration entry point for presolvers that work over a
+         * particular constraint shape --- combine it with that constraint's
+         * argument accessors, as the difference-logic and Cumulative presolvers
+         * do. Everything each_constraint() guarantees about timing and about
+         * arguments being as-posted applies here unchanged.
+         *
+         * \warning Ask for the type Problem *stores*, which is the type
+         * Constraint::clone() returns, and which for a constraint family is
+         * usually the family's shared base: posting a LessThan stores a
+         * ReifiedCompareLessThanOrMaybeEqual and posting a LinearLessThanEqual
+         * stores a ReifiedLinearInequality. Asking for the derived,
+         * user-facing type is not a compile error, it simply matches nothing.
+         * Use the constraint's accessors (typically its reification condition)
+         * to tell members of a family apart.
+         *
+         * \warning The yielded references alias objects owned by this Problem,
+         * and are valid only while the Problem is alive.
+         */
+        template <std::derived_from<Constraint> Constraint_>
+        [[nodiscard]] auto each_constraint_of_type() const -> std::generator<const Constraint_ &>
+        {
+            for (const auto & c : each_constraint())
+                if (auto typed = dynamic_cast<const Constraint_ *>(&c))
+                    co_yield *typed;
+        }
 
         /**
          * \brief Returns a generator giving each variable together with its
