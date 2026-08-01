@@ -771,13 +771,13 @@ not, the subsumption claim would be wrong.
 ### Why the tests assert on counts
 
 The presolver is invisible from the outside. A version that silently lifted
-nothing — because, say, `clone()` stopped flattening a posted
-`LinearLessThanEqual` to `ReifiedLinearInequality`, so
-`each_constraint_of_type<ReifiedLinearInequality>()` no longer matched it —
-would pass **every** validation we would otherwise write: solution-set
-equivalence (a no-op presolver preserves solutions), the OPB byte-diff
-(byte-identical is the *expected* result), and VeriPB (there would be nothing
-new to check).
+nothing — because, say, `clone()` started returning a type from outside the
+`ReifiedLinearInequality` family, so
+`each_constraint_of_type<ReifiedLinearInequality>()` no longer matched a posted
+`LinearLessThanEqual` — would pass **every** validation we would otherwise
+write: solution-set equivalence (a no-op presolver preserves solutions), the OPB
+byte-diff (byte-identical is the *expected* result), and VeriPB (there would be
+nothing new to check).
 
 So the presolver reports what it did in `DifferenceLogicStats`, and three
 things guard it:
@@ -785,17 +785,37 @@ things guard it:
 - `static_assert`s in `run()` pinning the class relationships the enumeration
   relies on, so a hierarchy change is a compiler error at the site that needs
   fixing;
-- a **runtime cross-check** of the typed enumeration against
-  `Constraint::constraint_type()`, which does not depend on the hierarchy at all:
-  if more constraints report `lin_less_equal` than the typed enumeration
-  yielded, the presolver throws;
-- assertions on the counts, and the propagation-count differential below.
+- `gcs/constraint_enumeration_test.cc`, which posts one of every member of both
+  families and requires the base enumeration to recover each with the arguments
+  posted. That is the contract this presolver rests on, stated where anyone
+  else's presolver can rely on it too;
+- assertions on the counts here, and the propagation-count differential below.
 
 Every one of those failure messages names the invariant and says explicitly not
-to update the expectation. Mutation-tested: asking for `LinearLessThanEqual`
-instead of `ReifiedLinearInequality` — the exact regression being defended
-against — trips the cross-check, and with the cross-check also disabled all four
-test modes fail, each naming the presolver.
+to update the expectation. Mutation-tested: asking the enumeration for
+`LinearLessThanEqual` instead of `ReifiedLinearInequality` — a stand-in for the
+regression being defended against, since it makes the enumeration yield nothing
+in exactly the same way — fails all five presolver test modes, each naming the
+presolver. (That mutation is local to the presolver, so it does not disturb
+`constraint_enumeration_test`; the real regression, which is in `clone()`, would
+fail that one first.)
+
+There is deliberately **no runtime self-audit**. An earlier version cross-checked
+the typed enumeration against `Constraint::constraint_type()` on every run, and
+threw if more constraints reported `lin_less_equal` than the enumeration yielded.
+It went, for four reasons. Whether the enumeration works is a property of gcs's
+own types, fixed when gcs is compiled, so nothing about a user's model can change
+the answer — checking it per solve, on the user's data, is the wrong place, which
+is exactly the distinction the `static_assert`s get right. The scenario it named
+could not happen: `each_constraint_of_type` is a `dynamic_cast`, so asking for the
+base matches whatever a family member clones to, flattened or not. It could decay
+into a no-op in precisely the way it existed to prevent, since the by-type count
+turns to zero if the `constraint_type()` string is ever renamed, and `0 > seen` is
+false — and in production you cannot fix that by requiring a non-zero count,
+because a model legitimately may contain no linears, while in a test with a known
+corpus you can. And the failure it guarded is a performance regression, not an
+unsound one: lifting nothing leaves every answer correct, which does not warrant
+throwing out of a user's solve.
 
 The comparison family gets the same treatment, and needs it more, because it can
 regress *on its own*: a model built entirely out of `x <= y + d` whose comparison
