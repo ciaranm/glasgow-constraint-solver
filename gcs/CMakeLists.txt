@@ -562,6 +562,17 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(deletion_exempt_test PRIVATE glasgow_constraint_solver)
     add_test(NAME deletion_exempt_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:deletion_exempt_test>)
 
+    # One entry per scenario: a descent with many incumbents, where every improvement but the
+    # first must retire its predecessor, and a find-first run, where there is nothing to
+    # supersede and the machinery must stay entirely inert. Distinct basenames because a
+    # parallel ctest would otherwise race over one set of proof files (issue #562).
+    add_executable(incumbent_retire_test innards/proofs/incumbent_retire_test.cc)
+    target_link_libraries(incumbent_retire_test PRIVATE glasgow_constraint_solver)
+    foreach(scenario many first)
+        add_test(NAME incumbent_retire_${scenario}_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash
+            --basename incumbent_retire_${scenario}_test $<TARGET_FILE:incumbent_retire_test> --scenario ${scenario})
+    endforeach()
+
     add_executable(eq_window_test innards/proofs/eq_window_test.cc)
     target_link_libraries(eq_window_test PRIVATE glasgow_constraint_solver)
     add_test(NAME eq_window_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:eq_window_test>)

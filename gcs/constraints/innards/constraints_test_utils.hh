@@ -173,7 +173,12 @@ namespace gcs::test_innards
      */
     [[nodiscard]] inline auto verify_proof_and_dispose(const std::string & proof_name) -> bool
     {
-        if (! run_veripb(proof_name + ".opb", proof_name + ".pbp"))
+        // -c (--force-checked-deletion) for the same reason run_test_and_verify.bash passes
+        // it: not soundness (VeriPB downgrades rather than accepts, and enforces the
+        // downgrade at the conclusions that need it) but diagnosability, so a deletion whose
+        // implication does not hold fails at the deletion instead of at some distant
+        // conclusion. See dev_docs/brancher-design.md, "Validated delc mechanics".
+        if (! run_veripb("-c", proof_name + ".opb", proof_name + ".pbp"))
             return false;
         cake_probe_chain(proof_name); // PROBE: measure workflow-2 chain (no-op unless GCS_TEST_CAKE)
         dispose_of_proof_files(proof_name);

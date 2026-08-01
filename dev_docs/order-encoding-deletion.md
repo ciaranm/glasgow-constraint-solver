@@ -405,11 +405,21 @@ frontend proofs.
   stranded without it — and it deliberately applies to the objective only, because
   exempting a bound-branched variable would defeat the split win, which *is* deleting its
   stepped-over chain.
-- **In progress:** the clean Brancher abstraction (step 2). Stages A, B, B', B'' and C have
-  landed — the `BranchDecision` / `BacktrackAdvance` types, the split families' bound
-  advances, the eviction primitives plus their always-on residency bookkeeping, and the
-  eq-atom window — so the direct guess/eq/aux hoist wiring is on its way out but is still
-  what the shipped path uses. Stages C/D/E remain;
+- **Incumbent retirement (stage D).** Each improving solution leaves two permanent lines
+  behind — the *core* improvement constraint the `soli` produces, and the *derived* Top unit
+  `~ge(v) >= 1` after it — so an optimisation descent accumulated O(#incumbents) of each.
+  The next improving solution now retires both: checked deletion (`delc`) for the core one,
+  since the tighter bound implies it, and plain deletion for the derived one, since the
+  order chain still propagates the old bound from the new. Resident count is O(1) whatever
+  the descent's length. From this stage on both verification funnels pass **`-c`
+  (`--force-checked-deletion`)**, so a deletion whose implication does not hold fails at the
+  deletion rather than at a distant conclusion.
+- **In progress:** the clean Brancher abstraction (step 2). Stages A, B, B', B'', C and D
+  have landed — the `BranchDecision` / `BacktrackAdvance` types, the split families' bound
+  advances, the eviction primitives plus their always-on residency bookkeeping, the
+  eq-atom window, the objective exemption and the incumbent retirement — so the direct
+  guess/eq/aux hoist wiring is on its way out but is still what the shipped path uses.
+  Only stage E remains, and it is the go/no-go gate for the whole stack;
   [brancher-design.md](brancher-design.md) is the authority on each. Also future:
   short-reason flag / deview-companion level-scoping (currently inert), and the bridge
   redesign (deprioritised — step 1b measured it as freeing 0 %).
@@ -547,8 +557,8 @@ win-recovery motivation is gone. Revisit only if a view/product-heavy
 freed chains would be long enough to matter.
 
 **Ordering decided (2026-07): 2b first (done, above), then step 2.** Step 2 is under
-way — A, B and B' are in — and it inherits the objective-variable-exemption follow-up
-from 2b as its stage C; 3 stays parked.
+way — A, B, B', B'', C and D are in — and it inherited the objective-variable-exemption
+follow-up from 2b as its stage C; 3 stays parked.
 
 **Also:** decide productionisation (keep flag-gated vs default-on — current verdict:
 flag-gated), and — cleanup — the superseded dormant `Links` mode can be removed.

@@ -67,6 +67,14 @@ namespace gcs::innards
         // Top. See dev_docs/brancher-design.md, "The hoist-out rule".
         auto note_top_eq_references(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> void;
 
+        // Record the incumbent an improving solution has just left resident, and take the
+        // one it supersedes back out of the proof: `delc` its improvement constraint, `del`
+        // its Top unit, and evict the threshold that unit was pinning. Called from
+        // solution() on the `soli` path under OrderEncodingDeletion::Literals only; the
+        // first incumbent records and retires nothing. See dev_docs/brancher-design.md,
+        // "Payload 2".
+        auto retire_superseded_incumbent(const IntegerVariableID & objective, Integer value, ProofLine improvement_line, ProofLine unit_line) -> void;
+
     public:
         /**
          * \name Constructors, destructors, and the like.
@@ -355,6 +363,30 @@ namespace gcs::innards
          * with the bucket the lines actually sit in.
          */
         auto delete_proof_lines_at_level(const std::vector<ProofLine> & lines, int level) -> void;
+
+        /**
+         * \brief The *checked* counterpart of \c delete_proof_lines_at_level: emit a `delc`
+         * for each line, which must be a **core** constraint currently tagged at \p level,
+         * and drop it from that level's bucket.
+         *
+         * VeriPB requires deletion from core to be justified; the autoproof form `delc <id>;`
+         * emitted here discharges that through its RUP shortcut, which is enough whenever
+         * what remains resident implies what is going -- the superseded objective-improvement
+         * constraint of payload 2 being the case this exists for.
+         *
+         * Note that VeriPB decides whether to check a deletion from the *constraint set the
+         * target is in*, not from which of the two spellings was used, so `del id` on a core
+         * constraint is checked just the same. What this form adds is the **origin
+         * assertion**: `delc` on a derived constraint is rejected outright. So the two
+         * deleters are not interchangeable -- use \c delete_proof_lines_at_level for
+         * everything the proof itself derived, and let a mix-up fail loudly.
+         *
+         * A failed autoproof **downgrades rather than rejects** without
+         * `--force-checked-deletion`, and the downgrade only bites at a later conclusion.
+         * That is sound (VeriPB enforces it at exactly the conclusions that need it) but it
+         * is not diagnosable, which is why the suites run `-c` from stage D on.
+         */
+        auto checked_delete_proof_lines_at_level(const std::vector<ProofLine> & lines, int level) -> void;
 
         /**
          * Hoist a search-introduced order literal `id >= v` to \p target_level:

@@ -4,12 +4,14 @@
 
 #include <iostream>
 #include <optional>
+#include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
 
 using std::cerr;
 using std::nullopt;
+using std::vector;
 
 // Driver for the stage-C frontier deletion exemption (dev_docs/brancher-design.md,
 // "Payload 3"), with the mode and the chain gate set in code so the test does not depend on
@@ -79,6 +81,22 @@ auto main() -> int
     check(tracker.live_order_literal_count(ord) < ord_before, "the exemption held an ORDINARY variable resident too, which would suppress the win");
     for (Integer v = 10_i; v <= 40_i; v += 10_i)
         check(tracker.order_literal_is_live(obj, v), "an exempt threshold went missing across the forget");
+
+    // The exemption against payload 2's pin. Every improving solution hoists the objective's
+    // new threshold to Top with a SoliHoist cause, and on an exempt variable that threshold is
+    // already Top-resident, so the hoist contributes nothing but the pin -- leaving exactly the
+    // sole-pin shape eviction otherwise acts on. The exemption has to outrank it, or it would
+    // hold only until the first improving solution, and only for the objective, which is the
+    // one variable it exists for. The ordinary variable is the control: the same pin over it
+    // must still evict, or the refusal would be a blanket one and stage D's eviction half
+    // would be dead everywhere rather than deferring to stage C here.
+    tracker.need_gevar(ord, 20_i); // the forget above took the control's copy out
+    tracker.hoist_live_order_literals_toward_level(vector<Literal>{obj < 20_i, ord < 20_i}, 0, OrderEncodingResidencyCause::SoliHoist);
+    check(! tracker.evict_order_literal(obj, 20_i, OrderEncodingResidencyCause::SoliHoist),
+        "an exempt variable's threshold was evicted once a soli pinned it");
+    check(tracker.order_literal_is_live(obj, 20_i), "the refused eviction took the threshold out anyway");
+    check(tracker.evict_order_literal(ord, 20_i, OrderEncodingResidencyCause::SoliHoist),
+        "the same pin over an ORDINARY variable was refused too, so the refusal is not the exemption");
 
     // ... and the definitions really are still there, not just believed to be: multi-hop
     // order propagation over a chain the forget would otherwise have taken out.

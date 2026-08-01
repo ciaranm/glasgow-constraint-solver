@@ -52,7 +52,15 @@ else
     "$prog" --prove "$@" || exit 1
 fi
 
-veripb "${proofname}.opb" "${proofname}.pbp" || exit 1
+# -c (--force-checked-deletion) is not a soundness requirement: VeriPB's default is to
+# downgrade a failed deletion check rather than accept it, and it then enforces the downgrade
+# at exactly the conclusions that need it. It is a DIAGNOSTIC requirement. Without it a bad
+# deletion surfaces at some later conclusion -- "claimed upper bound mismatches the best
+# recorded", or a constraint that has already been deleted -- a long way from the line that
+# caused it. With it, the run stops at the deletion. Order-encoding deletion emits deletions
+# by the thousand, so that distance is the difference between a diagnosable failure and a
+# puzzle. See dev_docs/brancher-design.md, "Validated delc mechanics".
+veripb -c "${proofname}.opb" "${proofname}.pbp" || exit 1
 
 # Verification passed, so dispose of the proof unless asked to preserve it.
 dispose_proof "$proofname"
