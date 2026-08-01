@@ -10,6 +10,7 @@
 
 #include <util/overloaded.hh>
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -22,6 +23,34 @@ using std::nullopt;
 using std::optional;
 using std::size_t;
 using std::vector;
+using std::ranges::find;
+using std::ranges::find_if;
+
+namespace
+{
+    // The propagator's hot data: one of these per edge, scanned end to end once
+    // per Bellman-Ford round, so its *size* is a measurable property rather than
+    // a detail. Carrying the edge's optional<IntegerVariableCondition> inline
+    // took DifferenceGraphEdge from 32 bytes to 96 and cost 2.9x on
+    // examples/difference_chain at n = 640 --- 0.32 s to 0.93 s with the
+    // propagation and recursion counts unchanged, i.e. pure memory traffic in
+    // the innermost loop.
+    //
+    // So DifferenceGraphEdge stays the convenient *construction* type, with the
+    // condition attached to the edge it belongs to, and install_difference_
+    // propagator repacks it once: arcs here, conditions in a parallel array read
+    // only when the active set is snapshotted (once per call) and when a reason
+    // is built (only when something is inferred). Never inside a round.
+    struct DifferenceArc
+    {
+        size_t from;
+        size_t to;
+        Integer d;
+        size_t posted_index;
+    };
+
+    static_assert(sizeof(DifferenceArc) <= 32, "the difference-logic relaxation loop scans this array once per round; keep it small");
+}
 
 auto gcs::innards::deview_difference_operand(const IntegerVariableID & var) -> optional<DeviewedDifferenceOperand>
 {
@@ -39,19 +68,80 @@ auto gcs::innards::deview_difference_operand(const IntegerVariableID & var) -> o
 
 auto gcs::innards::install_difference_propagator(Propagators & propagators, const ConstraintID & constraint_id, DifferenceGraph graph) -> void
 {
-    if (graph.edges.empty() && graph.static_bounds.empty())
+    if (graph.edges.empty() && graph.static_bounds.empty() && graph.disallowed_conditions.empty())
         return;
 
     Triggers triggers;
     for (const auto & v : graph.nodes)
         triggers.on_bounds.emplace_back(v);
 
+    // A half-reified edge joins the graph the moment its condition becomes
+    // true, so the propagator must wake on that as well as on the nodes'
+    // bounds. `on_change' on the condition's variable is the coarsest trigger
+    // gcs offers that is guaranteed to catch it: a condition can become true
+    // through an interior removal (`x != v' the instant v leaves the domain),
+    // which `on_bounds' does not see, and `on_instantiated' fires strictly less
+    // often still (`x >= v' can become true long before x is fixed). Nothing
+    // finer is needed, because there is no cheaper "becomes true" trigger and
+    // the refined per-literal watches would have to be armed one per condition
+    // anyway. Waking when a condition becomes *false* is not needed at all ---
+    // an inactive edge simply does not participate, and no inference is lost by
+    // finding that out later --- but `on_change' cannot distinguish the two
+    // directions, and paying for the extra wake is cheaper than the machinery
+    // to avoid it.
+    //
+    // Deliberately not deduplicated against the node list: a variable that is
+    // both a graph node and somebody's condition would then have to give up one
+    // of the two trigger kinds, and a duplicate wake is merely wasted work.
+    {
+        vector<IntegerVariableID> condition_vars;
+        auto note = [&](const IntegerVariableCondition & c) {
+            if (condition_vars.end() == find(condition_vars, c.var))
+                condition_vars.push_back(c.var);
+        };
+        for (const auto & e : graph.edges)
+            if (e.cond)
+                note(*e.cond);
+        for (const auto & sb : graph.static_bounds)
+            if (sb.cond)
+                note(*sb.cond);
+        for (const auto & dc : graph.disallowed_conditions)
+            note(dc.cond);
+        for (const auto & v : condition_vars)
+            triggers.on_change.emplace_back(v);
+    }
+
+    // Repack into the hot arc array plus a parallel condition array; see
+    // DifferenceArc. The condition array stays *empty* when nothing is
+    // conditional, which is both the check the propagator uses to take the
+    // straight-through path and a guarantee that an unconditional system pays
+    // nothing at all for this feature.
+    vector<DifferenceArc> arcs;
+    vector<optional<IntegerVariableCondition>> arc_conditions;
+    arcs.reserve(graph.edges.size());
+    for (const auto & e : graph.edges)
+        arcs.push_back(DifferenceArc{e.from, e.to, e.d, e.posted_index});
+    if (graph.edges.end() != find_if(graph.edges, [](const auto & e) { return e.cond.has_value(); })) {
+        arc_conditions.reserve(graph.edges.size());
+        for (const auto & e : graph.edges)
+            arc_conditions.push_back(e.cond);
+    }
+
     propagators.install(
         constraint_id,
-        [nodes = move(graph.nodes), graph_edges = move(graph.edges), static_bounds = move(graph.static_bounds), edge_lines = move(graph.edge_lines)](
-            const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+        [nodes = move(graph.nodes), arcs = move(arcs), arc_conditions = move(arc_conditions), static_bounds = move(graph.static_bounds),
+            disallowed_conditions = move(graph.disallowed_conditions),
+            edge_lines = move(graph.edge_lines)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             auto n = nodes.size();
-            auto m = graph_edges.size();
+            auto m = arcs.size();
+            // arc_conditions is either empty --- nothing in this system is
+            // conditional, and no per-edge storage exists at all --- or exactly
+            // as long as arcs. Only the cold paths go through here; see
+            // DifferenceArc for why the conditions are not in the arcs.
+            auto condition_of = [&](size_t e) -> const optional<IntegerVariableCondition> & {
+                static const optional<IntegerVariableCondition> none;
+                return arc_conditions.empty() ? none : arc_conditions[e];
+            };
 
             // Every pol below cites an edge row in deview mode. For rows this
             // constraint emitted itself that is a no-op: they are already over
@@ -68,20 +158,83 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                 return pol;
             };
 
-            // Static bounds first: an edge with a constant operand is a plain
+            // A half-reified edge whose condition says `cond -> 0 <= d' with
+            // d < 0 says `!cond', and saying so is a soundness obligation, not a
+            // nicety: dropping the edge would licence solutions in which cond
+            // holds and the constraint is violated. The row is `M.~cond >= -d'
+            // with -d >= 1, which is the unit clause `~cond' after saturation,
+            // so plain RUP against it suffices and nothing in the state is
+            // involved. (Unconditionally this is a root contradiction instead;
+            // see DifferenceConstraints::install_propagators.)
+            for (const auto & dc : disallowed_conditions)
+                if (LiteralIs::DefinitelyFalse != state.test_literal(dc.cond))
+                    inference.infer(logger, ! dc.cond, JustifyUsingRUP{}, NoReason{});
+
+            // Static bounds next: an edge with a constant operand is a plain
             // bound on the other operand, and once applied it is just part of
-            // the state that Bellman-Ford seeds from. These never change, so
-            // after the first call every one of these is a no-op.
+            // the state that Bellman-Ford seeds from. An unconditional one never
+            // changes, so after the first call it is a no-op; a conditional one
+            // applies from the moment its condition holds, and cites it.
             for (const auto & sb : static_bounds) {
+                if (sb.cond && LiteralIs::DefinitelyTrue != state.test_literal(*sb.cond))
+                    continue;
+                Reason why = sb.cond ? Reason{ExplicitReason{ReasonLiterals{{*sb.cond}}}} : Reason{NoReason{}};
                 if (sb.is_lower) {
                     if (state.lower_bound(nodes[sb.node]) < sb.value)
-                        inference.infer_greater_than_or_equal(logger, nodes[sb.node], sb.value, JustifyUsingRUP{}, NoReason{});
+                        inference.infer_greater_than_or_equal(logger, nodes[sb.node], sb.value, JustifyUsingRUP{}, why);
                 }
                 else {
                     if (state.upper_bound(nodes[sb.node]) > sb.value)
-                        inference.infer_less_than(logger, nodes[sb.node], sb.value + 1_i, JustifyUsingRUP{}, NoReason{});
+                        inference.infer_less_than(logger, nodes[sb.node], sb.value + 1_i, JustifyUsingRUP{}, why);
                 }
             }
+
+            // Which edges are in the graph *for this call*. A half-reified edge
+            // participates exactly while its condition currently holds; the
+            // paper's E' set, restricted to the entailed half, since nothing
+            // here infers a condition from the graph.
+            //
+            // Snapshotting once, rather than re-testing as we go, is what keeps
+            // the round bound and the cycle-extraction argument in
+            // dev_docs/difference-logic.md applicable verbatim: both are
+            // statements about one Bellman-Ford run over one fixed edge set, and
+            // the edge set is now fixed for the duration of the call rather than
+            // for the lifetime of the constraint. Nothing else in those
+            // arguments mentions where the edges came from.
+            //
+            // The snapshot also stays *correct* as inferences land during the
+            // call, which is why it is safe to cite a snapshotted condition in a
+            // reason later on. A literal that is definitely true holds for every
+            // value in the current domain, so it holds for every value in any
+            // subset of it; all this propagator does is shrink domains, and a
+            // domain shrunk to empty is a contradiction, which stops the call.
+            // So a condition true at snapshot time is still true at every
+            // inference made from it.
+            //
+            // An unconditional system is not snapshotted at all, and iterates
+            // the arc array straight through. That is not fastidiousness: the
+            // snapshot is a level of indirection inside the innermost loop, and
+            // going through it unconditionally cost 45% on
+            // examples/difference_chain at n = 640 (0.32 s to 0.47 s) with the
+            // propagation count unchanged. The branch is on the *outside* of the
+            // per-edge loop, so the conditional case pays nothing for it either.
+            vector<size_t> active_edges;
+            auto all_active = arc_conditions.empty();
+            if (! all_active) {
+                active_edges.reserve(m);
+                for (size_t e = 0; e < m; ++e)
+                    if (! arc_conditions[e] || LiteralIs::DefinitelyTrue == state.test_literal(*arc_conditions[e]))
+                        active_edges.push_back(e);
+            }
+
+            auto for_each_active_edge = [&](auto && relax) {
+                if (all_active)
+                    for (size_t e = 0; e < m; ++e)
+                        relax(e);
+                else
+                    for (auto e : active_edges)
+                        relax(e);
+            };
 
             // Both passes walk a predecessor relation, one forwards along the
             // edges and one backwards, so each is parameterised by which end of
@@ -96,6 +249,29 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
             // `0 >= -(cycle weight)' with the right hand side at least 1. No
             // domain state is involved, hence the empty reason.
             //
+            // A half-reified edge on the cycle contributes one extra term,
+            // `M.~cond', which does not telescope. Summing leaves
+            // `sum_i M_i.~cond_i >= -(cycle weight)', and one saturate turns it
+            // into the clause `~cond_1 v ... v ~cond_k' --- the learned clause,
+            // and exactly the shape hand-verified against real gcs OPB output in
+            // reified_hand.pbp before any of this was written. Every such
+            // condition therefore has to appear in the reason: the refutation is
+            // conditional on precisely them, and citing fewer would claim a
+            // contradiction the model does not entail. *That* part is
+            // load-bearing --- omitting a condition from the reason fails VeriPB
+            // on the reified fixtures, confirmed by mutation.
+            //
+            // The saturate itself is not: the closing RUP assumes every
+            // condition, which drives each `M.~cond' to zero and falsifies the
+            // unsaturated line just as well, and removing the saturate leaves
+            // every reified fixture verifying (also confirmed by mutation). It
+            // is emitted anyway because it makes the derived line *be* the
+            // clause rather than a big-M encoding of it, which is what a reader,
+            // an assertion hint or a longer-lived proof level would want. It is
+            // emitted only when there is a residual to saturate, so an
+            // unconditional cycle's proof line is byte-for-byte what it was
+            // before half-reified edges existed.
+            //
             // Before saying anything, verify the extracted cycle
             // arithmetically: that each edge meets the next, that it closes,
             // and that the total weight really is negative. That is O(cycle)
@@ -106,25 +282,40 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                 if (cycle.empty())
                     throw UnexpectedException{"difference logic extracted an empty negative cycle"};
                 Integer weight{0};
+                vector<IntegerVariableCondition> conditions;
                 for (size_t k = 0; k < cycle.size(); ++k) {
-                    const auto & here = graph_edges[cycle[k]];
-                    const auto & next = graph_edges[cycle[(k + 1) % cycle.size()]];
+                    const auto & here = arcs[cycle[k]];
+                    const auto & next = arcs[cycle[(k + 1) % cycle.size()]];
                     weight += here.d;
                     if (head_of(next) != tail_of(here))
                         throw UnexpectedException{"difference logic extracted a disconnected negative cycle"};
+                    // Deduplicated, because the same Boolean legitimately
+                    // appears on more than one edge (a disjunctive encoding
+                    // makes that the normal case) and a reason listing it twice
+                    // would render a proof line with a repeated literal.
+                    const auto & here_cond = condition_of(cycle[k]);
+                    if (here_cond && conditions.end() == find(conditions, *here_cond))
+                        conditions.push_back(*here_cond);
                 }
                 if (weight >= 0_i)
                     throw UnexpectedException{"difference logic extracted a cycle of weight " + weight.to_string() + ", which is not negative"};
+
+                auto conditional = ! conditions.empty();
+                ReasonLiterals reason_literals;
+                for (const auto & c : conditions)
+                    reason_literals.push_back(c);
 
                 inference.contradiction(logger,
                     JustifyExplicitly{[&](const ReasonLiterals &) {
                                           auto pol = edge_line_pol();
                                           for (auto e : cycle)
-                                              pol.add(edge_lines[graph_edges[e].posted_index]);
+                                              pol.add(edge_lines[arcs[e].posted_index]);
+                                          if (conditional)
+                                              pol.saturate();
                                           pol.emit(*logger, ProofLevel::Temporary);
                                       },
                         ThenRUP::Yes},
-                    NoReason{});
+                    conditional ? Reason{ExplicitReason{move(reason_literals)}} : Reason{NoReason{}});
             };
 
             // Walk predecessors back from `start' looking for a cycle, which is
@@ -143,14 +334,14 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                     seen[at] = true;
                     if (! pred[at])
                         throw UnexpectedException{"difference logic found no negative cycle where one must exist"};
-                    at = tail_of(graph_edges[*pred[at]]);
+                    at = tail_of(arcs[*pred[at]]);
                 }
 
                 vector<size_t> cycle;
                 auto here = at;
                 do {
                     cycle.push_back(*pred[here]);
-                    here = tail_of(graph_edges[*pred[here]]);
+                    here = tail_of(arcs[*pred[here]]);
                 } while (here != at);
                 return cycle;
             };
@@ -171,7 +362,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                     while (! done[at] && pred[at]) {
                         done[at] = true;
                         chain.push_back(at);
-                        at = tail_of(graph_edges[*pred[at]]);
+                        at = tail_of(arcs[*pred[at]]);
                     }
                     for (auto it = chain.rbegin(); it != chain.rend(); ++it)
                         infer_one(*it);
@@ -194,13 +385,13 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
             // more than needed; round n relaxes nothing unless the system has a
             // negative cycle, so a success there is sound evidence of one and
             // the extraction above is guaranteed to find it.
-            auto lb_tail_of = [](const DifferenceGraphEdge & g) { return g.from; };
-            auto lb_head_of = [](const DifferenceGraphEdge & g) { return g.to; };
+            auto lb_tail_of = [](const DifferenceArc & g) { return g.from; };
+            auto lb_head_of = [](const DifferenceArc & g) { return g.to; };
 
             for (size_t round = 0; round <= n; ++round) {
                 bool changed = false;
-                for (size_t e = 0; e < m; ++e) {
-                    const auto & edge = graph_edges[e];
+                for_each_active_edge([&](size_t e) {
+                    const auto & edge = arcs[e];
                     auto candidate = lb[edge.from] - edge.d;
                     if (candidate > lb[edge.to]) {
                         lb[edge.to] = candidate;
@@ -209,13 +400,14 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                         if (round == n)
                             contradict_on_cycle(extract_cycle(edge.to, lb_pred, lb_tail_of), lb_tail_of, lb_head_of);
                     }
-                }
+                });
                 if (! changed)
                     break;
             }
 
             infer_along_forest(lb_pred, lb_tail_of, [&](size_t v) {
-                const auto & edge = graph_edges[*lb_pred[v]];
+                const auto & edge = arcs[*lb_pred[v]];
+                const auto & edge_cond = condition_of(*lb_pred[v]);
                 auto source = nodes[edge.from];
                 auto source_lb = lb[edge.from];
                 if (source_lb - edge.d != lb[v])
@@ -233,6 +425,22 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                 // weakest antecedent for v >= L - d across this edge *is*
                 // source >= L, so the pol's degree comes out at exactly the
                 // pushed amount with no wasted slack.
+                //
+                // A half-reified edge adds `M.~cond' to that sum, and its
+                // condition to the reason. Only *this* edge's condition, because
+                // the inference is per edge: the predecessor's bound was either
+                // already there when the call started, or was itself inferred a
+                // moment ago carrying its own edge's condition in its own
+                // reason, so the conditions along a whole path are cited by the
+                // chain of inferences rather than by any one of them. Each link
+                // is a standalone entailment of one row, which is what makes its
+                // RUP check.
+                //
+                // No saturate here, unlike the cycle refutation: the residual is
+                // harmless under the closing RUP, which assumes cond and so
+                // drives that term to zero, leaving the line the unconditional
+                // case would have produced. Saturating would instead clamp
+                // BinEnc(v)'s own coefficients against the degree, for no gain.
                 inference.infer_greater_than_or_equal(logger, nodes[v], lb[v],
                     JustifyExplicitly{[&](const ReasonLiterals &) {
                                           auto pol = edge_line_pol();
@@ -241,7 +449,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                                           pol.emit(*logger, ProofLevel::Temporary);
                                       },
                         ThenRUP::Yes},
-                    ExplicitReason{ReasonLiterals{{source >= source_lb}}});
+                    ExplicitReason{edge_cond ? ReasonLiterals{{source >= source_lb}, {*edge_cond}} : ReasonLiterals{{source >= source_lb}}});
             });
 
             // Upper bounds flow backwards along the same edges. Edge
@@ -252,13 +460,13 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
             for (size_t v = 0; v < n; ++v)
                 ub[v] = state.upper_bound(nodes[v]);
 
-            auto ub_tail_of = [](const DifferenceGraphEdge & g) { return g.to; };
-            auto ub_head_of = [](const DifferenceGraphEdge & g) { return g.from; };
+            auto ub_tail_of = [](const DifferenceArc & g) { return g.to; };
+            auto ub_head_of = [](const DifferenceArc & g) { return g.from; };
 
             for (size_t round = 0; round <= n; ++round) {
                 bool changed = false;
-                for (size_t e = 0; e < m; ++e) {
-                    const auto & edge = graph_edges[e];
+                for_each_active_edge([&](size_t e) {
+                    const auto & edge = arcs[e];
                     auto candidate = ub[edge.to] + edge.d;
                     if (candidate < ub[edge.from]) {
                         ub[edge.from] = candidate;
@@ -267,13 +475,14 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                         if (round == n)
                             contradict_on_cycle(extract_cycle(edge.from, ub_pred, ub_tail_of), ub_tail_of, ub_head_of);
                     }
-                }
+                });
                 if (! changed)
                     break;
             }
 
             infer_along_forest(ub_pred, ub_tail_of, [&](size_t v) {
-                const auto & edge = graph_edges[*ub_pred[v]];
+                const auto & edge = arcs[*ub_pred[v]];
+                const auto & edge_cond = condition_of(*ub_pred[v]);
                 auto source = nodes[edge.to];
                 auto source_ub = ub[edge.to];
                 if (source_ub + edge.d != ub[v])
@@ -289,7 +498,8 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                                           pol.emit(*logger, ProofLevel::Temporary);
                                       },
                         ThenRUP::Yes},
-                    ExplicitReason{ReasonLiterals{{source < source_ub + 1_i}}});
+                    ExplicitReason{
+                        edge_cond ? ReasonLiterals{{source < source_ub + 1_i}, {*edge_cond}} : ReasonLiterals{{source < source_ub + 1_i}}});
             });
 
             // Deliberately not EnableButIdempotent, and not merely because the

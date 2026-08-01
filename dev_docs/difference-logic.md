@@ -4,9 +4,11 @@
 rather than one propagator per constraint. This note covers the graph
 formulation, the two propagation directions, the round bound and why the
 negative-cycle extraction is total, the canonicalisation rule and why it exists,
-the two proof shapes with worked examples, the defects in the source paper's
-pseudocode, the presolver that lifts an already-posted model into the same
-propagator, and what is deliberately deferred.
+the two proof shapes with worked examples, half-reified edges
+(`b -> x - y <= d`) and what they cost in the reason and in the proof, the
+defects in the source paper's pseudocode, the presolver that lifts an
+already-posted model into the same propagator, and what is deliberately
+deferred.
 
 The source is Kletzander, Dekker, Schutt and Stuckey, *Global Difference
 Constraint Propagation for Constraint Programming*, arXiv:2607.20022 — the
@@ -249,6 +251,197 @@ constraints: transferring the predecessor's *order atom* into the edge row's
 never performs (`view-proof-logging.md` invariant 3, and the same finding
 `dev_docs/disjunctive-proof-logging.md` records for its single-edge pol).
 
+## Half-reified edges: `b -> x - y <= d`
+
+An edge may carry a reification condition. The semantics are deliberately
+one-directional:
+
+> **An edge with a condition participates in the graph exactly while that
+> condition currently holds.** Nothing is ever inferred the other way — the
+> propagator never fixes a condition because of what the graph says.
+
+That second half is the paper's `IncImp`, and leaving it out is not laziness: it
+is the paper's own most strongly supported configuration finding. On RCPSP/max
+*every* configuration with `IncImp` on scored below *every* configuration with
+it off. The proof shape for it is already understood (below), so it is a small
+addition if it is ever wanted; the measurements say not to want it.
+
+Three shapes fall out of the same canonicalisation as before:
+
+| Canonical form | Unconditional | With condition `b` |
+|---|---|---|
+| two distinct variables | graph edge | graph edge, active while `b` holds |
+| one constant operand | static bound | bound applied while `b` holds, citing `b` |
+| `0 <= d`, `d < 0` | root contradiction | **`!b` is inferred** |
+
+The last row is a soundness obligation, not a nicety. `b -> 0 <= -1` says `!b`,
+and an implementation that quietly dropped the edge would return solutions in
+which `b` holds and the constraint is violated. It is handled in the propagator
+rather than by an initialiser (which is how the unconditional case is done),
+because the row `M·¬b >= 1` saturates directly to the unit clause `¬b`, so plain
+RUP against it suffices — and because a presolver has no initialiser available.
+
+### The reason, which is the whole soundness question
+
+**A negative cycle** cites the conditions of every conditional edge on it, and
+nothing else. The unconditional case keeps its empty reason. The conditions are
+deduplicated, because the same Boolean legitimately appears on more than one
+edge — a disjunctive encoding makes that the normal case — and a reason listing
+it twice would render a proof line with a repeated literal.
+
+**A bound push** cites the predecessor's bound and *this edge's* condition, and
+that is the part worth being careful about. It is not "every condition along the
+path", and it does not need to be, because the inference is made **per edge
+along the predecessor forest**, never per path (see proof shape 2). The
+predecessor's bound was either already there when the call started, or was itself
+inferred moments earlier carrying its own edge's condition in its own reason. So
+the conditions along a whole path are cited by the *chain* of inferences, and
+each individual link is a standalone entailment of exactly one OPB row — which
+is what makes each link's RUP check on its own.
+
+### The proof: one extra `saturate`, and that is all
+
+A row emitted under `HalfReifyOnConjunctionOf` carries a big-M term on `¬b`. It
+does not telescope. Everything else does, exactly as before, so summing a cycle
+whose edges are conditional on `b_1 … b_k` leaves
+
+```
+    Σ M_i·¬b_i  >=  -W        (with -W >= 1)
+```
+
+and one `saturate` turns that into the clause `¬b_1 ∨ … ∨ ¬b_k` — the learned
+clause. The emitted line is
+
+```
+pol  <edge row>  <edge row> +  <edge row> +  s ;
+rup 1 ~b_1 1 ~b_2 >= 1;
+```
+
+which is verbatim the shape hand-verified against real gcs OPB output in
+`reified.opb` / `reified_hand.pbp` (survey section 2.0a case 3) before any of
+this was written, and verbatim what the propagator now emits — from
+`difference_test reified negcycle_two_conds`:
+
+```
+pol @c[_1][e0] @c[_1][e2] + @c[_1][e1] + s ;
+rup 1 ~i[_4][b0] 1 ~i[_5][b0] >= 1;
+```
+
+With one Boolean shared between all three edges the same line closes with
+`rup 1 ~i[_4][b0] >= 1;`, which is the deduplication above showing up in the
+proof.
+
+Two honest notes on that `s`:
+
+- **The reason is load-bearing; the `saturate` is not.** Dropping a condition
+  from the reason fails VeriPB on the reified fixtures (confirmed by mutation).
+  Removing the `saturate` does **not** — the closing RUP assumes every condition,
+  which drives each `M·¬b` to zero and falsifies the unsaturated line just as
+  well (also confirmed by mutation, every reified fixture still verifies). It is
+  emitted anyway because it makes the derived line *be* the clause rather than a
+  big-M encoding of it, which is what a reader, an assertion hint, or a
+  longer-lived `ProofLevel` would want.
+- **The bound push does not saturate.** Its residual is harmless under the
+  closing RUP for the same reason, while saturating would clamp `BinEnc(v)`'s own
+  coefficients against the degree for no gain.
+
+Everything else is unchanged: no new OPB content, no flags, no auxiliaries. The
+unconditional path is byte-identical — `.opb`, `.pbp`, `.scp` and `.varmap` all
+compare equal before and after across `difference_test views`,
+`difference_chain -n 6` in both modes and all three variants, and `rcpsp` in all
+three variants. `tools/opb_snapshot.bash` also still matches `main` byte for byte
+on the three `rcpsp` entries in the proof benchmark set.
+
+### Triggers
+
+The propagator already woke on every node's bounds. It now also takes
+`on_change` on each distinct condition variable. That is the coarsest trigger gcs
+offers that is guaranteed to catch a condition *becoming true*:
+
+- `on_bounds` is not enough — `x != v` becomes true the instant `v` leaves the
+  domain, which can be an interior removal;
+- `on_instantiated` fires strictly less often still — `x >= v` can become true
+  long before `x` is fixed.
+
+There is no "becomes entailed" coarse trigger, and the refined per-literal
+watches would need one arming per condition, so `on_change` is both the cheapest
+correct choice and the simplest. Waking when a condition becomes *false* is not
+needed at all — an inactive edge simply does not participate, and no inference is
+lost by finding that out later — but `on_change` cannot distinguish the two
+directions, and the extra wake is cheaper than machinery to avoid it. Condition
+variables are deliberately not deduplicated against the node list: a variable
+that is both a node and somebody's condition would otherwise have to give up one
+of the two trigger kinds, and a duplicate wake is merely wasted work.
+
+### The termination and extraction arguments still hold, verbatim
+
+Both arguments above — the `n - 1` round bound, and the totality of the
+predecessor walk — are statements about **one Bellman-Ford run over one fixed
+edge set**. Neither mentions where the edges came from or whether the same set
+will be there next time. So the only obligation half-reification adds is that the
+edge set really is fixed for the duration of a call, and that is arranged
+directly: the active edges are **snapshotted once** at the top of the call,
+rather than re-tested as the passes go.
+
+The snapshot also stays *correct* as inferences land during the call, which is
+what licenses citing a snapshotted condition in a reason later on. A literal that
+is definitely true holds for every value in the current domain, so it holds for
+every value in any subset of that domain; all this propagator does is shrink
+domains, and a domain shrunk to empty is a contradiction, which ends the call. So
+a condition true at snapshot time is still true at every inference made from it.
+
+Across calls the edge set does change — it grows as conditions become true down a
+branch and shrinks on backtrack — and nothing needs to be trailed for that,
+because nothing about the graph is stored between calls. This version recomputes
+from scratch every wake anyway.
+
+### Two things that cost 3× until they were measured
+
+Both were found by benchmarking `examples/difference_chain --variant=global` at
+`n = 640` against the table above, not by inspection, and both left the
+propagation and recursion counts *identical* — so nothing but wall clock would
+have caught either.
+
+- **The condition must not live in the edge struct.** An
+  `optional<IntegerVariableCondition>` is 64 bytes, which took the edge from 32
+  bytes to 96. The relaxation loop scans the whole edge array once per round, so
+  that is 3× the memory traffic in the innermost loop, and it cost exactly that:
+  0.32 s → 0.93 s. `DifferenceGraphEdge` therefore stays the convenient
+  *construction* type, with the condition attached to the edge it belongs to,
+  and `install_difference_propagator` repacks it once into a 32-byte arc array
+  plus a parallel condition array. The conditions are read when the active set is
+  snapshotted (once per call) and when a reason is built (only when something is
+  inferred) — never inside a round. A `static_assert` pins the arc size.
+- **An unconditional system must not go through the snapshot.** Iterating
+  `active_edges` rather than `0 .. m-1` is a level of indirection in the same
+  innermost loop, worth another 45% (0.32 s → 0.47 s). When nothing is
+  conditional the snapshot is not built at all and the arc array is scanned
+  straight through; the branch sits *outside* the per-edge loop, so the
+  conditional case pays nothing for the choice either.
+
+With both, `--variant=global` at `n = 640` is 0.332 s against the 0.323 s
+measured before half-reification existed, which is inside the noise.
+
+### The completeness caveat, which is the paper's and not ours
+
+The paper's section 4.1 claims its propagator is a *domain* propagator only
+"under the assumptions that the domain `D` is a range domain and **no Boolean
+variable appears twice** in the set of difference, bounds, and half-reified
+difference constraints".
+
+A disjunctive encoding violates that by construction: `b -> i before j` and
+`!b -> j before i` put the same Boolean in two difference constraints, and that
+is precisely the modelling this feature exists to support. So the claim does not
+apply to the most important use case. Two things follow, and they are worth
+keeping apart:
+
+- **Soundness is unaffected.** Nothing above depends on a Boolean appearing at
+  most once; each inference is an entailment of the rows it cites.
+- **Completeness is not claimed.** This is a bounds-consistent propagator for the
+  active sub-system, nothing more — which it already was, since gcs domains have
+  holes where the paper's Theorem 2 assumes ranges (its section 4.1 caveat (vi)).
+  `difference_test reified negcycle_shared_cond` pins the sound-regardless part.
+
 ## The self-check
 
 Before emitting a cycle refutation the extracted cycle is verified
@@ -397,19 +590,48 @@ constraints the model already contains.
 ### What is lifted, and what is not
 
 The paper's **level 1**, restricted to what the propagator supports today: a
-two-term linear with coefficients exactly `+1` and `-1`, an unconditional
-(`reif::MustHold`) condition, and two distinct variable operands, each of which
-may carry a `+X + c` view offset. Two of the exclusions are soundness
-requirements rather than mere incompleteness:
+two-term linear with coefficients exactly `+1` and `-1` and two distinct variable
+operands, each of which may carry a `+X + c` view offset. The reification
+condition may be either of two kinds:
 
-- **Half-reified donors are refused.** `linear_inequality.cc` emits the `If`
-  form's row under `HalfReifyOnConjunctionOf`, so it states `b -> x - y <= d`,
-  not `x - y <= d`. Lifting it as an unconditional edge would licence
-  inferences the model does not entail (and the pol citing it would carry an
-  uncancelled gate term). Since `clone()` returns the family base, the
-  reification condition is the *only* thing distinguishing a
-  `LinearLessThanEqual` from a `LinearLessThanEqualIf` at enumeration time.
+- **`reif::MustHold`**, giving a plain edge;
+- **`reif::If`**, giving a half-reified one, `b -> x - y <= d`.
+
+**Both forms are citable, and this was checked rather than assumed.**
+`linear_inequality.cc` labels them identically — `add_labelled_constraint(id, "",
+…)`, i.e. `@c[<id>]` with an *empty* role — and differs only in passing
+`HalfReifyOnConjunctionOf{cond.cond}` for the `If` form. So the `If` row is
+exactly the shape the propagator's proofs assume, unlike `Comparison`'s
+unconditional rows, which go through the `void`-returning `add_constraint` and
+carry no label at all.
+
+The other three reification kinds are *also* difference constraints, and are
+skipped only because each needs a **different row** of the donor's output than
+the two above:
+
+- `reif::MustNotHold` and `reif::NotIf` state the integer negation,
+  `y - x <= -d-1`;
+- `reif::Iff` emits its two halves under the roles `r` and `f` rather than under
+  the empty role — and both halves are edges, one on `cond` and one on `¬cond`.
+
+They are counted in `skipped_reified` rather than guessed at. Two exclusions
+remain soundness requirements rather than mere incompleteness:
+
 - **Negated views are refused**, for the reason given above.
+- **Degenerate conditional donors are left to the donor.** A conditional
+  `x - x <= -1` says `!b`, which the donor already infers from its own bounds;
+  lifting it would duplicate that, and the presolver skips all degenerate shapes
+  anyway.
+
+**Half-reified donors are never retired**, however many of their edges were
+lifted, and that is a rule rather than a preference. `disabling_lifted_donors()`
+rests on the global propagator subsuming the donor, and for a half-reified donor
+subsumption fails in one direction: `LinearLessThanEqualIf` also infers `!cond`
+when its own bounds make the inequality impossible, and the global propagator
+makes no inference about a condition at all. Retiring one would silently lose
+that. Only unconditional donors go on the retirement list; the tripwire test
+asserts both halves of this (something must be disabled when there is an
+unconditional edge, nothing may be when there is not).
 
 Degenerate edges — a constant operand, or the same variable at both ends — are
 also skipped, and left to the donor. This is not just tidiness: a `0 <= d` with
@@ -681,10 +903,57 @@ here; it turns an expensive root refutation into a single propagation.
 
 The paper's baseline searches because its disjunctive resources contribute
 *half-reified* difference constraints, so the cycle only closes after Boolean
-decisions. `examples/rcpsp --machine pairwise` posts exactly that structure —
-`LinearGreaterThanEqualIf` in both directions on a 0/1 ordering variable — but
-half-reified edges are not supported by the propagator yet, so that mechanism is
-absent here by construction rather than by choice.
+decisions.
+
+### Switching that mechanism on: `--machine=difference`
+
+`examples/rcpsp --machine=difference` posts the machine as the pairwise
+disjunctive decomposition in conditional edges — one ordering Boolean per pair,
+the two disjuncts as edges under it and its negation — so the network's edge set
+now changes during search, which is the paper's modelling rather than ours.
+
+Two things follow, and the second is not the flattering one.
+
+**The search mechanism does reproduce.** On an infeasible instance the
+refutation now genuinely requires Boolean decisions rather than falling out of
+root propagation:
+
+| instance | `--machine` | variant | recursions | propagations |
+|---|---|---|---:|---:|
+| `--size 10 --seed 5 --machine-fraction 0.7 --deadline 17` | pairwise | decomposed | 836 | 45,777 |
+| | difference | decomposed | 689 | 36,145 |
+| | difference | **global** | **6,353** | **11,321** |
+| `--size 12 --seed 2 --machine-fraction 0.8 --deadline 18` | pairwise | decomposed | 316 | 11,498 |
+| | difference | decomposed | 47 | 2,355 |
+| | difference | **global** | **329** | **720** |
+
+**And the global propagator loses that search.** Nine times the nodes on the
+first instance, seven on the second, for a third of the propagations. The cause
+is `IncImp`'s absence, stated above and now measured: the reified linear forms
+infer their own condition — a violated `LinearGreaterThanEqualIf` fixes its
+Boolean false — and `DifferenceConstraints` infers nothing about a condition at
+all, so it explores orderings the decomposition has already refuted. Propagations
+are the wrong metric here; nodes are what the model is paying.
+
+This is the concrete argument for reconsidering `IncImp` for gcs specifically,
+against the paper's own configuration study, which found every configuration with
+it on scoring below every configuration with it off. Their baseline is a
+lazy-clause-generation solver that learns from a failed ordering; gcs is not, so
+what `IncImp` would buy here is not what it bought there.
+
+Two consequences worth stating for anyone writing a model against this
+propagator:
+
+- **The condition variables must be branched on.** An edge whose Boolean is
+  unfixed does not constrain, so leaving them out of the branch list does not
+  merely slow the search down — it lets the solver report a schedule that
+  violates the resource. `examples/rcpsp` puts them first in the branch list, and
+  the cross-check that catches getting this wrong is that all four `--machine`
+  spellings must agree on the optimum.
+- **`recursions` stops being a cross-variant invariant.** On the unconditional
+  temporal network the three variants search identically, which is what makes the
+  tables above a clean comparison. With conditional edges they do not, and a
+  table that reports only propagations would hide the regression above.
 
 ## Deliberately deferred
 
@@ -695,28 +964,29 @@ absent here by construction rather than by choice.
   it needs no trailing, which suits backtracking well. None of that is here: this
   version recomputes Bellman-Ford from scratch on every wake, which is
   `O(n·m)` worst case. The wall-time caveat above is entirely this.
-- **Half-reified edges** (`b -> x - y <= d`). These make the edge set change
-  during search, which needs the trailed edge journal and the paper's `E'`
-  machinery. The proof side is already understood and costs nothing extra: a
-  half-reified row contributes `M·¬b` to the sum, the `BinEnc` terms telescope
-  exactly as before, and one `saturate` turns the residuals into the clause
-  `¬b_1 ∨ … ∨ ¬b_k`. `Disjunctive` already does this at `k = 1`.
 - **`IncImp`** (implication checking, to disentail half-reified edges). It needs
   no new proof machinery — "shortest path `x ⇝ y` of weight `<= d'`" plus the
   candidate edge `y --(-d'-1)--(b)--> x` is a negative cycle, so it is proof
-  shape 1 with `b` the sole surviving residual — but the paper's own
-  configuration study says to leave it **off**: on RCPSP/max every configuration
-  with it on scored below every configuration with it off.
+  shape 1 with `b` the sole surviving residual, and the `saturate` already in
+  place produces exactly that unit clause — but the paper's own configuration
+  study says to leave it **off**: on RCPSP/max every configuration with it on
+  scored below every configuration with it off. **This is the one deferral the
+  RCPSP/max measurement below now costs something visible**: without it, a system
+  whose infeasibility depends on edges nobody has fixed yet is invisible at the
+  root.
 - **Lifting `Comparison` donors**, which needs their unconditional OPB rows
   labelled; see the presolver section above.
-- **Lifting half-reified donors**, which is the same problem as supporting
-  half-reified edges in the propagator.
+- **Lifting `Iff`, `NotIf` and `MustNotHold` linear donors**, which need the `r`
+  and `f` rows and the integer-negation row respectively rather than the
+  empty-role row the two supported kinds share.
 - **Root simplification** — Johnson's all-pairs shortest paths, then dropping
   redundant edges, fixing Booleans whose edge would close a negative cycle, and
   unifying variables on a zero-weight cycle. Note that dropping a redundant edge
   is a decision about which *propagators run*, not about what the model says: the
   OPB must always contain every posted constraint, so the removal has no proof
-  obligation at all.
+  obligation at all. Its Boolean-fixing step is `IncImp` restricted to the root,
+  and the measurement below argues it is where the paper's RCPSP/max
+  unsatisfiability headline actually comes from.
 - **Runtime propagator priorities.** The paper wants bound propagation at the
   lowest priority and Boolean propagation at the highest, as separate
   propagators. gcs has no runtime propagator priorities, only

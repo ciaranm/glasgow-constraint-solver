@@ -131,11 +131,26 @@ namespace
         return Operand{nullopt, value};
     }
 
+    // A half-reification condition, written as `vars[var] == value` so that the
+    // condition variable is an ordinary member of the domain list and the
+    // oracle enumerates both of its settings.
+    struct Cond
+    {
+        size_t var;
+        int value;
+    };
+
+    auto b(size_t i, int value = 1) -> optional<Cond>
+    {
+        return Cond{i, value};
+    }
+
     struct EdgeSpec
     {
         Operand x;
         Operand y;
         int d;
+        optional<Cond> cond = nullopt;
     };
 
     auto operand_value(const Operand & o, const vector<int> & vals) -> int
@@ -154,9 +169,12 @@ namespace
 
     auto satisfied(const vector<int> & vals, const vector<EdgeSpec> & edges) -> bool
     {
-        for (const auto & e : edges)
+        for (const auto & e : edges) {
+            if (e.cond && vals.at(e.cond->var) != e.cond->value)
+                continue;
             if (operand_value(e.x, vals) - operand_value(e.y, vals) > e.d)
                 return false;
+        }
         return true;
     }
 
@@ -191,8 +209,13 @@ namespace
         for (const auto & [lo, hi] : domains)
             vars.push_back(p.create_integer_variable(Integer(lo), Integer(hi)));
 
-        for (const auto & e : edges)
-            p.post(LinearLessThanEqual{WeightedSum{} + 1_i * operand_id(e.x, vars) + -1_i * operand_id(e.y, vars), Integer(e.d)});
+        for (const auto & e : edges) {
+            auto sum = WeightedSum{} + 1_i * operand_id(e.x, vars) + -1_i * operand_id(e.y, vars);
+            if (e.cond)
+                p.post(LinearLessThanEqualIf{sum, Integer(e.d), vars.at(e.cond->var) == Integer(e.cond->value)});
+            else
+                p.post(LinearLessThanEqual{sum, Integer(e.d)});
+        }
 
         switch (config) {
             using enum Config;
@@ -210,7 +233,7 @@ namespace
     // no proof would catch either, since a proof only certifies what was
     // derived.
     auto run_equivalence_test(bool proofs, const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges,
-        size_t expected_edges_lifted) -> void
+        size_t expected_edges_lifted, size_t expected_half_reified) -> void
     {
         print(cerr, "difference presolver equivalence {} domains={} edges={}{}", name, domains, edges.size(), proofs ? " with proofs:" : ":");
         cerr << flush;
@@ -231,21 +254,34 @@ namespace
             solve_for_tests(p, proof_name, actual, tuple{vars});
             check_results(proof_name, expected, actual);
 
-            if (config != Config::NoPresolver)
+            if (config != Config::NoPresolver) {
                 check_count("edges lifted", expected_edges_lifted, stats->edges_lifted, name);
+                check_count("half-reified edges lifted", expected_half_reified, stats->half_reified_edges_lifted, name);
+            }
         }
     }
 
     // The tripwire. Disabling the donors' own propagators must not change the
-    // search tree at all: the global propagator subsumes every single-edge bound
-    // push, and disabling changes neither degrees nor adjacency, so the
-    // branching heuristic sees an unchanged problem. Solutions *and* recursions
-    // must match exactly. (Propagation counts of course do not, and are the
-    // point of the option.)
-    auto run_tripwire_test(const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges) -> void
+    // search tree at all: the global propagator subsumes every unconditional
+    // single-edge bound push, and disabling changes neither degrees nor
+    // adjacency, so the branching heuristic sees an unchanged problem.
+    // Solutions *and* recursions must match exactly. (Propagation counts of
+    // course do not, and are the point of the option.)
+    //
+    // It is also what guards the rule that a *half-reified* donor is never
+    // retired. Subsumption fails for those in one direction: a
+    // LinearLessThanEqualIf also infers `!cond' from its own bounds, and the
+    // global propagator makes no inference about a condition at all. Retire one
+    // and the search grows, which shows up here as a recursion mismatch.
+    auto run_tripwire_test(const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges, size_t expected_edges_lifted,
+        size_t expected_half_reified) -> void
     {
         print(cerr, "difference presolver tripwire {}:", name);
         cerr << flush;
+
+        // Only unconditional donors are candidates for retirement, so a fixture
+        // whose every lifted edge is conditional legitimately disables nothing.
+        auto expect_disabling = expected_edges_lifted > expected_half_reified;
 
         Stats results[2];
         for (auto [index, config] : {pair{0, Config::Hybrid}, pair{1, Config::DonorsDisabled}}) {
@@ -253,9 +289,14 @@ namespace
             Problem p;
             static_cast<void>(build(p, domains, edges, config, stats));
             results[index] = solve_with(p, SolveCallbacks{.solution = [&](const CurrentState &) -> bool { return true; }});
-            if (config == Config::DonorsDisabled && 0 == stats->donor_propagators_disabled)
+            if (config == Config::DonorsDisabled && expect_disabling && 0 == stats->donor_propagators_disabled)
                 throw UnexpectedException{"the difference-logic presolver disabled no donor propagators on fixture '" + name +
                     "', so the tripwire compared two identical configurations." + detection_is_broken};
+            if (config == Config::DonorsDisabled && ! expect_disabling && 0 != stats->donor_propagators_disabled)
+                throw UnexpectedException{"the difference-logic presolver disabled " + to_string(stats->donor_propagators_disabled) +
+                    " donor propagators on fixture '" + name +
+                    "', every one of whose lifted edges is half-reified. A half-reified donor must never be retired: it also infers !cond from its "
+                    "own bounds, and the global propagator infers nothing about a condition at all, so retiring one silently loses propagation."};
         }
 
         println(cerr, " hybrid {} solutions / {} recursions / {} propagations, donors off {} / {} / {}", results[0].solutions, results[0].recursions,
@@ -281,6 +322,7 @@ namespace
         vector<pair<int, int>> domains;
         vector<EdgeSpec> edges;
         size_t expected_edges_lifted;
+        size_t expected_half_reified = 0;
     };
 
     auto corpus() -> vector<Fixture>
@@ -312,19 +354,35 @@ namespace
             // A negated view is not a difference constraint at all, and must be
             // refused rather than lifted: -x - y <= d has both coefficients
             // negative. The other two edges still lift.
-            {"negated_view", {{-3, 3}, {-3, 3}, {-3, 3}}, {{neg(0), v(1), 1}, {v(0), v(2), -1}, {v(2), v(1), -1}}, 2}};
+            {"negated_view", {{-3, 3}, {-3, 3}, {-3, 3}}, {{neg(0), v(1), 1}, {v(0), v(2), -1}, {v(2), v(1), -1}}, 2},
+            // Half-reified donors. LinearLessThanEqualIf emits its row under
+            // HalfReifyOnConjunctionOf and labels it @c[<id>] with an empty
+            // role, exactly as the unconditional form does, so it is citable
+            // and lifts as a conditional edge. The last variable of each
+            // fixture is the condition, and the oracle enumerates both of its
+            // settings, so the false branch is checked as hard as the true one.
+            {"reified_chain", {{0, 5}, {0, 5}, {0, 5}, {0, 1}}, {{v(0), v(1), -1, b(3)}, {v(1), v(2), -1, b(3)}}, 2, 2},
+            {"reified_negcycle", {{0, 5}, {0, 5}, {0, 5}, {0, 1}, {0, 1}}, {{v(0), v(1), 0, b(3)}, {v(1), v(2), 0, b(4)}, {v(2), v(0), -1}}, 3, 2},
+            // Mixed, with views, so the pol has to telescope in deview mode
+            // *and* carry reification residuals.
+            {"reified_views", {{0, 5}, {0, 5}, {0, 5}, {0, 1}}, {{v(0, 2), v(1), -1, b(3)}, {v(1, -1), v(2), 0}, {v(2), v(0), 1, b(3)}}, 3, 2},
+            // The negative control: a conditional edge that is impossible over
+            // these domains. Every assignment with the condition false is a
+            // solution, so a presolver whose propagator ignored the condition
+            // would lose all of them.
+            {"reified_impossible", {{0, 4}, {0, 4}, {0, 1}}, {{v(0), v(1), -10, b(2)}, {v(1), v(0), 1}}, 2, 1}};
     }
 
     auto run_equivalence_tests(bool proofs) -> void
     {
         for (const auto & f : corpus())
-            run_equivalence_test(proofs, f.name, f.domains, f.edges, f.expected_edges_lifted);
+            run_equivalence_test(proofs, f.name, f.domains, f.edges, f.expected_edges_lifted, f.expected_half_reified);
     }
 
     auto run_tripwire_tests() -> void
     {
         for (const auto & f : corpus())
-            run_tripwire_test(f.name, f.domains, f.edges);
+            run_tripwire_test(f.name, f.domains, f.edges, f.expected_edges_lifted, f.expected_half_reified);
     }
 
     // Every donor shape, with the count it must land in. A donor migrating from
@@ -334,11 +392,12 @@ namespace
     {
         auto check = [](const string & fixture, const DifferenceLogicStats & stats, const DifferenceLogicStats & expected) {
             println(cerr,
-                "difference presolver detection {}: lifted {} over {} nodes, skipped {} not-two-terms, {} coefficients, {} reified, {} "
-                "negated-view, {} degenerate, {} unlabelled-comparison",
-                fixture, stats.edges_lifted, stats.nodes, stats.skipped_not_two_terms, stats.skipped_coefficients, stats.skipped_reified,
-                stats.skipped_negated_view, stats.skipped_degenerate, stats.skipped_unlabelled_comparison);
+                "difference presolver detection {}: lifted {} ({} half-reified) over {} nodes, skipped {} not-two-terms, {} coefficients, {} "
+                "reified, {} negated-view, {} degenerate, {} unlabelled-comparison",
+                fixture, stats.edges_lifted, stats.half_reified_edges_lifted, stats.nodes, stats.skipped_not_two_terms, stats.skipped_coefficients,
+                stats.skipped_reified, stats.skipped_negated_view, stats.skipped_degenerate, stats.skipped_unlabelled_comparison);
             check_count("edges lifted", expected.edges_lifted, stats.edges_lifted, fixture);
+            check_count("half-reified edges lifted", expected.half_reified_edges_lifted, stats.half_reified_edges_lifted, fixture);
             check_count("nodes", expected.nodes, stats.nodes, fixture);
             check_count("skipped: not two terms", expected.skipped_not_two_terms, stats.skipped_not_two_terms, fixture);
             check_count("skipped: coefficients", expected.skipped_coefficients, stats.skipped_coefficients, fixture);
@@ -384,11 +443,13 @@ namespace
             p.post(LinearLessThanEqual{WeightedSum{} + 2_i * x[0] + -1_i * x[1], 4_i});
             // Two terms, both positive.
             p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + 1_i * x[1], 9_i});
-            // Half-reified: the row is emitted under HalfReifyOnConjunctionOf, so
-            // lifting it as unconditional would be unsound.
-            p.post(LinearLessThanEqualIf{WeightedSum{} + 1_i * x[0] + -1_i * x[1], -2_i, b == 1_i});
-            // Fully reified, likewise.
+            // Fully reified: the two halves are emitted under the roles r and f
+            // rather than under the empty role, so neither is the row this
+            // lifts, and both are counted rather than guessed at. (Half-reified
+            // `If` donors *are* lifted, and are exercised in the corpus above
+            // and in reified_donors below.)
             p.post(LinearLessThanEqualIff{WeightedSum{} + 1_i * x[1] + -1_i * x[2], -2_i, b == 1_i});
+            p.post(LinearGreaterThanEqualIff{WeightedSum{} + 1_i * x[2] + -1_i * x[3], 2_i, b == 1_i});
             // A negated view.
             p.post(LinearLessThanEqual{WeightedSum{} + 1_i * (-x[0]) + -1_i * x[1], 1_i});
             // Aliasing, and a constant operand.
@@ -418,6 +479,38 @@ namespace
                     .skipped_negated_view = 1,
                     .skipped_degenerate = 2,
                     .skipped_unlabelled_comparison = 2});
+        }
+
+        // Half-reified donors, in every shape the propagator distinguishes: two
+        // real conditional edges, one conditional edge that is degenerate (and
+        // so left to the donor, since its `!cond' is exactly what the donor
+        // already infers), one conditional edge with a constant operand, and one
+        // conditional negated view that must be refused just as the
+        // unconditional one is.
+        {
+            auto stats = make_shared<DifferenceLogicStats>();
+            Problem p;
+            auto x = p.create_integer_variable_vector(4, 0_i, 6_i, "x");
+            auto b = p.create_integer_variable(0_i, 1_i, "b");
+
+            p.post(LinearLessThanEqualIf{WeightedSum{} + 1_i * x[0] + -1_i * x[1], -1_i, b == 1_i});
+            p.post(LinearLessThanEqualIf{WeightedSum{} + 1_i * x[1] + -1_i * x[2], -1_i, b == 0_i});
+            p.post(LinearLessThanEqualIf{WeightedSum{} + 1_i * x[0] + -1_i * x[0], -1_i, b == 1_i});
+            p.post(LinearLessThanEqualIf{WeightedSum{} + 1_i * x[2] + -1_i * constant_variable(4_i), 1_i, b == 1_i});
+            p.post(LinearLessThanEqualIf{WeightedSum{} + 1_i * (-x[0]) + -1_i * x[1], 1_i, b == 1_i});
+            // One unconditional edge as well, so the mixture is what is
+            // installed and the donor-disabling rule has something to bite on.
+            p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[2] + -1_i * x[3], -1_i});
+
+            p.add_presolver(DifferenceLogic{stats});
+            solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }});
+            check("reified_donors", *stats,
+                DifferenceLogicStats{.edges_lifted = 3,
+                    .half_reified_edges_lifted = 2,
+                    .nodes = 4,
+                    .propagator_installed = true,
+                    .skipped_negated_view = 1,
+                    .skipped_degenerate = 2});
         }
 
         // A single edge is a degeneracy, not a threshold: over one edge the

@@ -27,6 +27,17 @@ namespace gcs
         /// Donors turned into graph edges: the number that matters.
         std::size_t edges_lifted = 0;
 
+        /**
+         * \brief How many of edges_lifted came from a half-reified (`reif::If`)
+         * donor, and so joined the graph as `cond -> x - y <= d`.
+         *
+         * Broken out rather than counted separately because these are the edges
+         * a disjunctive encoding contributes, which is where the paper's
+         * scheduling wins come from --- and because they are the ones whose
+         * donors must *not* be retired (see DifferenceLogic::disabling_lifted_donors).
+         */
+        std::size_t half_reified_edges_lifted = 0;
+
         /// Distinct variables those edges span.
         std::size_t nodes = 0;
 
@@ -51,9 +62,11 @@ namespace gcs
         /// A two-term linear whose coefficients are not exactly +1 and -1.
         std::size_t skipped_coefficients = 0;
 
-        /// A linear whose reification condition is not reif::MustHold. Lifting
-        /// one of these as though it were unconditional would be unsound: the
-        /// `If` form's row is emitted half-reified.
+        /// A linear whose reification condition is neither reif::MustHold nor
+        /// reif::If: MustNotHold, NotIf or Iff. Each of those *is* expressible
+        /// as one or two difference edges, but each needs a different row of the
+        /// donor's OPB output than the two forms handled here, so they are
+        /// counted rather than guessed at.
         std::size_t skipped_reified = 0;
 
         /// An operand that is a negated view (`-X + c`), which is not a
@@ -102,13 +115,18 @@ namespace gcs
      * \par What is lifted
      *
      * The paper's "level 1", restricted to what the propagator supports today: a
-     * two-term LinearLessThanEqual with coefficients exactly `+1` and `-1`, an
-     * unconditional (reif::MustHold) reification condition, and two distinct
-     * variable operands, each of which may carry a `+X + c` view offset (folded
-     * into the weight). Everything else is skipped and counted --- see
-     * DifferenceLogicStats, and note in particular that Comparison donors are
-     * skipped only because their unconditional OPB rows are emitted *unlabelled*
-     * and so cannot be cited, not because they are the wrong shape.
+     * two-term LinearLessThanEqual with coefficients exactly `+1` and `-1` and
+     * two distinct variable operands, each of which may carry a `+X + c` view
+     * offset (folded into the weight). The reification condition may be
+     * unconditional (reif::MustHold), giving a plain edge, or half-reified
+     * (reif::If), giving `cond -> x - y <= d`: `linear_inequality.cc` labels
+     * both forms `@c[<id>]` with no role suffix, so both are citable, and the
+     * `If` form's row is emitted under HalfReifyOnConjunctionOf, which is
+     * exactly the shape the propagator's proofs assume. Everything else is
+     * skipped and counted --- see DifferenceLogicStats, and note in particular
+     * that Comparison donors are skipped only because their unconditional OPB
+     * rows are emitted *unlabelled* and so cannot be cited, not because they are
+     * the wrong shape.
      *
      * Equalities (level 2) and disequalities (level 3) are not chased at all;
      * the paper measures both as losing to level 1.
@@ -132,16 +150,24 @@ namespace gcs
         explicit DifferenceLogic(std::shared_ptr<DifferenceLogicStats> stats = nullptr);
 
         /**
-         * \brief Also retire the propagators of every donor whose edge was
-         * lifted, so only the global propagator runs over them.
+         * \brief Also retire the propagators of every *unconditional* donor
+         * whose edge was lifted, so only the global propagator runs over them.
          *
          * Ships off, because the hybrid is what the paper measures as best; this
          * exists so the alternative can be measured rather than assumed. It is
          * also a soundness tripwire, and a strong one: the global propagator
-         * subsumes every donor's single-edge bound push, and disabling a
-         * propagator changes neither degrees nor adjacency, so the search tree
-         * must come out *identical* either way. It differing means the
-         * subsumption claim is wrong.
+         * subsumes every unconditional donor's single-edge bound push, and
+         * disabling a propagator changes neither degrees nor adjacency, so the
+         * search tree must come out *identical* either way. It differing means
+         * the subsumption claim is wrong.
+         *
+         * Half-reified donors are **never** retired, however many of their edges
+         * were lifted. Subsumption fails for them in one direction: a
+         * `LinearLessThanEqualIf` also infers `!cond` when its bounds make the
+         * inequality impossible, and the global propagator makes no inference
+         * about a condition at all (that is the paper's `IncImp`, deliberately
+         * not implemented). Retiring one would lose that inference, which is a
+         * completeness loss no proof could catch.
          */
         auto disabling_lifted_donors(bool = true) -> DifferenceLogic &;
 

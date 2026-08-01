@@ -80,10 +80,16 @@ library. For an introduction to *using* the solver, start with the top-level
   shapes — a negative cycle refuted by one telescoping `pol`, a bound push
   justified per edge along the predecessor forest — the source paper's
   pseudocode defects, the measured order-independence and proof-size results,
-  the `DifferenceLogic` presolver that lifts an already-posted model into the
-  same propagator (including why `DisableUntilBacktrack` could not be imposed
-  from outside, and why the tests assert on counts rather than on solutions),
-  and what is deferred (incrementality, half-reification, root simplification).
+  half-reified edges `b -> x - y <= d` (the one extra `saturate`, why the reason
+  must name every conditional edge used, and why the round bound survives an
+  edge set that changes between calls), the `DifferenceLogic` presolver that
+  lifts an already-posted model into the same propagator (including why
+  `DisableUntilBacktrack` could not be imposed from outside, and why a
+  half-reified donor is never retired), the RCPSP/max benchmark tables
+  (including where the non-incremental propagator loses, and why "detected at
+  the root" belongs to the paper's root simplification stage rather than to its
+  propagator), and what is deferred (incrementality, `IncImp`, root
+  simplification).
 - [Range ("in") literals](range_literals_spec.md) — the design specification
   for the interval-literal proof layer: reifying `[X∈[a,b]]` to its
   order-chain cuts, the always-covered partition invariant, interval-tree
