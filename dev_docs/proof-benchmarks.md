@@ -101,7 +101,17 @@ Pairs that differ in one controlled way, for attributing a difference.
 | benchmark | command | why separate |
 |---|---|---|
 | `mzn_aircraft06` | `fzn-glasgow -s -a aircraft.fzn` (Challenge 2024, `B737NG-600-06-Anon.json.dzn`) | Needs about **19 GB of veripb resident memory**. It cannot share a 30 GB machine with anything else and will exhaust a smaller one. |
-| `rcpsp20` | `rcpsp --size 20 --seed 1 --stats` | Writes a **4.1 GB `.pbp`** and verifies in 699 s — over the nominal ceiling and heavy on disk. Kept because it is the only *realistic* `Cumulative` + `Disjunctive` entry; `odb_cumulative8` covers the propagator more cheaply but is synthetic. |
+| `rcpsp20` | `rcpsp --size 20 --seed 1 --stats` | Writes a **4.1 GB `.pbp`** and verifies in **656.8 s** — near the nominal ceiling and heavy on disk. Kept because it is the only *realistic* `Cumulative` + `Disjunctive` entry; `odb_cumulative8` covers the propagator more cheaply but is synthetic. |
+
+`rcpsp` has since grown `--variant`, `--machine`, `--unary`, `--simplify`,
+`--incremental` and an RCPSP/max generalisation. **The defaults reproduce the
+row above exactly** — 171 480 recursions and a byte-identical 4106.4 MB proof —
+because `--variant=decomposed` is the original linear-per-edge posting,
+`--machine=disjunctive` the `Disjunctive` global, and `--max-lag-density`
+defaults to zero and draws no random numbers, leaving the generated instance
+untouched. No flag needs adding to the command. Worth re-checking the recursion
+count after any future change to the generator, though: a single extra random
+draw would move every seeded instance and silently stale this row.
 
 `mzn_aircraft06` is worth the trouble because it is the only entry where the
 checker is bound by the **model encoding** rather than the derivation: a 2.5 GB
