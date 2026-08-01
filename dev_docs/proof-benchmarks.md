@@ -36,7 +36,7 @@ local SSD. `veripb` 3.0.2.
 | benchmark | command | outcome | recs | `.opb` | `.pbp` | solve | +proof | verify |
 |---|---|---|--:|--:|--:|--:|--:|--:|
 | `odb_eq1000` | `order_deletion_bench --problem pairwise --size 6 --domain 1000 --window 1000 --tightness 90 --unsat --value-order smallest` | UNSAT | 49 352 | 11 KB | 37 MB | 0.10 s | ×2.0 | **139.5 s** |
-| `odb_split2000` | `order_deletion_bench --problem pairwise --size 8 --domain 2000 --window 2000 --tightness 90 --unsat` | UNSAT | 6 979 | 20 KB | 17 MB | 0.10 s | — | **~110 s** |
+| `odb_split2000` | `order_deletion_bench --problem pairwise --size 8 --domain 2000 --window 2000 --tightness 90 --unsat` | UNSAT | 6 979 | 20 KB | 17 MB | 0.10 s | ×1.0 | **106.1 s** |
 | `odb_cumulative8` | `order_deletion_bench --problem cumulative --size 8 --domain 250 --window 250 --tightness 90 --unsat` | UNSAT | 33 959 | 1.9 MB | 454 MB | 0.10 s | ×9.0 | **314.7 s** |
 | `qap10` | `qap --size=10` | optimal | 10 985 | 3.5 MB | 504 MB | 0.20 s | ×6.0 | **283.8 s** |
 | `colour46` | `colour --file <46-vertex random graph>` | optimal | 313 109 | 0.4 MB | 736 MB | 12.31 s | ×1.2 | **347.6 s** |
@@ -199,14 +199,22 @@ A worked example of why it matters: under pilot load `freqsq6_gac` and
 81.2 s) despite the GAC proof being 2.6× larger. The entire apparent difference
 was contention.
 
-**On filesystems**: on a machine with a local SSD, write the proofs wherever is
-convenient. The advice elsewhere to put timed proof I/O on tmpfs was formed
-where the alternative was network storage, and it does not transfer: disk has
-not been the bottleneck in the experiments run here. On the larger entries
-tmpfs is actively the wrong choice, because it competes with veripb for the
-same RAM — `mzn_aircraft06` wants about 19 GB resident *plus* room for a 2.5 GB
-`.opb`. Reach for tmpfs only if you have measured that your storage is slow
-enough to matter.
+**On filesystems: it does not matter, and tmpfs is mildly counterproductive.**
+Measured directly — the same proof verified from the local SSD and from tmpfs,
+solo, pinned, minimum of three each, all in one sitting:
+
+| proof | SSD | tmpfs | difference |
+|---|--:|--:|--:|
+| `odb_split2000`, 17 MB | 110.52 s | 110.72 s | +0.2 % |
+| `pdisp10_tuple`, 151 MB | 82.26 s | 82.41 s | +0.2 % |
+| `qap10`, 481 MB | 276.05 s | 286.59 s | +3.8 % |
+
+tmpfs is never faster and is slightly *slower* at every size. So write the
+proofs wherever is convenient. The advice elsewhere to put timed proof I/O on
+tmpfs was formed where the alternative was network storage; on a machine with a
+local SSD it buys nothing, and on the larger entries it is actively the wrong
+choice because it competes with veripb for the same RAM — `mzn_aircraft06`
+wants about 19 GB resident *plus* room for a 2.5 GB `.opb`.
 
 Always cap proof output. A `ulimit -f` on the `.pbp` is the difference between a
 mis-sized run costing a minute and it filling the disk; several candidates
@@ -224,7 +232,7 @@ repeated.
 | `tsp` (fixed default instance) | cap at 4 GB, and there is no size knob |
 | `qap --size=12` | cap; `--size=11` verifies but takes over 900 s |
 | `regular_random -n 9 --all`, `-n 10 --all` | cap |
-| `regular_random -n 7 --all` | over 1200 s to verify; `-n 6` is under a second. Note the `--seed` trap below — these were unseeded, so they are not one instance scaled |
+| `regular_random -n 7 --all` | 172–282 MB, but **over an hour** to verify, with `--bacchus` as well as without; `-n 6` is under a second |
 | `skeleton_puzzle` at 4×3, 4×4, 5×3, 5×4, 6×3 and the default 7×5 | cap or over 1200 s at every shape tried, with `--seed` and without |
 | `random_polynomial -n 12 -d 6` | cap; `-n 10 -d 5` is 426 MB |
 | `colour` on 42-vertex (50 % density) and 60-vertex graphs | cap — but a 46-vertex graph verifies in the band; see below |
@@ -271,14 +279,16 @@ Found the hard way, all of them producing an immediate parse error:
 
 ## Known gaps
 
-- **`Regular` at scale.** `regular_random --all` has no comfortable size: n=6
-  checks in well under a second, n=7 takes many minutes, and n=9 exceeds an 8 GB
-  proof cap. `examples/nonogram` is the documented structured alternative but
-  does not search, and `examples/rostering` is a 23-recursion toy. The
-  `--bacchus` strategy may bring n=7 into range — it produced a far smaller
-  proof in piloting — but that observation was made against an unseeded run and
-  so compared two different instances; a seeded comparison is the way to settle
-  it.
+- **`Regular` at scale, and this one looks closed rather than open.**
+  `regular_random --all` has no usable size: n=6 checks in well under a second,
+  n=9 exceeds an 8 GB proof cap, and n=7 sits in between in size but not in
+  checking cost. Measured seeded, `-n 7 --all --seed 1` under `--bacchus` writes
+  a 172 MB proof that **exceeds an hour** to verify — about 21 s/MB, the worst
+  cost-per-byte of any derivation-bound proof here. So the smaller-proof strategy
+  does not rescue it. `examples/nonogram` is the documented structured
+  alternative but does not search (17 recursions), and `examples/rostering` is a
+  23-recursion toy. Representing `Regular` at a measurable size probably needs a
+  cheaper proof strategy rather than a better instance.
 - **A comfortably-sized realistic `Cumulative` / `Disjunctive` instance.**
   `examples/rcpsp` (issue #633) closed the "unreachable natively" half of this,
   but its instances are **bimodal rather than scalable**: across `--size` 12–24
