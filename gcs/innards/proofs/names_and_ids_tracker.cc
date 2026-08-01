@@ -134,6 +134,15 @@ namespace
         // re-introduction) entry, so it stays monotone and remains the chain gate's
         // "thresholds ever named" count.
         std::unordered_map<long long, XLiteral> retired_ge;
+        // The same, for the eq atoms of a windowed variable (EqAtomResidency::Windowed):
+        // the forget sweep retires the atom out of `eq` into here, and
+        // need_direct_encoding_for's existing "does the condition exist" guard is the
+        // re-introduction path, taking the XLiteral back so identity and PB name survive
+        // the cycle. Everything the comment above says about `retired_ge` applies verbatim,
+        // including that `eq_defs` keeps its entry (need_pol_item_defining_literal resolves
+        // pol operands through it) and that re-introduction must overwrite rather than
+        // try_emplace those line numbers. Empty unless something windows a variable.
+        std::unordered_map<long long, XLiteral> retired_eq;
     };
 
     struct HashView
@@ -385,6 +394,55 @@ struct NamesAndIDsTracker::Imp
     // bucket (O(deleted)) to stitch and prune, instead of scanning every variable.
     // Level-0 (Top) literals are never indexed here, so they are never forgotten.
     map<int, vector<pair<SimpleIntegerVariableID, Integer>>> order_literals_by_level;
+    // The eq analogues of the two structures above, holding only the *windowed*
+    // (EqAtomResidency::Windowed) eq definitions -- those emitted at Current and deleted
+    // on backtrack. A permanent eq def is not recorded at all: absence means "resident
+    // forever", so both stay empty until something windows a variable, and every eq atom
+    // in the solver today is permanent. Levels here are always positive for the same
+    // reason (a level-0 entry would be a permanent def).
+    map<SimpleIntegerVariableID, map<Integer, int>> live_eq_literals;
+    map<int, vector<pair<SimpleIntegerVariableID, Integer>>> eq_literals_by_level;
+    // The chain-link and stitch clauses currently present in the proof: the threshold pair
+    // each links and its proof line, bucketed by the level it sits at and then by variable.
+    // The same pair can appear more than once -- a hoist re-stitches a pair whose deeper
+    // copy stays until that level is forgotten, and a Top re-stitch of an already-Top-linked
+    // pair duplicates it (the diagnostic's dup_top_stitches) -- so this is a flat list per
+    // (level, variable), not a keyed map.
+    //
+    // Eviction needs every clause naming the threshold it removes, and VeriPB will not
+    // notice if it misses one: a chain clause left naming an evicted threshold stays a
+    // *valid* derived constraint (it was derived from definitions that the atom's stable
+    // identity lets a later need_gevar restore, and re-introducing the definition verifies
+    // with the clause present -- measured, not assumed). A leak is therefore silent, and
+    // costs exactly the resident-database shrinkage the whole mode exists for. See
+    // chain_clauses_naming, which makes eviction's postcondition observable.
+    //
+    // **Level-first, and flat, because recording is the hot path**: every chain clause
+    // emitted inserts here. Keying by variable and then by threshold pair instead cost
+    // +11% of solver-side proof-writing time on the deletion-heavy synthetic (two map-node
+    // allocations and a vector allocation per clause, plus a second structure to keep the
+    // forget sweep off a full scan); this shape is two map lookups and a push_back, and a
+    // forget is one bucket erase. Eviction pays instead, scanning one small vector per
+    // level, which is the right way round: clauses are emitted in millions and evicted in
+    // handfuls.
+    //
+    // Level 0 is an ordinary bucket that nothing forgets -- eviction is what empties it.
+    // Only proof-time emissions are recorded, which is exactly the set eviction can be
+    // asked about: a model-time chain link joins two model-time thresholds, both born Top
+    // and structurally resident, and eviction refuses those.
+    struct ChainClause
+    {
+        Integer lo, hi;
+        ProofLine line;
+    };
+    map<int, map<SimpleIntegerVariableID, vector<ChainClause>>> chain_clauses_by_level;
+    // For each real variable's ge threshold whose Top residency a HOIST caused, how many
+    // permanent references of each cause pin it there. Always populated under Literals
+    // (unlike the diagnostic below): it is evict_order_literal's precondition, and VeriPB
+    // will not catch a wrongly-evicted literal except at a later point of use. See
+    // note_order_literal_top_pin for the two rules that make it trustworthy -- counted at
+    // the reference site, and only for hoisted thresholds.
+    map<SimpleIntegerVariableID, map<Integer, map<OrderEncodingResidencyCause, long long>>> ge_top_pins;
 
     // --- GCS_ORDER_ENCODING_STATS pin-apportionment diagnostic (Literals mode only) ---
     // Everything below is touched ONLY when collect_order_encoding_stats is true
@@ -401,6 +459,7 @@ struct NamesAndIDsTracker::Imp
     map<SimpleIntegerVariableID, map<Integer, optional<OrderEncodingResidencyCause>>> stats_ge_top_cause;
     // Event counters.
     long long stats_deletes = 0;                                    // literals dropped by forget_order_literals_at_level.
+    long long stats_evictions = 0;                                  // literals taken out on demand by evict_order_literal.
     long long stats_stitches = 0;                                   // forget-path skip-link emissions (emit_order_stitch).
     long long stats_reintroductions = 0;                            // ge definitions re-introduced after deletion.
     long long stats_dup_top_stitches = 0;                           // Top-level stitch clauses re-emitted for an already-linked pair.
@@ -754,13 +813,50 @@ auto NamesAndIDsTracker::track_eqvar(
     _imp->atoms_for(id).eq_defs.try_emplace(val.raw_value, names);
 }
 
-auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
+auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v, EqAtomResidency residency) -> void
 {
     if (_imp->find_condition(id == v))
         return;
 
-    auto eqvar = allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, v);
+    // A windowed (deletable) definition is only meaningful where deletable definitions
+    // exist at all -- the Literals mode, at proof-writing time, with assertions off, for a
+    // real variable -- and the request is ignored, leaving the definition permanent,
+    // anywhere else.
+    bool windowed = residency == EqAtomResidency::Windowed && _imp->order_link_deletion_mode == OrderEncodingDeletion::Literals &&
+        _imp->logger != nullptr && _imp->assertion_level == AssertionLevel::Off && std::holds_alternative<SimpleIntegerVariableID>(id);
+
+    // The (i-static) half of the eq-by-interval guard (dev_docs/brancher-design.md, "The
+    // one hidden pin"): a variable with an interval partition retro-pins its eq atoms as
+    // Top partition singleton cells, and a containment tree names them from Top containment
+    // edges, so a deletable definition there would leave a Top line naming a literal a
+    // backtrack deletes. Refuse to window such a variable: its eq atoms stay permanent,
+    // which is correct and merely wins nothing. The dynamic half -- collapsing a live
+    // window when an interval is first requested on it mid-search -- belongs with the
+    // window itself, in stage B''.
+    if (windowed && (_imp->interval_partitions.contains(id) || _imp->containment_trees.contains(id)))
+        windowed = false;
+
+    // Take a retired XLiteral back if this atom is being re-introduced after a backtrack
+    // deleted a windowed definition, so the atom keeps its identity and its PB name across
+    // the cycle (a fresh allocation would render as the same verbose name but a different
+    // `x<n>` with verbose names off); otherwise mint a fresh one. Only a windowed variable
+    // ever retires an eq atom.
+    auto eqvar = [&]() {
+        if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals) {
+            auto & atoms = _imp->atoms_for(id);
+            if (auto retired = atoms.retired_eq.find(v.raw_value); retired != atoms.retired_eq.end()) {
+                auto reused = retired->second;
+                atoms.retired_eq.erase(retired);
+                return reused;
+            }
+        }
+        return allocate_xliteral_meaning(id, EqualsOrGreaterEqual::Equals, v);
+    }();
     _imp->store_condition(id == v, eqvar);
+
+    // Where this atom's definition lands: Top for the permanent case (everything in the
+    // solver today), Current for a windowed one, so a backtrack deletes it.
+    auto eq_def_level = windowed ? ProofLevel::Current : ProofLevel::Top;
 
     auto bounds = _imp->integer_variable_definition_bounds.find(id);
     ProofLine forwards_line, reverse_line;
@@ -788,7 +884,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
             visit(
                 [&](const auto & id) {
                     auto [_f_line, _r_line] =
-                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, id == v, ProofLevel::Top);
+                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * ! (id >= (v + 1_i)) >= 1_i, id == v, eq_def_level);
                     forwards_line = _f_line;
                     reverse_line = _r_line;
                 },
@@ -809,8 +905,7 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links) {
             visit(
                 [&](const auto & id) {
-                    auto [_f_line, _r_line] =
-                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, ProofLevel::Top);
+                    auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + 1_i * (id >= v) >= 1_i, id == v, eq_def_level);
                     forwards_line = _f_line;
                     reverse_line = _r_line;
                 },
@@ -831,8 +926,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         if (_imp->logger && _imp->assertion_level <= AssertionLevel::Links)
             visit(
                 [&](const auto & id) {
-                    auto [_f_line, _r_line] = _imp->logger->emit_red_proof_lines_reifying(
-                        WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id > v)) >= 2_i, id == v, ProofLevel::Top);
+                    auto [_f_line, _r_line] =
+                        _imp->logger->emit_red_proof_lines_reifying(WPBSum{} + (1_i * (id >= v)) + (1_i * ! (id > v)) >= 2_i, id == v, eq_def_level);
                     forwards_line = _f_line;
                     reverse_line = _r_line;
                 },
@@ -848,17 +943,32 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
         }
     }
 
-    _imp->atoms_for(id).eq_defs.try_emplace(v.raw_value, pair{forwards_line, reverse_line});
+    // insert_or_assign, not try_emplace: on the re-introduction of a retired atom the
+    // eq_defs entry is still present but holds the line numbers of the definition the
+    // backtrack deleted, and need_pol_item_defining_literal resolves pol operands through
+    // those numbers. This is the trap the ge side hit; the entry is deliberately never
+    // erased.
+    _imp->atoms_for(id).eq_defs.insert_or_assign(v.raw_value, pair{forwards_line, reverse_line});
 
-    // Literals order-encoding-deletion mode: this eq atom's definition was emitted at
-    // ProofLevel::Top (permanent) above, and names ge(v) and ge(v+1). The
-    // need_all_proof_names_in inside that emission has made both live; but for an
-    // interior threshold their def lands at Current, so a later backtrack forget would
-    // delete it -- leaving this surviving Top eq def (and any solx / backtrack clause /
-    // value-branch guess over the eq atom) naming a deleted ge, which rejects in VeriPB
-    // (the failure this mode showed on eq-heavy instances). Hoist both ge defs to Top so
-    // they stay resident for the eq atom's whole lifetime.
-    hoist_ges_named_by_top_atom(id, v, v + 1_i, OrderEncodingResidencyCause::EqHoist);
+    if (windowed) {
+        // Index the definition under the level it was just emitted at, so the backtrack
+        // that deletes it also retires the atom.
+        record_live_eq_literal(std::get<SimpleIntegerVariableID>(id), v);
+    }
+    else {
+        // Literals order-encoding-deletion mode: this eq atom's definition was emitted at
+        // ProofLevel::Top (permanent) above, and names ge(v) and ge(v+1). The
+        // need_all_proof_names_in inside that emission has made both live; but for an
+        // interior threshold their def lands at Current, so a later backtrack forget would
+        // delete it -- leaving this surviving Top eq def (and any solx / backtrack clause /
+        // value-branch guess over the eq atom) naming a deleted ge, which rejects in VeriPB
+        // (the failure this mode showed on eq-heavy instances). Hoist both ge defs to Top so
+        // they stay resident for the eq atom's whole lifetime.
+        //
+        // A windowed definition deliberately does none of this: leaving its two thresholds
+        // deletable is the whole point of the window, and its own def dies with them.
+        hoist_ges_named_by_top_atom(id, v, v + 1_i, OrderEncodingResidencyCause::EqHoist);
+    }
 
     // If `id` is a view's proof-only var, eagerly emit the
     // eq-atom-level link `V=v <=> X=k_x` as two RUP lines. The GE-atom
@@ -1418,6 +1528,13 @@ auto NamesAndIDsTracker::forget_order_links_at_level(int level) -> void
 {
     if (_imp->order_link_deletion_mode == OrderEncodingDeletion::Literals) {
         forget_order_literals_at_level(level);
+        // The eq and chain-clause analogues, from the same funnel. Both are pure
+        // bookkeeping (the `del`s were emitted by forget_proof_level's own loop), and both
+        // run after the ge sweep because that is what emits this level's stitches -- which
+        // land at a *surviving* neighbour's level, never at the level being forgotten, so
+        // they are not swept away again here.
+        forget_eq_literals_at_level(level);
+        forget_chain_clauses_at_level(level);
         return;
     }
 
@@ -1450,6 +1567,80 @@ auto NamesAndIDsTracker::record_live_order_literal(const SimpleIntegerVariableID
         _imp->order_literals_by_level[level].emplace_back(id, v);
 }
 
+auto NamesAndIDsTracker::record_live_eq_literal(const SimpleIntegerVariableID & id, Integer v) -> void
+{
+    // Windowed eq defs only; a permanent one is left unrecorded (see the header).
+    int level = _imp->logger->proof_level();
+    _imp->live_eq_literals[id][v] = level;
+    _imp->eq_literals_by_level[level].emplace_back(id, v);
+}
+
+auto NamesAndIDsTracker::note_order_literal_top_pin(const SimpleIntegerVariableID & id, Integer v, OrderEncodingResidencyCause cause) -> void
+{
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+        return;
+
+    auto live_it = _imp->live_order_literals.find(id);
+    if (live_it == _imp->live_order_literals.end())
+        return;
+    auto lvl_it = live_it->second.find(v);
+    if (lvl_it == live_it->second.end())
+        return; // not a tracked threshold of id: there is nothing here to pin.
+
+    if (lvl_it->second == 0 && ! (_imp->ge_top_pins.contains(id) && _imp->ge_top_pins[id].contains(v)))
+        return; // structurally resident, so never evictable and needing no record.
+
+    ++_imp->ge_top_pins[id][v][cause];
+}
+
+auto NamesAndIDsTracker::record_live_chain_line(const SimpleIntegerVariableID & id, Integer lo, Integer hi, int at_level, const ProofLine & line)
+    -> void
+{
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+        return;
+
+    _imp->chain_clauses_by_level[at_level][id].emplace_back(Imp::ChainClause{lo, hi, line});
+}
+
+auto NamesAndIDsTracker::forget_chain_clauses_at_level(int level) -> void
+{
+    // The lines themselves were del'd by forget_proof_level's own loop; this just drops the
+    // whole level's records in one go.
+    _imp->chain_clauses_by_level.erase(level);
+}
+
+auto NamesAndIDsTracker::forget_eq_literals_at_level(int level) -> void
+{
+    auto bucket_it = _imp->eq_literals_by_level.find(level);
+    if (bucket_it == _imp->eq_literals_by_level.end())
+        return;
+
+    for (const auto & [id, v] : bucket_it->second) {
+        auto live_it = _imp->live_eq_literals.find(id);
+        if (live_it == _imp->live_eq_literals.end())
+            continue;
+        auto lvl_it = live_it->second.find(v);
+        if (lvl_it == live_it->second.end() || lvl_it->second != level)
+            continue; // hoisted out to Top since, so not this level's to delete.
+        live_it->second.erase(lvl_it);
+        if (live_it->second.empty())
+            _imp->live_eq_literals.erase(live_it);
+
+        // The def lines were del'd by forget_proof_level's own loop. Retire the atom, so
+        // a later reference cannot name a literal whose definition is gone: find_condition
+        // stops answering, and the only route back is need_direct_encoding_for, which
+        // re-introduces the definition and takes the retired XLiteral back. eq_defs keeps
+        // its now-stale entry, overwritten on re-introduction.
+        auto & atoms = _imp->atoms_for(SimpleOrProofOnlyIntegerVariableID{id});
+        if (auto atom = atoms.eq.find(v.raw_value); atom != atoms.eq.end()) {
+            atoms.retired_eq.insert_or_assign(v.raw_value, atom->second);
+            atoms.eq.erase(atom);
+        }
+    }
+
+    _imp->eq_literals_by_level.erase(bucket_it);
+}
+
 auto NamesAndIDsTracker::link_order_literal_to_live_neighbours(const SimpleIntegerVariableID & id, Integer v) -> void
 {
     // Emit the two chain links joining v to its immediate live neighbours. A link between
@@ -1477,16 +1668,18 @@ auto NamesAndIDsTracker::link_order_literal_to_live_neighbours(const SimpleInteg
     // lo < hi is the threshold pair the link is over (for the stats dup-Top check).
     auto emit_link = [&](const shared_ptr<PolBuilder> & pol, int neighbour_level, Integer lo, Integer hi) {
         int landed;
+        ProofLine line;
         if (v_level == 0 && neighbour_level == 0 && current != 0) {
             _imp->logger->enter_proof_level(0);
-            pol->emit(*_imp->logger, ProofLevel::Current);
+            line = pol->emit(*_imp->logger, ProofLevel::Current);
             _imp->logger->enter_proof_level(current);
             landed = 0;
         }
         else {
-            pol->emit(*_imp->logger, ProofLevel::Current);
+            line = pol->emit(*_imp->logger, ProofLevel::Current);
             landed = current;
         }
+        record_live_chain_line(id, lo, hi, landed, line);
         if (_imp->collect_order_encoding_stats)
             stats_note_stitch_emitted(id, lo, hi, landed, /*forget_path=*/false);
     };
@@ -1521,9 +1714,10 @@ auto NamesAndIDsTracker::emit_order_stitch(const SimpleIntegerVariableID & id, I
     _imp->building_order_link = saved;
 
     _imp->logger->enter_proof_level(at_level);
-    pol->emit(*_imp->logger, ProofLevel::Current);
+    auto line = pol->emit(*_imp->logger, ProofLevel::Current);
     _imp->logger->enter_proof_level(restore_level);
 
+    record_live_chain_line(id, lo, hi, at_level, line);
     if (_imp->collect_order_encoding_stats)
         stats_note_stitch_emitted(id, lo, hi, at_level, /*forget_path=*/true);
 }
@@ -1654,7 +1848,8 @@ auto NamesAndIDsTracker::stitch_hoisted_order_literal(const SimpleIntegerVariabl
         auto pol = make_pol_chain_line(id >= *lo, ! (id >= v));
         auto landed = max(target_level, lo_level);
         _imp->logger->enter_proof_level(landed);
-        pol->emit(*_imp->logger, ProofLevel::Current);
+        auto line = pol->emit(*_imp->logger, ProofLevel::Current);
+        record_live_chain_line(id, *lo, v, landed, line);
         if (_imp->collect_order_encoding_stats)
             stats_note_stitch_emitted(id, *lo, v, landed, /*forget_path=*/false);
     }
@@ -1663,7 +1858,8 @@ auto NamesAndIDsTracker::stitch_hoisted_order_literal(const SimpleIntegerVariabl
         auto pol = make_pol_chain_line(id >= v, ! (id >= *hi));
         auto landed = max(target_level, hi_level);
         _imp->logger->enter_proof_level(landed);
-        pol->emit(*_imp->logger, ProofLevel::Current);
+        auto line = pol->emit(*_imp->logger, ProofLevel::Current);
+        record_live_chain_line(id, v, *hi, landed, line);
         if (_imp->collect_order_encoding_stats)
             stats_note_stitch_emitted(id, v, *hi, landed, /*forget_path=*/false);
     }
@@ -1729,10 +1925,16 @@ auto NamesAndIDsTracker::hoist_order_literal_to_level(const SimpleIntegerVariabl
     stitch_hoisted_order_literal(id, v, target_level, immediate_neighbours);
 }
 
-auto NamesAndIDsTracker::hoist_order_literal_to_top(const SimpleIntegerVariableID & id, Integer v, optional<OrderEncodingResidencyCause> stats_cause)
+auto NamesAndIDsTracker::hoist_order_literal_to_top(const SimpleIntegerVariableID & id, Integer v, optional<OrderEncodingResidencyCause> cause)
     -> void
 {
-    hoist_order_literal_to_level(id, v, 0, /*immediate_neighbours=*/false, stats_cause);
+    // This entry point *is* a reference site (its caller is about to name the literal in a
+    // line that outlives every backtrack), so the Top pin is counted here, before
+    // delegating: hoist_order_literal_to_level early-returns for a threshold already at
+    // Top and would record nothing.
+    if (cause)
+        note_order_literal_top_pin(id, v, *cause);
+    hoist_order_literal_to_level(id, v, 0, /*immediate_neighbours=*/false, cause);
 }
 
 auto NamesAndIDsTracker::hoist_order_literal_to_top_if_live(
@@ -1759,20 +1961,29 @@ auto NamesAndIDsTracker::hoist_order_literal_to_top_if_live(
 }
 
 auto NamesAndIDsTracker::hoist_ges_named_by_top_atom(
-    SimpleOrProofOnlyIntegerVariableID id, Integer lower_ge, Integer upper_ge, optional<OrderEncodingResidencyCause> stats_cause) -> void
+    SimpleOrProofOnlyIntegerVariableID id, Integer lower_ge, Integer upper_ge, optional<OrderEncodingResidencyCause> cause) -> void
 {
     // Same guard the ge-def deletion in need_gevar uses: only proof-time, real-variable,
     // assertions-off Literals mode tracks deletable ge defs at all.
     if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger || _imp->assertion_level != AssertionLevel::Off)
         return;
     if (auto sid_ptr = std::get_if<SimpleIntegerVariableID>(&id)) {
-        hoist_order_literal_to_top_if_live(*sid_ptr, lower_ge, stats_cause);
-        hoist_order_literal_to_top_if_live(*sid_ptr, upper_ge, stats_cause);
+        // Count both Top pins here, at the reference site, and before the hoists: the
+        // permanent atom being defined names both thresholds whether or not either needs
+        // moving, and the hoist early-returns for one already at Top. This is exactly the
+        // case that made reference-site counting necessary -- eq(v) and eq(v+1) both name
+        // ge(v+1), so the second eq atom's pin is invisible to the hoist.
+        if (cause) {
+            note_order_literal_top_pin(*sid_ptr, lower_ge, *cause);
+            note_order_literal_top_pin(*sid_ptr, upper_ge, *cause);
+        }
+        hoist_order_literal_to_top_if_live(*sid_ptr, lower_ge, cause);
+        hoist_order_literal_to_top_if_live(*sid_ptr, upper_ge, cause);
     }
 }
 
 auto NamesAndIDsTracker::hoist_live_order_literals_toward_level(
-    const std::vector<Literal> & lits, int target_level, optional<OrderEncodingResidencyCause> stats_cause) -> void
+    const std::vector<Literal> & lits, int target_level, optional<OrderEncodingResidencyCause> cause) -> void
 {
     // Only the Literals mode has anything to hoist; other modes keep the whole
     // encoding resident at Top, and with no logger there is nothing emitted yet.
@@ -1805,9 +2016,217 @@ auto NamesAndIDsTracker::hoist_live_order_literals_toward_level(
         auto lvl_it = live_it->second.find(cond->value);
         if (lvl_it == live_it->second.end())
             continue;
+
+        // A hoist to Top is a permanent reference: this caller's line (a learned nogood,
+        // an objective-improvement constraint) survives every backtrack, so count the pin
+        // here at the reference site, before the hoist, which early-returns for a literal
+        // already at Top. A GuessHoist targets a positive level and is not permanent; if
+        // it happens to be called at level 0 it takes no pin, which leaves the literal
+        // looking structurally resident -- eviction then refuses it, which costs a win at
+        // worst and is never wrong.
+        if (target_level == 0 && cause && *cause != OrderEncodingResidencyCause::GuessHoist)
+            note_order_literal_top_pin(*sid, cond->value, *cause);
+
         if (lvl_it->second > target_level)
-            hoist_order_literal_to_level(*sid, cond->value, target_level, /*immediate_neighbours=*/false, stats_cause);
+            hoist_order_literal_to_level(*sid, cond->value, target_level, /*immediate_neighbours=*/false, cause);
     }
+}
+
+auto NamesAndIDsTracker::chain_clauses_naming(const SimpleIntegerVariableID & id, Integer v) const -> long long
+{
+    long long count = 0;
+    for (const auto & [level, by_var] : _imp->chain_clauses_by_level) {
+        auto var_it = by_var.find(id);
+        if (var_it == by_var.end())
+            continue;
+        for (const auto & clause : var_it->second)
+            if (clause.lo == v || clause.hi == v)
+                ++count;
+    }
+    return count;
+}
+
+auto NamesAndIDsTracker::evict_order_literal(
+    const SimpleIntegerVariableID & id, Integer v, optional<OrderEncodingResidencyCause> expected_sole_top_cause) -> bool
+{
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+        throw ProofError{"evict_order_literal requires OrderEncodingDeletion::Literals"};
+    if (! _imp->logger)
+        throw ProofError{"evict_order_literal requires the logger to be attached"};
+
+    auto live_it = _imp->live_order_literals.find(id);
+    if (live_it == _imp->live_order_literals.end())
+        throw ProofError{"eviction of an order literal for an untracked variable"};
+    auto lvl_it = live_it->second.find(v);
+    if (lvl_it == live_it->second.end())
+        throw ProofError{"eviction of a non-live order literal"};
+    int level = lvl_it->second;
+
+    // The residency precondition, checked rather than asserted: VeriPB accepts a
+    // wrongly-evicted literal at the deletion and only rejects at a later point of use, so
+    // getting this wrong would show up far from its cause. A refusal is always safe -- the
+    // literal stays resident and the caller simply wins nothing.
+    const map<OrderEncodingResidencyCause, long long> * pins = nullptr;
+    if (auto pins_it = _imp->ge_top_pins.find(id); pins_it != _imp->ge_top_pins.end())
+        if (auto pin_v_it = pins_it->second.find(v); pin_v_it != pins_it->second.end())
+            pins = &pin_v_it->second;
+
+    if (level == 0) {
+        // Top-resident: evict only if the caller's cause is the sole pin, held once. No pin
+        // record at all means structurally resident (boundary / model-time / aux / view /
+        // gate, none of which hoist), which is never evictable.
+        if (! expected_sole_top_cause || ! pins)
+            return false;
+        if (pins->size() != 1 || pins->begin()->first != *expected_sole_top_cause || pins->begin()->second != 1)
+            return false;
+    }
+    else if (expected_sole_top_cause || pins) {
+        // Deletable: no Top line can be naming it (anything that would have hoisted it),
+        // so a caller naming a Top cause, or a pin record existing at all, is a bug in the
+        // caller or in the bookkeeping rather than a policy refusal -- but refusing is
+        // still the safe answer.
+        return false;
+    }
+
+    // The immediate live neighbours to stitch over, read before v is dropped. std::map
+    // iterators survive the insertions the emissions below can make, so lvl_it stays valid.
+    optional<Integer> lo, hi;
+    int lo_level = 0, hi_level = 0;
+    if (lvl_it != live_it->second.begin()) {
+        auto p = prev(lvl_it);
+        lo = p->first;
+        lo_level = p->second;
+    }
+    if (auto n = next(lvl_it); n != live_it->second.end()) {
+        hi = n->first;
+        hi_level = n->second;
+    }
+
+    // Delete ge(v)'s two reification lines. A DirectOnly {0,1} variable's entry holds
+    // XLiterals rather than line numbers, filtered exactly as the hoist filters them.
+    SimpleOrProofOnlyIntegerVariableID key{id};
+    auto & defs = _imp->atoms_for(key).ge_defs.at(v.raw_value);
+    vector<ProofLine> def_lines;
+    if (auto p = std::get_if<ProofLine>(&defs.first))
+        def_lines.push_back(*p);
+    if (auto p = std::get_if<ProofLine>(&defs.second))
+        def_lines.push_back(*p);
+    _imp->logger->delete_proof_lines_at_level(def_lines, level);
+
+    // Delete every chain clause naming v, each at the level it sits at. This is the half of
+    // eviction that VeriPB does not police (see chain_clauses_by_level): a clause left
+    // behind stays valid, so a leak is silent and simply costs the shrinkage.
+    // chain_clauses_naming is what the driver test checks it against.
+    auto names_v = [&](const Imp::ChainClause & c) { return c.lo == v || c.hi == v; };
+    for (auto & [clause_level, by_var] : _imp->chain_clauses_by_level) {
+        auto var_it = by_var.find(id);
+        if (var_it == by_var.end())
+            continue;
+        auto & clauses = var_it->second;
+        vector<ProofLine> naming_v;
+        for (const auto & clause : clauses)
+            if (names_v(clause))
+                naming_v.push_back(clause.line);
+        if (naming_v.empty())
+            continue;
+        _imp->logger->delete_proof_lines_at_level(naming_v, clause_level);
+        std::erase_if(clauses, names_v);
+        if (clauses.empty())
+            by_var.erase(var_it);
+    }
+
+    // Drop v from the live set and, if it was deletable, from its level's deletion index --
+    // a re-introduction at the same level would otherwise be double-indexed there.
+    if (level != 0) {
+        auto & bucket = _imp->order_literals_by_level[level];
+        std::erase_if(bucket, [&](const pair<SimpleIntegerVariableID, Integer> & e) { return e.first.index == id.index && e.second == v; });
+    }
+    live_it->second.erase(lvl_it);
+    if (live_it->second.empty())
+        _imp->live_order_literals.erase(live_it);
+
+    // Release the Top pin: the reference that held it is gone (its own line was deleted by
+    // the caller, which owns the ordering -- see the delc-before-evict discipline in
+    // dev_docs/brancher-design.md).
+    if (auto pins_it = _imp->ge_top_pins.find(id); pins_it != _imp->ge_top_pins.end()) {
+        pins_it->second.erase(v);
+        if (pins_it->second.empty())
+            _imp->ge_top_pins.erase(pins_it);
+    }
+
+    // Retire the atom, for the same reason the backtrack sweep does: with it out of the
+    // lookup table, find_condition stops answering and the only route back to the literal
+    // is need_gevar, which re-introduces the definition first and takes the retired
+    // XLiteral back, so identity and PB name survive the cycle. ge_defs keeps its now-stale
+    // entry (overwritten on re-introduction, and the chain gate's monotone count).
+    auto & atoms = _imp->atoms_for(key);
+    if (auto atom = atoms.ge.find(v.raw_value); atom != atoms.ge.end()) {
+        atoms.retired_ge.insert_or_assign(v.raw_value, atom->second);
+        atoms.ge.erase(atom);
+    }
+
+    // Only now stitch the survivors, by the forget sweep's rule: the skip link lands at the
+    // deeper of the two, so it is deleted together with the first of them to go, and a run
+    // at a chain end (no survivor on one side) gets no stitch -- again exactly as there.
+    // Emitting it last, after the retirement above, means that at every point where a line
+    // is emitted "the atom exists" still implies "its definition does": the stitch's own
+    // pol re-enters need_gevar for lo and hi, and there is now no window in which it could
+    // reach a v whose definition has gone.
+    if (lo && hi)
+        emit_order_stitch(id, *lo, *hi, max(lo_level, hi_level), _imp->logger->proof_level());
+
+    if (_imp->collect_order_encoding_stats) {
+        ++_imp->stats_evictions;
+        // No longer Top-resident: clear the first-cause attribution but keep the "seen"
+        // entry, so the diagnostic's distinct-atom count and chain-length distribution stay
+        // right across an evict/re-introduce cycle.
+        if (auto id_it = _imp->stats_ge_top_cause.find(id); id_it != _imp->stats_ge_top_cause.end())
+            if (auto v_it = id_it->second.find(v); v_it != id_it->second.end())
+                v_it->second = nullopt;
+    }
+
+    return true;
+}
+
+auto NamesAndIDsTracker::hoist_eq_to_top(const SimpleIntegerVariableID & id, Integer v) -> void
+{
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+        throw ProofError{"hoist_eq_to_top requires OrderEncodingDeletion::Literals"};
+    if (! _imp->logger)
+        throw ProofError{"hoist_eq_to_top requires the logger to be attached"};
+
+    auto live_it = _imp->live_eq_literals.find(id);
+    if (live_it == _imp->live_eq_literals.end())
+        return; // nothing windowed on this variable: its eq atoms are already permanent.
+    auto lvl_it = live_it->second.find(v);
+    if (lvl_it == live_it->second.end())
+        return;
+    int level = lvl_it->second;
+
+    // Relocate the eq definition's two reification lines to Top -- pure bookkeeping,
+    // emitting nothing, exactly as the ge hoist does and for the same reason (re-emitting
+    // the `red` is what collides with a pin). A DirectOnly {0,1} variable's eq entry holds
+    // XLiterals rather than lines (track_eqvar), and those are filtered out here as
+    // everywhere else.
+    SimpleOrProofOnlyIntegerVariableID key{id};
+    auto & defs = _imp->atoms_for(key).eq_defs.at(v.raw_value);
+    vector<ProofLine> def_lines;
+    if (auto p = std::get_if<ProofLine>(&defs.first))
+        def_lines.push_back(*p);
+    if (auto p = std::get_if<ProofLine>(&defs.second))
+        def_lines.push_back(*p);
+    _imp->logger->move_proof_lines_to_level(def_lines, level, 0);
+
+    auto & bucket = _imp->eq_literals_by_level[level];
+    std::erase_if(bucket, [&](const pair<SimpleIntegerVariableID, Integer> & e) { return e.first.index == id.index && e.second == v; });
+    live_it->second.erase(lvl_it);
+    if (live_it->second.empty())
+        _imp->live_eq_literals.erase(live_it);
+
+    // eq(v) <=> ge(v) & ~ge(v+1): now that the definition is permanent, the two thresholds
+    // it names must be too, and each takes an EqHoist pin so a later eviction knows this
+    // atom is holding them.
+    hoist_ges_named_by_top_atom(key, v, v + 1_i, OrderEncodingResidencyCause::EqHoist);
 }
 
 auto NamesAndIDsTracker::stats_note_ge_recorded(const SimpleIntegerVariableID & id, Integer v, optional<OrderEncodingResidencyCause> born_cause)
@@ -1947,6 +2366,7 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     emit(format("  gate-held (below min_chain gate): {} ({:.1f}%)", gate_resident, pct(gate_resident)));
     emit("events:");
     emit(format("  deletes: {}", _imp->stats_deletes));
+    emit(format("  evictions: {}", _imp->stats_evictions));
     emit(format("  stitches (forget-path): {}", _imp->stats_stitches));
     emit(format("  reintroductions: {}", _imp->stats_reintroductions));
     emit(format("  duplicate-Top-stitches: {}", _imp->stats_dup_top_stitches));
