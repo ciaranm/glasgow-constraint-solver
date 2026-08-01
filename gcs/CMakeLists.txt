@@ -196,6 +196,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(constraint_enumeration_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME constraint_enumeration_test COMMAND $<TARGET_FILE:constraint_enumeration_test>)
 
+    add_executable(constraint_row_test constraint_row_test.cc)
+    target_link_libraries(constraint_row_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
+    add_test(NAME constraint_row_test COMMAND $<TARGET_FILE:constraint_row_test>)
+
     add_executable(array_param_test array_param_test.cc)
     target_link_libraries(array_param_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
     add_test(NAME array_param_test COMMAND $<TARGET_FILE:array_param_test>)

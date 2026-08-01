@@ -144,9 +144,21 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
     // Turn one donor row into a graph edge, or account for why it cannot be.
     // Returns whether an edge was added, so a caller can also count the row in
     // whatever family bucket it belongs to. The graph does not care which
-    // constraint class emitted the row --- only that the row exists, carries a
-    // citable @c[<id>] label, and says `positive - negative <= value`.
-    auto lift_row = [&](const DifferenceRow & row, const ConstraintID & id) -> bool {
+    // constraint class emitted the row --- only that the row says
+    // `positive - negative <= value` and, when proofs are on, that `label` names
+    // it. The label is resolved by the caller, through the donor's published
+    // role: see Problem::each_constraint_of_type_with_proof_data.
+    auto lift_row = [&](const DifferenceRow & row, const ConstraintID & id, const optional<ProofLineLabel> & label) -> bool {
+        if (logger && ! label) {
+            // The donor is the right shape but there is no row to build a pol
+            // on. Either it published no primary row for the kind it was posted
+            // with, or it published one and nothing was emitted under it. Lifting
+            // anyway would produce a propagator whose justifications cite a label
+            // the .opb does not contain, so decline and count it.
+            ++stats.skipped_uncitable_row;
+            return false;
+        }
+
         auto left = deview_difference_operand(row.positive);
         auto right = deview_difference_operand(row.negative);
         if (! left || ! right) {
@@ -181,13 +193,12 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
         auto posted_index = graph.edges.size();
         graph.edges.push_back(DifferenceGraphEdge{from, to, d, posted_index, row.cond});
         if (logger) {
-            // The donor's own row, which both families label @c[<id>] with an
-            // empty role, for the conditional forms exactly as for the
-            // unconditional ones. Nothing new goes into the OPB ---
-            // Presolver::run has no ProofModel * precisely because that door
+            // The donor's own row, named by the donor rather than by a label
+            // this presolver builds for itself. Nothing new goes into the OPB
+            // --- Presolver::run has no ProofModel * precisely because that door
             // has closed --- and nothing needs to: every inference the
             // propagator makes is a cutting-planes consequence of these rows.
-            graph.edge_lines.push_back(ProofLineLabel{"c[" + as_string(id) + "]"});
+            graph.edge_lines.push_back(*label);
         }
 
         if (row.cond)
@@ -203,7 +214,7 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
         return true;
     };
 
-    for (const auto & c : problem.each_constraint_of_type<ReifiedLinearInequality>()) {
+    for (const auto & [c, label] : problem.each_constraint_of_type_with_proof_data<ReifiedLinearInequality>(logger)) {
         // MustHold gives a plain edge; If gives a half-reified one,
         // `cond -> x - y <= d'. Both are citable and both are the shape the
         // propagator's proofs assume: linear_inequality.cc labels the
@@ -252,14 +263,14 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
             continue;
         }
 
-        static_cast<void>(lift_row(DifferenceRow{*positive, *negative, c.value(), edge_condition}, c.constraint_id()));
+        static_cast<void>(lift_row(DifferenceRow{*positive, *negative, c.value(), edge_condition}, c.constraint_id(), label));
     }
 
     // Comparisons are difference constraints too --- `x <= y + d` is a view, not
     // a separate constraint kind --- and every row
     // ReifiedCompareLessThanOrMaybeEqual emits now carries an @label, so every
     // row is citable.
-    for (const auto & c : problem.each_constraint_of_type<ReifiedCompareLessThanOrMaybeEqual>()) {
+    for (const auto & [c, label] : problem.each_constraint_of_type_with_proof_data<ReifiedCompareLessThanOrMaybeEqual>(logger)) {
         // `x <= y` states `x - y <= 0` and `x < y` states `x - y <= -1`, both
         // under the bare @c[<id>] label; the `If' form states the same row
         // under HalfReifyOnConjunctionOf on the recorded condition, and under
@@ -292,7 +303,7 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
             continue;
         }
 
-        if (lift_row(*row, c.constraint_id()))
+        if (lift_row(*row, c.constraint_id(), label))
             ++stats.comparison_edges_lifted;
     }
 

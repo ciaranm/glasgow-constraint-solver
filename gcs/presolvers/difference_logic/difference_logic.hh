@@ -69,7 +69,7 @@ namespace gcs
          * \name Why a candidate was not lifted.
          *
          * Every donor the presolver looked at, of either family, falls into
-         * exactly one of edges_lifted or one of these five buckets, so the six
+         * exactly one of edges_lifted or one of these six buckets, so the seven
          * numbers together account for every ReifiedLinearInequality *and*
          * every ReifiedCompareLessThanOrMaybeEqual in the model. (The first two
          * only ever fire on a linear: a comparison is two terms with
@@ -103,6 +103,16 @@ namespace gcs
         /// `d < 0` case would need an initialiser, a door that has closed by
         /// the time a presolver runs, so they are left to their own propagator.
         std::size_t skipped_degenerate = 0;
+
+        /// A donor of the right shape whose primary OPB row cannot be cited: it
+        /// published no role for the reification kind it was posted with, or it
+        /// published one and no row was emitted under it. The propagator's
+        /// justifications are `pol`s over the donors' rows, so a row that is not
+        /// there is not a weaker proof but an invalid one, and the edge is left
+        /// with its own propagator instead. Only ever non-zero when proofs are
+        /// being logged: with no logger there is nothing to cite and nothing to
+        /// check.
+        std::size_t skipped_uncitable_row = 0;
 
         ///@}
     };
