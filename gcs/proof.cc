@@ -64,12 +64,9 @@ namespace
     }
 
     /**
-     * Read an OrderEncodingDeletion from the environment, if set. The primary
-     * selector is GCS_DELETE_ORDER_ENCODING=literals|links|none (case-insensitive on
-     * the first letter); it picks the mode by name. The legacy GCS_DELETE_ORDER_LINKS
-     * variable is still honoured (any non-empty non-off value turns the old Links mode
-     * on), so existing tests keep working, but GCS_DELETE_ORDER_ENCODING takes
-     * precedence when both are set.
+     * Read an OrderEncodingDeletion from the environment, if set:
+     * GCS_DELETE_ORDER_ENCODING=literals|none (case-insensitive on the first letter),
+     * picking the mode by name. An unrecognised value falls through to the default.
      */
     [[nodiscard]] auto order_encoding_deletion_from_env() -> optional<OrderEncodingDeletion>
     {
@@ -77,18 +74,8 @@ namespace
             string value{env};
             if (value == "literals" || value == "Literals")
                 return OrderEncodingDeletion::Literals;
-            if (value == "links" || value == "Links")
-                return OrderEncodingDeletion::Links;
             if (is_off_word(value))
                 return OrderEncodingDeletion::None;
-            // Unrecognised value: fall through to the legacy variable / default.
-        }
-
-        if (const auto * const env = std::getenv("GCS_DELETE_ORDER_LINKS"); env && *env) {
-            string value{env};
-            if (is_off_word(value))
-                return OrderEncodingDeletion::None;
-            return OrderEncodingDeletion::Links;
         }
 
         return nullopt;

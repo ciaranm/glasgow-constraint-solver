@@ -55,6 +55,12 @@ The supervisor reviews this before any code is written.
    same measure-first discipline as the chain gate's default. The split family is
    likewise flag-gated.
 
+   **Settled by that measurement (stage E): the window now follows `Literals`**, so a
+   caller who has opted into deletion gets both halves of it. It is worth up to 4.87×
+   where it engages, and where it cannot engage it is byte-identical (talent, langford)
+   or costs +0.30 % on a seventy-three-second real verify. `Literals` itself stays
+   flag-gated and off, unchanged.
+
 Two of these (4, 5) supersede the "map the eq orders to `Exclude`, only split
 wins" stance that an earlier iteration of this design held; the eq-atom window
 (below) is what changed the calculus, and it is validated (8/8 in VeriPB 3.0.2).
@@ -676,7 +682,7 @@ resident* subset. An eq eviction mirrors the ge eviction's
   variable, and the index costs nothing on the eq-heavy instances whose eq atoms are not
   branched on. (`live_order_literals` cannot do this: it records level-0 ge thresholds
   because the chain walk and the stitch need them.) `forget_eq_literals_at_level` and
-  `forget_chain_lines_at_level` both hang off the same `forget_order_links_at_level`
+  `forget_chain_clauses_at_level` both hang off the same `forget_order_encoding_at_level`
   funnel, after the ge sweep — which is what emits the level's stitches, and those land at
   a *surviving* neighbour's level, never at the level being forgotten.
 
@@ -1316,10 +1322,12 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   containment-tree paths; `ProofLogger::{eq_window_active, mint_windowed_eq_guess,
   emit_eq_window_advance}` and the branch-loop wiring; and the `Lower`/`UpperBound`
   tags on `smallest_first` / `largest_first` / `smallest_in` / `largest_in`.
-  Ships **default-off for eq orders** (Decision 5), behind
+  Shipped **default-off for eq orders** (Decision 5), behind
   `ProofOptions::set_order_encoding_deletion_eq_window()` /
   `GCS_DELETE_ORDER_ENCODING_EQ_WINDOW`; with it off the four tagged orders are
-  byte-identical to the untagged ones, which is what makes the tags free to add now.
+  byte-identical to the untagged ones, which is what made the tags free to add. **Stage
+  E's measurement moved that default on**, under `Literals` only — see Decision 5 above
+  and the stage E entry below; the flag and its off-switch are unchanged.
   **Oracle (met):** the caps-off suite passes with the window on at `MIN_CHAIN=0`
   (542/542, no flag-induced rejection); flag-off byte-identity holds across
   {None, Literals gate 0, Literals gate 16}; and two new VeriPB-checked tests cover
@@ -1424,18 +1432,62 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   scale is **stage E's measurement**, and it is the kind of thing stage E's go/no-go has to
   weigh against the complexity.
 
-- **Stage E — benchmark + cleanup.**
-  Re-run the eq-free large-domain sweep and the optimisation sweep for the step-2
-  numbers; **measure the eq window on the eq-heavy instances (crystal_maze, talent)
-  and the ascending-eq large-domain case to decide whether it becomes the default for
-  `smallest_first`** (Decision 5's transient-for-permanent trade). Remove the dormant
-  `OrderEncodingDeletion::Links` mode; rename `forget_order_links_at_level` /
-  `live_order_links` and the `_links_`-named machinery the tracker header flags as
-  "left unchanged until the planned Brancher refactor renames it."
+- **Stage E — benchmark + cleanup. DONE, and the stack's go/no-go.**
+  Cleanup shipped: the dormant `OrderEncodingDeletion::Links` mode is gone (with
+  `ensure_order_chain_connected`, the `live_order_links` / `order_links_by_level` index,
+  the legacy `GCS_DELETE_ORDER_LINKS` variable, and `building_order_link`, whose only
+  reader was the Links branch — the four Literals sites that set it were protecting
+  nothing); `forget_order_links_at_level` is `forget_order_encoding_at_level` and
+  `order_link_deletion_mode` is `order_encoding_deletion_mode`; and the two verified
+  foundations are real tests, `order_jump_test` and `order_hoist_test`, with their
+  must-fail controls running through a new `run_test_and_expect_rejection.bash` that
+  asserts the rejection *message*, not just the exit code.
+  **Oracle (met):** caps-off suite **557/557** in each of {None, Literals gate 0,
+  Literals gate 16}, and `.opb`/`.pbp` byte-identical to stage D's tip for every
+  deterministic example in all three configurations (75/75).
 
-Stages A, B, B', B'', C and D have all landed in sequence. Stage D was the only one gated
-on work outside this task (the delc mechanics), and that gate is closed. Stage E is the
-only stage left, and it is the go/no-go for the whole stack.
+  **The campaign, in one sitting at the tip.** The full tables are in
+  [order-encoding-deletion.md](order-encoding-deletion.md), "Results"; what stage E was
+  for is the four answers.
+
+  1. **The later stages cost the headline win nothing.** The eq-free split sweep
+     reproduces the pre-B″ figures to a couple of percent: **5.03× / 9.89× / 19.87× /
+     58.03×** at d250/500/1000/2000, gate 0 (3.18×/6.18×/12.44×/38.64× at the shipped
+     gate 16), peak `veripb` RSS −30 % to −56 %, every row search-identical and VERIFIED
+     under `-c`.
+  2. **The stack opened a second win regime.** Ascending eq branching had no frontier to
+     advance before B″; with the window it goes **5.31× / 9.05× / 15.50×** against mode
+     None at d250/500/1000, of which the window itself is 2.32×/3.54×/4.87×. Same
+     grows-with-domain signature, same SIZE≠TIME shape (+31 % proof, 4.9× faster).
+  3. **It still does not generalise, and stages C and D did not change that.**
+     seat-moving — the lone deep-yet-verifiable real split case, and the instance whose
+     churn motivated stage C — is **124.63 s OFF against 126.82 s / 126.80 s ON**, i.e.
+     neutral-to-2 %-negative, where the pre-stack sitting had it 2-5 % the other way.
+     Stage C *does* fire (79.9 % of the optimisation synthetic's Top residency is now
+     attributed to the exemption; seat-moving's proof growth fell from +2.3 % to +1.3 %)
+     and stage D's residency claim holds, but neither converts to verify time even here.
+     tour, colour and knapsack are exact no-ops; talent is 0.97×/1.00×.
+  4. **Decision 5, settled by measurement rather than argument: the eq window follows
+     `Literals`.** Where it engages it is worth up to 4.87×. Where it cannot — which is
+     every real eq model, because the window needs the branch layer to name an eq atom
+     *first* and a per-value propagator always gets there before it — the cost is a
+     small-proof effect that washes out: **byte-identical** on talent and langford,
+     **+0.30 %** on colour's 73-second verify, +3.4 % on its three-second one. Requiring
+     a second flag to get the eq half of a feature you have already opted into is a
+     tunable, not a design input, so the default moved rather than the mechanism.
+
+  **Verdict: GO, flag-gated and off by default — which is where it already was.** The
+  case for keeping the stack is that the win is large, reproducible, and now covers both
+  branching families, while the cost of carrying it is provably zero when the flag is
+  off (byte-identity, in all three configurations, over the whole example set). The case
+  against — that a lot of machinery in a central proofs path buys nothing on any real
+  model anyone has found — is real and is not answered by this campaign; it is answered
+  by the flag. Nothing measured here argues for default-on, and the honest headline is
+  unchanged: **this is a feature for weak-propagation, large-domain search, and real
+  MiniZinc-shaped models are not that.**
+
+Stages A, B, B', B'', C, D and E have all landed in sequence. Stage D was the only one
+gated on work outside this task (the delc mechanics), and that gate is closed.
 
 ## Implementation gates (not owner calls)
 
@@ -1513,9 +1565,16 @@ around it. Both `.pbp` drivers are self-contained — they need only `veripb` 3.
   at point of use" result), the `q*.pbp` scenarios, and `run.sh`.
 
 The two verified foundations `order_jump_check.cc` (guess-reasoned bound jump + its
-two must-fail controls) and `order_hoist_check.cc` sit at the top of that directory,
-still uncommitted; stage E owns promoting them to proper `gcs/` tests, and until it
-does they are one `rm -rf` from being lost. The phase-2 real-instance campaign that
+two must-fail controls) and `order_hoist_check.cc` sat at the top of that directory,
+uncommitted, until stage E promoted them to `gcs/innards/proofs/order_jump_test.cc`
+and `order_hoist_test.cc`. The copies there are now provenance; the tests are the
+live record, and their must-fail controls run through the new
+`run_test_and_expect_rejection.bash`. Promotion changed two things beyond
+packaging: the controls capture their probe's text while the atom is still live
+(deletion now *retires* the atom, so naming it afterwards throws instead of
+producing a line for VeriPB to reject), and the `multi` hoist scenario gained a
+second hoist, without which the corrupted level bucket it exists to catch is never
+queried and the scenario passes against the broken code. The phase-2 real-instance campaign that
 motivated the objective exemption and the chain gate is under `real-instance-bench/`,
 with the gate study in `chain-gate/`. Its headline figures have since been re-measured
 from scratch on current hardware — see

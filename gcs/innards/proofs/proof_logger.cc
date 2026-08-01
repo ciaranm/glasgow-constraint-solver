@@ -568,8 +568,9 @@ auto ProofLogger::note_top_eq_references(const SumLessThanEqual<Weighted<PseudoB
     // smart_table, tour and minizinc-cumulative all reject without this.
     //
     // Costs a walk of the terms per Top emission while a window is live, and nothing at all
-    // otherwise: eq_window_active() is false in every default configuration, and the
-    // tracker's own guard returns immediately when no variable is currently windowed.
+    // otherwise: eq_window_active() is false unless order-encoding deletion is on (which it
+    // is not by default), and the tracker's own guard returns immediately when no variable
+    // is currently windowed.
     if (level != ProofLevel::Top || ! eq_window_active())
         return;
 
@@ -1069,11 +1070,11 @@ auto ProofLogger::forget_proof_level(int depth) -> void
     }
     lines.clear();
 
-    // Keep the tracker's live order-link structure in sync with the deletions just
-    // emitted: any order-encoding chain links recorded at this level have now been
-    // del'd, so drop them from the live set so a later need_gevar re-emits them if
-    // required. A cheap no-op when the order-link deletion mode is off.
-    names_and_ids_tracker().forget_order_links_at_level(depth);
+    // Keep the tracker's live order-encoding structures in sync with the deletions just
+    // emitted: the ge definitions, eq definitions and chain clauses recorded at this
+    // level have now been del'd, so retire their atoms and stitch the chain back over
+    // the survivors. A cheap no-op unless the order-encoding deletion mode is Literals.
+    names_and_ids_tracker().forget_order_encoding_at_level(depth);
 
     // The eq window's per-node records for this level went with those deletions. Dropping
     // them is not tidiness: the next node at this depth reuses the level number, and a
