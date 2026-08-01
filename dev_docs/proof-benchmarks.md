@@ -38,6 +38,7 @@ local SSD. `veripb` 3.0.2.
 | `odb_eq1000` | `order_deletion_bench --problem pairwise --size 6 --domain 1000 --window 1000 --tightness 90 --unsat --value-order smallest` | UNSAT | 49 352 | 11 KB | 37 MB | 0.10 s | ×2.0 | **139.5 s** |
 | `odb_split2000` | `order_deletion_bench --problem pairwise --size 8 --domain 2000 --window 2000 --tightness 90 --unsat` | UNSAT | 6 979 | 20 KB | 17 MB | 0.10 s | ×1.0 | **106.1 s** |
 | `odb_cumulative8` | `order_deletion_bench --problem cumulative --size 8 --domain 250 --window 250 --tightness 90 --unsat` | UNSAT | 33 959 | 1.9 MB | 454 MB | 0.10 s | ×9.0 | **314.7 s** |
+| `rcpsp_dl21` | `rcpsp --size 20 --seed 1 --deadline 21 --stats` | UNSAT | 42 115 | 0.3 MB | 1 247 MB | — | — | **135.8 s** |
 | `qap10` | `qap --size=10` | optimal | 10 985 | 3.5 MB | 504 MB | 0.20 s | ×6.0 | **283.8 s** |
 | `colour46` | `colour --file <46-vertex random graph>` | optimal | 313 109 | 0.4 MB | 736 MB | 12.31 s | ×1.2 | **347.6 s** |
 | `nqueens12` | `n_queens --size=12 --all` | enum, 14 200 | 232 163 | 0.2 MB | 208 MB | 0.50 s | ×2.2 | **219.8 s** |
@@ -101,17 +102,46 @@ Pairs that differ in one controlled way, for attributing a difference.
 | benchmark | command | why separate |
 |---|---|---|
 | `mzn_aircraft06` | `fzn-glasgow -s -a aircraft.fzn` (Challenge 2024, `B737NG-600-06-Anon.json.dzn`) | Needs about **19 GB of veripb resident memory**. It cannot share a 30 GB machine with anything else and will exhaust a smaller one. |
-| `rcpsp20` | `rcpsp --size 20 --seed 1 --stats` | Writes a **4.1 GB `.pbp`** and verifies in **656.8 s** — near the nominal ceiling and heavy on disk. Kept because it is the only *realistic* `Cumulative` + `Disjunctive` entry; `odb_cumulative8` covers the propagator more cheaply but is synthetic. |
+| `rcpsp20_opt` | `rcpsp --size 20 --seed 1 --stats` | The makespan-optimisation form of the group A entry above: **4.1 GB `.pbp`**, 656.8 s. Superseded for routine use by `rcpsp_dl21`, which proves infeasibility at the same instance for a quarter of the proof. Keep it only when the *optimisation* proof shape is what is under test. |
 
-`rcpsp` has since grown `--variant`, `--machine`, `--unary`, `--simplify`,
-`--incremental` and an RCPSP/max generalisation. **The defaults reproduce the
-row above exactly** — 171 480 recursions and a byte-identical 4106.4 MB proof —
-because `--variant=decomposed` is the original linear-per-edge posting,
-`--machine=disjunctive` the `Disjunctive` global, and `--max-lag-density`
-defaults to zero and draws no random numbers, leaving the generated instance
-untouched. No flag needs adding to the command. Worth re-checking the recursion
-count after any future change to the generator, though: a single extra random
-draw would move every seeded instance and silently stale this row.
+### `rcpsp`'s options, and what they are worth
+
+The example grew `--variant`, `--machine`, `--unary`, `--simplify`,
+`--incremental`, `--deadline` and an RCPSP/max generalisation. **The defaults
+reproduce the original row exactly** — 171 480 recursions and a byte-identical
+4106.4 MB proof — because `--variant=decomposed` is the original linear-per-edge
+posting, `--machine=disjunctive` the `Disjunctive` global, and
+`--max-lag-density` defaults to zero and *draws no random numbers*, leaving the
+generated instance untouched. Re-check the recursion count after any future
+change to the generator: one extra random draw would move every seeded instance
+and silently stale these rows without anything failing.
+
+Measured across the new options at `--size 20 --seed 1`:
+
+| configuration | recursions | `.pbp` | verify | outcome |
+|---|--:|--:|--:|---|
+| default (optimise) | 171 480 | 4 106 MB | 656.8 s | `BOUNDS 22 ≤ obj ≤ 22` |
+| `--variant global` | 171 480 | 4 136 MB | — | same |
+| `--variant presolved` | 171 480 | 4 125 MB | — | same |
+| `--value-order split` | 185 861 | 3 511 MB | — | same |
+| **`--deadline 21`** | 42 115 | **1 247 MB** | **135.8 s** | **UNSAT** |
+| `--deadline 21 --value-order split` | — | 1 007 MB | 111.5 s | UNSAT |
+| `--infeasible` | **1** | 0.1 MB | — | UNSAT at the root |
+
+Three things worth knowing:
+
+- **`--deadline` is the good entry.** The optimum is 22, so `--deadline 21` asks
+  a decision question the solver has to search to refute — a quarter of the
+  proof, a fifth of the verify time, and a *scheduling UNSAT*, which no other
+  entry provides. This is why it is in group A and the optimisation form is not.
+- **The three `--variant` postings make identical search and near-identical
+  proofs** (within 0.7 %), despite posting the temporal network three completely
+  different ways. That makes them a same-search control triple; it does *not*
+  make `global` a route to a smaller proof.
+- **`--infeasible` refutes at the root in one recursion.** It closes a negative
+  cycle the initial propagation already sees, so it is a smoke test for the
+  difference reasoning, not a search benchmark. Use `--deadline` for a searched
+  refutation.
 
 `mzn_aircraft06` is worth the trouble because it is the only entry where the
 checker is bound by the **model encoding** rather than the derivation: a 2.5 GB
