@@ -347,6 +347,12 @@ auto main(int argc, char * argv[]) -> int
                 "network as one DifferenceConstraints; presolved posts it decomposed and lets "    //
                 "the DifferenceLogic presolver lift it back",                                      //
                 cxxopts::value<string>()->default_value("decomposed"))                             //
+            ("simplify",
+                "Run the difference-logic root simplification stage (Johnson's all-pairs shortest " //
+                "paths, then redundant-edge removal, condition fixing and node removal). On by "    //
+                "default; --simplify=off turns it off. Ignored under --variant=decomposed, which "  //
+                "has no difference propagator to simplify for",                                     //
+                cxxopts::value<string>()->default_value("on"))                                      //
             ;
 
         options_vars = options.parse(argc, argv);
@@ -467,6 +473,14 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_FAILURE;
     }
 
+    auto simplify_name = options_vars["simplify"].as<string>();
+    if (simplify_name != "on" && simplify_name != "off") {
+        println(cerr, "Error: --simplify must be on or off, not '{}'.", simplify_name);
+        return EXIT_FAILURE;
+    }
+    auto simplify = (simplify_name == "on");
+    auto simplification = std::make_shared<DifferenceSimplificationStats>();
+
     // The temporal network. --variant decides how it reaches the solver, over
     // the identical edge list in the identical order, so a comparison between
     // the three is between the handling and nothing else.
@@ -522,7 +536,7 @@ auto main(int argc, char * argv[]) -> int
                 problem.post(LinearGreaterThanEqual{sum, e.d});
         }
         if (*variant == Presolved)
-            problem.add_presolver(DifferenceLogic{presolver_stats});
+            problem.add_presolver(DifferenceLogic{presolver_stats}.simplifying_at_root(simplify).reporting_simplification_to(simplification));
         break;
 
     case Global:
@@ -533,7 +547,7 @@ auto main(int argc, char * argv[]) -> int
             difference_edges.reserve(edges.size());
             for (const auto & e : edges)
                 difference_edges.push_back(DifferenceEdge{e.from, e.to, -e.d, e.cond});
-            problem.post(DifferenceConstraints{difference_edges});
+            problem.post(DifferenceConstraints{difference_edges}.simplifying_at_root(simplify).reporting_simplification_to(simplification));
         }
         break;
     }
@@ -678,6 +692,13 @@ auto main(int argc, char * argv[]) -> int
     if (*variant == Variant::Presolved) {
         println("presolver_edges_lifted: {}", presolver_stats->edges_lifted);
         println("presolver_nodes: {}", presolver_stats->nodes);
+    }
+    if (*variant != Variant::Decomposed) {
+        println("simplify: {}", simplify_name);
+        println("simplify_ran: {}", simplification->ran ? "yes" : "no");
+        println("simplify_redundant_edges_removed: {}", simplification->redundant_edges_removed);
+        println("simplify_conditions_fixed: {}", simplification->conditions_fixed);
+        println("simplify_isolated_nodes_removed: {}", simplification->isolated_nodes_removed);
     }
     println("critical path: {}", critical_path);
     println("horizon: {}", horizon);

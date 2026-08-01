@@ -1,6 +1,7 @@
 #ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_DIFFERENCE_LOGIC_HH
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_DIFFERENCE_LOGIC_HH
 
+#include <gcs/constraints/difference/difference_simplify.hh>
 #include <gcs/presolver.hh>
 
 #include <cstddef>
@@ -137,7 +138,9 @@ namespace gcs
     {
     private:
         std::shared_ptr<DifferenceLogicStats> _stats;
+        std::shared_ptr<DifferenceSimplificationStats> _simplification_stats;
         bool _disable_lifted_donors;
+        bool _simplify;
 
     public:
         /**
@@ -170,6 +173,29 @@ namespace gcs
          * completeness loss no proof could catch.
          */
         auto disabling_lifted_donors(bool = true) -> DifferenceLogic &;
+
+        /**
+         * \brief Run (or do not run) the root simplification stage over the
+         * lifted graph.
+         *
+         * On by default, matching DifferenceConstraints, and for the same
+         * reason: the paper's section 6.3 measures the simplification stage as
+         * most of the difference-logic win. It is exactly the same code and the
+         * same proof shapes from either entry point --- it runs inside the shared
+         * propagator, on its first call, precisely because a presolver runs after
+         * propagators.initialise() and so has no initialiser available and no way
+         * to infer anything itself.
+         */
+        auto simplifying_at_root(bool = true) -> DifferenceLogic &;
+
+        /**
+         * \brief Share a stats block the simplification stage will fill in.
+         *
+         * Separate from DifferenceLogicStats because the presolver's own counts
+         * are known when it runs, whereas the simplification's are only known
+         * once the propagator has first fired.
+         */
+        auto reporting_simplification_to(std::shared_ptr<DifferenceSimplificationStats>) -> DifferenceLogic &;
 
         [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool override;
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Presolver> override;

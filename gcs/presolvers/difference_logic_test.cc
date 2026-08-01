@@ -370,7 +370,21 @@ namespace
             // these domains. Every assignment with the condition false is a
             // solution, so a presolver whose propagator ignored the condition
             // would lose all of them.
-            {"reified_impossible", {{0, 4}, {0, 4}, {0, 1}}, {{v(0), v(1), -10, b(2)}, {v(1), v(0), 1}}, 2, 1}};
+            {"reified_impossible", {{0, 4}, {0, 4}, {0, 1}}, {{v(0), v(1), -10, b(2)}, {v(1), v(0), 1}}, 2, 1},
+            // The root simplification stage's one proof obligation, through the
+            // presolver path: the conditional edge closes a cycle of weight -3
+            // against the unconditional one, so the stage fixes the condition
+            // false before search. The weight is chosen so the *donor* cannot
+            // refute the condition from its own bounds --- over 0..10 an
+            // x0 - x1 of -5 is perfectly possible --- so if the stage stops
+            // working the condition is simply left to the search, which is a
+            // completeness loss no proof would notice.
+            {"reified_root_fix", {{0, 10}, {0, 10}, {0, 1}}, {{v(1), v(0), 2}, {v(0), v(1), -5, b(2)}}, 2, 1},
+            // The same, with both ends of both edges behind offset views, so the
+            // fixing pol only telescopes because it cites the donors' rows in
+            // deview mode --- the same property view_negcycle_wide pins for the
+            // refutation pol.
+            {"reified_root_fix_views", {{0, 10}, {0, 10}, {0, 1}}, {{v(1, 1), v(0), 2}, {v(0, 2), v(1, -1), -5, b(2)}}, 2, 1}};
     }
 
     auto run_equivalence_tests(bool proofs) -> void
@@ -611,6 +625,62 @@ namespace
             if (off_opb != on_opb || off_pbp != on_pbp)
                 throw UnexpectedException{"the difference-logic presolver changed the proof of a model containing nothing difference shaped"};
             println(cerr, "difference presolver opb: control .opb and .pbp both identical ({} and {} bytes)", off_opb.size(), off_pbp.size());
+        }
+
+        // The root simplification stage, from the presolver entry point, adds no
+        // OPB content either --- and it is the sub-step that most looks as though
+        // it would want to. Fixing a Boolean at the root is a real inference, so
+        // the .pbp gains a pol and a rup; dropping a redundant edge is a decision
+        // about which propagator runs and leaves no trace anywhere. Neither may
+        // touch the .opb: the model must always contain every posted constraint,
+        // which is also what keeps workflow-2 chain verification intact, since
+        // cake_pb_cp re-derives the .opb from the .scp and knows nothing about
+        // our internal pruning.
+        {
+            auto simplification = make_shared<DifferenceSimplificationStats>();
+            auto solve_with_simplification = [&](const string & basename, bool simplify) -> pair<string, string> {
+                Problem p;
+                auto x = p.create_integer_variable_vector(3, 0_i, 6_i, "x");
+                auto b = p.create_integer_variable(0_i, 1_i, "b");
+                // x0 - x1 <= 2 and x1 - x2 <= 2 unconditionally, so x0 - x2 <= 4,
+                // which makes the posted x0 - x2 <= 5 redundant. Then
+                // b -> x2 - x0 <= -5 closes a cycle of weight -1. The weight is
+                // chosen so the donor's *own* propagator cannot refute b from
+                // bounds --- over 0..6 an x0 - x2 of 5 is perfectly possible ---
+                // because if it could, b would already be false by the time the
+                // simplification stage looked and the fixture would be testing
+                // nothing.
+                p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + -1_i * x[1], 2_i});
+                p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[1] + -1_i * x[2], 2_i});
+                p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x[0] + -1_i * x[2], 5_i});
+                p.post(LinearLessThanEqualIf{WeightedSum{} + 1_i * x[2] + -1_i * x[0], -5_i, b == 1_i});
+                p.add_presolver(DifferenceLogic{}.simplifying_at_root(simplify).reporting_simplification_to(simplify ? simplification : nullptr));
+                static_cast<void>(solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }},
+                    make_optional<ProofOptions>(ProofFileNames{basename})));
+                auto opb = read_file(basename + ".opb"), pbp = read_file(basename + ".pbp");
+                for (auto ext : proof_file_extensions)
+                    std::remove((basename + ext).c_str());
+                return {opb, pbp};
+            };
+
+            auto [off_opb, off_pbp] = solve_with_simplification("difference_presolver_simplify_off", false);
+            auto [on_opb, on_pbp] = solve_with_simplification("difference_presolver_simplify_on", true);
+            if (off_opb != on_opb)
+                throw UnexpectedException{"the difference-logic root simplification stage changed the .opb. It must not: every one of its "
+                                          "conclusions is either internal to the propagator or a cutting-planes consequence of rows the model "
+                                          "already contains, and Presolver::run is handed no ProofModel to add anything with"};
+            if (! simplification->ran)
+                throw UnexpectedException{"the root simplification stage did not run from the presolver entry point, so this fixture checked "
+                                          "nothing at all"};
+            if (0 == simplification->conditions_fixed || 0 == simplification->redundant_edges_removed)
+                throw UnexpectedException{"the root simplification stage ran from the presolver entry point but fixed " +
+                    to_string(simplification->conditions_fixed) + " conditions and removed " + to_string(simplification->redundant_edges_removed) +
+                    " redundant edges, where this fixture is built so that both are nonzero. An OPB byte-diff that a no-op passes is not a test."};
+            if (off_pbp == on_pbp)
+                throw UnexpectedException{"the root simplification stage left the .pbp byte-identical on a fixture where it fixes a Boolean at the "
+                                          "root, which it cannot do without emitting a pol and a rup"};
+            println(cerr, "difference presolver opb: simplification .opb identical ({} bytes), .pbp differs ({} vs {} bytes), fixed {}, dropped {}",
+                off_opb.size(), off_pbp.size(), on_pbp.size(), simplification->conditions_fixed, simplification->redundant_edges_removed);
         }
     }
 

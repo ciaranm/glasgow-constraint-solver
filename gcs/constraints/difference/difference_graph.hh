@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_DIFFERENCE_DIFFERENCE_GRAPH_HH
 
 #include <gcs/constraint_id.hh>
+#include <gcs/constraints/difference/difference_simplify.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/propagators-fwd.hh>
 #include <gcs/integer.hh>
@@ -9,6 +10,7 @@
 #include <gcs/variable_id.hh>
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -136,6 +138,24 @@ namespace gcs::innards
     };
 
     /**
+     * \brief Whether the shared propagator should run the root simplification
+     * stage, and where to report what it did.
+     *
+     * On by default: the paper's section 6.3 measures the simplification stage
+     * as most of the difference-logic win (320.95 against 312.94 overall), while
+     * the propagator on its own is near-noise. It can be turned off from either
+     * entry point so that claim can be checked rather than inherited.
+     *
+     * \sa install_difference_propagator
+     * \ingroup Innards
+     */
+    struct DifferenceSimplificationOptions
+    {
+        bool enabled = true;
+        std::shared_ptr<DifferenceSimplificationStats> stats = nullptr;
+    };
+
+    /**
      * \brief Install the global difference-logic propagator over a canonicalised
      * system, attributed to the given constraint.
      *
@@ -161,9 +181,14 @@ namespace gcs::innards
      * half-reified counterpart *is* handled here, as a
      * DifferenceDisallowedCondition, precisely because it needs no initialiser.
      *
+     * The root simplification stage lives here too, for the same reason: it must
+     * infer, and a presolver has no way to. It runs inside the propagator, on its
+     * first call, guarded on that call being at the root --- which is where every
+     * propagator's first call is, since search starts by propagating everything.
+     *
      * \ingroup Innards
      */
-    auto install_difference_propagator(Propagators &, const ConstraintID &, DifferenceGraph) -> void;
+    auto install_difference_propagator(Propagators &, const ConstraintID &, DifferenceGraph, DifferenceSimplificationOptions = {}) -> void;
 }
 
 #endif

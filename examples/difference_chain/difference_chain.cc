@@ -194,7 +194,8 @@ namespace
     // once. Both variants produce the same OPB rows for the same edges (one
     // labelled inequality per edge), so the proofs are directly comparable.
     auto post_edges(Problem & problem, const vector<DifferenceEdge> & edges, Variant variant, bool disable_donors,
-        const shared_ptr<DifferenceLogicStats> & presolver_stats) -> void
+        const shared_ptr<DifferenceLogicStats> & presolver_stats, bool simplify, const shared_ptr<DifferenceSimplificationStats> & simplification)
+        -> void
     {
         switch (variant) {
             using enum Variant;
@@ -203,9 +204,12 @@ namespace
             for (const auto & e : edges)
                 problem.post(LinearLessThanEqual{WeightedSum{} + 1_i * e.x + -1_i * e.y, e.d});
             if (variant == Presolved)
-                problem.add_presolver(DifferenceLogic{presolver_stats}.disabling_lifted_donors(disable_donors));
+                problem.add_presolver(DifferenceLogic{presolver_stats}
+                        .disabling_lifted_donors(disable_donors)
+                        .simplifying_at_root(simplify)
+                        .reporting_simplification_to(simplification));
             break;
-        case Global: problem.post(DifferenceConstraints{edges}); break;
+        case Global: problem.post(DifferenceConstraints{edges}.simplifying_at_root(simplify).reporting_simplification_to(simplification)); break;
         }
     }
 
@@ -263,6 +267,10 @@ auto main(int argc, char * argv[]) -> int
                 "With --variant=presolved, also retire the lifted constraints' own propagators, so "     //
                 "only the global one runs over them")                                                    //
             ("all", "Find all solutions rather than stopping at the first")                              //
+            ("simplify",                                                                                 //
+                "Run the difference-logic root simplification stage. On by default; --simplify=off "     //
+                "turns it off. Ignored under --variant=decomposed, which has no difference propagator",  //
+                cxxopts::value<string>()->default_value("on"))                                           //
             ;
 
         options_vars = options.parse(argc, argv);
@@ -345,6 +353,13 @@ auto main(int argc, char * argv[]) -> int
     if (*mode == Mode::Refute)
         edges.push_back(DifferenceEdge{x[n], y[0], -1_i});
 
+    auto simplify_name = options_vars["simplify"].as<string>();
+    if (simplify_name != "on" && simplify_name != "off") {
+        println(cerr, "Error: --simplify must be on or off, not '{}'.", simplify_name);
+        return EXIT_FAILURE;
+    }
+    auto simplify = (simplify_name == "on");
+
     auto disable_donors = options_vars.contains("disable-donors");
     if (disable_donors && *variant != Variant::Presolved) {
         println(cerr, "Error: --disable-donors only means anything with --variant=presolved.");
@@ -352,7 +367,8 @@ auto main(int argc, char * argv[]) -> int
     }
 
     auto presolver_stats = make_shared<DifferenceLogicStats>();
-    post_edges(problem, edges, *variant, disable_donors, presolver_stats);
+    auto simplification = make_shared<DifferenceSimplificationStats>();
+    post_edges(problem, edges, *variant, disable_donors, presolver_stats, simplify, simplification);
 
     // The lower-bound bump that starts the chase. Posted last, so that the
     // difference constraints are all in the queue ahead of it and the bump wakes
@@ -392,6 +408,15 @@ auto main(int argc, char * argv[]) -> int
     println("order: {}", order_name);
     println("mode: {}", mode_name);
     println("variant: {}", variant_name_given);
+    if (*variant != Variant::Decomposed) {
+        println("simplify: {}", simplify_name);
+        println("simplify_ran: {}", simplification->ran ? "yes" : "no");
+        println("simplify_seconds: {:.6f}", simplification->seconds);
+        println("simplify_redundant_edges_removed: {}", simplification->redundant_edges_removed);
+        println("simplify_conditions_fixed: {}", simplification->conditions_fixed);
+        println("simplify_isolated_nodes_removed: {}", simplification->isolated_nodes_removed);
+        println("simplify_zero_weight_cycles: {}", simplification->zero_weight_cycles);
+    }
     if (*variant == Variant::Presolved) {
         println("disable_donors: {}", disable_donors ? "yes" : "no");
         println("presolver_edges_lifted: {}", presolver_stats->edges_lifted);

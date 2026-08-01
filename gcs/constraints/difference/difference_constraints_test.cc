@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <random>
 #include <set>
@@ -27,6 +28,7 @@
 using std::cerr;
 using std::flush;
 using std::make_optional;
+using std::make_shared;
 using std::mt19937;
 using std::nullopt;
 using std::optional;
@@ -387,6 +389,276 @@ namespace
         println(cerr, " ok");
     }
 
+    // What a fixture expects the root simplification stage to have done. Only
+    // the fields that are set are checked, because a fixture usually pins one
+    // sub-step and would otherwise have to restate every other count.
+    //
+    // These assertions are the whole reason the counters exist. Redundant-edge
+    // removal, node removal and zero-cycle detection are all invisible from
+    // outside: they change no solution, no proof and no search tree. A stage
+    // that quietly did nothing at all would pass the solution-equivalence check,
+    // the recursion check, the OPB byte-diff and VeriPB. So "the counters say it
+    // fired" is the only thing standing between a working stage and a shipped
+    // no-op, and a failure here means the *stage* is broken, not that the
+    // expectation has gone stale.
+    struct SimplifyExpectation
+    {
+        optional<bool> ran = nullopt;
+        optional<size_t> rounds_at_least = nullopt;
+        optional<size_t> redundant_edges_removed = nullopt;
+        optional<size_t> conditions_fixed = nullopt;
+        optional<size_t> isolated_nodes_removed = nullopt;
+        optional<size_t> zero_weight_cycles = nullopt;
+        optional<size_t> nodes_on_zero_weight_cycles = nullopt;
+        optional<bool> base_negative_cycle = nullopt;
+        // Simplification is never allowed to make the search bigger. Set this
+        // when a fixture is one where fixing a condition should make it strictly
+        // smaller.
+        bool expect_fewer_recursions = false;
+    };
+
+    auto check_count(const string & name, const string & what, const optional<size_t> & expected, size_t actual) -> void
+    {
+        if (expected && *expected != actual)
+            throw UnexpectedException{"difference simplify " + name + ": the root simplification stage reported " + to_string(actual) + " " + what +
+                ", expected " + to_string(*expected) +
+                ". This is an assertion about the stage, not about the fixture: it fires when the stage stops doing its job, and a stage that "
+                "silently does nothing passes every other check in this file. Fix gcs/constraints/difference/difference_simplify.cc."};
+    }
+
+    // Solve the same system twice, once with the root simplification stage on
+    // and once with it off, and insist that the only thing that changed is how
+    // much searching it took.
+    //
+    // Redundant-edge removal, node removal and zero-cycle detection are
+    // propagation-neutral by construction, so on a fixture where no condition is
+    // fixed the recursion counts must be *equal*: a difference means an edge was
+    // dropped that was carrying propagation. Fixing a condition is strictly
+    // stronger, so on those fixtures the count may fall, and the fixture says so
+    // rather than the check quietly allowing it either way.
+    auto run_simplify_test(bool proofs, const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges,
+        const SimplifyExpectation & expected) -> void
+    {
+        print(cerr, "difference simplify {} domains={} edges={}{}", name, domains, edges.size(), proofs ? " with proofs:" : ":");
+        cerr << flush;
+
+        set<tuple<vector<int>>> oracle, with, without;
+        build_expected(oracle, [&](const vector<int> & vals) { return satisfied(vals, edges); }, domains);
+
+        // Deliberately not solve_for_tests_with_callbacks: that wrapper applies
+        // the GCS_TEST_MAX_SOLUTIONS / GCS_TEST_MAX_RECURSIONS caps, and a run
+        // those truncate says nothing about completeness *and* reports a
+        // recursion count that is the cap rather than the search. Every fixture
+        // here is a handful of variables over a handful of values, so full
+        // enumeration is cheap and unconditional. \sa INCREMENTALITY-INVARIANTS
+        auto stats = make_shared<DifferenceSimplificationStats>();
+        auto solve_one = [&](bool simplify, set<tuple<vector<int>>> & into, const optional<string> & proof_name) -> unsigned long long {
+            Problem p;
+            auto vars = make_vars(p, domains);
+            vector<DifferenceEdge> posted;
+            for (const auto & e : edges)
+                posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
+            p.post(DifferenceConstraints{posted}.simplifying_at_root(simplify).reporting_simplification_to(simplify ? stats : nullptr));
+
+            // The same branching heuristic, from the same seed, in both runs, so
+            // that a difference in the recursion count is a difference in
+            // propagation and cannot be a difference in search order.
+            auto result = solve_with(p,
+                SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                                   into.emplace(extract_from_state(s, vars));
+                                   return true;
+                               },
+                    .branch = random_branch_with_optional_seed(p)},
+                proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
+            return result.recursions;
+        };
+
+        auto with_recursions = solve_one(true, with, proofs ? make_optional("difference_simplify_" + name) : nullopt);
+        auto without_recursions = solve_one(false, without, nullopt);
+
+        println(cerr, " {} solutions, recursions {} -> {}, ran={} rounds={} redundant={} fixed={} isolated={} zerocycles={}/{} negcycle={} {:.6f}s",
+            oracle.size(), without_recursions, with_recursions, stats->ran, stats->rounds, stats->redundant_edges_removed, stats->conditions_fixed,
+            stats->isolated_nodes_removed, stats->zero_weight_cycles, stats->nodes_on_zero_weight_cycles, stats->base_negative_cycle, stats->seconds);
+
+        if (proofs)
+            verify_proof_and_clean_up("difference_simplify_" + name);
+
+        if (with != oracle)
+            throw UnexpectedException{"difference simplify " + name + ": simplification on disagrees with the oracle, " + to_string(with.size()) +
+                " solutions against " + to_string(oracle.size())};
+        if (without != oracle)
+            throw UnexpectedException{"difference simplify " + name + ": simplification off disagrees with the oracle, " + to_string(without.size()) +
+                " solutions against " + to_string(oracle.size())};
+
+        if (expected.ran && *expected.ran != stats->ran)
+            throw UnexpectedException{"difference simplify " + name + ": the root simplification stage " + (stats->ran ? "ran" : "did not run") +
+                ", and it was supposed to " + (*expected.ran ? "" : "not ") + "run"};
+        if (expected.rounds_at_least && stats->rounds < *expected.rounds_at_least)
+            throw UnexpectedException{"difference simplify " + name + ": the root simplification stage took " + to_string(stats->rounds) +
+                " rounds, expected at least " + to_string(*expected.rounds_at_least) +
+                ". Fewer rounds than that means it stopped before its fixpoint, so fixing a condition is no longer re-activating the edges that "
+                "fixing it makes definitely true."};
+        check_count(name, "redundant edges removed", expected.redundant_edges_removed, stats->redundant_edges_removed);
+        check_count(name, "conditions fixed", expected.conditions_fixed, stats->conditions_fixed);
+        check_count(name, "isolated nodes removed", expected.isolated_nodes_removed, stats->isolated_nodes_removed);
+        check_count(name, "zero weight cycles", expected.zero_weight_cycles, stats->zero_weight_cycles);
+        check_count(name, "nodes on zero weight cycles", expected.nodes_on_zero_weight_cycles, stats->nodes_on_zero_weight_cycles);
+        if (expected.base_negative_cycle && *expected.base_negative_cycle != stats->base_negative_cycle)
+            throw UnexpectedException{"difference simplify " + name + ": base_negative_cycle was " + to_string(stats->base_negative_cycle) +
+                ", expected " + to_string(*expected.base_negative_cycle)};
+
+        if (expected.expect_fewer_recursions) {
+            if (with_recursions >= without_recursions)
+                throw UnexpectedException{"difference simplify " + name + ": simplification took " + to_string(with_recursions) +
+                    " recursions against " + to_string(without_recursions) +
+                    " without it, but this fixture is one where fixing a condition at the root is supposed to remove search"};
+        }
+        else if (with_recursions != without_recursions)
+            throw UnexpectedException{"difference simplify " + name + ": simplification changed the search from " + to_string(without_recursions) +
+                " recursions to " + to_string(with_recursions) +
+                ". Redundant-edge removal, node removal and zero-cycle detection are propagation-neutral by construction, so a fixture that fixes "
+                "no condition must search identically. An edge that was carrying propagation has been dropped."};
+    }
+
+    auto run_simplify_tests(bool proofs) -> void
+    {
+        // Redundant edges. The direct edge is implied by the two-step path, so
+        // it stops being propagated; the model keeps it, and nothing else moves.
+        run_simplify_test(proofs, "redundant_direct", {{0, 5}, {0, 5}, {0, 5}}, {{v(0), v(1), -1}, {v(1), v(2), -1}, {v(0), v(2), 0}},
+            SimplifyExpectation{.ran = true, .redundant_edges_removed = 1});
+
+        // Parallel edges: the weaker one is strictly implied, and of the two
+        // that attain the distance exactly one is kept --- dropping both would
+        // change the distance, which is why the tie is handled separately.
+        run_simplify_test(proofs, "redundant_parallel", {{0, 6}, {0, 6}}, {{v(0), v(1), 1}, {v(0), v(1), -2}, {v(0), v(1), -2}, {v(0), v(1), 3}},
+            SimplifyExpectation{.ran = true, .redundant_edges_removed = 3});
+
+        // A node that is only ever a static bound has no arcs at all, so it
+        // drops out of the relaxation loop and out of the round bound.
+        run_simplify_test(proofs, "isolated_node", {{0, 8}, {0, 8}, {0, 8}}, {{v(0), c(4), 3}, {v(1), v(2), -1}},
+            SimplifyExpectation{.ran = true, .isolated_nodes_removed = 1});
+
+        // A zero-weight cycle, which is what the unimplemented fourth sub-step
+        // would unify. Counted, so that "would it ever fire?" is a measurement.
+        run_simplify_test(proofs, "zero_cycle", {{0, 5}, {0, 5}}, {{v(0), v(1), -2}, {v(1), v(0), 2}},
+            SimplifyExpectation{.ran = true, .zero_weight_cycles = 1, .nodes_on_zero_weight_cycles = 2});
+        run_simplify_test(proofs, "zero_cycle_three", {{0, 5}, {0, 5}, {0, 5}}, {{v(0), v(1), 0}, {v(1), v(2), 0}, {v(2), v(0), 0}},
+            SimplifyExpectation{.ran = true, .zero_weight_cycles = 1, .nodes_on_zero_weight_cycles = 3});
+        run_simplify_test(proofs, "no_zero_cycle", {{0, 5}, {0, 5}, {0, 5}}, {{v(0), v(1), -1}, {v(1), v(2), -1}},
+            SimplifyExpectation{.ran = true, .zero_weight_cycles = 0, .nodes_on_zero_weight_cycles = 0});
+
+        // The deliverable. `b -> x - y <= -5` together with the unconditional
+        // `y - x <= 2` closes a cycle of weight -3, so b cannot hold, and saying
+        // so at the root removes the branch that would have discovered it.
+        run_simplify_test(proofs, "fix_one", {{0, 10}, {0, 10}, {0, 1}}, {{v(1), v(0), 2}, {v(0), v(1), -5, b(2)}},
+            SimplifyExpectation{.ran = true, .conditions_fixed = 1, .expect_fewer_recursions = true});
+
+        // The same, through a two-edge witness path, so the pol has three
+        // addends and the path is recovered from the shortest-path tree rather
+        // than being a single edge.
+        run_simplify_test(proofs, "fix_via_path", {{0, 10}, {0, 10}, {0, 10}, {0, 1}}, {{v(1), v(2), 1}, {v(2), v(0), 1}, {v(0), v(1), -5, b(3)}},
+            SimplifyExpectation{.ran = true, .conditions_fixed = 1, .expect_fewer_recursions = true});
+
+        // A conditional edge that does *not* close a cycle must be left alone.
+        // The negative control: a stage that fixed conditions too eagerly would
+        // lose solutions, and the oracle comparison above is what catches it.
+        run_simplify_test(proofs, "fix_none", {{0, 10}, {0, 10}, {0, 1}}, {{v(1), v(0), 5}, {v(0), v(1), -2, b(2)}},
+            SimplifyExpectation{.ran = true, .conditions_fixed = 0});
+
+        // The boundary: the cycle weighs exactly zero, so the condition is
+        // perfectly satisfiable and must not be touched. Changing the test from
+        // `< 0` to `<= 0` fixes b here and loses every solution with b true,
+        // which the oracle comparison catches immediately (confirmed by
+        // mutation).
+        run_simplify_test(proofs, "fix_boundary_zero", {{0, 10}, {0, 10}, {0, 1}}, {{v(1), v(0), 5}, {v(0), v(1), -5, b(2)}},
+            SimplifyExpectation{.ran = true, .conditions_fixed = 0});
+
+        // Both polarities of one Boolean, which is what a disjunctive resource
+        // contributes. Only the one that closes a cycle is fixed.
+        run_simplify_test(proofs, "fix_one_polarity", {{0, 10}, {0, 10}, {0, 1}},
+            {{v(1), v(0), 2}, {v(0), v(1), -5, b(2)}, {v(1), v(0), -1, b(2, 0)}},
+            SimplifyExpectation{.ran = true, .conditions_fixed = 1, .expect_fewer_recursions = true});
+
+        // Two independent Booleans, both fixable, in one round.
+        run_simplify_test(proofs, "fix_two", {{0, 10}, {0, 10}, {0, 10}, {0, 1}, {0, 1}},
+            {{v(1), v(0), 2}, {v(0), v(1), -5, b(3)}, {v(2), v(0), 1}, {v(0), v(2), -4, b(4)}},
+            SimplifyExpectation{.ran = true, .conditions_fixed = 2, .expect_fewer_recursions = true});
+
+        // The cascade, which is why the stage iterates rather than running once.
+        // b1's true edge closes a cycle against `y - x <= 1`, so b1 is false ---
+        // which makes b1's *false* edge `y - z <= -3` definitely active, and only
+        // then is there any path from x to z at all, which is what makes b2's
+        // edge close a cycle in its turn. Round one cannot see the second fix,
+        // because in round one z has no incoming edge.
+        //
+        // Confirmed by mutation: replacing the fixpoint loop with a single round
+        // leaves b2 unfixed and this fails on the count.
+        run_simplify_test(proofs, "fix_cascade", {{0, 10}, {0, 10}, {0, 10}, {0, 1}, {0, 1}},
+            {{v(1), v(0), 1}, {v(0), v(1), 2}, {v(0), v(1), -5, b(3)}, {v(1), v(2), -3, b(3, 0)}, {v(2), v(0), -1, b(4)}},
+            SimplifyExpectation{.ran = true, .rounds_at_least = 3, .conditions_fixed = 2, .expect_fewer_recursions = true});
+    }
+
+    // The paper's RCPSP/max headline, in miniature: two unit-capacity tasks
+    // whose maximum time lags are tight enough that neither can precede the
+    // other. Every setting of the ordering Boolean closes a negative cycle, so
+    // the model is infeasible --- but at the root no Boolean is fixed and so no
+    // conditional edge is in the graph, which is exactly why #590 measured that
+    // the propagator alone cannot see it and #587 before it.
+    //
+    // The simplification stage can, and the way it does is worth stating because
+    // it is simpler than expected. Both polarities of the ordering Boolean are
+    // separately impossible, so both are found fixable in the *same* round: the
+    // first is inferred, the second contradicts it, and the model is refuted
+    // before search starts. So the counters read one condition fixed in one
+    // round --- the second fix is the contradiction, and never gets counted,
+    // which is also why the counters are published by a destructor rather than
+    // at the end of the stage.
+    auto run_root_refutation_test() -> void
+    {
+        print(cerr, "difference root refutation:");
+        cerr << flush;
+
+        auto solve_one = [&](bool simplify, DifferenceSimplificationStats & into) -> pair<unsigned long long, unsigned long long> {
+            Problem p;
+            auto s_i = p.create_integer_variable(0_i, 20_i, "s_i");
+            auto s_j = p.create_integer_variable(0_i, 20_i, "s_j");
+            auto before = p.create_integer_variable(0_i, 1_i, "before");
+            auto stats = make_shared<DifferenceSimplificationStats>();
+            p.post(DifferenceConstraints{{// maximum time lags, in both directions: the two starts are within 2 of each other
+                                             DifferenceEdge{s_j, s_i, 2_i}, DifferenceEdge{s_i, s_j, 2_i},
+                                             // the unary resource, as a disjunction over durations of 4
+                                             DifferenceEdge{s_i, s_j, -4_i, before == 1_i}, DifferenceEdge{s_j, s_i, -4_i, before == 0_i}}}
+                    .simplifying_at_root(simplify)
+                    .reporting_simplification_to(stats));
+
+            auto result = solve_with(p, SolveCallbacks{.branch = random_branch_with_optional_seed(p)});
+            into = *stats;
+            return {result.recursions, result.solutions};
+        };
+
+        DifferenceSimplificationStats on, off;
+        auto [on_recursions, on_solutions] = solve_one(true, on);
+        auto [off_recursions, off_solutions] = solve_one(false, off);
+
+        println(cerr, " recursions {} -> {}, solutions {}/{}, fixed={} rounds={} negcycle={}", off_recursions, on_recursions, off_solutions,
+            on_solutions, on.conditions_fixed, on.rounds, on.base_negative_cycle);
+
+        if (0 != on_solutions || 0 != off_solutions)
+            throw UnexpectedException{"difference root refutation: the fixture is supposed to be unsatisfiable"};
+        if (! on.ran)
+            throw UnexpectedException{"difference root refutation: the simplification stage did not run at all"};
+        if (1 != on.conditions_fixed)
+            throw UnexpectedException{"difference root refutation: the simplification stage recorded " + to_string(on.conditions_fixed) +
+                " conditions fixed, expected exactly 1: both polarities of the ordering Boolean close a cycle against the maximum time lag, the "
+                "first is inferred and the second is the contradiction, which unwinds before it can be counted"};
+        if (1 != on_recursions)
+            throw UnexpectedException{"difference root refutation: with simplification the model must be refuted at the root, in " +
+                to_string(on_recursions) + " recursions rather than 1"};
+        if (off_recursions <= on_recursions)
+            throw UnexpectedException{"difference root refutation: without simplification the solver is supposed to have to search, and it took " +
+                to_string(off_recursions) + " recursions"};
+    }
+
     auto run_all_tests(bool proofs, const string & mode) -> void
     {
         if (mode == "basic") {
@@ -594,6 +866,15 @@ auto main(int argc, char * argv[]) -> int
     if (mode == "reified") {
         run_reified_bounds_test();
         run_reified_degenerate_test();
+    }
+    if (mode == "simplify") {
+        run_root_refutation_test();
+        for (bool proofs : {false, true}) {
+            if (proofs && ! can_run_veripb())
+                continue;
+            run_simplify_tests(proofs);
+        }
+        return EXIT_SUCCESS;
     }
 
     for (bool proofs : {false, true}) {

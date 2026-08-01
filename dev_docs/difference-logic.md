@@ -7,8 +7,8 @@ negative-cycle extraction is total, the canonicalisation rule and why it exists,
 the two proof shapes with worked examples, half-reified edges
 (`b -> x - y <= d`) and what they cost in the reason and in the proof, the
 defects in the source paper's pseudocode, the presolver that lifts an
-already-posted model into the same propagator, and what is deliberately
-deferred.
+already-posted model into the same propagator, the root simplification stage,
+and what is deliberately deferred.
 
 The source is Kletzander, Dekker, Schutt and Stuckey, *Global Difference
 Constraint Propagation for Constraint Programming*, arXiv:2607.20022 — the
@@ -955,6 +955,317 @@ propagator:
   tables above a clean comparison. With conditional edges they do not, and a
   table that reports only propagations would hide the regression above.
 
+## Root simplification
+
+The paper's section 5.2 runs a one-off pass over the graph before search, and its
+section 6.3 measures that pass as most of the difference-logic win: 320.95 against
+312.94 on the MiniZinc challenge set, 637.50 against 573.40 on `ProdCons`, and on
+`RCPSP/max` an average unsatisfiability time *below 0.01 s* because "most of these
+instances are identified during simplification". The section above on half-reified
+resources argued, from measurement, that the RCPSP/max headline has to belong to
+this stage rather than to `IncSat`/`IncLB`/`IncUB`. This section is that stage,
+and the argument turns out to be right.
+
+It is on by default and can be turned off from either entry point:
+
+```cpp
+problem.post(DifferenceConstraints{edges}.simplifying_at_root(false));
+problem.add_presolver(DifferenceLogic{}.simplifying_at_root(false));
+```
+
+Both also take `reporting_simplification_to(shared_ptr<DifferenceSimplificationStats>)`,
+which is how the tests and the example binaries tell "worked" from "did nothing".
+
+### Where it runs, and why it is not an initialiser
+
+It runs **inside the propagator, on its first call**. That is not where one would
+first reach for. An initialiser would be the natural home for the posted
+constraint — but a presolver runs *after* `propagators.initialise()`, so an
+initialiser it installed would never fire, and `Presolver::run` is handed a
+`State &` and a `ProofLogger *` but no inference tracker, so it cannot infer
+anything itself either. Fixing a condition is an inference. So the only place
+that works for both entry points is the propagator, and putting it there means
+one implementation and one set of proof shapes rather than two.
+
+Two guards make that safe:
+
+- **it runs once**, latched by a flag in the propagator's own (mutable) state;
+- **only if that first call is at the root**, tested by `state.guesses()` being
+  empty.
+
+The second is not decoration. Everything the stage concludes is *permanent* —
+edges leave the internal graph and never come back, and no part of it is trailed
+— so doing it under a decision would keep conclusions that hold only under that
+decision. That would be a completeness bug in the general case and an
+**unsoundness** in the case of an edge dropped because a conditional path implied
+it, and no proof would ever complain, because losing propagation is invisible to
+a proof. In practice the first call is always at the root (search begins by
+propagating everything, before any decision), so the guard costs nothing and
+buys the argument.
+
+Not trailing is then justified, and by exactly the argument that puts the paper's
+own section 5.3/5.4 boundary where it is: every conclusion drawn here is a
+statement about the *graph*, and backtracking does not change the graph. The
+stage reads no domain. The one thing that looks like a domain read — testing
+whether a condition currently holds — is a read of a fact fixed at the root and
+never undone.
+
+### The four sub-steps, and which are here
+
+Johnson's all-pairs shortest paths first: Bellman-Ford from the paper's imaginary
+source `v0` (seeding every potential at zero *is* that source's edge set, exactly
+as in the propagator's own passes), then one Dijkstra per node on the
+reduced-cost graph. `O(n² log n + nm)`, paid once. The pass computes nothing that
+needs certifying; only its four conclusions do, and only one of them turns out to
+need anything at all.
+
+**1. Redundant-edge removal — implemented, and no proof obligation whatsoever.**
+An active edge `u --d--> v` goes when `d > D_uv`, i.e. when a strictly shorter
+path already implies it. An implied (conditional) edge goes on the weaker test
+`d >= D_uv`, since one that merely restates a distance the base graph already has
+can never add anything even once its condition holds. Among parallel edges that
+*attain* the distance exactly one is kept, because dropping them all would change
+the distance.
+
+The crucial point, and the one the issue framed as a model change: **the edge is
+not removed from the model.** gcs separates `define_proof_model()` from
+`install_propagators()`, and this is a decision about the second. The OPB keeps
+every posted row, so there is nothing to certify, nothing to delete, and no
+brush with VeriPB's checked-deletion rule (Hoen et al., CPAIOR 2024). It also
+keeps workflow-2 chain verification intact, since `cake_pb_cp` re-derives the
+`.opb` from the `.scp` and knows nothing about our internal pruning. Deleting
+from the OPB instead would be sound for proving UNSAT and *unsound* for SAT and
+for optimisation, for no benefit at all.
+
+**2. Fixing a condition false — implemented, and the one real inference.** If
+adding `u --d--(b)--> v` would close a negative cycle — `d + D_vu < 0` — then `b`
+cannot hold. This is the sub-step that carries the paper's RCPSP/max result, and
+it is the deliverable of this PR.
+
+**3. Zero-weight-cycle unification — not implemented, but detected and counted.**
+See below.
+
+**4. Node removal — implemented, internal.** A node with no incident edge left
+cannot send or receive a bound, so it is dropped from the relaxation loop and,
+more usefully, from the round bound. In practice these are nodes that only ever
+appeared in a static bound.
+
+### The proof for condition fixing
+
+Proof shape 1 with the candidate edge standing in for the missing link. Sum the
+candidate's row and the witness path's rows: every `BinEnc` term telescopes away,
+because consecutive edges meet at a node and every row is in the canonical
+representation. What survives is the big-M residual of each *conditional* row,
+and the candidate's is always one of them, so
+
+```
+pol @c[_1][e1] @c[_1][e0] + s ;
+rup 1 ~i[_3][b0] >= 1;
+```
+
+is the whole thing, copied verbatim from the `fix_one` fixture: `e1` is the
+candidate `b -> x - y <= -5`, `e0` is the unconditional `y - x <= 2` that is the
+witness path, and `~i[_3][b0]` is the Boolean. That is the `reified_hand.pbp` shape verified by hand against
+real gcs OPB output before any of this existed, with the roles of the conditions
+swapped round: there the conditions were the residuals that survived into a
+learned clause, here the surviving residual *is* the literal being inferred.
+
+The witness path is taken from the shortest-path tree, so it may itself contain
+conditional edges — an edge whose condition the model fixed, or one an earlier
+round of this stage fixed. Their conditions are cited in the `Reason`,
+deduplicated, exactly as a negative cycle's are.
+
+Two mutation results, both measured:
+
+* **the `saturate` is not load-bearing** — removing it leaves every fixture
+  verifying, because the closing RUP assumes every condition and drives each
+  residual to zero. It is emitted anyway so the derived line *is* the clause;
+* **neither, here, are the path's conditions in the reason.** That is specific to
+  running at the root: a path condition is definitely true only because it is a
+  *globally derived* fact, so unit propagation recovers it and the RUP passes
+  without being told. They are cited regardless, because the reason is also what
+  the state and the nogood machinery see, and there a missing antecedent is not
+  recoverable.
+
+Emitted inside a `JustifyExplicitly` at `ProofLevel::Temporary`, like every other
+justification here. Nothing is emitted at `ProofLevel::Top`, and nothing needed
+to be: the inference itself is recorded by the inference tracker, and the
+redundant-edge and node removals leave no trace anywhere. **No new OPB content
+from either entry point**, which is enforced by byte-diff tests on both.
+
+### The fixpoint, and how the refutation actually happens
+
+Fixing a condition false makes its complement definitely true, which can put an
+edge *into* the base graph, which can license further fixing. So the stage
+iterates — the paper's section 5.3 — until a round fixes nothing. It terminates
+because every round either fixes at least one condition (removing an edge) or
+stops, and there are finitely many edges.
+
+On RCPSP/max the refutation turns out to arrive more directly than that. Both
+polarities of an ordering Boolean are separately impossible, so both are found
+fixable in the *same* round: the first is inferred, the second contradicts it,
+and the model is refuted before search starts. The counters then read one
+condition fixed in one round, because the second fix is the contradiction and
+unwinds before it can be counted — which is why they are published by a
+destructor rather than at the end of the stage.
+
+If instead the newly-activated edges jointly close a cycle, the next round's
+Bellman-Ford sees it, the stage stops, and the propagator's own pass refutes it
+with the cycle extraction and the telescoping `pol` that already exist. The stage
+deliberately does not duplicate that machinery.
+
+### This is `IncImp`, restricted to the root
+
+Fixing a condition because its edge would close a negative cycle is exactly the
+paper's `IncImp`, which its own configuration study says to leave off — on
+RCPSP/max every configuration with it on scored below every configuration with it
+off. That is not a contradiction: what the study measures is running it on **every
+wake**, and what this is is running it **once**, at the root, where its cost is
+`O(n² log n + nm)` in total rather than per propagation. The section above on
+half-reified resources noted that `IncImp`'s absence shows up in gcs as a
+*search-tree* cost, since `--variant=global` has no donors to infer `!cond` from
+bounds; the root-only version removes most of that without paying the per-wake
+price. Whether the in-search version pays for itself in gcs remains open.
+
+### RCPSP/max: the headline reproduces
+
+`examples/rcpsp --size 9 --machine-fraction 0.9 --max-lag-density 0.4
+--max-lag-slack 0 --machine difference`, the shape the half-reified section
+measured: a machine posted as conditional edges, on a network whose maximum lags
+are already tight. Every seed below is infeasible, and infeasible only
+*conditionally* — at the root no Boolean is fixed, so no conditional edge is in
+the graph at all, which is why neither the decomposed model nor the global
+propagator could see it.
+
+| seed | decomposed | presolved, no simp. | presolved | global, no simp. | global |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 3 | 3 | **1** | 3 | **1** |
+| 2 | 5 | 5 | **1** | 5 | **1** |
+| 3 | 5 | 5 | **1** | 5 | **1** |
+| 4 | 77 | 77 | **1** | 121 | **1** |
+| 5 | 1 | 1 | **1** | 1 | **1** |
+| 6 | 1,525 | 1,525 | **1** | 4,149 | **1** |
+| 7 | 55 | 55 | **1** | 75 | **1** |
+| 8 | 5 | 5 | **1** | 5 | **1** |
+
+(recursions; seed 5 was already refuted at the root by the temporal network
+alone.) Two things to read off it. The no-simplification global column is
+*worse* than decomposed in every row where the search is non-trivial — 4,149
+against 1,525 on seed 6 — which is `IncImp`'s absence again. And the
+simplification column is 1 everywhere, whatever the row above it was.
+
+Proofs shrink accordingly, and all of them verify:
+
+| instance | variant | `.pbp` lines | `.pbp` bytes | VeriPB (s) |
+|---|---|---:|---:|---:|
+| seed 4 | decomposed | 4,662 | 210,129 | 0.058 |
+| seed 4 | global, no simplification | 897 | 60,715 | 0.026 |
+| seed 4 | global | **60** | **1,548** | **0.018** |
+| seed 4 | presolved | 131 | 6,575 | 0.020 |
+| seed 6 | decomposed | 69,050 | 3,218,361 | 0.798 |
+| seed 6 | global, no simplification | 39,451 | 3,323,224 | 0.474 |
+| seed 6 | global | **32** | **769** | **0.018** |
+| seed 6 | presolved | 51 | 2,052 | 0.022 |
+
+So: **the paper's RCPSP/max unsatisfiability headline reproduces in shape, and it
+reproduces here and nowhere else in this stack.** #587 established that the
+decomposed model refutes at the root too, just expensively; #590 added
+half-reified resources and established that the search reproduces but the root
+refutation does not; this PR closes it. That sequence is the evidence for the
+claim, made in the half-reified section, that the headline belongs to the
+simplification stage rather than to the incremental algorithms.
+
+### What it costs where it does not pay
+
+`examples/difference_chain`, the paper's Example 8, is the opposite case and is
+worth stating plainly. `--variant=global --order unlucky --mode fixpoint`:
+
+| n | recursions | propagations | wall, no simp. (s) | wall (s) | Johnson's (s) | edges dropped |
+|---:|---:|---:|---:|---:|---:|---:|
+| 80 | 163 | 167 | 0.00167 | 0.00233 | 0.00050 | 79 |
+| 160 | 323 | 327 | 0.00817 | 0.01135 | 0.00328 | 159 |
+| 320 | 643 | 647 | 0.0477 | 0.0729 | 0.0234 | 319 |
+| 640 | 1,283 | 1,287 | 0.312 | 0.474 | 0.164 | 639 |
+
+`recursions` and `propagations` are identical down every column — which is the
+point, since redundant-edge removal and node removal are propagation-neutral by
+construction — and the entire wall-time difference is the Johnson's pass. It
+drops `n - 1` edges out of `n(n+5)/2`, i.e. essentially nothing, and costs 30 to
+50 % of the solve. `--mode refute` is the same, with the Johnson's pass accounting
+for the whole of a 0.117 s → 0.239 s regression at `n = 640` and nothing at all
+dropped.
+
+The pure-temporal scaling curve says the same more precisely
+(`--resources 0 --max-lag-density 0 --variant=global`, satisfiable, so Johnson's
+runs to completion):
+
+| n | nodes | edges | Johnson's (s) | solve (s) | recursions (both) |
+|---:|---:|---:|---:|---:|---:|
+| 100 | 101 | 230 | 0.00025 | 0.0028 | 12,834 |
+| 200 | 201 | 478 | 0.00110 | 0.0145 | 47,093 |
+| 400 | 401 | 957 | 0.00532 | 0.0910 | 188,322 |
+| 800 | 801 | 1,930 | 0.0238 | 0.625 | 757,354 |
+| 1,600 | 1,601 | 3,844 | 0.0989 | 4.51 | 3,082,344 |
+
+Sparse and satisfiable, the pass is quadratic-ish in `n` and around 2 % of the
+solve — cheap. Dense, as in `difference_chain`, the `nm` term dominates and it is
+not. That is the honest shape of the trade-off, and it is why the option exists
+and defaults on rather than being unconditional: the paper reports simplification
+as a clear win on its benchmark families, and it is a clear win on ours too, but
+"clear win" is a statement about scheduling models with conditional edges, not
+about difference systems in general.
+
+### Zero-weight-cycle unification, and why it is deferred
+
+The fourth sub-step is not implemented. It *is* detected: reduced weights are
+non-negative and a cycle's reduced weight is its real weight, so a cycle weighs
+zero exactly when every edge on it has reduced weight zero, and the
+strongly-connected components of that subgraph are the sets of variables the
+system pins into fixed relative positions. Tarjan over it is `O(n + m)` on data
+Johnson's has already produced, so the counters cost nothing and answer the
+question the deferral raises.
+
+They answer it in the affirmative, which is worth recording: on the
+`--max-lag-slack 0` RCPSP/max instances above there is one zero-weight cycle
+spanning **10 of the 11 nodes**, because exactly-tight maximum time lags are
+precisely a zero-weight cycle. On `difference_chain` and on the slack RCPSP/max
+instances there are none. So unification would fire, and hard, on the family this
+stage is aimed at.
+
+It is deferred for two reasons, neither of them about the proof.
+
+The proof side is settled and easy, and this is the issue's open question
+answered: the two directions of `x - y = d` are **pure `pol` consequences with
+unit multipliers** — the edge itself gives `x - y <= d`, and summing the rest of
+the cycle (weight `-d`) gives `y - x <= -d`. Aggregation, not redundance. **No
+`red`, no `dom`.** Nor does anything need to be pre-derived at `ProofLevel::Top`:
+the cycle's rows are already in the OPB, so a derivation that crosses a merged
+node can just add them to its own `pol`, which is the "one extra addend" story of
+`dev_docs/view-proof-logging.md` paid at `Temporary`.
+
+What is not cheap is the model side. Survey section 5.2 item 2 is emphatic that a
+`ViewOfIntegerVariableID` must **not** be retro-fitted onto an already-encoded
+user variable: gcs views are a model-construction concept, and
+`NamesAndIDsTracker::need_view` creates a view's own bit-vector and its
+definitional link row, which cannot happen after the model is finalised — and by
+the time this stage runs it has been. So the merged variables keep independent
+domains, and that is where the cost lands:
+
+- seeding the merged node means taking the maximum over its members' bounds, and
+  recording *which* member achieved it, since that member's bound is what the
+  reason must cite;
+- every push on the merged node must be inferred on **every** member separately,
+  each with its own `pol` carrying the zero-cycle path from the pushing edge's
+  endpoint to that member.
+
+So the graph gets smaller — which is the algorithmic win — but the number of
+`infer()` calls does not, and the bound-push justification, which is currently
+one row plus one literal, becomes one row plus one literal plus a path. That is a
+substantial rework of the two `infer_along_forest` passes for a win that has not
+been measured, and it is the only sub-step whose proof shape changes at all. It
+is left for a separate PR, with the counters above as the evidence that the PR is
+worth writing.
+
 ## Deliberately deferred
 
 - **Incrementality.** The paper's `IncSat` / `IncLB` / `IncUB` maintain a valid
@@ -979,14 +1290,9 @@ propagator:
 - **Lifting `Iff`, `NotIf` and `MustNotHold` linear donors**, which need the `r`
   and `f` rows and the integer-negation row respectively rather than the
   empty-role row the two supported kinds share.
-- **Root simplification** — Johnson's all-pairs shortest paths, then dropping
-  redundant edges, fixing Booleans whose edge would close a negative cycle, and
-  unifying variables on a zero-weight cycle. Note that dropping a redundant edge
-  is a decision about which *propagators run*, not about what the model says: the
-  OPB must always contain every posted constraint, so the removal has no proof
-  obligation at all. Its Boolean-fixing step is `IncImp` restricted to the root,
-  and the measurement below argues it is where the paper's RCPSP/max
-  unsatisfiability headline actually comes from.
+- **Zero-weight-cycle unification**, the fourth of the root simplification
+  stage's sub-steps. The other three are implemented; see the section on it
+  above, which also reports how often a zero-weight cycle actually turns up.
 - **Runtime propagator priorities.** The paper wants bound propagation at the
   lowest priority and Boolean propagation at the highest, as separate
   propagators. gcs has no runtime propagator priorities, only

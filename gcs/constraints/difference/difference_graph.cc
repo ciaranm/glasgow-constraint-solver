@@ -1,4 +1,5 @@
 #include <gcs/constraints/difference/difference_graph.hh>
+#include <gcs/constraints/difference/difference_simplify.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
@@ -11,6 +12,7 @@
 #include <util/overloaded.hh>
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -23,6 +25,9 @@ using std::nullopt;
 using std::optional;
 using std::size_t;
 using std::vector;
+using std::chrono::duration;
+using std::chrono::steady_clock;
+using std::ranges::count;
 using std::ranges::find;
 using std::ranges::find_if;
 
@@ -50,6 +55,32 @@ namespace
     };
 
     static_assert(sizeof(DifferenceArc) <= 32, "the difference-logic relaxation loop scans this array once per round; keep it small");
+
+    // Publishes the simplification counters on the way out, whichever way out it
+    // is.
+    //
+    // The stage can raise a contradiction in the middle of its own work, and
+    // that is not an edge case: it is the *best* outcome it has. Fixing one
+    // polarity of an ordering Boolean and then finding that the other polarity
+    // is equally impossible is a root refutation, and the inference tracker
+    // signals it by unwinding out of the propagator. Counters assigned at the
+    // end of the block would be lost exactly on the runs that most need
+    // explaining, so a destructor publishes them instead --- and times the stage
+    // while it is there, since the paper is explicit that its one-off cubic cost
+    // should be reported separately rather than folded into the solve.
+    struct DifferenceSimplificationReporter
+    {
+        DifferenceSimplificationStats & stats;
+        const std::shared_ptr<DifferenceSimplificationStats> & report_to;
+        steady_clock::time_point started = steady_clock::now();
+
+        ~DifferenceSimplificationReporter()
+        {
+            stats.seconds = duration<double>(steady_clock::now() - started).count();
+            if (report_to)
+                *report_to = stats;
+        }
+    };
 }
 
 auto gcs::innards::deview_difference_operand(const IntegerVariableID & var) -> optional<DeviewedDifferenceOperand>
@@ -66,7 +97,8 @@ auto gcs::innards::deview_difference_operand(const IntegerVariableID & var) -> o
         .visit(var);
 }
 
-auto gcs::innards::install_difference_propagator(Propagators & propagators, const ConstraintID & constraint_id, DifferenceGraph graph) -> void
+auto gcs::innards::install_difference_propagator(
+    Propagators & propagators, const ConstraintID & constraint_id, DifferenceGraph graph, DifferenceSimplificationOptions simplify) -> void
 {
     if (graph.edges.empty() && graph.static_bounds.empty() && graph.disallowed_conditions.empty())
         return;
@@ -127,11 +159,24 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
             arc_conditions.push_back(e.cond);
     }
 
+    // Read before the capture list moves the node vector out from under it.
+    auto number_of_nodes = graph.nodes.size();
+
+    // The root simplification stage mutates `arcs`, `arc_conditions` and
+    // `round_bound` in place, once, on the first call --- hence the `mutable`
+    // below, which is the only mutable propagator state in this file. It is safe
+    // without trailing for the same reason the paper's section 5.3 boundary is
+    // where it is: the stage runs only at the root, before any decision, and
+    // every conclusion it draws (this edge is implied by a path of unconditional
+    // or root-fixed edges; this node has no edges left) is a statement about the
+    // *graph*, which no amount of backtracking changes. Nothing here reads a
+    // domain.
     propagators.install(
         constraint_id,
         [nodes = move(graph.nodes), arcs = move(arcs), arc_conditions = move(arc_conditions), static_bounds = move(graph.static_bounds),
-            disallowed_conditions = move(graph.disallowed_conditions),
-            edge_lines = move(graph.edge_lines)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            disallowed_conditions = move(graph.disallowed_conditions), edge_lines = move(graph.edge_lines), simplify = move(simplify),
+            simplification_pending = true,
+            round_bound = number_of_nodes](const State & state, auto & inference, ProofLogger * const logger) mutable -> PropagatorState {
             auto n = nodes.size();
             auto m = arcs.size();
             // arc_conditions is either empty --- nothing in this system is
@@ -186,6 +231,246 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                 else {
                     if (state.upper_bound(nodes[sb.node]) > sb.value)
                         inference.infer_less_than(logger, nodes[sb.node], sb.value + 1_i, JustifyUsingRUP{}, why);
+                }
+            }
+
+            // The root simplification stage, which is the paper's Algorithm 4
+            // (its section 5.2) run to the fixpoint of its section 5.3. Once, on
+            // the first call, and only if that call is at the root --- which it
+            // always is, since search begins by propagating everything before
+            // any decision is made, but the guard is not decoration: everything
+            // below is *permanent*, so doing it below a decision would keep
+            // conclusions that only held under that decision, and no proof would
+            // ever complain because losing propagation is invisible to a proof.
+            //
+            // Three of the paper's four sub-steps are here. Redundant-edge
+            // removal and node removal are decisions about what to propagate,
+            // not about what the model says --- the OPB keeps every posted row,
+            // so there is nothing to certify. Fixing a condition false is a real
+            // inference and carries the one proof obligation, discharged below.
+            // Zero-weight-cycle unification is not implemented; the cycles are
+            // counted so the question of whether it would pay is answerable from
+            // a measurement (see dev_docs/difference-logic.md).
+            if (simplification_pending) {
+                simplification_pending = false;
+
+                bool at_root = true;
+                for ([[maybe_unused]] const auto & guess : state.guesses()) {
+                    at_root = false;
+                    break;
+                }
+
+                DifferenceSimplificationStats stats;
+                DifferenceSimplificationReporter reporter{stats, simplify.stats};
+                stats.nodes = n;
+                stats.edges = m;
+                for (size_t e = 0; e < m; ++e)
+                    if (condition_of(e))
+                        ++stats.conditional_edges;
+
+                if (simplify.enabled && at_root && ! arcs.empty()) {
+                    stats.ran = true;
+
+                    vector<DifferenceSimplifyEdge> simplify_edges;
+                    simplify_edges.reserve(m);
+                    for (const auto & a : arcs)
+                        simplify_edges.push_back(DifferenceSimplifyEdge{a.from, a.to, a.d});
+
+                    vector<bool> dropped(m, false);
+                    vector<DifferenceSimplifyRole> roles(m, DifferenceSimplifyRole::Base);
+
+                    while (true) {
+                        ++stats.rounds;
+
+                        for (size_t e = 0; e < m; ++e) {
+                            if (dropped[e])
+                                roles[e] = DifferenceSimplifyRole::Ignored;
+                            else if (const auto & cond = condition_of(e)) {
+                                switch (state.test_literal(*cond)) {
+                                    using enum LiteralIs;
+                                case DefinitelyTrue: roles[e] = DifferenceSimplifyRole::Base; break;
+                                case DefinitelyFalse:
+                                    roles[e] = DifferenceSimplifyRole::Ignored;
+                                    dropped[e] = true;
+                                    ++stats.dead_edges_removed;
+                                    break;
+                                case Undecided: roles[e] = DifferenceSimplifyRole::Candidate; break;
+                                }
+                            }
+                            else
+                                roles[e] = DifferenceSimplifyRole::Base;
+                        }
+
+                        auto outcome = simplify_difference_graph(n, simplify_edges, roles);
+                        if (outcome.base_negative_cycle) {
+                            // The unconditional part of the system is already
+                            // infeasible. Stop and let the Bellman-Ford pass
+                            // below refute it: that is where the cycle
+                            // extraction and the telescoping pol live, and
+                            // duplicating them here would buy nothing.
+                            stats.base_negative_cycle = true;
+                            break;
+                        }
+
+                        stats.zero_weight_cycles = outcome.zero_weight_cycles;
+                        stats.nodes_on_zero_weight_cycles = outcome.nodes_on_zero_weight_cycles;
+
+                        for (size_t e = 0; e < m; ++e)
+                            if (outcome.remove[e] && ! dropped[e]) {
+                                dropped[e] = true;
+                                ++stats.redundant_edges_removed;
+                                if (condition_of(e))
+                                    ++stats.redundant_conditional_edges_removed;
+                            }
+
+                        if (outcome.fix.empty())
+                            break;
+
+                        // Every round that gets here fixes at least one
+                        // condition and so drops at least one edge, which is
+                        // what bounds the loop --- an edge the pass wants to fix
+                        // is never also an edge it wants to remove, since
+                        // `d >= D_uv' and `d + D_vu < 0' cannot both hold when
+                        // the graph has no negative cycle. That is an argument
+                        // about the pass, though, and this is a loop inside a
+                        // propagator, so make the progress explicit rather than
+                        // inferred.
+                        bool progress = false;
+
+                        for (const auto & [candidate, path] : outcome.fix) {
+                            if (dropped[candidate])
+                                continue;
+
+                            // Check the witness arithmetically before saying
+                            // anything: that the candidate edge and the path
+                            // really do form a cycle, and that it really does
+                            // weigh less than zero. That is O(cycle), and it
+                            // turns a bug in the shortest-path pass into an
+                            // exception here rather than a VeriPB failure a
+                            // hundred lines later (survey section 2.9.4).
+                            auto weight = arcs[candidate].d;
+                            auto at = arcs[candidate].to;
+                            vector<IntegerVariableCondition> conditions;
+                            for (auto e : path) {
+                                if (arcs[e].from != at)
+                                    throw UnexpectedException{"difference logic simplification built a disconnected witness cycle"};
+                                weight += arcs[e].d;
+                                at = arcs[e].to;
+                                // A path edge may itself be conditional, on
+                                // something currently definitely true --- either
+                                // the model fixed it, or an earlier round of this
+                                // very loop did. Its row then carries a big-M
+                                // residual which does not telescope, so its
+                                // condition has to be in the reason for the same
+                                // reason a negative cycle's conditions are.
+                                // Deduplicated, since one Boolean may appear on
+                                // several edges.
+                                if (const auto & cond = condition_of(e))
+                                    if (conditions.end() == find(conditions, *cond))
+                                        conditions.push_back(*cond);
+                            }
+                            if (at != arcs[candidate].from)
+                                throw UnexpectedException{"difference logic simplification built a witness path that does not close"};
+                            if (weight >= 0_i)
+                                throw UnexpectedException{"difference logic simplification built a witness cycle of weight " + weight.to_string() +
+                                    ", which is not negative"};
+
+                            const auto & candidate_cond = condition_of(candidate);
+                            if (! candidate_cond)
+                                throw UnexpectedException{"difference logic simplification tried to fix the condition of an unconditional edge"};
+
+                            // The proof is proof shape 1 with the candidate edge
+                            // standing in for the missing link: sum the rows
+                            // around the cycle and every BinEnc term telescopes
+                            // away, leaving only the big-M residuals of the
+                            // conditional edges. The candidate's is always one of
+                            // them, so a saturate turns the sum into the clause
+                            // `~cand v ~c_1 v ... v ~c_k' over the path's
+                            // already-true conditions --- the reified_hand.pbp
+                            // shape with the roles of the conditions swapped
+                            // round. The closing RUP assumes the reason's
+                            // literals and reads off `~cand'.
+                            //
+                            // Two mutation results, both measured rather than
+                            // assumed, and both matching what the negative-cycle
+                            // refutation already found:
+                            //
+                            //  * the `saturate' is not load-bearing --- removing
+                            //    it leaves every fixture verifying, because the
+                            //    closing RUP assumes every condition and drives
+                            //    each residual to zero. Emitted anyway so the
+                            //    derived line *is* the clause;
+                            //  * neither, here, are the path's conditions in the
+                            //    reason. That is specific to running at the root:
+                            //    a path condition is definitely true only because
+                            //    it is a *globally derived* fact (the model fixed
+                            //    it, or an earlier round of this loop did), so
+                            //    unit propagation recovers it and the RUP passes
+                            //    without being told. They are cited regardless,
+                            //    because the reason is also what the state and
+                            //    the nogood machinery see, and there a missing
+                            //    antecedent is not recoverable.
+                            ReasonLiterals reason_literals;
+                            for (const auto & c : conditions)
+                                reason_literals.push_back(c);
+                            auto reason = conditions.empty() ? Reason{NoReason{}} : Reason{ExplicitReason{move(reason_literals)}};
+                            inference.infer(logger, ! *candidate_cond,
+                                JustifyExplicitly{[&](const ReasonLiterals &) {
+                                                      auto pol = edge_line_pol();
+                                                      pol.add(edge_lines[arcs[candidate].posted_index]);
+                                                      for (auto e : path)
+                                                          pol.add(edge_lines[arcs[e].posted_index]);
+                                                      pol.saturate();
+                                                      pol.emit(*logger, ProofLevel::Temporary);
+                                                  },
+                                    ThenRUP::Yes},
+                                reason);
+
+                            dropped[candidate] = true;
+                            progress = true;
+                            ++stats.conditions_fixed;
+                        }
+
+                        if (! progress)
+                            break;
+                    }
+
+                    // Now actually shrink the graph. Everything above only
+                    // marked; this is where the propagator stops paying for what
+                    // it marked.
+                    if (dropped.end() != find(dropped, true)) {
+                        vector<DifferenceArc> kept_arcs;
+                        vector<optional<IntegerVariableCondition>> kept_conditions;
+                        for (size_t e = 0; e < m; ++e)
+                            if (! dropped[e]) {
+                                kept_arcs.push_back(arcs[e]);
+                                if (! arc_conditions.empty())
+                                    kept_conditions.push_back(arc_conditions[e]);
+                            }
+                        arcs = move(kept_arcs);
+                        // If nothing conditional survived, drop the parallel
+                        // array entirely: an empty one is what puts the
+                        // relaxation loop back on its straight-through path,
+                        // which is worth 45% on examples/difference_chain.
+                        if (kept_conditions.end() == find_if(kept_conditions, [](const auto & c) { return c.has_value(); }))
+                            kept_conditions.clear();
+                        arc_conditions = move(kept_conditions);
+                        m = arcs.size();
+                    }
+
+                    // Node removal, the paper's last sub-step, and internal in
+                    // exactly the same way: a node with no incident edge left
+                    // cannot send or receive a bound, so it neither needs seeding
+                    // nor counts towards the number of relaxation rounds a
+                    // simple path can need.
+                    vector<bool> live(n, false);
+                    for (const auto & a : arcs) {
+                        live[a.from] = true;
+                        live[a.to] = true;
+                    }
+                    auto live_count = static_cast<size_t>(count(live, true));
+                    stats.isolated_nodes_removed = n - live_count;
+                    round_bound = live_count;
                 }
             }
 
@@ -388,7 +673,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
             auto lb_tail_of = [](const DifferenceArc & g) { return g.from; };
             auto lb_head_of = [](const DifferenceArc & g) { return g.to; };
 
-            for (size_t round = 0; round <= n; ++round) {
+            for (size_t round = 0; round <= round_bound; ++round) {
                 bool changed = false;
                 for_each_active_edge([&](size_t e) {
                     const auto & edge = arcs[e];
@@ -397,7 +682,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                         lb[edge.to] = candidate;
                         lb_pred[edge.to] = e;
                         changed = true;
-                        if (round == n)
+                        if (round == round_bound)
                             contradict_on_cycle(extract_cycle(edge.to, lb_pred, lb_tail_of), lb_tail_of, lb_head_of);
                     }
                 });
@@ -463,7 +748,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
             auto ub_tail_of = [](const DifferenceArc & g) { return g.to; };
             auto ub_head_of = [](const DifferenceArc & g) { return g.from; };
 
-            for (size_t round = 0; round <= n; ++round) {
+            for (size_t round = 0; round <= round_bound; ++round) {
                 bool changed = false;
                 for_each_active_edge([&](size_t e) {
                     const auto & edge = arcs[e];
@@ -472,7 +757,7 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, cons
                         ub[edge.from] = candidate;
                         ub_pred[edge.from] = e;
                         changed = true;
-                        if (round == n)
+                        if (round == round_bound)
                             contradict_on_cycle(extract_cycle(edge.from, ub_pred, ub_tail_of), ub_tail_of, ub_head_of);
                     }
                 });

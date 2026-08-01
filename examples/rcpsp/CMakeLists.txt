@@ -80,3 +80,13 @@ add_test(NAME rcpsp_machine_difference_global COMMAND ${GCS_BASH} ${CMAKE_SOURCE
     $<TARGET_FILE:rcpsp> --size 10 --seed 5 --machine-fraction 0.7 --machine difference --variant global)
 add_test(NAME rcpsp_machine_difference_presolved COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_machine_difference_presolved
     $<TARGET_FILE:rcpsp> --size 10 --seed 5 --machine-fraction 0.7 --machine difference --variant presolved)
+
+# The same conditional-edge instance with the root simplification stage off, so
+# the fallback path keeps being proof-checked. With the stage on, 14 redundant
+# edges go and 9 conditions are fixed before search; with it off the solver has
+# to find all of that itself, and those are two different proofs of the same
+# optimum.
+add_test(NAME rcpsp_machine_difference_nosimplify COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_machine_difference_nosimplify
+    $<TARGET_FILE:rcpsp> --size 10 --seed 5 --machine-fraction 0.7 --machine difference --variant global --simplify off)
+add_test(NAME rcpsp_machine_difference_presolved_nosimplify COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename rcpsp_machine_difference_presolved_nosimplify
+    $<TARGET_FILE:rcpsp> --size 10 --seed 5 --machine-fraction 0.7 --machine difference --variant presolved --simplify off)
