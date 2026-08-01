@@ -541,6 +541,12 @@ auto main(int argc, char * argv[]) -> int
         // every one of these has been posted in since this example landed.
         // Changing it would give the same constraint a different WeightedSum
         // term order, and so a different OPB row, for no reason.
+        //
+        // A LessThanEqual over an offset view would say the same thing, and the
+        // presolver lifts either --- both emit the same @c[<id>] row --- so the
+        // spelling here is a byte-identity choice and not a citability one.
+        // examples/difference_chain --donor is where the two are measured
+        // against each other.
         for (const auto & e : edges) {
             auto sum = WeightedSum{} + 1_i * e.to + -1_i * e.from;
             if (e.cond)

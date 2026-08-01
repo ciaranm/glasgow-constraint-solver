@@ -21,3 +21,10 @@ add_test(NAME difference_chain-presolved-refute COMMAND ${GCS_BASH} ${CMAKE_SOUR
 # And with the root simplification stage off, which is the configuration the
 # difference_chain measurements say to prefer on a dense system.
 add_test(NAME difference_chain-global-refute-nosimplify COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-global-refute-nosimplify $<TARGET_FILE:difference_chain> --mode refute --variant global --simplify off)
+
+# The presolved route over Comparison donors: `x <= y + d' lifted into the
+# global propagator, whose pols cite the comparison's own @c[<id>] row. That
+# citation is only valid because comparison.cc labels every row it emits, so
+# these two are what fail if it ever stops.
+add_test(NAME difference_chain-presolved-comparison-fixpoint COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-presolved-comparison-fixpoint $<TARGET_FILE:difference_chain> --mode fixpoint --variant presolved --donor comparison)
+add_test(NAME difference_chain-presolved-comparison-refute COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-presolved-comparison-refute $<TARGET_FILE:difference_chain> --mode refute --variant presolved --donor comparison)

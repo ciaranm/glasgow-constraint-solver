@@ -2,12 +2,14 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/integer_overflow.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <random>
@@ -26,6 +28,7 @@
 #include <fmt/ranges.h>
 #endif
 
+using gcs::innards::IntegerOverflow;
 using std::cerr;
 using std::flush;
 using std::function;
@@ -123,6 +126,32 @@ namespace
         return vars;
     }
 
+    // The view-wrap sweep's variant: each variable is created behind the wrap
+    // its position was assigned, with the underlying domain inverted so the
+    // *visible* domain -- and so the oracle, which speaks in visible values --
+    // is unchanged. Bare positions keep the plain creation above rather than
+    // going through the identity view, so a bare sweep really is the bare test.
+    auto make_vars(Problem & p, const vector<pair<int, int>> & domains, const vector<ViewWrap> & wraps) -> vector<IntegerVariableID>
+    {
+        vector<IntegerVariableID> vars;
+        for (size_t i = 0; i < domains.size(); ++i)
+            vars.push_back(wraps.at(i).bare ? p.create_integer_variable(Integer(domains.at(i).first), Integer(domains.at(i).second))
+                                            : create_integer_variable_or_constant_with_view(p, domains.at(i), wraps.at(i)));
+        return vars;
+    }
+
+    // Whether any operand of any edge sits behind a negating wrap. Conditions
+    // do not count: a condition is a literal, not a difference operand, and a
+    // negated view is perfectly fine to write `v == k` about.
+    auto any_operand_negated(const vector<EdgeSpec> & edges, const vector<ViewWrap> & wraps) -> bool
+    {
+        for (const auto & e : edges)
+            for (const auto * o : {&e.x, &e.y})
+                if (o->var && wraps.at(*o->var).negate)
+                    return true;
+        return false;
+    }
+
     auto satisfied(const vector<int> & vals, const vector<EdgeSpec> & edges) -> bool
     {
         for (const auto & e : edges) {
@@ -165,11 +194,44 @@ namespace
     // This is the sharpest check there is on the incremental machinery, because
     // every way it can go wrong loses propagation, and lost propagation is
     // invisible to VeriPB.
-    auto run_test(bool proofs, const string & mode, const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges)
-        -> void
+    auto run_test(bool proofs, const ViewWrapConfig & view_cfg, const string & mode, const string & name, const vector<pair<int, int>> & domains,
+        const vector<EdgeSpec> & edges) -> void
     {
-        print(cerr, "difference {} {} domains={} edges={}{}", mode, name, domains, edges.size(), proofs ? " with proofs:" : ":");
+        auto wraps = wraps_for_positions(view_cfg, static_cast<int>(domains.size()));
+
+        print(cerr, "difference {} [{}] {} domains={} edges={}{}", mode, view_wrap_config_label(view_cfg), name, domains, edges.size(),
+            proofs ? " with proofs:" : ":");
         cerr << flush;
+
+        // Ten of the nineteen canonical wraps negate, and DifferenceConstraints
+        // refuses a negated operand at construction rather than approximating
+        // it: `-X - Y <= d' has both coefficients negative, is not a difference
+        // constraint at all, and lifting it would be unsound rather than merely
+        // incomplete. So under a negating wrap the fixture's job changes from
+        // "solve this" to "refuse this" -- which is a real check run over every
+        // fixture, edge shape and operand position, not a skip.
+        if (any_operand_negated(edges, wraps)) {
+            Problem p;
+            auto vars = make_vars(p, domains, wraps);
+            vector<DifferenceEdge> posted;
+            for (const auto & e : edges)
+                posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
+
+            bool threw = false;
+            try {
+                DifferenceConstraints rejected{posted};
+                static_cast<void>(rejected);
+            }
+            catch (const InvalidProblemDefinitionException &) {
+                threw = true;
+            }
+            if (! threw)
+                throw UnexpectedException{"difference " + mode + " " + name + " under view wrap " + view_wrap_config_label(view_cfg) +
+                    " accepted a negated view operand. A negated view is not a difference constraint, and accepting one licences inferences the "
+                    "constraint does not entail; the rejection in deview_difference_operand must be total."};
+            println(cerr, " negated operand rejected as designed");
+            return;
+        }
 
         set<tuple<vector<int>>> expected, actual, decomposed, from_scratch;
         build_expected(expected, [&](const vector<int> & vals) { return satisfied(vals, edges); }, domains);
@@ -189,7 +251,7 @@ namespace
 
         {
             Problem p;
-            auto vars = make_vars(p, domains);
+            auto vars = make_vars(p, domains, wraps);
             vector<DifferenceEdge> posted;
             for (const auto & e : edges)
                 posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
@@ -201,7 +263,7 @@ namespace
             // solution a long way downstream, or not at all.
             p.post(DifferenceConstraints{posted}.auditing_incremental_propagation());
 
-            auto proof_name = proofs ? make_optional("difference_test_" + mode + "_" + name) : nullopt;
+            auto proof_name = proofs ? make_optional("difference_test_" + mode + "_" + name + "_" + view_wrap_config_label(view_cfg)) : nullopt;
             // Bounds consistent, not GAC: the propagator only reads and writes
             // bounds, and gcs domains can have holes where the paper's Theorem
             // 2 assumes ranges.
@@ -213,7 +275,7 @@ namespace
 
         {
             Problem p;
-            auto vars = make_vars(p, domains);
+            auto vars = make_vars(p, domains, wraps);
             vector<DifferenceEdge> posted;
             for (const auto & e : edges)
                 posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
@@ -226,7 +288,7 @@ namespace
 
         {
             Problem p;
-            auto vars = make_vars(p, domains);
+            auto vars = make_vars(p, domains, wraps);
             for (const auto & e : edges) {
                 auto sum = WeightedSum{} + 1_i * operand_id(e.x, vars) + -1_i * operand_id(e.y, vars);
                 if (auto cond = condition_id(e.cond, vars))
@@ -424,6 +486,73 @@ namespace
             throw UnexpectedException{"difference refuted the condition of a vacuous half-reified edge saying cond -> 0 <= 0"};
     }
 
+    // Extreme edge weights.
+    //
+    // Bellman-Ford accumulates weights along a path, so a system whose edges
+    // are individually representable can still have a path sum that is not.
+    // Nothing else in this file goes anywhere near the limit, and a silently
+    // wrapped path sum is the worst failure available: it turns an enormous
+    // positive distance into a negative one, which is a negative cycle that
+    // does not exist, so the propagator would refute a satisfiable system --- a
+    // lost solution, which proof logging cannot catch because nothing wrong was
+    // ever *derived* from the model's rows, only from the solver's own
+    // arithmetic.
+    //
+    // Integer's arithmetic is overflow-checked and throws, so this cannot
+    // happen. The point of this test is to say so out loud: it demands the
+    // throw, and it demands the right answer at a weight one order of magnitude
+    // inside the boundary, so that "checked" and "usable up to the limit" are
+    // both pinned.
+    auto run_overflow_test() -> void
+    {
+        print(cerr, "difference extreme weights:");
+        cerr << flush;
+
+        constexpr auto limit = std::numeric_limits<long long>::max();
+
+        // Far below the boundary: `x - y <= limit / 4` is vacuous over these
+        // domains, and every relaxation the propagator performs (`ub[y] + d`,
+        // `lb[x] - d`) stays comfortably in range, so the answer must simply be
+        // right --- all 36 assignments.
+        {
+            Problem p;
+            auto x = p.create_integer_variable(0_i, 5_i, "x");
+            auto y = p.create_integer_variable(0_i, 5_i, "y");
+            p.post(DifferenceConstraints{{DifferenceEdge{x, y, Integer{limit / 4}}}}.auditing_incremental_propagation());
+            auto stats = solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }});
+            if (36 != stats.solutions)
+                throw UnexpectedException{"difference found " + to_string(stats.solutions) +
+                    " solutions for a single vacuous edge of weight limit/4 over two 0..5 variables, where all 36 assignments satisfy it. A large "
+                    "but perfectly representable weight must give the right answer, not a truncated one."};
+        }
+
+        // Over the boundary: two chained edges of weight -(limit/2 + 1). Each
+        // is representable; their sum is not. The lower-bound relaxation
+        // computes `lb[from] - d`, so the second edge asks for
+        // (limit/2 + 1) + (limit/2 + 1) = limit + 2 and Integer refuses.
+        {
+            Problem p;
+            auto x = p.create_integer_variable_vector(3, 0_i, 5_i, "x");
+            p.post(DifferenceConstraints{{DifferenceEdge{x[0], x[1], Integer{-(limit / 2 + 1)}}, //
+                DifferenceEdge{x[1], x[2], Integer{-(limit / 2 + 1)}}}});
+
+            bool threw = false;
+            try {
+                static_cast<void>(solve_with(p, SolveCallbacks{.solution = [](const CurrentState &) -> bool { return true; }}));
+            }
+            catch (const IntegerOverflow &) {
+                threw = true;
+            }
+            if (! threw)
+                throw UnexpectedException{"difference propagated a system whose path weight does not fit in an Integer without throwing "
+                                          "IntegerOverflow. Either the sum wrapped --- which would let the propagator refute a satisfiable system, "
+                                          "silently and invisibly to proof logging --- or the propagator has learnt to avoid forming the sum at all. "
+                                          "If it is genuinely the latter, this test needs a system that forces the sum, not deleting."};
+        }
+
+        println(cerr, " ok");
+    }
+
     // A negated view operand is not a difference constraint at all, and
     // accepting one would be unsound rather than merely incomplete, so it is
     // rejected at construction.
@@ -523,15 +652,26 @@ namespace
                 posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
             p.post(DifferenceConstraints{posted}.simplifying_at_root(simplify).reporting_simplification_to(simplify ? stats : nullptr));
 
-            // The same branching heuristic, from the same seed, in both runs, so
+            // A *deterministic* branching heuristic, identical in both runs, so
             // that a difference in the recursion count is a difference in
             // propagation and cannot be a difference in search order.
+            //
+            // This was a seeded random brancher, which is not good enough for
+            // the expect_fewer_recursions fixtures. Fixing a condition at the
+            // root only removes search if the search would otherwise have
+            // branched on that condition; whether it does depends on where the
+            // variable order happens to put it, so on some seeds the two runs
+            // came out equal and the assertion fired spuriously (seed 879451257
+            // on fix_cascade, one CI lane only). The equality-asserting
+            // fixtures were always safe -- propagation-neutral under any fixed
+            // order -- but the differential ones need the order pinned. Variety
+            // across search orders is the random and random_reified modes' job.
             auto result = solve_with(p,
                 SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
                                    into.emplace(extract_from_state(s, vars));
                                    return true;
                                },
-                    .branch = random_branch_with_optional_seed(p)},
+                    .branch = branch_with(variable_order::in_order(vars), value_order::smallest_first())},
                 proof_name ? make_optional<ProofOptions>(ProofFileNames{*proof_name}) : nullopt);
             return result.recursions;
         };
@@ -992,80 +1132,80 @@ namespace
         run_restart_stress();
     }
 
-    auto run_all_tests(bool proofs, const string & mode) -> void
+    auto run_all_tests(bool proofs, const ViewWrapConfig & view_cfg, const string & mode) -> void
     {
         if (mode == "basic") {
             // A single edge, both signs of d.
-            run_test(proofs, mode, "single_neg", {{0, 6}, {0, 6}}, {{v(0), v(1), -2}});
-            run_test(proofs, mode, "single_pos", {{0, 6}, {0, 6}}, {{v(0), v(1), 2}});
-            run_test(proofs, mode, "single_zero", {{0, 6}, {0, 6}}, {{v(0), v(1), 0}});
+            run_test(proofs, view_cfg, mode, "single_neg", {{0, 6}, {0, 6}}, {{v(0), v(1), -2}});
+            run_test(proofs, view_cfg, mode, "single_pos", {{0, 6}, {0, 6}}, {{v(0), v(1), 2}});
+            run_test(proofs, view_cfg, mode, "single_zero", {{0, 6}, {0, 6}}, {{v(0), v(1), 0}});
 
             // A chain: bounds have to travel the whole way in one pass.
-            run_test(proofs, mode, "chain", {{0, 5}, {0, 5}, {0, 5}, {0, 5}}, {{v(0), v(1), -1}, {v(1), v(2), -1}, {v(2), v(3), -1}});
+            run_test(proofs, view_cfg, mode, "chain", {{0, 5}, {0, 5}, {0, 5}, {0, 5}}, {{v(0), v(1), -1}, {v(1), v(2), -1}, {v(2), v(3), -1}});
 
             // A tree: one source, two branches, so the predecessor forest has
             // more than one leaf.
-            run_test(proofs, mode, "tree", {{0, 5}, {0, 5}, {0, 5}, {0, 5}, {0, 5}},
+            run_test(proofs, view_cfg, mode, "tree", {{0, 5}, {0, 5}, {0, 5}, {0, 5}, {0, 5}},
                 {{v(0), v(1), -1}, {v(1), v(2), -1}, {v(1), v(3), -2}, {v(0), v(4), 1}});
 
             // Negative domains, and a mixture of edge weights.
-            run_test(proofs, mode, "negative_domain", {{-4, 2}, {-3, 3}, {-2, 4}}, {{v(0), v(1), -1}, {v(1), v(2), 2}, {v(2), v(0), 3}});
+            run_test(proofs, view_cfg, mode, "negative_domain", {{-4, 2}, {-3, 3}, {-2, 4}}, {{v(0), v(1), -1}, {v(1), v(2), 2}, {v(2), v(0), 3}});
 
             // Duplicate edges between the same pair, one strictly stronger.
-            run_test(proofs, mode, "duplicate_edges", {{0, 6}, {0, 6}}, {{v(0), v(1), 1}, {v(0), v(1), -2}, {v(0), v(1), 3}});
+            run_test(proofs, view_cfg, mode, "duplicate_edges", {{0, 6}, {0, 6}}, {{v(0), v(1), 1}, {v(0), v(1), -2}, {v(0), v(1), 3}});
         }
         else if (mode == "cycles") {
             // A negative cycle: unsatisfiable, and refuted by summing the cycle.
-            run_test(proofs, mode, "negcycle3", {{0, 6}, {0, 6}, {0, 6}}, {{v(0), v(1), 0}, {v(1), v(2), 0}, {v(2), v(0), -1}});
-            run_test(proofs, mode, "negcycle2", {{0, 8}, {0, 8}}, {{v(0), v(1), 0}, {v(1), v(0), -2}});
-            run_test(proofs, mode, "negcycle_weighted", {{0, 5}, {0, 5}, {0, 5}, {0, 5}},
+            run_test(proofs, view_cfg, mode, "negcycle3", {{0, 6}, {0, 6}, {0, 6}}, {{v(0), v(1), 0}, {v(1), v(2), 0}, {v(2), v(0), -1}});
+            run_test(proofs, view_cfg, mode, "negcycle2", {{0, 8}, {0, 8}}, {{v(0), v(1), 0}, {v(1), v(0), -2}});
+            run_test(proofs, view_cfg, mode, "negcycle_weighted", {{0, 5}, {0, 5}, {0, 5}, {0, 5}},
                 {{v(0), v(1), 2}, {v(1), v(2), -3}, {v(2), v(3), 1}, {v(3), v(0), -1}});
 
             // A zero-weight cycle: satisfiable, and it forces equalities all
             // the way round.
-            run_test(proofs, mode, "zerocycle", {{0, 5}, {0, 5}, {0, 5}}, {{v(0), v(1), 0}, {v(1), v(2), 0}, {v(2), v(0), 0}});
-            run_test(proofs, mode, "zerocycle_offset", {{0, 6}, {0, 6}}, {{v(0), v(1), -2}, {v(1), v(0), 2}});
+            run_test(proofs, view_cfg, mode, "zerocycle", {{0, 5}, {0, 5}, {0, 5}}, {{v(0), v(1), 0}, {v(1), v(2), 0}, {v(2), v(0), 0}});
+            run_test(proofs, view_cfg, mode, "zerocycle_offset", {{0, 6}, {0, 6}}, {{v(0), v(1), -2}, {v(1), v(0), 2}});
 
             // A negative cycle sitting inside a bigger graph, so the
             // predecessor walk has to skip the nodes hanging off it.
-            run_test(proofs, mode, "negcycle_with_tail", {{0, 4}, {0, 4}, {0, 4}, {0, 4}},
+            run_test(proofs, view_cfg, mode, "negcycle_with_tail", {{0, 4}, {0, 4}, {0, 4}, {0, 4}},
                 {{v(0), v(1), 0}, {v(1), v(2), 0}, {v(2), v(1), -1}, {v(2), v(3), 1}});
         }
         else if (mode == "views") {
             // Offset views on either or both ends. The offsets fold into the
             // weight, so the OPB row is over the bare variables and every
             // edge's row speaks the same representation.
-            run_test(proofs, mode, "view_left", {{0, 6}, {0, 6}}, {{v(0, 3), v(1), 0}});
-            run_test(proofs, mode, "view_right", {{0, 6}, {0, 6}}, {{v(0), v(1, -2), 1}});
-            run_test(proofs, mode, "view_both", {{0, 5}, {0, 5}, {0, 5}}, {{v(0, 4), v(1, -1), -1}, {v(1, 2), v(2, 2), 0}});
-            run_test(proofs, mode, "view_chain", {{0, 5}, {0, 5}, {0, 5}}, {{v(0, 1), v(1, 1), -1}, {v(1, -3), v(2, 3), 0}});
+            run_test(proofs, view_cfg, mode, "view_left", {{0, 6}, {0, 6}}, {{v(0, 3), v(1), 0}});
+            run_test(proofs, view_cfg, mode, "view_right", {{0, 6}, {0, 6}}, {{v(0), v(1, -2), 1}});
+            run_test(proofs, view_cfg, mode, "view_both", {{0, 5}, {0, 5}, {0, 5}}, {{v(0, 4), v(1, -1), -1}, {v(1, 2), v(2, 2), 0}});
+            run_test(proofs, view_cfg, mode, "view_chain", {{0, 5}, {0, 5}, {0, 5}}, {{v(0, 1), v(1, 1), -1}, {v(1, -3), v(2, 3), 0}});
 
             // The same variable reached through two different offset views in
             // two edges: the graph joins them at one node, which only cancels
             // because both rows are emitted over the bare variable.
-            run_test(proofs, mode, "view_shared_node", {{0, 5}, {0, 5}, {0, 5}}, {{v(0), v(1, 2), -1}, {v(1, -3), v(2), -1}});
+            run_test(proofs, view_cfg, mode, "view_shared_node", {{0, 5}, {0, 5}, {0, 5}}, {{v(0), v(1, 2), -1}, {v(1, -3), v(2), -1}});
 
             // A negative cycle whose edges are all expressed through views.
-            run_test(proofs, mode, "view_negcycle", {{0, 5}, {0, 5}}, {{v(0, 2), v(1), 0}, {v(1, 1), v(0, 4), 0}});
+            run_test(proofs, view_cfg, mode, "view_negcycle", {{0, 5}, {0, 5}}, {{v(0, 2), v(1), 0}, {v(1, 1), v(0, 4), 0}});
 
             // Constant operands, which are static bounds on the other end.
-            run_test(proofs, mode, "constant_upper", {{0, 8}}, {{v(0), c(2), 3}});
-            run_test(proofs, mode, "constant_lower", {{0, 8}}, {{c(7), v(0), 2}});
-            run_test(proofs, mode, "constant_both_true", {{0, 3}}, {{c(1), c(4), 0}, {v(0), c(0), 2}});
-            run_test(proofs, mode, "constant_both_false", {{0, 3}}, {{c(4), c(1), 0}});
-            run_test(proofs, mode, "constant_and_edge", {{0, 8}, {0, 8}}, {{c(4), v(0), 0}, {v(0), v(1), -2}});
+            run_test(proofs, view_cfg, mode, "constant_upper", {{0, 8}}, {{v(0), c(2), 3}});
+            run_test(proofs, view_cfg, mode, "constant_lower", {{0, 8}}, {{c(7), v(0), 2}});
+            run_test(proofs, view_cfg, mode, "constant_both_true", {{0, 3}}, {{c(1), c(4), 0}, {v(0), c(0), 2}});
+            run_test(proofs, view_cfg, mode, "constant_both_false", {{0, 3}}, {{c(4), c(1), 0}});
+            run_test(proofs, view_cfg, mode, "constant_and_edge", {{0, 8}, {0, 8}}, {{c(4), v(0), 0}, {v(0), v(1), -2}});
         }
         else if (mode == "alias") {
             // The same variable in both slots, once vacuous and once a root
             // contradiction. Handled, not thrown: x - x <= d is 0 <= d.
-            run_test(proofs, mode, "alias_ok", {{0, 5}, {0, 5}}, {{v(0), v(0), 0}, {v(0), v(1), -1}});
-            run_test(proofs, mode, "alias_ok_pos", {{0, 5}}, {{v(0), v(0), 3}});
-            run_test(proofs, mode, "alias_bad", {{0, 5}, {0, 5}}, {{v(0), v(0), -1}, {v(0), v(1), 0}});
+            run_test(proofs, view_cfg, mode, "alias_ok", {{0, 5}, {0, 5}}, {{v(0), v(0), 0}, {v(0), v(1), -1}});
+            run_test(proofs, view_cfg, mode, "alias_ok_pos", {{0, 5}}, {{v(0), v(0), 3}});
+            run_test(proofs, view_cfg, mode, "alias_bad", {{0, 5}, {0, 5}}, {{v(0), v(0), -1}, {v(0), v(1), 0}});
             // Aliasing through views, where the offsets decide the sign.
-            run_test(proofs, mode, "alias_view_ok", {{0, 5}}, {{v(0, 2), v(0), 3}});
-            run_test(proofs, mode, "alias_view_bad", {{0, 5}}, {{v(0, 2), v(0), 1}});
+            run_test(proofs, view_cfg, mode, "alias_view_ok", {{0, 5}}, {{v(0, 2), v(0), 3}});
+            run_test(proofs, view_cfg, mode, "alias_view_bad", {{0, 5}}, {{v(0, 2), v(0), 1}});
             // An empty system, and one with nothing but a vacuous edge.
-            run_test(proofs, mode, "empty", {{0, 3}}, {});
+            run_test(proofs, view_cfg, mode, "empty", {{0, 3}}, {});
         }
         else if (mode == "reified") {
             // Throughout: the last one or two variables have domain 0..1 and
@@ -1078,7 +1218,7 @@ namespace
             // quadrant is excluded -- and that is the case reified_hand.pbp
             // verifies by hand: sum the three rows, saturate, and the residual
             // is the clause ~b1 v ~b2.
-            run_test(proofs, mode, "negcycle_two_conds", {{0, 5}, {0, 5}, {0, 5}, {0, 1}, {0, 1}},
+            run_test(proofs, view_cfg, mode, "negcycle_two_conds", {{0, 5}, {0, 5}, {0, 5}, {0, 1}, {0, 1}},
                 {{v(0), v(1), 0, b(3)}, {v(1), v(2), 0, b(4)}, {v(2), v(0), -1}});
 
             // The same cycle with every edge conditional on the same Boolean.
@@ -1087,51 +1227,54 @@ namespace
             // "domain propagator" claim excludes and which every disjunctive
             // encoding does anyway): soundness must hold regardless, and the
             // reason must not list the Boolean three times.
-            run_test(proofs, mode, "negcycle_shared_cond", {{0, 5}, {0, 5}, {0, 5}, {0, 1}},
+            run_test(proofs, view_cfg, mode, "negcycle_shared_cond", {{0, 5}, {0, 5}, {0, 5}, {0, 1}},
                 {{v(0), v(1), 0, b(3)}, {v(1), v(2), 0, b(3)}, {v(2), v(0), -1, b(3)}});
 
             // Mixed: an unconditional cycle would already be infeasible, so the
             // conditional edge is the only thing standing between satisfiable
             // and not.
-            run_test(proofs, mode, "negcycle_mixed", {{0, 4}, {0, 4}, {0, 4}, {0, 1}}, {{v(0), v(1), -1}, {v(1), v(2), -1}, {v(2), v(0), 1, b(3)}});
+            run_test(proofs, view_cfg, mode, "negcycle_mixed", {{0, 4}, {0, 4}, {0, 4}, {0, 1}},
+                {{v(0), v(1), -1}, {v(1), v(2), -1}, {v(2), v(0), 1, b(3)}});
 
             // Bound pushes across conditional edges, chained, so the reason of
             // the second cites the first's inferred bound and its own condition.
             // Domains kept narrow enough that the whole solution set fits inside
             // the default runtime cap, so this keeps its cross-check against the
             // decomposed model even in a capped run.
-            run_test(proofs, mode, "chain_conds", {{0, 4}, {0, 4}, {0, 4}, {0, 1}, {0, 1}}, {{v(0), v(1), -2, b(3)}, {v(1), v(2), -2, b(4)}});
+            run_test(
+                proofs, view_cfg, mode, "chain_conds", {{0, 4}, {0, 4}, {0, 4}, {0, 1}, {0, 1}}, {{v(0), v(1), -2, b(3)}, {v(1), v(2), -2, b(4)}});
 
             // A conditional edge that can never hold over these domains: the
             // negative control, as a solution count. Every assignment with the
             // condition false is a solution, and none with it true.
-            run_test(proofs, mode, "cond_impossible", {{0, 4}, {0, 4}, {0, 1}}, {{v(0), v(1), -10, b(2)}});
+            run_test(proofs, view_cfg, mode, "cond_impossible", {{0, 4}, {0, 4}, {0, 1}}, {{v(0), v(1), -10, b(2)}});
 
             // Conditioning on the *false* value of a 0..1 variable, which is
             // the other half of a disjunctive decomposition.
-            run_test(proofs, mode, "cond_on_zero", {{0, 4}, {0, 4}, {0, 1}}, {{v(0), v(1), -2, b(2, 0)}, {v(1), v(0), -2, b(2)}});
+            run_test(proofs, view_cfg, mode, "cond_on_zero", {{0, 4}, {0, 4}, {0, 1}}, {{v(0), v(1), -2, b(2, 0)}, {v(1), v(0), -2, b(2)}});
 
             // A conditional edge whose condition is over a variable with a
             // wider domain, so the condition is `x == 2' rather than a Boolean.
-            run_test(proofs, mode, "cond_not_boolean", {{0, 4}, {0, 4}, {0, 3}}, {{v(0), v(1), -3, b(2, 2)}});
+            run_test(proofs, view_cfg, mode, "cond_not_boolean", {{0, 4}, {0, 4}, {0, 3}}, {{v(0), v(1), -3, b(2, 2)}});
 
             // Conditional edges through offset views on both ends, which is
             // where a proof only telescopes because the rows are emitted over
             // the canonical bare variables.
-            run_test(proofs, mode, "cond_views", {{0, 5}, {0, 5}, {0, 5}, {0, 1}}, {{v(0, 2), v(1, -1), -1, b(3)}, {v(1, 3), v(2), 0, b(3)}});
-            run_test(proofs, mode, "cond_view_negcycle", {{0, 5}, {0, 5}, {0, 1}}, {{v(0, 2), v(1), 0, b(2)}, {v(1, 1), v(0, 4), 0}});
+            run_test(
+                proofs, view_cfg, mode, "cond_views", {{0, 5}, {0, 5}, {0, 5}, {0, 1}}, {{v(0, 2), v(1, -1), -1, b(3)}, {v(1, 3), v(2), 0, b(3)}});
+            run_test(proofs, view_cfg, mode, "cond_view_negcycle", {{0, 5}, {0, 5}, {0, 1}}, {{v(0, 2), v(1), 0, b(2)}, {v(1, 1), v(0, 4), 0}});
 
             // Conditional static bounds (a constant operand) and conditional
             // degenerate edges (aliasing), which are the two shapes that are not
             // graph edges at all.
-            run_test(proofs, mode, "cond_constant", {{0, 8}, {0, 1}}, {{v(0), c(0), 3, b(1)}, {c(6), v(0), 0, b(1, 0)}});
-            run_test(proofs, mode, "cond_alias_bad", {{0, 3}, {0, 1}}, {{v(0), v(0), -1, b(1)}});
-            run_test(proofs, mode, "cond_alias_ok", {{0, 3}, {0, 1}}, {{v(0), v(0), 0, b(1)}});
+            run_test(proofs, view_cfg, mode, "cond_constant", {{0, 8}, {0, 1}}, {{v(0), c(0), 3, b(1)}, {c(6), v(0), 0, b(1, 0)}});
+            run_test(proofs, view_cfg, mode, "cond_alias_bad", {{0, 3}, {0, 1}}, {{v(0), v(0), -1, b(1)}});
+            run_test(proofs, view_cfg, mode, "cond_alias_ok", {{0, 3}, {0, 1}}, {{v(0), v(0), 0, b(1)}});
 
             // Two Booleans, four quadrants, each excluding a different part of
             // the space: nothing may be pruned in the wrong quadrant.
-            run_test(
-                proofs, mode, "cond_quadrants", {{0, 4}, {0, 4}, {0, 1}, {0, 1}}, {{v(0), v(1), -2, b(2)}, {v(1), v(0), -2, b(3)}, {v(0), v(1), 1}});
+            run_test(proofs, view_cfg, mode, "cond_quadrants", {{0, 4}, {0, 4}, {0, 1}, {0, 1}},
+                {{v(0), v(1), -2, b(2)}, {v(1), v(0), -2, b(3)}, {v(0), v(1), 1}});
         }
         else if (mode == "random" || mode == "random_reified") {
             // In random_reified, two extra 0..1 variables sit at the end of the
@@ -1174,7 +1317,7 @@ namespace
                         v(static_cast<size_t>(var_dist(rand)), offset_dist(rand)), d_dist(rand), cond});
                 }
 
-                run_test(proofs, mode, "random" + to_string(iteration), domains, edges);
+                run_test(proofs, view_cfg, mode, "random" + to_string(iteration), domains, edges);
             }
         }
         else
@@ -1191,35 +1334,61 @@ auto main(int argc, char * argv[]) -> int
 
     string mode{argv[1]};
 
-    run_negated_view_test();
-    if (mode == "basic")
-        for (bool incremental : {true, false}) {
-            run_transitive_test(incremental);
-            run_hole_snap_test(incremental);
-        }
-    if (mode == "reified")
-        for (bool incremental : {true, false}) {
-            run_reified_bounds_test(incremental);
-            run_reified_degenerate_test(incremental);
-        }
-    if (mode == "incremental") {
-        run_incremental_tests();
+    auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
+
+    // The sweep names positions 0..n_positions-1; fixtures here have between
+    // one and six variables, so a position past a fixture's end simply leaves
+    // that fixture bare, which wraps_for_positions already does. Only a
+    // position past *every* fixture is worth declining outright.
+    constexpr int n_positions = 5;
+    if (view_cfg.single_position && (*view_cfg.single_position < 0 || *view_cfg.single_position >= n_positions)) {
+        println(cerr, "difference view sweep: position {} out of range for n_positions = {}; skipping", *view_cfg.single_position, n_positions);
         return EXIT_SUCCESS;
     }
-    if (mode == "simplify") {
-        run_root_refutation_test();
-        for (bool proofs : {false, true}) {
-            if (proofs && ! can_run_veripb())
-                continue;
-            run_simplify_tests(proofs);
+
+    run_negated_view_test();
+    run_overflow_test();
+
+    // The bespoke tests below build their own models by hand rather than going
+    // through run_test's fixture machinery, so they take no wrap; running them
+    // again under every wrap would only repeat the bare run. The sweep is over
+    // the data-driven fixtures, which is where the operand shapes live.
+    auto bare = view_wrap_config_is_effectively_bare(view_cfg, n_positions);
+
+    if (bare) {
+        if (mode == "basic")
+            for (bool incremental : {true, false}) {
+                run_transitive_test(incremental);
+                run_hole_snap_test(incremental);
+            }
+        if (mode == "reified")
+            for (bool incremental : {true, false}) {
+                run_reified_bounds_test(incremental);
+                run_reified_degenerate_test(incremental);
+            }
+        if (mode == "incremental") {
+            run_incremental_tests();
+            return EXIT_SUCCESS;
         }
+        if (mode == "simplify") {
+            run_root_refutation_test();
+            for (bool proofs : {false, true}) {
+                if (proofs && ! can_run_veripb())
+                    continue;
+                run_simplify_tests(proofs);
+            }
+            return EXIT_SUCCESS;
+        }
+    }
+    else if (mode == "incremental" || mode == "simplify") {
+        println(cerr, "difference view sweep: mode {} builds its models by hand and takes no wrap; skipping", mode);
         return EXIT_SUCCESS;
     }
 
     for (bool proofs : {false, true}) {
         if (proofs && ! can_run_veripb())
             continue;
-        run_all_tests(proofs, mode);
+        run_all_tests(proofs, view_cfg, mode);
     }
 
     return EXIT_SUCCESS;
