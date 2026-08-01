@@ -600,6 +600,92 @@ extra global pass and the presolver's own O(number of constraints) enumeration
 are pure overhead. That is the honest counterweight to the 9.7× on the unlucky
 order, and the reason this ships off by default.
 
+## RCPSP/max: the benchmark this was built for
+
+Per Kletzander, Dekker, Schutt and Stuckey (arXiv:2607.20022), RCPSP/max is
+where a global difference-logic propagator wins most: 550 → 586.55 on their
+scoring, and average unsat-detection time 1.98 s → under 0.01 s. The reason is
+structural. A *maximum* time lag is a negative-weight arc running backwards
+along the precedence network, so the network has cycles, and a nearly-tight one
+is infeasible-or-nearly-so in a way per-constraint bounds propagation can only
+find by crawling.
+
+`examples/rcpsp` reaches it with `--max-lag-density`, and `--variant` posts the
+identical edge list, in the identical order, three ways. `--branch` defaults to
+a static order, so `recursions` is an invariant across variants rather than a
+confound: any row where the three disagree on recursions is a bug.
+
+Measured on fataepyc-10, release, `taskset`-pinned, medians of 3, never with
+`--prove`; proof numbers taken separately below.
+
+### Feasible instances
+
+`recursions` identical in every row, propagations 3–12× lower for the global:
+
+| instance | status | recursions | props (dec) | props (presolved) | props (global) |
+|---|---|---:|---:|---:|---:|
+| `--size 14 --seed 9 --max-lag-density 0.4 --max-lag-slack 0` | optimal 17 | 35 | 447 | 314 | **55** |
+| `--size 12 --seed 3 --max-lag-density 0.3` | optimal 14 | 61 | 749 | 576 | **140** |
+| `--size 18 --seed 11 --max-lag-density 0.3` | optimal 22 | 102 | 2,669 | 1,530 | **227** |
+| `--size 16 --seed 3 --max-lag-density 0.3` | optimal 14 | 296 | 1,271 | 859 | **256** |
+| `--size 22 --seed 4 --max-lag-density 0.25` | optimal 32 | 10,512 | 109,199 | 82,726 | **32,682** |
+| `--size 20 --seed 5 --max-lag-density 0.3` | unsat at root | 1 | 1,155 | 56 | **1** |
+
+The `--size 22` row is the honest one: 3.3× fewer propagations, and **8 % slower**
+in wall time (0.0771 s decomposed against 0.0828 s global). That is the
+non-incrementality caveat under "Deliberately deferred" showing up on a real
+model — every wake re-runs the whole Bellman-Ford pass. The presolved column
+sits between the two throughout because it leaves the donor linears installed
+alongside the lifted global unless they are explicitly retired.
+
+### Negative cycles, against the horizon
+
+The sharp result. A negative cycle of weight -1, resources off, horizon forced,
+so the only thing varying is how far the bounds have to crawl:
+
+| horizon | props (dec) | props (global) | wall dec (s) | wall global (s) |
+|---:|---:|---:|---:|---:|
+| 200 | 1,163 | **1** | 0.00035 | 0.00016 |
+| 800 | 4,763 | **1** | 0.00073 | 0.00010 |
+| 3,200 | 19,163 | **1** | 0.00324 | 0.00011 |
+| 12,800 | 76,763 | **1** | 0.02397 | 0.00010 |
+| 51,200 | 307,163 | **1** | 0.26282 | 0.00011 |
+
+Exactly linear against a constant: 4× the horizon is 4× the propagations
+decomposed, and one propagation regardless for the global.
+
+### Proofs of that refutation
+
+Separate runs, with `--prove`:
+
+| horizon | dec lines | dec `.pbp` | veripb dec | global lines | global `.pbp` | veripb global |
+|---:|---:|---:|---:|---:|---:|---:|
+| 200 | 4,454 | 299,560 B | 0.068 s | **12** | **222 B** | 0.012 s |
+| 800 | 18,254 | 1,417,961 B | 0.95 s | **12** | **222 B** | 0.012 s |
+| 3,200 | 73,454 | 6,578,202 B | 21.0 s | **12** | **222 B** | 0.014 s |
+| 12,800 | 294,254 | 29,769,564 B | **> 600 s, abandoned** | **12** | **222 B** | 0.013 s |
+
+The refutation is 12 lines and 222 bytes whatever the horizon, because it sums
+the cycle's edge rows once (proof shape 1 above). The decomposed proof grows
+with the horizon and its verification grows faster still — the 12,800 row was
+abandoned after ten minutes rather than being left to finish, so that figure is
+a lower bound and is marked as one.
+
+### Where the paper's headline does and does not reproduce
+
+The cost claim reproduces cleanly. The *shape* claim does not: `recursions: 1`
+in **both** columns on the negative-cycle rows, because gcs runs root
+propagation to a fixpoint and a negative cycle always eventually empties a
+domain. So the global propagator does not turn a search into a root refutation
+here; it turns an expensive root refutation into a single propagation.
+
+The paper's baseline searches because its disjunctive resources contribute
+*half-reified* difference constraints, so the cycle only closes after Boolean
+decisions. `examples/rcpsp --machine pairwise` posts exactly that structure —
+`LinearGreaterThanEqualIf` in both directions on a 0/1 ordering variable — but
+half-reified edges are not supported by the propagator yet, so that mechanism is
+absent here by construction rather than by choice.
+
 ## Deliberately deferred
 
 - **Incrementality.** The paper's `IncSat` / `IncLB` / `IncUB` maintain a valid
