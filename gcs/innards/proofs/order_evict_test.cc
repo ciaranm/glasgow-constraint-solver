@@ -148,11 +148,16 @@ auto main() -> int
     // ---- w: the eq-atom window's hoist-out rule and forget sweep ----
     logger.enter_proof_level(1);
     // Two windowed eq atoms: definitions at Current, and their ge thresholds left
-    // deletable rather than hoisted to Top.
-    tracker.need_direct_encoding_for(w, 10_i, EqAtomResidency::Windowed);
-    tracker.need_direct_encoding_for(w, 20_i, EqAtomResidency::Windowed);
+    // deletable rather than hoisted to Top. The scope is the branch layer's request, held
+    // across the guess mint and nothing else.
+    {
+        NamesAndIDsTracker::WindowedEqScope scope{tracker};
+        tracker.need_direct_encoding_for(w, 10_i);
+        tracker.need_direct_encoding_for(w, 20_i);
+    }
     auto w10 = tracker.xliteral_for(w == 10_i);
     auto w20 = tracker.xliteral_for(w == 20_i);
+    check(tracker.live_windowed_eq_count(w) == 2);
 
     // eq(10) acquires a permanent reference, so the window retains it instead of evicting
     // it: its definition and the two ge thresholds it names all move to Top.

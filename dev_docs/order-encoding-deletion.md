@@ -6,7 +6,7 @@ not default.** This note records the design for shrinking the integer
 order-encoding that VeriPB carries, plus the measured outcome and what is and
 isn't yet done. The full Brancher-API refactor (step 2, below) is a **decided design,
 recorded in [brancher-design.md](brancher-design.md), now partly implemented**: its
-stages A, B and B' have landed, B''/C/D/E have not. That note, not this one, is the
+stages A, B, B' and B'' have landed, C/D/E have not. That note, not this one, is the
 authority on the refactor's staging and status. The shipped deletion path still wires
 into the existing branch/backtrack flow via hoisting, and the four-step sketch further
 down this note is superseded by the decided design (see the note at "Design overview"
@@ -297,10 +297,10 @@ frontend proofs.
     threshold pair cost, and the +4.1 % this one costs.
   - **The eq analogue of atom retirement** (`VariableAtoms::retired_eq`,
     `forget_eq_literals_at_level`), so a *deletable* eq definition — which only a windowed
-    variable has, and nothing is windowed yet — retires its atom on backtrack and is
-    re-introduced through `need_direct_encoding_for` with its identity intact. Both ge
-    traps recur verbatim: `eq_defs` keeps its entry and re-introduction must
-    `insert_or_assign`, and the `XLiteral` must be reused rather than re-minted.
+    variable has — retires its atom on backtrack and is re-introduced through
+    `need_direct_encoding_for` with its identity intact. Both ge traps recur verbatim:
+    `eq_defs` keeps its entry and re-introduction must `insert_or_assign`, and the
+    `XLiteral` must be reused rather than re-minted.
 
   **A finding worth carrying forward: VeriPB does not police a leaked chain clause.** A
   chain clause left naming an evicted threshold stays a valid derived constraint, and
@@ -349,14 +349,59 @@ frontend proofs.
   split-branched ones anyway.
 - **`soli` objective atom** is hoisted to Top when the objective-improvement
   constraint is emitted (latent optimisation-mode bug fixed defensively).
-- **In progress:** the clean Brancher abstraction (step 2). Stages A, B and B' have
+- **The eq-atom sliding window (stage B'', opt-in and OFF by default).** The four
+  contiguous eq value orders — `smallest_first`, `largest_first`, `smallest_in`,
+  `largest_in` — used to keep every eq atom they branched on, *and* both of the `ge`
+  thresholds each names, resident at Top forever: O(domain width) per branched variable,
+  and no deletion win at all. Under
+  `ProofOptions::set_order_encoding_deletion_eq_window()` (or
+  `GCS_DELETE_ORDER_ENCODING_EQ_WINDOW=1`) the branch layer instead mints each guess's eq
+  definition **deletable, at the node's own level**, advances a monotone frontier past it
+  once the sibling is refuted, and evicts the atom and the threshold it stepped over
+  behind that frontier — O(1) resident.
+  [brancher-design.md](brancher-design.md) ("The eq-atom window") is the authority; the
+  three things worth knowing here are:
+
+  - **The advance RUPs *through* the eq atom's reverse reification**, which fixes the
+    order of the per-iteration tidy: the definition must not be deleted before the
+    advance is emitted. This is not a guess — the artifacts driver's D2c control deletes
+    it early and VeriPB rejects.
+  - **The atom's definition is minted before the descent, not by the child's
+    propagation**, so it lands at the level the child's backtrack clause and the
+    frontier advance both live at. Left to the child it would land a level deeper and
+    the child's own `forget` would delete it out from under both.
+  - **Permanent references are detected at the reference site**
+    (`note_permanent_eq_reference`) and retain the atom rather than evicting it. There is
+    exactly one such site plus the interval guard — a learned nogood's Top clause. A
+    `solx`/`soli` line names `var == val` too, but is **not** one: the constraint VeriPB
+    keeps is built from the `preserved:` set alone (our variables' bits), so those atoms
+    are consumed while the line is checked and referenced by nothing afterwards.
+    The list of sites is enumerated rather than general, which is acceptable only because
+    getting it wrong is loud: the atom keeps its `XLiteral` across eviction, so a
+    surviving line naming it collides with the re-introduction's `red` witness and VeriPB
+    rejects.
+
+  **Measured** (figures and method in [brancher-design.md](brancher-design.md), "What it
+  measures"): on ascending eq branching over a wide domain the window verifies **2.3× /
+  3.5× / 4.7× faster at domain 250 / 500 / 1000**, a speedup that grows with width — and
+  it does so while making the proof **31 % bigger**, which is this mode's SIZE≠TIME point
+  in its purest form.
+
+  On the eq-heavy *real* instances it does not engage: talent windows **0** eq atoms and
+  crystal_maze **2**, against 3255 on the synthetic. The precondition the design did not
+  name is that **the window can only act on an eq atom the branch layer names first**, and
+  on a model whose constraints reason per value the propagators have defined those atoms
+  permanently long before the search reaches them. Where it cannot engage it now costs
+  nothing (talent's window-on proof is byte-identical to its window-off proof). The window
+  therefore ships off, and stage E owns whether the default changes.
+- **In progress:** the clean Brancher abstraction (step 2). Stages A, B, B' and B'' have
   landed — the `BranchDecision` / `BacktrackAdvance` types, the split families' bound
-  advances, and the eviction primitives plus their always-on residency bookkeeping — so
-  the direct guess/eq/aux hoist wiring is on its way out but is still what the shipped
-  path uses. Stages B''/C/D/E remain; [brancher-design.md](brancher-design.md) is the
-  authority on each. Also future: short-reason flag / deview-companion level-scoping
-  (currently inert), and the bridge redesign (deprioritised — step 1b measured it as
-  freeing 0 %).
+  advances, the eviction primitives plus their always-on residency bookkeeping, and the
+  eq-atom window — so the direct guess/eq/aux hoist wiring is on its way out but is still
+  what the shipped path uses. Stages C/D/E remain;
+  [brancher-design.md](brancher-design.md) is the authority on each. Also future:
+  short-reason flag / deview-companion level-scoping (currently inert), and the bridge
+  redesign (deprioritised — step 1b measured it as freeing 0 %).
 
 ## Next steps (prioritised)
 
@@ -390,16 +435,17 @@ builds long chains (seat-moving: median chain 12, max 98, despite maxdom 901), a
 the deletion machinery churns (37 644 deletes / 37 616 reintroductions, net 28) for
 nothing there.
 
-**2. Brancher-API refactor — IN PROGRESS: stages A, B and B' landed; B'' is next.**
+**2. Brancher-API refactor — IN PROGRESS: stages A, B, B' and B'' landed; C is next.**
 The concrete, decided step-2 design and its staging live in
 [brancher-design.md](brancher-design.md), which is the authority on what is done and
 what each remaining stage owes. In summary: **A** added the `BranchDecision` /
 `BacktrackAdvance` types and ported every value order (byte-identical); **B** wired the
 split families' bound advances and the advance-RUP-driven deletion; **B'** added the
 always-on residency bookkeeping and the evict/hoist primitives the eq window and the
-objective `delc` both need (behaviour-neutral — nothing calls them yet). Remaining:
-**B''** the eq-atom window, **C** the objective/frontier exemption, **D** the
-objective-improvement `delc` + Top-eviction, **E** benchmark and cleanup. The design
+objective `delc` both need (behaviour-neutral); **B''** built the eq-atom window on
+them, opt-in and off by default. Remaining: **C** the objective/frontier exemption,
+**D** the objective-improvement `delc` + Top-eviction, **E** benchmark and cleanup —
+including whether the window becomes the default for `smallest_first`. The design
 generalises consolidate-then-delete,
 tidies the current direct wiring, and is the natural home for the chain-gated
 deletion policy, the objective-variable exemption (from 2b, below), and the
@@ -434,7 +480,10 @@ Parameter: `ProofOptions::order_encoding_deletion_min_chain` (+ fluent setter), 
 override `GCS_DELETE_ORDER_ENCODING_MIN_CHAIN` (explicit-in-code wins). **`0` = gate
 off = byte-identical to the pre-gate Literals behaviour — the aggressive-testing
 mode: regression runs exercising the deletion machinery MUST set `MIN_CHAIN=0`,
-because tiny test domains never cross a nonzero gate.** The suite passed caps-off
+because tiny test domains never cross a nonzero gate.** A variable with a live eq
+window is exempt from the gate entirely (the `WindowedFrontier` slot): it is a frontier
+variable by construction, and holding its thresholds resident would collapse the window
+back to the baseline. The suite passed caps-off
 flag-ON at gate 0 and at 32 when this landed (525/525 each, 0 flag-induced failures; the
 suite has grown since — the standing gate is "all of it, in each of the three modes",
 not a fixed number). The stats dump

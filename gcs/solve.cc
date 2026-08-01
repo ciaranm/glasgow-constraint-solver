@@ -112,12 +112,31 @@ namespace
         }
     };
 
-    // A refuted split sibling carries a Bound (Lower/Upper) advance; every other value
-    // order stays Exclude. The framework emits a guess-reasoned frontier advance only
-    // for the Bound siblings.
+    // A refuted split or contiguous-eq sibling carries a Bound (Lower/Upper) advance; every
+    // other value order stays Exclude. The framework emits a guess-reasoned frontier
+    // advance only for the Bound siblings.
     [[nodiscard]] auto is_bound_advance(const BacktrackAdvance & advance) -> bool
     {
         return std::holds_alternative<backtrack_advance::LowerBound>(advance) || std::holds_alternative<backtrack_advance::UpperBound>(advance);
+    }
+
+    // Which way a Bound advance moves the frontier. Only meaningful once is_bound_advance
+    // holds.
+    [[nodiscard]] auto is_lower_bound_advance(const BacktrackAdvance & advance) -> bool
+    {
+        return std::holds_alternative<backtrack_advance::LowerBound>(advance);
+    }
+
+    // The two shapes a Bound advance comes in, told apart by the atom the decision
+    // branches on rather than by which value order produced it (design 3: the advance is
+    // derived from the yielded condition). A split guesses an ORDER atom, and refuting it
+    // establishes the frontier directly. A contiguous eq order guesses an EQ atom, and
+    // refuting it establishes the frontier only through that atom's reverse reification --
+    // which is what the eq-atom window is built around, and what makes its tidy ordering
+    // load-bearing.
+    [[nodiscard]] auto is_eq_decision(const IntegerVariableCondition & guess) -> bool
+    {
+        return guess.op == VariableConditionOperator::Equal;
     }
 
     auto solve_with_state(unsigned long long depth, Stats & stats, Problem & problem, Propagators & propagators, State & state,
@@ -266,6 +285,16 @@ namespace
                             ++sibling_index;
                         }
 
+                        // Under the eq-atom window, mint the guess's eq definition HERE,
+                        // before the descent, so it lands at this node's level: the level
+                        // the refuted child's backtrack clause lands at, and the level the
+                        // frontier advance is emitted at. Left to the child's first
+                        // propagation to name, it would land a level deeper and the child's
+                        // own forget would delete it out from under both. A no-op unless
+                        // the window is on and the guess is an eq atom of a real variable.
+                        if (logger && is_bound_advance(decision.on_refuted) && is_eq_decision(guess))
+                            logger->mint_windowed_eq_guess(guess);
+
                         auto child_result = recurse(guess, child_prefix);
                         if (child_result == SearchResult::Stop)
                             return SearchResult::Stop;
@@ -296,7 +325,21 @@ namespace
                             vector<Literal> guesses;
                             for (const auto & g : state.guesses())
                                 guesses.push_back(g);
-                            logger->emit_split_bound_advance(guesses, guess);
+                            if (! is_eq_decision(guess))
+                                logger->emit_split_bound_advance(guesses, guess);
+                            else if ((*branch_iter).guess != ! guess) {
+                                // The eq window's step, skipped for the `smallest_in` /
+                                // `largest_in` shape -- a `var == lb` whose only remaining
+                                // sibling is its complement `var != lb`. There the tidy
+                                // would evict the very atom that sibling is about to name,
+                                // forcing an immediate re-mint as a PERMANENT definition
+                                // that pins both its thresholds at Top: strictly worse
+                                // than not tidying. And with no later sibling there is
+                                // nothing for the advance to be the standing bound of, so
+                                // emitting one would be pure cost. Those orders still gain
+                                // from the window across the chain of nodes below them.
+                                logger->emit_eq_window_advance(guesses, guess, is_lower_bound_advance(decision.on_refuted));
+                            }
                         }
                     }
                 }

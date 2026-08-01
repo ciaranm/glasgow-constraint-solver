@@ -402,6 +402,20 @@ struct NamesAndIDsTracker::Imp
     // reason (a level-0 entry would be a permanent def).
     map<SimpleIntegerVariableID, map<Integer, int>> live_eq_literals;
     map<int, vector<pair<SimpleIntegerVariableID, Integer>>> eq_literals_by_level;
+    // Set by a NamesAndIDsTracker::WindowedEqScope, for the duration of one guess mint in
+    // the branch layer: the eq atom need_direct_encoding_for is about to define belongs to
+    // a frontier, and wants a deletable (Current) definition rather than a permanent one.
+    // Every other caller runs with this clear and is oblivious to lifetimes.
+    bool minting_windowed_eq = false;
+    // Real variables that have had at least one windowed eq definition and have not since
+    // had their window collapsed by the eq-by-interval guard. This is the design's
+    // **WindowedFrontier** residency slot: such a variable is a frontier variable by
+    // construction, so the chain-length gate must not hold its interior ge definitions
+    // resident at Top -- that would degenerate the window to the baseline, every eq atom
+    // permanent and O(width) again. Checked in need_gevar ABOVE the gate but BELOW the
+    // structural pins (boundary / aux / view), which keep their absolute priority: a
+    // literal resident for a structural reason is resident whatever branches on it.
+    std::set<SimpleIntegerVariableID> windowed_eq_variables;
     // The chain-link and stitch clauses currently present in the proof: the threshold pair
     // each links and its proof line, bucketed by the level it sits at and then by variable.
     // The same pair can appear more than once -- a hoist re-stitches a pair whose deeper
@@ -459,7 +473,8 @@ struct NamesAndIDsTracker::Imp
     map<SimpleIntegerVariableID, map<Integer, optional<OrderEncodingResidencyCause>>> stats_ge_top_cause;
     // Event counters.
     long long stats_deletes = 0;                                    // literals dropped by forget_order_literals_at_level.
-    long long stats_evictions = 0;                                  // literals taken out on demand by evict_order_literal.
+    long long stats_evictions = 0;                                  // ge literals taken out on demand by evict_order_literal.
+    long long stats_eq_evictions = 0;                               // windowed eq definitions taken out by evict_eq_literal.
     long long stats_stitches = 0;                                   // forget-path skip-link emissions (emit_order_stitch).
     long long stats_reintroductions = 0;                            // ge definitions re-introduced after deletion.
     long long stats_dup_top_stitches = 0;                           // Top-level stitch clauses re-emitted for an already-linked pair.
@@ -813,7 +828,7 @@ auto NamesAndIDsTracker::track_eqvar(
     _imp->atoms_for(id).eq_defs.try_emplace(val.raw_value, names);
 }
 
-auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v, EqAtomResidency residency) -> void
+auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID id, Integer v) -> void
 {
     if (_imp->find_condition(id == v))
         return;
@@ -822,8 +837,8 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     // exist at all -- the Literals mode, at proof-writing time, with assertions off, for a
     // real variable -- and the request is ignored, leaving the definition permanent,
     // anywhere else.
-    bool windowed = residency == EqAtomResidency::Windowed && _imp->order_link_deletion_mode == OrderEncodingDeletion::Literals &&
-        _imp->logger != nullptr && _imp->assertion_level == AssertionLevel::Off && std::holds_alternative<SimpleIntegerVariableID>(id);
+    bool windowed = _imp->minting_windowed_eq && _imp->order_link_deletion_mode == OrderEncodingDeletion::Literals && _imp->logger != nullptr &&
+        _imp->assertion_level == AssertionLevel::Off && std::holds_alternative<SimpleIntegerVariableID>(id);
 
     // The (i-static) half of the eq-by-interval guard (dev_docs/brancher-design.md, "The
     // one hidden pin"): a variable with an interval partition retro-pins its eq atoms as
@@ -831,10 +846,16 @@ auto NamesAndIDsTracker::need_direct_encoding_for(SimpleOrProofOnlyIntegerVariab
     // edges, so a deletable definition there would leave a Top line naming a literal a
     // backtrack deletes. Refuse to window such a variable: its eq atoms stay permanent,
     // which is correct and merely wins nothing. The dynamic half -- collapsing a live
-    // window when an interval is first requested on it mid-search -- belongs with the
-    // window itself, in stage B''.
+    // window when an interval is first requested on a windowed variable mid-search -- is
+    // collapse_eq_window, called from the two paths that build those structures.
     if (windowed && (_imp->interval_partitions.contains(id) || _imp->containment_trees.contains(id)))
         windowed = false;
+
+    // Mark the variable as windowed BEFORE the definition is emitted, because emitting it
+    // is what mints the two ge thresholds it names, and need_gevar's WindowedFrontier slot
+    // reads this mark to keep them deletable through the chain gate.
+    if (windowed)
+        _imp->windowed_eq_variables.insert(std::get<SimpleIntegerVariableID>(id));
 
     // Take a retired XLiteral back if this atom is being re-introduced after a backtrack
     // deleted a windowed definition, so the atom keeps its identity and its PB name across
@@ -1149,7 +1170,17 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         // residency priority: a boundary/aux/view literal is resident for its own
         // structural reason regardless of chain length, so this only fires for an
         // otherwise-deletable interior literal.
-        if (def_at_current && _imp->order_encoding_deletion_min_chain > 0) {
+        //
+        // ... and the **WindowedFrontier** slot sits between the two: a variable with a
+        // live eq window is a frontier variable by construction, so the gate must not hold
+        // its interior ges resident -- the window would degenerate to the baseline, with
+        // every threshold permanent and O(width) again. It ranks below the structural pins
+        // (which have already decided the matter above) and above the gate, exactly as the
+        // design's residency ladder specifies; stage C's FrontierExempt ("resident despite
+        // being frontier") is its sibling and opposite, and the two never apply to the same
+        // variable.
+        bool windowed_frontier = _imp->windowed_eq_variables.contains(std::get<SimpleIntegerVariableID>(id));
+        if (def_at_current && ! windowed_frontier && _imp->order_encoding_deletion_min_chain > 0) {
             const auto * atoms = _imp->find_atoms(id);
             long long ever_named = atoms ? static_cast<long long>(atoms->ge_defs.size()) : 0;
             if (ever_named <= _imp->order_encoding_deletion_min_chain)
@@ -2229,6 +2260,135 @@ auto NamesAndIDsTracker::hoist_eq_to_top(const SimpleIntegerVariableID & id, Int
     hoist_ges_named_by_top_atom(key, v, v + 1_i, OrderEncodingResidencyCause::EqHoist);
 }
 
+NamesAndIDsTracker::WindowedEqScope::WindowedEqScope(NamesAndIDsTracker & tracker) : _tracker(tracker), _saved(tracker._imp->minting_windowed_eq)
+{
+    _tracker._imp->minting_windowed_eq = true;
+}
+
+NamesAndIDsTracker::WindowedEqScope::~WindowedEqScope()
+{
+    _tracker._imp->minting_windowed_eq = _saved;
+}
+
+auto NamesAndIDsTracker::note_permanent_eq_reference(const SimpleIntegerVariableID & id, Integer v) -> void
+{
+    // Cheap enough to call unconditionally from every permanent-reference site: the mode
+    // check rules out every proof that has no window at all, and live_eq_literals is empty
+    // unless something is windowed right now.
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger || _imp->live_eq_literals.empty())
+        return;
+
+    hoist_eq_to_top(id, v);
+}
+
+auto NamesAndIDsTracker::evict_eq_literal(const SimpleIntegerVariableID & id, Integer v) -> bool
+{
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals)
+        throw ProofError{"evict_eq_literal requires OrderEncodingDeletion::Literals"};
+    if (! _imp->logger)
+        throw ProofError{"evict_eq_literal requires the logger to be attached"};
+
+    // Not a live windowed definition: permanent (every eq atom outside a window), already
+    // hoisted out by the hoist-out rule, or already gone. All three are refusals rather
+    // than errors -- the atom simply stays where it is.
+    auto live_it = _imp->live_eq_literals.find(id);
+    if (live_it == _imp->live_eq_literals.end())
+        return false;
+    auto lvl_it = live_it->second.find(v);
+    if (lvl_it == live_it->second.end())
+        return false;
+    int level = lvl_it->second;
+
+    // Delete the definition's two reification lines. A DirectOnly {0,1} variable's eq entry
+    // holds XLiterals rather than line numbers (track_eqvar), filtered out exactly as the
+    // hoist filters them.
+    SimpleOrProofOnlyIntegerVariableID key{id};
+    auto & defs = _imp->atoms_for(key).eq_defs.at(v.raw_value);
+    vector<ProofLine> def_lines;
+    if (auto p = std::get_if<ProofLine>(&defs.first))
+        def_lines.push_back(*p);
+    if (auto p = std::get_if<ProofLine>(&defs.second))
+        def_lines.push_back(*p);
+    _imp->logger->delete_proof_lines_at_level(def_lines, level);
+
+    // Drop it from the level's deletion index as well as the live set: a re-introduction at
+    // the same level would otherwise be double-indexed there, and the eventual forget of
+    // that level would `del id` an already-deleted line, which VeriPB errors on.
+    auto & bucket = _imp->eq_literals_by_level[level];
+    std::erase_if(bucket, [&](const pair<SimpleIntegerVariableID, Integer> & e) { return e.first.index == id.index && e.second == v; });
+    live_it->second.erase(lvl_it);
+    if (live_it->second.empty())
+        _imp->live_eq_literals.erase(live_it);
+
+    // Retire the atom, for the same reason the ge side does: with it out of the lookup
+    // table find_condition stops answering, so the only route back to the literal is
+    // need_direct_encoding_for, which re-introduces the definition first and takes the
+    // retired XLiteral back, keeping identity and PB name stable across the cycle. eq_defs
+    // deliberately keeps its now-stale entry, overwritten on re-introduction, because
+    // need_pol_item_defining_literal resolves pol operands through it.
+    auto & atoms = _imp->atoms_for(key);
+    if (auto atom = atoms.eq.find(v.raw_value); atom != atoms.eq.end()) {
+        atoms.retired_eq.insert_or_assign(v.raw_value, atom->second);
+        atoms.eq.erase(atom);
+    }
+
+    if (_imp->collect_order_encoding_stats)
+        ++_imp->stats_eq_evictions;
+
+    return true;
+}
+
+auto NamesAndIDsTracker::collapse_eq_window(const SimpleOrProofOnlyIntegerVariableID & id) -> void
+{
+    if (_imp->order_link_deletion_mode != OrderEncodingDeletion::Literals || ! _imp->logger)
+        return;
+    const auto * sid_ptr = std::get_if<SimpleIntegerVariableID>(&id);
+    if (! sid_ptr)
+        return;
+
+    // Unwindow first, unconditionally: a variable whose interval machinery has been built
+    // must never be windowed again, even if it happens to have no live definition right now
+    // (the static half of the guard covers a first request, this covers every later one).
+    _imp->windowed_eq_variables.erase(*sid_ptr);
+
+    auto live_it = _imp->live_eq_literals.find(*sid_ptr);
+    if (live_it == _imp->live_eq_literals.end())
+        return;
+
+    // Copy the thresholds out: hoist_eq_to_top erases from the very map being walked, and
+    // takes the whole entry with the last one.
+    vector<Integer> windowed;
+    windowed.reserve(live_it->second.size());
+    for (const auto & [v, _] : live_it->second)
+        windowed.push_back(v);
+    for (auto v : windowed)
+        hoist_eq_to_top(*sid_ptr, v);
+}
+
+auto NamesAndIDsTracker::live_windowed_eq_count(const SimpleIntegerVariableID & id) const -> long long
+{
+    auto it = _imp->live_eq_literals.find(id);
+    return it == _imp->live_eq_literals.end() ? 0 : static_cast<long long>(it->second.size());
+}
+
+auto NamesAndIDsTracker::live_order_literal_count(const SimpleIntegerVariableID & id) const -> long long
+{
+    auto it = _imp->live_order_literals.find(id);
+    return it == _imp->live_order_literals.end() ? 0 : static_cast<long long>(it->second.size());
+}
+
+auto NamesAndIDsTracker::order_literal_is_live(const SimpleIntegerVariableID & id, Integer v) const -> bool
+{
+    auto it = _imp->live_order_literals.find(id);
+    return it != _imp->live_order_literals.end() && it->second.contains(v);
+}
+
+auto NamesAndIDsTracker::eq_literal_is_windowed(const SimpleIntegerVariableID & id, Integer v) const -> bool
+{
+    auto it = _imp->live_eq_literals.find(id);
+    return it != _imp->live_eq_literals.end() && it->second.contains(v);
+}
+
 auto NamesAndIDsTracker::stats_note_ge_recorded(const SimpleIntegerVariableID & id, Integer v, optional<OrderEncodingResidencyCause> born_cause)
     -> void
 {
@@ -2367,6 +2527,7 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     emit("events:");
     emit(format("  deletes: {}", _imp->stats_deletes));
     emit(format("  evictions: {}", _imp->stats_evictions));
+    emit(format("  eq_evictions: {}", _imp->stats_eq_evictions));
     emit(format("  stitches (forget-path): {}", _imp->stats_stitches));
     emit(format("  reintroductions: {}", _imp->stats_reintroductions));
     emit(format("  duplicate-Top-stitches: {}", _imp->stats_dup_top_stitches));
@@ -2487,6 +2648,9 @@ auto NamesAndIDsTracker::define_plain_invar(SimpleOrProofOnlyIntegerVariableID i
     // variable's first range literal creates its containment tree, seeded with
     // the eq atoms that already exist.
     if (! _imp->containment_trees.contains(id)) {
+        // (i-dynamic): the seeding below names every existing eq atom from Top containment
+        // edges, so any windowed definition among them has to become permanent first.
+        collapse_eq_window(id);
         auto & tree = _imp->containment_trees[id];
         if (const auto * atoms = _imp->find_atoms(id))
             for (const auto & [v, _] : atoms->eq_defs)
@@ -2549,6 +2713,12 @@ auto NamesAndIDsTracker::init_interval_partition(SimpleOrProofOnlyIntegerVariabl
 {
     if (_imp->logger->get_assertion_level() > AssertionLevel::Links)
         return;
+
+    // (i-dynamic): every pre-existing eq atom is about to become a Top partition singleton
+    // cell naming its definition, so a windowed (Current) definition among them has to
+    // become permanent before the partition is built -- and the variable must not be
+    // windowed again afterwards.
+    collapse_eq_window(id);
 
     auto [lb, ub] = _imp->integer_variable_definition_bounds.at(id);
     auto & boundaries = _imp->interval_partitions[id];

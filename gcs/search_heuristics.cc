@@ -381,7 +381,7 @@ auto gcs::value_order::smallest_in() -> BranchValueGenerator
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchDecision> {
         return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchDecision> {
             auto value = s.lower_bound(var);
-            co_yield var == value;
+            co_yield BranchDecision{var == value, backtrack_advance::LowerBound{var}};
             co_yield var != value;
         }(s, var);
     };
@@ -402,8 +402,13 @@ auto gcs::value_order::smallest_first() -> BranchValueGenerator
 {
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchDecision> {
         return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchDecision> {
+            // Ascending: refuting `var == v` moves a monotone LOWER frontier one step, so
+            // this is a LowerBound advance -- the same declaration a split makes, and the
+            // one the eq-atom window acts on (dev_docs/brancher-design.md, "Mapping the
+            // existing value orders"). Inert, and the proof byte-identical to the untagged
+            // form, unless the window is switched on.
             for (auto v : s.each_value(var))
-                co_yield var == v;
+                co_yield BranchDecision{var == v, backtrack_advance::LowerBound{var}};
         }(s, var);
     };
 }
@@ -493,7 +498,7 @@ auto gcs::value_order::largest_in() -> BranchValueGenerator
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchDecision> {
         return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchDecision> {
             auto value = s.upper_bound(var);
-            co_yield var == value;
+            co_yield BranchDecision{var == value, backtrack_advance::UpperBound{var}};
             co_yield var != value;
         }(s, var);
     };
@@ -514,8 +519,9 @@ auto gcs::value_order::largest_first() -> BranchValueGenerator
 {
     return [](const CurrentState & s, const innards::Propagators &, const IntegerVariableID & var) -> generator<BranchDecision> {
         return [](const CurrentState & s, IntegerVariableID var) -> generator<BranchDecision> {
+            // Descending: the UpperBound mirror of smallest_first.
             for (auto v : s.each_value_reversed(var))
-                co_yield var == v;
+                co_yield BranchDecision{var == v, backtrack_advance::UpperBound{var}};
         }(s, var);
     };
 }

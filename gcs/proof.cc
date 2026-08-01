@@ -122,6 +122,19 @@ namespace
     }
 
     /**
+     * Read the eq-atom window switch from the GCS_DELETE_ORDER_ENCODING_EQ_WINDOW
+     * environment variable, if set. Any non-empty value turns it on except the off-words
+     * (0 / off / none), which turn it off explicitly.
+     */
+    [[nodiscard]] auto order_encoding_deletion_eq_window_from_env() -> optional<bool>
+    {
+        const auto * const env = std::getenv("GCS_DELETE_ORDER_ENCODING_EQ_WINDOW");
+        if (! env || ! *env)
+            return nullopt;
+        return ! is_off_word(string{env});
+    }
+
+    /**
      * Apply any environment-variable overrides to a copy of the given ProofOptions.
      * Environment variables act as defaults only: an option set explicitly in code
      * takes precedence.
@@ -137,6 +150,9 @@ namespace
         if (! options.order_encoding_deletion_min_chain_set_explicitly)
             if (auto min_chain = order_encoding_deletion_min_chain_from_env())
                 options.order_encoding_deletion_min_chain = *min_chain;
+        if (! options.order_encoding_deletion_eq_window_set_explicitly)
+            if (auto eq_window = order_encoding_deletion_eq_window_from_env())
+                options.order_encoding_deletion_eq_window = *eq_window;
         return options;
     }
 }

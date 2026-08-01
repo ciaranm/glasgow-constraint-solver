@@ -61,29 +61,6 @@ namespace gcs::innards
     };
 
     /**
-     * How long an eq atom's definition is meant to live, under
-     * OrderEncodingDeletion::Literals.
-     *
-     * `Permanent` is what every caller in the solver asks for (and the only thing any
-     * other mode can give): the definition lands at ProofLevel::Top, outlives every
-     * backtrack, and pins the two `ge` thresholds it names at Top with it.
-     *
-     * `Windowed` lands the definition at ProofLevel::Current instead, so a backtrack
-     * deletes it and retires the atom, and leaves the two `ge` thresholds it names
-     * deletable. It is the eq-atom window's residency (dev_docs/brancher-design.md, "The
-     * eq-atom window"): only the frontier owner may ask for it, because a windowed atom
-     * must not be named by any surviving Top line. Nothing in the solver asks for it yet
-     * -- the window itself is stage B'' -- so it exists here to give the stage-B'
-     * primitives (hoist_eq_to_top, the eq forget sweep) a producer to be checked
-     * against.
-     */
-    enum class EqAtomResidency
-    {
-        Permanent, ///< def at Top, never deleted; the ges it names are hoisted to Top.
-        Windowed   ///< def at Current, deleted (and the atom retired) on backtrack; its ges stay deletable.
-    };
-
-    /**
      * Why a real variable's proof-time `ge` order literal is resident (for
      * GuessHoist, transiently resident at a positive backtrack level), under
      * OrderEncodingDeletion::Literals. Threaded from the residency-deciding call sites
@@ -132,6 +109,47 @@ namespace gcs::innards
      */
     class NamesAndIDsTracker
     {
+    public:
+        /**
+         * \brief Scoped request that eq atoms minted inside it be **windowed** rather
+         * than permanent, under OrderEncodingDeletion::Literals.
+         *
+         * A permanent eq definition -- what every caller outside this scope gets, and the
+         * only thing any other mode can give -- lands at ProofLevel::Top, outlives every
+         * backtrack, and pins the two `ge` thresholds it names at Top with it. A windowed
+         * definition lands at ProofLevel::Current instead, so a backtrack (or the window's
+         * own tidy) deletes it and retires the atom, and leaves the two `ge` thresholds it
+         * names deletable. That is what bounds the resident proof objects per branched
+         * variable at O(1) instead of O(domain width); see dev_docs/brancher-design.md,
+         * "The eq-atom window".
+         *
+         * The scope is the narrow API the design asks for: only the frontier owner -- the
+         * branch layer, around the guess mint -- may ask for a windowed atom, because a
+         * windowed atom must not be named by any surviving Top line. **Every** other caller
+         * (propagator reasons, reified constraints, need_pol_item_defining_literal) runs
+         * with the scope closed and gets today's byte-identical Top behaviour, so no other
+         * call site knows lifetimes exist. The request is honoured only where a deletable
+         * definition is meaningful -- Literals mode, proof-writing time, assertions off, a
+         * real variable, and not a variable the eq-by-interval guard refuses -- and is
+         * silently ignored (leaving the definition permanent) anywhere else, which is
+         * always correct and merely wins nothing.
+         *
+         * Has no effect on an atom that already exists: residency is decided once, when the
+         * definition is emitted.
+         */
+        struct WindowedEqScope
+        {
+            explicit WindowedEqScope(NamesAndIDsTracker &);
+            ~WindowedEqScope();
+
+            WindowedEqScope(const WindowedEqScope &) = delete;
+            auto operator=(const WindowedEqScope &) -> WindowedEqScope & = delete;
+
+        private:
+            NamesAndIDsTracker & _tracker;
+            bool _saved;
+        };
+
     private:
         struct Imp;
         std::unique_ptr<Imp> _imp;
@@ -240,6 +258,19 @@ namespace gcs::innards
         // rule). Emits nothing: forget_proof_level has already del'd the lines. Eq atoms
         // carry no chain, so unlike the ge sweep there is nothing to stitch.
         auto forget_eq_literals_at_level(int level) -> void;
+
+        // The (i-dynamic) half of the eq-by-interval guard (dev_docs/brancher-design.md,
+        // "The one hidden pin"): an interval literal has just been requested on `id`, and
+        // the partition / containment machinery is about to walk its eq_defs table and
+        // name every eq atom from Top lines (singleton partition cells, containment
+        // edges). A windowed definition sits at Current, so those Top lines would name a
+        // literal the next backtrack deletes. Collapse the window first -- hoist every
+        // live windowed eq definition on `id`, and the ge thresholds each names, out to
+        // Top -- and leave the variable unwindowed, so nothing windows it again. The
+        // static half (refusing to window a variable that already has a partition or a
+        // containment tree) is in need_direct_encoding_for. A no-op for a variable with
+        // no live window, which is every variable but a currently-branched one.
+        auto collapse_eq_window(const SimpleOrProofOnlyIntegerVariableID & id) -> void;
 
         // Record a permanent (Top) reference to real variable `id`'s ge threshold `v`,
         // from the *reference site* -- the caller that is about to make (or has just
@@ -546,6 +577,79 @@ namespace gcs::innards
         auto hoist_eq_to_top(const SimpleIntegerVariableID & id, Integer v) -> void;
 
         /**
+         * The hoist-out rule's **trigger**: note that a permanent (Top) line is about to
+         * name real variable \p id's eq atom \p v -- a solx blocking clause, a soli
+         * witness, a learned nogood's decision literal -- and so retain the atom instead
+         * of letting the window evict it, by hoisting it (and the two ge thresholds it
+         * names) out to Top. hoist_eq_to_top is the action; this is where the reference is
+         * detected, at the reference site, exactly as note_order_literal_top_pin is for
+         * the ge side.
+         *
+         * A cheap no-op whenever there is nothing to retain: any mode but Literals, no
+         * logger, or -- the overwhelmingly common case -- an atom that is not a live
+         * windowed definition, every eq atom outside a window being permanent already.
+         */
+        auto note_permanent_eq_reference(const SimpleIntegerVariableID & id, Integer v) -> void;
+
+        /**
+         * The eq mirror of evict_order_literal: take real variable \p id's live windowed
+         * eq definition \p v out of the proof. Emits `del` for its two reification lines,
+         * drops it from the windowed live/level bookkeeping, and **retires its atom**, so
+         * find_condition stops answering and the only route back is
+         * need_direct_encoding_for, which re-introduces the definition and takes the
+         * retired XLiteral back with its identity intact. Eq atoms carry no chain, so
+         * unlike the ge case there is nothing to stitch.
+         *
+         * This is the window's per-iteration tidy: the frontier has stepped past \p v, the
+         * advance that needed \p v's reverse reification has already been emitted, and the
+         * sibling clause naming the atom has already been deleted by the caller (which owns
+         * that ordering -- deleting the definition first is exactly what driver control D2c
+         * shows VeriPB rejecting).
+         *
+         * Returns whether the definition was evicted. `false` -- an atom that is not a live
+         * windowed definition, including one the hoist-out rule has already taken to Top --
+         * is a refusal, not an error: it means the atom is permanent, which is always
+         * correct and merely wins less. Requires the mode to be Literals and the logger
+         * attached (both throw, being caller errors rather than policy).
+         */
+        auto evict_eq_literal(const SimpleIntegerVariableID & id, Integer v) -> bool;
+
+        /**
+         * How many of real variable \p id's eq atoms are currently live *windowed*
+         * definitions. Always 0 unless the mode is Literals, and 0 for every variable
+         * nothing has windowed. Exposed because the window's headline invariant -- O(1)
+         * resident eq definitions per branched variable, not O(domain width) -- is
+         * solver-side and unobservable in the proof VeriPB checks.
+         */
+        [[nodiscard]] auto live_windowed_eq_count(const SimpleIntegerVariableID & id) const -> long long;
+
+        /**
+         * How many of real variable \p id's ge thresholds are currently live (resident in
+         * the proof), at any level. Always 0 unless the mode is Literals. The ge half of
+         * the same unobservable-in-the-proof invariant as live_windowed_eq_count.
+         */
+        [[nodiscard]] auto live_order_literal_count(const SimpleIntegerVariableID & id) const -> long long;
+
+        /**
+         * Is real variable \p id's ge threshold \p v currently resident in the proof, at
+         * any level? Always false unless the mode is Literals. This is
+         * evict_order_literal's one throwing precondition made askable, for a caller that
+         * evicts opportunistically -- the eq window steps over a threshold that a one-sided
+         * (compact-encoding) eq definition may never have named.
+         */
+        [[nodiscard]] auto order_literal_is_live(const SimpleIntegerVariableID & id, Integer v) const -> bool;
+
+        /**
+         * Is real variable \p id's eq atom \p v currently a live *windowed* definition —
+         * one the window may evict? False for every permanent atom, which is every eq atom
+         * a constraint (rather than the branch layer) defined first, and false once the
+         * hoist-out rule has retained one. The window asks before doing any work behind a
+         * frontier, because on a model whose constraints name the values it branches on
+         * there is nothing behind the frontier to take out.
+         */
+        [[nodiscard]] auto eq_literal_is_windowed(const SimpleIntegerVariableID & id, Integer v) const -> bool;
+
+        /**
          * If the `GCS_ORDER_ENCODING_STATS` diagnostic is active (OrderEncodingDeletion::Literals
          * mode AND the env var set), sweep the pin-apportionment bookkeeping and print a
          * compact summary to stderr, each line prefixed `%% oed-stats:`. Called once, from
@@ -631,14 +735,11 @@ namespace gcs::innards
         /**
          * Say that we will need the diect encoding to exist for a given variable.
          *
-         * \p residency asks for the eq atom's definition to be permanent (the default,
-         * and what every caller in the solver wants) or windowed; see EqAtomResidency. It
-         * is honoured only where a deletable definition is meaningful -- under
-         * OrderEncodingDeletion::Literals, at proof-writing time, with assertions off, for
-         * a real variable -- and ignored (leaving the definition permanent) otherwise. It
-         * has no effect on an atom that already exists.
+         * The eq atom's definition is permanent (at ProofLevel::Top) unless a
+         * WindowedEqScope is open, which is the branch layer's request for a deletable
+         * one; see that type for when the request is honoured.
          */
-        auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer, EqAtomResidency residency = EqAtomResidency::Permanent) -> void;
+        auto need_direct_encoding_for(SimpleOrProofOnlyIntegerVariableID, Integer) -> void;
 
         /**
          * Say that we will need the range ("in") literal [lo, hi] for a variable,
