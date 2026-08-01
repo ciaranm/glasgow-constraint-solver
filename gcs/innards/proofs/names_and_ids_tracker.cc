@@ -2062,6 +2062,26 @@ auto NamesAndIDsTracker::evict_order_literal(
         // still the safe answer.
         return false;
     }
+    else if (level < _imp->logger->proof_level()) {
+        // The definition belongs to an ANCESTOR of the subtree we are standing in, so it
+        // outlives this subtree and any line emitted between its level and here may name
+        // it. Only Top references are tracked (ge_top_pins, and the hoists that record
+        // them); for a reference at an intermediate level there is no pin to consult, so
+        // the pin check above cannot speak for one and `pins == nullptr` does not mean
+        // unreferenced. Refuse: the win forgone is one atom, and the alternative is a
+        // dangling reference VeriPB only reports much later.
+        //
+        // table_layout is what this costs nothing to protect and everything to get wrong.
+        // Its eq-window advance retired `rowheight[1] >= 81` -- definition at level 4 --
+        // while the search stood at level 20, and the objective lower-bound row
+        //   totalheight>=295 \/ ~rowheight[0]>=90 \/ ~rowheight[1]>=81 \/ ~rowheight[2]>=27 \/ ~rowheight[3]>=97
+        // emitted back at level 4 stayed live for another 239 backtracks. The atom was
+        // therefore not free, and its later re-introduction was a redundance step whose
+        // `ge81 -> 1` witness had to discharge that row and could not. (The `-> 0` half
+        // passes, because ~ge81 satisfies the row trivially -- a one-sided redundance
+        // failure is the signature of a stale reference rather than a bad definition.)
+        return false;
+    }
 
     // The immediate live neighbours to stitch over, read before v is dropped. std::map
     // iterators survive the insertions the emissions below can make, so lvl_it stays valid.
