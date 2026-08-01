@@ -8,7 +8,8 @@ the two proof shapes with worked examples, half-reified edges
 (`b -> x - y <= d`) and what they cost in the reason and in the proof, the
 defects in the source paper's pseudocode, the presolver that lifts an
 already-posted model into the same propagator, the root simplification stage,
-and what is deliberately deferred.
+the incremental algorithms and the invariants they rest on, and what is
+deliberately deferred.
 
 The source is Kletzander, Dekker, Schutt and Stuckey, *Global Difference
 Constraint Propagation for Constraint Programming*, arXiv:2607.20022 — the
@@ -495,8 +496,11 @@ belong to are not implemented yet:
 - The `Do` gate in Algorithm 3 is against the *previous run's* bounds, not the
   current ones, and the paper never says what happens to `Do` on backtracking.
   Loosening it is always sound, tightening it silently loses propagation — and
-  a lost propagation is invisible to proof logging. Relevant when incrementality
-  lands.
+  a lost propagation is invisible to proof logging. See "Incremental
+  propagation" below, which is where this bites and where the answer is.
+- **Section 5.4 describes half of what section 4.4 requires on edge addition.**
+  Transcribing the during-search section alone loses every push a reification
+  delivers. Also below.
 - Theorem 2 assumes **range** domains. gcs domains have holes. The propagator
   stays sound (it only reads and writes bounds), but the theorem's completeness
   half only holds for the bounds abstraction — so this is a bounds-consistent
@@ -535,11 +539,13 @@ Two honest caveats. First, `recursions` differs between the variants because the
 default `dom_then_deg` brancher sees different variable degrees — one global
 propagator gives every variable degree 1, where the decomposition gives `y_0`
 degree `n + 1` — so this is a search-shape change as well as a propagation
-change and the two columns have to be read together. Second, on the *lucky*
-order at large `n` the global propagator is slightly slower in wall time despite
-doing 640× fewer propagations, because this version is not incremental: every
-wake re-runs the whole `O(rounds × |E|)` pass from the current bounds. That is
-the deferred work below, not a property of the approach.
+change and the two columns have to be read together. Second, the table above was
+measured before incremental propagation existed, so its `global` column is the
+from-scratch route: on the *lucky* order at large `n` it is slightly slower in
+wall time despite doing 640× fewer propagations, because every wake re-ran the
+whole `O(rounds × |E|)` pass from the current bounds. That was a property of the
+implementation and not of the approach, and the section on incremental
+propagation below is where it goes away — 0.269 s → 0.057 s at `n = 640`.
 
 Proof size, `--mode=refute` (the same system plus one edge closing a
 negative cycle of weight `-1`), `n = 10`:
@@ -810,10 +816,16 @@ the extra sweeps but not the one-run-per-donor-per-round floor; only disabling
 the donors does that, and it takes the count to 647.
 
 **The redundant donors cost almost nothing in wall time here**, 0.459 s against
-0.452 s at `n = 640`, even though they are 1,275× of the propagation count.
-Time is dominated by the non-incremental Bellman-Ford, not by the donors' cheap
-two-term propagations. So on this family the hybrid is nearly free, which
-matches the paper preferring it.
+0.452 s at `n = 640`, even though they are 1,275× of the propagation count. So on
+this family the hybrid is nearly free, which matches the paper preferring it.
+That conclusion survives incremental propagation, which was the obvious thing to
+check: with it on the same pair is 0.239 s against 0.231 s, so the redundant
+sweeps go from 1.5 % to 3 % of the presolved route's wall time rather than
+becoming visible. What incrementality *does* change here is the gap between
+`presolved` and `global` — 0.410 s against 0.323 s before, 0.239 s against
+0.056 s after — and that residual is the presolver's own `O(constraints)`
+enumeration and the model carrying 205k posted constraints, not propagator
+ordering.
 
 **On the lucky order the presolver is a modest loss**, 0.257 s → 0.445 s at
 `n = 640`: nothing was wrong with the propagation order to begin with, and the
@@ -1266,15 +1278,399 @@ been measured, and it is the only sub-step whose proof shape changes at all. It
 is left for a separate PR, with the counters above as the evidence that the PR is
 worth writing.
 
+## Incremental propagation
+
+Every wake used to redo the whole `O(rounds × |E|)` Bellman-Ford pass from the
+current bounds. That is what the two honest caveats above were about: the
+propagation counts and the proof sizes were dramatically better than the
+decomposed model's, and the wall time was not. This section is the paper's
+`IncSat` / `IncLB` / `IncUB`, which fix that.
+
+It is on by default and can be turned off from either entry point, and from
+both example binaries:
+
+```cpp
+problem.post(DifferenceConstraints{edges}.incrementally(false));
+problem.add_presolver(DifferenceLogic{}.incrementally(false));
+```
+
+**The from-scratch version is not dead code and must not be deleted.** It is the
+reference the incremental one is checked against, in two ways that nothing else
+can supply — see "The two oracles" below.
+
+### The three moving parts
+
+**A potential function `π`**, maintained over the whole search, satisfying
+`π(u) + d − π(v) >= 0` for every arc `u --d--> v` **currently in the graph, and
+nothing else**. That makes every *reduced* cost `π(u) + d − π(v)` non-negative,
+which is what lets Dijkstra replace Bellman-Ford. It is computed once at the
+root by a single Bellman-Ford from an imaginary zero-weight source (seeding every
+potential at zero *is* that source's edge set, exactly as elsewhere in this
+file), and repaired by `IncSat` whenever an arc joins the graph.
+
+Three things are true of `π` and all three are load-bearing:
+
+- **it is never trailed**, because its invariant is a conjunction over the arcs
+  in the graph and backtracking only ever *removes* arcs. This is the paper's
+  section 4.1 remark, attributed to Wang et al.;
+- **bounds must not appear in it.** `π(v0)` is a per-call temporary, computed
+  over `Vl` only, and is never stored. (It turns out not to be able to break
+  anything if it were — see the mutation table below — but it is free to do the
+  right thing and the reason it is safe is a property of the priority queue
+  rather than of the algorithm);
+- **it decreases monotonically and is never reset**, which is why an arc that
+  was fine when it was last active can need repair when it comes back. See
+  "re-activation" below.
+
+Nothing bounds how far `π` drifts down over a long search, and the guard against
+that is free: `Integer`'s arithmetic is overflow-checked, so a drift that ever
+reached the edge of a `long long` is a loud exception at the operation that did
+it rather than silent wrap-around. Nothing has come close on anything measured
+here.
+
+**`IncSat`** (the paper's Algorithm 1, from Cotton and Maler) repairs `π` when
+one arc is added, or reports that the graph now has a negative cycle. It is a
+Dijkstra-shaped relaxation of the *violation* `γ`, touching only the nodes it
+has to, and it terminates either when nothing is violated any more or when the
+repair reaches back round to the new arc's own tail — which is exactly a negative
+cycle. It does not *extract* that cycle: on `false` the caller hands straight
+over to the from-scratch pass, which already carries the extraction and the
+telescoping `pol`, and re-verifies arithmetically that a cycle is really there.
+A negative cycle ends the search, so the `O(n·m)` is paid at most once per
+branch and buys a second implementation that does not have to be written or
+trusted. The same hand-off covers a negative cycle in the *initial* potential
+computation.
+
+**`IncLB`** (Algorithm 3) processes every bound change since the last run in one
+Dijkstra on the reduced-cost graph. `IncUB` is the same function applied to the
+reverse graph with the potential, the bounds and the gate all negated:
+`ub(x) <= ub(y) + d` is `−ub(x) >= −ub(y) − d`, which is the lower-bound relation
+along the arc read backwards, and `−π` is a valid potential for it. One
+implementation, two instantiations, and no second opportunity to mistranscribe
+Algorithm 3.
+
+### The `Do` array, which is where all the difficulty is
+
+`IncLB` is gated by `Do`, "the bounds of variables the last time the propagator
+was run". Two invariants have to hold at the entry to every call, and everything
+below is about keeping them:
+
+- **I1**: `Do(x) <= min D(x)` for every node;
+- **I2**: `Do(t) >= Do(s) − d` for every arc `(s, t, d)` currently in the graph.
+
+`Vl = { x | min D(x) > Do(x) }` seeds Dijkstra, and the *expansion* gate
+(Algorithm 3 line 12) declines to relax out of a settled node `s` whose new bound
+does not beat `Do(s)`. I2 is what makes that safe: if `−δ(s) <= Do(s)` then for
+every arc out of `s`, `−δ(s) − d <= Do(s) − d <= Do(t) <= min D(t)`, and the same
+argument chains along any path, so the whole sub-search is dead. Drop I2 and the
+gate silently throws away propagation.
+
+**At the end of a run, `Do` becomes the bounds the run propagated *from*, not the
+bounds the state ends up holding.** For every node Dijkstra settled, that is
+`max(Do(x), −δ(x))`; for every node it did not, `Do(x)` is unchanged. That
+assignment re-establishes I2 (the settled-and-expanded case is Dijkstra's own
+`δ(t) <= δ(s) + d`; the settled-but-not-expanded and unsettled cases fall back on
+the old I2) and preserves I1 (a pushed bound was inferred, so `min D` is at least
+it).
+
+**Recording the state's bounds instead is a real bug and it is gcs-specific.**
+gcs domains have holes, so `infer_greater_than_or_equal(x, 5)` on a domain with a
+hole at 5 lands the state's lower bound at 6 or higher. Recording 6 makes
+`min D(x) == Do(x)`, so on the mandatory self-re-wake `x ∉ Vl`, `Vl` comes out
+empty, and the consequences of the snapped bound are never propagated. The
+propagator returns `PropagatorState::Enable` precisely so that it is re-woken by
+its own inferences; recording the snapped value neuters that. Neither the paper
+(range domains) nor the survey mentions it, and `run_hole_snap_test` catches it
+immediately.
+
+### Backtracking: exact restoration, not a lazy clamp
+
+`Do` and the record of which arcs the invariants have been established for both
+have to be restored on backtracking, and **restored exactly**.
+
+The tempting cheap alternative — clamp `Do(x) := min(Do(x), min D(x))` at the
+next call rather than restoring it — is wrong. Guess `y >= 10`; the propagator
+runs and records `Do(y) = 10`; the branch fails; `y >= 5` is restored; the
+sibling guesses `y >= 7`. The clamp gives `Do(y) = min(10, 7) = 7`, which is
+`min D(y)`, so `y ∉ Vl`, the gate never expands, and the consequences of
+`y >= 7` — computed in a branch that has been thrown away — are simply gone.
+Successive guesses tightening the same variable is the commonest branching
+pattern there is, and no proof can see the loss. `difference_test incremental`
+runs that scenario verbatim.
+
+`State::on_backtrack` is not reachable from a propagator's `const State &`, so
+the restoration goes through the trailed constraint state. Putting `Do` itself
+there would make entering an epoch `O(n + m)`, since gcs copies the whole
+constraint-state vector at every `new_epoch`. So what is trailed is **one
+number**: the length of an undo trail that lives in the propagator's own
+(untrailed) memory. Entering an epoch is `O(1)`; the next call after a backtrack
+pops the trail down to the restored mark, which restores exact values. Doing that
+lazily is safe precisely *because* the values are exact and do not depend on the
+current domains — nothing reads `Do` between the backtrack and that call. The
+trail's length is bounded by the current root-to-leaf path, not by total work,
+because it shrinks again on every backtrack.
+
+### Arc activation: the paper's section 5.4 omits half of it
+
+`Do` says nothing whatsoever about an arc that has joined the graph since the
+last run, and a reification becoming true can deliver one **with no node bound
+changing anywhere**. `Vl` is then empty, `IncLB` does nothing, and the push the
+arc delivers is lost.
+
+The paper's section 4.4 gives the right recipe — on adding `(u, v, d)`, compute
+the possibly-new bounds `lb(v) := lb(u) − d` and `ub(u) := ub(v) + d` and feed
+them through `IncLB` / `IncUB` — but **its section 5.4, which is the
+during-search description one would naturally transcribe, mentions only `IncSat`
+and `IncImp`**. Transcribing section 5.4 alone builds a propagator that silently
+loses every reification-delivered push.
+
+Here that seeding is done by *forcing the arc's tail into `Vl` and forcing it to
+be expanded* (and its head, for the upper bound pass), rather than by touching
+`Do`: Dijkstra then carries that node's bound across the new arc and onwards to
+everything downstream, and the `Do` update at the end re-establishes I2 for the
+new arc as a side effect. Lowering `Do` instead would have needed a cascade, since
+lowering `Do(s)` can break I2 for arcs *into* `s`.
+
+**Re-activation after backtracking counts, every single time.** `π` is never
+reset and drifts downwards over the whole search, so an arc whose reduced cost
+was non-negative when it was last active can be negative when it comes back —
+`π`'s invariant is only maintained for arcs that are *in* the graph. Nothing may
+cache "this arc has been checked", which is why the activation record is trailed
+alongside `Do`. A negative reduced cost is not a slow path but a wrong one: it
+breaks Dijkstra's settle order.
+
+### The two oracles
+
+Both come from keeping the from-scratch pass compiled and runtime-selectable.
+They exist because of the asymmetry this whole file keeps running into: a proof
+certifies what *was* derived, so an inference that should have been made and was
+not is invisible to VeriPB. Every way the machinery above can go wrong loses
+propagation.
+
+**The differential fixpoint audit** re-runs the from-scratch pass after *every*
+incremental call, on the same starting bounds and the same active edge set, and
+requires the two to agree node for node — plus that it finds no negative cycle
+the incremental route missed. It is on for every fixture in
+`difference_constraints_test.cc`, and `GCS_DIFFERENCE_AUDIT=1` turns it on for
+every difference propagator in a process, so a whole corpus (or an example
+binary) can be run under it without touching a model. It catches a completeness
+failure **at the wake where it first occurs**, which is the only way to catch a
+stale `Do`, a stale `π`, a missed activation seed or a wrong `π(v0)`.
+
+**Search-shape equality.** Given I1 and I2 the incremental route reaches the
+*identical per-call fixpoint*, not merely the same eventual one: a bounds closure
+is the least fixpoint of monotone inflationary operators and is therefore unique.
+So the search tree must be bit-identical. Intra-call inference *order* does
+differ — Dijkstra settles in a different order from the predecessor forest — so
+`propagations`, other propagators' wake order and proof bytes may legitimately
+move; `recursions`, the solution sequence and every per-node domain may not.
+`run_test` therefore solves every fixture both ways and requires the solution set
+*and* the recursion count to match, with a failure message saying not to relax
+the check. Treat a `recursions` divergence as a bug with certainty. (Voided by a
+randomised or conflict-weighted heuristic; the default `dom_then_deg` and the
+harness's seeded random brancher are both fine, because both runs use the same
+one.)
+
+The `incremental` test mode then adds five deterministic scenarios --- the
+stale-`Do` sequence verbatim, a Boolean fixed with no node bound change
+anywhere, an arc activated and re-activated across four backtracks with a
+negative cycle that closes only when two conditions hold at once, the hole-snap
+topology, and a conditional static bound applied in a branch that fails --- each
+run both ways and each asserting its invariant at **every** search node rather
+than at the leaves, which is where a gate bug shows and a solution count does
+not. Last, a randomised stress of twenty systems under a Luby restart schedule
+with a tiny scale: a restart unwinds to the root at a moment nothing else
+chooses, which is the sharpest exercise of the undo trail there is, and the two
+routes have to agree on the optimum, the solution count *and* the recursion
+count.
+
+### What actually went wrong, measured by mutation
+
+Every row was produced by breaking the shipping code in exactly that way,
+rebuilding, and recording which test modes failed. The last two rows are the
+interesting ones.
+
+| mutation | caught by |
+|---|---|
+| record end-of-call state bounds in `Do` | `incremental`, `basic` (the hole snap), `reified`, `cycles`, `views` |
+| clamp `Do` lazily instead of restoring it | every mode, and the presolver |
+| never unwind the trail at all | every mode, and the presolver |
+| seed nothing on activation (section 5.4 only) | `incremental`, `reified`, `simplify`, `random_reified` |
+| cache "this arc has been checked" across backtracking | `incremental`, `reified`, `simplify`, `random_reified`, presolver |
+| `Vl` gate off by one | every mode, and the presolver |
+| expansion gate off by one | every mode, and the presolver |
+| Algorithm 3 lines 15–16 literally (`γ(s)` after the `+∞` reset) | every mode, and the presolver |
+| **`π(v0)` not the maximum over `Vl`** | **nothing — and it cannot be** |
+| **no expansion gate at all** | **nothing — and it should not be** |
+
+"Every mode" means every mode that fired on the run that produced this table;
+`random` and `random_reified` generate their systems from the announced test
+seed, so which of the two catches a given mutation moves about between seeds and
+neither is what any row is resting on. The deterministic modes were stable across
+the runs taken.
+
+The last two are worth stating properly, because one of them contradicts a
+prediction and the other confirms the theory.
+
+**`π(v0)` cannot break anything here, whatever it is.** It enters only as
+`γ(v) = π(v0) − min D(v) − π(v)` and leaves as `−δ(v) = π(v0) − γ(v) − π(v)`, so
+any change to it is a *uniform shift* of every key in the priority queue and
+cancels exactly out of every bound the pass reports. A too-small `π(v0)` makes
+some seeds negative, which is harmless for a binary-heap Dijkstra: Dijkstra needs
+non-negative *edges*, and a multi-source search with differing (even negative)
+initial distances is fine. It is still computed per call over `Vl` — that is the
+cheapest correct thing and it costs nothing extra — but the predicted failure
+mode does not exist in this implementation. It *would* exist under a monotone
+bucket or radix priority queue, which assumes non-decreasing extraction, so this
+is a fact about the queue rather than about the algorithm.
+
+**Removing the expansion gate is sound and complete, just slower.** That is the
+correct answer, and it is a useful negative control on the mutation harness:
+over-expansion loses nothing, which is why every *tightening* of a gate above is
+caught and the loosening is not.
+
+### Measurements
+
+`examples/difference_chain`, the paper's Example 8, `--variant=global
+--simplify=off`, `k = 2`, release build, `taskset`-pinned, medians of 3, no
+`--prove`:
+
+| n | order | variant | recursions | propagations | time (s) |
+|---:|---|---|---:|---:|---:|
+| 40 | unlucky | decomposed | 43 | 37,102 | 0.00123 |
+| 40 | unlucky | global, from scratch | 83 | 87 | 0.00043 |
+| 40 | unlucky | global, incremental | 83 | 87 | **0.00028** |
+| 40 | lucky | decomposed | 43 | 3,601 | 0.00056 |
+| 40 | lucky | global, from scratch | 83 | 87 | 0.00042 |
+| 40 | lucky | global, incremental | 83 | 87 | **0.00028** |
+| 160 | unlucky | decomposed | 163 | 2,126,002 | 0.0455 |
+| 160 | unlucky | global, from scratch | 323 | 327 | 0.0081 |
+| 160 | unlucky | global, incremental | 323 | 327 | **0.0028** |
+| 160 | lucky | decomposed | 163 | 52,801 | 0.0081 |
+| 160 | lucky | global, from scratch | 323 | 327 | 0.0069 |
+| 160 | lucky | global, incremental | 323 | 327 | **0.0028** |
+| 640 | unlucky | decomposed | 643 | 132,305,602 | 3.654 |
+| 640 | unlucky | global, from scratch | 1,283 | 1,287 | 0.323 |
+| 640 | unlucky | global, incremental | 1,283 | 1,287 | **0.057** |
+| 640 | lucky | decomposed | 643 | 825,601 | 0.212 |
+| 640 | lucky | global, from scratch | 1,283 | 1,287 | 0.269 |
+| 640 | lucky | global, incremental | 1,283 | 1,287 | **0.057** |
+
+`recursions` and `propagations` are identical down every column, which is what
+says the wall-time column is measuring propagation cost and nothing else. The
+`n = 640` figures are the headline: `--variant=global` was the *slower* choice on
+the lucky order at that size (0.297 s against the decomposed model's 0.199 s in
+the table earlier in this file) and is now comfortably the faster one.
+
+`examples/rcpsp`, the real family, `--variant=global --simplify=off`, same
+protocol, maximum lags on:
+
+| instance | status | recursions | prop (dec) | prop (global) | dec (s) | global, scratch (s) | global, incr (s) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `--size 20 --seed 5 --max-lag-density 0.3` | unsat | 1 | 1,155 | 1 | 0.000492 | 0.000153 | 0.000163 |
+| `--size 12 --seed 3 --max-lag-density 0.3` | optimal | 61 | 749 | 140 | 0.000502 | 0.000429 | 0.000430 |
+| `--size 18 --seed 11 --max-lag-density 0.3` | optimal | 102 | 2,669 | 227 | 0.001192 | 0.000770 | 0.000784 |
+| `--size 22 --seed 4 --max-lag-density 0.25` | optimal | 10,512 | 109,199 | 32,682 | 0.0775 | 0.0855 | **0.0701** |
+| `--size 15 --seed 0 --max-lag-density 0.3 --max-lag-slack 4` | unsat | 3,796,420 | 76,983,465 | 19,692,576 | 40.88 | 38.89 | **36.67** |
+
+`recursions` is identical across all three columns on every row, which is what
+says the time columns are measuring propagation cost and nothing else.
+
+**The `--size 22 --seed 4` row is the one this PR exists for.** The RCPSP/max
+section above measured it as the instance where the global propagator lost to
+the decomposed model in wall time — 3.3x fewer propagations and 8 % slower — and
+named non-incrementality as the cause. The from-scratch route is 10 % slower than
+the decomposed model there; the incremental route is 10 % *faster*. The largest
+row moves the same way, 38.89 s to 36.67 s against the decomposed model's 40.88 s.
+
+The small rows are flat, and honestly so: at this size the from-scratch pass
+early-exits after two or three relaxation rounds over a few dozen arcs, which is
+already cheap. The asymptotic win needs `|E| >> n` (which is what
+`difference_chain` is), long chains, or a search deep enough for the per-wake
+cost to dominate.
+
+Half-reified resources, `--machine=difference`, which is where the conditional
+edges live and therefore where `IncSat` and the activation seeding are exercised
+at all:
+
+| instance | variant | recursions | propagations | time (s) |
+|---|---|---:|---:|---:|
+| `--size 12 --seed 2 --machine-fraction 0.8` | decomposed | 277 | 13,638 | 0.00343 |
+| | global, from scratch | 2,091 | 3,640 | **0.01626** |
+| | global, incremental | 2,091 | 3,640 | 0.01717 |
+| `--size 11 --seed 4 --machine-fraction 0.9` | decomposed | 917 | 51,142 | 0.01102 |
+| | global, from scratch | 10,471 | 17,087 | **0.08168** |
+| | global, incremental | 10,471 | 17,087 | 0.08816 |
+| `--size 10 --seed 5 --machine-fraction 0.7` | decomposed | 3,172 | 178,964 | 0.03569 |
+| | global, from scratch | 28,138 | 44,369 | **0.21335** |
+| | global, incremental | 28,138 | 44,369 | 0.23048 |
+
+**This is the one family where incrementality loses, consistently, by 5 to
+8 %**, and the reason is worth stating because it is not a bug and not a missing
+optimisation.
+
+A pairwise disjunctive encoding contributes `n(n-1)` conditional arcs against `n`
+nodes, so `|E| ~ n^2` and every wake is dominated by the `O(|E|)` pass that tests
+which conditions currently hold --- which *both* routes pay, and which was 19 %
+of the profile in both. What the incremental route saves on top of that is the
+relaxation, which is cheap here because only the arcs whose Booleans have been
+fixed are active. What it adds is one `IncSat` per activation, and on this
+modelling those repairs are nearly always real: `pi` is seeded from the
+unconditional temporal network, and a disjunctive arc weighs `-p_i`, so its
+reduced cost starts out negative essentially every time. Each repair is a
+Dijkstra over a graph in which every node has `~2(n-1)` outgoing arcs.
+
+So the trade is: pay one potential repair per Boolean fixed, to save a
+relaxation that was not expensive. `--incremental=off` is there for exactly this,
+and the default stays on because the two families the paper and this stack care
+about most --- Example 8 and the unconditional temporal network --- both want it.
+Note that root simplification refutes most of these instances outright anyway
+(see above), which is where the real win on this family is.
+
+Root simplification interacts with this, because #592 measured Johnson's pass at
+30–50 % of the solve on dense `difference_chain`. Making the solve four times
+faster does not make the pass any cheaper, so its *share* rises:
+
+| n | incremental | simplify | recursions | Johnson's (s) | solve (s) | Johnson's share |
+|---:|---|---|---:|---:|---:|---:|
+| 160 | off | off | 323 | — | 0.0083 | — |
+| 160 | off | on | 323 | 0.0032 | 0.0112 | 29 % |
+| 160 | on | off | 323 | — | 0.0027 | — |
+| 160 | on | on | 323 | 0.0032 | 0.0060 | **54 %** |
+| 320 | off | off | 643 | — | 0.0514 | — |
+| 320 | off | on | 643 | 0.0220 | 0.0728 | 30 % |
+| 320 | on | off | 643 | — | 0.0123 | — |
+| 320 | on | on | 643 | 0.0228 | 0.0359 | **63 %** |
+| 640 | off | off | 1,283 | — | 0.352 | — |
+| 640 | off | on | 1,283 | 0.165 | 0.515 | 32 % |
+| 640 | on | off | 1,283 | — | 0.056 | — |
+| 640 | on | on | 1,283 | 0.164 | 0.220 | **75 %** |
+
+The pass itself has not changed and costs the same to the microsecond. What has
+changed is everything around it: on this family the root simplification stage is
+now **three quarters** of the solve, against the 30-50 % #592 measured. It still
+drops `n - 1` edges out of `n(n+5)/2` here and buys nothing, so this is the same
+trade-off as before, just with the losing side of it four times more visible.
+Nothing about that is an argument for changing the default, which is a statement
+about scheduling models with conditional edges and not about this one; it is an
+argument for `--simplify=off` being easy to reach, which it is.
+
+### What this does not fix
+
+The per-wake cost is now `O(n + |Vl| log n + reachable arcs)` rather than
+`O(rounds × |E|)`, but the `O(n)` term is unavoidable without advisors: `Vl` is
+built by scanning every node's bounds against `Do`. The refined-watch inbox could
+supply it directly, but `propagators.cc` drops undelivered payloads when a
+contradiction cuts a round short, so it could only ever be an optimisation on top
+of the scan and never the sole source of truth. On a small, sparse graph — 21
+nodes and a few dozen arcs, which is what `examples/rcpsp` is at the smaller
+`--size` values — that `O(n)` term
+plus a heap is not much cheaper than a Bellman-Ford pass that early-exits after
+two rounds, and the win is correspondingly modest. The win is large exactly where
+the asymptotics say it should be: `|E| >> n`, or long chains.
+
 ## Deliberately deferred
 
-- **Incrementality.** The paper's `IncSat` / `IncLB` / `IncUB` maintain a valid
-  potential function `π` and run Dijkstra on the reduced-cost graph, processing
-  all bound changes since the last run in one pass, in `O(n log n + m)`. `π`
-  stays valid when edges are removed — validity is a conjunction over edges — so
-  it needs no trailing, which suits backtracking well. None of that is here: this
-  version recomputes Bellman-Ford from scratch on every wake, which is
-  `O(n·m)` worst case. The wall-time caveat above is entirely this.
 - **`IncImp`** (implication checking, to disentail half-reified edges). It needs
   no new proof machinery — "shortest path `x ⇝ y` of weight `<= d'`" plus the
   candidate edge `y --(-d'-1)--(b)--> x` is a negative cycle, so it is proof

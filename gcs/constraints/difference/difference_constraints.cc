@@ -75,16 +75,35 @@ auto DifferenceConstraints::reporting_simplification_to(shared_ptr<DifferenceSim
     return *this;
 }
 
+auto DifferenceConstraints::incrementally(bool incremental) -> DifferenceConstraints &
+{
+    _incremental.enabled = incremental;
+    return *this;
+}
+
+auto DifferenceConstraints::auditing_incremental_propagation(bool audit) -> DifferenceConstraints &
+{
+    _incremental.audit = audit;
+    return *this;
+}
+
 auto DifferenceConstraints::clone() const -> unique_ptr<Constraint>
 {
     auto result = make_unique<DifferenceConstraints>(_edges);
     result->simplifying_at_root(_simplify.enabled);
     result->reporting_simplification_to(_simplify.stats);
+    result->incrementally(_incremental.enabled);
+    result->auditing_incremental_propagation(_incremental.audit);
     return result;
 }
 
-auto DifferenceConstraints::prepare(Propagators &, State &, ProofModel * const) -> bool
+auto DifferenceConstraints::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
 {
+    // The only phase handed a *mutable* State --- define_proof_model gets a
+    // const one --- and install_propagators() needs one to register the
+    // incremental machinery's trailed constraint state.
+    _initial_state = &initial_state;
+
     if (_edges.empty())
         return false;
 
@@ -214,7 +233,10 @@ auto DifferenceConstraints::install_propagators(Propagators & propagators) -> vo
         return;
     }
 
-    install_difference_propagator(propagators, constraint_id(), move(_graph), move(_simplify));
+    if (! _initial_state)
+        throw UnexpectedException{"DifferenceConstraints::install_propagators was called without prepare() having run first"};
+
+    install_difference_propagator(propagators, *_initial_state, constraint_id(), move(_graph), move(_simplify), move(_incremental));
 }
 
 auto DifferenceConstraints::constraint_type() const -> string

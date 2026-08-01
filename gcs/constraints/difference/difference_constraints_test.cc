@@ -6,6 +6,7 @@
 #include <gcs/solve.hh>
 
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -27,6 +28,7 @@
 
 using std::cerr;
 using std::flush;
+using std::function;
 using std::make_optional;
 using std::make_shared;
 using std::mt19937;
@@ -150,13 +152,26 @@ namespace
     // the propagator shows up as a missing solution, over-pruning as an extra
     // one, and proof logging can catch neither of those (it only ever catches a
     // wrong inference). See the survey's section 5.2, item 11.
+    //
+    // The global model is then solved a second time with incrementality turned
+    // off, and *both* the solution set and the recursion count have to come out
+    // identical. That is not a smoke test: given the gate invariants the
+    // incremental route reaches the same per-call fixpoint as the from-scratch
+    // one, and a bounds fixpoint is the least fixpoint of monotone inflationary
+    // operators, so it is unique --- which makes the search tree bit-identical.
+    // `propagations` and the proof bytes may legitimately differ, because
+    // Dijkstra settles in a different order from the predecessor forest, but a
+    // `recursions` difference is a lost or gained inference and nothing else.
+    // This is the sharpest check there is on the incremental machinery, because
+    // every way it can go wrong loses propagation, and lost propagation is
+    // invisible to VeriPB.
     auto run_test(bool proofs, const string & mode, const string & name, const vector<pair<int, int>> & domains, const vector<EdgeSpec> & edges)
         -> void
     {
         print(cerr, "difference {} {} domains={} edges={}{}", mode, name, domains, edges.size(), proofs ? " with proofs:" : ":");
         cerr << flush;
 
-        set<tuple<vector<int>>> expected, actual, decomposed;
+        set<tuple<vector<int>>> expected, actual, decomposed, from_scratch;
         build_expected(expected, [&](const vector<int> & vals) { return satisfied(vals, edges); }, domains);
         println(cerr, " expecting {} solutions", expected.size());
 
@@ -170,6 +185,7 @@ namespace
         // the propagator, and it is what CI found on the reified random mode
         // (whose extra condition variables multiply the solution count).
         bool truncated = false;
+        unsigned long long incremental_recursions = 0, from_scratch_recursions = 0;
 
         {
             Problem p;
@@ -177,7 +193,13 @@ namespace
             vector<DifferenceEdge> posted;
             for (const auto & e : edges)
                 posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
-            p.post(DifferenceConstraints{posted});
+            // The differential fixpoint audit is on for every fixture in this
+            // file: after each incremental call the from-scratch pass is re-run
+            // on the same starting bounds and the same active edge set, and the
+            // two have to agree node for node. That catches a completeness
+            // failure at the wake where it happens rather than as a missing
+            // solution a long way downstream, or not at all.
+            p.post(DifferenceConstraints{posted}.auditing_incremental_propagation());
 
             auto proof_name = proofs ? make_optional("difference_test_" + mode + "_" + name) : nullopt;
             // Bounds consistent, not GAC: the propagator only reads and writes
@@ -185,7 +207,21 @@ namespace
             // 2 assumes ranges.
             solve_for_tests(p, proof_name, actual, tuple{vars});
             truncated = truncated || last_run_truncated();
+            incremental_recursions = last_run_recursions();
             check_results(proof_name, expected, actual);
+        }
+
+        {
+            Problem p;
+            auto vars = make_vars(p, domains);
+            vector<DifferenceEdge> posted;
+            for (const auto & e : edges)
+                posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
+            p.post(DifferenceConstraints{posted}.incrementally(false));
+
+            solve_for_tests(p, nullopt, from_scratch, tuple{vars});
+            truncated = truncated || last_run_truncated();
+            from_scratch_recursions = last_run_recursions();
         }
 
         {
@@ -202,13 +238,32 @@ namespace
             truncated = truncated || last_run_truncated();
         }
 
-        if (truncated)
+        if (truncated) {
             println(cerr, "difference {} {}: a cap fired, so the global/decomposed cross-check is skipped", mode, name);
-        else if (actual != decomposed) {
+            return;
+        }
+
+        if (actual != decomposed) {
             println(cerr, "difference {} {}: global and decomposed models disagree", mode, name);
             println(cerr, "global has {} solutions, decomposed has {}", actual.size(), decomposed.size());
             throw UnexpectedException{"difference global and decomposed models disagree"};
         }
+
+        if (actual != from_scratch) {
+            println(cerr, "difference {} {}: incremental and from-scratch propagation disagree", mode, name);
+            println(cerr, "incremental has {} solutions, from-scratch has {}", actual.size(), from_scratch.size());
+            throw UnexpectedException{"difference incremental and from-scratch propagation disagree"};
+        }
+
+        if (incremental_recursions != from_scratch_recursions)
+            throw UnexpectedException{"difference " + mode + " " + name + ": incremental propagation took " + to_string(incremental_recursions) +
+                " recursions against the from-scratch pass's " + to_string(from_scratch_recursions) +
+                ". The two reach the identical per-call fixpoint --- a bounds closure is the least fixpoint of monotone inflationary operators and "
+                "is "
+                "therefore unique --- so the search tree cannot legitimately differ. This is a lost or gained inference in the incremental route, "
+                "and "
+                "it is invisible to proof logging. Fix gcs/constraints/difference/difference_incremental.cc or the gate handling in "
+                "difference_graph.cc; do NOT relax this check."};
     }
 
     // The transitive push: two edges whose combined bound is strictly stronger
@@ -217,16 +272,18 @@ namespace
     // edge implies. Solve as far as the first complete propagation and read the
     // bounds off, so this asserts the propagator actually fires rather than
     // merely that the solution set is right.
-    auto run_transitive_test() -> void
+    auto run_transitive_test(bool incremental) -> void
     {
-        print(cerr, "difference transitive push:");
+        print(cerr, "difference transitive push (incremental={}):", incremental);
         cerr << flush;
 
         Problem p;
         auto x = p.create_integer_variable(0_i, 10_i, "x");
         auto y = p.create_integer_variable(0_i, 10_i, "y");
         auto z = p.create_integer_variable(0_i, 10_i, "z");
-        p.post(DifferenceConstraints{{DifferenceEdge{x, y, -3_i}, DifferenceEdge{y, z, -4_i}}});
+        p.post(DifferenceConstraints{{DifferenceEdge{x, y, -3_i}, DifferenceEdge{y, z, -4_i}}}
+                .incrementally(incremental)
+                .auditing_incremental_propagation());
 
         optional<Integer> z_lower, x_upper;
         solve_with(p, SolveCallbacks{.trace = [&](const CurrentState & s) -> bool {
@@ -257,16 +314,18 @@ namespace
     // engine would not re-wake it from its own inferences and z would be left at
     // 5. Confirmed by mutation: switching the return to EnableButIdempotent makes
     // this fail (and also trips the harness's GCS_CHECK_IDEMPOTENT_CLAIMS re-run).
-    auto run_hole_snap_test() -> void
+    auto run_hole_snap_test(bool incremental) -> void
     {
-        print(cerr, "difference hole snap:");
+        print(cerr, "difference hole snap (incremental={}):", incremental);
         cerr << flush;
 
         Problem p;
         auto x = p.create_integer_variable(0_i, 10_i, "x");
         auto y = p.create_integer_variable(vector<Integer>{0_i, 1_i, 2_i, 6_i, 7_i, 8_i, 9_i, 10_i}, "y");
         auto z = p.create_integer_variable(0_i, 10_i, "z");
-        p.post(DifferenceConstraints{{DifferenceEdge{x, y, -3_i}, DifferenceEdge{y, z, -2_i}}});
+        p.post(DifferenceConstraints{{DifferenceEdge{x, y, -3_i}, DifferenceEdge{y, z, -2_i}}}
+                .incrementally(incremental)
+                .auditing_incremental_propagation());
 
         optional<Integer> y_lower, z_lower;
         solve_with(p, SolveCallbacks{.trace = [&](const CurrentState & s) -> bool {
@@ -297,9 +356,9 @@ namespace
     //
     // Confirmed by mutation: dropping the DefinitelyTrue test in the
     // active-edge snapshot empties w's domain and this fails immediately.
-    auto run_reified_bounds_test() -> void
+    auto run_reified_bounds_test(bool incremental) -> void
     {
-        print(cerr, "difference reified push and negative control:");
+        print(cerr, "difference reified push and negative control (incremental={}):", incremental);
         cerr << flush;
 
         Problem p;
@@ -310,7 +369,9 @@ namespace
         auto b1 = p.create_integer_variable(1_i, 1_i, "b1");
         auto b2 = p.create_integer_variable(0_i, 0_i, "b2");
         p.post(DifferenceConstraints{
-            {DifferenceEdge{x, y, -3_i, b1 == 1_i}, DifferenceEdge{y, z, -4_i, b1 == 1_i}, DifferenceEdge{w, z, -20_i, b2 == 1_i}}});
+            {DifferenceEdge{x, y, -3_i, b1 == 1_i}, DifferenceEdge{y, z, -4_i, b1 == 1_i}, DifferenceEdge{w, z, -20_i, b2 == 1_i}}}
+                .incrementally(incremental)
+                .auditing_incremental_propagation());
 
         optional<Integer> z_lower, x_upper, w_lower, w_upper;
         solve_with(p, SolveCallbacks{.trace = [&](const CurrentState & s) -> bool {
@@ -335,9 +396,9 @@ namespace
     // dropping it would let cond hold with the constraint violated, which is
     // unsound rather than merely incomplete. Unconditionally the same edge is a
     // root contradiction instead, which is why the two live in different places.
-    auto run_reified_degenerate_test() -> void
+    auto run_reified_degenerate_test(bool incremental) -> void
     {
-        print(cerr, "difference reified degenerate edge:");
+        print(cerr, "difference reified degenerate edge (incremental={}):", incremental);
         cerr << flush;
 
         Problem p;
@@ -345,7 +406,9 @@ namespace
         auto bad = p.create_integer_variable(0_i, 1_i, "bad");
         auto fine = p.create_integer_variable(0_i, 1_i, "fine");
         // bad -> x - x <= -1, i.e. !bad. fine -> x - x <= 0, i.e. nothing.
-        p.post(DifferenceConstraints{{DifferenceEdge{x, x, -1_i, bad == 1_i}, DifferenceEdge{x, x, 0_i, fine == 1_i}}});
+        p.post(DifferenceConstraints{{DifferenceEdge{x, x, -1_i, bad == 1_i}, DifferenceEdge{x, x, 0_i, fine == 1_i}}}
+                .incrementally(incremental)
+                .auditing_incremental_propagation());
 
         optional<Integer> bad_upper, fine_upper;
         solve_with(p, SolveCallbacks{.trace = [&](const CurrentState & s) -> bool {
@@ -659,6 +722,276 @@ namespace
                 to_string(off_recursions) + " recursions"};
     }
 
+    // The incremental machinery's failure mode is always the same: an inference
+    // that should have been made is not, because a gate said there was nothing
+    // to do. Every one of those failures is invisible to proof logging, and most
+    // are invisible to a solution count too, because a lost bound push usually
+    // only makes the solver search harder. So these fixtures assert an
+    // *invariant at every search node*: the propagator's own consequence has to
+    // hold at every fully-propagated state the search visits, not merely at the
+    // leaves. That is a direct test of the gate, and it fails at the node where
+    // the gate first went wrong.
+    //
+    // The branching is fixed and deterministic in each, so the scenario really
+    // is the one described rather than whatever a random order happened to
+    // produce, and every one of them runs both incrementally and from scratch.
+    struct NodeInvariant
+    {
+        string what;
+        function<auto(const CurrentState &)->bool> holds;
+    };
+
+    auto run_node_invariant_test(const string & name, bool incremental, Problem & p, const vector<IntegerVariableID> & branch_vars,
+        const vector<NodeInvariant> & invariants, unsigned long long expected_solutions) -> void
+    {
+        print(cerr, "difference {} (incremental={}):", name, incremental);
+        cerr << flush;
+
+        optional<string> failure;
+        unsigned long long nodes = 0;
+        auto result = solve_with(p,
+            SolveCallbacks{.trace = [&](const CurrentState & s) -> bool {
+                               ++nodes;
+                               for (const auto & i : invariants)
+                                   if (! i.holds(s)) {
+                                       failure = i.what;
+                                       return false;
+                                   }
+                               return true;
+                           },
+                .branch = branch_with(variable_order::in_order(branch_vars), value_order::largest_first())});
+
+        println(cerr, " {} nodes, {} solutions", nodes, result.solutions);
+
+        if (failure)
+            throw UnexpectedException{"difference " + name + " (incremental=" + (incremental ? "yes" : "no") +
+                "): a consequence of the difference system does not hold at a search node the solver visited: " + *failure +
+                ". A bound the system entails was never pushed, which is a lost inference and is invisible to proof logging. Fix "
+                "gcs/constraints/difference/difference_incremental.cc or the gate handling in difference_graph.cc."};
+        if (result.solutions != expected_solutions)
+            throw UnexpectedException{"difference " + name + " (incremental=" + (incremental ? "yes" : "no") + "): found " +
+                to_string(result.solutions) + " solutions, expected " + to_string(expected_solutions)};
+    }
+
+    // (a) The stale-Do scenario, verbatim. `sel` is branched first and
+    // largest-value-first, so the search sets `y >= 10`, propagates (recording
+    // Do(y) = 10), fails against `z <= 12`, backtracks to `y >= 5`, and only
+    // then does the sibling set `y >= 7`.
+    //
+    // A `Do` array clamped lazily against the current bounds at the next call,
+    // rather than restored exactly, would compute Do(y) = min(10, 7) = 7, which
+    // is min D(y), leave `y` out of `Vl`, and never push `z >= 10`: the
+    // consequences of `y >= 7` were computed in a branch that no longer exists.
+    // Successive guesses tightening the same variable is the commonest
+    // branching pattern there is, so this is not an exotic case.
+    auto run_stale_do_test(bool incremental) -> void
+    {
+        Problem p;
+        auto sel = p.create_integer_variable(0_i, 1_i, "sel");
+        auto y = p.create_integer_variable(5_i, 20_i, "y");
+        auto z = p.create_integer_variable(0_i, 12_i, "z");
+        p.post(DifferenceConstraints{{DifferenceEdge{y, z, -3_i}}}.incrementally(incremental).auditing_incremental_propagation());
+        p.post(LinearGreaterThanEqualIf{WeightedSum{} + 1_i * y, 10_i, sel == 1_i});
+        p.post(LinearGreaterThanEqualIf{WeightedSum{} + 1_i * y, 7_i, sel == 0_i});
+
+        // y in 7..9 forced by z <= 12 and z >= y + 3, with sel = 0; sel = 1
+        // needs y >= 10 and so z >= 13, which is impossible.
+        run_node_invariant_test("incremental stale do", incremental, p, {sel, y, z},
+            {{"z >= y + 3", [=](const CurrentState & s) { return s.lower_bound(z) >= s.lower_bound(y) + 3_i; }},
+                {"y <= z - 3", [=](const CurrentState & s) { return s.upper_bound(y) <= s.upper_bound(z) - 3_i; }}},
+            6);
+    }
+
+    // (b) A Boolean fixed with no node bound change at all. At the root `b` is
+    // undecided, so its edge is not in the graph and nothing constrains y; the
+    // moment `b` is fixed true the edge joins the graph and `y >= x + 4` has to
+    // be pushed --- from x's *root* lower bound, which has not moved since the
+    // last run.
+    //
+    // So `Vl` is empty, and an implementation that transcribed only the paper's
+    // section 5.4 (repair the potential function on activation, and stop there)
+    // would do nothing at all here. Section 4.4 is the one that says to seed
+    // bound propagation across the new arc as well.
+    auto run_activation_seed_test(bool incremental) -> void
+    {
+        Problem p;
+        auto b = p.create_integer_variable(0_i, 1_i, "b");
+        auto x = p.create_integer_variable(0_i, 10_i, "x");
+        auto y = p.create_integer_variable(0_i, 10_i, "y");
+        p.post(DifferenceConstraints{{DifferenceEdge{x, y, -4_i, b == 1_i}}}
+                .simplifying_at_root(false)
+                .incrementally(incremental)
+                .auditing_incremental_propagation());
+
+        auto b_holds = [=](const CurrentState & s) { return s.lower_bound(b) == 1_i; };
+        run_node_invariant_test("incremental activation seed", incremental, p, {b, x, y},
+            {{"y >= x + 4 once b is true", [=](const CurrentState & s) { return ! b_holds(s) || s.lower_bound(y) >= s.lower_bound(x) + 4_i; }},
+                {"x <= y - 4 once b is true", [=](const CurrentState & s) { return ! b_holds(s) || s.upper_bound(x) <= s.upper_bound(y) - 4_i; }}},
+            // b = 1: x in 0..6, y in x+4..10, so sum over x of (7 - x) = 28.
+            // b = 0: 121.
+            149);
+    }
+
+    // (c) Activate, backtrack, tighten elsewhere, re-activate, and close a
+    // negative cycle. `g` is branched first purely so that the (b, c) subtree is
+    // entered four times, each entry after a backtrack that deactivated both
+    // conditional edges; every activation after the first is a *re*-activation.
+    //
+    // The potential function is never trailed and drifts downwards over the
+    // whole search, so an edge that satisfied the potential invariant when it
+    // was last active can violate it when it comes back. Caching "this edge has
+    // been checked" would leave the reduced cost negative, which corrupts
+    // Dijkstra's settle order and can lose the refutation entirely.
+    auto run_reactivation_test(bool incremental) -> void
+    {
+        Problem p;
+        auto g = p.create_integer_variable(0_i, 3_i, "g");
+        auto b = p.create_integer_variable(0_i, 1_i, "b");
+        auto cc = p.create_integer_variable(0_i, 1_i, "c");
+        auto x = p.create_integer_variable(0_i, 10_i, "x");
+        auto y = p.create_integer_variable(0_i, 10_i, "y");
+        // b and c together close a cycle of weight -3; either alone is fine.
+        p.post(DifferenceConstraints{{DifferenceEdge{x, y, -5_i, b == 1_i}, DifferenceEdge{y, x, 2_i, cc == 1_i}}}
+                .simplifying_at_root(false)
+                .incrementally(incremental)
+                .auditing_incremental_propagation());
+
+        run_node_invariant_test("incremental reactivation", incremental, p, {g, b, cc, x, y},
+            {{"b and c are never both true", [=](const CurrentState & s) { return ! (s.lower_bound(b) == 1_i && s.lower_bound(cc) == 1_i); }},
+                {"y >= x + 5 once b is true",
+                    [=](const CurrentState & s) { return s.lower_bound(b) != 1_i || s.lower_bound(y) >= s.lower_bound(x) + 5_i; }}},
+            // Per g value: b=0,c=0 gives 121; b=0,c=1 gives |{x,y : x >= y - 2}|
+            // = 121 - |{y - x > 2}| = 121 - 36 = 85; b=1,c=0 gives
+            // |{y >= x + 5}| = 21; b=1,c=1 is refuted. 227 per g, four g values.
+            908);
+    }
+
+    // (e) A conditional static bound applied in a branch that then fails must
+    // leave nothing behind. Static bounds are re-derived from the state on every
+    // call and never enter Do or the arc records, so there is nothing to leak;
+    // this pins that, since a static bound is the one shape that is neither an
+    // arc nor a node bound change.
+    auto run_conditional_static_bound_test(bool incremental) -> void
+    {
+        Problem p;
+        auto b = p.create_integer_variable(0_i, 1_i, "b");
+        auto x = p.create_integer_variable(0_i, 10_i, "x");
+        auto y = p.create_integer_variable(0_i, 10_i, "y");
+        // b -> x <= 3 and b -> x >= 5, which cannot both hold, so every solution
+        // has b = 0 and x unconstrained. y hangs off x by an ordinary edge, so a
+        // bound left behind after the failed branch would show up as a missing
+        // solution rather than only as a tighter domain.
+        p.post(DifferenceConstraints{{DifferenceEdge{x, constant_variable(0_i), 3_i, b == 1_i},
+                                         DifferenceEdge{constant_variable(5_i), x, 0_i, b == 1_i}, DifferenceEdge{x, y, 0_i}}}
+                .simplifying_at_root(false)
+                .incrementally(incremental)
+                .auditing_incremental_propagation());
+
+        run_node_invariant_test("incremental conditional static bound", incremental, p, {b, x, y},
+            {{"y >= x", [=](const CurrentState & s) { return s.lower_bound(y) >= s.lower_bound(x); }},
+                {"b is never true", [=](const CurrentState & s) { return s.lower_bound(b) != 1_i; }}},
+            // b = 0, y >= x over 0..10: 66.
+            66);
+    }
+
+    // Randomised backtracking stress, with restarts. Restarts are the one thing
+    // in the engine that unwinds all the way to the root at a moment nothing
+    // else chooses, so they are the sharpest exercise of the undo trail there
+    // is: every restart pops it back to the root mark, and a Do array that
+    // survived a restart it should not have, or that was popped further than it
+    // should have been, shows up as a different optimum or a different search.
+    //
+    // Optimisation rather than enumeration, because a restart schedule without
+    // recorded nogoods re-finds solutions and gcs rejects combining it with
+    // all-solution enumeration. The Luby scale is deliberately tiny so that a
+    // few-hundred-node search restarts many times.
+    auto run_restart_stress() -> void
+    {
+        print(cerr, "difference incremental restart stress:");
+        cerr << flush;
+
+        mt19937 rand(*get_seed());
+        size_t agreed = 0;
+
+        for (int iteration = 0; iteration < 20; ++iteration) {
+            uniform_int_distribution n_vars_dist{3, 5};
+            auto n_vars = n_vars_dist(rand);
+            vector<pair<int, int>> domains;
+            for (int i = 0; i < n_vars; ++i) {
+                uniform_int_distribution lo_dist{-2, 2};
+                auto lo = lo_dist(rand);
+                uniform_int_distribution width_dist{2, 7};
+                domains.emplace_back(lo, lo + width_dist(rand));
+            }
+            domains.emplace_back(0, 1);
+            domains.emplace_back(0, 1);
+
+            uniform_int_distribution n_edges_dist{2, 7};
+            auto n_edges = n_edges_dist(rand);
+            vector<EdgeSpec> edges;
+            for (int e = 0; e < n_edges; ++e) {
+                uniform_int_distribution var_dist{0, n_vars - 1};
+                uniform_int_distribution d_dist{-3, 3};
+                uniform_int_distribution which_dist{0, 4};
+                auto which = which_dist(rand);
+                optional<Cond> cond;
+                if (which > 0)
+                    cond = Cond{static_cast<size_t>(n_vars + (which - 1) / 2), (which - 1) % 2};
+                edges.push_back(EdgeSpec{v(static_cast<size_t>(var_dist(rand))), v(static_cast<size_t>(var_dist(rand))), d_dist(rand), cond});
+            }
+
+            auto solve_one = [&](bool incremental) -> tuple<unsigned long long, unsigned long long, int> {
+                Problem p;
+                auto vars = make_vars(p, domains);
+                vector<DifferenceEdge> posted;
+                for (const auto & e : edges)
+                    posted.push_back(DifferenceEdge{operand_id(e.x, vars), operand_id(e.y, vars), Integer(e.d), condition_id(e.cond, vars)});
+                p.post(DifferenceConstraints{posted}.incrementally(incremental).auditing_incremental_propagation());
+                p.minimise(vars.front());
+
+                int best = 0;
+                auto result = solve_with(p,
+                    SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+                                       best = s(vars.front()).raw_value;
+                                       return true;
+                                   },
+                        .branch = random_branch_with_optional_seed(p),
+                        .restarts = RestartSchedule::luby(3)});
+                return {result.recursions, result.solutions, best};
+            };
+
+            auto incremental = solve_one(true);
+            auto from_scratch = solve_one(false);
+            if (incremental != from_scratch)
+                throw UnexpectedException{"difference incremental restart stress iteration " + to_string(iteration) +
+                    ": with restarts, incremental propagation gave recursions/solutions/optimum " + to_string(std::get<0>(incremental)) + "/" +
+                    to_string(std::get<1>(incremental)) + "/" + to_string(std::get<2>(incremental)) + " against the from-scratch pass's " +
+                    to_string(std::get<0>(from_scratch)) + "/" + to_string(std::get<1>(from_scratch)) + "/" + to_string(std::get<2>(from_scratch)) +
+                    ". A restart unwinds to the root at a moment nothing else chooses, so this is the undo trail being popped too far or not far "
+                    "enough. Do NOT relax this check."};
+            ++agreed;
+        }
+
+        println(cerr, " {} random systems agreed on recursions, solutions and optimum", agreed);
+    }
+
+    auto run_incremental_tests() -> void
+    {
+        for (bool incremental : {true, false}) {
+            run_stale_do_test(incremental);
+            run_activation_seed_test(incremental);
+            run_reactivation_test(incremental);
+            run_conditional_static_bound_test(incremental);
+            // (d) The hole-snap topology, which is where recording the *state's*
+            // bounds in Do rather than the bounds the run propagated from goes
+            // wrong: the snap lands the state bound above the computed value, so
+            // the mandatory self-re-wake finds Vl empty and stops with z at 5.
+            run_hole_snap_test(incremental);
+        }
+
+        run_restart_stress();
+    }
+
     auto run_all_tests(bool proofs, const string & mode) -> void
     {
         if (mode == "basic") {
@@ -859,13 +1192,19 @@ auto main(int argc, char * argv[]) -> int
     string mode{argv[1]};
 
     run_negated_view_test();
-    if (mode == "basic") {
-        run_transitive_test();
-        run_hole_snap_test();
-    }
-    if (mode == "reified") {
-        run_reified_bounds_test();
-        run_reified_degenerate_test();
+    if (mode == "basic")
+        for (bool incremental : {true, false}) {
+            run_transitive_test(incremental);
+            run_hole_snap_test(incremental);
+        }
+    if (mode == "reified")
+        for (bool incremental : {true, false}) {
+            run_reified_bounds_test(incremental);
+            run_reified_degenerate_test(incremental);
+        }
+    if (mode == "incremental") {
+        run_incremental_tests();
+        return EXIT_SUCCESS;
     }
     if (mode == "simplify") {
         run_root_refutation_test();

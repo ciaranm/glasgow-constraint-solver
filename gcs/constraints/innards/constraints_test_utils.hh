@@ -246,6 +246,23 @@ namespace gcs::test_innards
         static bool truncated = false;
         return truncated;
     }
+
+    /// How many search nodes the most recent solve_for_tests*() call took. Set
+    /// by solve_for_tests_with_callbacks(); single-threaded, one solve per
+    /// check by construction, exactly like last_run_truncated().
+    ///
+    /// This is what lets a test compare two ways of propagating the same model
+    /// and require the *search* to be identical rather than merely the answers.
+    /// A propagator that reaches the same fixpoint by a different route must
+    /// leave the search tree alone, and a divergence is then a bug with
+    /// certainty rather than an ambiguous search-shape effect --- as long as the
+    /// heuristic is not randomised or conflict-weighted, and as long as no cap
+    /// fired (a truncated run reports the cap, not the search).
+    inline auto last_run_recursions() -> unsigned long long &
+    {
+        static unsigned long long recursions = 0;
+        return recursions;
+    }
     /// @}
 
     template <typename ResultsSet_, typename IsSatisfying_, typename... Accumulated_>
@@ -567,13 +584,14 @@ namespace gcs::test_innards
             return t(s);
         };
 
-        solve_with(p,
+        auto stats = solve_with(p,
             SolveCallbacks{
                 .solution = capped_solution,                  //
                 .trace = capped_trace,                        //
                 .branch = random_branch_with_optional_seed(p) //
             },
             proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : std::nullopt);
+        last_run_recursions() = stats.recursions;
     }
 
     /**

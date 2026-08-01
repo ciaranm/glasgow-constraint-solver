@@ -79,8 +79,12 @@ namespace gcs
      * unaffected, and this propagator is bounds consistent rather than domain
      * consistent in any case.
      *
-     * Incremental propagation is not implemented: every wake recomputes from
-     * scratch.
+     * Propagation is incremental by default: a potential function is maintained
+     * across the whole search and never trailed, and each wake runs Dijkstra on
+     * the reduced-cost graph over just the bounds that have moved since the last
+     * one. \ref incrementally selects the from-scratch Bellman-Ford version
+     * instead, which reaches the identical per-call fixpoint and therefore must
+     * search identically.
      *
      * See `dev_docs/difference-logic.md` for the design, the proof shapes and
      * what is deferred.
@@ -117,6 +121,16 @@ namespace gcs
         // measures the simplification as most of the win.
         innards::DifferenceSimplificationOptions _simplify;
 
+        // Whether to propagate incrementally, and whether to audit that against
+        // the from-scratch pass. On and off respectively.
+        innards::DifferenceIncrementalOptions _incremental;
+
+        // Stashed by prepare(), which is the only place in the split install
+        // pattern that is handed a State, and needed by install_propagators()
+        // for the one piece of trailed constraint state the incremental
+        // machinery keeps.
+        innards::State * _initial_state = nullptr;
+
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
@@ -149,6 +163,36 @@ namespace gcs
          * other check there is, so these counters are what the tests assert on.
          */
         auto reporting_simplification_to(std::shared_ptr<DifferenceSimplificationStats>) -> DifferenceConstraints &;
+
+        /**
+         * \brief Propagate incrementally (the default), or from scratch on
+         * every wake.
+         *
+         * The incremental route maintains a potential function and runs
+         * Dijkstra on the reduced-cost graph over just the bounds that have
+         * moved, which is `O(n log n + m)` against the from-scratch route's
+         * `O(n.m)`. The two reach the identical per-call fixpoint, so
+         * `recursions` and the solution sequence must come out the same either
+         * way; that equality is the sharpest test there is of the incremental
+         * route, because a lost inference is invisible to proof logging.
+         */
+        auto incrementally(bool = true) -> DifferenceConstraints &;
+
+        /**
+         * \brief Re-run the from-scratch pass after every incremental call and
+         * require the two to agree, node for node.
+         *
+         * Off by default and intended for tests: it makes every wake cost what
+         * the non-incremental route costs, plus the incremental route on top.
+         * What it buys is catching a completeness failure --- a stale `Do`
+         * array, a stale potential function, a missed activation seed, a wrong
+         * `pi(v0)` --- at the wake where it first happens rather than as a
+         * missing solution a million nodes later, or not at all.
+         *
+         * Also forced on for every difference propagator in the process by the
+         * `GCS_DIFFERENCE_AUDIT` environment variable.
+         */
+        auto auditing_incremental_propagation(bool = true) -> DifferenceConstraints &;
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;
