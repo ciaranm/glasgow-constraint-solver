@@ -6,7 +6,7 @@ not default.** This note records the design for shrinking the integer
 order-encoding that VeriPB carries, plus the measured outcome and what is and
 isn't yet done. The full Brancher-API refactor (step 2, below) is a **decided design,
 recorded in [brancher-design.md](brancher-design.md), now partly implemented**: its
-stages A, B, B' and B'' have landed, C/D/E have not. That note, not this one, is the
+stages A, B, B', B'' and C have landed, D/E have not. That note, not this one, is the
 authority on the refactor's staging and status. The shipped deletion path still wires
 into the existing branch/backtrack flow via hoisting, and the four-step sketch further
 down this note is superseded by the decided design (see the note at "Design overview"
@@ -394,7 +394,18 @@ frontend proofs.
   permanently long before the search reaches them. Where it cannot engage it now costs
   nothing (talent's window-on proof is byte-identical to its window-off proof). The window
   therefore ships off, and stage E owns whether the default changes.
-- **In progress:** the clean Brancher abstraction (step 2). Stages A, B, B' and B'' have
+- **The frontier deletion exemption (stage C).** `ProofModel::minimise` marks the objective
+  `note_deletion_exempt`, so under Literals its whole `ge` encoding stays resident however
+  long its chain grows. Branch-and-bound re-tightens the objective at every improving
+  solution and every backtrack relaxes it again, so without this its thresholds are deleted
+  and re-introduced forever, verify-neutrally, for zero shrinkage — on seat-moving 2018
+  essentially all of the residual churn at the default gate. The chain gate cannot suppress
+  it: the gate measures *length*, and the objective's chain is long for a churn reason
+  rather than a win reason. This is a **policy** hook, not a correctness one — nothing is
+  stranded without it — and it deliberately applies to the objective only, because
+  exempting a bound-branched variable would defeat the split win, which *is* deleting its
+  stepped-over chain.
+- **In progress:** the clean Brancher abstraction (step 2). Stages A, B, B', B'' and C have
   landed — the `BranchDecision` / `BacktrackAdvance` types, the split families' bound
   advances, the eviction primitives plus their always-on residency bookkeeping, and the
   eq-atom window — so the direct guess/eq/aux hoist wiring is on its way out but is still
@@ -435,7 +446,7 @@ builds long chains (seat-moving: median chain 12, max 98, despite maxdom 901), a
 the deletion machinery churns (37 644 deletes / 37 616 reintroductions, net 28) for
 nothing there.
 
-**2. Brancher-API refactor — IN PROGRESS: stages A, B, B' and B'' landed; C is next.**
+**2. Brancher-API refactor — IN PROGRESS: stages A, B, B', B'' and C landed; D is next.**
 The concrete, decided step-2 design and its staging live in
 [brancher-design.md](brancher-design.md), which is the authority on what is done and
 what each remaining stage owes. In summary: **A** added the `BranchDecision` /
@@ -443,7 +454,7 @@ what each remaining stage owes. In summary: **A** added the `BranchDecision` /
 split families' bound advances and the advance-RUP-driven deletion; **B'** added the
 always-on residency bookkeeping and the evict/hoist primitives the eq window and the
 objective `delc` both need (behaviour-neutral); **B''** built the eq-atom window on
-them, opt-in and off by default. Remaining: **C** the objective/frontier exemption,
+them, opt-in and off by default; **C** exempted the objective from deletion. Remaining:
 **D** the objective-improvement `delc` + Top-eviction, **E** benchmark and cleanup —
 including whether the window becomes the default for `smallest_first`. The design
 generalises consolidate-then-delete,

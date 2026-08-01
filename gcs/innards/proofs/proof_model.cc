@@ -842,6 +842,25 @@ auto ProofModel::minimise(const IntegerVariableID & var) -> void
     if (_imp->streaming)
         throw UnexpectedException{"objective must be set before the OPB preamble is written"};
     _imp->optional_minimise_variable = var;
+
+    // Exempt the objective from order-encoding deletion (dev_docs/brancher-design.md,
+    // payload 3). Branch-and-bound re-tightens it at every improving solution and every
+    // backtrack relaxes it again, so under Literals its thresholds are deleted and
+    // re-introduced forever -- on seat-moving 2018 that is essentially all of the residual
+    // churn at the default gate, verify-neutrally and for zero shrinkage. The chain gate
+    // cannot suppress it, because the objective's chain is long for a churn reason rather
+    // than a win reason and the gate only measures length.
+    //
+    // Here rather than in solve_with because this is where the objective is declared to the
+    // proof machinery, so every path that sets one gets the exemption. A view objective is
+    // exempted through its underlying, which is the variable whose `ge` definitions the
+    // deletion machinery tracks (and which is already resident as a view underlying anyway).
+    overloaded{
+        [&](const SimpleIntegerVariableID & v) { names_and_ids_tracker().note_deletion_exempt(v); },                 //
+        [&](const ViewOfIntegerVariableID & v) { names_and_ids_tracker().note_deletion_exempt(v.actual_variable); }, //
+        [&](const ConstantIntegerVariableID &) {}                                                                    //
+    }
+        .visit(var);
 }
 
 auto ProofModel::preserve(vector<IntegerVariableID> vars) -> void

@@ -558,6 +558,10 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(order_evict_test PRIVATE glasgow_constraint_solver)
     add_test(NAME order_evict_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:order_evict_test>)
 
+    add_executable(deletion_exempt_test innards/proofs/deletion_exempt_test.cc)
+    target_link_libraries(deletion_exempt_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME deletion_exempt_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:deletion_exempt_test>)
+
     add_executable(eq_window_test innards/proofs/eq_window_test.cc)
     target_link_libraries(eq_window_test PRIVATE glasgow_constraint_solver)
     add_test(NAME eq_window_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:eq_window_test>)
