@@ -50,9 +50,21 @@
 // stops depending on the order the edges were given in; and in --mode=refute it
 // refutes the negative cycle by summing the cycle's edge rows, which is one
 // cutting-planes step whatever the domains are.
+//
+// --variant=presolved posts the decomposed model and then adds the
+// DifferenceLogic presolver, which detects those two-term linears and installs
+// the same global propagator over them without the model being rewritten. The
+// donors' own propagators stay installed (the paper's section 4.4 hybrid), which
+// is what makes this the interesting middle column: it answers whether the
+// presolver route recovers the global route's win while still paying for the
+// redundant propagators, and whether the presolver's propagator running last in
+// registration order (gcs has no propagator priorities, see issue #582) costs
+// anything measurable. --disable-donors additionally retires the lifted donors'
+// propagators, which is the same experiment with that cost removed.
 
 #include <gcs/constraints/difference.hh>
 #include <gcs/constraints/linear.hh>
+#include <gcs/presolvers/difference_logic.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -60,6 +72,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -82,8 +95,10 @@ using namespace gcs;
 using std::cerr;
 using std::cout;
 using std::make_optional;
+using std::make_shared;
 using std::nullopt;
 using std::optional;
+using std::shared_ptr;
 using std::string;
 using std::string_view;
 using std::vector;
@@ -113,6 +128,7 @@ namespace
     enum struct Variant
     {
         Decomposed,
+        Presolved,
         Global
     };
 
@@ -177,20 +193,24 @@ namespace
     // Hand the same edges to the solver, either one propagator each or all at
     // once. Both variants produce the same OPB rows for the same edges (one
     // labelled inequality per edge), so the proofs are directly comparable.
-    auto post_edges(Problem & problem, const vector<DifferenceEdge> & edges, Variant variant) -> void
+    auto post_edges(Problem & problem, const vector<DifferenceEdge> & edges, Variant variant, bool disable_donors,
+        const shared_ptr<DifferenceLogicStats> & presolver_stats) -> void
     {
         switch (variant) {
             using enum Variant;
+        case Presolved:
         case Decomposed:
             for (const auto & e : edges)
                 problem.post(LinearLessThanEqual{WeightedSum{} + 1_i * e.x + -1_i * e.y, e.d});
+            if (variant == Presolved)
+                problem.add_presolver(DifferenceLogic{presolver_stats}.disabling_lifted_donors(disable_donors));
             break;
         case Global: problem.post(DifferenceConstraints{edges}); break;
         }
     }
 
     // The --variant names, in help order.
-    constexpr string_view variants[] = {"decomposed", "global"};
+    constexpr string_view variants[] = {"decomposed", "presolved", "global"};
 
     auto variant_names() -> string
     {
@@ -239,6 +259,9 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<string>()->default_value("fixpoint"))                                     //
             ("variant", "Model variant to post. Supported: " + variant_names(),                          //
                 cxxopts::value<string>()->default_value("decomposed"))                                   //
+            ("disable-donors",                                                                           //
+                "With --variant=presolved, also retire the lifted constraints' own propagators, so "     //
+                "only the global one runs over them")                                                    //
             ("all", "Find all solutions rather than stopping at the first")                              //
             ;
 
@@ -300,6 +323,8 @@ auto main(int argc, char * argv[]) -> int
     optional<Variant> variant;
     if (variant_name_given == "decomposed")
         variant = Variant::Decomposed;
+    else if (variant_name_given == "presolved")
+        variant = Variant::Presolved;
     else if (variant_name_given == "global")
         variant = Variant::Global;
     else {
@@ -320,7 +345,14 @@ auto main(int argc, char * argv[]) -> int
     if (*mode == Mode::Refute)
         edges.push_back(DifferenceEdge{x[n], y[0], -1_i});
 
-    post_edges(problem, edges, *variant);
+    auto disable_donors = options_vars.contains("disable-donors");
+    if (disable_donors && *variant != Variant::Presolved) {
+        println(cerr, "Error: --disable-donors only means anything with --variant=presolved.");
+        return EXIT_FAILURE;
+    }
+
+    auto presolver_stats = make_shared<DifferenceLogicStats>();
+    post_edges(problem, edges, *variant, disable_donors, presolver_stats);
 
     // The lower-bound bump that starts the chase. Posted last, so that the
     // difference constraints are all in the queue ahead of it and the bump wakes
@@ -360,6 +392,12 @@ auto main(int argc, char * argv[]) -> int
     println("order: {}", order_name);
     println("mode: {}", mode_name);
     println("variant: {}", variant_name_given);
+    if (*variant == Variant::Presolved) {
+        println("disable_donors: {}", disable_donors ? "yes" : "no");
+        println("presolver_edges_lifted: {}", presolver_stats->edges_lifted);
+        println("presolver_nodes: {}", presolver_stats->nodes);
+        println("presolver_donors_disabled: {}", presolver_stats->donor_propagators_disabled);
+    }
     println("all: {}", all ? "yes" : "no");
     println("domain: 0..{}", hi.raw_value);
     println("status: {}", status);

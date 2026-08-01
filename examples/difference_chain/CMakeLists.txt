@@ -9,3 +9,11 @@ add_test(NAME difference_chain-fixpoint COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/
 add_test(NAME difference_chain-refute COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-refute $<TARGET_FILE:difference_chain> --mode refute)
 add_test(NAME difference_chain-global-fixpoint COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-global-fixpoint $<TARGET_FILE:difference_chain> --mode fixpoint --variant global)
 add_test(NAME difference_chain-global-refute COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-global-refute $<TARGET_FILE:difference_chain> --mode refute --variant global)
+
+# The presolved variant reaches the same two conclusions by a third route: the
+# donors are posted as ordinary linears and the presolver lifts them, so the
+# proof cites the donors' own OPB rows rather than rows this example's model
+# emitted. Worth its own entries --- the presolver's unit tests drive it through
+# a Problem built in-process, not through a posted model.
+add_test(NAME difference_chain-presolved-fixpoint COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-presolved-fixpoint $<TARGET_FILE:difference_chain> --mode fixpoint --variant presolved)
+add_test(NAME difference_chain-presolved-refute COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/run_test_and_verify.bash --basename difference_chain-presolved-refute $<TARGET_FILE:difference_chain> --mode refute --variant presolved)
