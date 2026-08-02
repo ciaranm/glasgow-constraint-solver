@@ -1,4 +1,5 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 
@@ -49,13 +50,14 @@ auto main() -> int
     ProofModel model(proof_options, tracker);
 
     // One variable per scenario, so the scenarios cannot perturb each other's chains.
-    SimpleIntegerVariableID x{0}, y{1}, z{2}, w{3}, u{4}, t{5};
+    SimpleIntegerVariableID x{0}, y{1}, z{2}, w{3}, u{4}, t{5}, v{6};
     model.set_up_integer_variable(x, 0_i, 100_i, "x", nullopt);
     model.set_up_integer_variable(y, 0_i, 100_i, "y", nullopt);
     model.set_up_integer_variable(z, 0_i, 100_i, "z", nullopt);
     model.set_up_integer_variable(w, 0_i, 100_i, "w", nullopt);
     model.set_up_integer_variable(u, 0_i, 100_i, "u", nullopt);
     model.set_up_integer_variable(t, 0_i, 100_i, "t", nullopt);
+    model.set_up_integer_variable(v, 0_i, 100_i, "v", nullopt);
 
     model.finalise();
 
@@ -242,6 +244,38 @@ auto main() -> int
     // the rule is about ancestry, not a blanket refusal.
     tracker.need_gevar(t, 90_i);
     check(tracker.evict_order_literal(t, 90_i, nullopt));
+    logger.forget_proof_level(1);
+
+    // ---- v: a ge threshold pinned only through a pol's operands ----
+    // The ge half of the union rule. A `pol` landing at Top over an operand naming
+    // `v >= 30` is a permanent reference to that threshold, but nothing in the emitted pol
+    // text names it -- the literals are the arithmetic's result -- so before the operand
+    // union nothing pinned it and the window was free to take it.
+    //
+    // Asserted through the Top-pin bookkeeping rather than through the proof, because that
+    // is where the difference shows immediately: an unpinned threshold at a positive level
+    // is evictable with no cause at all, and a pinned one is evictable only against its
+    // sole cause. Checking the proof instead would only fail once something later named the
+    // evicted atom.
+    logger.enter_proof_level(1);
+    tracker.need_gevar(v, 30_i);
+    check(tracker.order_literal_is_live(v, 30_i));
+    // Deletable right now: this level minted it and nothing names it.
+    check(tracker.evict_order_literal(v, 30_i, nullopt));
+    tracker.need_gevar(v, 30_i);
+
+    {
+        PolBuilder pol;
+        pol.add(logger.emit_rup_proof_line(WPBSum{} + 1_i * (v < 30_i) + 1_i * (v >= 30_i) >= 1_i, ProofLevel::Temporary));
+        pol.emit(logger, ProofLevel::Top);
+    }
+
+    // The Top pol pinned it: a no-cause eviction is now refused, and LineHoist is the cause
+    // that owns the pin. Both halves matter -- the first is what fails without the union,
+    // the second is what fails if the pin is recorded against the wrong cause.
+    check(! tracker.evict_order_literal(v, 30_i, nullopt));
+    check(! tracker.evict_order_literal(v, 30_i, Cause::SoliHoist));
+    check(tracker.evict_order_literal(v, 30_i, Cause::LineHoist));
     logger.forget_proof_level(1);
 
     logger.enter_proof_level(0);

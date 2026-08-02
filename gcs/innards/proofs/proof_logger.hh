@@ -55,7 +55,7 @@ namespace gcs::innards
         // evict: stored against the line so that a later `pol` citing it can discover what
         // citing it would name. Empty for the overwhelming majority of lines, and always
         // empty unless the window is live.
-        auto record_proof_line(ProofLineNumber line, ProofLevel level, const NamedEqAtoms & names = {}) -> ProofLineNumber;
+        auto record_proof_line(ProofLineNumber line, ProofLevel level, const NamedAtoms & names = {}) -> ProofLineNumber;
 
         auto end_proof() -> void;
 
@@ -75,7 +75,7 @@ namespace gcs::innards
         // that names an eq atom can still be cited by a `pol` that lands at Top --- which
         // is exactly how all-different's Hall-set row referenced an atom nothing had
         // pinned. Only the *pinning* is Top-only; the *recording* cannot be.
-        auto note_top_eq_references(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> NamedEqAtoms;
+        auto note_top_eq_references(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> NamedAtoms;
 
         // Record the incumbent an improving solution has just left resident, and take the
         // one it supersedes back out of the proof: `delc` its improvement constraint, `del`
@@ -436,7 +436,7 @@ namespace gcs::innards
          * --- it is how PolBuilder hands over the union it computed over its operands.
          */
         auto emit_proof_line(const std::string &, ProofLevel level, const std::optional<ProofLineLabel> & label = std::nullopt,
-            const NamedEqAtoms & names = {}) -> ProofLine;
+            const NamedAtoms & names = {}) -> ProofLine;
 
         /**
          * Emit a proof step, with a specified rule. An optional label is written as a

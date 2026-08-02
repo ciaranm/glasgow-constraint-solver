@@ -395,9 +395,9 @@ struct NamesAndIDsTracker::Imp
     // What each emitted proof line names, for lines that name any eq atom at all --- the
     // only way a `pol` can find out what citing an operand would name, since its own
     // literals are a derivation result rather than text. Entries exist only for lines that
-    // name something, and forget_eq_atom_names_for drops them as the lines are del'd, so
+    // name something, and forget_atom_names_for drops them as the lines are del'd, so
     // this tracks what is live in the proof rather than the proof.
-    unordered_map<long long, NamedEqAtoms> eq_atoms_by_line;
+    unordered_map<long long, NamedAtoms> atoms_by_line;
     // Set by a NamesAndIDsTracker::WindowedEqScope, for the duration of one guess mint in
     // the branch layer: the eq atom need_direct_encoding_for is about to define belongs to
     // a frontier, and wants a deletable (Current) definition rather than a permanent one.
@@ -2254,41 +2254,41 @@ auto NamesAndIDsTracker::note_permanent_eq_reference(const SimpleIntegerVariable
     hoist_eq_to_top(id, v);
 }
 
-auto NamesAndIDsTracker::note_line_names_eq_atoms(ProofLineNumber line, NamedEqAtoms atoms) -> void
+auto NamesAndIDsTracker::note_line_names_atoms(ProofLineNumber line, NamedAtoms atoms) -> void
 {
     if (atoms.empty())
         return;
-    _imp->eq_atoms_by_line.insert_or_assign(line.number, move(atoms));
+    _imp->atoms_by_line.insert_or_assign(line.number, move(atoms));
 }
 
-auto NamesAndIDsTracker::eq_atoms_named_by(const ProofLine & line) const -> const NamedEqAtoms *
+auto NamesAndIDsTracker::atoms_named_by(const ProofLine & line) const -> const NamedAtoms *
 {
     // A labelled line is a model row, which is permanent and never windowed, so it can
     // name nothing the window could evict.
     const auto * n = get_if<ProofLineNumber>(&line);
     if (! n)
         return nullptr;
-    auto it = _imp->eq_atoms_by_line.find(n->number);
-    return it == _imp->eq_atoms_by_line.end() ? nullptr : &it->second;
+    auto it = _imp->atoms_by_line.find(n->number);
+    return it == _imp->atoms_by_line.end() ? nullptr : &it->second;
 }
 
-auto NamesAndIDsTracker::forget_eq_atom_names_for(const IntervalSet<long long> & lines) -> void
+auto NamesAndIDsTracker::forget_atom_names_for(const IntervalSet<long long> & lines) -> void
 {
-    if (_imp->eq_atoms_by_line.empty())
+    if (_imp->atoms_by_line.empty())
         return;
 
     // Iterate the intervals rather than the map: a level's deletions are contiguous runs,
     // and the map is (by design) far smaller than the run it covers, so probing per line
     // would be quadratic in the wrong direction on a long-lived level. Erasing over the
     // smaller of the two is what keeps this off the profile.
-    if (_imp->eq_atoms_by_line.size() <= 64) {
-        erase_if(_imp->eq_atoms_by_line, [&](const auto & entry) { return lines.contains(entry.first); });
+    if (_imp->atoms_by_line.size() <= 64) {
+        erase_if(_imp->atoms_by_line, [&](const auto & entry) { return lines.contains(entry.first); });
         return;
     }
 
     for (const auto & [l, u] : lines.each_interval())
         for (auto n = l; n <= u; ++n)
-            _imp->eq_atoms_by_line.erase(n);
+            _imp->atoms_by_line.erase(n);
 }
 
 auto NamesAndIDsTracker::evict_eq_literal(const SimpleIntegerVariableID & id, Integer v) -> bool
@@ -2488,7 +2488,9 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
         }
         bool any_hoist_pin = false, any_gate = false;
         for (const auto & [v, cause] : vs) {
-            if (cause && (*cause == Cause::EqHoist || *cause == Cause::InvarHoist || *cause == Cause::NogoodHoist || *cause == Cause::SoliHoist))
+            if (cause &&
+                (*cause == Cause::EqHoist || *cause == Cause::InvarHoist || *cause == Cause::NogoodHoist || *cause == Cause::SoliHoist ||
+                    *cause == Cause::LineHoist))
                 any_hoist_pin = true;
             if (cause && *cause == Cause::GateResident)
                 any_gate = true;
@@ -2513,8 +2515,9 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     long long boundary = get(by_cause, Cause::Boundary), model_time = get(by_cause, Cause::ModelTime);
     long long gate_resident = get(by_cause, Cause::GateResident);
     long long frontier_exempt = get(by_cause, Cause::FrontierExempt);
+    long long line_h = get(by_cause, Cause::LineHoist);
     long long would_free = view_pin + aux_pin;
-    long long would_not_free = eq_h + invar_h + nogood_h + soli_h;
+    long long would_not_free = eq_h + invar_h + nogood_h + soli_h + line_h;
     long long structural = boundary + model_time;
 
     stringstream o;
@@ -2530,11 +2533,17 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     emit(format("  step-3-WOULD-free (view_pin + aux_pin): {} ({:.1f}%)", would_free, pct(would_free)));
     emit(format("      view_pin:     {} ({:.1f}%)", view_pin, pct(view_pin)));
     emit(format("      aux_pin:      {} ({:.1f}%)", aux_pin, pct(aux_pin)));
-    emit(format("  step-3-would-NOT-free (eq + invar + nogood + soli hoist): {} ({:.1f}%)", would_not_free, pct(would_not_free)));
+    emit(format("  step-3-would-NOT-free (eq + invar + nogood + soli + line hoist): {} ({:.1f}%)", would_not_free, pct(would_not_free)));
     emit(format("      eq_hoist:     {} ({:.1f}%)", eq_h, pct(eq_h)));
     emit(format("      invar_hoist:  {} ({:.1f}%)", invar_h, pct(invar_h)));
     emit(format("      nogood_hoist: {} ({:.1f}%)", nogood_h, pct(nogood_h)));
     emit(format("      soli_hoist:   {} ({:.1f}%)", soli_h, pct(soli_h)));
+    // A ge atom pinned because an emitted Top line names it, found by the generic reference
+    // walk or by the union over a pol's operands. Broken out rather than folded into the
+    // others because it is the only cause that can fire from a `pol`, whose literals nothing
+    // else can see -- so if this reads 0 on a model with Hall-set reasoning, the union is
+    // not working.
+    emit(format("      line_hoist:   {} ({:.1f}%)", line_h, pct(line_h)));
     emit(format("  structural (boundary + model_time): {} ({:.1f}%)", structural, pct(structural)));
     emit(format("      boundary:     {} ({:.1f}%)", boundary, pct(boundary)));
     emit(format("      model_time:   {} ({:.1f}%)", model_time, pct(model_time)));
@@ -2547,14 +2556,15 @@ auto NamesAndIDsTracker::dump_order_encoding_stats() const -> void
     emit(format("  stitches (forget-path): {}", _imp->stats_stitches));
     emit(format("  reintroductions: {}", _imp->stats_reintroductions));
     emit(format("  duplicate-Top-stitches: {}", _imp->stats_dup_top_stitches));
-    emit(format("  hoists: eq={} invar={} nogood={} soli={} guess={}", get(_imp->stats_hoist_events, Cause::EqHoist),
+    emit(format("  hoists: eq={} invar={} nogood={} soli={} guess={} line={}", get(_imp->stats_hoist_events, Cause::EqHoist),
         get(_imp->stats_hoist_events, Cause::InvarHoist), get(_imp->stats_hoist_events, Cause::NogoodHoist),
-        get(_imp->stats_hoist_events, Cause::SoliHoist), get(_imp->stats_hoist_events, Cause::GuessHoist)));
+        get(_imp->stats_hoist_events, Cause::SoliHoist), get(_imp->stats_hoist_events, Cause::GuessHoist),
+        get(_imp->stats_hoist_events, Cause::LineHoist)));
     emit("variables by class:");
     emit(format("  fully-resident-by-view: {}", n_view));
     emit(format("  fully-resident-by-aux:  {}", n_aux));
     emit(format("  fully-resident-by-exemption: {}", n_exempt));
-    emit(format("  mixed (some eq/invar/nogood/soli-hoisted resident): {}", n_mixed));
+    emit(format("  mixed (some eq/invar/nogood/soli/line-hoisted resident): {}", n_mixed));
     emit(format("  gate-held (no hoist pins, some ge below min_chain gate): {}", n_gate_held));
     emit(format("  fully-deletable (no hoist pins): {}", n_deletable));
 

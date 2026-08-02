@@ -1499,7 +1499,12 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   `magic_square --size=4 --all-different gac` rejected in the **shipped** configuration
   because of it. Fixed automatically rather than by declaration — cutting planes cannot
   invent an atom, so the union over the operands over-approximates the result. Costs a
-  `ProofLine -> named eq atoms` map, scoped to what is live. Full write-up in
+  `ProofLine -> named atoms` map, scoped to what is live. Covers **ge** thresholds too, under
+  the new `LineHoist` residency cause -- but `line_hoist` is **0 on all 24** PR #632 rows, so
+  the ge half rests on the argument and a discriminating unit test, not on an instance.
+  Pinning ge from the ordinary reference walk was tried and **reverted**: a ge threshold is a
+  chain link, so hoisting it restructures the chain and breaks RUP steps that depend on its
+  positive-level shape. Full write-up in
   [order-encoding-deletion.md](order-encoding-deletion.md), "The `pol` gap".
 
 Stages A, B, B', B'', C, D, E, F and G have all landed in sequence. Stage D was the only one

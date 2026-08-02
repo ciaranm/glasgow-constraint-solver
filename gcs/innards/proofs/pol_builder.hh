@@ -79,7 +79,7 @@ namespace gcs::innards
         std::vector<std::pair<std::size_t, ProofLine>> _refs;
         // Eq atoms pushed as literals rather than reached through an operand's names --- the
         // one source of atoms that the operand union cannot see. See emit().
-        NamedEqAtoms _named_eq_atoms;
+        NamedAtoms _named_atoms;
         bool _empty = true;
         const NamesAndIDsTracker * _deview_tracker = nullptr;
 

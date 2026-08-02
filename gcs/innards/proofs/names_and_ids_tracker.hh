@@ -55,12 +55,6 @@ namespace gcs::innards
         return XLiteral{lit.id, ! lit.negated};
     }
 
-    enum class EqualsOrGreaterEqual
-    {
-        Equals,
-        GreaterEqual
-    };
-
     /**
      * Why a real variable's proof-time `ge` order literal is resident (for
      * GuessHoist, transiently resident at a positive backtrack level), under
@@ -97,7 +91,9 @@ namespace gcs::innards
         InvarHoist,     ///< hoisted to Top from an interval-partition atom's Top def (define_plain_invar).
         NogoodHoist,    ///< hoisted to Top by emit_learned_nogood.
         SoliHoist,      ///< hoisted to Top by the objective-improvement hoist in ProofLogger::solution.
-        GuessHoist      ///< hoisted to a positive backtrack level by ProofLogger::backtrack (transient; never a Top cause).
+        GuessHoist,     ///< hoisted to a positive backtrack level by ProofLogger::backtrack (transient; never a Top cause).
+        LineHoist       ///< hoisted to Top because an emitted Top line names it, found by the generic reference walk
+                        ///< (an inequality's own terms, or the union over a pol's operands).
     };
 
     /**
@@ -603,19 +599,19 @@ namespace gcs::innards
          * nothing" and the map stays proportional to the eq-naming lines rather than to the
          * proof. Recorded only while the eq window is live; a no-op otherwise.
          */
-        auto note_line_names_eq_atoms(ProofLineNumber line, NamedEqAtoms atoms) -> void;
+        auto note_line_names_atoms(ProofLineNumber line, NamedAtoms atoms) -> void;
 
         /**
          * The eq atoms \p line names, or nullptr if it names none (or predates tracking).
          */
-        [[nodiscard]] auto eq_atoms_named_by(const ProofLine & line) const -> const NamedEqAtoms *;
+        [[nodiscard]] auto atoms_named_by(const ProofLine & line) const -> const NamedAtoms *;
 
         /**
          * Drop the naming records for every line in \p lines, which forget_proof_level is
          * about to `del`. Without this the map would grow with the proof rather than with
          * what is live in it.
          */
-        auto forget_eq_atom_names_for(const IntervalSet<long long> & lines) -> void;
+        auto forget_atom_names_for(const IntervalSet<long long> & lines) -> void;
 
         /**
          * The eq mirror of evict_order_literal: take real variable \p id's live windowed

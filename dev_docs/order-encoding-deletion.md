@@ -916,10 +916,41 @@ rather than to the proof — entries only for lines that name an atom, nothing r
 the window is live, and `forget_eq_atom_names_for` drops each level's entries as its lines
 are `del`'d.
 
-**Still open**: the same argument applies to *ge* atoms named through a `pol`, which are not
-tracked. Stage F's ancestor rule covers the eviction path structurally and does not depend
-on knowing what a line names, so no instance is known to need the ge side — the position
-this section recorded for the eq side until one turned up.
+### The ge side, and where the symmetry stops
+
+The same union covers *ge* thresholds: a `pol` at Top pins the ge atoms its operands name,
+under `OrderEncodingResidencyCause::LineHoist`. Two things about it are worth recording,
+because both are easy to assume wrongly.
+
+**It fires nowhere measured.** `line_hoist` is **0 on all 24 rows** of the PR #632 set at
+gate 0 — no pol landing at Top names a live deletable ge threshold on any of them. So the
+ge half is carried on the strength of the argument and a discriminating unit test
+(`order_evict_test`, scenario `v`), not on the strength of an instance. It is defence in
+depth for a soundness property, not a measured win, and it should be read that way. Treat
+`line_hoist: 0` in the stats dump as the expected reading; a nonzero one means an instance
+has finally reached it.
+
+**Pinning ge from the ordinary reference walk does *not* work, and this was measured.** The
+obvious symmetry — extend the hoist-out rule so that any Top line naming a ge threshold pins
+it, exactly as it does for eq — **breaks proofs**:
+
+```
+comparison_test le_iff --seed=4979515          -> not implied by reverse unit propagation
+linear_constraint_le_iff_incremental (gate 0)  -> same
+```
+
+The reason is that the two atom kinds are not structurally alike. An eq atom stands alone,
+so hoisting one is a local move. A ge threshold is **a link in a chain**, and hoisting it to
+Top restructures that chain by stitching over its neighbours — so doing it at every Top line
+that happens to name a threshold pulls the chain out from under RUP steps that depend on its
+positive-level shape. The walk therefore *records* ge atoms (which is what the pol union
+reads) but does not pin them; only a pol pins, and only at pol-emit time, which is outside
+any other line's emission.
+
+So the ge coverage is exactly as wide as the pol gap, and no wider. The broader
+"any Top line naming a threshold pins it" rule remains unavailable, and stage F's ancestor
+rule is what covers the eviction path instead — which is the same conclusion stage F reached
+when the Top-pin idea was first tried against `table_layout`.
 
 ## Mapping the existing heuristics
 
