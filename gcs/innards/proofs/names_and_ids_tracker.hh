@@ -12,6 +12,7 @@
 #include <gcs/innards/proofs/reification.hh>
 #include <gcs/innards/reason.hh>
 #include <gcs/innards/s_expr.hh>
+#include <gcs/interval_set-fwd.hh>
 #include <gcs/proof.hh>
 #include <gcs/reification.hh>
 #include <gcs/variable_condition.hh>
@@ -578,6 +579,43 @@ namespace gcs::innards
          * windowed definition, every eq atom outside a window being permanent already.
          */
         auto note_permanent_eq_reference(const SimpleIntegerVariableID & id, Integer v) -> void;
+
+        /**
+         * Record that proof line \p line names exactly these eq atoms, so that a later
+         * `pol` citing it can find out what citing it would name.
+         *
+         * The problem this exists to solve: an inequality emitter can see its own literals
+         * and hand them to note_permanent_eq_reference, but a `pol` line's literals are the
+         * *result* of a cutting-planes derivation, which gcs never evaluates. A `pol` at Top
+         * over operands naming `x == v` is a permanent reference to `x == v` that is
+         * invisible in the emitted text, so nothing pinned it and the window evicted it
+         * anyway --- `magic_square --size=4 --all-different gac` rejects for exactly this
+         * reason (the all-different Hall-set at-most-one row, justify.cc).
+         *
+         * Cutting planes cannot invent an atom: addition, multiplication, division and
+         * saturation all yield a constraint over a subset of the operands' variables, and
+         * the only other sources (`add(XLiteral)`, `add_for_literal`, `weaken`) are handed
+         * to PolBuilder directly. So the union over a pol's operands, plus whatever it was
+         * given literally, over-approximates what the result names --- soundly, and with no
+         * declaration for anyone to forget.
+         *
+         * Only lines that name at least one atom get an entry, so absence means "names
+         * nothing" and the map stays proportional to the eq-naming lines rather than to the
+         * proof. Recorded only while the eq window is live; a no-op otherwise.
+         */
+        auto note_line_names_eq_atoms(ProofLineNumber line, NamedEqAtoms atoms) -> void;
+
+        /**
+         * The eq atoms \p line names, or nullptr if it names none (or predates tracking).
+         */
+        [[nodiscard]] auto eq_atoms_named_by(const ProofLine & line) const -> const NamedEqAtoms *;
+
+        /**
+         * Drop the naming records for every line in \p lines, which forget_proof_level is
+         * about to `del`. Without this the map would grow with the proof rather than with
+         * what is live in it.
+         */
+        auto forget_eq_atom_names_for(const IntervalSet<long long> & lines) -> void;
 
         /**
          * The eq mirror of evict_order_literal: take real variable \p id's live windowed

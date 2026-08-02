@@ -11,6 +11,7 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/innards/proofs/simplify_literal.hh>
 #include <gcs/innards/variable_id_utils.hh>
+#include <gcs/interval_set.hh>
 
 #include <algorithm>
 #include <cstdlib>
@@ -42,9 +43,11 @@ using namespace gcs;
 using namespace gcs::innards;
 
 using std::any_of;
+using std::erase_if;
 using std::fstream;
 using std::function;
 using std::generator;
+using std::get_if;
 using std::ios;
 using std::ios_base;
 using std::list;
@@ -389,6 +392,12 @@ struct NamesAndIDsTracker::Imp
     // reason (a level-0 entry would be a permanent def).
     map<SimpleIntegerVariableID, map<Integer, int>> live_eq_literals;
     map<int, vector<pair<SimpleIntegerVariableID, Integer>>> eq_literals_by_level;
+    // What each emitted proof line names, for lines that name any eq atom at all --- the
+    // only way a `pol` can find out what citing an operand would name, since its own
+    // literals are a derivation result rather than text. Entries exist only for lines that
+    // name something, and forget_eq_atom_names_for drops them as the lines are del'd, so
+    // this tracks what is live in the proof rather than the proof.
+    unordered_map<long long, NamedEqAtoms> eq_atoms_by_line;
     // Set by a NamesAndIDsTracker::WindowedEqScope, for the duration of one guess mint in
     // the branch layer: the eq atom need_direct_encoding_for is about to define belongs to
     // a frontier, and wants a deletable (Current) definition rather than a permanent one.
@@ -2243,6 +2252,43 @@ auto NamesAndIDsTracker::note_permanent_eq_reference(const SimpleIntegerVariable
         return;
 
     hoist_eq_to_top(id, v);
+}
+
+auto NamesAndIDsTracker::note_line_names_eq_atoms(ProofLineNumber line, NamedEqAtoms atoms) -> void
+{
+    if (atoms.empty())
+        return;
+    _imp->eq_atoms_by_line.insert_or_assign(line.number, move(atoms));
+}
+
+auto NamesAndIDsTracker::eq_atoms_named_by(const ProofLine & line) const -> const NamedEqAtoms *
+{
+    // A labelled line is a model row, which is permanent and never windowed, so it can
+    // name nothing the window could evict.
+    const auto * n = get_if<ProofLineNumber>(&line);
+    if (! n)
+        return nullptr;
+    auto it = _imp->eq_atoms_by_line.find(n->number);
+    return it == _imp->eq_atoms_by_line.end() ? nullptr : &it->second;
+}
+
+auto NamesAndIDsTracker::forget_eq_atom_names_for(const IntervalSet<long long> & lines) -> void
+{
+    if (_imp->eq_atoms_by_line.empty())
+        return;
+
+    // Iterate the intervals rather than the map: a level's deletions are contiguous runs,
+    // and the map is (by design) far smaller than the run it covers, so probing per line
+    // would be quadratic in the wrong direction on a long-lived level. Erasing over the
+    // smaller of the two is what keeps this off the profile.
+    if (_imp->eq_atoms_by_line.size() <= 64) {
+        erase_if(_imp->eq_atoms_by_line, [&](const auto & entry) { return lines.contains(entry.first); });
+        return;
+    }
+
+    for (const auto & [l, u] : lines.each_interval())
+        for (auto n = l; n <= u; ++n)
+            _imp->eq_atoms_by_line.erase(n);
 }
 
 auto NamesAndIDsTracker::evict_eq_literal(const SimpleIntegerVariableID & id, Integer v) -> bool

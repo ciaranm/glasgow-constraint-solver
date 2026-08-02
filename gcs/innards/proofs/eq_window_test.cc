@@ -1,4 +1,5 @@
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 
@@ -60,7 +61,7 @@ auto main() -> int
     // One variable per scenario, each with its own guard variable, so the scenarios cannot
     // perturb each other's chains. A guard is [0..3] rather than [0..1] so it gets the
     // ordinary bits encoding (a {0,1} variable is direct-only, and carries no order cuts).
-    SimpleIntegerVariableID x{0}, gx{1}, y{2}, gy{3}, w{4}, gw{5}, z{6}, gz{7};
+    SimpleIntegerVariableID x{0}, gx{1}, y{2}, gy{3}, w{4}, gw{5}, z{6}, gz{7}, p{8}, gp{9};
     model.set_up_integer_variable(x, 0_i, 15_i, "x", nullopt);
     model.set_up_integer_variable(gx, 0_i, 3_i, "gx", nullopt);
     model.set_up_integer_variable(y, 0_i, 15_i, "y", nullopt);
@@ -69,6 +70,8 @@ auto main() -> int
     model.set_up_integer_variable(gw, 0_i, 3_i, "gw", nullopt);
     model.set_up_integer_variable(z, 0_i, 15_i, "z", nullopt);
     model.set_up_integer_variable(gz, 0_i, 3_i, "gz", nullopt);
+    model.set_up_integer_variable(p, 0_i, 15_i, "p", nullopt);
+    model.set_up_integer_variable(gp, 0_i, 3_i, "gp", nullopt);
 
     // The guard is what makes each guess genuinely refutable, so the sibling clause the
     // window's tidy deletes is a real RUP rather than something asserted for the test:
@@ -77,6 +80,7 @@ auto main() -> int
     model.add_constraint(WPBSum{} + 8_i * gx + -1_i * x <= 0_i);
     model.add_constraint(WPBSum{} + 8_i * gw + -1_i * w <= 0_i);
     model.add_constraint(WPBSum{} + 8_i * gz + -1_i * z <= 0_i);
+    model.add_constraint(WPBSum{} + 8_i * gp + -1_i * p <= 0_i);
     // Descending: g >= 1 => var <= 7, so var == 15..8 are all refuted.
     model.add_constraint(WPBSum{} + 1_i * y + 8_i * gy <= 15_i);
 
@@ -208,6 +212,57 @@ auto main() -> int
     check(tracker.xliteral_for(z == 4_i) == z4, "z: the collapsed window's atom did not survive the forget");
     logger.emit_rup_proof_line(WPBSum{} + 1_i * (z != 4_i) + 1_i * (z >= 4_i) >= 1_i, ProofLevel::Current);
     logger.emit_rup_proof_line(WPBSum{} + 1_i * (z != 5_i) + 1_i * (z >= 5_i) >= 1_i, ProofLevel::Current);
+
+    // ---- p: a reference reached only through a `pol`'s operands ----
+    // The all-different Hall-set shape, which is what `magic_square --size=4
+    // --all-different gac` rejected on: pairwise at-most-one lines naming `p == 2` are
+    // emitted at Temporary, then folded by a PolBuilder into a line that lands at Top. The
+    // resulting constraint names `p == 2`, but nothing in the emitted `pol` text does --
+    // the literals are the arithmetic's result -- so the reference is invisible to any
+    // walk over the line, and before the operand-union rule nothing pinned the atom.
+    //
+    // The discriminating assertion is the count, not the proof: with the reference missed,
+    // the atom stays windowed and gets evicted, and only *then* does VeriPB reject. A test
+    // that checked verification alone would be reporting the symptom two steps downstream.
+    Literal outer_p{gp >= 1_i};
+    logger.enter_proof_level(2);
+    refute_sibling(outer_p, p == 2_i);
+    auto p2 = tracker.xliteral_for(p == 2_i);
+    check(tracker.live_windowed_eq_count(p) == 1, "p: the guess mint did not window the eq definition");
+
+    {
+        // Operands at Temporary, exactly as all_different/justify.cc emits them, and both
+        // genuinely RUP: `p == 2` implies `p >= 2` through the eq definition, and the guard
+        // constraint `8*gp <= p` refutes `p == 2` once `gp >= 1`. Their own level pins
+        // nothing -- it is the pol they feed that is permanent.
+        PolBuilder am1;
+        am1.add(logger.emit_rup_proof_line(WPBSum{} + 1_i * (p != 2_i) + 1_i * (p >= 2_i) >= 1_i, ProofLevel::Temporary));
+        am1.add(logger.emit_rup_proof_line(WPBSum{} + 1_i * (p != 2_i) + 1_i * (gp < 1_i) >= 1_i, ProofLevel::Temporary));
+        am1.saturate();
+        check(tracker.live_windowed_eq_count(p) == 1, "p: a Temporary operand should not pin on its own");
+        am1.emit(logger, ProofLevel::Top);
+    }
+
+    check(tracker.live_windowed_eq_count(p) == 0, "p: a Top pol over operands naming the atom did not take it out of the window");
+
+    // The window steps on regardless; the retained atom must survive both the tidy and the
+    // forget, as in scenario w.
+    logger.emit_eq_window_advance(vector<Literal>{outer_p}, p == 2_i, /*lower=*/true);
+    check(tracker.xliteral_for(p == 2_i) == p2, "p: the tidy evicted an atom a pol had pinned");
+
+    refute_sibling(outer_p, p == 3_i);
+    logger.emit_eq_window_advance(vector<Literal>{outer_p}, p == 3_i, /*lower=*/true);
+    logger.enter_proof_level(1);
+    logger.forget_proof_level(2);
+    check(tracker.xliteral_for(p == 2_i) == p2, "p: the pol-pinned atom did not survive the forget");
+    // Naming it again after the forget is the step that rejects if the ge thresholds its
+    // definition names were left deletable.
+    tracker.need_gevar(p, 2_i);
+    tracker.need_gevar(p, 3_i);
+    logger.enter_proof_level(2);
+    logger.emit_rup_proof_line(WPBSum{} + 1_i * (p != 2_i) + 1_i * (p < 3_i) >= 1_i, ProofLevel::Current);
+    logger.enter_proof_level(1);
+    logger.forget_proof_level(2);
 
     logger.enter_proof_level(0);
     logger.conclude_none();

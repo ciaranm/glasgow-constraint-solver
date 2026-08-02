@@ -6,9 +6,11 @@
 
 #include <util/overloaded.hh>
 
+using std::nullopt;
 using std::optional;
 using std::string;
 using std::visit;
+using std::ranges::contains;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -85,8 +87,24 @@ auto PolBuilder::add(const XLiteral & lit, Integer coeff, const NamesAndIDsTrack
     return *this;
 }
 
+auto PolBuilder::note_literal_pushed(const IntegerVariableCondition & lit) -> void
+{
+    // The other way an atom enters a pol: pushed as a literal rather than reached through
+    // an operand's names. `add(XLiteral)` cannot be caught here -- an XLiteral is already a
+    // proof name with no condition to read back -- but every eq atom a caller means to push
+    // arrives through add_for_literal, which still has the condition.
+    if (lit.op != VariableConditionOperator::Equal && lit.op != VariableConditionOperator::NotEqual)
+        return;
+    if (const auto * sid = std::get_if<SimpleIntegerVariableID>(&lit.var)) {
+        NamedEqAtom atom{*sid, lit.value};
+        if (! contains(_named_eq_atoms, atom))
+            _named_eq_atoms.push_back(atom);
+    }
+}
+
 auto PolBuilder::add_for_literal(NamesAndIDsTracker & tracker, const IntegerVariableCondition & lit) -> PolBuilder &
 {
+    note_literal_pushed(lit);
     visit(overloaded{
               [&](const ProofLine & l) { add(l); },        //
               [&](const XLiteral & x) { add(x, tracker); } //
@@ -97,6 +115,7 @@ auto PolBuilder::add_for_literal(NamesAndIDsTracker & tracker, const IntegerVari
 
 auto PolBuilder::add_for_literal(NamesAndIDsTracker & tracker, const IntegerVariableCondition & lit, Integer coeff) -> PolBuilder &
 {
+    note_literal_pushed(lit);
     visit(overloaded{
               [&](const ProofLine & l) { add(l, coeff); },        //
               [&](const XLiteral & x) { add(x, coeff, tracker); } //
@@ -167,7 +186,46 @@ auto PolBuilder::str() const -> string
 
 auto PolBuilder::emit(ProofLogger & logger, ProofLevel level) -> ProofLine
 {
-    auto result = logger.emit_proof_line(render(logger.get_current_proof_line().number), level);
+    // What does the constraint this pol derives actually name? The text cannot say: it is
+    // reverse-polish over *references*, and the result's literals fall out of the
+    // arithmetic. gcs never evaluates that arithmetic, so before this the answer was
+    // "nobody knows", and a Top pol over operands naming a windowed eq atom was an
+    // invisible permanent reference to it -- which is why
+    // `magic_square --size=4 --all-different gac` rejected under the window, at the
+    // all-different Hall-set at-most-one row.
+    //
+    // It does not need evaluating. Cutting planes cannot invent an atom: addition,
+    // multiplication, division and saturation all yield a constraint over a subset of the
+    // operands' variables. So the union over the operands' recorded names, plus whatever
+    // was pushed as a literal rather than a reference, over-approximates the result --
+    // soundly, automatically, and with nothing for a caller to declare or forget.
+    //
+    // Over-approximating costs only a pin that was not strictly required; under-approximating
+    // costs a rejected proof, so erring this way is the whole point.
+    NamedEqAtoms named;
+    if (logger.eq_window_active()) {
+        const auto & tracker = logger.names_and_ids_tracker();
+        auto note = [&](const NamedEqAtom & atom) {
+            if (! contains(named, atom))
+                named.push_back(atom);
+        };
+        for (const auto & [offset, line] : _refs)
+            if (const auto * from_operand = tracker.eq_atoms_named_by(line))
+                for (const auto & atom : *from_operand)
+                    note(atom);
+        for (const auto & atom : _named_eq_atoms)
+            note(atom);
+
+        // A pol landing at Top is a permanent reference to everything it names, so pin
+        // before the line is written -- hoisting emits lines of its own, and they have to
+        // precede the citing line. Rendering must therefore happen after this, or the
+        // relative operand offsets would be computed against a stale line counter.
+        if (level == ProofLevel::Top)
+            for (const auto & [id, v] : named)
+                logger.names_and_ids_tracker().note_permanent_eq_reference(id, v);
+    }
+
+    auto result = logger.emit_proof_line(render(logger.get_current_proof_line().number), level, nullopt, named);
     clear();
     return result;
 }
@@ -176,5 +234,6 @@ auto PolBuilder::clear() -> void
 {
     _text.clear();
     _refs.clear();
+    _named_eq_atoms.clear();
     _empty = true;
 }

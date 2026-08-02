@@ -77,10 +77,15 @@ namespace gcs::innards
         // logger's current line.
         std::string _text;
         std::vector<std::pair<std::size_t, ProofLine>> _refs;
+        // Eq atoms pushed as literals rather than reached through an operand's names --- the
+        // one source of atoms that the operand union cannot see. See emit().
+        NamedEqAtoms _named_eq_atoms;
         bool _empty = true;
         const NamesAndIDsTracker * _deview_tracker = nullptr;
 
         auto separator_if_not_first() -> void;
+
+        auto note_literal_pushed(const IntegerVariableCondition & lit) -> void;
 
         // Render to "pol ... ;". With current_max set, constraint references are
         // emitted as relative indices; without, absolutely.

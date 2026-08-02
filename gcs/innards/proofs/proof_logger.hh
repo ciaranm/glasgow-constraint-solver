@@ -51,7 +51,11 @@ namespace gcs::innards
 
         auto advance_proof_line_number() -> ProofLineNumber;
 
-        auto record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber;
+        // `names` is what the line being recorded names, for the eq atoms the window can
+        // evict: stored against the line so that a later `pol` citing it can discover what
+        // citing it would name. Empty for the overwhelming majority of lines, and always
+        // empty unless the window is live.
+        auto record_proof_line(ProofLineNumber line, ProofLevel level, const NamedEqAtoms & names = {}) -> ProofLineNumber;
 
         auto end_proof() -> void;
 
@@ -63,9 +67,15 @@ namespace gcs::innards
         // ProofLevel::Top that names a windowed eq atom is a permanent reference to it, so
         // the atom (and the ge thresholds its definition names) has to become permanent
         // before the line is written. Called from every emission funnel that renders a sum
-        // at a caller-chosen level; a no-op unless eq_window_active() and the line is at
-        // Top. See dev_docs/brancher-design.md, "The hoist-out rule".
-        auto note_top_eq_references(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> void;
+        // at a caller-chosen level; a no-op unless eq_window_active().
+        // See dev_docs/brancher-design.md, "The hoist-out rule".
+        //
+        // Returns what the line names, which the caller passes to record_proof_line. The
+        // walk now runs at *every* level rather than only Top, because a Temporary line
+        // that names an eq atom can still be cited by a `pol` that lands at Top --- which
+        // is exactly how all-different's Hall-set row referenced an atom nothing had
+        // pinned. Only the *pinning* is Top-only; the *recording* cannot be.
+        auto note_top_eq_references(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> NamedEqAtoms;
 
         // Record the incumbent an improving solution has just left resident, and take the
         // one it supersedes back out of the proof: `delc` its improvement constraint, `del`
@@ -420,8 +430,13 @@ namespace gcs::innards
          * Emit the specified text as a proof line. An optional label is written as a
          * leading `@<label>` (legal before any rule -- pol, rup, red, ia, ...), binding
          * the label to the constraint the line produces, as an OPB `@label` does.
+         *
+         * `names` is what the emitted line names, for the eq atoms the window can evict.
+         * The text is already rendered by the time it gets here, so this cannot be derived
+         * --- it is how PolBuilder hands over the union it computed over its operands.
          */
-        auto emit_proof_line(const std::string &, ProofLevel level, const std::optional<ProofLineLabel> & label = std::nullopt) -> ProofLine;
+        auto emit_proof_line(const std::string &, ProofLevel level, const std::optional<ProofLineLabel> & label = std::nullopt,
+            const NamedEqAtoms & names = {}) -> ProofLine;
 
         /**
          * Emit a proof step, with a specified rule. An optional label is written as a
