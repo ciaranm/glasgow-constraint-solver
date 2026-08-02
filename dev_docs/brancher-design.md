@@ -1486,7 +1486,23 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   unchanged: **this is a feature for weak-propagation, large-domain search, and real
   MiniZinc-shaped models are not that.**
 
-Stages A, B, B', B'', C, D and E have all landed in sequence. Stage D was the only one
+- **Stage F — do not evict an ancestor's order literal. DONE (#645).** A definition minted
+  at a level the search has since left can still be named by a live row from that level, so
+  `evict_order_literal` refuses when `level < logger->proof_level()`. Found by rebasing onto
+  main, which made `table_layout` reachable: it rejected at gate 0 and only at gate 0.
+  Conservative by design — the information to do better is not kept — and it costs nothing
+  measurable.
+- **Stage G — pin what a `pol` names, via the union over its operands. DONE.** The
+  eq-side member of stage F's family, reached by a path stage F's rule cannot see: a `pol`
+  at Top over operands naming a windowed eq atom is a permanent reference that no walk over
+  the emitted line can detect, because a pol's literals are the derivation's result.
+  `magic_square --size=4 --all-different gac` rejected in the **shipped** configuration
+  because of it. Fixed automatically rather than by declaration — cutting planes cannot
+  invent an atom, so the union over the operands over-approximates the result. Costs a
+  `ProofLine -> named eq atoms` map, scoped to what is live. Full write-up in
+  [order-encoding-deletion.md](order-encoding-deletion.md), "The `pol` gap".
+
+Stages A, B, B', B'', C, D, E, F and G have all landed in sequence. Stage D was the only one
 gated on work outside this task (the delc mechanics), and that gate is closed.
 
 ## Implementation gates (not owner calls)

@@ -877,11 +877,49 @@ rather than a bad definition.**
 The `t` scenario in `order_evict_test` is this shape reduced, and fails both ways without
 the rule (return values first, then the proof itself).
 
-The remaining gap, unclosed and so far theoretical: a `pol` line's result names literals
-that are a function of the derivation, which we do not evaluate, so nothing can detect a
-reference from one. All 28 `PolBuilder::emit(..., ProofLevel::Top)` call sites would need
-to declare what they name for that to be checkable. The ancestor rule does not depend on
-knowing, which is why it was preferred to extending the pin bookkeeping.
+### The `pol` gap: closed for eq atoms (stage G)
+
+A `pol` line's result names literals that are a function of the derivation, which we do not
+evaluate — so for a long time nothing could detect a reference from one, and this was
+recorded here as theoretical, with no instance known to need it. **An instance is now
+known**, and it was in the shipped configuration:
+
+```
+GCS_DELETE_ORDER_ENCODING=literals magic_square --size=4 --all-different gac --prove
+  -> Proofgoal 3515 could not be autoproven  (at pbp:4310)
+```
+
+Found by the PR #632 benchmark sweep, on a group C **control** row expected to be an exact
+no-op. Constraint 3515 is all-different's Hall-set at-most-one row (`all_different/
+justify.cc:39`): a `PolBuilder` fold of fifteen pairwise clauses naming `i[_13][eq8]`,
+emitted at Top and cached across the search. The eq window evicted `eq8`'s definition
+underneath it, and the "re-introduction" at pbp:4309–4310 was not one — the atom had never
+been free. `del id 3515` before that step makes it pass, which is how the row was confirmed
+to be the sole blocker.
+
+It turned out not to need evaluating, and not to need 28 declarations either. **Cutting
+planes cannot invent an atom**: addition, multiplication, division and saturation all yield
+a constraint over a subset of the operands' variables, and the only other sources —
+`add_for_literal` and `weaken`'s flag — are handed to `PolBuilder` directly. So the union
+over the operands' recorded names over-approximates what the result names, soundly and
+automatically. `PolBuilder::emit` computes it, pins it when the line lands at Top, and
+records it against the new line so a pol over pols composes.
+
+That is why this is automatic rather than a second level argument on the emitters: a
+declaration is a second source of truth that drifts from the expression it describes, and a
+missing one is silent until deletion is enabled *and* an instance happens to hit it — which
+is exactly how this survived every green suite until a benchmark sweep tripped over it.
+
+The cost is a `ProofLine -> named eq atoms` map, which is real and worth watching: it is the
+point at which we start tracking the live contents of the proof. It is kept to what is live
+rather than to the proof — entries only for lines that name an atom, nothing recorded unless
+the window is live, and `forget_eq_atom_names_for` drops each level's entries as its lines
+are `del`'d.
+
+**Still open**: the same argument applies to *ge* atoms named through a `pol`, which are not
+tracked. Stage F's ancestor rule covers the eviction path structurally and does not depend
+on knowing what a line names, so no instance is known to need the ge side — the position
+this section recorded for the eq side until one turned up.
 
 ## Mapping the existing heuristics
 
