@@ -149,6 +149,14 @@ struct NamesAndIDsTracker::Imp
     // it needs no synchronisation under the intended one-OPB, N-thread model.
     set<string> emitted_constraint_row_labels;
 
+    // Every flag created under a ConstraintID-keyed name, so that a caller
+    // holding the key can find it (find_proof_flag_values). Filled by
+    // make_proof_flag_named, which is the funnel for exactly those namespaces:
+    // an f[index][stem] flag is anonymous and has no key. Same write-only
+    // during model definition, read-only afterwards story as
+    // emitted_constraint_row_labels, and for the same reason.
+    map<string, optional<ProofFlag>> constraint_keyed_flags;
+
     unordered_map<SimpleOrProofOnlyIntegerVariableID, ProofLine, HashSimpleOrProofOnlyVariable> variable_at_least_one_constraints;
     // Indexed by variable index (variables are allocated with sequential
     // indices, so these stay dense), one per id kind.
@@ -1613,6 +1621,27 @@ auto NamesAndIDsTracker::constraint_row_label(const ConstraintID & id, const str
     return ProofLineLabel{label};
 }
 
+auto NamesAndIDsTracker::find_proof_flag_values(const ConstraintID & id, const ProofFlagKey & key) const -> optional<ProofFlag>
+{
+    // Built the same way create_proof_flag_values builds it, because it has to
+    // be the same string: that is what makes this a pure function of
+    // (id, values, annotation) rather than a lookup into per-solve state.
+    string name = "v[" + as_string(id) + "][";
+    for (size_t k = 0; k < key.values.size(); ++k) {
+        if (k != 0)
+            name += "_";
+        name += to_string(key.values[k]);
+    }
+    name += "]";
+    if (key.annotation)
+        name += "[" + *key.annotation + "]";
+
+    auto found = _imp->constraint_keyed_flags.find(name);
+    if (found == _imp->constraint_keyed_flags.end())
+        return nullopt;
+    return found->second;
+}
+
 auto NamesAndIDsTracker::create_proof_flag(const string & name) -> ProofFlag
 {
     ProofFlag result{allocate_flag_index(), true};
@@ -1693,6 +1722,15 @@ auto NamesAndIDsTracker::make_proof_flag_named(const string & full_name) -> Proo
     auto flagvar = allocate_flag_xliteral(result, full_name);
     _imp->flags.emplace(result, flagvar);
     _imp->flags.emplace(! result, ! flagvar);
+    // Indexed so that find_proof_flag_values can answer for it. A repeat is a
+    // name collision in the PB file --- two flags rendering as one variable ---
+    // so it is a bug in whichever namer produced it rather than something to
+    // resolve here, but this is not the place to be strict about it: the
+    // ambiguity that matters is a *lookup* that could name either, so record
+    // the first and let a repeat poison the entry.
+    auto [where, inserted] = _imp->constraint_keyed_flags.emplace(full_name, result);
+    if (! inserted)
+        where->second = nullopt; // poisoned: a lookup could name either, so it names neither
     return result;
 }
 

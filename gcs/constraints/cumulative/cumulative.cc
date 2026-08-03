@@ -1,5 +1,6 @@
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/constraints/cumulative/hints.hh>
+#include <gcs/constraints/cumulative/propagate.hh>
 #include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
@@ -186,14 +187,22 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
         _per_task_t_hi[i] = s_hi + _length_ub[i] - 1_i;
     }
 
-    if (_rules.overload)
-        prepare_overload_check(initial_state);
+    if (_rules.overload) {
+        auto overload_data =
+            prepare_cumulative_overload_check(_starts, _lengths, _heights, _active_tasks, _per_task_t_lo, _per_task_t_hi, initial_state);
+        _overload_tasks = move(overload_data.overload_tasks);
+        _time_slot_prefix = move(overload_data.time_slot_prefix);
+        _time_slot_lo = overload_data.time_slot_lo;
+    }
 
     return true;
 }
 
-auto Cumulative::prepare_overload_check(State & initial_state) -> void
+auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariableID> & starts, const vector<IntegerVariableID> & lengths,
+    const vector<IntegerVariableID> & heights, const vector<size_t> & active_tasks, const vector<Integer> & per_task_t_lo,
+    const vector<Integer> & per_task_t_hi, const State & initial_state) -> CumulativeOverloadData
 {
+    CumulativeOverloadData result;
     // Which tasks the window-energy lemma can speak about: a constant length
     // and height (so the task's energy is a constant, and its load in C_t is
     // h·active rather than the bit-linearised contrib), and a start that is a
@@ -206,49 +215,51 @@ auto Cumulative::prepare_overload_check(State & initial_state) -> void
     // whose presence is fixed true may join the energy set or the profile, and
     // its presence literal joins the reason. Nothing here consults a presence
     // variable yet because there is not one to consult.
-    _overload_tasks.clear();
-    for (auto i : _active_tasks) {
-        if (! is_constant_variable(_lengths[i]) || ! is_constant_variable(_heights[i]))
+    result.overload_tasks.clear();
+    for (auto i : active_tasks) {
+        if (! is_constant_variable(lengths[i]) || ! is_constant_variable(heights[i]))
             continue;
-        if (_length_vals[i] <= 0_i || _height_vals[i] <= 0_i)
+        if (const_value_of(lengths[i]) <= 0_i || const_value_of(heights[i]) <= 0_i)
             continue;
-        if (! std::holds_alternative<SimpleIntegerVariableID>(_starts[i]))
+        if (! std::holds_alternative<SimpleIntegerVariableID>(starts[i]))
             continue;
         // A start whose domain is exactly {0, 1} is direct-only encoded, so it
         // has no order literals for the lemma's bridges to cancel against.
-        auto [s_lo, s_hi] = initial_state.bounds(_starts[i]);
+        auto [s_lo, s_hi] = initial_state.bounds(starts[i]);
         if (s_lo == 0_i && s_hi == 1_i)
             continue;
-        _overload_tasks.push_back(i);
+        result.overload_tasks.push_back(i);
     }
 
-    if (_overload_tasks.empty())
-        return;
+    if (result.overload_tasks.empty())
+        return result;
 
     // Count the time points at which some task can be active, which is exactly
     // where define_proof_model writes a capacity line. A difference array over
     // the per-task windows, prefix-summed, so a window's count is one
     // subtraction.
-    Integer global_lo = _per_task_t_lo[_active_tasks.front()], global_hi = _per_task_t_hi[_active_tasks.front()];
-    for (auto i : _active_tasks) {
-        global_lo = min(global_lo, _per_task_t_lo[i]);
-        global_hi = max(global_hi, _per_task_t_hi[i]);
+    Integer global_lo = per_task_t_lo[active_tasks.front()], global_hi = per_task_t_hi[active_tasks.front()];
+    for (auto i : active_tasks) {
+        global_lo = min(global_lo, per_task_t_lo[i]);
+        global_hi = max(global_hi, per_task_t_hi[i]);
     }
 
     auto range = (global_hi - global_lo + 1_i).raw_value;
     vector<long long> starting_or_ending(static_cast<size_t>(range) + 1, 0);
-    for (auto i : _active_tasks) {
-        ++starting_or_ending[static_cast<size_t>((_per_task_t_lo[i] - global_lo).raw_value)];
-        --starting_or_ending[static_cast<size_t>((_per_task_t_hi[i] + 1_i - global_lo).raw_value)];
+    for (auto i : active_tasks) {
+        ++starting_or_ending[static_cast<size_t>((per_task_t_lo[i] - global_lo).raw_value)];
+        --starting_or_ending[static_cast<size_t>((per_task_t_hi[i] + 1_i - global_lo).raw_value)];
     }
 
-    _time_slot_lo = global_lo;
-    _time_slot_prefix.assign(static_cast<size_t>(range) + 1, 0_i);
+    result.time_slot_lo = global_lo;
+    result.time_slot_prefix.assign(static_cast<size_t>(range) + 1, 0_i);
     long long covering = 0;
     for (size_t k = 0; k < static_cast<size_t>(range); ++k) {
         covering += starting_or_ending[k];
-        _time_slot_prefix[k + 1] = _time_slot_prefix[k] + (covering > 0 ? 1_i : 0_i);
+        result.time_slot_prefix[k + 1] = result.time_slot_prefix[k] + (covering > 0 ? 1_i : 0_i);
     }
+
+    return result;
 }
 
 auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
@@ -431,519 +442,604 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         }
     });
 
+    CumulativeInputs inputs{.owner = constraint_id(),
+        .starts = move(_starts),
+        .lengths = move(_lengths),
+        .heights = move(_heights),
+        .capacity = _capacity,
+        .active_tasks = move(_active_tasks),
+        .before_flags = move(_before_flags),
+        .after_flags = move(_after_flags),
+        .active_flags = move(_active_flags),
+        .contrib_flags = move(_contrib_flags),
+        .per_task_t_lo = move(_per_task_t_lo),
+        .ends = move(_end),
+        .end_lines = end_lines,
+        .capacity_lines = move(_capacity_lines),
+        .rules = _rules,
+        .proof_mutation = _proof_mutation,
+        .overload_tasks = move(_overload_tasks),
+        .time_slot_prefix = move(_time_slot_prefix),
+        .time_slot_lo = _time_slot_lo};
+
     propagators.install(
         constraint_id(),
-        [starts = move(_starts), lengths_var = move(_lengths), heights_var = move(_heights), capacity_var = _capacity,
-            active_tasks = move(_active_tasks), before_flags = move(_before_flags), after_flags = move(_after_flags),
-            active_flags = move(_active_flags), contrib_flags = move(_contrib_flags), ends = move(_end), end_lines,
-            capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo), rules = _rules, mutation = _proof_mutation,
-            overload_tasks = move(_overload_tasks), time_slot_prefix = move(_time_slot_prefix), time_slot_lo = _time_slot_lo,
-            owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
-            // The capacity may be a variable: the load profile is infeasible
-            // only when it exceeds the *largest* still-allowed capacity, so the
-            // threshold for every overflow/blocked test is ub(capacity). When
-            // capacity is a genuine variable its bound is part of every reason.
-            auto capacity = state.upper_bound(capacity_var);
+        [inputs = move(inputs)](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
+            return propagate_cumulative(inputs, state, inference, logger);
+        },
+        triggers);
+}
 
-            // A height may be a variable: a task's *guaranteed* contribution to
-            // the load is its smallest still-allowed height, lb(h_i). For a
-            // constant height lb(h_i) is just its value. Variable heights' bounds
-            // are part of every reason, and the proof uses the cc flags.
-            auto hlb = [&](size_t i) { return state.lower_bound(heights_var[i]); };
-            auto h_is_var = [&](size_t i) { return ! is_constant_variable(heights_var[i]); };
+auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const State & state, auto & inference, ProofLogger * const logger)
+    -> PropagatorState
+{
+    // Named the way the propagator body has always named them, so that what
+    // follows is the same code whether a posted Cumulative or a derived one
+    // supplied the flags and lines.
+    const auto & starts = inputs.starts;
+    const auto & lengths_var = inputs.lengths;
+    const auto & heights_var = inputs.heights;
+    const auto & capacity_var = inputs.capacity;
+    const auto & active_tasks = inputs.active_tasks;
+    const auto & before_flags = inputs.before_flags;
+    const auto & after_flags = inputs.after_flags;
+    const auto & active_flags = inputs.active_flags;
+    const auto & contrib_flags = inputs.contrib_flags;
+    const auto & per_task_t_lo = inputs.per_task_t_lo;
+    const auto & end_lines = inputs.end_lines;
+    const auto & capacity_lines = inputs.capacity_lines;
+    const auto & rules = inputs.rules;
+    const auto & mutation = inputs.proof_mutation;
+    const auto & overload_tasks = inputs.overload_tasks;
+    const auto & time_slot_prefix = inputs.time_slot_prefix;
+    const auto & time_slot_lo = inputs.time_slot_lo;
+    const auto & owner = inputs.owner;
 
-            // A length may be a variable: a task's *mandatory* part and its
-            // guaranteed footprint when placed use the smallest still-allowed
-            // duration lb(l_i); the possible-active window uses ub(l_i). For a
-            // constant length both are its value. Variable-length bounds join
-            // every reason.
-            auto llb = [&](size_t i) { return state.lower_bound(lengths_var[i]); };
-            auto lub = [&](size_t i) { return state.upper_bound(lengths_var[i]); };
-            auto l_is_var = [&](size_t i) { return ! is_constant_variable(lengths_var[i]); };
-            auto s_is_var = [&](size_t i) { return ! is_constant_variable(starts[i]); };
+    // The capacity may be a variable: the load profile is infeasible
+    // only when it exceeds the *largest* still-allowed capacity, so the
+    // threshold for every overflow/blocked test is ub(capacity). When
+    // capacity is a genuine variable its bound is part of every reason.
+    auto capacity = state.upper_bound(capacity_var);
 
-            // For a task whose start AND length are both variables, after_{i,t}
-            // is reified on s_i + l_i. To pin after = 1 we first materialise the
-            // single-variable end ≥ s_lo + lb(l_i) with a pol over end's in-proof
-            // `end ≥ s + l` line plus the two operand order-literal defining lines;
-            // the after = 1 RUP is then single-variable in end, closing against the
-            // `end ≥ t+1 → after` bridge lemma the initialiser emitted (just like
-            // the constant-duration case). s_lo is the start lower bound that, with
-            // lb(l_i), reaches t+1: the chain running bound for lb-push, t−lb(l_j)+1
-            // (= ¬ext_lit) for ub-push, lb(s_i) for a mandatory task. Only needed
-            // when both operands vary (else after is already single-variable).
-            auto materialise_after_sum = [&](size_t i, Integer s_lo) -> void {
-                if (! (l_is_var(i) && s_is_var(i)))
-                    return;
-                PolBuilder sp;
-                sp.add((*end_lines)[i]->first);
-                sp.add_for_literal(logger->names_and_ids_tracker(), starts[i] >= s_lo);
-                sp.add_for_literal(logger->names_and_ids_tracker(), lengths_var[i] >= llb(i));
-                sp.emit(*logger, ProofLevel::Temporary);
-            };
+    // A height may be a variable: a task's *guaranteed* contribution to
+    // the load is its smallest still-allowed height, lb(h_i). For a
+    // constant height lb(h_i) is just its value. Variable heights' bounds
+    // are part of every reason, and the proof uses the cc flags.
+    auto hlb = [&](size_t i) { return state.lower_bound(heights_var[i]); };
+    auto h_is_var = [&](size_t i) { return ! is_constant_variable(heights_var[i]); };
 
-            vector<IntegerVariableID> reason_vars = starts;
-            if (! is_constant_variable(capacity_var))
-                reason_vars.push_back(capacity_var);
-            for (auto i : active_tasks) {
-                if (h_is_var(i))
-                    reason_vars.push_back(heights_var[i]);
-                if (l_is_var(i))
-                    reason_vars.push_back(lengths_var[i]);
-            }
+    // A length may be a variable: a task's *mandatory* part and its
+    // guaranteed footprint when placed use the smallest still-allowed
+    // duration lb(l_i); the possible-active window uses ub(l_i). For a
+    // constant length both are its value. Variable-length bounds join
+    // every reason.
+    auto llb = [&](size_t i) { return state.lower_bound(lengths_var[i]); };
+    auto lub = [&](size_t i) { return state.upper_bound(lengths_var[i]); };
+    auto l_is_var = [&](size_t i) { return ! is_constant_variable(lengths_var[i]); };
+    auto s_is_var = [&](size_t i) { return ! is_constant_variable(starts[i]); };
 
-            // Proof helper: pin task i's guaranteed load contribution at t and
-            // return a (line, coeff) pair to feed the time-table pol. For a
-            // constant height that is "active = 1" scaled by the height; for a
-            // variable height it is "contrib >= lb(h_i)" with coefficient 1
-            // (contrib is the proof-only product h_i·active in C_t). The
-            // before/after RUPs give VeriPB the units to chase active's AND-gate.
-            auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t) -> std::pair<ProofLine, Integer> {
-                auto fi = (t - per_task_t_lo[i]).raw_value;
-                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                // A mandatory task has s_i + l_i ≥ lb(s_i) + lb(l_i) > t.
-                materialise_after_sum(i, state.lower_bound(starts[i]));
-                logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                auto active_line =
-                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
-                if (! h_is_var(i))
-                    return {active_line, hlb(i)};
-                auto contrib_line =
-                    logger->emit_rup_proof_line_under_reason(reason, contrib_sum_of(contrib_flags[i][fi]) >= hlb(i), ProofLevel::Temporary);
-                return {contrib_line, 1_i};
-            };
+    // For a task whose start AND length are both variables, after_{i,t}
+    // is reified on s_i + l_i. To pin after = 1 we first materialise the
+    // single-variable end ≥ s_lo + lb(l_i) with a pol over end's in-proof
+    // `end ≥ s + l` line plus the two operand order-literal defining lines;
+    // the after = 1 RUP is then single-variable in end, closing against the
+    // `end ≥ t+1 → after` bridge lemma the initialiser emitted (just like
+    // the constant-duration case). s_lo is the start lower bound that, with
+    // lb(l_i), reaches t+1: the chain running bound for lb-push, t−lb(l_j)+1
+    // (= ¬ext_lit) for ub-push, lb(s_i) for a mandatory task. Only needed
+    // when both operands vary (else after is already single-variable).
+    auto materialise_after_sum = [&](size_t i, Integer s_lo) -> void {
+        if (! (l_is_var(i) && s_is_var(i)))
+            return;
+        PolBuilder sp;
+        sp.add((*end_lines)[i]->first);
+        sp.add_for_literal(logger->names_and_ids_tracker(), starts[i] >= s_lo);
+        sp.add_for_literal(logger->names_and_ids_tracker(), lengths_var[i] >= llb(i));
+        sp.emit(*logger, ProofLevel::Temporary);
+    };
 
-            // Proof helper for the pushed task j, pinned under the EXTENDED
-            // reason {reason ∧ ¬ext_lit} (ext_lit appended as a disjunct). For a
-            // constant height it returns (active_j+ext_lit ≥ 1, h_j); for a
-            // variable height it deposits contrib_j + lb(h_j)·ext_lit ≥ lb(h_j)
-            // (vacuous when ext_lit holds, "contrib_j ≥ lb(h_j)" otherwise) and
-            // returns that line with coefficient 1.
-            auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, IntegerVariableCondition ext_lit,
-                                  Integer s_lo_after) -> std::pair<ProofLine, Integer> {
-                auto fj = (t - per_task_t_lo[j_idx]).raw_value;
-                logger->emit_rup_proof_line_under_reason(
-                    reason, WPBSum{} + 1_i * before_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-                // s_lo_after + lb(l_j) ≥ t+1 gives after_{j,t} = 1 (under ¬ext_lit
-                // for ub-push, under the running bound for lb-push).
-                materialise_after_sum(j_idx, s_lo_after);
-                logger->emit_rup_proof_line_under_reason(
-                    reason, WPBSum{} + 1_i * after_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-                auto active_line = logger->emit_rup_proof_line_under_reason(
-                    reason, WPBSum{} + 1_i * active_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-                if (! h_is_var(j_idx))
-                    return {active_line, hlb(j_idx)};
-                auto contrib_line = logger->emit_rup_proof_line_under_reason(
-                    reason, contrib_sum_of(contrib_flags[j_idx][fj]) + hlb(j_idx) * ext_lit >= hlb(j_idx), ProofLevel::Temporary);
-                return {contrib_line, 1_i};
-            };
+    vector<IntegerVariableID> reason_vars = starts;
+    if (! is_constant_variable(capacity_var))
+        reason_vars.push_back(capacity_var);
+    for (auto i : active_tasks) {
+        if (h_is_var(i))
+            reason_vars.push_back(heights_var[i]);
+        if (l_is_var(i))
+            reason_vars.push_back(lengths_var[i]);
+    }
 
-            // Time-table consistency. The mandatory part of task i is the
-            // half-open interval [lst_i, eet_i) where lst_i = ub(s_i) and
-            // eet_i = lb(s_i) + l_i. Summing heights over mandatory parts
-            // gives the load profile. Each task's bounds are then pushed
-            // away from time points where placing it would force the load
-            // over capacity.
+    // Proof helper: pin task i's guaranteed load contribution at t and
+    // return a (line, coeff) pair to feed the time-table pol. For a
+    // constant height that is "active = 1" scaled by the height; for a
+    // variable height it is "contrib >= lb(h_i)" with coefficient 1
+    // (contrib is the proof-only product h_i·active in C_t). The
+    // before/after RUPs give VeriPB the units to chase active's AND-gate.
+    auto pin_contributor = [&](const ReasonLiterals & reason, size_t i, Integer t) -> std::pair<ProofLine, Integer> {
+        auto fi = (t - per_task_t_lo[i]).raw_value;
+        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+        // A mandatory task has s_i + l_i ≥ lb(s_i) + lb(l_i) > t.
+        materialise_after_sum(i, state.lower_bound(starts[i]));
+        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+        auto active_line = logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flags[i][fi] >= 1_i, ProofLevel::Temporary);
+        if (! h_is_var(i))
+            return {active_line, hlb(i)};
+        auto contrib_line = logger->emit_rup_proof_line_under_reason(reason, contrib_sum_of(contrib_flags[i][fi]) >= hlb(i), ProofLevel::Temporary);
+        return {contrib_line, 1_i};
+    };
 
-            // Determine the time window we care about: the union of every
-            // task's possibly-active range. This bounds both the mandatory
-            // profile and the per-task bound search.
-            bool any = false;
-            Integer t_lo = 0_i, t_hi = -1_i;
-            for (auto i : active_tasks) {
-                auto [s_lo, s_hi] = state.bounds(starts[i]);
-                auto lo = s_lo, hi = s_hi + lub(i) - 1_i;
-                if (! any || lo < t_lo)
-                    t_lo = lo;
-                if (! any || hi > t_hi)
-                    t_hi = hi;
-                any = true;
-            }
-            if (! any)
-                return PropagatorState::DisableUntilBacktrack;
+    // Proof helper for the pushed task j, pinned under the EXTENDED
+    // reason {reason ∧ ¬ext_lit} (ext_lit appended as a disjunct). For a
+    // constant height it returns (active_j+ext_lit ≥ 1, h_j); for a
+    // variable height it deposits contrib_j + lb(h_j)·ext_lit ≥ lb(h_j)
+    // (vacuous when ext_lit holds, "contrib_j ≥ lb(h_j)" otherwise) and
+    // returns that line with coefficient 1.
+    auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, IntegerVariableCondition ext_lit,
+                          Integer s_lo_after) -> std::pair<ProofLine, Integer> {
+        auto fj = (t - per_task_t_lo[j_idx]).raw_value;
+        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+        // s_lo_after + lb(l_j) ≥ t+1 gives after_{j,t} = 1 (under ¬ext_lit
+        // for ub-push, under the running bound for lb-push).
+        materialise_after_sum(j_idx, s_lo_after);
+        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+        auto active_line =
+            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+        if (! h_is_var(j_idx))
+            return {active_line, hlb(j_idx)};
+        auto contrib_line = logger->emit_rup_proof_line_under_reason(
+            reason, contrib_sum_of(contrib_flags[j_idx][fj]) + hlb(j_idx) * ext_lit >= hlb(j_idx), ProofLevel::Temporary);
+        return {contrib_line, 1_i};
+    };
 
-            auto range = (t_hi - t_lo + 1_i).raw_value;
-            vector<Integer> mand_load(range, 0_i);
+    // Time-table consistency. The mandatory part of task i is the
+    // half-open interval [lst_i, eet_i) where lst_i = ub(s_i) and
+    // eet_i = lb(s_i) + l_i. Summing heights over mandatory parts
+    // gives the load profile. Each task's bounds are then pushed
+    // away from time points where placing it would force the load
+    // over capacity.
 
+    // Determine the time window we care about: the union of every
+    // task's possibly-active range. This bounds both the mandatory
+    // profile and the per-task bound search.
+    bool any = false;
+    Integer t_lo = 0_i, t_hi = -1_i;
+    for (auto i : active_tasks) {
+        auto [s_lo, s_hi] = state.bounds(starts[i]);
+        auto lo = s_lo, hi = s_hi + lub(i) - 1_i;
+        if (! any || lo < t_lo)
+            t_lo = lo;
+        if (! any || hi > t_hi)
+            t_hi = hi;
+        any = true;
+    }
+    if (! any)
+        return PropagatorState::DisableUntilBacktrack;
+
+    auto range = (t_hi - t_lo + 1_i).raw_value;
+    vector<Integer> mand_load(range, 0_i);
+
+    for (auto i : active_tasks) {
+        auto lst = state.upper_bound(starts[i]);
+        auto eet = state.lower_bound(starts[i]) + llb(i);
+        if (lst < eet)
+            for (Integer t = lst; t < eet; ++t)
+                mand_load[(t - t_lo).raw_value] += hlb(i);
+    }
+
+    for (auto idx = 0; rules.time_table && idx < range; ++idx)
+        if (mand_load[idx] > capacity) {
+            auto violating_t = t_lo + Integer{idx};
+
+            // Tasks whose mandatory part covers violating_t — the ones
+            // we'll pin to active=1 in the proof.
+            vector<size_t> contributing;
             for (auto i : active_tasks) {
                 auto lst = state.upper_bound(starts[i]);
                 auto eet = state.lower_bound(starts[i]) + llb(i);
-                if (lst < eet)
-                    for (Integer t = lst; t < eet; ++t)
-                        mand_load[(t - t_lo).raw_value] += hlb(i);
+                if (lst < eet && violating_t >= lst && violating_t < eet)
+                    contributing.push_back(i);
             }
 
-            for (auto idx = 0; rules.time_table && idx < range; ++idx)
-                if (mand_load[idx] > capacity) {
-                    auto violating_t = t_lo + Integer{idx};
-
-                    // Tasks whose mandatory part covers violating_t — the ones
-                    // we'll pin to active=1 in the proof.
-                    vector<size_t> contributing;
-                    for (auto i : active_tasks) {
-                        auto lst = state.upper_bound(starts[i]);
-                        auto eet = state.lower_bound(starts[i]) + llb(i);
-                        if (lst < eet && violating_t >= lst && violating_t < eet)
-                            contributing.push_back(i);
-                    }
-
-                    auto justify = [&, violating_t, contributing](const ReasonLiterals & reason) -> void {
-                        if (! logger)
-                            return;
-                        // Pin every contributing task's guaranteed load at
-                        // violating_t, then combine those lines with C_t in a
-                        // single pol. The result is unsatisfiable under the
-                        // reason context (the pinned loads already exceed
-                        // ub(capacity)), closing the framework's wrapping RUP.
-                        PolBuilder pol;
-                        pol.add(capacity_lines.at(violating_t));
-                        for (auto i : contributing) {
-                            auto [line, coeff] = pin_contributor(reason, i, violating_t);
-                            pol.add(line, coeff);
-                        }
-                        pol.emit(*logger, ProofLevel::Temporary);
-                    };
-
-                    inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
-                    return PropagatorState::DisableUntilBacktrack;
-                }
-
-            // Overload checking: rule (OC') of Cloutier & Quimper, CP 2026,
-            // strengthened by the mandatory-part profile to their (TTOC). If
-            // the tasks that must run entirely inside a time window carry more
-            // energy than the window can supply, the constraint is infeasible.
-            // This is conflict-only --- no bound moves --- so a bug here shows
-            // up as a missing solution, which is what the enumeration tests
-            // are the net for.
-            //
-            // The windows worth trying are [a, b) with a an earliest start and
-            // b a latest completion time. I(a, b), the tasks with est >= a and
-            // lct <= b, contribute their whole energy p·h; every other task
-            // contributes whatever of its mandatory part falls inside the
-            // window. A task in I(a, b) has its mandatory part inside the
-            // window as well, so that second term is the window's total
-            // mandatory load minus I(a, b)'s --- which makes both terms
-            // accumulate as b grows, and the whole sweep quadratic.
-            //
-            // Two restrictions, both of which only weaken the check: the
-            // capacity must be constant (a variable one would leave a
-            // (b − a)·capacity term in the conflict pol for the wrapping RUP
-            // to dispose of over the capacity's bits, which it cannot do in
-            // general), and only eligible tasks (see prepare_overload_check)
-            // may join I(a, b).
-            if (rules.overload && ! overload_tasks.empty() && is_constant_variable(capacity_var)) {
-                vector<Integer> mand_prefix(static_cast<size_t>(range) + 1, 0_i);
-                for (auto idx = 0; idx < range; ++idx)
-                    mand_prefix[static_cast<size_t>(idx) + 1] = mand_prefix[static_cast<size_t>(idx)] + mand_load[static_cast<size_t>(idx)];
-
-                // Mandatory load inside [from, to), over every task.
-                auto profile_within = [&](Integer from, Integer to) {
-                    return mand_prefix[static_cast<size_t>((to - t_lo).raw_value)] - mand_prefix[static_cast<size_t>((from - t_lo).raw_value)];
-                };
-
-                // How many time points in [from, to) some task can occupy.
-                // Anywhere else supplies nothing to this window's tasks (and
-                // has no capacity line to cite), so it is not counted.
-                auto slots_within = [&](Integer from, Integer to) {
-                    return time_slot_prefix[static_cast<size_t>((to - time_slot_lo).raw_value)] -
-                        time_slot_prefix[static_cast<size_t>((from - time_slot_lo).raw_value)];
-                };
-
-                struct Candidate
-                {
-                    size_t task;
-                    Integer est, lct, energy, mandatory;
-                };
-
-                vector<Candidate> candidates;
-                candidates.reserve(overload_tasks.size());
-                for (auto i : overload_tasks) {
-                    auto [s_lo, s_hi] = state.bounds(starts[i]);
-                    auto p = llb(i), h = hlb(i);
-                    candidates.push_back(Candidate{i, s_lo, s_hi + p, p * h, h * max(0_i, s_lo + p - s_hi)});
-                }
-                sort(candidates, [](const Candidate & a, const Candidate & b) { return a.lct < b.lct; });
-
-                vector<Integer> window_starts;
-                window_starts.reserve(candidates.size());
-                for (const auto & c : candidates)
-                    window_starts.push_back(c.est);
-                sort(window_starts);
-
-                for (size_t w = 0; w < window_starts.size(); ++w) {
-                    if (w > 0 && window_starts[w] == window_starts[w - 1])
-                        continue;
-                    auto a = window_starts[w];
-
-                    Integer energy = 0_i, inside_mandatory = 0_i;
-                    vector<size_t> inside_tasks;
-                    for (const auto & c : candidates) {
-                        if (c.est < a)
-                            continue;
-                        energy += c.energy;
-                        inside_mandatory += c.mandatory;
-                        inside_tasks.push_back(c.task);
-
-                        auto b = c.lct;
-                        auto supply = capacity * slots_within(a, b);
-                        auto outside_profile = rules.profile_overload ? profile_within(a, b) - inside_mandatory : 0_i;
-                        if (energy + outside_profile <= supply)
-                            continue;
-
-                        // (OC') on its own, or does the conflict need the
-                        // profile of the tasks outside the window?
-                        auto uses_profile = energy <= supply;
-
-                        // The (i, t) pairs whose compulsory load the proof
-                        // pins: exactly what outside_profile counted.
-                        vector<pair<size_t, Integer>> pins;
-                        if (uses_profile) {
-                            vector<bool> inside(starts.size(), false);
-                            for (auto i : inside_tasks)
-                                inside[i] = true;
-                            for (auto j : active_tasks) {
-                                if (inside[j])
-                                    continue;
-                                auto lst = state.upper_bound(starts[j]);
-                                auto eet = state.lower_bound(starts[j]) + llb(j);
-                                for (Integer t = max(lst, a); t < min(eet, b); ++t)
-                                    pins.emplace_back(j, t);
-                            }
-                        }
-
-                        auto justify = [&, a, b, inside_tasks, pins, uses_profile](const ReasonLiterals & reason) -> void {
-                            if (! logger)
-                                return;
-                            logger->emit_proof_comment("cumulative overload conflict window=[" + std::to_string(a.raw_value) + "," +
-                                std::to_string(b.raw_value) + ") rule=" + (uses_profile ? "ttoc" : "oc"));
-
-                            // Tests only: each of these breaks one step of what
-                            // follows, and each must make VeriPB reject the
-                            // proof. See CumulativeProofMutation.
-                            auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
-                            auto shrink_lemma_window = std::holds_alternative<cumulative_proof_mutation::ShrinkLemmaWindow>(mutation);
-                            auto overstate_energy = std::holds_alternative<cumulative_proof_mutation::OverstateWindowEnergy>(mutation);
-
-                            // The capacity available across the window, plus
-                            // each contained task's window energy scaled by its
-                            // height, plus (for (TTOC)) the pinned compulsory
-                            // load of the tasks outside it. Each contained
-                            // task's activity terms cancel exactly against its
-                            // terms in the capacity lines, leaving a constraint
-                            // with nothing but negative coefficients on the
-                            // left and a positive right hand side.
-                            PolBuilder pol;
-                            for (Integer t = a; t < b; ++t) {
-                                if (omit_capacity_line && t == b - 1_i)
-                                    continue;
-                                auto line = capacity_lines.find(t);
-                                if (line != capacity_lines.end())
-                                    pol.add(line->second);
-                            }
-
-                            for (auto i : inside_tasks) {
-                                auto energy_line = window_energy::derive_window_energy(*logger, reason,
-                                    window_energy::ConstantLengthTask{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i],
-                                        before_flags[i], after_flags[i], active_flags[i]},
-                                    a, shrink_lemma_window ? b - 1_i : b, state.bounds(starts[i]), ProofLevel::Temporary);
-                                if (! energy_line) {
-                                    // Only reachable under the shrunk-window
-                                    // mutation, where a task can be left with
-                                    // nothing derivable at all.
-                                    if (shrink_lemma_window)
-                                        continue;
-                                    throw ProofError{"cumulative overload: a task in the window has no derivable energy"};
-                                }
-                                if (! shrink_lemma_window && energy_line->bound != llb(i))
-                                    throw ProofError{"cumulative overload: window energy derivation is weaker than the check assumed"};
-
-                                auto line = energy_line->line;
-                                if (overstate_energy && i == inside_tasks.front()) {
-                                    WPBSum activity;
-                                    for (Integer t = energy_line->lo; t < energy_line->hi; ++t)
-                                        activity += 1_i * active_flags[i][static_cast<size_t>((t - per_task_t_lo[i]).raw_value)];
-                                    line = logger->emit_rup_proof_line_under_reason(
-                                        reason, move(activity) >= energy_line->bound + 1_i, ProofLevel::Temporary);
-                                }
-                                pol.add(line, hlb(i));
-                            }
-
-                            for (const auto & [j, t] : pins) {
-                                auto [line, coeff] = pin_contributor(reason, j, t);
-                                pol.add(line, coeff);
-                            }
-
-                            pol.emit(*logger, ProofLevel::Temporary);
-                        };
-
-                        inference.contradiction(
-                            logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, generic_reason(reason_vars));
-                        return PropagatorState::DisableUntilBacktrack;
-                    }
-                }
-            }
-
-            // The remaining work --- pushing each task's bounds away from the
-            // times where placing it would overflow the profile --- is
-            // time-table reasoning too.
-            if (! rules.time_table)
-                return PropagatorState::Enable;
-
-            // One step of a bound-push proof chain: a blocked time t and the
-            // tasks (≠ j) whose mandatory parts cover t. Used by both
-            // lb-push and ub-push.
-            struct ChainStep
-            {
-                Integer t;
-                vector<size_t> contributing;
-                // Start lower bound that, with lb(l_j), forces after_{j,t}=1:
-                // the running bound for lb-push, t−lb(l_j)+1 for ub-push.
-                Integer s_lo_after;
-            };
-
-            // Helper: emit (a)–(d) for one chain step.
-            //
-            // `ext_lit` is the literal added to the reason in PB form (= the
-            // negation of "task j is active at t"-as-bounded-by-the-running
-            // half):
-            //   lb-push:  ext_lit = (s_j ≥ t + 1)
-            //   ub-push:  ext_lit = (s_j ≤ t − l_j)
-            //
-            // `emit_intermediate` deposits ext_lit as a unit under reason —
-            // needed for every step except the last (the framework's wrapping
-            // RUP closes the final inference).
-            auto emit_chain_step = [&](size_t j_idx, Integer t, const vector<size_t> & contributing, IntegerVariableCondition ext_lit,
-                                       Integer s_lo_after, bool emit_intermediate, const ReasonLiterals & reason) -> void {
-                // (a) Pin each task i ≠ j mandatory at t under the reason, and
-                // (b) pin the pushed task j under the EXTENDED reason. Then
-                // (c) combine all pinned load lines with C_t in one pol. After
-                // cancellation the pol is dominated by (load − capacity)·ext_lit,
-                // forcing ext_lit = 1 (the new bound) under the reason context.
+            auto justify = [&, violating_t, contributing](const ReasonLiterals & reason) -> void {
+                if (! logger)
+                    return;
+                // Pin every contributing task's guaranteed load at
+                // violating_t, then combine those lines with C_t in a
+                // single pol. The result is unsatisfiable under the
+                // reason context (the pinned loads already exceed
+                // ub(capacity)), closing the framework's wrapping RUP.
                 PolBuilder pol;
-                pol.add(capacity_lines.at(t));
+                pol.add(capacity_lines.at(violating_t));
                 for (auto i : contributing) {
-                    auto [line, coeff] = pin_contributor(reason, i, t);
+                    auto [line, coeff] = pin_contributor(reason, i, violating_t);
                     pol.add(line, coeff);
                 }
-                auto [j_line, j_coeff] = pin_pushed(reason, j_idx, t, ext_lit, s_lo_after);
-                pol.add(j_line, j_coeff);
                 pol.emit(*logger, ProofLevel::Temporary);
-
-                // (d) Deposit the running-bound advance as a fact under
-                // reason for the next chain step's UP.
-                if (emit_intermediate)
-                    logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
             };
 
-            for (auto j : active_tasks) {
-                auto [cur_lb, cur_ub] = state.bounds(starts[j]);
-                if (cur_lb == cur_ub)
+            inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
+            return PropagatorState::DisableUntilBacktrack;
+        }
+
+    // Overload checking: rule (OC') of Cloutier & Quimper, CP 2026,
+    // strengthened by the mandatory-part profile to their (TTOC). If
+    // the tasks that must run entirely inside a time window carry more
+    // energy than the window can supply, the constraint is infeasible.
+    // This is conflict-only --- no bound moves --- so a bug here shows
+    // up as a missing solution, which is what the enumeration tests
+    // are the net for.
+    //
+    // The windows worth trying are [a, b) with a an earliest start and
+    // b a latest completion time. I(a, b), the tasks with est >= a and
+    // lct <= b, contribute their whole energy p·h; every other task
+    // contributes whatever of its mandatory part falls inside the
+    // window. A task in I(a, b) has its mandatory part inside the
+    // window as well, so that second term is the window's total
+    // mandatory load minus I(a, b)'s --- which makes both terms
+    // accumulate as b grows, and the whole sweep quadratic.
+    //
+    // Two restrictions, both of which only weaken the check: the
+    // capacity must be constant (a variable one would leave a
+    // (b − a)·capacity term in the conflict pol for the wrapping RUP
+    // to dispose of over the capacity's bits, which it cannot do in
+    // general), and only eligible tasks (see prepare_overload_check)
+    // may join I(a, b).
+    if (rules.overload && ! overload_tasks.empty() && is_constant_variable(capacity_var)) {
+        vector<Integer> mand_prefix(static_cast<size_t>(range) + 1, 0_i);
+        for (auto idx = 0; idx < range; ++idx)
+            mand_prefix[static_cast<size_t>(idx) + 1] = mand_prefix[static_cast<size_t>(idx)] + mand_load[static_cast<size_t>(idx)];
+
+        // Mandatory load inside [from, to), over every task.
+        auto profile_within = [&](Integer from, Integer to) {
+            return mand_prefix[static_cast<size_t>((to - t_lo).raw_value)] - mand_prefix[static_cast<size_t>((from - t_lo).raw_value)];
+        };
+
+        // How many time points in [from, to) some task can occupy.
+        // Anywhere else supplies nothing to this window's tasks (and
+        // has no capacity line to cite), so it is not counted.
+        auto slots_within = [&](Integer from, Integer to) {
+            return time_slot_prefix[static_cast<size_t>((to - time_slot_lo).raw_value)] -
+                time_slot_prefix[static_cast<size_t>((from - time_slot_lo).raw_value)];
+        };
+
+        struct Candidate
+        {
+            size_t task;
+            Integer est, lct, energy, mandatory;
+        };
+
+        vector<Candidate> candidates;
+        candidates.reserve(overload_tasks.size());
+        for (auto i : overload_tasks) {
+            auto [s_lo, s_hi] = state.bounds(starts[i]);
+            auto p = llb(i), h = hlb(i);
+            candidates.push_back(Candidate{i, s_lo, s_hi + p, p * h, h * max(0_i, s_lo + p - s_hi)});
+        }
+        sort(candidates, [](const Candidate & a, const Candidate & b) { return a.lct < b.lct; });
+
+        vector<Integer> window_starts;
+        window_starts.reserve(candidates.size());
+        for (const auto & c : candidates)
+            window_starts.push_back(c.est);
+        sort(window_starts);
+
+        for (size_t w = 0; w < window_starts.size(); ++w) {
+            if (w > 0 && window_starts[w] == window_starts[w - 1])
+                continue;
+            auto a = window_starts[w];
+
+            Integer energy = 0_i, inside_mandatory = 0_i;
+            vector<size_t> inside_tasks;
+            for (const auto & c : candidates) {
+                if (c.est < a)
+                    continue;
+                energy += c.energy;
+                inside_mandatory += c.mandatory;
+                inside_tasks.push_back(c.task);
+
+                auto b = c.lct;
+                auto supply = capacity * slots_within(a, b);
+                auto outside_profile = rules.profile_overload ? profile_within(a, b) - inside_mandatory : 0_i;
+                if (energy + outside_profile <= supply)
                     continue;
 
-                auto lst_j = cur_ub, eet_j = cur_lb + llb(j);
-                auto fits_at = [&](Integer s) -> bool {
-                    for (Integer t = s; t < s + llb(j); ++t) {
-                        auto load = mand_load[(t - t_lo).raw_value];
-                        if (lst_j < eet_j && t >= lst_j && t < eet_j)
-                            load -= hlb(j);
-                        if (load + hlb(j) > capacity)
-                            return false;
-                    }
-                    return true;
-                };
+                // (OC') on its own, or does the conflict need the
+                // profile of the tasks outside the window?
+                auto uses_profile = energy <= supply;
 
-                auto is_blocked_at = [&](Integer t) -> bool {
-                    auto load = mand_load[(t - t_lo).raw_value];
-                    if (lst_j < eet_j && t >= lst_j && t < eet_j)
-                        load -= hlb(j);
-                    return load + hlb(j) > capacity;
-                };
-
-                auto contributors_at = [&](Integer t) -> vector<size_t> {
-                    vector<size_t> result;
-                    for (auto i : active_tasks) {
-                        if (i == j)
+                // The (i, t) pairs whose compulsory load the proof
+                // pins: exactly what outside_profile counted.
+                vector<pair<size_t, Integer>> pins;
+                if (uses_profile) {
+                    vector<bool> inside(starts.size(), false);
+                    for (auto i : inside_tasks)
+                        inside[i] = true;
+                    for (auto j : active_tasks) {
+                        if (inside[j])
                             continue;
-                        auto lst_i = state.upper_bound(starts[i]);
-                        auto eet_i = state.lower_bound(starts[i]) + llb(i);
-                        if (lst_i < eet_i && t >= lst_i && t < eet_i)
-                            result.push_back(i);
+                        auto lst = state.upper_bound(starts[j]);
+                        auto eet = state.lower_bound(starts[j]) + llb(j);
+                        for (Integer t = max(lst, a); t < min(eet, b); ++t)
+                            pins.emplace_back(j, t);
                     }
-                    return result;
+                }
+
+                auto justify = [&, a, b, inside_tasks, pins, uses_profile](const ReasonLiterals & reason) -> void {
+                    if (! logger)
+                        return;
+                    logger->emit_proof_comment("cumulative overload conflict window=[" + std::to_string(a.raw_value) + "," +
+                        std::to_string(b.raw_value) + ") rule=" + (uses_profile ? "ttoc" : "oc"));
+
+                    // Tests only: each of these breaks one step of what
+                    // follows, and each must make VeriPB reject the
+                    // proof. See CumulativeProofMutation.
+                    auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
+                    auto shrink_lemma_window = std::holds_alternative<cumulative_proof_mutation::ShrinkLemmaWindow>(mutation);
+                    auto overstate_energy = std::holds_alternative<cumulative_proof_mutation::OverstateWindowEnergy>(mutation);
+
+                    // The capacity available across the window, plus
+                    // each contained task's window energy scaled by its
+                    // height, plus (for (TTOC)) the pinned compulsory
+                    // load of the tasks outside it. Each contained
+                    // task's activity terms cancel exactly against its
+                    // terms in the capacity lines, leaving a constraint
+                    // with nothing but negative coefficients on the
+                    // left and a positive right hand side.
+                    PolBuilder pol;
+                    for (Integer t = a; t < b; ++t) {
+                        if (omit_capacity_line && t == b - 1_i)
+                            continue;
+                        auto line = capacity_lines.find(t);
+                        if (line != capacity_lines.end())
+                            pol.add(line->second);
+                    }
+
+                    for (auto i : inside_tasks) {
+                        auto energy_line = window_energy::derive_window_energy(*logger, reason,
+                            window_energy::ConstantLengthTask{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i], before_flags[i],
+                                after_flags[i], active_flags[i]},
+                            a, shrink_lemma_window ? b - 1_i : b, state.bounds(starts[i]), ProofLevel::Temporary);
+                        if (! energy_line) {
+                            // Only reachable under the shrunk-window
+                            // mutation, where a task can be left with
+                            // nothing derivable at all.
+                            if (shrink_lemma_window)
+                                continue;
+                            throw ProofError{"cumulative overload: a task in the window has no derivable energy"};
+                        }
+                        if (! shrink_lemma_window && energy_line->bound != llb(i))
+                            throw ProofError{"cumulative overload: window energy derivation is weaker than the check assumed"};
+
+                        auto line = energy_line->line;
+                        if (overstate_energy && i == inside_tasks.front()) {
+                            WPBSum activity;
+                            for (Integer t = energy_line->lo; t < energy_line->hi; ++t)
+                                activity += 1_i * active_flags[i][static_cast<size_t>((t - per_task_t_lo[i]).raw_value)];
+                            line =
+                                logger->emit_rup_proof_line_under_reason(reason, move(activity) >= energy_line->bound + 1_i, ProofLevel::Temporary);
+                        }
+                        pol.add(line, hlb(i));
+                    }
+
+                    for (const auto & [j, t] : pins) {
+                        auto [line, coeff] = pin_contributor(reason, j, t);
+                        pol.add(line, coeff);
+                    }
+
+                    pol.emit(*logger, ProofLevel::Temporary);
                 };
 
-                // lb-push: find smallest s with fits_at(s), then chain
-                // through blocked t's picking the LARGEST in each step's
-                // window so the bound advances as far as possible per step.
-                auto new_lb = cur_lb;
-                while (new_lb <= cur_ub && ! fits_at(new_lb))
-                    ++new_lb;
-                if (new_lb > cur_lb) {
-                    vector<ChainStep> chain;
-                    Integer running_bound = cur_lb;
-                    while (running_bound < new_lb) {
-                        bool found = false;
-                        for (Integer t = running_bound + llb(j) - 1_i; t >= running_bound; --t)
-                            if (is_blocked_at(t)) {
-                                chain.push_back(ChainStep{t, contributors_at(t), running_bound});
-                                running_bound = t + 1_i;
-                                found = true;
-                                break;
-                            }
-                        if (! found)
-                            break;
+                inference.contradiction(
+                    logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, generic_reason(reason_vars));
+                return PropagatorState::DisableUntilBacktrack;
+            }
+        }
+    }
+
+    // The remaining work --- pushing each task's bounds away from the
+    // times where placing it would overflow the profile --- is
+    // time-table reasoning too.
+    if (! rules.time_table)
+        return PropagatorState::Enable;
+
+    // One step of a bound-push proof chain: a blocked time t and the
+    // tasks (≠ j) whose mandatory parts cover t. Used by both
+    // lb-push and ub-push.
+    struct ChainStep
+    {
+        Integer t;
+        vector<size_t> contributing;
+        // Start lower bound that, with lb(l_j), forces after_{j,t}=1:
+        // the running bound for lb-push, t−lb(l_j)+1 for ub-push.
+        Integer s_lo_after;
+    };
+
+    // Helper: emit (a)–(d) for one chain step.
+    //
+    // `ext_lit` is the literal added to the reason in PB form (= the
+    // negation of "task j is active at t"-as-bounded-by-the-running
+    // half):
+    //   lb-push:  ext_lit = (s_j ≥ t + 1)
+    //   ub-push:  ext_lit = (s_j ≤ t − l_j)
+    //
+    // `emit_intermediate` deposits ext_lit as a unit under reason —
+    // needed for every step except the last (the framework's wrapping
+    // RUP closes the final inference).
+    auto emit_chain_step = [&](size_t j_idx, Integer t, const vector<size_t> & contributing, IntegerVariableCondition ext_lit, Integer s_lo_after,
+                               bool emit_intermediate, const ReasonLiterals & reason) -> void {
+        // (a) Pin each task i ≠ j mandatory at t under the reason, and
+        // (b) pin the pushed task j under the EXTENDED reason. Then
+        // (c) combine all pinned load lines with C_t in one pol. After
+        // cancellation the pol is dominated by (load − capacity)·ext_lit,
+        // forcing ext_lit = 1 (the new bound) under the reason context.
+        PolBuilder pol;
+        pol.add(capacity_lines.at(t));
+        for (auto i : contributing) {
+            auto [line, coeff] = pin_contributor(reason, i, t);
+            pol.add(line, coeff);
+        }
+        auto [j_line, j_coeff] = pin_pushed(reason, j_idx, t, ext_lit, s_lo_after);
+        pol.add(j_line, j_coeff);
+        pol.emit(*logger, ProofLevel::Temporary);
+
+        // (d) Deposit the running-bound advance as a fact under
+        // reason for the next chain step's UP.
+        if (emit_intermediate)
+            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+    };
+
+    for (auto j : active_tasks) {
+        auto [cur_lb, cur_ub] = state.bounds(starts[j]);
+        if (cur_lb == cur_ub)
+            continue;
+
+        auto lst_j = cur_ub, eet_j = cur_lb + llb(j);
+        auto fits_at = [&](Integer s) -> bool {
+            for (Integer t = s; t < s + llb(j); ++t) {
+                auto load = mand_load[(t - t_lo).raw_value];
+                if (lst_j < eet_j && t >= lst_j && t < eet_j)
+                    load -= hlb(j);
+                if (load + hlb(j) > capacity)
+                    return false;
+            }
+            return true;
+        };
+
+        auto is_blocked_at = [&](Integer t) -> bool {
+            auto load = mand_load[(t - t_lo).raw_value];
+            if (lst_j < eet_j && t >= lst_j && t < eet_j)
+                load -= hlb(j);
+            return load + hlb(j) > capacity;
+        };
+
+        auto contributors_at = [&](Integer t) -> vector<size_t> {
+            vector<size_t> result;
+            for (auto i : active_tasks) {
+                if (i == j)
+                    continue;
+                auto lst_i = state.upper_bound(starts[i]);
+                auto eet_i = state.lower_bound(starts[i]) + llb(i);
+                if (lst_i < eet_i && t >= lst_i && t < eet_i)
+                    result.push_back(i);
+            }
+            return result;
+        };
+
+        // lb-push: find smallest s with fits_at(s), then chain
+        // through blocked t's picking the LARGEST in each step's
+        // window so the bound advances as far as possible per step.
+        auto new_lb = cur_lb;
+        while (new_lb <= cur_ub && ! fits_at(new_lb))
+            ++new_lb;
+        if (new_lb > cur_lb) {
+            vector<ChainStep> chain;
+            Integer running_bound = cur_lb;
+            while (running_bound < new_lb) {
+                bool found = false;
+                for (Integer t = running_bound + llb(j) - 1_i; t >= running_bound; --t)
+                    if (is_blocked_at(t)) {
+                        chain.push_back(ChainStep{t, contributors_at(t), running_bound});
+                        running_bound = t + 1_i;
+                        found = true;
+                        break;
                     }
-
-                    auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
-                        if (! logger)
-                            return;
-                        for (size_t step = 0; step < chain.size(); ++step)
-                            emit_chain_step(j, chain[step].t, chain[step].contributing, starts[j] > chain[step].t, chain[step].s_lo_after,
-                                step + 1 < chain.size(), reason);
-                    };
-
-                    inference.infer_greater_than_or_equal(
-                        logger, starts[j], new_lb, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
-                }
-
-                // ub-push: mirror image. Pick SMALLEST blocked t in each
-                // step's window so the upper bound drops the most. Each
-                // step turns a blocked t into the fact s_j ≤ t − l_j.
-                auto new_ub = cur_ub;
-                while (new_ub >= cur_lb && ! fits_at(new_ub))
-                    --new_ub;
-                if (new_ub < cur_ub) {
-                    vector<ChainStep> chain;
-                    Integer running_bound = cur_ub;
-                    while (running_bound > new_ub) {
-                        bool found = false;
-                        for (Integer t = running_bound; t <= running_bound + llb(j) - 1_i; ++t)
-                            if (is_blocked_at(t)) {
-                                chain.push_back(ChainStep{t, contributors_at(t), t - llb(j) + 1_i});
-                                running_bound = t - llb(j);
-                                found = true;
-                                break;
-                            }
-                        if (! found)
-                            break;
-                    }
-
-                    auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
-                        if (! logger)
-                            return;
-                        for (size_t step = 0; step < chain.size(); ++step)
-                            emit_chain_step(j, chain[step].t, chain[step].contributing, starts[j] < chain[step].t - llb(j) + 1_i,
-                                chain[step].s_lo_after, step + 1 < chain.size(), reason);
-                    };
-
-                    inference.infer_less_than(logger, starts[j], new_ub + 1_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}},
-                        generic_reason(reason_vars));
-                }
+                if (! found)
+                    break;
             }
 
-            return PropagatorState::Enable;
-        },
-        triggers);
+            auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
+                if (! logger)
+                    return;
+                for (size_t step = 0; step < chain.size(); ++step)
+                    emit_chain_step(j, chain[step].t, chain[step].contributing, starts[j] > chain[step].t, chain[step].s_lo_after,
+                        step + 1 < chain.size(), reason);
+            };
+
+            inference.infer_greater_than_or_equal(
+                logger, starts[j], new_lb, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
+        }
+
+        // ub-push: mirror image. Pick SMALLEST blocked t in each
+        // step's window so the upper bound drops the most. Each
+        // step turns a blocked t into the fact s_j ≤ t − l_j.
+        auto new_ub = cur_ub;
+        while (new_ub >= cur_lb && ! fits_at(new_ub))
+            --new_ub;
+        if (new_ub < cur_ub) {
+            vector<ChainStep> chain;
+            Integer running_bound = cur_ub;
+            while (running_bound > new_ub) {
+                bool found = false;
+                for (Integer t = running_bound; t <= running_bound + llb(j) - 1_i; ++t)
+                    if (is_blocked_at(t)) {
+                        chain.push_back(ChainStep{t, contributors_at(t), t - llb(j) + 1_i});
+                        running_bound = t - llb(j);
+                        found = true;
+                        break;
+                    }
+                if (! found)
+                    break;
+            }
+
+            auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
+                if (! logger)
+                    return;
+                for (size_t step = 0; step < chain.size(); ++step)
+                    emit_chain_step(j, chain[step].t, chain[step].contributing, starts[j] < chain[step].t - llb(j) + 1_i, chain[step].s_lo_after,
+                        step + 1 < chain.size(), reason);
+            };
+
+            inference.infer_less_than(
+                logger, starts[j], new_ub + 1_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
+        }
+    }
+
+    return PropagatorState::Enable;
+}
+
+auto Cumulative::starts() const -> const vector<IntegerVariableID> &
+{
+    return _starts;
+}
+
+auto Cumulative::lengths() const -> const vector<IntegerVariableID> &
+{
+    return _lengths;
+}
+
+auto Cumulative::heights() const -> const vector<IntegerVariableID> &
+{
+    return _heights;
+}
+
+auto Cumulative::capacity() const -> IntegerVariableID
+{
+    return _capacity;
+}
+
+auto ConstraintProofModelData<Cumulative>::primary_row_role(const Cumulative &) -> std::optional<string>
+{
+    return std::nullopt;
+}
+
+auto ConstraintProofModelData<Cumulative>::capacity_row_role(Integer t) -> string
+{
+    // Must stay the string define_proof_model labels the row with.
+    return "cap_" + std::to_string(t.raw_value);
+}
+
+auto ConstraintProofModelData<Cumulative>::before_flag_key(size_t task, Integer t) -> ProofFlagKey
+{
+    return ProofFlagKey{{static_cast<long long>(task), t.raw_value}, "cb"};
+}
+
+auto ConstraintProofModelData<Cumulative>::after_flag_key(size_t task, Integer t) -> ProofFlagKey
+{
+    return ProofFlagKey{{static_cast<long long>(task), t.raw_value}, "ca"};
+}
+
+auto ConstraintProofModelData<Cumulative>::active_flag_key(size_t task, Integer t) -> ProofFlagKey
+{
+    return ProofFlagKey{{static_cast<long long>(task), t.raw_value}, "cact"};
 }
 
 auto Cumulative::constraint_type() const -> std::string
@@ -964,3 +1060,9 @@ auto Cumulative::s_expr(const ProofModel * const model) const -> SExpr
     return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)),
         SExpr::list(std::move(lengths)), SExpr::list(std::move(heights)), tracker.s_expr_term_of(_capacity)});
 }
+
+template auto gcs::innards::propagate_cumulative(const CumulativeInputs &, const State &, SimpleInferenceTracker &, ProofLogger * const)
+    -> PropagatorState;
+
+template auto gcs::innards::propagate_cumulative(const CumulativeInputs &, const State &, EagerProofLoggingInferenceTracker &, ProofLogger * const)
+    -> PropagatorState;
