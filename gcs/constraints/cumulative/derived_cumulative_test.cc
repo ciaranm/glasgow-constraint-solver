@@ -239,7 +239,7 @@ namespace
         return true;
     }
 
-    auto post(Problem & p, const Instance & inst, optional<Demo> demo) -> vector<IntegerVariableID>
+    auto post(Problem & p, const Instance & inst, optional<Demo> demo, CumulativeRules donor_rules = CumulativeRules{}) -> vector<IntegerVariableID>
     {
         vector<IntegerVariableID> starts;
         for (auto & [lo, hi] : inst.start_ranges)
@@ -251,7 +251,7 @@ namespace
         for (auto h : inst.heights)
             heights.push_back(Integer{h});
 
-        p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}});
+        p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(donor_rules));
         if (demo)
             p.add_presolver(DerivedDemoPresolver{*demo});
         return starts;
@@ -264,10 +264,11 @@ namespace
         bool refuted_at_root = false;
     };
 
-    auto solve_it(const Instance & inst, optional<Demo> demo, const optional<string> & proof_name) -> Outcome
+    auto solve_it(const Instance & inst, optional<Demo> demo, const optional<string> & proof_name, CumulativeRules donor_rules = CumulativeRules{})
+        -> Outcome
     {
         Problem p;
-        auto starts = post(p, inst, demo);
+        auto starts = post(p, inst, demo, donor_rules);
 
         Outcome outcome;
         bool reached_a_node = false, found_a_solution = false;
@@ -383,6 +384,30 @@ auto main(int argc, char * argv[]) -> int
             fail("strengthened demo: the derived constraint did not refute at the root");
         if (! with_derived.solutions.empty())
             fail("strengthened demo: the instance is unsatisfiable but solutions were reported");
+    }
+
+    // The derived propagator has to be the one doing the work, not a
+    // bystander watching the donor do it. With the donor's own rules turned off
+    // it infers nothing at all, so every inference in this solve --- and every
+    // justification --- comes from the derived constraint, over the donor's
+    // flags and its own derived rows.
+    {
+        const CumulativeRules silent{.time_table = false, .overload = false, .profile_overload = false};
+
+        auto donor_silent = solve_it(duplicate_instance, nullopt, nullopt, silent);
+        auto derived_working =
+            solve_it(duplicate_instance, make_optional(Demo::Duplicate), proofs ? make_optional("derived_cumulative_carrying") : nullopt, silent);
+
+        set<vector<int>> expected;
+        build_expected(
+            expected, [&](const vector<int> & starts) { return is_satisfying(duplicate_instance, starts); }, duplicate_instance.start_ranges);
+        if (derived_working.solutions != expected)
+            fail("carrying demo: solutions do not match brute force with the donor silent");
+        if (derived_working.recursions >= donor_silent.recursions)
+            fail("carrying demo: the derived constraint pruned nothing (" + std::to_string(derived_working.recursions) + " nodes against " +
+                std::to_string(donor_silent.recursions) + " with nothing propagating), so its proof path is untested");
+        println(cerr, "derived propagator carrying alone: {} nodes against {} with nothing propagating", derived_working.recursions,
+            donor_silent.recursions);
     }
 
     // Nothing above may have reached the OPB.
