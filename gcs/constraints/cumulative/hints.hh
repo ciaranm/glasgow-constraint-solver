@@ -17,6 +17,24 @@ namespace gcs::innards::hints
         ConstraintID originator;
         static constexpr std::string_view hint_name = "cumulative";
     };
+
+    /**
+     * \brief Cumulative's overload-check hint: the owning constraint, plus the
+     * `overload` subhint distinguishing an energy-based conflict from a
+     * time-table one.
+     *
+     * The two rules reach a contradiction by quite different derivations, so
+     * telling them apart matters when isolating one with
+     * AssertRatherThanJustifying. With no own hint_sexpr the hint takes the
+     * default identity-plus-subhint wire form,
+     * `(constraint_id <originator>)(subhint overload)`.
+     *
+     * \ingroup Innards
+     */
+    struct CumulativeOverload : Cumulative
+    {
+        static constexpr std::string_view subhint_name = "overload";
+    };
 }
 
 #endif

@@ -1,20 +1,24 @@
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/constraints/cumulative/hints.hh>
+#include <gcs/constraints/innards/window_energy.hh>
 #include <gcs/exception.hh>
 #include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
+#include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/s_expr.hh>
 #include <gcs/innards/state.hh>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 #include <version>
@@ -30,13 +34,16 @@ using namespace gcs::innards;
 
 using std::make_shared;
 using std::make_unique;
+using std::max;
 using std::min;
 using std::move;
+using std::pair;
 using std::size_t;
 using std::string;
 using std::stringstream;
 using std::unique_ptr;
 using std::vector;
+using std::ranges::sort;
 
 #if defined(__cpp_lib_print) && defined(__cpp_lib_format)
 using std::print;
@@ -94,9 +101,24 @@ Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths
 {
 }
 
+auto Cumulative::with_rules(CumulativeRules rules) -> Cumulative &
+{
+    _rules = rules;
+    return *this;
+}
+
+auto Cumulative::with_proof_mutation(CumulativeProofMutation mutation) -> Cumulative &
+{
+    _proof_mutation = mutation;
+    return *this;
+}
+
 auto Cumulative::clone() const -> unique_ptr<Constraint>
 {
-    return make_unique<Cumulative>(_starts, _lengths, _heights, _capacity);
+    auto result = make_unique<Cumulative>(_starts, _lengths, _heights, _capacity);
+    result->with_rules(_rules);
+    result->with_proof_mutation(_proof_mutation);
+    return result;
 }
 
 auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * const) -> bool
@@ -163,7 +185,70 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
         _per_task_t_lo[i] = s_lo;
         _per_task_t_hi[i] = s_hi + _length_ub[i] - 1_i;
     }
+
+    if (_rules.overload)
+        prepare_overload_check(initial_state);
+
     return true;
+}
+
+auto Cumulative::prepare_overload_check(State & initial_state) -> void
+{
+    // Which tasks the window-energy lemma can speak about: a constant length
+    // and height (so the task's energy is a constant, and its load in C_t is
+    // h·active rather than the bit-linearised contrib), and a start that is a
+    // plain variable with an order encoding, since the lemma bridges the
+    // before/after flags to the start's order literals. A task that is not
+    // eligible is not lost to the check: whatever it must occupy still counts,
+    // through the profile term of the (TTOC) strengthening.
+    //
+    // Seam for optional tasks (#543): once a task can be absent, only one
+    // whose presence is fixed true may join the energy set or the profile, and
+    // its presence literal joins the reason. Nothing here consults a presence
+    // variable yet because there is not one to consult.
+    _overload_tasks.clear();
+    for (auto i : _active_tasks) {
+        if (! is_constant_variable(_lengths[i]) || ! is_constant_variable(_heights[i]))
+            continue;
+        if (_length_vals[i] <= 0_i || _height_vals[i] <= 0_i)
+            continue;
+        if (! std::holds_alternative<SimpleIntegerVariableID>(_starts[i]))
+            continue;
+        // A start whose domain is exactly {0, 1} is direct-only encoded, so it
+        // has no order literals for the lemma's bridges to cancel against.
+        auto [s_lo, s_hi] = initial_state.bounds(_starts[i]);
+        if (s_lo == 0_i && s_hi == 1_i)
+            continue;
+        _overload_tasks.push_back(i);
+    }
+
+    if (_overload_tasks.empty())
+        return;
+
+    // Count the time points at which some task can be active, which is exactly
+    // where define_proof_model writes a capacity line. A difference array over
+    // the per-task windows, prefix-summed, so a window's count is one
+    // subtraction.
+    Integer global_lo = _per_task_t_lo[_active_tasks.front()], global_hi = _per_task_t_hi[_active_tasks.front()];
+    for (auto i : _active_tasks) {
+        global_lo = min(global_lo, _per_task_t_lo[i]);
+        global_hi = max(global_hi, _per_task_t_hi[i]);
+    }
+
+    auto range = (global_hi - global_lo + 1_i).raw_value;
+    vector<long long> starting_or_ending(static_cast<size_t>(range) + 1, 0);
+    for (auto i : _active_tasks) {
+        ++starting_or_ending[static_cast<size_t>((_per_task_t_lo[i] - global_lo).raw_value)];
+        --starting_or_ending[static_cast<size_t>((_per_task_t_hi[i] + 1_i - global_lo).raw_value)];
+    }
+
+    _time_slot_lo = global_lo;
+    _time_slot_prefix.assign(static_cast<size_t>(range) + 1, 0_i);
+    long long covering = 0;
+    for (size_t k = 0; k < static_cast<size_t>(range); ++k) {
+        covering += starting_or_ending[k];
+        _time_slot_prefix[k + 1] = _time_slot_prefix[k] + (covering > 0 ? 1_i : 0_i);
+    }
 }
 
 auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
@@ -351,7 +436,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         [starts = move(_starts), lengths_var = move(_lengths), heights_var = move(_heights), capacity_var = _capacity,
             active_tasks = move(_active_tasks), before_flags = move(_before_flags), after_flags = move(_after_flags),
             active_flags = move(_active_flags), contrib_flags = move(_contrib_flags), ends = move(_end), end_lines,
-            capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo),
+            capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo), rules = _rules, mutation = _proof_mutation,
+            overload_tasks = move(_overload_tasks), time_slot_prefix = move(_time_slot_prefix), time_slot_lo = _time_slot_lo,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // The capacity may be a variable: the load profile is infeasible
             // only when it exceeds the *largest* still-allowed capacity, so the
@@ -487,7 +573,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                         mand_load[(t - t_lo).raw_value] += hlb(i);
             }
 
-            for (auto idx = 0; idx < range; ++idx)
+            for (auto idx = 0; rules.time_table && idx < range; ++idx)
                 if (mand_load[idx] > capacity) {
                     auto violating_t = t_lo + Integer{idx};
 
@@ -521,6 +607,187 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                     inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
                     return PropagatorState::DisableUntilBacktrack;
                 }
+
+            // Overload checking: rule (OC') of Cloutier & Quimper, CP 2026,
+            // strengthened by the mandatory-part profile to their (TTOC). If
+            // the tasks that must run entirely inside a time window carry more
+            // energy than the window can supply, the constraint is infeasible.
+            // This is conflict-only --- no bound moves --- so a bug here shows
+            // up as a missing solution, which is what the enumeration tests
+            // are the net for.
+            //
+            // The windows worth trying are [a, b) with a an earliest start and
+            // b a latest completion time. I(a, b), the tasks with est >= a and
+            // lct <= b, contribute their whole energy p·h; every other task
+            // contributes whatever of its mandatory part falls inside the
+            // window. A task in I(a, b) has its mandatory part inside the
+            // window as well, so that second term is the window's total
+            // mandatory load minus I(a, b)'s --- which makes both terms
+            // accumulate as b grows, and the whole sweep quadratic.
+            //
+            // Two restrictions, both of which only weaken the check: the
+            // capacity must be constant (a variable one would leave a
+            // (b − a)·capacity term in the conflict pol for the wrapping RUP
+            // to dispose of over the capacity's bits, which it cannot do in
+            // general), and only eligible tasks (see prepare_overload_check)
+            // may join I(a, b).
+            if (rules.overload && ! overload_tasks.empty() && is_constant_variable(capacity_var)) {
+                vector<Integer> mand_prefix(static_cast<size_t>(range) + 1, 0_i);
+                for (auto idx = 0; idx < range; ++idx)
+                    mand_prefix[static_cast<size_t>(idx) + 1] = mand_prefix[static_cast<size_t>(idx)] + mand_load[static_cast<size_t>(idx)];
+
+                // Mandatory load inside [from, to), over every task.
+                auto profile_within = [&](Integer from, Integer to) {
+                    return mand_prefix[static_cast<size_t>((to - t_lo).raw_value)] - mand_prefix[static_cast<size_t>((from - t_lo).raw_value)];
+                };
+
+                // How many time points in [from, to) some task can occupy.
+                // Anywhere else supplies nothing to this window's tasks (and
+                // has no capacity line to cite), so it is not counted.
+                auto slots_within = [&](Integer from, Integer to) {
+                    return time_slot_prefix[static_cast<size_t>((to - time_slot_lo).raw_value)] -
+                        time_slot_prefix[static_cast<size_t>((from - time_slot_lo).raw_value)];
+                };
+
+                struct Candidate
+                {
+                    size_t task;
+                    Integer est, lct, energy, mandatory;
+                };
+
+                vector<Candidate> candidates;
+                candidates.reserve(overload_tasks.size());
+                for (auto i : overload_tasks) {
+                    auto [s_lo, s_hi] = state.bounds(starts[i]);
+                    auto p = llb(i), h = hlb(i);
+                    candidates.push_back(Candidate{i, s_lo, s_hi + p, p * h, h * max(0_i, s_lo + p - s_hi)});
+                }
+                sort(candidates, [](const Candidate & a, const Candidate & b) { return a.lct < b.lct; });
+
+                vector<Integer> window_starts;
+                window_starts.reserve(candidates.size());
+                for (const auto & c : candidates)
+                    window_starts.push_back(c.est);
+                sort(window_starts);
+
+                for (size_t w = 0; w < window_starts.size(); ++w) {
+                    if (w > 0 && window_starts[w] == window_starts[w - 1])
+                        continue;
+                    auto a = window_starts[w];
+
+                    Integer energy = 0_i, inside_mandatory = 0_i;
+                    vector<size_t> inside_tasks;
+                    for (const auto & c : candidates) {
+                        if (c.est < a)
+                            continue;
+                        energy += c.energy;
+                        inside_mandatory += c.mandatory;
+                        inside_tasks.push_back(c.task);
+
+                        auto b = c.lct;
+                        auto supply = capacity * slots_within(a, b);
+                        auto outside_profile = rules.profile_overload ? profile_within(a, b) - inside_mandatory : 0_i;
+                        if (energy + outside_profile <= supply)
+                            continue;
+
+                        // (OC') on its own, or does the conflict need the
+                        // profile of the tasks outside the window?
+                        auto uses_profile = energy <= supply;
+
+                        // The (i, t) pairs whose compulsory load the proof
+                        // pins: exactly what outside_profile counted.
+                        vector<pair<size_t, Integer>> pins;
+                        if (uses_profile) {
+                            vector<bool> inside(starts.size(), false);
+                            for (auto i : inside_tasks)
+                                inside[i] = true;
+                            for (auto j : active_tasks) {
+                                if (inside[j])
+                                    continue;
+                                auto lst = state.upper_bound(starts[j]);
+                                auto eet = state.lower_bound(starts[j]) + llb(j);
+                                for (Integer t = max(lst, a); t < min(eet, b); ++t)
+                                    pins.emplace_back(j, t);
+                            }
+                        }
+
+                        auto justify = [&, a, b, inside_tasks, pins, uses_profile](const ReasonLiterals & reason) -> void {
+                            if (! logger)
+                                return;
+                            logger->emit_proof_comment("cumulative overload conflict window=[" + std::to_string(a.raw_value) + "," +
+                                std::to_string(b.raw_value) + ") rule=" + (uses_profile ? "ttoc" : "oc"));
+
+                            // Tests only: each of these breaks one step of what
+                            // follows, and each must make VeriPB reject the
+                            // proof. See CumulativeProofMutation.
+                            auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
+                            auto shrink_lemma_window = std::holds_alternative<cumulative_proof_mutation::ShrinkLemmaWindow>(mutation);
+                            auto overstate_energy = std::holds_alternative<cumulative_proof_mutation::OverstateWindowEnergy>(mutation);
+
+                            // The capacity available across the window, plus
+                            // each contained task's window energy scaled by its
+                            // height, plus (for (TTOC)) the pinned compulsory
+                            // load of the tasks outside it. Each contained
+                            // task's activity terms cancel exactly against its
+                            // terms in the capacity lines, leaving a constraint
+                            // with nothing but negative coefficients on the
+                            // left and a positive right hand side.
+                            PolBuilder pol;
+                            for (Integer t = a; t < b; ++t) {
+                                if (omit_capacity_line && t == b - 1_i)
+                                    continue;
+                                auto line = capacity_lines.find(t);
+                                if (line != capacity_lines.end())
+                                    pol.add(line->second);
+                            }
+
+                            for (auto i : inside_tasks) {
+                                auto energy_line = window_energy::derive_window_energy(*logger, reason,
+                                    window_energy::ConstantLengthTask{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i],
+                                        before_flags[i], after_flags[i], active_flags[i]},
+                                    a, shrink_lemma_window ? b - 1_i : b, state.bounds(starts[i]), ProofLevel::Temporary);
+                                if (! energy_line) {
+                                    // Only reachable under the shrunk-window
+                                    // mutation, where a task can be left with
+                                    // nothing derivable at all.
+                                    if (shrink_lemma_window)
+                                        continue;
+                                    throw ProofError{"cumulative overload: a task in the window has no derivable energy"};
+                                }
+                                if (! shrink_lemma_window && energy_line->bound != llb(i))
+                                    throw ProofError{"cumulative overload: window energy derivation is weaker than the check assumed"};
+
+                                auto line = energy_line->line;
+                                if (overstate_energy && i == inside_tasks.front()) {
+                                    WPBSum activity;
+                                    for (Integer t = energy_line->lo; t < energy_line->hi; ++t)
+                                        activity += 1_i * active_flags[i][static_cast<size_t>((t - per_task_t_lo[i]).raw_value)];
+                                    line = logger->emit_rup_proof_line_under_reason(
+                                        reason, move(activity) >= energy_line->bound + 1_i, ProofLevel::Temporary);
+                                }
+                                pol.add(line, hlb(i));
+                            }
+
+                            for (const auto & [j, t] : pins) {
+                                auto [line, coeff] = pin_contributor(reason, j, t);
+                                pol.add(line, coeff);
+                            }
+
+                            pol.emit(*logger, ProofLevel::Temporary);
+                        };
+
+                        inference.contradiction(
+                            logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, generic_reason(reason_vars));
+                        return PropagatorState::DisableUntilBacktrack;
+                    }
+                }
+            }
+
+            // The remaining work --- pushing each task's bounds away from the
+            // times where placing it would overflow the profile --- is
+            // time-table reasoning too.
+            if (! rules.time_table)
+                return PropagatorState::Enable;
 
             // One step of a bound-push proof chain: a blocked time t and the
             // tasks (≠ j) whose mandatory parts cover t. Used by both

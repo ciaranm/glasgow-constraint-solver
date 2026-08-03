@@ -852,17 +852,41 @@ GCS_PRESERVE_PROOF_FILES=all ./build/equals_test   # equals_test.0001.pbp, ...
 ```
 
 The same variable is honoured by the shell test wrappers
-(`run_test_and_verify.bash`, `run_xcsp_test.bash`, `run_minizinc_test.bash`,
-`run_fzn_json_test.bash` and `run_scp_chain.bash`), so a proof is disposed of
-the same way whether it is checked inside the test binary or by the wrapper
-around it. Those wrappers run their binary once, so there is nothing for the
-counter to disambiguate: they treat `all` the same as `1`.
+(`run_test_and_verify.bash`, `run_test_and_expect_verify_failure.bash`,
+`run_xcsp_test.bash`, `run_minizinc_test.bash`, `run_fzn_json_test.bash` and
+`run_scp_chain.bash`), so a proof is disposed of the same way whether it is
+checked inside the test binary or by the wrapper around it. Those wrappers run
+their binary once, so there is nothing for the counter to disambiguate: they
+treat `all` the same as `1`.
 
-All five get it from one `dispose_proof` in `proof_file_disposal.bash` at the
+All six get it from one `dispose_proof` in `proof_file_disposal.bash` at the
 repo root, which they source relative to their own `$0`. Changing what the
 wrappers delete — adding a sixth proof artifact, say — means changing that one
 file, and its extension list should stay in step with `proof_file_extensions`
 in `constraints_test_utils.hh`.
+
+### Mutation testing: showing a derivation is tight
+
+A proof that verifies is necessary, not sufficient. If a propagator's
+derivation has slack in it — a bound derived more weakly than claimed, a step
+that happens not to matter — then a *wrong* proof verifies too, and every
+"veripb accepted it" in the suite is saying less than it looks.
+
+The check is to break the derivation on purpose and insist that veripb
+notices. Give the constraint a test-only knob that corrupts one emitted step
+(precedent: `CumulativeProofMutation` and `Knapsack::with_proof_strategy`),
+have the test binary write that proof and stop, and register it with
+`run_test_and_expect_verify_failure.bash`, which is
+`run_test_and_verify.bash` with the verdict inverted: it passes only when
+veripb rejects.
+
+Two things make the difference between a mutation lane that tests something
+and one that does not. Mutate on an instance whose margin is *one* — corrupt a
+proof of a conflict that had three units of slack and the contradiction
+survives the corruption, so veripb accepts and the lane is green for the wrong
+reason. And check that the run being mutated really produced the inference at
+all, or the harness is checking an empty proof. If a mutation verifies anyway,
+that is a finding about the honest derivation.
 
 ## Adding a new constraint: checklist
 
