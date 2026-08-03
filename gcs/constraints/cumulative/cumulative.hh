@@ -15,6 +15,34 @@
 namespace gcs
 {
     /**
+     * \brief Which of Cumulative's propagation rules are enabled.
+     *
+     * All three are on by default. Turning one off weakens propagation but
+     * never changes the solutions found, and never changes the OPB encoding:
+     * these select propagation strength only, and exist so that a test can
+     * attribute an inference to the rule that made it (and so that a fixture
+     * can show a rule is load-bearing by watching the search get worse without
+     * it).
+     *
+     * \ingroup Constraints
+     */
+    struct CumulativeRules
+    {
+        /// Time-table: the mandatory-part load profile, its overflow
+        /// contradiction and the bound pushes away from blocked times.
+        bool time_table = true;
+
+        /// The overload check: a window whose fully-contained tasks carry more
+        /// energy than the window supplies is infeasible. Conflict-only.
+        bool overload = true;
+
+        /// Strengthen the overload check with the mandatory-part load of tasks
+        /// that are *not* fully contained in the window (rule (TTOC)). Has no
+        /// effect unless \ref overload is also set.
+        bool profile_overload = true;
+    };
+
+    /**
      * \brief Cumulative constraint: tasks with start times, durations, and
      * demands, sharing a resource of a given capacity. Any of the durations,
      * demands, and the capacity may be variables or constants (constants are
@@ -60,6 +88,18 @@ namespace gcs
         std::vector<std::size_t> _active_tasks;
         std::vector<Integer> _per_task_t_lo;
         std::vector<Integer> _per_task_t_hi;
+        CumulativeRules _rules;
+        // Overload checking, resolved in prepare(). _overload_tasks lists the
+        // tasks the window-energy lemma can speak about (constant length and
+        // height, and a start whose order literals the lemma can bridge to);
+        // _time_slot_prefix[t − _time_slot_lo] counts the time points strictly
+        // below t at which some task can be active, which is exactly where
+        // define_proof_model writes a per-time capacity line. A window's supply
+        // is its capacity times that count: a time point no task can occupy
+        // supplies nothing to the window's tasks and has no line to cite.
+        std::vector<std::size_t> _overload_tasks;
+        std::vector<Integer> _time_slot_prefix;
+        Integer _time_slot_lo = 0_i;
 
         // Filled in by define_proof_model; consumed by install_propagators.
         // Each [task_idx] is indexed by t − _per_task_t_lo[i].
@@ -83,6 +123,8 @@ namespace gcs
         std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end;
         std::map<Integer, innards::ProofLine> _capacity_lines; // t -> proof line for the per-t time-table constraint
 
+        auto prepare_overload_check(innards::State &) -> void;
+
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
@@ -101,6 +143,11 @@ namespace gcs
          * constructor.
          */
         explicit Cumulative(std::vector<IntegerVariableID> starts, std::vector<Integer> lengths, std::vector<Integer> heights, Integer capacity);
+
+        /// Select which propagation rules are enabled (all of them, by
+        /// default). Propagation strength only: the solutions found and the OPB
+        /// encoding are the same whatever is selected.
+        auto with_rules(CumulativeRules rules) -> Cumulative &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
