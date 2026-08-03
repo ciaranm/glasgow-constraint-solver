@@ -102,6 +102,19 @@ Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths
 {
 }
 
+Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableID> lengths, vector<IntegerVariableID> heights,
+    vector<IntegerVariableID> presences, IntegerVariableID capacity) : Cumulative(move(starts), move(lengths), move(heights), capacity)
+{
+    _presences = move(presences);
+    if (_starts.size() != _presences.size())
+        throw InvalidProblemDefinitionException{"Cumulative: starts and presences must have the same size"};
+    // A constant presence is checked here; a variable one is checked in
+    // prepare(), where its domain first becomes available.
+    for (const auto & p : _presences)
+        if (is_constant_variable(p) && const_value_of(p) != 0_i && const_value_of(p) != 1_i)
+            throw InvalidProblemDefinitionException{"Cumulative: presences must be within {0, 1}"};
+}
+
 auto Cumulative::with_rules(CumulativeRules rules) -> Cumulative &
 {
     _rules = rules;
@@ -114,11 +127,19 @@ auto Cumulative::with_proof_mutation(CumulativeProofMutation mutation) -> Cumula
     return *this;
 }
 
+auto Cumulative::with_presence_mutation(CumulativePresenceMutation mutation) -> Cumulative &
+{
+    _presence_mutation = mutation;
+    return *this;
+}
+
 auto Cumulative::clone() const -> unique_ptr<Constraint>
 {
-    auto result = make_unique<Cumulative>(_starts, _lengths, _heights, _capacity);
+    auto result = _presences.empty() ? make_unique<Cumulative>(_starts, _lengths, _heights, _capacity)
+                                     : make_unique<Cumulative>(_starts, _lengths, _heights, _presences, _capacity);
     result->with_rules(_rules);
     result->with_proof_mutation(_proof_mutation);
+    result->with_presence_mutation(_presence_mutation);
     return result;
 }
 
@@ -138,6 +159,28 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
             throw InvalidProblemDefinitionException{"Cumulative: heights must be non-negative"};
     if (! is_constant_variable(_capacity) && initial_state.lower_bound(_capacity) < 0_i)
         throw InvalidProblemDefinitionException{"Cumulative: capacity must be non-negative"};
+
+    // Resolve each task's presence to the variable that has to appear in its
+    // active flag, or nullopt when the task is unconditionally present. Only a
+    // constant argument resolves away: a *variable* presence keeps its conjunct
+    // even if it is already fixed, because the encoding has to say what it means
+    // without appealing to a domain the OPB does not record.
+    _presence.assign(n, std::nullopt);
+    for (size_t i = 0; i < n; ++i) {
+        if (_presences.empty())
+            continue;
+        const auto & p = _presences[i];
+        if (is_constant_variable(p)) {
+            if (const_value_of(p) == 1_i)
+                continue;
+        }
+        else {
+            auto [lo, hi] = initial_state.bounds(p);
+            if (lo < 0_i || hi > 1_i)
+                throw InvalidProblemDefinitionException{"Cumulative: presences must be within {0, 1}"};
+        }
+        _presence[i] = p;
+    }
 
     // Resolve snapshots used by define_proof_model and the propagator. For a
     // variable length/height, _*_vals[i] is a placeholder 0 (the propagator
@@ -168,10 +211,13 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
         _capacity_val = const_value_of(_capacity);
 
     // Tasks whose length can only ever be 0, or whose height can only ever be 0,
-    // never raise the load profile.
+    // or which are constantly absent, never raise the load profile.
+    auto constantly_absent = [&](size_t i) {
+        return _presence[i].has_value() && is_constant_variable(*_presence[i]) && const_value_of(*_presence[i]) == 0_i;
+    };
     _active_tasks.reserve(n);
     for (size_t i = 0; i < n; ++i)
-        if (_length_ub[i] > 0_i && _height_ub[i] > 0_i)
+        if (_length_ub[i] > 0_i && _height_ub[i] > 0_i && ! constantly_absent(i))
             _active_tasks.push_back(i);
 
     if (_active_tasks.empty())
@@ -268,7 +314,7 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
     //   for each task i and each time point t in its possible-active range:
     //     before_{i,t}  ⇔  starts[i] ≤ t
     //     after_{i,t}   ⇔  starts[i] ≥ t − lengths[i] + 1
-    //     active_{i,t} ⇔  before_{i,t} ∧ after_{i,t}
+    //     active_{i,t} ⇔  before_{i,t} ∧ after_{i,t} [ ∧ presences[i] = 1 ]
     //   for each time point t:
     //     Σ heights[i] · active_{i,t} ≤ capacity
     _before_flags.assign(_starts.size(), {});
@@ -326,7 +372,20 @@ auto Cumulative::define_proof_model(ProofModel & model, const State &) -> void
             auto after = is_constant_variable(_lengths[i])
                 ? model.create_proof_flag_values_fully_reifying(_constraint_id, it, "ca", WPBSum{} + 1_i * _starts[i] >= t - _length_vals[i] + 1_i)
                 : model.create_proof_flag_values_fully_reifying(_constraint_id, it, "ca", WPBSum{} + 1_i * _starts[i] + 1_i * _lengths[i] >= t + 1_i);
-            auto active = model.create_proof_flag_values_fully_reifying(_constraint_id, it, "cact", WPBSum{} + 1_i * before + 1_i * after >= 2_i);
+            // active_{i,t} ⇔ before ∧ after, plus the presence conjunct for an
+            // optional task. The presence literal is the {0,1} variable's single
+            // PB atom, so the three-way AND costs one more term in the same two
+            // reification halves --- no extra flag, and nothing else in the
+            // encoding has to know whether the task is optional. An absent task
+            // fails the AND at every t, so it drops out of every capacity row,
+            // which is exactly "an absent task consumes nothing".
+            auto active_conjuncts = WPBSum{} + 1_i * before + 1_i * after;
+            auto active_arity = 2_i;
+            if (_presence[i]) {
+                active_conjuncts += 1_i * (*_presence[i] == 1_i);
+                active_arity = 3_i;
+            }
+            auto active = model.create_proof_flag_values_fully_reifying(_constraint_id, it, "cact", move(active_conjuncts) >= active_arity);
             _before_flags[i].push_back(before);
             _after_flags[i].push_back(after);
             _active_flags[i].push_back(active);
@@ -405,6 +464,14 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
     for (auto i : _active_tasks)
         if (! is_constant_variable(_lengths[i]))
             triggers.on_bounds.emplace_back(_lengths[i]);
+    // A task joins the load profile the moment its presence is fixed to 1, and
+    // leaves the falsification search the moment it is fixed to 0, so an
+    // optional task's presence has to wake the propagator as much as its start
+    // does. A {0,1} variable's only possible change is being fixed, so
+    // on_bounds and on_instantiated coincide here.
+    for (auto i : _active_tasks)
+        if (_presence[i] && ! is_constant_variable(*_presence[i]))
+            triggers.on_instantiated.emplace_back(*_presence[i]);
 
     // Per variable-duration task, the in-proof end = s + l definition lines
     // {end_ge, end_le}, filled by the initialiser and read by the propagator's
@@ -447,6 +514,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .lengths = move(_lengths),
         .heights = move(_heights),
         .capacity = _capacity,
+        .presence = move(_presence),
         .active_tasks = move(_active_tasks),
         .before_flags = move(_before_flags),
         .after_flags = move(_after_flags),
@@ -458,6 +526,7 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         .capacity_lines = move(_capacity_lines),
         .rules = _rules,
         .proof_mutation = _proof_mutation,
+        .presence_mutation = _presence_mutation,
         .overload_tasks = move(_overload_tasks),
         .time_slot_prefix = move(_time_slot_prefix),
         .time_slot_lo = _time_slot_lo};
@@ -490,6 +559,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     const auto & capacity_lines = inputs.capacity_lines;
     const auto & rules = inputs.rules;
     const auto & mutation = inputs.proof_mutation;
+    const auto & presence = inputs.presence;
+    const auto & presence_mutation = inputs.presence_mutation;
     const auto & overload_tasks = inputs.overload_tasks;
     const auto & time_slot_prefix = inputs.time_slot_prefix;
     const auto & time_slot_lo = inputs.time_slot_lo;
@@ -517,6 +588,15 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     auto lub = [&](size_t i) { return state.upper_bound(lengths_var[i]); };
     auto l_is_var = [&](size_t i) { return ! is_constant_variable(lengths_var[i]); };
     auto s_is_var = [&](size_t i) { return ! is_constant_variable(starts[i]); };
+
+    // A task with no presence variable is always here. An optional one is here
+    // only once its presence is fixed to 1: until then it contributes nothing
+    // to the profile and nothing to the overload check's energy, and nothing
+    // may be inferred about its start, since a prune that is only valid when
+    // the task is present would be plain wrong if it turns out absent. Fixed
+    // to 0, it is gone for good and every loop below skips it.
+    auto is_present = [&](size_t i) { return ! presence[i] || state.lower_bound(*presence[i]) == 1_i; };
+    auto is_absent = [&](size_t i) { return presence[i] && state.upper_bound(*presence[i]) == 0_i; };
 
     // For a task whose start AND length are both variables, after_{i,t}
     // is reified on s_i + l_i. To pin after = 1 we first materialise the
@@ -548,6 +628,24 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             reason_vars.push_back(lengths_var[i]);
     }
 
+    // Presence enters the reason as an explicit literal per task known present,
+    // rather than by putting the variable in reason_vars: an undecided presence
+    // has no fact to record (a task not known present is simply not in the
+    // profile, and staying out of it is monotone as the domain shrinks), and
+    // generic_reason would contribute the pair of trivial bounds 0 ≤ p ≤ 1 for
+    // it, which says nothing and costs an order atom on a variable whose whole
+    // encoding is one PB literal. Every inference below reasons only about
+    // tasks known present, so this one list serves all of them --- including
+    // the overload check, whose energy set is a subset of the profile's tasks.
+    // The snapshot is taken once per call and stays accurate: the only presence
+    // this propagator ever changes is one it fixes to 0, and those were
+    // undecided, so absent from the list to begin with.
+    ReasonLiterals presence_lits;
+    for (auto i : active_tasks)
+        if (presence[i] && is_present(i))
+            presence_lits.push_back(*presence[i] == 1_i);
+    auto reason_with_presence = [&]() { return with_extra(generic_reason(reason_vars), presence_lits); };
+
     // Proof helper: pin task i's guaranteed load contribution at t and
     // return a (line, coeff) pair to feed the time-table pol. For a
     // constant height that is "active = 1" scaled by the height; for a
@@ -567,26 +665,41 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         return {contrib_line, 1_i};
     };
 
+    // The disjuncts a chain step's pins are weakened by --- what the step is out
+    // to prove. An ordinary bound push carries the one literal saying the bound
+    // has advanced; a presence falsification carries "task j is absent"
+    // alongside it, so that every line the chain lays down reads "either the
+    // bound has moved on, or the task is not there at all". At most two, so a
+    // vector costs nothing worth avoiding on a path that only runs when a proof
+    // is being written.
+    using ExtLits = vector<IntegerVariableCondition>;
+
+    auto plus_ext = [&](WPBSum sum, const ExtLits & ext, Integer coeff) -> WPBSum {
+        for (const auto & e : ext)
+            sum += coeff * e;
+        return sum;
+    };
+
     // Proof helper for the pushed task j, pinned under the EXTENDED
-    // reason {reason ∧ ¬ext_lit} (ext_lit appended as a disjunct). For a
-    // constant height it returns (active_j+ext_lit ≥ 1, h_j); for a
-    // variable height it deposits contrib_j + lb(h_j)·ext_lit ≥ lb(h_j)
-    // (vacuous when ext_lit holds, "contrib_j ≥ lb(h_j)" otherwise) and
-    // returns that line with coefficient 1.
-    auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, IntegerVariableCondition ext_lit,
+    // reason {reason ∧ ¬ext} (ext appended as disjuncts). For a constant
+    // height it returns (active_j + Σext ≥ 1, h_j); for a variable height
+    // it deposits contrib_j + lb(h_j)·Σext ≥ lb(h_j) (vacuous when some ext
+    // literal holds, "contrib_j ≥ lb(h_j)" otherwise) and returns that line
+    // with coefficient 1.
+    auto pin_pushed = [&](const ReasonLiterals & reason, size_t j_idx, Integer t, const ExtLits & ext,
                           Integer s_lo_after) -> std::pair<ProofLine, Integer> {
         auto fj = (t - per_task_t_lo[j_idx]).raw_value;
-        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * before_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-        // s_lo_after + lb(l_j) ≥ t+1 gives after_{j,t} = 1 (under ¬ext_lit
+        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * before_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        // s_lo_after + lb(l_j) ≥ t+1 gives after_{j,t} = 1 (under ¬ext
         // for ub-push, under the running bound for lb-push).
         materialise_after_sum(j_idx, s_lo_after);
-        logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * after_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
-        auto active_line =
-            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * active_flags[j_idx][fj] + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+        logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{} + 1_i * after_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
+        auto active_line = logger->emit_rup_proof_line_under_reason(
+            reason, plus_ext(WPBSum{} + 1_i * active_flags[j_idx][fj], ext, 1_i) >= 1_i, ProofLevel::Temporary);
         if (! h_is_var(j_idx))
             return {active_line, hlb(j_idx)};
         auto contrib_line = logger->emit_rup_proof_line_under_reason(
-            reason, contrib_sum_of(contrib_flags[j_idx][fj]) + hlb(j_idx) * ext_lit >= hlb(j_idx), ProofLevel::Temporary);
+            reason, plus_ext(contrib_sum_of(contrib_flags[j_idx][fj]), ext, hlb(j_idx)) >= hlb(j_idx), ProofLevel::Temporary);
         return {contrib_line, 1_i};
     };
 
@@ -603,6 +716,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     bool any = false;
     Integer t_lo = 0_i, t_hi = -1_i;
     for (auto i : active_tasks) {
+        if (is_absent(i))
+            continue;
         auto [s_lo, s_hi] = state.bounds(starts[i]);
         auto lo = s_lo, hi = s_hi + lub(i) - 1_i;
         if (! any || lo < t_lo)
@@ -617,7 +732,11 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
     auto range = (t_hi - t_lo + 1_i).raw_value;
     vector<Integer> mand_load(range, 0_i);
 
+    // Only tasks known present have a mandatory part: an undecided one might
+    // not be scheduled at all, so none of its resource use is guaranteed.
     for (auto i : active_tasks) {
+        if (! is_present(i))
+            continue;
         auto lst = state.upper_bound(starts[i]);
         auto eet = state.lower_bound(starts[i]) + llb(i);
         if (lst < eet)
@@ -633,6 +752,8 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             // we'll pin to active=1 in the proof.
             vector<size_t> contributing;
             for (auto i : active_tasks) {
+                if (! is_present(i))
+                    continue;
                 auto lst = state.upper_bound(starts[i]);
                 auto eet = state.lower_bound(starts[i]) + llb(i);
                 if (lst < eet && violating_t >= lst && violating_t < eet)
@@ -656,7 +777,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 pol.emit(*logger, ProofLevel::Temporary);
             };
 
-            inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
+            inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
             return PropagatorState::DisableUntilBacktrack;
         }
 
@@ -710,10 +831,19 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
         vector<Candidate> candidates;
         candidates.reserve(overload_tasks.size());
         for (auto i : overload_tasks) {
+            // An optional task carries guaranteed energy only once it is known
+            // present. Until then it might not be scheduled at all, and
+            // counting its energy would manufacture a conflict that is not
+            // there. Its presence literal is already in the reason, put there
+            // with every other known-present task's.
+            if (! is_present(i))
+                continue;
             auto [s_lo, s_hi] = state.bounds(starts[i]);
             auto p = llb(i), h = hlb(i);
             candidates.push_back(Candidate{i, s_lo, s_hi + p, p * h, h * max(0_i, s_lo + p - s_hi)});
         }
+        // An empty candidate list leaves window_starts empty too, so the window
+        // loop below simply does not run; no early exit needed.
         sort(candidates, [](const Candidate & a, const Candidate & b) { return a.lct < b.lct; });
 
         vector<Integer> window_starts;
@@ -754,7 +884,15 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     for (auto i : inside_tasks)
                         inside[i] = true;
                     for (auto j : active_tasks) {
-                        if (inside[j])
+                        // Exactly the tasks profile_within counted: mand_load
+                        // holds only those known present. Pinning any other
+                        // would claim load the arithmetic never used --- which
+                        // VeriPB would *accept*, since by this point the reason
+                        // context is contradictory and every RUP under it is
+                        // vacuously valid, so nothing downstream would notice.
+                        // That is exactly why it is written down here rather
+                        // than left to a test to catch.
+                        if (inside[j] || ! is_present(j))
                             continue;
                         auto lst = state.upper_bound(starts[j]);
                         auto eet = state.lower_bound(starts[j]) + llb(j);
@@ -828,8 +966,7 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                     pol.emit(*logger, ProofLevel::Temporary);
                 };
 
-                inference.contradiction(
-                    logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, generic_reason(reason_vars));
+                inference.contradiction(logger, JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeOverload{owner}}, reason_with_presence());
                 return PropagatorState::DisableUntilBacktrack;
             }
         }
@@ -855,66 +992,69 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
 
     // Helper: emit (a)–(d) for one chain step.
     //
-    // `ext_lit` is the literal added to the reason in PB form (= the
+    // `ext` holds the literals added to the reason in PB form (= the
     // negation of "task j is active at t"-as-bounded-by-the-running
     // half):
-    //   lb-push:  ext_lit = (s_j ≥ t + 1)
-    //   ub-push:  ext_lit = (s_j ≤ t − l_j)
+    //   lb-push:  ext = {s_j ≥ t + 1}
+    //   ub-push:  ext = {s_j ≤ t − l_j}
+    //   falsify:  ext = {s_j ≥ t + 1, present_j = 0}, and just
+    //             {present_j = 0} on the final step
     //
-    // `emit_intermediate` deposits ext_lit as a unit under reason —
-    // needed for every step except the last (the framework's wrapping
+    // `emit_intermediate` deposits the ext disjunction as a unit clause under
+    // reason — needed for every step except the last (the framework's wrapping
     // RUP closes the final inference).
-    auto emit_chain_step = [&](size_t j_idx, Integer t, const vector<size_t> & contributing, IntegerVariableCondition ext_lit, Integer s_lo_after,
+    auto emit_chain_step = [&](size_t j_idx, Integer t, const vector<size_t> & contributing, const ExtLits & ext, Integer s_lo_after,
                                bool emit_intermediate, const ReasonLiterals & reason) -> void {
         // (a) Pin each task i ≠ j mandatory at t under the reason, and
         // (b) pin the pushed task j under the EXTENDED reason. Then
         // (c) combine all pinned load lines with C_t in one pol. After
-        // cancellation the pol is dominated by (load − capacity)·ext_lit,
-        // forcing ext_lit = 1 (the new bound) under the reason context.
+        // cancellation the pol is dominated by (load − capacity)·Σext,
+        // forcing the ext disjunction under the reason context.
         PolBuilder pol;
         pol.add(capacity_lines.at(t));
         for (auto i : contributing) {
             auto [line, coeff] = pin_contributor(reason, i, t);
             pol.add(line, coeff);
         }
-        auto [j_line, j_coeff] = pin_pushed(reason, j_idx, t, ext_lit, s_lo_after);
+        auto [j_line, j_coeff] = pin_pushed(reason, j_idx, t, ext, s_lo_after);
         pol.add(j_line, j_coeff);
         pol.emit(*logger, ProofLevel::Temporary);
 
         // (d) Deposit the running-bound advance as a fact under
         // reason for the next chain step's UP.
         if (emit_intermediate)
-            logger->emit_rup_proof_line_under_reason(reason, WPBSum{} + 1_i * ext_lit >= 1_i, ProofLevel::Temporary);
+            logger->emit_rup_proof_line_under_reason(reason, plus_ext(WPBSum{}, ext, 1_i) >= 1_i, ProofLevel::Temporary);
     };
 
     for (auto j : active_tasks) {
+        if (is_absent(j))
+            continue;
         auto [cur_lb, cur_ub] = state.bounds(starts[j]);
-        if (cur_lb == cur_ub)
+        // A fixed start leaves nothing to push, but an undecided task with a
+        // fixed start can still be shown to have nowhere to go.
+        if (cur_lb == cur_ub && is_present(j))
             continue;
 
         auto lst_j = cur_ub, eet_j = cur_lb + llb(j);
+        // Only a task known present put anything into the profile, so only that
+        // one has something to discount before asking where it could go. An
+        // undecided task's own load is not in mand_load and must not be
+        // subtracted out of it.
+        auto own_load_at = [&](Integer t) { return is_present(j) && lst_j < eet_j && t >= lst_j && t < eet_j ? hlb(j) : 0_i; };
+
         auto fits_at = [&](Integer s) -> bool {
-            for (Integer t = s; t < s + llb(j); ++t) {
-                auto load = mand_load[(t - t_lo).raw_value];
-                if (lst_j < eet_j && t >= lst_j && t < eet_j)
-                    load -= hlb(j);
-                if (load + hlb(j) > capacity)
+            for (Integer t = s; t < s + llb(j); ++t)
+                if (mand_load[(t - t_lo).raw_value] - own_load_at(t) + hlb(j) > capacity)
                     return false;
-            }
             return true;
         };
 
-        auto is_blocked_at = [&](Integer t) -> bool {
-            auto load = mand_load[(t - t_lo).raw_value];
-            if (lst_j < eet_j && t >= lst_j && t < eet_j)
-                load -= hlb(j);
-            return load + hlb(j) > capacity;
-        };
+        auto is_blocked_at = [&](Integer t) -> bool { return mand_load[(t - t_lo).raw_value] - own_load_at(t) + hlb(j) > capacity; };
 
         auto contributors_at = [&](Integer t) -> vector<size_t> {
             vector<size_t> result;
             for (auto i : active_tasks) {
-                if (i == j)
+                if (i == j || ! is_present(i))
                     continue;
                 auto lst_i = state.upper_bound(starts[i]);
                 auto eet_i = state.lower_bound(starts[i]) + llb(i);
@@ -924,16 +1064,22 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
             return result;
         };
 
-        // lb-push: find smallest s with fits_at(s), then chain
-        // through blocked t's picking the LARGEST in each step's
-        // window so the bound advances as far as possible per step.
+        // The lb-push scan, which the presence falsification also reads: find
+        // the smallest s in [cur_lb, cur_ub] with fits_at(s). If there is none,
+        // no placement at all is left for this task.
         auto new_lb = cur_lb;
         while (new_lb <= cur_ub && ! fits_at(new_lb))
             ++new_lb;
-        if (new_lb > cur_lb) {
+
+        // Build the chain of blocked times carrying the running bound from
+        // cur_lb up to `target`, picking the LARGEST blocked t in each step's
+        // window so the bound advances as far as possible per step. Every
+        // step's window contains a blocked time by construction (its running
+        // bound does not fit), so the chain always reaches `target`.
+        auto build_lb_chain = [&](Integer target) -> vector<ChainStep> {
             vector<ChainStep> chain;
             Integer running_bound = cur_lb;
-            while (running_bound < new_lb) {
+            while (running_bound < target) {
                 bool found = false;
                 for (Integer t = running_bound + llb(j) - 1_i; t >= running_bound; --t)
                     if (is_blocked_at(t)) {
@@ -945,17 +1091,80 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 if (! found)
                     break;
             }
+            return chain;
+        };
+
+        if (! is_present(j)) {
+            // Presence falsification. The task is undecided and, if it were
+            // present, has nowhere left to start: new_lb ran off the end of its
+            // domain. Replay the lb-push chain over the whole domain with "task
+            // j is absent" carried as an extra disjunct on every line, so each
+            // step says "either j starts later than this, or j is not here at
+            // all". The last step's blocked time is at or beyond cur_ub --- that
+            // is what makes it the last --- so there the start-side disjunct is
+            // dropped: j's own upper bound in the reason already puts it before
+            // that time, and asking for an order literal above the domain would
+            // be asking for one that need not exist.
+            //
+            // The ClaimOneTooFar mutation fires where exactly one placement is
+            // still open, so the conclusion is wrong rather than the route to
+            // it. The chain then stops short --- its last window has no blocked
+            // time --- and the wrapping RUP has nothing to close on, which is
+            // what VeriPB must catch.
+            if (new_lb <= cur_ub && ! (std::holds_alternative<cumulative_presence_mutation::ClaimOneTooFar>(presence_mutation) && new_lb == cur_ub))
+                continue;
+            auto chain = build_lb_chain(cur_ub + 1_i);
+            if (chain.empty())
+                continue;
+
+            auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
+                if (! logger)
+                    return;
+                // The marker a test counts to show the rule fired, and counts to
+                // zero on the twin instance where it must not.
+                logger->emit_proof_comment("cumulative optional: task " + std::to_string(j) + " cannot be placed anywhere, so it is absent");
+
+                auto steps = std::holds_alternative<cumulative_presence_mutation::EmitNothing>(presence_mutation) ? 0 : chain.size();
+                // Which task's absence the chain argues about: the one being
+                // falsified, unless the WrongTask mutation points it at some
+                // other optional task.
+                auto about = j;
+                if (std::holds_alternative<cumulative_presence_mutation::WrongTask>(presence_mutation))
+                    for (auto k : active_tasks)
+                        if (k != j && presence[k]) {
+                            about = k;
+                            break;
+                        }
+
+                for (size_t step = 0; step < steps; ++step) {
+                    auto last = step + 1 == steps;
+                    ExtLits ext;
+                    if (! last)
+                        ext.push_back(starts[j] > chain[step].t);
+                    ext.push_back(*presence[about] == 0_i);
+                    emit_chain_step(j, chain[step].t, chain[step].contributing, ext, chain[step].s_lo_after, ! last, reason);
+                }
+            };
+
+            inference.infer_equal(
+                logger, *presence[j], 0_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
+            continue;
+        }
+
+        // lb-push: chain through blocked t's up to the first placement that fits.
+        if (new_lb > cur_lb) {
+            auto chain = build_lb_chain(new_lb);
 
             auto justify = [&, j, chain](const ReasonLiterals & reason) -> void {
                 if (! logger)
                     return;
                 for (size_t step = 0; step < chain.size(); ++step)
-                    emit_chain_step(j, chain[step].t, chain[step].contributing, starts[j] > chain[step].t, chain[step].s_lo_after,
+                    emit_chain_step(j, chain[step].t, chain[step].contributing, ExtLits{starts[j] > chain[step].t}, chain[step].s_lo_after,
                         step + 1 < chain.size(), reason);
             };
 
             inference.infer_greater_than_or_equal(
-                logger, starts[j], new_lb, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
+                logger, starts[j], new_lb, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
         }
 
         // ub-push: mirror image. Pick SMALLEST blocked t in each
@@ -984,12 +1193,12 @@ auto gcs::innards::propagate_cumulative(const CumulativeInputs & inputs, const S
                 if (! logger)
                     return;
                 for (size_t step = 0; step < chain.size(); ++step)
-                    emit_chain_step(j, chain[step].t, chain[step].contributing, starts[j] < chain[step].t - llb(j) + 1_i, chain[step].s_lo_after,
-                        step + 1 < chain.size(), reason);
+                    emit_chain_step(j, chain[step].t, chain[step].contributing, ExtLits{starts[j] < chain[step].t - llb(j) + 1_i},
+                        chain[step].s_lo_after, step + 1 < chain.size(), reason);
             };
 
             inference.infer_less_than(
-                logger, starts[j], new_ub + 1_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, generic_reason(reason_vars));
+                logger, starts[j], new_ub + 1_i, JustifyExplicitly{justify, ThenRUP::Yes, hints::Cumulative{owner}}, reason_with_presence());
         }
     }
 
@@ -1009,6 +1218,11 @@ auto Cumulative::lengths() const -> const vector<IntegerVariableID> &
 auto Cumulative::heights() const -> const vector<IntegerVariableID> &
 {
     return _heights;
+}
+
+auto Cumulative::presences() const -> const vector<IntegerVariableID> &
+{
+    return _presences;
 }
 
 auto Cumulative::capacity() const -> IntegerVariableID
@@ -1044,21 +1258,37 @@ auto ConstraintProofModelData<Cumulative>::active_flag_key(size_t task, Integer 
 
 auto Cumulative::constraint_type() const -> std::string
 {
-    return "cumulative";
+    // The optional form is a different constraint, not a variant of this one:
+    // its active flags carry a third conjunct, so a verified encoder for
+    // "cumulative" would re-derive a strictly different --- and weaker --- set
+    // of capacity rows from the same s-expression. cake_pb_cp has no optional
+    // cumulative encoder today, so naming it apart is what keeps the
+    // verified-encoding chain honest about the gap rather than silently
+    // mismatching.
+    return _presences.empty() ? "cumulative" : "cumulative_optional";
 }
 
 auto Cumulative::s_expr(const ProofModel * const model) const -> SExpr
 {
     auto & tracker = model->names_and_ids_tracker();
-    vector<SExpr> starts, lengths, heights;
+    vector<SExpr> starts, lengths, heights, presences;
     for (const auto & v : _starts)
         starts.push_back(tracker.s_expr_term_of(v));
     for (const auto & l : _lengths)
         lengths.push_back(tracker.s_expr_term_of(l));
     for (const auto & h : _heights)
         heights.push_back(tracker.s_expr_term_of(h));
-    return SExpr::list({SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)),
-        SExpr::list(std::move(lengths)), SExpr::list(std::move(heights)), tracker.s_expr_term_of(_capacity)});
+    for (const auto & p : _presences)
+        presences.push_back(tracker.s_expr_term_of(p));
+    vector<SExpr> terms{SExpr::atom(as_string(_constraint_id)), SExpr::atom(constraint_type()), SExpr::list(std::move(starts)),
+        SExpr::list(std::move(lengths)), SExpr::list(std::move(heights))};
+    // The presences list sits where the FlatZinc builtin puts it, between the
+    // heights and the capacity, and is absent entirely for the non-optional
+    // form so that its s-expression is unchanged.
+    if (! _presences.empty())
+        terms.push_back(SExpr::list(std::move(presences)));
+    terms.push_back(tracker.s_expr_term_of(_capacity));
+    return SExpr::list(std::move(terms));
 }
 
 template auto gcs::innards::propagate_cumulative(const CumulativeInputs &, const State &, SimpleInferenceTracker &, ProofLogger * const)
