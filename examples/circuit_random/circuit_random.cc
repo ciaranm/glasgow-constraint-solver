@@ -47,7 +47,8 @@ auto create_graph_from_seed(int n, double p, unsigned int seed) -> vector<vector
     return distances;
 }
 
-Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOptions options, bool print_solutions, bool prove, string proof_prefix)
+Stats run_circuit_problem(
+    int n, const vector<vector<long>> & distances, SCCOptions options, bool gac_all_different, bool print_solutions, bool prove, string proof_prefix)
 {
     Problem p;
     auto x = p.create_integer_variable_vector(n, 0_i, Integer{n - 1});
@@ -59,9 +60,8 @@ Stats run_circuit_problem(int n, const vector<vector<long>> & distances, SCCOpti
             }
         }
     }
-    auto use_gac_all_different = false;
     p.post(Circuit{x}
-            .with_gac_all_different(use_gac_all_different)
+            .with_gac_all_different(gac_all_different)
             .with_prune_root(options.prune_root)
             .with_prune_skip(options.prune_skip)
             .with_fix_req(options.fix_req)
@@ -124,6 +124,7 @@ auto main(int argc, char * argv[]) -> int
                 cxxopts::value<string>()->default_value("circuit_random"))                 //
             ("print-distances", "Print the input graph used for the probllem")             //
             ("print-solutions", "Print each solution found while optimising")              //
+            ("gac-all-different", "Use a GAC all-different over the successors")           //
             ("no-prune-root", "SCC inference")                                             //
             ("no-prune-skip", "SCC inference")                                             //
             ("no-fix-req", "SCC inference")                                                //
@@ -159,6 +160,7 @@ auto main(int argc, char * argv[]) -> int
         options_vars.contains("short-reasons"),
     };
 
+    auto gac_all_different = options_vars.contains("gac-all-different");
     auto n = options_vars["n"].as<int>();
     auto seed = options_vars["seed"].as<int>();
     auto proof_prefix = options_vars["proof-files-basename"].as<string>();
@@ -184,7 +186,7 @@ auto main(int argc, char * argv[]) -> int
         }
     }
 
-    auto stats = run_circuit_problem(n, distances, options, print_solutions, prove, proof_prefix);
+    auto stats = run_circuit_problem(n, distances, options, gac_all_different, print_solutions, prove, proof_prefix);
 
     if (print_stats) {
         cout << "seed: " << seed << endl;
