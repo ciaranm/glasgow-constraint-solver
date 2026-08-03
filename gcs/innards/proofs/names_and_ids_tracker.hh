@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PROOFS_PROOF_VARIABLE_CONSTRAINTS_TRACKER_HH
 
 #include <gcs/constraint_id.hh>
+#include <gcs/innards/proofs/constraint_proof_model_data.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker-fwd.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
@@ -534,6 +535,34 @@ namespace gcs::innards
          * constraint's naming scheme.
          */
         [[nodiscard]] auto constraint_row_label(const ConstraintID & id, const std::string & role) const -> std::optional<ProofLineLabel>;
+
+        /**
+         * \brief The flag a constraint created under this key, if it created
+         * one.
+         *
+         * The flag-side counterpart of \ref constraint_row_label, and the same
+         * shape of answer: "may I cite this?", not "what does it say". A flag's
+         * name is a pure function of `(id, values, annotation)` --- the same
+         * function \ref create_proof_flag_values applies --- so this finds the
+         * flag whichever clone of the constraint created it, and stores nothing
+         * a solve depends on beyond the name index the flags already need.
+         *
+         * nullopt means no flag went out under that key: the constraint was
+         * never installed, or proofs are off, or the key names a
+         * (task, time) pair outside the window the constraint encoded. All of
+         * those mean the same thing to a caller --- there is nothing to cite,
+         * so do not do the thing that would need citing.
+         *
+         * Pair it with innards::ConstraintProofModelData, which is how a
+         * constraint publishes the *keys* it uses; building one here instead
+         * would be guessing at another constraint's naming scheme.
+         *
+         * Only the ConstraintID-keyed flag namespaces are indexed, matching
+         * what \ref claim_constraint_row_labels covers on the row side: an
+         * `f[index][stem]` flag is anonymous by construction and has no key to
+         * look up.
+         */
+        [[nodiscard]] auto find_proof_flag_values(const ConstraintID & id, const ProofFlagKey & key) const -> std::optional<ProofFlag>;
 
         /**
          * Create a proof flag with a new identifier, named `f[index][stem]`.

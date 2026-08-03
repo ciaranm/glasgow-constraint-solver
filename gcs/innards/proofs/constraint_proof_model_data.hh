@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace gcs::innards
 {
@@ -44,6 +45,32 @@ namespace gcs::innards
      */
     template <typename Constraint_>
     struct ConstraintProofModelData;
+
+    /**
+     * \brief The key a constraint created one of its proof flags under: the
+     * value list and optional annotation it passed to
+     * NamesAndIDsTracker::create_proof_flag_values.
+     *
+     * The flag-side counterpart of a published row role, and published the same
+     * way and for the same reason. A flag's name is a pure function of
+     * `(ConstraintID, values, annotation)`, so a caller that knows the key can
+     * find the flag whatever clone created it --- but a caller that *builds*
+     * that name itself is hard-coding another constraint's naming scheme, which
+     * is what ConstraintProofModelData exists to stop.
+     *
+     * Holding the resulting ProofFlag is then the permission to cite its
+     * reification rows by name, exactly as the constraint that made it does:
+     * those rows live in the `v[...]` namespace rather than `c[id][role]`, so
+     * constraint_row_label deliberately does not cover them.
+     *
+     * \ingroup Innards
+     * \sa NamesAndIDsTracker::find_proof_flag_values
+     */
+    struct ProofFlagKey
+    {
+        std::vector<long long> values;
+        std::optional<std::string> annotation;
+    };
 
     /**
      * \brief NamesAndIDsTracker::constraint_row_label, reached through a

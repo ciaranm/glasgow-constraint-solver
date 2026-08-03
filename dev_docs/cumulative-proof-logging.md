@@ -473,6 +473,106 @@ None of these lose soundness or solutions: a task the energy set will
 not take still counts through `F(a, b)`, and a check not made is a
 conflict found later.
 
+## Derived Cumulatives: an implied constraint that adds nothing to the model
+
+A presolver that spots an implied `Cumulative` — a strengthened capacity, a
+lifted resource, a disjunctive clique — needs its propagator's inferences to be
+justifiable, and the obvious way to do that is the wrong one. Writing the
+implied constraint's rows into the OPB changes the statement being verified:
+VeriPB would check the proof against a model containing an assertion nobody
+proved, accept it, and mean nothing by it. The whole point of #541's plan is
+that everything inferred enters as a *derivation*.
+
+`install_derived_cumulative`
+([`derived_cumulative.hh`](../gcs/constraints/cumulative/derived_cumulative.hh))
+is the mechanism. A derived Cumulative covers a donor's tasks, with its own
+heights and capacity, and creates no flags and no rows of its own: it pins the
+donor's flags, and its per-time capacity rows are derived in the proof from the
+donor's by a recipe the caller supplies.
+
+### Reaching the donor
+
+Two halves, both following the discipline #603 set for citing another
+constraint's model output — the constraint *publishes* what is citable, and the
+tracker says whether it is there:
+
+| what | published as | resolved by |
+|---|---|---|
+| `Σ h_i·active_{i,t} ≤ C` for a time `t` | `ConstraintProofModelData<Cumulative>::capacity_row_role(t)` | `NamesAndIDsTracker::constraint_row_label` |
+| the `before` / `after` / `active` flags for `(i, t)` | `...::before_flag_key(i, t)` and friends | `NamesAndIDsTracker::find_proof_flag_values` |
+
+The flag half is new. A flag's name is a pure function of
+`(ConstraintID, values, annotation)` — the same function
+`create_proof_flag_values` applies — so the tracker can answer "did a flag go
+out under this key?" exactly as it answers the question for rows. Holding the
+returned `ProofFlag` is then the permission to cite its reification rows by
+name, as the constraint that made it does; those rows live in the `v[...]`
+namespace, which `claim_constraint_row_labels` deliberately leaves out of the
+row-label set.
+
+Reconstructing either name as a string would work and is what not to do: the
+citer would be hard-coding another constraint's naming scheme, with nothing to
+tell the constraint's author they had broken somebody.
+
+The lookup also does the windowing check for free. The donor's flags exist only
+over the windows it encoded, so a derived constraint whose tasks run longer asks
+for a key that has no flag — and declines to install, rather than inventing one
+and finding out at verification time.
+
+### Where the derivation happens
+
+Inline, in `install_derived_cumulative`, at `ProofLevel::Top` — not from an
+`install_initialiser`. That was originally forced: initialisers had already run
+by the time a presolver was called, so one installed from there never fired and
+the propagator spent the search citing rows that were never written. #658 fixed
+that ordering, and this stays inline anyway for a better reason — the caller is
+told whether the constraint could be set up at all, and that answer has to be
+known while not installing the propagator is still an option.
+
+Top level is what makes the rows survive backtracking, which the propagator
+needs at every node.
+
+### The recipe
+
+```cpp
+std::function<auto(ProofLogger &, ProofLine donor_row, Integer t)->ProofLine>
+```
+
+Called once per time point with the donor's row, returning the derived one. It
+has a `ProofLogger` and no `ProofModel`, so a recipe cannot write to the OPB
+even by mistake. The two in `derived_cumulative_test` are the shapes to copy: a
+one-line `pol` that copies the donor's row, and
+[subset-sum strengthening](subset-sum-strengthening.md) over the row's own
+terms, which takes its divisibility fast path and rounds a capacity of eight
+down to six when every height is a multiple of three.
+
+That second one is worth a note, because it is easy to expect the wrong thing
+from it. Rounding the capacity down by integrality is **invisible to
+time-tabling**: a load is a sum of heights, so it clears eight exactly when it
+clears six. What it changes is the *energy* argument, where a window's supply is
+the capacity times its width, and that is not a multiple of three. Seven
+unit-length tasks of height three need 21 units in `[0, 3)`, which eight
+supplies and six does not.
+
+### Multi-donor, for later
+
+Issues #548 and #549 infer a Cumulative over tasks drawn from *several* donors,
+each with its own flag copies for the same `(task, time)` semantics. Two ways to
+make one derivation speak about all of them:
+
+1. **Bridge lemmas.** Pick one donor's flags as canonical and derive
+   `active^{(r)}_{i,t} ↔ active^{(1)}_{i,t}` per `(i, t)`, by `pol` over the two
+   reification halves — the start variable's bits cancel, exactly as in the
+   window-energy bridges above. O(tasks × times) extra Top lines per extra
+   donor, and it needs no new API: both donors' rows are citable by name.
+2. **Rewrite each donor's row.** One `pol` pass per row, over the flag-defining
+   rows directly, landing on the canonical flags without ever stating the
+   bridge.
+
+Neither is implemented here. The first is the safer starting point (each lemma
+is checkable on its own); the second is smaller if it works. Whichever lands
+should measure the proof size, since that is the whole difference between them.
+
 ## Open follow-ups
 
 - **Edge-finding.** A *set* of tasks blocks an interval, not a single

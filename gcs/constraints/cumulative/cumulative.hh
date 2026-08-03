@@ -2,6 +2,7 @@
 #define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_CONSTRAINTS_CUMULATIVE_CUMULATIVE_HH
 
 #include <gcs/constraint.hh>
+#include <gcs/innards/proofs/constraint_proof_model_data.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_only_variables-fwd.hh>
 #include <gcs/integer.hh>
@@ -171,8 +172,6 @@ namespace gcs
         std::vector<std::optional<innards::ProofOnlySimpleIntegerVariableID>> _end;
         std::map<Integer, innards::ProofLine> _capacity_lines; // t -> proof line for the per-t time-table constraint
 
-        auto prepare_overload_check(innards::State &) -> void;
-
         virtual auto prepare(innards::Propagators &, innards::State &, innards::ProofModel * const) -> bool override;
         virtual auto define_proof_model(innards::ProofModel &, const innards::State &) -> void override;
         virtual auto install_propagators(innards::Propagators &) -> void override;
@@ -202,9 +201,74 @@ namespace gcs
         /// CumulativeProofMutation.
         auto with_proof_mutation(CumulativeProofMutation mutation) -> Cumulative &;
 
+        /**
+         * \name The arguments this constraint was posted with.
+         *
+         * As posted, not as resolved: a constant length or height comes back as
+         * the ConstantIntegerVariableID it went in as. A caller wanting bounds
+         * should ask the State, which is the only thing that knows them at the
+         * point the caller is asking.
+         */
+        ///@{
+        [[nodiscard]] auto starts() const -> const std::vector<IntegerVariableID> &;
+        [[nodiscard]] auto lengths() const -> const std::vector<IntegerVariableID> &;
+        [[nodiscard]] auto heights() const -> const std::vector<IntegerVariableID> &;
+        [[nodiscard]] auto capacity() const -> IntegerVariableID;
+        ///@}
+
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;
         [[nodiscard]] virtual auto constraint_type() const -> std::string override;
+    };
+
+    /**
+     * \brief What Cumulative publishes for other proof steps to build on: its
+     * per-time capacity rows, and the keys of its per-(task, time) flags.
+     *
+     * Public API, in the sense #603 established: a derived Cumulative
+     * (install_derived_cumulative) builds `pol`s on the capacity rows and pins
+     * the flags, so changing what these name is a breaking change. cake_pb_cp
+     * re-derives the same names, so it is a cross-tool break rather than merely
+     * an internal one.
+     *
+     * Unlike a comparison or a linear inequality, there is no single primary
+     * row to publish --- the capacity rows are a family, one per time point ---
+     * so primary_row_role is honestly nullopt and \ref capacity_row_role is
+     * what a citer wants.
+     */
+    template <>
+    struct innards::ConstraintProofModelData<Cumulative>
+    {
+        /**
+         * \brief Always nullopt: a Cumulative's rows are a per-time family, and
+         * no one of them is the row a citer could mean.
+         */
+        [[nodiscard]] static auto primary_row_role(const Cumulative &) -> std::optional<std::string>;
+
+        /**
+         * \brief The role of the row saying the load at time `t` is within the
+         * capacity: `Σ heights[i]·active[i,t] ≤ capacity`.
+         *
+         * A row exists for each time point some task can occupy; ask
+         * NamesAndIDsTracker::constraint_row_label whether this one did.
+         */
+        [[nodiscard]] static auto capacity_row_role(Integer t) -> std::string;
+
+        /**
+         * \name The keys of the per-(task, time) flags.
+         *
+         * `before` is `start[i] <= t`, `after` is `start[i] + length[i] > t`,
+         * and `active` is their conjunction. Ask
+         * NamesAndIDsTracker::find_proof_flag_values for the flag: a key
+         * outside the task's possible-active window has none, which is how a
+         * citer discovers it is asking about a window the constraint did not
+         * encode.
+         */
+        ///@{
+        [[nodiscard]] static auto before_flag_key(std::size_t task, Integer t) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto after_flag_key(std::size_t task, Integer t) -> innards::ProofFlagKey;
+        [[nodiscard]] static auto active_flag_key(std::size_t task, Integer t) -> innards::ProofFlagKey;
+        ///@}
     };
 }
 
