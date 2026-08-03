@@ -349,6 +349,19 @@ auto gcs::solve_with(
                 presolve_success = false;
                 break;
             }
+
+            // Whatever that presolver installed gets initialised before the
+            // next one looks at the problem. A presolver can install a
+            // constraint, and a constraint can install an initialiser --- that
+            // is where one introduces a proof-only variable, for instance ---
+            // so without this the constraint would be propagating against
+            // definitions that were never written, which shows up as a
+            // rejected proof at best. initialise() picks up where it left off,
+            // so the first round's initialisers do not run again.
+            if (! propagators.initialise(state, optional_proof ? optional_proof->logger() : nullptr)) {
+                presolve_success = false;
+                break;
+            }
         }
     }
 

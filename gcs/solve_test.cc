@@ -5,6 +5,7 @@
 #include <gcs/constraints/innards/constraints_test_utils.hh>
 #include <gcs/constraints/plus.hh>
 #include <gcs/expression.hh>
+#include <gcs/presolver.hh>
 #include <gcs/presolvers/auto_table.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.cc>
@@ -12,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdlib>
+#include <memory>
 #include <optional>
 #include <set>
 #include <tuple>
@@ -407,5 +409,163 @@ TEST_CASE("Solve unsat optimisation presolving")
         ProofOptions{proof_name});
 
     CHECK(! found_solution);
+    CHECK(verify_proof_and_dispose(proof_name));
+}
+
+namespace
+{
+    // A presolver that installs initialisers, to pin that they run: a presolver
+    // may install a constraint, and a constraint does its once-only work ---
+    // introducing a proof-only variable, say --- in an initialiser. Before
+    // this, one installed from a presolver was dropped without a word, because
+    // solve() had already run the initialisers by the time presolvers were
+    // called.
+    struct InitialiserInstallingPresolver : Presolver
+    {
+        std::shared_ptr<unsigned> ran;
+        std::shared_ptr<unsigned> ran_before_next_presolver;
+        bool contradict = false;
+        bool install_another = false;
+
+        [[nodiscard]] auto run(Problem &, innards::Propagators & propagators, innards::State &, innards::ProofLogger * const) -> bool override
+        {
+            propagators.install_initialiser([ran = ran, contradict = contradict, install_another = install_another, &propagators](
+                                                const innards::State &, auto & inference, innards::ProofLogger * const logger) -> void {
+                ++*ran;
+                if (logger)
+                    logger->emit_proof_comment("initialiser installed by a presolver");
+                if (install_another)
+                    propagators.install_initialiser([ran = ran](const innards::State &, auto &, innards::ProofLogger * const) -> void { ++*ran; },
+                        innards::InitialiserPriority::SimpleDefinition);
+                if (contradict)
+                    inference.contradiction(logger, JustifyUsingRUP{}, NoReason{});
+            });
+            return true;
+        }
+
+        [[nodiscard]] auto clone() const -> std::unique_ptr<Presolver> override
+        {
+            return std::make_unique<InitialiserInstallingPresolver>(*this);
+        }
+    };
+
+    // Runs second, and records what the first one's initialiser had done by
+    // then.
+    struct ObservingPresolver : Presolver
+    {
+        std::shared_ptr<unsigned> ran;
+        std::shared_ptr<unsigned> observed;
+
+        [[nodiscard]] auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool override
+        {
+            *observed = *ran;
+            return true;
+        }
+
+        [[nodiscard]] auto clone() const -> std::unique_ptr<Presolver> override
+        {
+            return std::make_unique<ObservingPresolver>(*this);
+        }
+    };
+}
+
+TEST_CASE("An initialiser installed by a presolver runs")
+{
+    const auto proof_name = "solve_test_presolver_initialiser";
+    auto ran = std::make_shared<unsigned>(0);
+
+    Problem p;
+    auto v = p.create_integer_variable(0_i, 3_i);
+    p.post(WeightedSum{} + 1_i * v >= 0_i);
+
+    InitialiserInstallingPresolver presolver;
+    presolver.ran = ran;
+    p.add_presolver(presolver);
+
+    unsigned solutions = 0;
+    solve(
+        p,
+        [&](const CurrentState &) -> bool {
+            ++solutions;
+            return true;
+        },
+        ProofOptions{proof_name});
+
+    CHECK(*ran == 1); // exactly once: not dropped, and not re-run per node
+    CHECK(solutions == 4);
+    CHECK(verify_proof_and_dispose(proof_name)); // and what it wrote is part of a verifiable proof
+}
+
+TEST_CASE("A presolver's initialiser runs before the next presolver")
+{
+    auto ran = std::make_shared<unsigned>(0);
+    auto observed = std::make_shared<unsigned>(0);
+
+    Problem p;
+    auto v = p.create_integer_variable(0_i, 3_i);
+    p.post(WeightedSum{} + 1_i * v >= 0_i);
+
+    InitialiserInstallingPresolver first;
+    first.ran = ran;
+    p.add_presolver(first);
+
+    ObservingPresolver second;
+    second.ran = ran;
+    second.observed = observed;
+    p.add_presolver(second);
+
+    solve(p, [&](const CurrentState &) -> bool { return true; });
+
+    CHECK(*observed == 1); // the second presolver saw a fully initialised problem
+}
+
+TEST_CASE("An initialiser installed by an initialiser runs")
+{
+    auto ran = std::make_shared<unsigned>(0);
+
+    Problem p;
+    auto v = p.create_integer_variable(0_i, 3_i);
+    p.post(WeightedSum{} + 1_i * v >= 0_i);
+
+    InitialiserInstallingPresolver presolver;
+    presolver.ran = ran;
+    presolver.install_another = true;
+    p.add_presolver(presolver);
+
+    solve(p, [&](const CurrentState &) -> bool { return true; });
+
+    CHECK(*ran == 2); // the one the presolver installed, and the one that installed
+}
+
+TEST_CASE("A presolver's initialiser can report unsatisfiability")
+{
+    const auto proof_name = "solve_test_presolver_initialiser_contradiction";
+    auto ran = std::make_shared<unsigned>(0);
+
+    // Genuinely unsatisfiable, so the contradiction the initialiser raises is
+    // one reverse unit propagation can reach: two constraints that are each
+    // fine on their own, so nothing detects it before the presolver runs.
+    Problem p;
+    auto a = p.create_integer_variable(0_i, 3_i);
+    auto b = p.create_integer_variable(0_i, 3_i);
+    p.post(WeightedSum{} + 1_i * a + 1_i * b >= 5_i);
+    p.post(WeightedSum{} + 1_i * a + 1_i * b <= 1_i);
+
+    InitialiserInstallingPresolver presolver;
+    presolver.ran = ran;
+    presolver.contradict = true;
+    p.add_presolver(presolver);
+
+    bool found_solution = false;
+    solve(
+        p,
+        [&](const CurrentState &) -> bool {
+            found_solution = true;
+            return false;
+        },
+        ProofOptions{proof_name});
+
+    CHECK(*ran == 1);
+    CHECK(! found_solution); // a contradiction there ends the solve, rather than being lost
     CHECK(verify_proof_and_dispose(proof_name));
 }

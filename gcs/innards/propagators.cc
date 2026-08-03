@@ -155,6 +155,11 @@ struct Propagators::Imp : RefinedWatchSink
 {
     vector<PropagationFunction> propagation_functions;
     std::array<vector<InitialisationFunction>, number_of_initialiser_priorities> initialisation_functions_by_priority;
+    // How many of each bucket initialise() has already run. A presolver can
+    // install a constraint after the first round, and that constraint's
+    // initialiser has to run like any other: the next round picks up from here,
+    // so nothing runs twice and nothing is left behind.
+    std::array<std::size_t, number_of_initialiser_priorities> initialisers_already_run{};
 
     // Every propagation function's index appears exactly once in queue, and lookup[id] always tells
     // us where that position is. The ready-to-propagate items are [enqueued_begin, enqueued_end);
@@ -528,23 +533,43 @@ auto Propagators::install_initialiser(InitialisationFunction && f, InitialiserPr
     _imp->initialisation_functions_by_priority[to_underlying(priority)].emplace_back(move(f));
 }
 
-auto Propagators::initialise(State & state, ProofLogger * const logger) const -> bool
+auto Propagators::initialise(State & state, ProofLogger * const logger) -> bool
 {
-    for (auto & bucket : _imp->initialisation_functions_by_priority) {
-        for (auto & f : bucket) {
-            try {
-                // As in propagate(): with no logger, run the lean tracker.
-                if (logger) {
-                    EagerProofLoggingInferenceTracker inf(state);
-                    f(state, inf, logger);
+    // Sweep the buckets in priority order until every one has been run to its
+    // end. The repeat matters because running an initialiser can install more
+    // of them --- including into a bucket this sweep has already passed --- and
+    // an initialiser that never runs is a silent hole in a proof rather than a
+    // visible failure.
+    //
+    // Priority ordering holds within a round, which is all it can: an
+    // initialiser installed after an earlier-priority one has already run
+    // cannot be made to precede it.
+    bool anything_left = true;
+    while (anything_left) {
+        anything_left = false;
+
+        for (std::size_t priority = 0; priority < number_of_initialiser_priorities; ++priority) {
+            // By index, and re-reading the size: the bucket can grow underneath
+            // this loop.
+            while (_imp->initialisers_already_run[priority] < _imp->initialisation_functions_by_priority[priority].size()) {
+                auto & f = _imp->initialisation_functions_by_priority[priority][_imp->initialisers_already_run[priority]];
+                ++_imp->initialisers_already_run[priority];
+                anything_left = true;
+
+                try {
+                    // As in propagate(): with no logger, run the lean tracker.
+                    if (logger) {
+                        EagerProofLoggingInferenceTracker inf(state);
+                        f(state, inf, logger);
+                    }
+                    else {
+                        SimpleInferenceTracker inf(state);
+                        f(state, inf, logger);
+                    }
                 }
-                else {
-                    SimpleInferenceTracker inf(state);
-                    f(state, inf, logger);
+                catch (const TrackedPropagationFailed &) {
+                    return false;
                 }
-            }
-            catch (const TrackedPropagationFailed &) {
-                return false;
             }
         }
     }

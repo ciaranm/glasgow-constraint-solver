@@ -506,10 +506,18 @@ namespace gcs::innards
         auto disable_propagators_for_constraints(std::span<const ConstraintID> constraint_ids) -> std::size_t;
 
         /**
-         * Install an initialiser, which will be called once just before search
+         * Install an initialiser, which will be called once before search
          * starts. Initialisers run in priority order
          * (\c SimpleDefinition before \c Cheap before \c Expensive); within
          * the same priority they run in registration order.
+         *
+         * A Presolver may install one too, and it will run after that presolver
+         * returns rather than being silently dropped --- which is what a
+         * constraint installed by a presolver needs, since a constraint that
+         * introduces a proof-only variable does that work in an initialiser.
+         * Priorities then order only what that round installed: an initialiser
+         * registered after an earlier-priority one has already run cannot be
+         * made to precede it.
          */
         auto install_initialiser(InitialisationFunction &&, InitialiserPriority priority = InitialiserPriority::SimpleDefinition) -> void;
 
@@ -554,9 +562,19 @@ namespace gcs::innards
             -> bool;
 
         /**
-         * Call every initialiser, or until a contradiction is reached.
+         * \brief Call every initialiser that has not run yet, or run until a
+         * contradiction is reached.
+         *
+         * Called once before search starts, and again after each Presolver: a
+         * presolver can install a constraint, and a constraint can install an
+         * initialiser, so there is a second (and third, ...) round to run. Each
+         * call picks up where the last one left off, so an initialiser runs
+         * exactly once however many rounds there are.
+         *
+         * Returns false if an initialiser reached a contradiction, meaning the
+         * problem is unsatisfiable.
          */
-        [[nodiscard]] auto initialise(State &, ProofLogger * const) const -> bool;
+        [[nodiscard]] auto initialise(State &, ProofLogger * const) -> bool;
 
         ///@}
 

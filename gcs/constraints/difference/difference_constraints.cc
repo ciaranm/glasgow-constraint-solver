@@ -225,10 +225,17 @@ auto DifferenceConstraints::install_propagators(Propagators & propagators) -> vo
     if (_root_contradiction_posted_index) {
         // The edge's own OPB row is `0 >= something positive', so the
         // contradiction is RUP from the model with no state involved at all.
-        // Deliberately not part of install_difference_propagator: this is an
-        // initialiser, and initialisers have already run by the time a
-        // presolver builds a graph, so the presolver must instead decline to
-        // lift a degenerate edge and leave it to its own propagator.
+        // Deliberately not part of install_difference_propagator, which the
+        // difference-logic presolver shares: when this was written, an
+        // initialiser installed from a presolver was dropped, so the presolver
+        // had to decline to lift a degenerate edge and leave it to that edge's
+        // own propagator instead.
+        //
+        // Presolver-installed initialisers now run (solve.cc initialises again
+        // after each presolver), so this could move into the shared path and
+        // the presolver's decline could go with it. Not done here: both halves
+        // have to change together, and the presolver's own tests are what say
+        // whether declining is still worth its complexity.
         propagators.install_initial_contradiction("difference constraint x - x <= d with d < 0", JustifyUsingRUP{}, NoReason{});
         return;
     }
