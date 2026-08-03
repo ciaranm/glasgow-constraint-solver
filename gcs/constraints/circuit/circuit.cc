@@ -135,6 +135,12 @@ auto Circuit::prepare(Propagators & propagators, State & initial_state, ProofMod
     // before the position encoding, as they did before.
     if (_gac_all_different) {
         AllDifferent all_diff{_succ};
+        // The child must carry this constraint's identity, as SeqPrecedeChain's does:
+        // AllDifferent keys its labelled OPB lines and its pair selectors on its id, so
+        // an unnamed child writes @c[unnamed] rows and x[unnamed] flags that two such
+        // circuits in one problem would share (issue #449). With the id set, the rows
+        // are the ones the non-GAC branch would have written anyway.
+        all_diff.set_constraint_id(constraint_id());
         std::move(all_diff).install(propagators, initial_state, model);
     }
 
