@@ -50,6 +50,51 @@ namespace
             return string{"_t"} + e;
         return {};
     }
+
+    // The two negated reification forms have no derived class: the six
+    // LinearLessThanEqual{,If,Iff} / LinearGreaterThanEqual{,If,Iff} spellings cover
+    // MustHold, If and Iff only, and scp_reader builds only those. Spelling them here
+    // gives them the same constructor shape as the derived classes, so the generic
+    // test functions below take them unchanged --- and gives them the coverage that
+    // being unreachable through the public API had cost them (issue #644: NotIf's OPB
+    // row stated the un-negated inequality, and both forms threw when they logged).
+    //
+    // Each is its own constraint rather than the negation of a posted one, so the
+    // satisfying predicate handed to the test functions is `>` where the positive
+    // forms pass `<=`: what these enforce, when they enforce anything, is
+    // `sum > value`.
+    struct LinearLessThanEqualNot : ReifiedLinearInequality
+    {
+        // s_expr() throws on both negated kinds --- they have no cake_pb_cp
+        // spelling --- so these instances write no .scp. The .opb and .pbp veripb
+        // checks are written as usual.
+        static constexpr auto write_s_expr_file = WriteSExprFile::No;
+
+        explicit LinearLessThanEqualNot(WeightedSum coeff_vars, Integer value) :
+            ReifiedLinearInequality(std::move(coeff_vars), value, reif::MustNotHold{})
+        {
+        }
+    };
+
+    struct LinearLessThanEqualNotIf : ReifiedLinearInequality
+    {
+        static constexpr auto write_s_expr_file = WriteSExprFile::No;
+
+        explicit LinearLessThanEqualNotIf(WeightedSum coeff_vars, Integer value, IntegerVariableCondition cond) :
+            ReifiedLinearInequality(std::move(coeff_vars), value, reif::NotIf{cond})
+        {
+        }
+    };
+
+    // Yes unless the constraint type says otherwise, which only the two above do.
+    template <typename Constraint_>
+    constexpr auto write_s_expr_file_for() -> WriteSExprFile
+    {
+        if constexpr (requires { Constraint_::write_s_expr_file; })
+            return Constraint_::write_s_expr_file;
+        else
+            return WriteSExprFile::Yes;
+    }
 }
 
 template <typename Constraint_>
@@ -89,10 +134,11 @@ auto run_linear_test(bool proofs, const string & mode, const ViewWrapConfig & vi
         proofs ? make_optional("linear_equality_test_" + mode + "_" + view_wrap_config_label(view_cfg) + threshold_proof_suffix()) : nullopt;
 
     if ((! is_same_v<Constraint_, LinearEquality>) && 1 == ineqs.size())
-        solve_for_tests_checking_consistency(
-            p, proof_name, expected, actual, tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}});
+        solve_for_tests_checking_consistency(p, proof_name, expected, actual,
+            tuple{pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}},
+            write_s_expr_file_for<Constraint_>());
     else
-        solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3});
+        solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3}, write_s_expr_file_for<Constraint_>());
 
     check_results(proof_name, expected, actual);
 }
@@ -191,9 +237,10 @@ auto run_linear_reif_test(bool full_reif, bool proofs, const string & mode, cons
             (! is_same_v<Constraint_, LinearNotEqualsIf>) && (! is_same_v<Constraint_, LinearNotEqualsIff>) && 1 == ineqs.size())
             solve_for_tests_checking_consistency(p, proof_name, expected, actual,
                 tuple{
-                    pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::GAC}});
+                    pair{v1, CheckConsistency::BC}, pair{v2, CheckConsistency::BC}, pair{v3, CheckConsistency::BC}, pair{v4, CheckConsistency::GAC}},
+                write_s_expr_file_for<Constraint_>());
         else
-            solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4});
+            solve_for_tests(p, proof_name, actual, tuple{v1, v2, v3, v4}, write_s_expr_file_for<Constraint_>());
 
         check_results(proof_name, expected, actual);
     }
@@ -311,7 +358,8 @@ auto main(int argc, char * argv[]) -> int
     }
     // Keep in sync with the if-chain below and the matching foreach(mode ...) in
     // gcs/CMakeLists.txt.
-    const vector<string> all_modes = {"eq", "eq_if", "eq_iff", "ne", "ne_if", "ne_iff", "le", "le_if", "le_iff", "ge", "ge_if", "ge_iff"};
+    const vector<string> all_modes = {
+        "eq", "eq_if", "eq_iff", "ne", "ne_if", "ne_iff", "le", "le_if", "le_iff", "le_not", "le_notif", "ge", "ge_if", "ge_iff"};
     const vector<string> modes = requested_mode.empty() ? all_modes : vector<string>{requested_mode};
 
     auto view_cfg = parse_view_wrap_config_from_argv(argc, argv);
@@ -418,6 +466,13 @@ auto main(int argc, char * argv[]) -> int
                 else if (mode == "le_iff") {
                     run_linear_reif_test<LinearLessThanEqualIff>(
                         true, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a <= b; });
+                }
+                else if (mode == "le_not") {
+                    run_linear_test<LinearLessThanEqualNot>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a > b; });
+                }
+                else if (mode == "le_notif") {
+                    run_linear_reif_test<LinearLessThanEqualNotIf>(
+                        false, proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a > b; });
                 }
                 else if (mode == "ge") {
                     run_linear_test<LinearGreaterThanEqual>(proofs, mode, view_cfg, r1, r2, r3, constraints, [&](int a, int b) { return a >= b; });

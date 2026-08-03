@@ -133,11 +133,11 @@ namespace
         Problem p;
         post(p);
         p.add_presolver(CapturingPresolver<Constraint_>{&result.resolved});
-        // No .scp: s_expr() throws on the MustNotHold and NotIf comparison
-        // forms, which have no cake_pb_cp spelling --- and those are exactly the
-        // forms this has to cover, since they are the ones whose row is under
-        // the label a naive citer would build. The .opb is written either way,
-        // and the .opb is the oracle here.
+        // No .scp: s_expr() throws on the MustNotHold and NotIf forms of both
+        // families, which have no cake_pb_cp spelling --- and those are exactly
+        // the forms this has to cover, since they are the ones whose row states
+        // something other than what its label suggests. The .opb is written
+        // either way, and the .opb is the oracle here.
         ProofFileNames names{basename};
         names.s_expr_file = nullopt;
         static_cast<void>(
@@ -183,28 +183,42 @@ TEST_CASE("a linear's published role resolves to a row the .opb contains")
         p.post(LinearLessThanEqual{WeightedSum{} + 1_i * x + -1_i * y, 3_i});
         p.post(LinearLessThanEqualIf{WeightedSum{} + 1_i * y + -1_i * x, 4_i, b == 1_i});
         p.post(LinearLessThanEqualIff{WeightedSum{} + 1_i * x + 1_i * y, 12_i, b == 0_i});
+        // No derived class reaches these two, so they are posted directly.
+        p.post(ReifiedLinearInequality{WeightedSum{} + 1_i * x + 1_i * y, 4_i, reif::MustNotHold{}});
+        p.post(ReifiedLinearInequality{WeightedSum{} + 1_i * x + -1_i * y, 2_i, reif::NotIf{b == 1_i}});
     });
 
-    // Three posted, three enumerated: the enumeration is the same one the
+    // Five posted, five enumerated: the enumeration is the same one the
     // presolver uses, so a shortfall here would be a different bug.
-    REQUIRE(run.resolved.size() == 3);
+    REQUIRE(run.resolved.size() == 5);
     check_labels_against_opb(run);
 
-    // MustHold and If publish the empty role and resolve; Iff publishes nothing,
-    // because its r and f halves say the two directions of the equivalence
-    // rather than `sum <= value`.
+    // MustHold and If publish the empty role and resolve; the other three
+    // publish nothing, because none of their rows is the `sum <= value` a citer
+    // means. Iff's r and f halves say the two directions of the equivalence, and
+    // MustNotHold's and NotIf's rows both state the integer negation --- which
+    // is the thing those forms enforce, so it is the right row for them to have
+    // and the wrong one to hand a citer.
     CHECK(run.resolved[0].role == make_optional(""s));
     CHECK(run.resolved[0].label.has_value());
     CHECK(run.resolved[1].role == make_optional(""s));
     CHECK(run.resolved[1].label.has_value());
-    CHECK_FALSE(run.resolved[2].role.has_value());
-    CHECK_FALSE(run.resolved[2].label.has_value());
+    for (auto i : {2u, 3u, 4u}) {
+        CAPTURE(i);
+        CHECK_FALSE(run.resolved[i].role.has_value());
+        CHECK_FALSE(run.resolved[i].label.has_value());
+    }
 
-    // The Iff donor really did emit rows --- it published no role, which is not
-    // the same as having emitted nothing. Without this the previous check would
-    // pass just as well against a constraint that emitted no model at all.
+    // The three non-publishing donors really did emit rows --- publishing no
+    // role is not the same as having emitted nothing. Without this the previous
+    // check would pass just as well against a constraint that emitted no model
+    // at all. MustNotHold's goes out under the empty role, exactly the label a
+    // build-it-yourself citer would construct; publishing is what keeps it out
+    // of a pol.
     CHECK(opb_has_row_labelled(run.opb, "c[" + run.resolved[2].id + "][r]"));
     CHECK(opb_has_row_labelled(run.opb, "c[" + run.resolved[2].id + "][f]"));
+    CHECK(opb_has_row_labelled(run.opb, "c[" + run.resolved[3].id + "]"));
+    CHECK(opb_has_row_labelled(run.opb, "c[" + run.resolved[4].id + "][ltn]"));
 }
 
 TEST_CASE("a comparison's published role resolves to a row the .opb contains")

@@ -152,13 +152,19 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model, const State
     for (auto & [c, v] : _coeff_vars.terms)
         terms += c * v;
 
+    // Which slot a row goes in is the invariant install_propagators relies on:
+    // .first is the must-hold direction's row and .second the must-not-hold
+    // direction's (see the member's declaration). A form fills only the slot for
+    // a direction its dispatcher can reach, so the negated forms fill .second and
+    // leave .first empty --- putting their row in .first would leave the one
+    // direction they do run with nothing to cite.
     overloaded{
         [&](const reif::MustHold &) {
             // cake_pb_cp labels the unconditional inequality @c[<id>] (no role).
             _proof_lines = pair{model.add_labelled_constraint(constraint_id(), "", terms <= _value), nullopt};
         }, //
         [&](const reif::MustNotHold &) {
-            _proof_lines = pair{model.add_labelled_constraint(constraint_id(), "", terms >= _value + 1_i), nullopt};
+            _proof_lines = pair{nullopt, model.add_labelled_constraint(constraint_id(), "", terms >= _value + 1_i)};
         }, //
         [&](const reif::If & cond) {
             // cake_pb_cp labels the half-reified inequality @c[<id>], with no role
@@ -166,9 +172,14 @@ auto ReifiedLinearInequality::define_proof_model(ProofModel & model, const State
             _proof_lines = pair{model.add_labelled_constraint(constraint_id(), "", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
         }, //
         [&](const reif::NotIf & cond) {
+            // NotIf says cond -> the constraint must *not* hold, so the row is the
+            // integer negation under cond, exactly as MustNotHold's is
+            // unconditionally. `cond -> sum <= value` would state the opposite of
+            // what the constraint means, and is what the row said until #644.
             // s_expr throws on NotIf, so this form never reaches the cake chain and
             // the invented role is fine.
-            _proof_lines = pair{model.add_labelled_constraint(constraint_id(), "ltn", terms <= _value, HalfReifyOnConjunctionOf{cond.cond}), nullopt};
+            _proof_lines =
+                pair{nullopt, model.add_labelled_constraint(constraint_id(), "ltn", terms >= _value + 1_i, HalfReifyOnConjunctionOf{cond.cond})};
         }, //
         [&](const reif::Iff & cond) {
             // cake_pb_cp labels the iff halves r (cond -> ineq) and f (~cond -> its
@@ -198,6 +209,8 @@ auto innards::ConstraintProofModelData<ReifiedLinearInequality>::primary_row_rol
 auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> void
 {
     auto proof_lines = _proof_lines;
+    // Everything downstream cites .first, so the must-not-hold direction is handed
+    // the pair the other way round rather than being told which slot to read.
     auto proof_lines_swapped = pair{_proof_lines.second, _proof_lines.first};
 
     const auto & sanitised_cv = _sanitised;
@@ -292,7 +305,11 @@ auto ReifiedLinearInequality::install_propagators(Propagators & propagators) -> 
                 }
 
                 if (min_possible > value + modifier) {
-                    // cannot possibly hold
+                    // cannot possibly hold. The witness cites proof_lines.first, the
+                    // `sum <= value` row: only Iff and NotIf get here undecided, and of
+                    // those only Iff licenses an inference for this verdict (NotIf learns
+                    // nothing from the constraint failing), so the justification is only
+                    // ever emitted for a form that has that row.
                     return reification_verdict::MustNotHold<LinearCondJustification>{
                         .justification =
                             JustifyExplicitly{hints::LinearInequalityCond<CV>{{owner}, &state, sanitised_cv, proof_lines}, ThenRUP::Yes}, //

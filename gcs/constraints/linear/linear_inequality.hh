@@ -34,6 +34,15 @@ namespace gcs
         WeightedSum _coeff_vars;
         Integer _value;
         ReificationCondition _reif_cond;
+        // The rows define_proof_model emitted, by direction rather than by order of
+        // emission: .first states `sum <= value`, which the must-hold direction cites,
+        // and .second the integer negation `sum >= value + 1`, which the must-not-hold
+        // direction cites --- each under the reification condition where there is one.
+        // A form fills only the slots for directions it can reach: If deactivates
+        // rather than enforcing the negation and NotIf deactivates rather than
+        // enforcing the inequality, so those two fill one slot each and only Iff fills
+        // both. An empty slot therefore means "this form never propagates that way",
+        // not "not logged yet"; both are empty when proofs are off.
         std::pair<std::optional<innards::ProofLine>, std::optional<innards::ProofLine>> _proof_lines;
         innards::EvaluatedReificationCondition _evaluated_cond = innards::evaluated_reif::Deactivated{};
         // Per-constraint width at/above which to use the incremental propagator; unset
@@ -137,17 +146,12 @@ namespace gcs
          * Changing which row this names is a breaking change.
          *
          * MustHold and If both use the empty role, so both come out as
-         * `@c[<id>]`. The other three publish nothing. MustNotHold's empty-role
-         * row states the integer negation and Iff's `r` / `f` halves state the
-         * two directions of the equivalence, so neither is the row a citer
-         * asking for `sum <= value` means. NotIf is excluded for a different and
-         * less comfortable reason: its `ltn` row is emitted as
-         * `cond -> sum <= value`, which is what the constraint says must *not*
-         * hold, so the row as written looks wrong rather than merely unwanted.
-         * Nothing in gcs constructs a ReifiedLinearInequality with either
-         * negated kind --- the six derived classes cover MustHold, If and Iff,
-         * and scp_reader builds only those --- so this publishes nothing rather
-         * than committing to a row that has never been exercised.
+         * `@c[<id>]`. The other three publish nothing, because none of their
+         * rows is the one a citer asking for `sum <= value` means: MustNotHold's
+         * empty-role row and NotIf's `ltn` row both state the integer negation
+         * `sum >= value + 1` (that being what those forms make the propagator
+         * enforce), and Iff's `r` / `f` halves state the two directions of the
+         * equivalence.
          *
          * A nullopt here means "no such row exists", which is different from a
          * nullopt out of NamesAndIDsTracker::constraint_row_label, where the row
