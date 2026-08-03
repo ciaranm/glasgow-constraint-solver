@@ -554,6 +554,10 @@ the capacity times its width, and that is not a multiple of three. Seven
 unit-length tasks of height three need 21 units in `[0, 3)`, which eight
 supplies and six does not.
 
+The real presolver built on that recipe is `CumulativeStrengthening` — see
+[cumulative-strengthening.md](cumulative-strengthening.md), which turns the
+invisibility above into an automated soundness tripwire rather than a caveat.
+
 ### Multi-donor, for later
 
 Issues #548 and #549 infer a Cumulative over tasks drawn from *several* donors,

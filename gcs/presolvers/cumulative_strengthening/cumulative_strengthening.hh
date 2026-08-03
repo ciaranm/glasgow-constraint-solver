@@ -1,0 +1,215 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_CUMULATIVE_STRENGTHENING_CUMULATIVE_STRENGTHENING_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_CUMULATIVE_STRENGTHENING_CUMULATIVE_STRENGTHENING_HH
+
+#include <gcs/constraints/cumulative/cumulative.hh>
+#include <gcs/integer.hh>
+#include <gcs/presolver.hh>
+
+#include <cstddef>
+#include <memory>
+#include <variant>
+
+namespace gcs
+{
+    /**
+     * \brief What the Cumulative strengthening presolver did, filled in when it
+     * runs.
+     *
+     * The presolver is invisible from the outside by construction: it writes
+     * nothing to the OPB, removes no solution, and --- because the rules it
+     * applies are time-table neutral --- does not even change the search tree
+     * unless energy reasoning is switched on. So every check that a presolver
+     * normally has to pass is passed just as well by a presolver that did
+     * nothing at all, and the counts below are how a test tells the two apart.
+     * \sa CumulativeStrengthening
+     *
+     * \ingroup Presolvers
+     */
+    struct CumulativeStrengtheningStats
+    {
+        /// Posted Cumulatives the presolver looked at.
+        std::size_t donors_seen = 0;
+
+        /// Donors it posted a strengthened, derived Cumulative for: the number
+        /// that matters.
+        std::size_t donors_strengthened = 0;
+
+        /// Summed `capacity - kappa` over those donors. Distinguishes "fired on
+        /// three constraints" from "fired on three constraints and took a unit
+        /// off each", which are different claims about the fixture.
+        Integer capacity_units_removed = 0_i;
+
+        /**
+         * \name Why a donor was passed over.
+         *
+         * Broken out because they mean different things to a caller: the first
+         * two are the v1 restrictions, the third is a proof-size budget that a
+         * caller may want to raise, and the last is the honest and common
+         * answer that the capacity was already the largest reachable load.
+         */
+        ///@{
+        std::size_t declined_optional = 0;
+        std::size_t declined_variable_arguments = 0;
+        std::size_t declined_over_budget = 0;
+        std::size_t declined_nothing_to_gain = 0;
+        /// Declined by install_derived_cumulative itself, which is a bug rather
+        /// than a restriction: the presolver derives its rows over the donor's
+        /// own windows, so the flags it asks for should always be there.
+        std::size_t declined_by_install = 0;
+        ///@}
+
+        /**
+         * \name Which derivation each per-time capacity row took.
+         *
+         * Zero when proofs are off, since there are no rows to derive. The
+         * split is the difference between Schulz's gcd rule and his knapsack
+         * rule as they reach the proof --- see CumulativeStrengthening --- and
+         * a fixture that means to exercise one of them has to assert which it
+         * got, because the arithmetic picks whichever is stronger and a fixture
+         * can drift onto the other path without failing anything else.
+         */
+        ///@{
+        std::size_t rows_by_division = 0;
+        std::size_t rows_by_dynamic_programming = 0;
+        ///@}
+    };
+
+    /**
+     * \brief Deliberate corruptions of the strengthening derivation, for
+     * testing only. VeriPB must reject each of them.
+     *
+     * \ingroup Presolvers
+     */
+    namespace cumulative_strengthening_mutation
+    {
+        /// Emit the honest derivation.
+        struct None
+        {
+        };
+
+        /// Claim a capacity one below the largest load the heights can reach.
+        /// The "bound + 1 must fail" check for this rule: it corrupts the
+        /// conclusion rather than the route to it.
+        struct ClaimOneBetter
+        {
+        };
+
+        /// Take the divisibility fast path with a divisor that does not divide
+        /// every height. Dividing is a sound proof step whatever the divisor,
+        /// so this produces a perfectly valid line that simply is not the one
+        /// the derived constraint was told it had --- which nothing catches
+        /// except the `ia` step pinning each row's content.
+        struct BogusDivisor
+        {
+        };
+    }
+
+    using CumulativeStrengtheningMutation = std::variant<cumulative_strengthening_mutation::None, cumulative_strengthening_mutation::ClaimOneBetter,
+        cumulative_strengthening_mutation::BogusDivisor>;
+
+    /**
+     * \brief Strengthen each posted Cumulative by integrality, posting the
+     * strengthened version as a *derived* constraint whose per-time capacity
+     * rows are proved from the donor's.
+     *
+     * The rules are Schulz's pre-solving strengthenings, as recapped by
+     * Cloutier and Quimper (CP 2026, section 2.3). The load at a time point is a
+     * sum of the heights of the tasks running then, so it can only ever take a
+     * value that is a subset sum of those heights; a capacity that is not itself
+     * such a value is therefore worth more than it says. Reducing it to
+     *
+     *     kappa = max over t of (largest subset sum of the heights of the tasks
+     *                            that can run at t, that is at most the capacity)
+     *
+     * loses no solution. Schulz's two capacity rules are the two ways that
+     * quantity gets computed --- his gcd rule is the case where the heights
+     * share a factor `d`, making the answer `d * floor(C / d)`, and his knapsack
+     * rule is the general one --- and they reach the proof as the two
+     * derivations derive_subset_sum_strengthening() chooses between: two `pol`
+     * steps of Chvatal-Gomory rounding, or a layered dynamic program. Which one
+     * a row took is in CumulativeStrengtheningStats.
+     *
+     * Two deliberate deviations from the paper's statement of the rules, both
+     * documented in `dev_docs/cumulative-strengthening.md`:
+     *
+     * - The knapsack rule's per-time set is taken over *every* task that can run
+     *   at `t`, rather than only those with `c_j < C`. Excluding the tasks that
+     *   fill the resource by themselves gives a smaller kappa, but it is then
+     *   only sound if those tasks' own heights come down to kappa as well ---
+     *   which changes the derived constraint's coefficients, and needs the
+     *   at-most-one reasoning that is issue #547's remaining half.
+     * - The coefficient-raising rule (any `c_i` above `C - min_j c_j` can be
+     *   raised to `C`) is not here at all, for the same reason: it changes
+     *   heights.
+     *
+     * Neither costs soundness or solutions; both leave strengthening on the
+     * table, which is what an unimplemented rule does.
+     *
+     * **Do not expect this to make anything faster on its own.** The rules are
+     * time-table neutral --- a load is a sum of heights, so it clears `C`
+     * exactly when it clears kappa --- which the paper says outright and which
+     * the tests assert as a tripwire, since a search-tree difference under
+     * time-tabling alone would mean the strengthening was unsound. The benefit
+     * arrives with energy reasoning, where a window's supply is the capacity
+     * times its width and that is not a sum of heights.
+     *
+     * \ingroup Presolvers
+     */
+    class CumulativeStrengthening : public Presolver
+    {
+    private:
+        std::shared_ptr<CumulativeStrengtheningStats> _stats;
+        long long _max_dynamic_programming_states;
+        CumulativeRules _rules;
+        CumulativeStrengtheningMutation _mutation;
+
+    public:
+        /**
+         * \brief Construct the presolver, optionally sharing a stats block that
+         * outlives the copy Problem takes.
+         */
+        explicit CumulativeStrengthening(std::shared_ptr<CumulativeStrengtheningStats> stats = nullptr);
+
+        /**
+         * \brief Cap the size of the dynamic-programming derivation, summed over
+         * a donor's time points, in states.
+         *
+         * The layered dynamic program costs three flags per state and a handful
+         * of lines per transition, so a donor with a large capacity and a long
+         * horizon can produce a great deal of proof for a strengthening worth
+         * one unit. A donor whose derivation would exceed this is passed over
+         * entirely and counted in CumulativeStrengtheningStats::declined_over_budget;
+         * the divisibility path is not budgeted, being two `pol` steps a row.
+         *
+         * The default is meant to be left alone. It exists as a knob so that a
+         * test can set it to zero and watch the dynamic-programming path
+         * disappear while the divisibility one keeps working.
+         */
+        auto with_dynamic_programming_budget(long long states) -> CumulativeStrengthening &;
+
+        /**
+         * \brief Select which propagation rules the derived constraints run.
+         *
+         * The default is the energy rules only, because time-tabling a derived
+         * constraint is provably wasted work: neutrality says a load exceeds
+         * kappa exactly when it exceeds the donor's capacity, so every
+         * time-table inference the derived constraint could draw is one the
+         * donor draws already, at every node. That is the same theorem the
+         * tests check, used the other way round.
+         *
+         * Which is why a test asserting the neutrality has to turn time-tabling
+         * back *on* here: with the derived constraint's time-tabling off, the
+         * comparison would pass without kappa having been used for anything.
+         */
+        auto with_rules(CumulativeRules rules) -> CumulativeStrengthening &;
+
+        /// Corrupt one step of the emitted derivation. For tests only, which
+        /// assert that VeriPB rejects the result.
+        auto with_proof_mutation(CumulativeStrengtheningMutation mutation) -> CumulativeStrengthening &;
+
+        [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool override;
+        [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Presolver> override;
+    };
+}
+
+#endif

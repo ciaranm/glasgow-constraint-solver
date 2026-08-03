@@ -1,0 +1,6 @@
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_CUMULATIVE_STRENGTHENING_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_PRESOLVERS_CUMULATIVE_STRENGTHENING_HH
+
+#include <gcs/presolvers/cumulative_strengthening/cumulative_strengthening.hh>
+
+#endif

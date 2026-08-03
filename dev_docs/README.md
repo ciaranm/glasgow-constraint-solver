@@ -141,6 +141,15 @@ library. For an introduction to *using* the solver, start with the top-level
   the same strength, the clause resolution that stands in for the case split
   unit propagation cannot do, and why a satisfiable test model and an `ia`
   content check are both needed to test it.
+- [Strengthening a `Cumulative` by integrality](cumulative-strengthening.md) —
+  Schulz's pre-solving capacity rules as the `CumulativeStrengthening` presolver,
+  posting the strengthened constraint in derived mode. Covers why the largest
+  reachable load is the real capacity, why the rules are *time-table neutral* and
+  how that turns into a node-for-node soundness tripwire, the `ia` step that
+  pins every row to the declared capacity (and is the only thing that catches a
+  sound derivation of the wrong line), the deviations from the paper's statement
+  of the rules, and why the deep-gap fixture everyone quotes cannot be a
+  `Cumulative` instance.
 - [Restarts, nogoods, and dom/wdeg weighting](restarts-nogoods-weighting.md) —
   the search-side machinery from issue #315: the restart loop and its
   `SearchResult` unwind signal, `RestartSchedule`, the `ConflictObserver`

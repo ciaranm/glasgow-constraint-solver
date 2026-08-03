@@ -117,6 +117,7 @@ add_library(glasgow_constraint_solver
         innards/state.cc
         innards/variable_id_utils.cc
         presolvers/auto_table/auto_table.cc
+        presolvers/cumulative_strengthening/cumulative_strengthening.cc
         presolvers/difference_logic/difference_logic.cc
 )
 
@@ -194,6 +195,11 @@ if(GCS_BUILD_TESTS)
     endforeach()
     add_test(NAME difference_logic_presolver_proofs
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:difference_logic_presolver_test> proofs)
+
+    add_executable(cumulative_strengthening_presolver_test presolvers/cumulative_strengthening/cumulative_strengthening_test.cc)
+    target_link_libraries(cumulative_strengthening_presolver_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME cumulative_strengthening_presolver
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_strengthening_presolver_test>)
 
     add_executable(constraint_enumeration_test constraint_enumeration_test.cc)
     target_link_libraries(constraint_enumeration_test PRIVATE glasgow_constraint_solver Catch2::Catch2WithMain)
