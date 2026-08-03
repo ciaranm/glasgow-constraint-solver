@@ -131,10 +131,14 @@ auto gcs::innards::install_derived_cumulative(
     // can reach the OPB.
     //
     // Not through an install_initialiser, even though that is where a posted
-    // constraint would do its once-only proof work: initialisers have already
-    // run by the time a presolver is called (solve.cc runs them, then the
-    // presolvers), so one installed from here would never fire and the
-    // propagator would cite rows that were never written.
+    // constraint would do its once-only proof work. That used to be forced ---
+    // initialisers had already run by the time a presolver was called, so one
+    // installed from here never fired and the propagator cited rows that were
+    // never written --- and #658 has since fixed the ordering. It stays inline
+    // anyway, for a better reason: the caller is told whether this constraint
+    // could be set up, and that answer has to be known now, while there is
+    // still the option of not installing a propagator whose inferences could
+    // not be justified.
     if (logger) {
         logger->emit_proof_comment("derived cumulative: " + to_string(donor_rows.size()) + " capacity rows from " + as_string(spec.donor));
         for (const auto & [t, donor_row] : donor_rows)

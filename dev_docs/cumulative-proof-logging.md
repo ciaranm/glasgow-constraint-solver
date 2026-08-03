@@ -522,11 +522,15 @@ and finding out at verification time.
 ### Where the derivation happens
 
 Inline, in `install_derived_cumulative`, at `ProofLevel::Top` — not from an
-`install_initialiser`. Initialisers have already run by the time a presolver is
-called (`solve.cc` runs them, then the presolvers), so one installed from there
-never fires, and the propagator would spend the whole search citing rows that
-were never written. Top level is what makes the rows survive backtracking,
-which the propagator needs at every node.
+`install_initialiser`. That was originally forced: initialisers had already run
+by the time a presolver was called, so one installed from there never fired and
+the propagator spent the search citing rows that were never written. #658 fixed
+that ordering, and this stays inline anyway for a better reason — the caller is
+told whether the constraint could be set up at all, and that answer has to be
+known while not installing the propagator is still an option.
+
+Top level is what makes the rows survive backtracking, which the propagator
+needs at every node.
 
 ### The recipe
 
