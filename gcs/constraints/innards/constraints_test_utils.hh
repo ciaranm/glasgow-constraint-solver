@@ -540,9 +540,30 @@ namespace gcs::test_innards
         return branch_with(variable_order::random(p), value_order::reject_random_interval());
     }
 
+    /**
+     * Whether a proof-writing test solve should also write the .scp definition
+     * file. No for a constraint form whose s_expr() throws --- the negated
+     * reification kinds of the linear and comparison families have no
+     * cake_pb_cp spelling, so there is nothing for it to write --- and the .opb
+     * and .pbp, which are what veripb checks, are written either way.
+     */
+    enum class WriteSExprFile
+    {
+        Yes,
+        No
+    };
+
+    [[nodiscard]] inline auto proof_file_names_for_tests(const std::string & proof_name, WriteSExprFile write_s_expr_file) -> ProofFileNames
+    {
+        ProofFileNames names{proof_name};
+        if (write_s_expr_file == WriteSExprFile::No)
+            names.s_expr_file = std::nullopt;
+        return names;
+    }
+
     template <typename SolutionCallback_, typename TraceCallback_>
-    auto solve_for_tests_with_callbacks(
-        Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f, const TraceCallback_ & t) -> void
+    auto solve_for_tests_with_callbacks(Problem & p, const std::optional<std::string> & proof_name, const SolutionCallback_ & f,
+        const TraceCallback_ & t, WriteSExprFile write_s_expr_file = WriteSExprFile::Yes) -> void
     {
         // Every constraint test runs with the idempotence claim checker on:
         // each honoured PropagatorState::EnableButIdempotent claim is verified
@@ -590,7 +611,7 @@ namespace gcs::test_innards
                 .trace = capped_trace,                        //
                 .branch = random_branch_with_optional_seed(p) //
             },
-            proof_name ? std::make_optional<ProofOptions>(ProofFileNames{*proof_name}) : std::nullopt);
+            proof_name ? std::make_optional<ProofOptions>(proof_file_names_for_tests(*proof_name, write_s_expr_file)) : std::nullopt);
         last_run_recursions() = stats.recursions;
     }
 
@@ -625,7 +646,8 @@ namespace gcs::test_innards
     }
 
     template <typename ResultsSet_, typename... Args_>
-    auto solve_for_tests(Problem & p, const std::optional<std::string> & proof_name, ResultsSet_ & actual, const std::tuple<Args_...> & vars) -> void
+    auto solve_for_tests(Problem & p, const std::optional<std::string> & proof_name, ResultsSet_ & actual, const std::tuple<Args_...> & vars,
+        WriteSExprFile write_s_expr_file = WriteSExprFile::Yes) -> void
     {
         solve_for_tests_with_callbacks(
             p, proof_name,
@@ -633,7 +655,7 @@ namespace gcs::test_innards
                 std::apply([&](const auto &... args) { actual.emplace(extract_from_state(s, args)...); }, vars);
                 return true;
             },
-            [&](const CurrentState &) -> bool { return true; });
+            [&](const CurrentState &) -> bool { return true; }, write_s_expr_file);
     }
 
     enum class CheckConsistency
@@ -780,7 +802,8 @@ namespace gcs::test_innards
 
     template <typename ResultsSet_, typename... AllArgs_>
     auto solve_for_tests_checking_consistency(Problem & p, const std::optional<std::string> & proof_name, const ResultsSet_ & expected,
-        ResultsSet_ & actual, const std::tuple<std::pair<AllArgs_, CheckConsistency>...> & all_vars) -> void
+        ResultsSet_ & actual, const std::tuple<std::pair<AllArgs_, CheckConsistency>...> & all_vars,
+        WriteSExprFile write_s_expr_file = WriteSExprFile::Yes) -> void
     {
         std::vector<IntegerVariableID> all_vars_as_vector;
         [&]<std::size_t... i_>(std::index_sequence<i_...>) { (add_to_all_vars(all_vars_as_vector, std::get<i_>(all_vars).first), ...); }(
@@ -846,7 +869,8 @@ namespace gcs::test_innards
                     (check_support(support[i_], s, all_vars_as_vector, std::get<i_>(all_vars).first, std::get<i_>(all_vars).second), ...);
                 }(std::index_sequence_for<AllArgs_...>());
                 return true;
-            });
+            },
+            write_s_expr_file);
     }
 
     template <typename ResultsSet_, typename... AllArgs_>

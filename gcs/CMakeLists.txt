@@ -411,7 +411,7 @@ if(GCS_BUILD_TESTS)
     add_view_tests(among_constraint among_test 5)
     add_view_tests(all_different_except_constraint all_different_except_test 4)
     add_view_tests(value_precede_constraint value_precede_test 5)
-    foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
+    foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff le_not le_notif ne ne_if ne_iff)
         add_view_tests(linear_constraint_${mode} linear_test 3 ${mode})
     endforeach()
     add_view_tests(table_constraint table_test 3)
@@ -439,7 +439,7 @@ if(GCS_BUILD_TESTS)
     # stateless (a huge threshold). The threshold env is appended below (after the cap
     # block, so it doesn't clobber it) and is folded into the proof file name by the
     # test, so the two modes never collide under parallel ctest.
-    foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
+    foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff le_not le_notif ne ne_if ne_iff)
         foreach(linmode incremental stateless)
             add_test(NAME linear_constraint_${mode}_${linmode}
                 COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
@@ -451,7 +451,7 @@ if(GCS_BUILD_TESTS)
     # reads it, so this is meaningful for the le/ge modes and their install-decided
     # reified forms. linear_test verifies each instance's proof internally, so the
     # slack path is proof-checked here too.
-    foreach(mode ge ge_if ge_iff le le_if le_iff)
+    foreach(mode ge ge_if ge_iff le le_if le_iff le_not le_notif)
         add_test(NAME linear_constraint_${mode}_slack
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:linear_test> ${mode})
     endforeach()
@@ -659,13 +659,13 @@ if(GCS_BUILD_TESTS)
     # Pin the linear incremental threshold per test variant: 0 = always incremental,
     # a huge value = always stateless, so CI exercises both linear propagation paths.
     # APPEND so the runtime-cap environment set just above is preserved.
-    foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff ne ne_if ne_iff)
+    foreach(mode eq eq_if eq_iff ge ge_if ge_iff le le_if le_iff le_not le_notif ne ne_if ne_iff)
         set_property(TEST linear_constraint_${mode}_incremental APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=0")
         set_property(TEST linear_constraint_${mode}_stateless APPEND PROPERTY ENVIRONMENT "GCS_LINEAR_INCREMENTAL_THRESHOLD=1000000")
     endforeach()
     # Force slack-based waking on (threshold 0, no covering-fraction cap) so the
     # slack path is exercised for every decided inequality direction.
-    foreach(mode ge ge_if ge_iff le le_if le_iff)
+    foreach(mode ge ge_if ge_iff le le_if le_iff le_not le_notif)
         set_property(TEST linear_constraint_${mode}_slack APPEND PROPERTY ENVIRONMENT
             "GCS_LINEAR_SLACK_WATCH_THRESHOLD=0;GCS_LINEAR_SLACK_WATCH_COVER_PERCENT=100")
     endforeach()
