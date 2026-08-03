@@ -59,6 +59,7 @@ using std::tuple;
 using std::variant;
 using std::vector;
 using std::visit;
+using std::ranges::contains;
 
 using namespace gcs;
 using namespace gcs::innards;
@@ -553,7 +554,7 @@ auto ProofLogger::eq_window_active() const -> bool
     return _imp->eq_window && bound_advances_active();
 }
 
-auto ProofLogger::note_top_eq_references(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> void
+auto ProofLogger::note_top_eq_references(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLevel level) -> NamedAtoms
 {
     // The eq-atom window's hoist-out rule, applied generally rather than site by site: a
     // line about to land at ProofLevel::Top that names a windowed eq atom is a PERMANENT
@@ -571,9 +572,42 @@ auto ProofLogger::note_top_eq_references(const SumLessThanEqual<Weighted<PseudoB
     // otherwise: eq_window_active() is false unless order-encoding deletion is on (which it
     // is not by default), and the tracker's own guard returns immediately when no variable
     // is currently windowed.
-    if (level != ProofLevel::Top || ! eq_window_active())
-        return;
+    // The walk runs at every level, not only Top, because what it collects is also what a
+    // later `pol` needs in order to know what citing this line would name -- and pol
+    // operands are routinely Temporary (all-different's pairwise at-most-ones are). Only
+    // the pinning below is Top-only.
+    //
+    // Gated on bound_advances_active() rather than eq_window_active(): ge definitions are
+    // deletable under Literals whether or not the eq window was asked for, so gating the ge
+    // half on the window would miss every reference in the shipped configuration. The eq
+    // half stays effectively window-gated regardless, because note_permanent_eq_reference
+    // returns immediately when nothing is windowed.
+    if (! bound_advances_active())
+        return {};
 
+    NamedAtoms named;
+    auto note = [&](const NamedAtom & atom) {
+        if (! contains(named, atom))
+            named.push_back(atom);
+    };
+
+    // ge atoms are RECORDED but deliberately not pinned here, which is where the two sides
+    // stop being symmetric.
+    //
+    // An eq atom stands alone, so hoisting one is local. A ge threshold is a link in a
+    // chain, and hoisting it to Top *restructures that chain* by stitching over its
+    // neighbours. Doing that at every Top line that happens to name a ge threshold breaks
+    // RUP steps that depend on the chain's positive-level shape -- measured:
+    // `comparison_constraint_le_iff` (`comparison_test le_iff --seed=4979515`) and
+    // `linear_constraint_le_iff_incremental` both reject at gate 0 with "not implied by
+    // reverse unit propagation" when the ge half pins here.
+    //
+    // Recording still has to happen, at every level, because it is what a later `pol`
+    // unions over -- and a pol that lands at Top *does* pin the ge atoms it finds, which is
+    // safe because it happens at pol-emit time rather than inside another line's emission.
+    // So the pol gap is covered for ge; the broader "any Top line naming a ge threshold
+    // pins it" rule is not, and stage F's ancestor rule is what covers the eviction path
+    // instead.
     for (const auto & term : ineq.lhs.terms) {
         const auto * lit = std::get_if<ProofLiteral>(&term.variable);
         if (! lit)
@@ -582,11 +616,30 @@ auto ProofLogger::note_top_eq_references(const SumLessThanEqual<Weighted<PseudoB
         if (! cond)
             continue;
         const auto * ivc = std::get_if<IntegerVariableCondition>(cond);
-        if (! ivc || (ivc->op != VariableConditionOperator::Equal && ivc->op != VariableConditionOperator::NotEqual))
+        if (! ivc)
             continue;
-        if (const auto * sid = std::get_if<SimpleIntegerVariableID>(&ivc->var))
-            names_and_ids_tracker().note_permanent_eq_reference(*sid, ivc->value);
+        const auto * sid = std::get_if<SimpleIntegerVariableID>(&ivc->var);
+        if (! sid)
+            continue;
+
+        switch (ivc->op) {
+            using enum VariableConditionOperator;
+        case Equal:
+        case NotEqual:
+            if (level == ProofLevel::Top)
+                names_and_ids_tracker().note_permanent_eq_reference(*sid, ivc->value);
+            note(NamedAtom{*sid, ivc->value, EqualsOrGreaterEqual::Equals});
+            break;
+        // ge(v) is named by `X >= v` and by `X < v` (its negation); `X <= v` / `X > v` are
+        // lowered to Less(v+1) / GreaterEqual(v+1), so the threshold is the value either
+        // way. Mirrors hoist_live_order_literals_toward_level's own reading.
+        case GreaterEqual:
+        case Less: note(NamedAtom{*sid, ivc->value, EqualsOrGreaterEqual::GreaterEqual}); break;
+        default: break;
+        }
     }
+
+    return named;
 }
 
 namespace
@@ -856,14 +909,14 @@ auto ProofLogger::reify(const WPBSumLE & ineq, const HalfReifyOnConjunctionOf & 
     return names_and_ids_tracker().reify(ineq, half_reif);
 }
 
-auto ProofLogger::emit_proof_line(const string & s, ProofLevel level, const optional<ProofLineLabel> & label) -> ProofLine
+auto ProofLogger::emit_proof_line(const string & s, ProofLevel level, const optional<ProofLineLabel> & label, const NamedAtoms & names) -> ProofLine
 {
     log_stacktrace();
     write_indent();
     if (label)
         _imp->proof << *label << ' ';
     _imp->proof << s << '\n';
-    auto result = record_proof_line(advance_proof_line_number(), level);
+    auto result = record_proof_line(advance_proof_line_number(), level, names);
     return result;
 }
 
@@ -876,7 +929,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     const std::optional<AssertionAnnotation> & assertion_hint, const std::optional<ProofLineLabel> & label) -> ProofLine
 {
     log_stacktrace();
-    note_top_eq_references(ineq, level);
+    auto named_atoms = note_top_eq_references(ineq, level);
 
     LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
     auto & rule_line = lease.buffer();
@@ -926,7 +979,7 @@ auto ProofLogger::emit(const ProofRule & rule, const SumLessThanEqual<Weighted<P
     }
         .visit(rule);
 
-    auto line = emit_proof_line(rule_line, level, label);
+    auto line = emit_proof_line(rule_line, level, label, named_atoms);
     // Note: no automatic deview-derivation here. Runtime RUP/red emissions
     // happen many times per propagator inference and per-call deview
     // derivation explodes proof size on tests with many view-using
@@ -940,7 +993,7 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     const ReasonLiterals & reason, const std::optional<AssertionAnnotation> & assertion_hint) -> ProofLine
 {
     log_stacktrace();
-    note_top_eq_references(ineq, level);
+    auto named_atoms = note_top_eq_references(ineq, level);
 
     LineBufferLease lease{_imp->line_buffers, _imp->line_buffer_depth};
     auto & rule_line = lease.buffer();
@@ -994,7 +1047,7 @@ auto ProofLogger::emit_under_reason(const ProofRule & rule, const SumLessThanEqu
     }
         .visit(rule);
 
-    auto line = emit_proof_line(rule_line, level);
+    auto line = emit_proof_line(rule_line, level, nullopt, named_atoms);
     // Note: see comment in `emit()` about why no auto-deview-derivation.
     return line;
 }
@@ -1068,6 +1121,11 @@ auto ProofLogger::forget_proof_level(int depth) -> void
             _imp->proof << "del id " << rel(u) << ";\n";
         }
     }
+    // Drop the naming records for the lines just del'd, before `lines` is cleared and they
+    // become unrecoverable. Without this the map would grow with the proof rather than with
+    // what is live in it, which on a long search is the difference between bounded and not.
+    names_and_ids_tracker().forget_atom_names_for(lines);
+
     lines.clear();
 
     // Keep the tracker's live order-encoding structures in sync with the deletions just
@@ -1178,13 +1236,18 @@ auto ProofLogger::start_proof(const ProofModel & model) -> void
     _imp->proof_line.number += model.number_of_constraints().number;
 }
 
-auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level) -> ProofLineNumber
+auto ProofLogger::record_proof_line(ProofLineNumber line, ProofLevel level, const NamedAtoms & names) -> ProofLineNumber
 {
     switch (level) {
     case ProofLevel::Top: _imp->proof_lines_by_level.at(0).insert_at_end(line.number); break;
     case ProofLevel::Current: _imp->proof_lines_by_level.at(_imp->active_proof_level).insert_at_end(line.number); break;
     case ProofLevel::Temporary: _imp->proof_lines_by_level.at(_imp->active_proof_level + 1).insert_at_end(line.number); break;
     }
+
+    // Empty for nearly every line, and unconditionally empty when the window is not live,
+    // so this costs a branch on the common path.
+    if (! names.empty())
+        names_and_ids_tracker().note_line_names_atoms(line, names);
 
     return line;
 }
@@ -1244,6 +1307,12 @@ auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBool
     const std::vector<std::pair<ProofLiteralOrFlag, ProofLiteralOrFlag>> & witness, ProofLevel level,
     const std::optional<std::map<ProofGoal, Subproof>> & subproofs) -> ProofLine
 {
+    // This funnel renders a sum at a caller-chosen level exactly as the two reifying `red`
+    // emitters do, but was not on the hoist-out rule's list of call sites. A plain `red` at
+    // Top naming a windowed eq atom is as permanent a reference as a reifying one, and its
+    // names are as citable by a later `pol`, so it belongs here too.
+    auto named_atoms = note_top_eq_references(ineq, level);
+
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
 
     log_stacktrace();
@@ -1260,7 +1329,7 @@ auto ProofLogger::emit_red_proof_line(const SumLessThanEqual<Weighted<PseudoBool
     else
         _imp->proof << ";\n";
 
-    return record_proof_line(advance_proof_line_number(), level);
+    return record_proof_line(advance_proof_line_number(), level, named_atoms);
 }
 
 auto ProofLogger::introduce_bits_of(
@@ -1400,7 +1469,7 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessThanEqual<W
     ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs) -> ProofLine
 {
     log_stacktrace();
-    note_top_eq_references(ineq, level);
+    auto named_atoms = note_top_eq_references(ineq, level);
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     write_indent();
@@ -1412,14 +1481,14 @@ auto ProofLogger::emit_red_proof_lines_forward_reifying(const SumLessThanEqual<W
     else
         _imp->proof << ";\n";
 
-    return record_proof_line(advance_proof_line_number(), level);
+    return record_proof_line(advance_proof_line_number(), level, named_atoms);
 }
 
 auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif,
     ProofLevel level, const optional<map<ProofGoal, Subproof>> & subproofs) -> ProofLine
 {
     log_stacktrace();
-    note_top_eq_references(ineq, level);
+    auto named_atoms = note_top_eq_references(ineq, level);
 
     names_and_ids_tracker().need_all_proof_names_in(ineq.lhs);
     auto negated_ineq = ineq.lhs >= ineq.rhs + 1_i;
@@ -1431,7 +1500,7 @@ auto ProofLogger::emit_red_proof_lines_reverse_reifying(const SumLessThanEqual<W
         emit_subproofs(subproofs.value());
     else
         _imp->proof << ";\n";
-    return record_proof_line(advance_proof_line_number(), level);
+    return record_proof_line(advance_proof_line_number(), level, named_atoms);
 }
 
 auto ProofLogger::emit_red_proof_lines_reifying(const SumLessThanEqual<Weighted<PseudoBooleanTerm>> & ineq, ProofLiteralOrFlag reif, ProofLevel level)

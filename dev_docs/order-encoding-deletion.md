@@ -877,11 +877,80 @@ rather than a bad definition.**
 The `t` scenario in `order_evict_test` is this shape reduced, and fails both ways without
 the rule (return values first, then the proof itself).
 
-The remaining gap, unclosed and so far theoretical: a `pol` line's result names literals
-that are a function of the derivation, which we do not evaluate, so nothing can detect a
-reference from one. All 28 `PolBuilder::emit(..., ProofLevel::Top)` call sites would need
-to declare what they name for that to be checkable. The ancestor rule does not depend on
-knowing, which is why it was preferred to extending the pin bookkeeping.
+### The `pol` gap: closed for eq atoms (stage G)
+
+A `pol` line's result names literals that are a function of the derivation, which we do not
+evaluate — so for a long time nothing could detect a reference from one, and this was
+recorded here as theoretical, with no instance known to need it. **An instance is now
+known**, and it was in the shipped configuration:
+
+```
+GCS_DELETE_ORDER_ENCODING=literals magic_square --size=4 --all-different gac --prove
+  -> Proofgoal 3515 could not be autoproven  (at pbp:4310)
+```
+
+Found by the PR #632 benchmark sweep, on a group C **control** row expected to be an exact
+no-op. Constraint 3515 is all-different's Hall-set at-most-one row (`all_different/
+justify.cc:39`): a `PolBuilder` fold of fifteen pairwise clauses naming `i[_13][eq8]`,
+emitted at Top and cached across the search. The eq window evicted `eq8`'s definition
+underneath it, and the "re-introduction" at pbp:4309–4310 was not one — the atom had never
+been free. `del id 3515` before that step makes it pass, which is how the row was confirmed
+to be the sole blocker.
+
+It turned out not to need evaluating, and not to need 28 declarations either. **Cutting
+planes cannot invent an atom**: addition, multiplication, division and saturation all yield
+a constraint over a subset of the operands' variables, and the only other sources —
+`add_for_literal` and `weaken`'s flag — are handed to `PolBuilder` directly. So the union
+over the operands' recorded names over-approximates what the result names, soundly and
+automatically. `PolBuilder::emit` computes it, pins it when the line lands at Top, and
+records it against the new line so a pol over pols composes.
+
+That is why this is automatic rather than a second level argument on the emitters: a
+declaration is a second source of truth that drifts from the expression it describes, and a
+missing one is silent until deletion is enabled *and* an instance happens to hit it — which
+is exactly how this survived every green suite until a benchmark sweep tripped over it.
+
+The cost is a `ProofLine -> named eq atoms` map, which is real and worth watching: it is the
+point at which we start tracking the live contents of the proof. It is kept to what is live
+rather than to the proof — entries only for lines that name an atom, nothing recorded unless
+the window is live, and `forget_eq_atom_names_for` drops each level's entries as its lines
+are `del`'d.
+
+### The ge side, and where the symmetry stops
+
+The same union covers *ge* thresholds: a `pol` at Top pins the ge atoms its operands name,
+under `OrderEncodingResidencyCause::LineHoist`. Two things about it are worth recording,
+because both are easy to assume wrongly.
+
+**It fires nowhere measured.** `line_hoist` is **0 on all 24 rows** of the PR #632 set at
+gate 0 — no pol landing at Top names a live deletable ge threshold on any of them. So the
+ge half is carried on the strength of the argument and a discriminating unit test
+(`order_evict_test`, scenario `v`), not on the strength of an instance. It is defence in
+depth for a soundness property, not a measured win, and it should be read that way. Treat
+`line_hoist: 0` in the stats dump as the expected reading; a nonzero one means an instance
+has finally reached it.
+
+**Pinning ge from the ordinary reference walk does *not* work, and this was measured.** The
+obvious symmetry — extend the hoist-out rule so that any Top line naming a ge threshold pins
+it, exactly as it does for eq — **breaks proofs**:
+
+```
+comparison_test le_iff --seed=4979515          -> not implied by reverse unit propagation
+linear_constraint_le_iff_incremental (gate 0)  -> same
+```
+
+The reason is that the two atom kinds are not structurally alike. An eq atom stands alone,
+so hoisting one is a local move. A ge threshold is **a link in a chain**, and hoisting it to
+Top restructures that chain by stitching over its neighbours — so doing it at every Top line
+that happens to name a threshold pulls the chain out from under RUP steps that depend on its
+positive-level shape. The walk therefore *records* ge atoms (which is what the pol union
+reads) but does not pin them; only a pol pins, and only at pol-emit time, which is outside
+any other line's emission.
+
+So the ge coverage is exactly as wide as the pol gap, and no wider. The broader
+"any Top line naming a threshold pins it" rule remains unavailable, and stage F's ancestor
+rule is what covers the eviction path instead — which is the same conclusion stage F reached
+when the Top-pin idea was first tried against `table_layout`.
 
 ## Mapping the existing heuristics
 
@@ -964,6 +1033,46 @@ a real use case lands.
 
 Each stage gates on: VeriPB accepts, and recursions/propagations/solutions are
 unchanged mode-off vs mode-on (a proof-only change must not perturb search).
+
+## The `table_layout` checking regression — diagnosed, and it is upstream's
+
+`table_layout --size 15 --seed 1` checks **11.4× slower** with the mode on (69.66 s → 797.33 s
+at gate 16; 0.08× at gate 0). It reproduced across three independent sittings, so it is not
+noise. It is **not a cost of deletion**, and there is nothing to fix here:
+
+- **All of it is before the search.** Cutting the proof at the first backtracking point:
+  pre-search **8.52 s vs 740.76 s (87×)**, while the *search* parts are comparable (~61 s vs
+  ~57 s). That is why 119 deletions cost the same as 1 870 — the cost is paid by enabling the
+  mode, not per deletion.
+- **The constraint database is identical.** At the same semantic point both hold **595 105
+  live constraints**, with the arity distribution matching in every bucket (2-term 204 735,
+  3-term 224 620, …); as sets only 12 of 595 105 differ, and as ordered sequences the dumps
+  diverge only at line 594 831. Database size, contents, arity and insertion order are all
+  ruled out.
+- **It is unhinted RUP propagation.** 83 % of runtime in `PropagationSet::propagate`;
+  `RUP[unhinted]` averages 24.9 µs against 1 849.2 µs. The +75 600 `pol` lines the mode emits
+  cost 0.7 µs each — 0.07 s in total — and every one of them derives a constraint already
+  present, which VeriPB deduplicates.
+- **Hints erase it.** Elaborated, the two check in **2.70 s vs 2.68 s**, and the "slow" proof
+  needs **5.3 % fewer** hints (19.9 M vs 21.0 M over identical 214 260 rup counts). So the
+  proof is not logically harder; the 87 × is the cost of *searching for* a path that could be
+  followed in 2.68 s.
+
+Raised with VeriPB upstream. Write-up and a self-contained reproducer (both proof pairs,
+byte-identical `.opb`, 9.4 MB) are in `~/claude/tmp/oed-bench-632/preserved-table_layout15/`
+— `FOR-VERIPB.md`, `DIAGNOSIS.md` and `table_layout15-repro.tar.zst`. Not version controlled;
+regenerate with `table_layout --size 15 --seed 1 --prove` on this branch and on main.
+
+**If a gcs-side mitigation is ever wanted**, hint the containment edges. They are emitted
+unhinted at Top by `link_immediate_containment`, they account for ~81 % of all hint volume,
+and elaboration spends ~175 steps on them where ~4 suffice (flat across parent widths 2–49,
+so the excess is not width-related). Everything the hint needs is already tracked —
+`invars_that_exist` holds both endpoints' reification lines, `chain_clauses_by_level` holds
+the chain-link lines under `Literals`, and `define_plain_invar` already hoists the relevant
+ges to Top so the path is guaranteed resident. The one addition would be an index from
+(variable, adjacent-threshold-pair) to chain-clause `ProofLine`; the existing map is
+level-major and flat, so today that lookup is a scan. Under mode `None` the chain lines are
+not recorded at all, so that config would need new bookkeeping in `emit_order_link`.
 
 ## Open questions
 

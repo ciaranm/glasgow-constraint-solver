@@ -1486,8 +1486,49 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
   unchanged: **this is a feature for weak-propagation, large-domain search, and real
   MiniZinc-shaped models are not that.**
 
-Stages A, B, B', B'', C, D and E have all landed in sequence. Stage D was the only one
+- **Stage F — do not evict an ancestor's order literal. DONE (#645).** A definition minted
+  at a level the search has since left can still be named by a live row from that level, so
+  `evict_order_literal` refuses when `level < logger->proof_level()`. Found by rebasing onto
+  main, which made `table_layout` reachable: it rejected at gate 0 and only at gate 0.
+  Conservative by design — the information to do better is not kept — and it costs nothing
+  measurable.
+- **Stage G — pin what a `pol` names, via the union over its operands. DONE.** The
+  eq-side member of stage F's family, reached by a path stage F's rule cannot see: a `pol`
+  at Top over operands naming a windowed eq atom is a permanent reference that no walk over
+  the emitted line can detect, because a pol's literals are the derivation's result.
+  `magic_square --size=4 --all-different gac` rejected in the **shipped** configuration
+  because of it. Fixed automatically rather than by declaration — cutting planes cannot
+  invent an atom, so the union over the operands over-approximates the result. Costs a
+  `ProofLine -> named atoms` map, scoped to what is live. Covers **ge** thresholds too, under
+  the new `LineHoist` residency cause -- but `line_hoist` is **0 on all 24** PR #632 rows, so
+  the ge half rests on the argument and a discriminating unit test, not on an instance.
+  Pinning ge from the ordinary reference walk was tried and **reverted**: a ge threshold is a
+  chain link, so hoisting it restructures the chain and breaks RUP steps that depend on its
+  positive-level shape. Full write-up in
+  [order-encoding-deletion.md](order-encoding-deletion.md), "The `pol` gap".
+
+Stages A, B, B', B'', C, D, E, F and G have all landed in sequence. Stage D was the only one
 gated on work outside this task (the delc mechanics), and that gate is closed.
+
+### Status: PAUSED (2026-08-03)
+
+Work on this stack is **paused**, with every stage pushed to a PR and nothing uncommitted.
+The reason is that the full PR #632 benchmark sweep did not make the case:
+
+- **Two correctness bugs found by benchmarking**, both fixed (stage F, stage G) — the stage G
+  one, `magic_square --size=4 --all-different gac`, was a rejected proof in the **shipped**
+  configuration, found on a control row expected to be an exact no-op.
+- **On real instances the feature is a no-op or worse.** 10 of 26 rows never engage at all;
+  only `qap10` (1.20×/1.28×) and the two `rcpsp` forms (~1.17×/1.20×) win; groups B and C are
+  1.00× throughout. The 3.7×–15× wins are confined to the `odb_*` synthetics built to exhibit
+  them.
+- **One severe regression**, `table_layout15` at 0.09×/0.08× — diagnosed as a VeriPB
+  unhinted-propagation issue (see order-encoding-deletion.md) rather than a cost of deletion,
+  and raised upstream.
+
+The flag-off byte-identity claim holds exactly (21/21), so carrying the stack costs nothing
+while it sits. VeriPB's forthcoming **label-groups** mechanism may offer a different route to
+the same goal, which is the other reason to stop here rather than push on.
 
 ## Implementation gates (not owner calls)
 
