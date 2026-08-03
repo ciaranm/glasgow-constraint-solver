@@ -316,6 +316,14 @@ if(GCS_BUILD_TESTS)
     add_test(NAME gac_global_cardinality_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:gac_global_cardinality_test>)
     add_test(NAME cumulative_constraint COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_test>)
     add_test(NAME cumulative_overload COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:cumulative_overload_test>)
+    # Mutation lanes: each writes a deliberately corrupted proof of the
+    # sharp-margin fixture, and passes only if veripb rejects it. Distinct
+    # basenames so the lanes do not race over one set of proof files.
+    foreach(mutation energy capacity window)
+        add_test(NAME cumulative_overload_mutation_${mutation}
+            COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_expect_verify_failure.bash
+                --basename cumulative_overload_mutation_${mutation} $<TARGET_FILE:cumulative_overload_test> --mutate=${mutation})
+    endforeach()
     foreach(mode basic cycles views alias reified simplify incremental random random_reified)
         add_test(NAME difference_constraint_${mode}
             COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:difference_test> ${mode})

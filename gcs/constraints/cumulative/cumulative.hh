@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <map>
 #include <optional>
+#include <variant>
 #include <vector>
 
 namespace gcs
@@ -41,6 +42,52 @@ namespace gcs
         /// effect unless \ref overload is also set.
         bool profile_overload = true;
     };
+
+    /**
+     * \brief Deliberate corruptions of the overload check's derivation, for
+     * testing only.
+     *
+     * A proof that verifies is necessary but not sufficient: if the honest
+     * derivation has slack in it, a wrong one verifies too, and the rule's
+     * arithmetic is then not being checked by anything. Each of these breaks
+     * one step of the emitted derivation in a way that must make VeriPB
+     * *reject* the proof; a mutation that still verifies is a finding about the
+     * honest derivation, not about the mutation.
+     *
+     * These change nothing but the proof: the same conflicts are found, the
+     * same solutions reported, and the OPB is untouched.
+     *
+     * \ingroup Constraints
+     */
+    namespace cumulative_proof_mutation
+    {
+        /// Emit the honest derivation.
+        struct None
+        {
+        };
+
+        /// Claim one more unit of activity than the window-energy lemma
+        /// derived, for the first task in the window.
+        struct OverstateWindowEnergy
+        {
+        };
+
+        /// Leave the last time point's capacity line out of the conflict's
+        /// pol, so the window appears to supply one time point less than the
+        /// energy argument was told.
+        struct OmitCapacityLine
+        {
+        };
+
+        /// Derive each task's window energy over a window one time point
+        /// short, which is honest but weaker than the conflict needs.
+        struct ShrinkLemmaWindow
+        {
+        };
+    }
+
+    using CumulativeProofMutation = std::variant<cumulative_proof_mutation::None, cumulative_proof_mutation::OverstateWindowEnergy,
+        cumulative_proof_mutation::OmitCapacityLine, cumulative_proof_mutation::ShrinkLemmaWindow>;
 
     /**
      * \brief Cumulative constraint: tasks with start times, durations, and
@@ -89,6 +136,7 @@ namespace gcs
         std::vector<Integer> _per_task_t_lo;
         std::vector<Integer> _per_task_t_hi;
         CumulativeRules _rules;
+        CumulativeProofMutation _proof_mutation = cumulative_proof_mutation::None{};
         // Overload checking, resolved in prepare(). _overload_tasks lists the
         // tasks the window-energy lemma can speak about (constant length and
         // height, and a start whose order literals the lemma can bridge to);
@@ -148,6 +196,11 @@ namespace gcs
         /// default). Propagation strength only: the solutions found and the OPB
         /// encoding are the same whatever is selected.
         auto with_rules(CumulativeRules rules) -> Cumulative &;
+
+        /// Corrupt one step of the overload check's derivation. For tests
+        /// only, which assert that VeriPB rejects the result; see
+        /// CumulativeProofMutation.
+        auto with_proof_mutation(CumulativeProofMutation mutation) -> Cumulative &;
 
         virtual auto clone() const -> std::unique_ptr<Constraint> override;
         [[nodiscard]] virtual auto s_expr(const innards::ProofModel * const) const -> innards::SExpr override;

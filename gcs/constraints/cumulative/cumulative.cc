@@ -107,10 +107,17 @@ auto Cumulative::with_rules(CumulativeRules rules) -> Cumulative &
     return *this;
 }
 
+auto Cumulative::with_proof_mutation(CumulativeProofMutation mutation) -> Cumulative &
+{
+    _proof_mutation = mutation;
+    return *this;
+}
+
 auto Cumulative::clone() const -> unique_ptr<Constraint>
 {
     auto result = make_unique<Cumulative>(_starts, _lengths, _heights, _capacity);
     result->with_rules(_rules);
+    result->with_proof_mutation(_proof_mutation);
     return result;
 }
 
@@ -424,8 +431,8 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
         [starts = move(_starts), lengths_var = move(_lengths), heights_var = move(_heights), capacity_var = _capacity,
             active_tasks = move(_active_tasks), before_flags = move(_before_flags), after_flags = move(_after_flags),
             active_flags = move(_active_flags), contrib_flags = move(_contrib_flags), ends = move(_end), end_lines,
-            capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo), rules = _rules, overload_tasks = move(_overload_tasks),
-            time_slot_prefix = move(_time_slot_prefix), time_slot_lo = _time_slot_lo,
+            capacity_lines = move(_capacity_lines), per_task_t_lo = move(_per_task_t_lo), rules = _rules, mutation = _proof_mutation,
+            overload_tasks = move(_overload_tasks), time_slot_prefix = move(_time_slot_prefix), time_slot_lo = _time_slot_lo,
             owner = constraint_id()](const State & state, auto & inference, ProofLogger * const logger) -> PropagatorState {
             // The capacity may be a variable: the load profile is infeasible
             // only when it exceeds the *largest* still-allowed capacity, so the
@@ -713,8 +720,17 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                             // lines exactly, leaving a constraint whose
                             // negative-only left hand side must reach a
                             // positive right hand side.
+                            // The mutations (tests only, see
+                            // CumulativeProofMutation) each break one step
+                            // here, and each must make VeriPB reject.
+                            auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
+                            auto shrink_lemma_window = std::holds_alternative<cumulative_proof_mutation::ShrinkLemmaWindow>(mutation);
+                            auto overstate_energy = std::holds_alternative<cumulative_proof_mutation::OverstateWindowEnergy>(mutation);
+
                             PolBuilder pol;
                             for (Integer t = a; t < b; ++t) {
+                                if (omit_capacity_line && t == b - 1_i)
+                                    continue;
                                 auto line = capacity_lines.find(t);
                                 if (line != capacity_lines.end())
                                     pol.add(line->second);
@@ -724,10 +740,27 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                                 auto energy_line = window_energy::derive_window_energy(*logger, reason,
                                     window_energy::ConstantLengthTask{std::get<SimpleIntegerVariableID>(starts[i]), llb(i), per_task_t_lo[i],
                                         before_flags[i], after_flags[i], active_flags[i]},
-                                    a, b, state.bounds(starts[i]), ProofLevel::Temporary);
-                                if (! energy_line || energy_line->bound != llb(i))
+                                    a, shrink_lemma_window ? b - 1_i : b, state.bounds(starts[i]), ProofLevel::Temporary);
+                                if (! energy_line) {
+                                    // Only reachable under the shrunk-window
+                                    // mutation, where a task can be left with
+                                    // nothing derivable at all.
+                                    if (shrink_lemma_window)
+                                        continue;
+                                    throw ProofError{"cumulative overload: a task in the window has no derivable energy"};
+                                }
+                                if (! shrink_lemma_window && energy_line->bound != llb(i))
                                     throw ProofError{"cumulative overload: window energy derivation is weaker than the check assumed"};
-                                pol.add(energy_line->line, hlb(i));
+
+                                auto line = energy_line->line;
+                                if (overstate_energy && i == inside_tasks.front()) {
+                                    WPBSum activity;
+                                    for (Integer t = energy_line->lo; t < energy_line->hi; ++t)
+                                        activity += 1_i * active_flags[i][static_cast<size_t>((t - per_task_t_lo[i]).raw_value)];
+                                    line = logger->emit_rup_proof_line_under_reason(
+                                        reason, move(activity) >= energy_line->bound + 1_i, ProofLevel::Temporary);
+                                }
+                                pol.add(line, hlb(i));
                             }
 
                             for (const auto & [j, t] : pins) {

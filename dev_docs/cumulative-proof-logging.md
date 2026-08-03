@@ -355,14 +355,135 @@ The `pin_contributor` / `pin_pushed` helpers in
 and both push inferences share one shape across all constant/variable
 combinations.
 
+## Inference 4 — the overload check, and the window-energy lemma
+
+Time-tabling only ever looks at one time point at a time. The overload
+check (Cloutier & Quimper, CP 2026, rule `(OC')`, strengthened by the
+mandatory-part profile to their `(TTOC)`) looks at a *window*: if the
+tasks that must run entirely inside `[a, b)` carry more energy than the
+window can supply, the constraint is infeasible. It is conflict-only —
+no bound moves — and it lives behind `CumulativeRules::overload` /
+`::profile_overload`.
+
+### What the propagator computes
+
+For each pair `(a, b)` with `a` an earliest start time and `b` a latest
+completion time, let `I(a, b)` be the tasks with `est ≥ a` and
+`lct ≤ b`. The conflict condition is
+
+```
+    Σ_{i ∈ I(a,b)} p_i·h_i   +   F(a, b)   >   capacity · slots(a, b)
+```
+
+where `F(a, b)` is the mandatory-part load inside the window of the
+tasks *not* in `I(a, b)`, and `slots(a, b)` counts the time points in
+`[a, b)` that some task can occupy at all.
+
+Two things make this quadratic rather than cubic. A task in `I(a, b)`
+has its mandatory part inside the window too, so `F` is the window's
+total mandatory load minus `I(a, b)`'s — both terms then accumulate as
+`b` grows over the tasks sorted by `lct`. And `slots` comes from a
+prefix count of the per-task windows, built once in `prepare()`.
+
+`slots` rather than `b − a` because a time point no task can occupy
+supplies nothing to the window's tasks — and has no `C_t` line to cite,
+since `define_proof_model` writes one only where some task can be
+active. Counting it would claim capacity the proof cannot produce.
+
+### The window-energy lemma
+
+The proof needs, for each `i ∈ I(a, b)`, a derived line saying task `i`
+really does spend `p_i` time active inside the window:
+
+```
+    Σ_{t ∈ [a,b)} active_{i,t}  ≥  p_i .
+```
+
+That is `derive_window_energy` in
+[`gcs/constraints/innards/window_energy.hh`](../gcs/constraints/innards/window_energy.hh),
+and it is the reusable piece: issues #549 and #550 consume it, in its
+clipped form (a task only partly inside the window), so it derives the
+general bound rather than just the contained case.
+
+Per time point `t`, three `pol` lines:
+
+```
+    before_{i,t} \/ [s_i ≥ t+1]                  @v[..][cb][f]  +  Def([s_i < t+1])   , saturate
+    after_{i,t}  \/ ~[s_i ≥ t-p+1]               @v[..][ca][f]  +  Def([s_i ≥ t-p+1]) , saturate
+    active_{i,t} \/ [s_i ≥ t+1] \/ ~[s_i ≥ t-p+1]        @v[..][cact][f]  +  the two above
+```
+
+The first two are order bridges of exactly the shape
+`product_justify::add_order_bridge_hints` uses: a flag's `[f]` half and
+an order literal's defining row share the `s_i` bits, which cancel, and
+saturation turns what is left into a two-literal clause. The third adds
+`active`'s `[f]` half — the AND-gate clause
+`active \/ ¬before \/ ¬after` — whose `before` and `after` terms cancel
+against the bridges, each pair contributing a constant to the degree.
+
+Summing those over `t ∈ [a, b)` gives
+
+```
+    Σ active_{i,t}  +  Σ_{v ∈ (a, b]} [s_i ≥ v]  +  Σ_{u ∈ (a-p, b-p]} ~[s_i ≥ u]   ≥   b − a
+```
+
+and this is where the telescoping happens: every value in both ranges
+contributes `[s_i ≥ w]` and its negation, which is a constant, so it
+cancels inside the pol. What survives is `min(p, b−a)` literals at each
+end, and each is resolved against the start bounds:
+
+- `~[s_i ≥ u]` with `u ≤ lb(s_i)`: RUP `[s_i ≥ u]` under the reason —
+  the terms cancel and the degree is unchanged;
+- `[s_i ≥ v]` with `v > ub(s_i)`: RUP `[s_i < v]` under the reason —
+  likewise;
+- anything the bounds do not decide: push the literal itself onto the
+  `pol` stack (VeriPB reads a bare literal as the trivial constraint
+  `lit ≥ 0`), which cancels the term at the cost of one unit of the
+  bound.
+
+So a fully contained task yields exactly `p_i`, and a task hanging out
+of the window yields its guaranteed overlap. `window_energy_bound()`
+computes the same number without emitting anything, and the emitter
+cross-checks against it: a disagreement would otherwise only show up as
+a rejected proof much later.
+
+### The conflict
+
+One `pol`: every `C_t` for `t ∈ [a, b)` that exists, each contained
+task's window-energy line scaled by its height, and — for `(TTOC)` —
+the outside tasks' compulsory contributions via the existing
+`pin_contributor`. Each contained task's `active` terms cancel exactly
+against its terms in the capacity lines, and what is left is a
+constraint with nothing but negative coefficients on the left and a
+positive right hand side. The framework's wrapping RUP closes it.
+
+### Restrictions, and why they are only weakenings
+
+The energy set takes only tasks with a constant length and height (a
+variable height enters `C_t` as the bit-linearised `contrib`, not as
+`h·active`, so the cancellation would not be exact) and a start that is
+a plain variable with an order encoding (the bridges need order
+literals; a `{0,1}` domain is direct-only encoded, and a view's atoms
+would need deview-mode arithmetic). The whole check is skipped when the
+capacity is a variable: a `(b−a)·capacity` term would survive into the
+conflict line for the wrapping RUP to dispose of over the capacity's
+bits, which it cannot do in general.
+
+None of these lose soundness or solutions: a task the energy set will
+not take still counts through `F(a, b)`, and a check not made is a
+conflict found later.
+
 ## Open follow-ups
 
 - **Edge-finding.** A *set* of tasks blocks an interval, not a single
   task at a single time. The pol arithmetic would need to sum across
   the set; the chain idea no longer fits directly.
-- **Energetic reasoning.** Even more set-of-tasks, set-of-intervals.
-  No clean OPB witness exists in the current encoding; the proof
-  scaffold would need extra auxiliary flags.
+- **Energetic reasoning.** The window-energy lemma above is the first
+  piece of it: horizontally elastic and knapsack-augmented checking
+  (#550) build on the clipped form, and the lifted-constraint
+  presolvers (#549) on the contained one.
+- **Variable lengths, heights and capacity in the energy set.** Staged
+  deliberately; the extensions are sketched in #542.
 The current scaffolding (`_before_flags`, `_after_flags`,
 `_active_flags`, `_contrib_flags`, `_end`, `_capacity_lines`) is
 enough for time-table-strength reasoning over variable `d`/`r`/`b` and not
