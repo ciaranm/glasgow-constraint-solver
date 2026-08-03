@@ -172,11 +172,15 @@ auto DifferenceLogic::run(Problem & problem, Propagators & propagators, State & 
         // A constant operand makes this a plain bound, which the donor's own
         // propagator applies once and which adds nothing to the graph; and
         // aliasing says 0 <= d, which is vacuous, or else a root contradiction
-        // (unconditionally, needing an initialiser --- and initialisers have
-        // already run by the time a presolver is called) or a fact about the
-        // condition (half-reified). Leave all of them to the donor, which
-        // handles them. Checked before node_index is called, so a skipped edge
-        // never leaves an isolated node behind to be triggered on.
+        // (unconditionally) or a fact about the condition (half-reified). Leave
+        // all of them to the donor, which handles them --- measured, not
+        // assumed: with this presolver installed, an unconditional degenerate
+        // donor is refuted in one recursion with a verifying proof, with and
+        // without a view offset, and a half-reified one's `!cond' is inferred
+        // by its own propagator. Lifting would duplicate that and nothing more,
+        // and would have to cite the donor's row in the *user's* views' bits to
+        // do it. Checked before node_index is called, so a skipped edge never
+        // leaves an isolated node behind to be triggered on.
         if (! left->variable || ! right->variable || *left->variable == *right->variable) {
             ++stats.skipped_degenerate;
             return false;

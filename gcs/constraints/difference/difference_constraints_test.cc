@@ -816,6 +816,12 @@ namespace
     // round --- the second fix is the contradiction, and never gets counted,
     // which is also why the counters are published by a destructor rather than
     // at the end of the stage.
+    //
+    // "Before search starts" is meant exactly: the stage runs from an
+    // initialiser, so this refutes in *zero* recursions, and that number is what
+    // this fixture pins. It is the one externally visible consequence of where
+    // the stage lives, and so the one thing that would notice it moving back
+    // into the propagator, where it would refute in one.
     auto run_root_refutation_test() -> void
     {
         print(cerr, "difference root refutation:");
@@ -854,9 +860,13 @@ namespace
             throw UnexpectedException{"difference root refutation: the simplification stage recorded " + to_string(on.conditions_fixed) +
                 " conditions fixed, expected exactly 1: both polarities of the ordering Boolean close a cycle against the maximum time lag, the "
                 "first is inferred and the second is the contradiction, which unwinds before it can be counted"};
-        if (1 != on_recursions)
-            throw UnexpectedException{"difference root refutation: with simplification the model must be refuted at the root, in " +
-                to_string(on_recursions) + " recursions rather than 1"};
+        if (0 != on_recursions)
+            throw UnexpectedException{"difference root refutation: with simplification the model must be refuted during initialisation, before "
+                                      "search is entered at all, and instead took " +
+                to_string(on_recursions) +
+                " recursions. The stage runs from an initialiser: a refutation from one is reported by solve() "
+                "without a search node ever being opened, and anything else means the stage has moved back into the "
+                "propagator"};
         if (off_recursions <= on_recursions)
             throw UnexpectedException{"difference root refutation: without simplification the solver is supposed to have to search, and it took " +
                 to_string(off_recursions) + " recursions"};
