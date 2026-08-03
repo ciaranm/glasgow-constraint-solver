@@ -202,7 +202,13 @@ auto main(int argc, char * argv[]) -> int
         // A bound above everything: the answer is the whole sum.
         {"i", {3_i, 5_i, 11_i}, 40_i, 19_i, false},
         // A bound of zero: nothing fits.
-        {"j", {3_i, 5_i}, 0_i, 0_i, false}};
+        {"j", {3_i, 5_i}, 0_i, 0_i, false},
+        // At the scale the consumers work at: six coprime weights against a
+        // bound in the eighties, which is sixteen reachable states across
+        // seven layers. Not a stress test --- a check that the layered
+        // derivation stays a sensible size when the bound is realistic, since
+        // it is O(items x bound) flags in the worst case.
+        {"k", {29_i, 31_i, 37_i, 41_i, 43_i, 47_i}, 83_i, 80_i, false}};
 
     for (const auto & fixture : fixtures) {
         auto expected = brute_force_largest(fixture.weights, fixture.bound);

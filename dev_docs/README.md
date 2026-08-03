@@ -134,6 +134,13 @@ library. For an introduction to *using* the solver, start with the top-level
   `BinPacking` Stage 3. Covers the `define_proof_model` /
   `install_initialiser` split, the paper-style reified scaffolding, the
   per-call proof chain, and the measured default-vs-opt-in trade-off.
+- [Subset-sum strengthening](subset-sum-strengthening.md) — tightening a derived
+  `Σ c_i x_i ≤ B` to the largest subset sum at most `B`, by Chvátal–Gomory
+  rounding when the coefficients share a factor and by a layered dynamic
+  programme otherwise. Covers why the two lines have the same solutions but not
+  the same strength, the clause resolution that stands in for the case split
+  unit propagation cannot do, and why a satisfiable test model and an `ia`
+  content check are both needed to test it.
 - [Restarts, nogoods, and dom/wdeg weighting](restarts-nogoods-weighting.md) —
   the search-side machinery from issue #315: the restart loop and its
   `SearchResult` unwind signal, `RestartSchedule`, the `ConflictObserver`
