@@ -109,6 +109,7 @@ add_library(glasgow_constraint_solver
         innards/proofs/proof_only_variables.cc
         innards/proofs/scp_writer.cc
         innards/proofs/simplify_literal.cc
+        innards/proofs/subset_sum_strengthening.cc
         innards/propagators.cc
         innards/reason.cc
         innards/s_expr.cc
@@ -552,6 +553,12 @@ if(GCS_BUILD_TESTS)
     add_executable(eqvar_polarity_test innards/proofs/eqvar_polarity_test.cc)
     target_link_libraries(eqvar_polarity_test PRIVATE glasgow_constraint_solver)
     add_test(NAME eqvar_polarity_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:eqvar_polarity_test>)
+
+    add_executable(subset_sum_strengthening_test innards/proofs/subset_sum_strengthening_test.cc)
+    target_link_libraries(subset_sum_strengthening_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
+    add_test(NAME subset_sum_strengthening_test COMMAND $<TARGET_FILE:subset_sum_strengthening_test>)
 
     add_executable(introduce_bits_test innards/proofs/introduce_bits_test.cc)
     target_link_libraries(introduce_bits_test PRIVATE glasgow_constraint_solver)
