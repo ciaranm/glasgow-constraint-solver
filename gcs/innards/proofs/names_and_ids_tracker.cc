@@ -134,6 +134,40 @@ namespace
             return hash_combine(flag.positive ? 5 : 6, flag.index);
         }
     };
+
+    // The cake-style bracketed flag name `<kind>[id][n1_n2..][annotation?]`:
+    // the number list joined by '_', the optional annotation in its own
+    // brackets, mirroring cake_pb_cp's format_flag (cp_to_ilpScript.sml).
+    // `kind` is cake's rendering class -- 'x' where the numbers are array
+    // positions, 'v' where they are domain values. See #354.
+    //
+    // Shared rather than written out at each caller because
+    // find_proof_flag_values has to rebuild *exactly* the string
+    // create_proof_flag_values built: that is what makes the lookup a pure
+    // function of (id, values, annotation) rather than a read of per-solve
+    // state. One builder is what keeps "the same string" a fact rather than an
+    // intention.
+    //
+    // Negative numbers render as `-N`, matching cake's format_int_list and the
+    // solver's own eq/ge literals (i[X][eq-N]). VeriPB allows '-' in variable
+    // names and in @labels alike (VeriPB-dev #191), so this is legal in the
+    // labelled flag definitions too, and byte-matches cake over negative
+    // domains.
+    [[nodiscard]] auto bracketed_flag_name(char kind, const ConstraintID & id, const vector<long long> & numbers, const optional<string> & annotation)
+        -> string
+    {
+        string name{kind};
+        name += "[" + as_string(id) + "][";
+        for (size_t k = 0; k < numbers.size(); ++k) {
+            if (k != 0)
+                name += "_";
+            name += to_string(numbers[k]);
+        }
+        name += "]";
+        if (annotation)
+            name += "[" + *annotation + "]";
+        return name;
+    }
 }
 
 struct NamesAndIDsTracker::Imp
@@ -1623,20 +1657,10 @@ auto NamesAndIDsTracker::constraint_row_label(const ConstraintID & id, const str
 
 auto NamesAndIDsTracker::find_proof_flag_values(const ConstraintID & id, const ProofFlagKey & key) const -> optional<ProofFlag>
 {
-    // Built the same way create_proof_flag_values builds it, because it has to
-    // be the same string: that is what makes this a pure function of
+    // Built by the same helper create_proof_flag_values builds with, because it
+    // has to be the same string: that is what makes this a pure function of
     // (id, values, annotation) rather than a lookup into per-solve state.
-    string name = "v[" + as_string(id) + "][";
-    for (size_t k = 0; k < key.values.size(); ++k) {
-        if (k != 0)
-            name += "_";
-        name += to_string(key.values[k]);
-    }
-    name += "]";
-    if (key.annotation)
-        name += "[" + *key.annotation + "]";
-
-    auto found = _imp->constraint_keyed_flags.find(name);
+    auto found = _imp->constraint_keyed_flags.find(bracketed_flag_name('v', id, key.values, key.annotation));
     if (found == _imp->constraint_keyed_flags.end())
         return nullopt;
     return found->second;
@@ -1655,19 +1679,10 @@ auto NamesAndIDsTracker::create_proof_flag(const string & name) -> ProofFlag
 auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const vector<long long> & indices, const optional<string> & annotation)
     -> ProofFlag
 {
-    // Mirror cake_pb_cp's Indices flag rendering (cp_to_ilpScript.sml format_flag):
-    // x[id][i1_i2..][annotation?] -- the index list joined by '_', the optional
-    // annotation in its own brackets.
-    string name = "x[" + as_string(id) + "][";
-    for (size_t k = 0; k < indices.size(); ++k) {
-        if (k != 0)
-            name += "_";
-        name += to_string(indices[k]);
-    }
-    name += "]";
-    if (annotation)
-        name += "[" + *annotation + "]";
-    return make_proof_flag_named(name);
+    // cake_pb_cp's Indices flag rendering: x[id][i1_i2..][annotation?]. The
+    // numbers are array positions, in contrast to the domain values of the
+    // v[...] overload.
+    return make_proof_flag_named(bracketed_flag_name('x', id, indices, annotation));
 }
 
 auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const string & annotation) -> ProofFlag
@@ -1682,26 +1697,11 @@ auto NamesAndIDsTracker::create_proof_flag(const ConstraintID & id, const string
 auto NamesAndIDsTracker::create_proof_flag_values(const ConstraintID & id, const vector<long long> & values, const optional<string> & annotation)
     -> ProofFlag
 {
-    // Mirror cake_pb_cp's Values flag rendering (cp_to_ilpScript.sml format_flag):
-    // v[id][v1_v2..][annotation?] -- the value list joined by '_', the optional
-    // annotation in its own brackets. The values are domain values, in contrast
-    // to the array positions of the x[...] overload; nvalue's per-value
-    // occurrence flag is create_proof_flag_values(id, {v}) -> v[id][v]. See #354.
-    string name = "v[" + as_string(id) + "][";
-    for (size_t k = 0; k < values.size(); ++k) {
-        if (k != 0)
-            name += "_";
-        // Negative values are rendered `-N`, matching cake's format_int_list and
-        // the solver's eq/ge literals (i[X][eq-N]). VeriPB allows '-' in both
-        // variable names and @labels (VeriPB-dev #191), so this is legal in the
-        // labelled flag definitions too and byte-matches cake over negative
-        // domains.
-        name += to_string(values[k]);
-    }
-    name += "]";
-    if (annotation)
-        name += "[" + *annotation + "]";
-    return make_proof_flag_named(name);
+    // cake_pb_cp's Values flag rendering: v[id][v1_v2..][annotation?]. The
+    // numbers are domain values, in contrast to the array positions of the
+    // x[...] overload; nvalue's per-value occurrence flag is
+    // create_proof_flag_values(id, {v}) -> v[id][v]. See #354.
+    return make_proof_flag_named(bracketed_flag_name('v', id, values, annotation));
 }
 
 auto NamesAndIDsTracker::create_proof_flag_for_constant(Integer k, const string & atom) -> ProofFlag
