@@ -1,0 +1,20 @@
+{
+    "variables": {
+        "s1": { "type": "int", "domain": [[0, 2]] },
+        "s2": { "type": "int", "domain": [[0, 2]] },
+        "o1": { "type": "bool" },
+        "o2": { "type": "bool" }
+    },
+    "arrays": {
+        "starts": { "a": ["s1", "s2"] },
+        "durations": { "a": [2, 2] },
+        "demands": { "a": [1, 1] },
+        "presences": { "a": ["o1", "o2"] }
+    },
+    "constraints": [
+        { "id": "glasgow_cumulative_opt", "args": ["starts", "durations", "demands", "presences", 1] }
+    ],
+    "output": ["s1", "s2", "o1", "o2"],
+    "solve": { "method": "satisfy" },
+    "version": "1.0"
+}

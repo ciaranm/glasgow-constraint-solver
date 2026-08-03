@@ -204,6 +204,46 @@ and VeriPB alike. `minizinc-differencelogic` therefore runs with
 `-s --difference-logic` and asserts on the `%%%mzn-stat:
 differenceLogic*` counters as well.
 
+### Reachability guards and extra reference solvers
+
+Two more leading flags, both taken *before* the positional arguments:
+
+- `--fzn-pattern REGEX` (repeatable) requires the regex to match the
+  flattened model the solver was handed. This is the guard against a
+  test passing vacuously. MiniZinc's global wrappers rewrite freely —
+  `cumulative` short-circuits into a disjunctive when no two tasks can
+  coexist, `disjunctive_opt` routes to `disjunctive_strict_opt` when
+  every duration is known positive — and a rewritten model still agrees
+  with the reference solver and still verifies its proof. Nothing else
+  the harness checks can tell you the builtin never ran. Any test whose
+  point is a specific `glasgow_*` builtin wants one of these.
+- `--reference-solver NAME` (repeatable) diffs against another solver on
+  top of MiniZinc's default. Worth it where a second implementation is
+  genuinely independent: for optional-task scheduling, Gecode (the
+  default) propagates them natively while Chuffed falls back to the
+  library decomposition, so agreeing with both pins the semantics
+  against a propagator *and* against MiniZinc's own reference reading. A
+  solver that is not installed is reported and skipped rather than
+  failing, like the `veripb` check.
+
+### Optional (`var opt int`) arguments
+
+MiniZinc's optional-task predicates take `array[int] of var opt int`,
+which no `glasgow_*` builtin can accept. Split them the way the Gecode
+and OR-Tools libraries do: `occurs(s[i])` for the presence Boolean and
+`deopt(s[i])` for the underlying integer, guarding `deopt` because it is
+undefined on a value already fixed absent:
+
+```minizinc
+glasgow_cumulative_opt(
+    [ if is_fixed(si) /\ absent(fix(si)) then 0 else deopt(si) endif | si in s ],
+    d, r, [ occurs(si) | si in s ], b)
+```
+
+The presence array arrives as `array[int] of var bool`, which
+`fzn-glasgow` already presents as `{0, 1}` integer variables (see *Bool
+vs int* below), so the C++ side needs nothing special.
+
 ### Solution counts
 
 Be deliberate about how many solutions a test enumerates. The default

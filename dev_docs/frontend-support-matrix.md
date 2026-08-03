@@ -49,6 +49,7 @@ equivalent for that frontend's vocabulary).
 | channel (inverse) | `Inverse` | ✓ | ✓ (1- and 2-list inverse; one-to-many form `s UNSUPPORTED`) | ? |
 | noOverlap (Disjunctive) | `Disjunctive` (1D, var durations) / `Disjunctive2D` (2D, var sizes)[^disj] | ✓ (1D + 2D `diffn`, var durations/sizes) | ✓ (1D + 2D, var durations/sizes) | ? |
 | cumulative | `Cumulative`[^cum] | ✓ (var s/d/r/b) | ✓ (var s/d/r/b) | ? |
+| cumulative, optional tasks | `Cumulative` presence form[^cumopt] | ✓ (`fzn_cumulative_opt`, and `fzn_disjunctive_opt` riding it) | n/a — no such form in XCSP3 | ? |
 | binPacking | `BinPacking` (per-bin GAC)[^bp] | ✓ (`fzn_bin_packing` / `_capa` / `_load`) | ✓ (signatures 1/2/3; per-bin condition list `s UNSUPPORTED`) | ? |
 | knapsack | `Knapsack` | ✓ | ✓ (basic with two `XCondition`s; not yet exercised by a test) | ? |
 | circuit | `Circuit` | ✓ | ✓ (basic; sub-circuit with size param `s UNSUPPORTED`); semantics mismatch with XCSP3 spec, see #167 | ? |
@@ -86,6 +87,28 @@ addressed.
 - [#200](https://github.com/ciaranm/glasgow-constraint-solver/issues/200) — `Knapsack`: the default per-call DP implementation is kept as the default (its proofs verify 3.6–18× faster), with an opt-in upfront-DAG variant `KnapsackUpfront` (Stage 1 checker + Stage 2 full GAC with paper-style proof scaffolding at `ProofLevel::Top`) that produces 3–6× smaller proofs. Open follow-up: factor the layered-DAG infrastructure shared with `MDD` and `BinPacking` into a common framework. See `knapsack.md`.
 
 [^cum]: Time-table propagation (mandatory-part load profile with bound pushes), now over variable origins, durations, demands, and capacity; every inference is VeriPB-certified — see [`cumulative-proof-logging.md`](cumulative-proof-logging.md). MiniZinc forwards `s`/`d`/`r`/`b` straight to `glasgow_cumulative` (constants pass through as constant variables); XCSP3 handles all four constant/variable length×height overloads and a constant- or variable-capacity `le` condition. Edge-finding / energetic reasoning remain out of scope.
+
+[^cumopt]: Optional tasks: a `{0, 1}` presence variable per task, absent tasks
+    consuming nothing, with the presences ordinary problem variables so a model
+    can maximise over them. Time-table strength on the tasks known present, plus
+    presence falsification — a task with no start position left that fits is
+    inferred absent — all VeriPB-certified; an undecided task's own start bounds
+    are deliberately not pruned (see
+    [`cumulative-proof-logging.md`](cumulative-proof-logging.md)). MiniZinc
+    redefines `fzn_cumulative_opt` to `glasgow_cumulative_opt`, splitting each
+    `var opt int` start with `occurs`/`deopt` the way the Gecode and OR-Tools
+    libraries do; `fzn_disjunctive_opt` rides the same builtin at unit demands
+    and capacity 1. `fzn_disjunctive_strict_opt` deliberately does not: strict
+    disjunctive forbids a zero-duration task from sitting inside another, and a
+    task consuming nothing for no time is invisible to a resource profile.
+    XCSP3 defines no optional-task cumulative at all — every
+    `buildConstraintCumulative` overload in the parser is
+    origins/lengths/heights[/ends] plus a condition — so there is nothing to
+    map, and the XCSP frontend records that rather than leaving it open.
+    `cake_pb_cp` has no encoder for the optional form, so it is outside the
+    verified-encoding chain; `constraint_type()` is `cumulative_optional` so
+    that gap is named rather than silently mismatched against the plain
+    encoder.
 
 [^disj]: 1D `Disjunctive`: variable starts, constant *or* variable durations, strict/non-strict; time-table specialised to heights=1, capacity=1 (variable durations fold into the pairwise ordering flags directly, with a reified zero-length escape clause in non-strict mode). 2D `Disjunctive2D` (non-overlapping rectangles, variable origins, constant or variable sizes): pairwise time-table — mandatory-box overlap is a contradiction, and a pair forced to overlap on one axis is pushed apart on the other. Both are fully proof-logged pairwise against the declarative OPB encoding ([`disjunctive-proof-logging.md`](disjunctive-proof-logging.md)); 2D adds a 4-way separation clause per pair. Outside the envelope (k-D, optional tasks): XCSP3 raises an unsupported error.
 
