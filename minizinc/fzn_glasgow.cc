@@ -760,6 +760,17 @@ auto main(int argc, char * argv[]) -> int
                 const auto & capacity = arg_as_var(data, args, 3);
                 problem.post(Cumulative{starts, lengths, heights, capacity});
             }
+            else if (id == "glasgow_cumulative_opt") {
+                // Optional tasks: the presence Booleans arrive as an array of
+                // var bool, which the FlatZinc reader already presents as 0/1
+                // integer variables --- exactly what Cumulative wants.
+                const auto & starts = arg_as_array_of_var(data, args, 0);
+                const auto & lengths = arg_as_array_of_var(data, args, 1);
+                const auto & heights = arg_as_array_of_var(data, args, 2);
+                const auto & presences = arg_as_array_of_var(data, args, 3);
+                const auto & capacity = arg_as_var(data, args, 4);
+                problem.post(Cumulative{starts, lengths, heights, presences, capacity});
+            }
             else if (id == "glasgow_disjunctive" || id == "glasgow_disjunctive_strict") {
                 const auto & starts = arg_as_array_of_var(data, args, 0);
                 const auto & lengths = arg_as_array_of_var(data, args, 1);

@@ -7,6 +7,7 @@
 #include <gcs/innards/state.hh>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,6 +41,11 @@ auto gcs::innards::install_derived_cumulative(
     inputs->starts = spec.starts;
     inputs->capacity = constant_variable(spec.capacity);
     inputs->rules = spec.rules;
+    // Every task unconditionally present: a derived Cumulative over an optional
+    // donor would have to carry the donor's presence literals into its own
+    // reasons, which is future work rather than something to get wrong quietly.
+    // See DerivedCumulativeSpec, which says the donor must not be optional.
+    inputs->presence.assign(n, std::nullopt);
     for (size_t i = 0; i < n; ++i) {
         inputs->lengths.push_back(constant_variable(spec.lengths[i]));
         inputs->heights.push_back(constant_variable(spec.heights[i]));

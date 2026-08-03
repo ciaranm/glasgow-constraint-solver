@@ -618,6 +618,13 @@ namespace
             return result;
         }
 
+        // XCSP3 has no optional-task cumulative, so Cumulative's presence-taking
+        // constructor has no callback to hang off here. Every
+        // buildConstraintCumulative overload the parser declares
+        // (XCSP3CoreCallbacks.h) is origins/lengths/heights, optionally with
+        // ends, plus a condition --- there is no presence, occurrence or
+        // absence argument anywhere in the format. Recorded so nobody goes
+        // looking twice; if XCSP3 ever grows an optional form, wire it then.
         auto buildConstraintCumulative(string, vector<XVariable *> & origins, vector<int> & lengths, vector<int> & heights, XCondition & cond)
             -> void override
         {

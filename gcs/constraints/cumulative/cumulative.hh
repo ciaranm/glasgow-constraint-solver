@@ -91,6 +91,67 @@ namespace gcs
         cumulative_proof_mutation::OmitCapacityLine, cumulative_proof_mutation::ShrinkLemmaWindow>;
 
     /**
+     * \brief Deliberate corruptions of the presence-falsification derivation,
+     * for testing only. VeriPB must reject each of them.
+     *
+     * A proof that verifies is necessary but not sufficient, so something has
+     * to check that the derivation is doing work. What that something can be is
+     * narrower here than for a bound push, and worth understanding before
+     * adding to this list: presence falsification is a *conflict-shaped* rule,
+     * whose content is "this task cannot be here at all". Once the chain has
+     * narrowed the start domain far enough, the reason context extended with
+     * "the task is present" is contradictory, and every RUP under it is
+     * vacuously valid. A mutation that merely shortens the chain therefore
+     * produces a shorter but still *sound* derivation, and VeriPB is right to
+     * accept it. Corrupting the route is not a test; corrupt the destination.
+     *
+     * So the two that bite are \ref cumulative_presence_mutation::WrongTask,
+     * which argues about a task nothing has cornered, and \ref
+     * cumulative_presence_mutation::ClaimOneTooFar, which draws the conclusion
+     * where it is false. \ref cumulative_presence_mutation::EmitNothing is the
+     * control that says the chain is required at all.
+     *
+     * All but ClaimOneTooFar change nothing except the proof: the same
+     * presences are falsified, the same solutions reported, and the OPB is
+     * untouched. ClaimOneTooFar necessarily changes the inference, since making
+     * the conclusion wrong is the whole point of it.
+     *
+     * \ingroup Constraints
+     */
+    namespace cumulative_presence_mutation
+    {
+        /// Emit the honest derivation.
+        struct None
+        {
+        };
+
+        /// Carry some other optional task's presence literal through the chain,
+        /// so the derivation argues about a task that is not the one being
+        /// falsified.
+        struct WrongTask
+        {
+        };
+
+        /// Fire on an instance where exactly one placement still fits, claiming
+        /// the task is absent when it is not. The "bound + 1 must fail" check
+        /// for this rule: it corrupts the conclusion rather than the route to
+        /// it, which is what a margin of exactly one unit is there to expose.
+        struct ClaimOneTooFar
+        {
+        };
+
+        /// Emit no chain at all, leaving the inference to the framework's
+        /// wrapping RUP. Not a corruption but a control: if VeriPB accepts
+        /// this, the chain is decoration and no mutation of it can be caught.
+        struct EmitNothing
+        {
+        };
+    }
+
+    using CumulativePresenceMutation = std::variant<cumulative_presence_mutation::None, cumulative_presence_mutation::WrongTask,
+        cumulative_presence_mutation::ClaimOneTooFar, cumulative_presence_mutation::EmitNothing>;
+
+    /**
      * \brief Cumulative constraint: tasks with start times, durations, and
      * demands, sharing a resource of a given capacity. Any of the durations,
      * demands, and the capacity may be variables or constants (constants are
@@ -98,6 +159,16 @@ namespace gcs
      * demands of currently-active tasks must not exceed the capacity.
      *
      * A task <em>i</em> is active at time <em>t</em> iff
+     * <em>starts[i] &le; t &lt; starts[i] + lengths[i]</em>.
+     *
+     * Tasks may also be <em>optional</em>: the constructor taking a `presences`
+     * array gives each task a {0, 1} variable, and a task with
+     * <em>presences[i] = 0</em> is absent &mdash; it is never active, so it
+     * consumes no resource and its start time is unconstrained. The presence
+     * variables are ordinary problem variables, so a model can constrain them
+     * and optimise over them (maximising the number of scheduled tasks is the
+     * motivating use). A task <em>i</em> is then active at <em>t</em> iff
+     * <em>presences[i] = 1</em> and
      * <em>starts[i] &le; t &lt; starts[i] + lengths[i]</em>.
      *
      * Propagation is time-table consistent. For each task, the
@@ -110,6 +181,13 @@ namespace gcs
      * time point where placing it would force the load over capacity. Stronger
      * reasoning (edge-finding, energetic) is left for future work.
      *
+     * A task whose presence is still undecided is left out of the profile and
+     * out of the overload check's energy set entirely, and its own start bounds
+     * are never pruned (there is no conditional-bounds store, so a prune valid
+     * only if the task is present would be unsound). What it does get is the
+     * mirror-image inference: when no start position left in its domain fits
+     * under the profile, its presence is inferred to be 0.
+     *
      * \ingroup Constraints
      */
     class Cumulative : public Constraint
@@ -119,6 +197,10 @@ namespace gcs
         std::vector<IntegerVariableID> _lengths;
         std::vector<IntegerVariableID> _heights;
         IntegerVariableID _capacity;
+        // Per-task presence, as posted; empty for the constructors that take no
+        // presences, where every task is unconditionally present. Resolved into
+        // _presence by prepare(); this copy exists for clone() and s_expr().
+        std::vector<IntegerVariableID> _presences;
         // Snapshots resolved in prepare(). For each of lengths and heights,
         // _*_vals holds the constant value for a constant argument (and 0 for a
         // variable one, where the variable / _contrib_flags is used instead) and
@@ -133,6 +215,19 @@ namespace gcs
         std::vector<Integer> _height_vals;
         std::vector<Integer> _height_ub;
         Integer _capacity_val;
+        // Resolved in prepare(). nullopt for a task that is unconditionally
+        // present --- the non-optional constructors, or a presence argument that
+        // is the constant 1 --- which then needs no presence conjunct in its
+        // active flag and no presence literal in a reason, so it encodes and
+        // propagates exactly as it did before optional tasks existed. A task
+        // whose presence is the constant 0 is dropped from _active_tasks
+        // instead: it can never be active, so it contributes nothing to any
+        // capacity row. Only *constant* presences are resolved this way; a
+        // variable that happens to be fixed at prepare() time keeps its
+        // conjunct, because the OPB has to stand on its own and it is the OPB,
+        // not the initial State, that a checker reads.
+        std::vector<std::optional<IntegerVariableID>> _presence;
+        CumulativePresenceMutation _presence_mutation = cumulative_presence_mutation::None{};
         std::vector<std::size_t> _active_tasks;
         std::vector<Integer> _per_task_t_lo;
         std::vector<Integer> _per_task_t_hi;
@@ -191,6 +286,22 @@ namespace gcs
          */
         explicit Cumulative(std::vector<IntegerVariableID> starts, std::vector<Integer> lengths, std::vector<Integer> heights, Integer capacity);
 
+        /**
+         * \brief Optional-task form: `presences[i]` is a {0, 1} variable saying
+         * whether task <em>i</em> is scheduled at all. An absent task is never
+         * active, consumes no resource, and has an unconstrained start.
+         *
+         * Each presence must be a variable whose domain is within {0, 1}, or
+         * the constant 0 or 1. Passing the constant 1 is the same constraint as
+         * leaving the task out of the optional form entirely, and encodes
+         * identically; the constant 0 drops the task.
+         *
+         * \throws InvalidProblemDefinitionException if a presence's domain is
+         * not within {0, 1}, or if the array lengths disagree.
+         */
+        explicit Cumulative(std::vector<IntegerVariableID> starts, std::vector<IntegerVariableID> lengths, std::vector<IntegerVariableID> heights,
+            std::vector<IntegerVariableID> presences, IntegerVariableID capacity);
+
         /// Select which propagation rules are enabled (all of them, by
         /// default). Propagation strength only: the solutions found and the OPB
         /// encoding are the same whatever is selected.
@@ -201,18 +312,27 @@ namespace gcs
         /// CumulativeProofMutation.
         auto with_proof_mutation(CumulativeProofMutation mutation) -> Cumulative &;
 
+        /// Corrupt one step of the presence-falsification derivation. For tests
+        /// only, which assert that VeriPB rejects the result; see
+        /// CumulativePresenceMutation.
+        auto with_presence_mutation(CumulativePresenceMutation mutation) -> Cumulative &;
+
         /**
          * \name The arguments this constraint was posted with.
          *
-         * As posted, not as resolved: a constant length or height comes back as
-         * the ConstantIntegerVariableID it went in as. A caller wanting bounds
-         * should ask the State, which is the only thing that knows them at the
-         * point the caller is asking.
+         * As posted, not as resolved: a constant length, height or presence
+         * comes back as the ConstantIntegerVariableID it went in as. A caller
+         * wanting bounds should ask the State, which is the only thing that
+         * knows them at the point the caller is asking.
          */
         ///@{
         [[nodiscard]] auto starts() const -> const std::vector<IntegerVariableID> &;
         [[nodiscard]] auto lengths() const -> const std::vector<IntegerVariableID> &;
         [[nodiscard]] auto heights() const -> const std::vector<IntegerVariableID> &;
+        /// Empty for the non-optional constructors, which is how a caller asks
+        /// "is this an optional-task Cumulative?" --- DerivedCumulativeSpec
+        /// requires a donor for which this is empty.
+        [[nodiscard]] auto presences() const -> const std::vector<IntegerVariableID> &;
         [[nodiscard]] auto capacity() const -> IntegerVariableID;
         ///@}
 

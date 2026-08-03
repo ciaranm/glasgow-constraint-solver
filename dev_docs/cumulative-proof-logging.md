@@ -572,6 +572,136 @@ make one derivation speak about all of them:
 Neither is implemented here. The first is the safer starting point (each lemma
 is checkable on its own); the second is smaller if it works. Whichever lands
 should measure the proof size, since that is the whole difference between them.
+## Optional tasks (issue #543)
+
+The optional-task constructor gives each task a `{0, 1}` presence
+variable, and an absent task consumes nothing. That is the *one*
+sanctioned change to the OPB in the whole #541 plan, and it is a single
+extra conjunct:
+
+```
+active_{i,t}  ⇔  before_{i,t} ∧ after_{i,t} ∧ (presences[i] = 1)
+```
+
+`C_t` keeps its shape. A `{0, 1}` variable is direct-only encoded as one
+PB literal (`i[name][b0]`, with `= 0` its negation — see
+[`variable-encodings.md`](variable-encodings.md)), so the three-way AND
+costs one term in the same two reification halves, and nothing else in
+the encoding has to know the task is optional.
+
+A task posted with the *constant* 1 as its presence keeps the two-way
+AND, and one posted with the constant 0 is dropped from the constraint
+altogether. Only constants resolve away like this: a variable that
+happens to be fixed when `prepare()` runs keeps its conjunct, because the
+OPB has to say what it means without appealing to a domain the OPB does
+not record. `cumulative_optional_test enumerate` asserts the degeneracy
+by diffing the two forms' OPB constraint lines.
+
+### Presence in reasons
+
+Presence enters a reason as an explicit `presences[i] = 1` literal per
+task known present, *not* by putting the variable in the `generic_reason`
+scope. An undecided presence has no fact to record — a task not known
+present is simply not in the profile, and staying out of it is monotone
+as the domain shrinks — and `generic_reason` would otherwise contribute
+the pair of trivial bounds `0 ≤ p ≤ 1`, which says nothing and costs an
+order atom on a variable whose whole encoding is one literal.
+
+### Presence falsification
+
+The new inference is the mirror image of an lb-push: when an undecided
+task has no start position left that fits under the profile, its presence
+is 0. The proof is the lb-push chain run over the task's *whole* domain
+with `present_j = 0` carried as an extra disjunct on every line, so each
+step reads "either `j` starts later than this, or `j` is not here at
+all". `ExtLits` generalises `emit_chain_step`'s single extension literal
+to the (at most two) disjuncts this needs.
+
+The last step drops the start-side disjunct. Its blocked time is at or
+beyond `ub(s_j)` — that is what makes it the last, since the chain stops
+when the running bound passes `ub(s_j)` — so `before_{j,t}` follows from
+the task's own upper bound in the reason, and the proof never asks for an
+order literal above the domain, which need not exist.
+
+### Why the chain is load-bearing, and what a mutation can catch
+
+The wrapping RUP (`ThenRUP::Yes`) cannot close on its own: the order
+atoms `[s_j ≥ v]` for the interior of the domain are created lazily, and
+it is the chain that creates them. The `EmitNothing` mutation is the
+control for exactly this, and VeriPB rejects it.
+
+What VeriPB will *not* reject is a mutation that merely shortens the
+chain — omitting a step, or stopping one step early. This is worth
+understanding, because it looks like a gap and is not one. Once the chain
+has narrowed `s_j` far enough, the reason context extended with
+`present_j = 1` is *contradictory*, and every subsequent RUP under it is
+vacuously valid. A shortened chain is therefore still a sound (if
+differently shaped) derivation, and VeriPB is right to accept it. This is
+the same trap as #656's contradictory micro-model, one level in: there
+the whole OPB was unsatisfiable, here it is the reason context.
+
+So the mutations that bite are the ones producing a statement that is
+*not* implied:
+
+- `WrongTask` — carry a different optional task's presence literal
+  through the chain. The pinned activity is then about a task nothing has
+  cornered, and the pin fails to RUP.
+- `ClaimOneTooFar` — fire on the twin instance where exactly one
+  placement still fits. The conclusion is wrong rather than the route to
+  it, the chain runs out of blocked times, and the wrapping RUP has
+  nothing to close on. This is the plan's "bound + 1 must fail" check for
+  this rule.
+
+The general lesson for the rest of #541: for a *conflict-shaped* rule —
+one whose content is "this assignment is impossible" — corrupting the
+route is not a test, because the destination makes every route valid.
+Corrupt the destination.
+
+### Interaction with the overload check
+
+The overload check (issue 01, above) is guarded the same way the profile
+is, and it has to be: its energy set counts each contained task's
+`length x height` as *guaranteed*, which an optional task's is not until
+its presence is fixed to 1. Counting an undecided task's energy would
+manufacture a conflict that is not there. So `propagate_cumulative`
+filters the candidate list by the same `is_present`. That one is
+load-bearing and cheap to check: remove it and the enumeration tests lose
+solutions immediately, because two optional unit-height tasks over one
+capacity-1 window carry enough combined "energy" to overload it when in
+truth both may simply be absent.
+
+The (TTOC) strengthening's pinned outside-the-window tasks are filtered
+too, and that one is *not* checkable, which is worth knowing before
+someone deletes it as untested. Pinning a task the arithmetic never
+counted would be accepted by VeriPB, not rejected: by the point the pins
+are emitted the reason context is contradictory, so every RUP under it is
+vacuously valid --- the same phenomenon as the mutation finding below,
+one rule over. The filter keeps the `pol`'s inputs matched to the
+arithmetic that decided the conflict, and it has to be argued rather than
+tested.
+
+Both then need the presence literals in the reason, which they get for
+free: `reason_with_presence()` carries every known-present task's
+literal, and the energy set is a subset of the profile's tasks. The
+eligibility resolved once in `prepare_cumulative_overload_check` is
+unchanged --- it cannot know a runtime presence, so the filtering belongs
+at the point of use.
+
+Falsifying a presence *by* an energy argument, rather than by the
+profile, is issue 09's extension and is not here.
+
+A *derived* Cumulative (issue 04) declines the whole question: it fills
+its `presence` with nullopts, and `DerivedCumulativeSpec` says the donor
+must not be optional. Deriving over an optional donor would need the
+donor's presence literals in every reason the derived constraint gives,
+which is future work --- and the presolvers of issues 06-08 are specified
+to bail out on optional Cumulatives for v1 anyway.
+
+`constraint_type()` is `cumulative_optional` for the optional form, so
+the verified-encoding chain does not silently match it against
+`cake_pb_cp`'s `cumulative` encoder, which would re-derive a strictly
+weaker set of capacity rows. cake has no optional cumulative encoder, and
+that gap is now named rather than hidden.
 
 ## Open follow-ups
 
@@ -584,6 +714,14 @@ should measure the proof size, since that is the whole difference between them.
   presolvers (#549) on the contained one.
 - **Variable lengths, heights and capacity in the energy set.** Staged
   deliberately; the extensions are sketched in #542.
+- **Conditional bounds for optional tasks.** An undecided task's start
+  bounds are never pruned, because there is no conditional-bounds store
+  and an unconditional prune would be unsound if the task turns out
+  absent. The propagation that is being left on the table is real:
+  "if present, `j` cannot start before `b`" is derivable by exactly the
+  chain above, stopped early.
+- **A `cake_pb_cp` encoder for `cumulative_optional`.** Until there is
+  one, the optional form is outside the verified-encoding chain.
 The current scaffolding (`_before_flags`, `_after_flags`,
 `_active_flags`, `_contrib_flags`, `_end`, `_capacity_lines`) is
 enough for time-table-strength reasoning over variable `d`/`r`/`b` and not

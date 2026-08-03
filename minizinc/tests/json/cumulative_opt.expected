@@ -1,0 +1,146 @@
+s1 = 0;
+s2 = 0;
+o1 = false;
+o2 = false;
+----------
+s1 = 0;
+s2 = 1;
+o1 = false;
+o2 = false;
+----------
+s1 = 0;
+s2 = 2;
+o1 = false;
+o2 = false;
+----------
+s1 = 1;
+s2 = 0;
+o1 = false;
+o2 = false;
+----------
+s1 = 1;
+s2 = 1;
+o1 = false;
+o2 = false;
+----------
+s1 = 1;
+s2 = 2;
+o1 = false;
+o2 = false;
+----------
+s1 = 2;
+s2 = 0;
+o1 = false;
+o2 = false;
+----------
+s1 = 2;
+s2 = 1;
+o1 = false;
+o2 = false;
+----------
+s1 = 2;
+s2 = 2;
+o1 = false;
+o2 = false;
+----------
+s1 = 0;
+s2 = 0;
+o1 = false;
+o2 = true;
+----------
+s1 = 0;
+s2 = 1;
+o1 = false;
+o2 = true;
+----------
+s1 = 0;
+s2 = 2;
+o1 = false;
+o2 = true;
+----------
+s1 = 1;
+s2 = 0;
+o1 = false;
+o2 = true;
+----------
+s1 = 1;
+s2 = 1;
+o1 = false;
+o2 = true;
+----------
+s1 = 1;
+s2 = 2;
+o1 = false;
+o2 = true;
+----------
+s1 = 2;
+s2 = 0;
+o1 = false;
+o2 = true;
+----------
+s1 = 2;
+s2 = 1;
+o1 = false;
+o2 = true;
+----------
+s1 = 2;
+s2 = 2;
+o1 = false;
+o2 = true;
+----------
+s1 = 0;
+s2 = 0;
+o1 = true;
+o2 = false;
+----------
+s1 = 0;
+s2 = 1;
+o1 = true;
+o2 = false;
+----------
+s1 = 0;
+s2 = 2;
+o1 = true;
+o2 = false;
+----------
+s1 = 1;
+s2 = 0;
+o1 = true;
+o2 = false;
+----------
+s1 = 1;
+s2 = 1;
+o1 = true;
+o2 = false;
+----------
+s1 = 1;
+s2 = 2;
+o1 = true;
+o2 = false;
+----------
+s1 = 2;
+s2 = 0;
+o1 = true;
+o2 = false;
+----------
+s1 = 2;
+s2 = 1;
+o1 = true;
+o2 = false;
+----------
+s1 = 2;
+s2 = 2;
+o1 = true;
+o2 = false;
+----------
+s1 = 0;
+s2 = 2;
+o1 = true;
+o2 = true;
+----------
+s1 = 2;
+s2 = 0;
+o1 = true;
+o2 = true;
+----------
+==========

@@ -38,7 +38,12 @@ namespace gcs::innards
     struct DerivedCumulativeSpec
     {
         /// The Cumulative whose flags and capacity rows this is derived from.
-        /// Its arguments come from the donor's own accessors.
+        /// Its arguments come from the donor's own accessors. The donor must
+        /// not be an optional-task Cumulative: its active flags would carry a
+        /// presence conjunct, and a derived constraint reasoning over them
+        /// would need the donor's presence literals in every reason it gives.
+        /// A caller building one of these from a donor should decline when the
+        /// donor's presences() is non-empty.
         ConstraintID donor;
 
         /// The donor's starts, in the donor's order: the flag keys are by task

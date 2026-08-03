@@ -44,6 +44,13 @@ namespace gcs::innards
         std::vector<IntegerVariableID> starts, lengths, heights;
         IntegerVariableID capacity = constant_variable(0_i);
 
+        /// Sized to the task count. nullopt for a task that is unconditionally
+        /// present; otherwise the {0, 1} variable saying whether it is
+        /// scheduled at all. A derived Cumulative fills this with nullopts:
+        /// deriving over an optional donor would need the presence literals in
+        /// its own reasons, which is future work (see DerivedCumulativeSpec).
+        std::vector<std::optional<IntegerVariableID>> presence;
+
         /// The tasks that can raise the load profile at all: those whose length
         /// and height can both be non-zero.
         std::vector<std::size_t> active_tasks;
@@ -71,6 +78,7 @@ namespace gcs::innards
 
         CumulativeRules rules;
         CumulativeProofMutation proof_mutation;
+        CumulativePresenceMutation presence_mutation;
 
         /// Overload checking, resolved once (see
         /// Cumulative::prepare_overload_check). Empty when the rule is off or

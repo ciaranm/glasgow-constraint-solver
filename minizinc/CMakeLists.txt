@@ -55,6 +55,19 @@ set_tests_properties(minizinc-cumulative-mode PROPERTIES SKIP_RETURN_CODE 66)
 add_test(NAME minizinc-cumulative-var COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativevartest true true)
 set_tests_properties(minizinc-cumulative-var PROPERTIES SKIP_RETURN_CODE 66)
 
+# Optional tasks. --fzn-pattern is the reachability guard: MiniZinc's cumulative
+# wrapper is free to rewrite the constraint into a decomposition, and if it did,
+# these tests would agree with the default solver and verify their proofs
+# without glasgow_cumulative_opt ever running.
+add_test(NAME minizinc-cumulative-opt COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_cumulative_opt --reference-solver chuffed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativeopttest true true)
+set_tests_properties(minizinc-cumulative-opt PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-cumulative-opt-obj COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_cumulative_opt --reference-solver chuffed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulativeoptobjtest false true)
+set_tests_properties(minizinc-cumulative-opt-obj PROPERTIES SKIP_RETURN_CODE 66)
+
+add_test(NAME minizinc-disjunctive-opt COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_minizinc_test.bash --fzn-pattern glasgow_cumulative_opt --reference-solver chuffed $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ disjunctiveopttest true true)
+set_tests_properties(minizinc-disjunctive-opt PROPERTIES SKIP_RETURN_CODE 66)
+
 # The difference-logic presolver is invisible to solution equivalence and to
 # proof verification alike, so this one also asserts on its counters: four
 # lifted edges over four nodes, and the two constraints that are not
@@ -198,6 +211,12 @@ set_tests_properties(minizinc-sets PROPERTIES SKIP_RETURN_CODE 66)
 # Empty-set set_in / set_in_reif: MiniZinc folds `x in {}` to false before it
 # reaches the solver, so these feed hand-written JSON FlatZinc to fzn-glasgow
 # directly to exercise the empty-set frontend guards.
+# Pins the glasgow_cumulative_opt signature against the solver directly, so a
+# MiniZinc version that re-routes around the builtin cannot take this coverage
+# with it. The expected solutions are the hand-countable set: 9 with both tasks
+# absent, 9 with each alone, and the 2 non-overlapping placements with both.
+add_test(NAME minizinc-cumulativeopt-fzn COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ cumulative_opt)
+
 add_test(NAME minizinc-emptysetin COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ empty_set_in)
 add_test(NAME minizinc-emptysetinreif COMMAND ${GCS_BASH} ${CMAKE_SOURCE_DIR}/minizinc/run_fzn_json_test.bash $<TARGET_FILE:fzn-glasgow> ${CMAKE_SOURCE_DIR}/minizinc/ empty_set_in_reif)
 
