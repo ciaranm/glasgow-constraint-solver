@@ -95,9 +95,9 @@ sign-case-conditional bound as its raw pol line plus its case literals.
   only a database-wide RUP reaches the closing conflict, so they stay
   on the default hint-free path.
 
-Inference drivers: product bounds are thesis Procedure 7.5 (per live sign
+Inference drivers: product bounds are thesis Procedure 7.6 (per live sign
 case: channel, 7.1/7.2, channel to the result, conclude); factor and
-square bounds are Procedures 7.6/7.7 — never enumerate propagator logic,
+square bounds are Procedures 7.7/7.8 — never enumerate propagator logic,
 just refute the excluded range, with the far side of that range being the
 target's *current* bound carried by the reason. The square's inner
 square-root lift is sequenced after the outer clamp so each refuted

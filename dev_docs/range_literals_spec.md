@@ -177,7 +177,7 @@ contradictions by 2.7/2.9, and the *backtracking* obligation (Inv2) reduces to
 leaf-conflict replays (a parent backtrack clause is RUP from its two child
 clauses), where the path's own inference clauses are live and fire over the
 vocabulary above. **A lone bound still cannot cross a bit-sum equality — the
-thesis Example 2.14 limit is real — but no replay obligation requires it once
+thesis Example 2.15 limit is real — but no replay obligation requires it once
 the vocabulary is complete.** The 2026-06 experiments that seemed to show
 otherwise were P2 gaps in disguise (Appendix B).
 
@@ -407,7 +407,7 @@ the chain stops, veripb rejects Bt, and the trace (six lines long, in W1)
 *looks like* "UP cannot thread a bound across the equality" because the
 bound-crossing steps are the next thing the stalled trail would have needed.
 That misdiagnosis cost two sessions and a theory document. The bound-crossing
-limit is real (thesis Example 2.14); it just was never the binding
+limit is real (thesis Example 2.15); it just was never the binding
 constraint.
 
 ## Appendix B — refuted designs and simplifications. Do not retry without new theory.
