@@ -216,9 +216,14 @@ namespace gcs
          * reason: the paper's section 6.3 measures the simplification stage as
          * most of the difference-logic win. It is exactly the same code and the
          * same proof shapes from either entry point --- it runs inside the shared
-         * propagator, on its first call, precisely because a presolver runs after
-         * propagators.initialise() and so has no initialiser available and no way
-         * to infer anything itself.
+         * propagator, on its first call.
+         *
+         * That placement was originally forced: a presolver ran after
+         * propagators.initialise(), so an initialiser installed from one was
+         * dropped, leaving nowhere else to do root work that infers. Presolver-
+         * installed initialisers now run (solve.cc initialises again after each
+         * presolver), so the stage could move; it has not been tried, and there
+         * is no reason to think it would change what the stage does.
          */
         auto simplifying_at_root(bool = true) -> DifferenceLogic &;
 
