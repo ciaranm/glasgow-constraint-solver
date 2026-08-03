@@ -1034,6 +1034,46 @@ a real use case lands.
 Each stage gates on: VeriPB accepts, and recursions/propagations/solutions are
 unchanged mode-off vs mode-on (a proof-only change must not perturb search).
 
+## The `table_layout` checking regression — diagnosed, and it is upstream's
+
+`table_layout --size 15 --seed 1` checks **11.4× slower** with the mode on (69.66 s → 797.33 s
+at gate 16; 0.08× at gate 0). It reproduced across three independent sittings, so it is not
+noise. It is **not a cost of deletion**, and there is nothing to fix here:
+
+- **All of it is before the search.** Cutting the proof at the first backtracking point:
+  pre-search **8.52 s vs 740.76 s (87×)**, while the *search* parts are comparable (~61 s vs
+  ~57 s). That is why 119 deletions cost the same as 1 870 — the cost is paid by enabling the
+  mode, not per deletion.
+- **The constraint database is identical.** At the same semantic point both hold **595 105
+  live constraints**, with the arity distribution matching in every bucket (2-term 204 735,
+  3-term 224 620, …); as sets only 12 of 595 105 differ, and as ordered sequences the dumps
+  diverge only at line 594 831. Database size, contents, arity and insertion order are all
+  ruled out.
+- **It is unhinted RUP propagation.** 83 % of runtime in `PropagationSet::propagate`;
+  `RUP[unhinted]` averages 24.9 µs against 1 849.2 µs. The +75 600 `pol` lines the mode emits
+  cost 0.7 µs each — 0.07 s in total — and every one of them derives a constraint already
+  present, which VeriPB deduplicates.
+- **Hints erase it.** Elaborated, the two check in **2.70 s vs 2.68 s**, and the "slow" proof
+  needs **5.3 % fewer** hints (19.9 M vs 21.0 M over identical 214 260 rup counts). So the
+  proof is not logically harder; the 87 × is the cost of *searching for* a path that could be
+  followed in 2.68 s.
+
+Raised with VeriPB upstream. Write-up and a self-contained reproducer (both proof pairs,
+byte-identical `.opb`, 9.4 MB) are in `~/claude/tmp/oed-bench-632/preserved-table_layout15/`
+— `FOR-VERIPB.md`, `DIAGNOSIS.md` and `table_layout15-repro.tar.zst`. Not version controlled;
+regenerate with `table_layout --size 15 --seed 1 --prove` on this branch and on main.
+
+**If a gcs-side mitigation is ever wanted**, hint the containment edges. They are emitted
+unhinted at Top by `link_immediate_containment`, they account for ~81 % of all hint volume,
+and elaboration spends ~175 steps on them where ~4 suffice (flat across parent widths 2–49,
+so the excess is not width-related). Everything the hint needs is already tracked —
+`invars_that_exist` holds both endpoints' reification lines, `chain_clauses_by_level` holds
+the chain-link lines under `Literals`, and `define_plain_invar` already hoists the relevant
+ges to Top so the path is guaranteed resident. The one addition would be an index from
+(variable, adjacent-threshold-pair) to chain-clause `ProofLine`; the existing map is
+level-major and flat, so today that lookup is a scan. Under mode `None` the chain lines are
+not recorded at all, so that config would need new bookkeeping in `emit_order_link`.
+
 ## Open questions
 
 - Backtrack-constraint expressiveness beyond bound/excluded-set/custom — deferred;

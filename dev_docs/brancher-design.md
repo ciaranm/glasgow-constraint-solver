@@ -1510,6 +1510,26 @@ recursions / propagations / solutions unchanged mode-off vs mode-on.
 Stages A, B, B', B'', C, D, E, F and G have all landed in sequence. Stage D was the only one
 gated on work outside this task (the delc mechanics), and that gate is closed.
 
+### Status: PAUSED (2026-08-03)
+
+Work on this stack is **paused**, with every stage pushed to a PR and nothing uncommitted.
+The reason is that the full PR #632 benchmark sweep did not make the case:
+
+- **Two correctness bugs found by benchmarking**, both fixed (stage F, stage G) — the stage G
+  one, `magic_square --size=4 --all-different gac`, was a rejected proof in the **shipped**
+  configuration, found on a control row expected to be an exact no-op.
+- **On real instances the feature is a no-op or worse.** 10 of 26 rows never engage at all;
+  only `qap10` (1.20×/1.28×) and the two `rcpsp` forms (~1.17×/1.20×) win; groups B and C are
+  1.00× throughout. The 3.7×–15× wins are confined to the `odb_*` synthetics built to exhibit
+  them.
+- **One severe regression**, `table_layout15` at 0.09×/0.08× — diagnosed as a VeriPB
+  unhinted-propagation issue (see order-encoding-deletion.md) rather than a cost of deletion,
+  and raised upstream.
+
+The flag-off byte-identity claim holds exactly (21/21), so carrying the stack costs nothing
+while it sits. VeriPB's forthcoming **label-groups** mechanism may offer a different route to
+the same goal, which is the other reason to stop here rather than push on.
+
 ## Implementation gates (not owner calls)
 
 Three unknowns; all are validated empirically against VeriPB, not decided by the owner.
