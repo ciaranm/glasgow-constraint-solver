@@ -277,10 +277,14 @@ Three shapes fall out of the same canonicalisation as before:
 
 The last row is a soundness obligation, not a nicety. `b -> 0 <= -1` says `!b`,
 and an implementation that quietly dropped the edge would return solutions in
-which `b` holds and the constraint is violated. It is handled in the propagator
-rather than by an initialiser (which is how the unconditional case is done),
-because the row `M·¬b >= 1` saturates directly to the unit clause `¬b`, so plain
-RUP against it suffices — and because a presolver has no initialiser available.
+which `b` holds and the constraint is violated. Both cases are handled by an
+initialiser: `!b` is a root fact that backtracking never takes back, and the row
+`M·¬b >= 1` saturates directly to the unit clause `¬b`, so plain RUP against it
+suffices. They are *different* initialisers, though — the unconditional one is
+`Propagators::install_initial_contradiction` from
+`DifferenceConstraints::install_propagators`, and the conditional one is the
+root initialiser `install_difference_propagator` installs, which the presolver
+shares.
 
 ### The reason, which is the whole soundness question
 
@@ -666,11 +670,25 @@ asserts both halves of this (something must be disabled when there is an
 unconditional edge, nothing may be when there is not).
 
 Degenerate edges — a constant operand, or the same variable at both ends — are
-also skipped, and left to the donor. This is not just tidiness: a `0 <= d` with
-`d < 0` is a root contradiction, which `DifferenceConstraints` reports with
-`install_initial_contradiction`, and **initialisers have already run** by the
-time a presolver is called. Declining to lift such an edge leaves it with the
-donor, which handles it correctly.
+also skipped, and left to the donor, because the donor handles every one of them
+and lifting would add nothing. That was checked rather than argued, since PR #658
+removed the reason this section used to give (that a `0 <= d` with `d < 0` is a
+root contradiction, and initialisers had already run by the time a presolver was
+called). With the presolver installed and the degenerate donor left to itself:
+
+| donor | what happens today |
+|---|---|
+| `x - x <= -5` | refuted in **1 recursion**, `s VERIFIED UNSATISFIABLE` |
+| `x - (x + 3) <= -5` | refuted in **1 recursion**, `s VERIFIED UNSATISFIABLE` |
+| `b -> x - x <= -5` | `!b` inferred by the donor, `s VERIFIED SATISFIABLE` |
+| `b -> x - (x + 3) <= -5` | `!b` inferred by the donor, `s VERIFIED SATISFIABLE` |
+
+So lifting them would duplicate the donor's own root inference exactly — and
+would have to do it the hard way, because the donor's row is in the *user's*
+views' bits, not the deviewed ones `DifferenceConstraints` emits, so the
+contradiction is not the bare RUP that `install_initial_contradiction` uses.
+`skipped_degenerate` therefore stays, and the count remains the way a test tells
+that these were seen and declined rather than silently missed.
 
 ### Labelling `Comparison`'s rows, and what it did to the cake chain
 
@@ -1338,32 +1356,22 @@ problem.add_presolver(DifferenceLogic{}.simplifying_at_root(false));
 Both also take `reporting_simplification_to(shared_ptr<DifferenceSimplificationStats>)`,
 which is how the tests and the example binaries tell "worked" from "did nothing".
 
-### Where it runs, and why it is not an initialiser
+### Where it runs, and why it is an initialiser
 
-It runs **inside the propagator, on its first call**. That is not where one would
-first reach for. An initialiser would be the natural home for the posted
-constraint — but a presolver runs *after* `propagators.initialise()`, so an
-initialiser it installed would never fire, and `Presolver::run` is handed a
-`State &` and a `ProofLogger *` but no inference tracker, so it cannot infer
-anything itself either. Fixing a condition is an inference. So the only place
-that works for both entry points is the propagator, and putting it there means
-one implementation and one set of proof shapes rather than two.
+It runs **from an initialiser**, installed by `install_difference_propagator`
+alongside the propagator itself, at `InitialiserPriority::Expensive`. The same
+initialiser also infers the disallowed conditions and applies the unconditional
+static bounds, in that order, because those are root facts too and the stage's
+classification of a conditional edge has to see them.
 
-Two guards make that safe:
-
-- **it runs once**, latched by a flag in the propagator's own (mutable) state;
-- **only if that first call is at the root**, tested by `state.guesses()` being
-  empty.
-
-The second is not decoration. Everything the stage concludes is *permanent* —
-edges leave the internal graph and never come back, and no part of it is trailed
-— so doing it under a decision would keep conclusions that hold only under that
-decision. That would be a completeness bug in the general case and an
-**unsoundness** in the case of an edge dropped because a conditional path implied
-it, and no proof would ever complain, because losing propagation is invisible to
-a proof. In practice the first call is always at the root (search begins by
-propagating everything, before any decision), so the guard costs nothing and
-buys the argument.
+Everything the stage concludes is *permanent* — edges leave the internal graph
+and never come back, and no part of it is trailed — so doing it under a decision
+would keep conclusions that hold only under that decision. That would be a
+completeness bug in the general case and an **unsoundness** in the case of an
+edge dropped because a conditional path implied it, and no proof would ever
+complain, because losing propagation is invisible to a proof. An initialiser is
+the root by construction, so that is a property of where the call sits rather
+than a guard it has to check.
 
 Not trailing is then justified, and by exactly the argument that puts the paper's
 own section 5.3/5.4 boundary where it is: every conclusion drawn here is a
@@ -1371,6 +1379,47 @@ statement about the *graph*, and backtracking does not change the graph. The
 stage reads no domain. The one thing that looks like a domain read — testing
 whether a condition currently holds — is a read of a fact fixed at the root and
 never undone.
+
+The stage and the propagator therefore share one `DifferenceRootGraph` (the arc
+array, the parallel condition array and the round bound) through a `shared_ptr`,
+since the stage rewrites all three and the propagator reads them afterwards. The
+propagator names them by reference at the top of each call, so nothing in the hot
+loops goes through the indirection.
+
+#### It used to be in the propagator, and what moving it changed
+
+Until PR #659 the stage ran inside the propagator on its first call, latched by a
+flag and guarded on `state.guesses()` being empty. That was forced: a presolver
+ran *after* `propagators.initialise()`, so an initialiser it installed never
+fired, and `Presolver::run` is handed a `State &` and a `ProofLogger *` but no
+inference tracker, so it cannot infer anything itself either — and fixing a
+condition is an inference. PR #658 made a presolver-installed initialiser run,
+which removed the reason.
+
+The move was measured before it was made, because the stage's role classification
+reads the state, and an initialiser runs before *any* propagation: a condition
+some other propagator would have decided at the root is undecided when an
+initialiser looks, which makes its edge a `Candidate` rather than `Base` or
+`Ignored`, and a smaller base graph simplifies less. Across every fixture in
+`difference_constraints_test`, every fixture in `difference_logic_test`, and
+`examples/rcpsp --size 14 --machine difference` over seeds 1–5 in both the
+`global` and `presolved` variants:
+
+- **solutions and recursions are identical everywhere**, and so is the `.opb`;
+- `conditions_fixed` goes **up** (rcpsp seed 4: 7 → 19), because the stage now
+  fixes conditions the donors' own propagators used to get to first. Same end
+  state, different attribution — and one that shortens the proof slightly (the
+  presolver `opb` fixture's `.pbp` goes 44807 → 44794 bytes, and rcpsp seed 4's
+  4156748 → 4155435, with `veripb` time unchanged);
+- propagation counts move by a few percent in **both** directions (rcpsp
+  presolved: seed 1 7163 → 7377, seed 3 64668 → 64661, seed 4 61467 → 64304,
+  seed 5 82697 → 82686), with the search tree unchanged in every case.
+
+The one externally visible change is that a model the stage refutes is now
+refuted in **zero** recursions rather than one, because the refutation happens
+during initialisation and no search node is ever opened.
+`run_root_refutation_test` asserts that number, and it is what would notice the
+stage moving back into the propagator.
 
 ### The four sub-steps, and which are here
 

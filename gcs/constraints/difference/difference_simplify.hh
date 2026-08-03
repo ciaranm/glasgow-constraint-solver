@@ -25,8 +25,8 @@ namespace gcs
      */
     struct DifferenceSimplificationStats
     {
-        /// True if the stage actually ran. It runs once, on the propagator's
-        /// first call, and only if that call is at the root (see
+        /// True if the stage actually ran. It runs once, from an initialiser,
+        /// which is the root by construction (see
         /// `dev_docs/difference-logic.md`).
         bool ran = false;
 

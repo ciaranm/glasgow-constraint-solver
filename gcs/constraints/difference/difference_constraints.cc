@@ -225,17 +225,19 @@ auto DifferenceConstraints::install_propagators(Propagators & propagators) -> vo
     if (_root_contradiction_posted_index) {
         // The edge's own OPB row is `0 >= something positive', so the
         // contradiction is RUP from the model with no state involved at all.
-        // Deliberately not part of install_difference_propagator, which the
-        // difference-logic presolver shares: when this was written, an
-        // initialiser installed from a presolver was dropped, so the presolver
-        // had to decline to lift a degenerate edge and leave it to that edge's
-        // own propagator instead.
         //
-        // Presolver-installed initialisers now run (solve.cc initialises again
-        // after each presolver), so this could move into the shared path and
-        // the presolver's decline could go with it. Not done here: both halves
-        // have to change together, and the presolver's own tests are what say
-        // whether declining is still worth its complexity.
+        // Deliberately not part of install_difference_propagator, which the
+        // difference-logic presolver shares, and this is now a statement about
+        // the presolver rather than about initialisers. Nothing would reach it
+        // from there: a degenerate donor is one the presolver declines, and it
+        // declines because lifting would only duplicate what the donor's own
+        // propagator already does. Measured rather than assumed --- with the
+        // presolver installed and the donor left to itself, an unconditional
+        // `x - (x + c) <= d' that canonicalises to `0 <= d' with `d < 0' is
+        // refuted in one recursion and the proof verifies, with and without a
+        // view offset, and the half-reified counterpart's `!cond' likewise. So
+        // this is DifferenceConstraints' own row and its own contradiction, and
+        // it belongs where the edges it came from were posted.
         propagators.install_initial_contradiction("difference constraint x - x <= d with d < 0", JustifyUsingRUP{}, NoReason{});
         return;
     }

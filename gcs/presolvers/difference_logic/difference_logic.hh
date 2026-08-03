@@ -99,9 +99,9 @@ namespace gcs
 
         /// An edge that canonicalises to `0 <= d` (both operands the same
         /// variable, or both constants), or to a plain bound on one variable
-        /// (one constant operand). Nothing is gained by lifting these and the
-        /// `d < 0` case would need an initialiser, a door that has closed by
-        /// the time a presolver runs, so they are left to their own propagator.
+        /// (one constant operand). Nothing is gained by lifting these --- the
+        /// donor's own propagator refutes the `d < 0` case at the root, or
+        /// applies the bound, or infers `!cond` --- so they are left to it.
         std::size_t skipped_degenerate = 0;
 
         /// A donor of the right shape whose primary OPB row cannot be cited: it
@@ -215,15 +215,15 @@ namespace gcs
          * On by default, matching DifferenceConstraints, and for the same
          * reason: the paper's section 6.3 measures the simplification stage as
          * most of the difference-logic win. It is exactly the same code and the
-         * same proof shapes from either entry point --- it runs inside the shared
-         * propagator, on its first call.
+         * same proof shapes from either entry point --- it runs from an
+         * initialiser installed alongside the shared propagator, so a model
+         * this presolver builds a graph for can be refuted before search is
+         * entered at all.
          *
-         * That placement was originally forced: a presolver ran after
+         * That was not always possible: a presolver ran after
          * propagators.initialise(), so an initialiser installed from one was
-         * dropped, leaving nowhere else to do root work that infers. Presolver-
-         * installed initialisers now run (solve.cc initialises again after each
-         * presolver), so the stage could move; it has not been tried, and there
-         * is no reason to think it would change what the stage does.
+         * dropped, and the stage ran inside the propagator instead. PR #658
+         * fixed the ordering and the stage moved.
          */
         auto simplifying_at_root(bool = true) -> DifferenceLogic &;
 

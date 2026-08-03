@@ -178,15 +178,19 @@ namespace gcs::innards
      * A no-op if the system has no edges, static bounds or disallowed
      * conditions. Detecting a root-level contradiction (an *unconditional* edge
      * saying `0 <= d` with `d < 0`) is *not* this function's job --- see
-     * DifferenceConstraints::install_propagators, which handles it with an
-     * initialiser, a door that has closed by the time a presolver runs. The
-     * half-reified counterpart *is* handled here, as a
-     * DifferenceDisallowedCondition, precisely because it needs no initialiser.
+     * DifferenceConstraints::install_propagators, which handles it directly, and
+     * which is the only caller that can produce one. The half-reified
+     * counterpart, a DifferenceDisallowedCondition, *is* handled here.
      *
-     * The root simplification stage lives here too, for the same reason: it must
-     * infer, and a presolver has no way to. It runs inside the propagator, on its
-     * first call, guarded on that call being at the root --- which is where every
-     * propagator's first call is, since search starts by propagating everything.
+     * Two propagator-like things are installed, not one: an initialiser for
+     * everything that is a root fact --- the disallowed conditions, the
+     * unconditional static bounds, and the root simplification stage --- and the
+     * propagator itself. The split is what the stage requires rather than a
+     * tidying: it rewrites the internal graph permanently and trails none of it,
+     * so it may only run where no decision has been made, and an initialiser is
+     * that place by construction. (Before PR #658 it could not go there, because
+     * an initialiser installed by a presolver was dropped, so it ran inside the
+     * propagator behind a `state.guesses()` guard instead.)
      *
      * The \c State is needed at install time for one thing only: a trailed
      * constraint state holding the length of the incremental machinery's undo

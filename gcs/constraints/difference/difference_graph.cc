@@ -16,6 +16,7 @@
 #include <any>
 #include <chrono>
 #include <cstdlib>
+#include <memory>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -87,6 +88,17 @@ namespace
         Integer value;
     };
 
+    // The graph the propagator actually walks: the hot arc array, the parallel
+    // condition array, and the number of relaxation rounds a simple path can
+    // need. The root simplification stage rewrites all three, so it and the
+    // propagator share one of these rather than each holding a copy.
+    struct DifferenceRootGraph
+    {
+        vector<DifferenceArc> arcs;
+        vector<optional<IntegerVariableCondition>> arc_conditions;
+        size_t round_bound;
+    };
+
     // Everything the incremental propagator remembers between calls.
     //
     // None of it is copied by the engine: the one thing that *is* trailed is a
@@ -148,13 +160,16 @@ namespace
     };
 
     // The root simplification stage, which is the paper's Algorithm 4
-    // (its section 5.2) run to the fixpoint of its section 5.3. Once, on
-    // the first call, and only if that call is at the root --- which it
-    // always is, since search begins by propagating everything before
-    // any decision is made, but the guard is not decoration: everything
-    // below is *permanent*, so doing it below a decision would keep
-    // conclusions that only held under that decision, and no proof would
-    // ever complain because losing propagation is invisible to a proof.
+    // (its section 5.2) run to the fixpoint of its section 5.3. Called
+    // from an initialiser, which is the only place it can go: everything
+    // below is *permanent* and none of it is trailed, so running it
+    // under a decision would keep conclusions that hold only under that
+    // decision --- a completeness bug in general, and an unsoundness for
+    // an edge dropped because a conditional path implied it, and no
+    // proof would ever complain, because losing propagation is invisible
+    // to a proof. An initialiser is the root by construction, so that is
+    // a property of where the call sits rather than a guard it has to
+    // check.
     //
     // Three of the paper's four sub-steps are here. Redundant-edge
     // removal and node removal are decisions about what to propagate,
@@ -172,7 +187,7 @@ namespace
     template <typename Inference_>
     auto run_difference_root_simplification(const State & state, Inference_ & inference, ProofLogger * const logger, size_t number_of_nodes,
         vector<DifferenceArc> & arcs, vector<optional<IntegerVariableCondition>> & arc_conditions, const vector<ProofLine> & edge_lines,
-        const DifferenceSimplificationOptions & simplify, size_t & round_bound, bool at_root) -> void
+        const DifferenceSimplificationOptions & simplify, size_t & round_bound) -> void
     {
         auto n = number_of_nodes;
         auto m = arcs.size();
@@ -196,7 +211,7 @@ namespace
             if (condition_of(e))
                 ++stats.conditional_edges;
 
-        if (simplify.enabled && at_root && ! arcs.empty()) {
+        if (simplify.enabled && ! arcs.empty()) {
             stats.ran = true;
 
             vector<DifferenceSimplifyEdge> simplify_edges;
@@ -399,6 +414,33 @@ namespace
             auto live_count = static_cast<size_t>(count(live, true));
             stats.isolated_nodes_removed = n - live_count;
             round_bound = live_count;
+        }
+    }
+
+    // An edge with a constant operand is a plain bound on the other operand,
+    // and once applied it is just part of the state that the relaxation passes
+    // seed from. An unconditional one is a root fact and is applied by the
+    // initialiser; a conditional one applies from the moment its condition
+    // holds, which is why the propagator runs this too. Idempotent either way:
+    // a bound already in the state is skipped, and applying one moves the
+    // state, which is exactly what puts the node into Vl on the call that does
+    // it.
+    template <typename Inference_>
+    auto apply_difference_static_bounds(const State & state, Inference_ & inference, ProofLogger * const logger,
+        const vector<SimpleIntegerVariableID> & nodes, const vector<DifferenceStaticBound> & static_bounds) -> void
+    {
+        for (const auto & sb : static_bounds) {
+            if (sb.cond && LiteralIs::DefinitelyTrue != state.test_literal(*sb.cond))
+                continue;
+            Reason why = sb.cond ? Reason{ExplicitReason{ReasonLiterals{{*sb.cond}}}} : Reason{NoReason{}};
+            if (sb.is_lower) {
+                if (state.lower_bound(nodes[sb.node]) < sb.value)
+                    inference.infer_greater_than_or_equal(logger, nodes[sb.node], sb.value, JustifyUsingRUP{}, why);
+            }
+            else {
+                if (state.upper_bound(nodes[sb.node]) > sb.value)
+                    inference.infer_less_than(logger, nodes[sb.node], sb.value + 1_i, JustifyUsingRUP{}, why);
+            }
         }
     }
 
@@ -1146,73 +1188,91 @@ auto gcs::innards::install_difference_propagator(Propagators & propagators, Stat
     // between the backtrack and that call.
     auto trail_mark_handle = initial_state.add_constraint_state(size_t{0});
 
-    // The root simplification stage mutates `arcs`, `arc_conditions` and
-    // `round_bound` in place, once, on the first call --- hence the `mutable`
-    // below. It is safe without trailing for the same reason the paper's section
-    // 5.3 boundary is where it is: the stage runs only at the root, before any
-    // decision, and every conclusion it draws (this edge is implied by a path of
-    // unconditional or root-fixed edges; this node has no edges left) is a
-    // statement about the *graph*, which no amount of backtracking changes.
-    // Nothing there reads a domain. The incremental machinery below is `mutable`
-    // for a different reason, and one the paper is explicit about: the potential
+    // The arc arrays and the round bound are shared between the root
+    // initialiser and the propagator, because the simplification stage rewrites
+    // them: it drops edges the propagator will never need to look at again, and
+    // shrinks the number of relaxation rounds a pass can need. Shared rather
+    // than handed over because the propagator is installed here and the stage
+    // runs later, and rather than copied because there is exactly one owner of
+    // the post-simplification graph. The propagator names them by reference at
+    // the top of each call, so nothing in the hot loops goes through the
+    // indirection.
+    //
+    // Not trailing any of it is safe for the same reason the paper's section 5.3
+    // boundary is where it is: every conclusion the stage draws (this edge is
+    // implied by a path of unconditional or root-fixed edges; this node has no
+    // edges left) is a statement about the *graph*, which no amount of
+    // backtracking changes. The incremental machinery below is `mutable` for a
+    // different reason, and one the paper is explicit about: the potential
     // function survives backtracking by design.
-    propagators.install(
-        constraint_id,
-        [nodes = move(graph.nodes), arcs = move(arcs), arc_conditions = move(arc_conditions), static_bounds = move(graph.static_bounds),
-            disallowed_conditions = move(graph.disallowed_conditions), edge_lines = move(graph.edge_lines), simplify = move(simplify),
-            incremental = move(incremental), memory = DifferencePropagatorMemory{}, trail_mark_handle, simplification_pending = true,
-            round_bound = number_of_nodes](const State & state, auto & inference, ProofLogger * const logger) mutable -> PropagatorState {
-            auto n = nodes.size();
-            auto m = arcs.size();
+    auto root_graph = std::make_shared<DifferenceRootGraph>(move(arcs), move(arc_conditions), number_of_nodes);
 
+    // Everything that is a root fact goes in an initialiser, which is where root
+    // work belongs and, since PR #658, is available to a presolver-installed
+    // constraint as well as a posted one. Ordering inside it is the ordering the
+    // stage needs: the conditions it classifies must already have had everything
+    // said about them that this system has to say.
+    //
+    // Expensive priority, not because anything here is definitional --- nothing
+    // in it writes OPB content --- but because the stage's classification of a
+    // conditional edge reads the state, so the later it runs the more it knows.
+    propagators.install_initialiser(
+        [nodes = graph.nodes, static_bounds = graph.static_bounds, disallowed_conditions = move(graph.disallowed_conditions),
+            edge_lines = graph.edge_lines, simplify = move(simplify), root_graph,
+            number_of_nodes](const State & state, auto & inference, ProofLogger * const logger) {
             // A half-reified edge whose condition says `cond -> 0 <= d' with
             // d < 0 says `!cond', and saying so is a soundness obligation, not a
             // nicety: dropping the edge would licence solutions in which cond
             // holds and the constraint is violated. The row is `M.~cond >= -d'
             // with -d >= 1, which is the unit clause `~cond' after saturation,
             // so plain RUP against it suffices and nothing in the state is
-            // involved. (Unconditionally this is a root contradiction instead;
-            // see DifferenceConstraints::install_propagators.)
+            // involved. Said once, because it is a root fact that backtracking
+            // never takes back. (Unconditionally this is a root contradiction
+            // instead; see DifferenceConstraints::install_propagators.)
             for (const auto & dc : disallowed_conditions)
                 if (LiteralIs::DefinitelyFalse != state.test_literal(dc.cond))
                     inference.infer(logger, ! dc.cond, JustifyUsingRUP{}, NoReason{});
 
-            // Static bounds next: an edge with a constant operand is a plain
-            // bound on the other operand, and once applied it is just part of
-            // the state that the passes below seed from. An unconditional one
-            // never changes, so after the first call it is a no-op; a
-            // conditional one applies from the moment its condition holds, and
-            // cites it. Nothing about it needs trailing or gating: a bound it
-            // applies moves the state, and moving the state is exactly what puts
-            // the node into Vl on this very call.
-            for (const auto & sb : static_bounds) {
-                if (sb.cond && LiteralIs::DefinitelyTrue != state.test_literal(*sb.cond))
-                    continue;
-                Reason why = sb.cond ? Reason{ExplicitReason{ReasonLiterals{{*sb.cond}}}} : Reason{NoReason{}};
-                if (sb.is_lower) {
-                    if (state.lower_bound(nodes[sb.node]) < sb.value)
-                        inference.infer_greater_than_or_equal(logger, nodes[sb.node], sb.value, JustifyUsingRUP{}, why);
-                }
-                else {
-                    if (state.upper_bound(nodes[sb.node]) > sb.value)
-                        inference.infer_less_than(logger, nodes[sb.node], sb.value + 1_i, JustifyUsingRUP{}, why);
-                }
-            }
+            apply_difference_static_bounds(state, inference, logger, nodes, static_bounds);
 
-            auto first_call = simplification_pending;
+            run_difference_root_simplification(state, inference, logger, number_of_nodes, root_graph->arcs, root_graph->arc_conditions, edge_lines,
+                simplify, root_graph->round_bound);
+        },
+        InitialiserPriority::Expensive);
+
+    propagators.install(
+        constraint_id,
+        [nodes = move(graph.nodes), static_bounds = move(graph.static_bounds), edge_lines = move(graph.edge_lines), incremental = move(incremental),
+            memory = DifferencePropagatorMemory{}, trail_mark_handle, first_call_pending = true,
+            root_graph](const State & state, auto & inference, ProofLogger * const logger) mutable -> PropagatorState {
+            auto & arcs = root_graph->arcs;
+            auto & arc_conditions = root_graph->arc_conditions;
+            auto & round_bound = root_graph->round_bound;
+
+            auto n = nodes.size();
+            auto m = arcs.size();
+
+            // A conditional static bound applies from the moment its condition
+            // holds, so unlike the unconditional ones the initialiser dealt
+            // with, these have to be retested on every call.
+            apply_difference_static_bounds(state, inference, logger, nodes, static_bounds);
+
+            auto first_call = first_call_pending;
+            first_call_pending = false;
+
+            // The incremental machinery's own root requirement, which is not the
+            // stage's: what it builds on its first call --- the adjacency, the
+            // potential function, the Do arrays --- is never reset, so a first
+            // call below a decision would leave it holding values that only that
+            // decision justifies. Search propagates everything before it guesses
+            // anything, so this cannot happen; say so rather than assume it.
+            // Only asked on the call that would be misled by the answer.
             bool at_root = true;
-
-            if (first_call) {
-                simplification_pending = false;
-
+            if (first_call)
                 for ([[maybe_unused]] const auto & guess : state.guesses()) {
                     at_root = false;
                     break;
                 }
-
-                run_difference_root_simplification(state, inference, logger, n, arcs, arc_conditions, edge_lines, simplify, round_bound, at_root);
-                m = arcs.size();
-            }
 
             // Which edges are in the graph *for this call*. A half-reified edge
             // participates exactly while its condition currently holds; the
