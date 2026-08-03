@@ -331,11 +331,25 @@ namespace
     // window energy, and the contradiction is gone. Pairwise-coprime data
     // keeps any arithmetic that happens to be right modulo a common factor
     // from passing by luck.
-    auto sharp_margin_instance(std::mt19937 & rand, int n, int horizon) -> optional<Instance>
+    // Degenerate data is tested separately from the coprime kind, not mixed in
+    // with it: equal heights, or heights and durations sharing a factor, make
+    // arithmetic that is only right modulo that factor look right, so a suite
+    // that mixed them could pass on the easy instances and say nothing about
+    // the hard ones.
+    enum class Data
+    {
+        Coprime,   ///< durations and heights all distinct primes
+        Equal,     ///< one height for every task
+        GcdHeavy,  ///< durations and heights all multiples of six
+        UnitHeight ///< every height one, which is where the capacity is small
+    };
+
+    auto sharp_margin_instance(std::mt19937 & rand, int n, int horizon, Data data) -> optional<Instance>
     {
         static const vector<int> primes{29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113};
+        static const vector<int> sixes{6, 12, 18, 24, 30, 36, 42, 48, 54, 60};
 
-        vector<int> pool = primes;
+        auto pool = (data == Data::GcdHeavy) ? sixes : primes;
         std::shuffle(pool.begin(), pool.end(), rand);
         if (static_cast<size_t>(2 * n) > pool.size())
             return nullopt;
@@ -344,7 +358,15 @@ namespace
         long long energy = 0;
         for (int i = 0; i < n; ++i) {
             auto length = pool.at(static_cast<size_t>(i));
-            auto height = pool.at(static_cast<size_t>(n + i));
+            auto height = [&]() {
+                switch (data) {
+                case Data::Coprime:
+                case Data::GcdHeavy: return pool.at(static_cast<size_t>(n + i));
+                case Data::Equal: return pool.at(static_cast<size_t>(n));
+                case Data::UnitHeight: return 1;
+                }
+                return 1;
+            }();
             if (length > horizon)
                 return nullopt;
             inst.lengths.push_back(length);
@@ -513,25 +535,28 @@ auto main(int argc, char * argv[]) -> int
     // steps.
     {
         std::mt19937 rand(*get_seed());
-        int found = 0;
-        for (int attempt = 0; attempt < 4000 && found < 4; ++attempt) {
-            std::uniform_int_distribution<> horizon_dist(120, 240);
-            auto inst = sharp_margin_instance(rand, 3, horizon_dist(rand));
-            if (! inst)
-                continue;
-            ++found;
+        for (auto [data, label] : {pair{Data::Coprime, "coprime"}, pair{Data::Equal, "equal_heights"}, pair{Data::GcdHeavy, "gcd_heavy"},
+                 pair{Data::UnitHeight, "unit_heights"}}) {
+            int found = 0;
+            for (int attempt = 0; attempt < 4000 && found < 3; ++attempt) {
+                std::uniform_int_distribution<> horizon_dist(120, 240);
+                auto inst = sharp_margin_instance(rand, 3, horizon_dist(rand), data);
+                if (! inst)
+                    continue;
+                ++found;
 
-            auto name = "cumulative_overload_primes_" + std::to_string(found);
-            println(cerr, "cumulative overload sharp margin lens={} hts={} c={} horizon={}", inst->lengths, inst->heights, inst->capacity,
-                inst->start_ranges[0].second + inst->lengths[0]);
-            auto probe = probe_root(*inst, only_overload, proofs ? make_optional(name) : nullopt);
-            if (! probe.refuted)
-                fail("sharp margin: the overload check did not refute at the root");
-            if (proofs && probe.markers.oc != 1)
-                fail("sharp margin: expected exactly one (OC') marker");
+                auto name = "cumulative_overload_sharp_" + string{label} + "_" + std::to_string(found);
+                println(cerr, "cumulative overload sharp margin {} lens={} hts={} c={} horizon={}", label, inst->lengths, inst->heights,
+                    inst->capacity, inst->start_ranges[0].second + inst->lengths[0]);
+                auto probe = probe_root(*inst, only_overload, proofs ? make_optional(name) : nullopt);
+                if (! probe.refuted)
+                    fail("sharp margin: the overload check did not refute at the root");
+                if (proofs && probe.markers.oc != 1)
+                    fail("sharp margin: expected exactly one (OC') marker");
+            }
+            if (found == 0)
+                fail("sharp margin: the " + string{label} + " generator produced nothing to test");
         }
-        if (found == 0)
-            fail("sharp margin: the generator produced nothing to test");
     }
 
     // Oracle cross-check. Over a random corpus, with time-tabling off so that

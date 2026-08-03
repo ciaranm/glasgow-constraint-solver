@@ -201,6 +201,11 @@ auto Cumulative::prepare_overload_check(State & initial_state) -> void
     // before/after flags to the start's order literals. A task that is not
     // eligible is not lost to the check: whatever it must occupy still counts,
     // through the profile term of the (TTOC) strengthening.
+    //
+    // Seam for optional tasks (#543): once a task can be absent, only one
+    // whose presence is fixed true may join the energy set or the profile, and
+    // its presence literal joins the reason. Nothing here consults a presence
+    // variable yet because there is not one to consult.
     _overload_tasks.clear();
     for (auto i : _active_tasks) {
         if (! is_constant_variable(_lengths[i]) || ! is_constant_variable(_heights[i]))
@@ -712,21 +717,21 @@ auto Cumulative::install_propagators(Propagators & propagators) -> void
                             logger->emit_proof_comment("cumulative overload conflict window=[" + std::to_string(a.raw_value) + "," +
                                 std::to_string(b.raw_value) + ") rule=" + (uses_profile ? "ttoc" : "oc"));
 
-                            // The capacity available across the window, plus
-                            // each contained task's window energy scaled by its
-                            // height, plus (for (TTOC)) the pinned compulsory
-                            // load of the tasks outside it. Each task's energy
-                            // terms cancel against its terms in the capacity
-                            // lines exactly, leaving a constraint whose
-                            // negative-only left hand side must reach a
-                            // positive right hand side.
-                            // The mutations (tests only, see
-                            // CumulativeProofMutation) each break one step
-                            // here, and each must make VeriPB reject.
+                            // Tests only: each of these breaks one step of what
+                            // follows, and each must make VeriPB reject the
+                            // proof. See CumulativeProofMutation.
                             auto omit_capacity_line = std::holds_alternative<cumulative_proof_mutation::OmitCapacityLine>(mutation);
                             auto shrink_lemma_window = std::holds_alternative<cumulative_proof_mutation::ShrinkLemmaWindow>(mutation);
                             auto overstate_energy = std::holds_alternative<cumulative_proof_mutation::OverstateWindowEnergy>(mutation);
 
+                            // The capacity available across the window, plus
+                            // each contained task's window energy scaled by its
+                            // height, plus (for (TTOC)) the pinned compulsory
+                            // load of the tasks outside it. Each contained
+                            // task's activity terms cancel exactly against its
+                            // terms in the capacity lines, leaving a constraint
+                            // with nothing but negative coefficients on the
+                            // left and a positive right hand side.
                             PolBuilder pol;
                             for (Integer t = a; t < b; ++t) {
                                 if (omit_capacity_line && t == b - 1_i)
