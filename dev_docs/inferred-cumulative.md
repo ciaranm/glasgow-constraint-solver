@@ -157,7 +157,10 @@ family, and 40 go the other way. The chain is not redundant; it is also not the
 only route to a non-unit coefficient.
 
 Adopting shaving is
-[#674](https://github.com/ciaranm/glasgow-constraint-solver/issues/674).
+[#674](https://github.com/ciaranm/glasgow-constraint-solver/issues/674) — though
+[#675](https://github.com/ciaranm/glasgow-constraint-solver/issues/675) argues
+for going the other way entirely and proof-logging the lifting DP, which would
+be complete by construction and would delete this whole search.
 
 The result is pinned with an `ia`, which is the only thing that says the `pol`s
 arrived where the plan predicted. Every step is sound whatever it is fed, so a
