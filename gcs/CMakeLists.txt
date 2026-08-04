@@ -105,6 +105,7 @@ add_library(glasgow_constraint_solver
         innards/proofs/constraint_proof_model_data.cc
         innards/proofs/emit_inequality_to.cc
         innards/proofs/flag_bridge.cc
+        innards/proofs/lifted_cover_cut.cc
         innards/proofs/names_and_ids_tracker.cc
         innards/proofs/pol_builder.cc
         innards/proofs/proof_error.cc
@@ -122,6 +123,7 @@ add_library(glasgow_constraint_solver
         presolvers/auto_table/auto_table.cc
         presolvers/cumulative_strengthening/cumulative_strengthening.cc
         presolvers/difference_logic/difference_logic.cc
+        presolvers/inferred_cumulative/inferred_cumulative.cc
         presolvers/inferred_disjunctive/inferred_disjunctive.cc
 )
 
@@ -199,6 +201,11 @@ if(GCS_BUILD_TESTS)
     endforeach()
     add_test(NAME difference_logic_presolver_proofs
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:difference_logic_presolver_test> proofs)
+
+    add_executable(inferred_cumulative_presolver_test presolvers/inferred_cumulative/inferred_cumulative_test.cc)
+    target_link_libraries(inferred_cumulative_presolver_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME inferred_cumulative_presolver
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_cumulative_presolver_test>)
 
     add_executable(inferred_disjunctive_presolver_test presolvers/inferred_disjunctive/inferred_disjunctive_test.cc)
     target_link_libraries(inferred_disjunctive_presolver_test PRIVATE glasgow_constraint_solver)
@@ -600,6 +607,12 @@ if(GCS_BUILD_TESTS)
     # Verifies (and deliberately fails to verify) its own proofs internally, so
     # it needs no wrapper.
     add_test(NAME am1_from_row_test COMMAND $<TARGET_FILE:am1_from_row_test>)
+
+    add_executable(lifted_cover_cut_test innards/proofs/lifted_cover_cut_test.cc)
+    target_link_libraries(lifted_cover_cut_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
+    add_test(NAME lifted_cover_cut_test COMMAND $<TARGET_FILE:lifted_cover_cut_test>)
 
     add_executable(subset_sum_strengthening_test innards/proofs/subset_sum_strengthening_test.cc)
     target_link_libraries(subset_sum_strengthening_test PRIVATE glasgow_constraint_solver)

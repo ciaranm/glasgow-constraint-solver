@@ -143,7 +143,8 @@ namespace gcs
      *
      * This is the first stage of Sidorov (CP 2026), restricted to what his own
      * data says carries most of the value: capacity one, unit coefficients. It
-     * keeps every certificate polynomial. The general lifted case is issue #549.
+     * keeps every certificate polynomial. The general lifted case, with non-unit
+     * coefficients, is InferredCumulative.
      *
      * Nothing reaches the OPB. Each clique is posted as a derived Cumulative
      * whose per-time rows are *proved*: the pairwise at-most-ones come out of a

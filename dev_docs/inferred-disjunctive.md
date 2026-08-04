@@ -10,7 +10,8 @@ inference no single posted `Cumulative` can make.
 finds those sets and posts each as a capacity-one derived `Cumulative`. It is the
 first stage of Sidorov (CP 2026), restricted to capacity one and unit
 coefficients — which is what keeps every certificate polynomial, and where his
-own data says most of the value is. The general lifted case is issue #549.
+own data says most of the value is. The general lifted case, with non-unit
+coefficients, is [`InferredCumulative`](inferred-cumulative.md).
 
 ## What it does
 
@@ -168,8 +169,9 @@ get wrong and neither is visible from the paper:
 
 ## Not done
 
-- The general lifted case, capacity above one with non-unit coefficients, which
-  is where the remaining sixteen of his thirty-six closures live (issue #549).
+- Multi-resource lifting. The single-resource half of the general lifted case is
+  [`InferredCumulative`](inferred-cumulative.md); a cut mixing demands from two
+  resources is still open (issue #549).
 - Budget-robustness sweeps on larger instances.
 - The proof-size work above.
 

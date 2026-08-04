@@ -161,6 +161,16 @@ library. For an introduction to *using* the solver, start with the top-level
   cliques are never worth posting, the camouflage fixture the mutations need, and
   the measured proof size — which is the thing to fix before pointing this at a
   real instance.
+- [Inferring `Cumulative` constraints by lifting cover inequalities](inferred-cumulative.md) —
+  the `InferredCumulative` presolver: cover inequalities over one posted
+  Cumulative's rows, lifted to non-unit coefficients and posted in derived mode.
+  Covers why energy is the only thing a valid cut can buy (and why that makes it
+  time-table neutral for a one-line reason), sequential lifting and the gap
+  between the largest valid coefficient and the largest *certifiable* one, the
+  three shapes of `pol` the certificate takes and why non-unit coefficients need
+  the third, how a cut is restricted to the tasks present at one time point when
+  its heights cannot move, and the differential fixture that separates this from
+  the capacity-one stage.
 - [Restarts, nogoods, and dom/wdeg weighting](restarts-nogoods-weighting.md) —
   the search-side machinery from issue #315: the restart loop and its
   `SearchResult` unwind signal, `RestartSchedule`, the `ConflictObserver`
