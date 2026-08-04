@@ -1,4 +1,4 @@
-/* Schulz's capacity strengthenings, as a presolver over posted Cumulatives.
+/* Schulz's strengthenings, as a presolver over posted Cumulatives.
  *
  * What is hard to test here is not that the proofs verify --- they do that
  * whether the presolver fired or not, since a presolver that declines every
@@ -8,17 +8,21 @@
  * energy reasoning is on. Three separate nets are therefore needed:
  *
  *   - the stats block, asserting the presolver fired, on how many donors, by
- *     how much, and down which of the two derivations;
+ *     how much, on how many raised heights, and down which derivation;
  *   - an energy-rule differential, where the strengthening is the only thing
  *     that refutes at the root;
  *   - mutations, asserting VeriPB rejects a derivation that claims more than it
  *     proved.
  *
  * And the neutrality itself is a tripwire rather than a caveat: under
- * time-tabling alone the node counts must be *identical*, because a load is a
- * sum of heights and so clears the donor's capacity exactly when it clears
- * kappa. A difference would mean the strengthening had changed what the profile
- * permits, which is what an unsound one looks like.
+ * time-tabling alone the node counts must be *identical*. For the capacity that
+ * is because a load is a sum of heights and so clears the donor's capacity
+ * exactly when it clears kappa. For a *raised* height it is a separate argument
+ * --- the profile really is different --- and it holds because a raised task
+ * conflicts with everything, so any time-table verdict a raised height reaches
+ * is one the donor's own capacity reaches too. A node-count difference would
+ * mean one of those two arguments was wrong, which is what an unsound
+ * strengthening looks like.
  */
 
 #include <gcs/constraints/cumulative.hh>
@@ -126,6 +130,7 @@ namespace
         optional<CumulativeRules> derived_rules = nullopt;
         CumulativeStrengtheningMutation mutation = cumulative_strengthening_mutation::None{};
         long long budget = 20000;
+        long long raise_budget = 5000;
         shared_ptr<CumulativeStrengtheningStats> stats = nullptr;
     };
 
@@ -144,7 +149,7 @@ namespace
         p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(setup.rules));
         if (setup.presolve) {
             auto presolver = CumulativeStrengthening{setup.stats};
-            presolver.with_dynamic_programming_budget(setup.budget).with_proof_mutation(setup.mutation);
+            presolver.with_dynamic_programming_budget(setup.budget).with_raise_budget(setup.raise_budget).with_proof_mutation(setup.mutation);
             if (setup.derived_rules)
                 presolver.with_rules(*setup.derived_rules);
             p.add_presolver(presolver);
@@ -251,6 +256,46 @@ namespace
             fail(what + ": the derivation takes the " + (by_division ? "divisibility" : "dynamic programming") +
                 " path, not the one the fixture is for");
     }
+
+    /// The same discipline for the split: which tasks the presolver will raise
+    /// to the capacity, and what kappa the rest of them come to. Asserted as
+    /// arithmetic first, because the whole rule turns on the pairwise test and
+    /// a fixture that has drifted over the boundary --- `c_i = C - min` rather
+    /// than one above it --- is a fixture for the other case entirely.
+    ///
+    /// Every fixture here has tasks whose windows all overlap, so the overlap
+    /// half of the presolver's test is not repeated.
+    auto check_split(const string & what, const vector<int> & heights, int capacity, const vector<size_t> & expected_raised, int expected_kappa)
+        -> void
+    {
+        vector<size_t> raised;
+        vector<Integer> rest;
+        for (size_t i = 0; i < heights.size(); ++i) {
+            bool conflicts_with_everything = true;
+            for (size_t j = 0; j < heights.size(); ++j)
+                if (i != j && heights[i] + heights[j] <= capacity)
+                    conflicts_with_everything = false;
+            if (conflicts_with_everything)
+                raised.push_back(i);
+            else
+                rest.push_back(Integer{heights[i]});
+        }
+
+        auto as_text = [](const vector<size_t> & positions) {
+            string text;
+            for (auto p : positions)
+                text += (text.empty() ? "" : ", ") + std::to_string(p);
+            return "{" + text + "}";
+        };
+        if (raised != expected_raised)
+            fail(what + ": the tasks that fill the resource on their own are " + as_text(raised) + ", not the " + as_text(expected_raised) +
+                " the fixture claims");
+
+        auto kappa = largest_subset_sum_at_most(rest, Integer{capacity});
+        if (kappa != Integer{expected_kappa})
+            fail(what + ": kappa over the rest is " + std::to_string(kappa.raw_value) + ", not the " + std::to_string(expected_kappa) +
+                " the fixture claims");
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -280,6 +325,17 @@ auto main(int argc, char * argv[]) -> int
     // below is a viable version of.
     check_kappa("deep gap, as arithmetic", {6, 10, 15}, 14, 10, false);
 
+    // And the split the heights half turns on, checked the same way. The R1
+    // sharpness fixture is barely over the line --- five is one above
+    // `C - min = 4` --- and its control sits exactly on it, which is the case
+    // the rule must *not* fire for.
+    check_split("R1 fixture", {5, 4, 2}, 6, {0}, 6);
+    check_split("R1 control", {4, 4, 2}, 6, {}, 6);
+    check_split("full-task pack fixture", {8, 3, 3, 3, 3, 3}, 8, {0}, 6);
+    check_split("knapsack raise fixture", {1, 3, 4, 6}, 6, {3}, 5);
+    check_split("gcd pack fixture", {3, 3, 3, 3, 3, 3, 3}, 8, {}, 6);
+    check_split("deep gap fixture", {2, 6, 6}, 10, {}, 8);
+
     // The value demonstration. Seven unit-length tasks of height three, all
     // able to run in [0, 3), against a capacity of eight. Every load is a
     // multiple of three, so the capacity is really six --- and that is invisible
@@ -306,6 +362,8 @@ auto main(int argc, char * argv[]) -> int
             fail("pack fixture: strengthened " + std::to_string(stats->donors_strengthened) + " donors, not one");
         if (stats->capacity_units_removed != 2_i)
             fail("pack fixture: took " + std::to_string(stats->capacity_units_removed.raw_value) + " units off the capacity, not the two 8 to 6 is");
+        if (stats->tasks_raised != 0)
+            fail("pack fixture: a height was raised, so the fixture is not testing the capacity rule on its own");
         if (proofs && stats->rows_by_dynamic_programming != 0)
             fail("pack fixture: a row took the dynamic programming path, so the fixture is not testing the gcd rule");
         if (proofs && stats->rows_by_division == 0)
@@ -327,12 +385,28 @@ auto main(int argc, char * argv[]) -> int
 
     const Instance searchy{{{0, 5}, {0, 5}, {0, 5}, {0, 5}}, {2, 2, 3, 3}, {2, 2, 2, 4}, 7};
 
-    // Heights {6, 10, 4} against a capacity of thirteen: the gcd is two, so
-    // Schulz's gcd rule offers twelve, but 4 + 6 = 10 is the largest load that
-    // can actually be reached, and only the dynamic programming gets there.
-    const Instance deep_gap{{{0, 3}, {0, 3}, {0, 3}}, {2, 2, 2}, {6, 10, 4}, 13};
+    // Heights {2, 6, 6} against a capacity of ten: the gcd is two, so Schulz's
+    // gcd rule offers ten, but 2 + 6 = 8 is the largest load that can actually
+    // be reached, and only the dynamic programming gets there. No task fills
+    // the resource on its own --- 2 + 6 fits --- so nothing is raised and this
+    // is the capacity rule alone.
+    const Instance deep_gap{{{0, 3}, {0, 3}, {0, 3}}, {2, 2, 2}, {2, 6, 6}, 10};
 
-    for (const auto & [what, inst] : {pair<string, Instance>{"searchy", searchy}, pair<string, Instance>{"deep gap", deep_gap}}) {
+    // Heights {1, 3, 4, 6} against a capacity of six. The six conflicts with
+    // everything, so it is raised; kappa over the remaining {1, 3, 4} is five,
+    // which the gcd cannot reach. Both halves of the rule, in one fixture, and
+    // the raise takes four `pol` steps because {1, 3, 4} overshoots five by
+    // three.
+    const Instance knapsack_raise{{{0, 3}, {0, 3}, {0, 3}, {0, 3}}, {2, 2, 2, 2}, {1, 3, 4, 6}, 6};
+
+    // Heights {5, 4, 2} against a capacity of six: the issue's R1 fixture,
+    // where five is one above `C - min` and is raised to the capacity, and
+    // where the capacity itself does not move at all. So the only thing the
+    // presolver does here is raise a height.
+    const Instance r1{{{0, 3}, {0, 3}, {0, 3}}, {2, 2, 2}, {5, 4, 2}, 6};
+
+    for (const auto & [what, inst] : {pair<string, Instance>{"searchy", searchy}, pair<string, Instance>{"deep gap", deep_gap},
+             pair<string, Instance>{"knapsack raise", knapsack_raise}, pair<string, Instance>{"R1", r1}}) {
         auto stats = make_shared<CumulativeStrengtheningStats>();
 
         auto without = solve_it(inst, Setup{.presolve = false, .rules = tt_only}, nullopt);
@@ -345,7 +419,8 @@ auto main(int argc, char * argv[]) -> int
         if (without.recursions != with.recursions)
             fail(what + " neutrality: " + std::to_string(with.recursions) + " nodes against " + std::to_string(without.recursions) +
                 " --- the strengthening is not time-table neutral, which means it is not sound");
-        println(cerr, "{} neutrality: {} nodes either way, capacity down by {}", what, with.recursions, stats->capacity_units_removed.raw_value);
+        println(cerr, "{} neutrality: {} nodes either way, capacity down by {}, {} heights raised", what, with.recursions,
+            stats->capacity_units_removed.raw_value, stats->tasks_raised);
     }
 
     // The deep-gap fixture is the one that exercises the dynamic programming.
@@ -362,13 +437,136 @@ auto main(int argc, char * argv[]) -> int
         // backtracked would not notice if they had landed at any other level.
         if (outcome.recursions < 5)
             fail("deep gap fixture: the instance did not search, so it soaked nothing");
-        if (stats->capacity_units_removed != 3_i)
-            fail("deep gap fixture: took " + std::to_string(stats->capacity_units_removed.raw_value) + " units off, not the three 13 to 10 is");
+        if (stats->capacity_units_removed != 2_i)
+            fail("deep gap fixture: took " + std::to_string(stats->capacity_units_removed.raw_value) + " units off, not the two 10 to 8 is");
+        if (stats->tasks_raised != 0)
+            fail("deep gap fixture: a height was raised, so the fixture is not testing the capacity rule on its own");
         if (proofs && stats->rows_by_division != 0)
             fail("deep gap fixture: a row took the divisibility path, so the fixture is not testing the knapsack rule");
         if (proofs && stats->rows_by_dynamic_programming == 0)
             fail("deep gap fixture: no row took the dynamic programming path");
         println(cerr, "deep gap fixture: {} rows by dynamic programming", stats->rows_by_dynamic_programming);
+    }
+
+    // The heights half, and what it buys. Five unit-length tasks of height
+    // three plus one that fills the resource, all able to run in [0, 3),
+    // against a capacity of eight.
+    //
+    // The capacity rule alone gets nothing here: the tall task reaches eight
+    // on its own, so the largest reachable load *is* the capacity. Setting it
+    // aside takes kappa to six, and its own height comes down to six with it,
+    // which is what makes the energy sums come apart --- the window supplies
+    // twenty-four at a capacity of eight, covering the twenty-three the tasks
+    // need, and eighteen at six against the twenty-one they then need.
+    const Instance full_task_pack{{{0, 2}, {0, 2}, {0, 2}, {0, 2}, {0, 2}, {0, 2}}, {1, 1, 1, 1, 1, 1}, {8, 3, 3, 3, 3, 3}, 8};
+
+    {
+        auto stats = make_shared<CumulativeStrengtheningStats>();
+
+        auto donor_only = solve_it(full_task_pack, Setup{.presolve = false}, nullopt);
+        if (donor_only.refuted_at_root)
+            fail("full-task pack: the donor alone refuted at the root, so the fixture proves nothing");
+
+        // And the capacity rule on its own does not get there either, which is
+        // the claim that makes this a fixture for the heights half rather than
+        // another version of the pack one. Checked by arithmetic rather than by
+        // a toggle: kappa over *every* task is the capacity, so the presolver
+        // that stops at the capacity rule declines the donor outright.
+        vector<Integer> every_height{8_i, 3_i, 3_i, 3_i, 3_i, 3_i};
+        if (largest_subset_sum_at_most(every_height, 8_i) != 8_i)
+            fail("full-task pack: the capacity rule alone would have strengthened this, so the fixture is not about raising");
+
+        auto strengthened =
+            solve_it(full_task_pack, Setup{.stats = stats}, proofs ? make_optional("cumulative_strengthening_full_task_pack") : nullopt);
+        if (! strengthened.refuted_at_root)
+            fail("full-task pack: the strengthened constraint did not refute at the root");
+        if (! strengthened.solutions.empty())
+            fail("full-task pack: the instance is unsatisfiable but solutions were reported");
+
+        if (stats->tasks_raised != 1)
+            fail("full-task pack: raised " + std::to_string(stats->tasks_raised) + " heights, not the one");
+        if (stats->capacity_units_removed != 2_i)
+            fail(
+                "full-task pack: took " + std::to_string(stats->capacity_units_removed.raw_value) + " units off the capacity, not the two 8 to 6 is");
+        if (proofs && stats->rows_with_a_raise == 0)
+            fail("full-task pack: no row needed at-most-one reasoning, so nothing was raised in the proof");
+        println(cerr, "full-task pack: refuted at the root, {} rows raised over {} pol steps", stats->rows_with_a_raise, stats->raise_lines_emitted);
+    }
+
+    // The R1 fixture and its control, as the issue states them. Five is one
+    // above `C - min = 4` and is raised; four is exactly on it and is not, and
+    // since nothing else moves either the whole donor is then declined.
+    {
+        auto stats = make_shared<CumulativeStrengtheningStats>();
+        auto outcome = solve_it(r1, Setup{.stats = stats}, proofs ? make_optional("cumulative_strengthening_r1") : nullopt);
+
+        set<vector<int>> expected;
+        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(r1, starts); }, r1.start_ranges);
+        if (expected != outcome.solutions)
+            fail("R1 fixture: solutions do not match brute force");
+        if (stats->tasks_raised != 1)
+            fail("R1 fixture: raised " + std::to_string(stats->tasks_raised) + " heights, not the one");
+        if (stats->capacity_units_removed != 0_i)
+            fail("R1 fixture: the capacity moved, so the fixture is not testing raising on its own");
+        println(cerr, "R1 fixture: one height raised to the capacity, which did not move");
+    }
+
+    const Instance r1_control{{{0, 3}, {0, 3}, {0, 3}}, {2, 2, 2}, {4, 4, 2}, 6};
+
+    {
+        auto stats = make_shared<CumulativeStrengtheningStats>();
+        auto outcome = solve_it(r1_control, Setup{.stats = stats}, proofs ? make_optional("cumulative_strengthening_r1_control") : nullopt);
+
+        if (stats->donors_strengthened != 0)
+            fail("R1 control: a task whose height is exactly `C - min` was raised");
+        if (stats->declined_nothing_to_gain != 1)
+            fail("R1 control: the donor was passed over for the wrong reason");
+
+        set<vector<int>> expected;
+        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(r1_control, starts); }, r1_control.start_ranges);
+        if (expected != outcome.solutions)
+            fail("R1 control: solutions do not match brute force");
+    }
+
+    // Two tasks raised in the same row, which is a different shape again: the
+    // second one is raised into the row the first one left behind, so its own
+    // at-most-ones have to include the one tying it to a task whose coefficient
+    // is already the capacity rather than its posted height.
+    const Instance two_full{{{0, 3}, {0, 3}, {0, 3}, {0, 3}}, {2, 2, 2, 2}, {7, 7, 3, 3}, 8};
+
+    {
+        auto stats = make_shared<CumulativeStrengtheningStats>();
+        auto outcome = solve_it(two_full, Setup{.stats = stats}, proofs ? make_optional("cumulative_strengthening_two_full") : nullopt);
+
+        set<vector<int>> expected;
+        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(two_full, starts); }, two_full.start_ranges);
+        if (expected != outcome.solutions)
+            fail("two-raised fixture: solutions do not match brute force");
+        if (stats->tasks_raised != 2)
+            fail("two-raised fixture: raised " + std::to_string(stats->tasks_raised) + " heights, not the two");
+        if (stats->capacity_units_removed != 2_i)
+            fail("two-raised fixture: took " + std::to_string(stats->capacity_units_removed.raw_value) + " units off the capacity, not the two");
+        println(cerr, "two-raised fixture: {} pol steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
+    }
+
+    // Both halves at once, over a raise that takes several steps.
+    {
+        auto stats = make_shared<CumulativeStrengtheningStats>();
+        auto outcome = solve_it(knapsack_raise, Setup{.stats = stats}, proofs ? make_optional("cumulative_strengthening_knapsack_raise") : nullopt);
+
+        set<vector<int>> expected;
+        build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(knapsack_raise, starts); }, knapsack_raise.start_ranges);
+        if (expected != outcome.solutions)
+            fail("knapsack raise fixture: solutions do not match brute force");
+        if (stats->tasks_raised != 1 || stats->capacity_units_removed != 1_i)
+            fail("knapsack raise fixture: raised " + std::to_string(stats->tasks_raised) + " heights and took " +
+                std::to_string(stats->capacity_units_removed.raw_value) + " off the capacity, wanting one of each");
+        if (proofs && stats->rows_by_dynamic_programming == 0)
+            fail("knapsack raise fixture: no row took the dynamic programming path, so it is not exercising both halves");
+        if (proofs && stats->raise_lines_emitted <= stats->rows_with_a_raise)
+            fail("knapsack raise fixture: " + std::to_string(stats->raise_lines_emitted) + " pol steps over " +
+                std::to_string(stats->rows_with_a_raise) + " rows, so no raise took more than one step");
+        println(cerr, "knapsack raise fixture: {} pol steps over {} raised rows", stats->raise_lines_emitted, stats->rows_with_a_raise);
     }
 
     // The negative control. A capacity the heights can reach exactly is already
@@ -451,32 +649,52 @@ auto main(int argc, char * argv[]) -> int
         solve_it(pack, Setup{.budget = 0, .stats = pack_stats}, make_optional("cumulative_strengthening_budget_pack"));
         if (pack_stats->donors_strengthened != 1)
             fail("a zero budget stopped the divisibility derivation, which it does not pay for");
+
+        // And the raising budget, which is a separate knob because it is a
+        // separate cost in different units. Zero stops the fixture that raises
+        // and leaves the two that do not alone.
+        auto raise_stats = make_shared<CumulativeStrengtheningStats>();
+        solve_it(knapsack_raise, Setup{.raise_budget = 0, .stats = raise_stats}, make_optional("cumulative_strengthening_budget_raise"));
+        if (raise_stats->declined_over_raise_budget != 1)
+            fail("a zero raise budget did not stop the raising derivation");
+
+        auto unraised_stats = make_shared<CumulativeStrengtheningStats>();
+        solve_it(pack, Setup{.raise_budget = 0, .stats = unraised_stats}, make_optional("cumulative_strengthening_budget_unraised"));
+        if (unraised_stats->donors_strengthened != 1)
+            fail("a zero raise budget stopped a donor with nothing to raise");
     }
 
     // Nothing above may have reached the OPB.
     check_opb_unaffected("pack", pack);
     check_opb_unaffected("deep gap", deep_gap);
+    check_opb_unaffected("knapsack raise", knapsack_raise);
+    check_opb_unaffected("two raised", two_full);
+    check_opb_unaffected("full-task pack", full_task_pack);
 
     // Solution preservation, the defining property of a presolve strengthening.
-    // Random instances against brute force, with heights drawn so that both
-    // derivations get a turn.
+    // Random instances against brute force, with heights drawn against each
+    // instance's own capacity rather than from a fixed pool. Two reasons, both
+    // about what the corpus actually covers: a height above the capacity means
+    // the donor is declined outright and the instance tests nothing, and a task
+    // over half the capacity is what conflicts with everything, so drawing one
+    // deliberately is how the heights half gets a turn at all.
     {
         std::mt19937 rand(*get_seed());
-        std::uniform_int_distribution<> n_dist(2, 4), lo_dist(0, 3), span_dist(0, 3), len_dist(0, 3), cap_dist(2, 12);
-        const vector<int> height_pool{1, 2, 3, 4, 5, 6, 10, 15};
-        std::uniform_int_distribution<> height_dist(0, static_cast<int>(height_pool.size()) - 1);
+        std::uniform_int_distribution<> n_dist(2, 4), lo_dist(0, 3), span_dist(0, 3), len_dist(0, 3), cap_dist(4, 12), tall_dist(0, 2);
 
-        size_t fired = 0;
+        size_t fired = 0, raised = 0;
         for (int k = 0; k < 60; ++k) {
             Instance inst;
+            inst.capacity = cap_dist(rand);
+            std::uniform_int_distribution<> tall(inst.capacity / 2 + 1, inst.capacity), rest(1, inst.capacity / 2);
+
             auto n = n_dist(rand);
             for (int i = 0; i < n; ++i) {
                 auto lo = lo_dist(rand), span = span_dist(rand);
                 inst.start_ranges.emplace_back(lo, lo + span);
                 inst.lengths.push_back(len_dist(rand));
-                inst.heights.push_back(height_pool[height_dist(rand)]);
+                inst.heights.push_back(0 == tall_dist(rand) ? tall(rand) : rest(rand));
             }
-            inst.capacity = cap_dist(rand);
 
             set<vector<int>> expected;
             build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
@@ -488,16 +706,61 @@ auto main(int argc, char * argv[]) -> int
                 fail("the strengthening removed solutions");
             }
             fired += stats->donors_strengthened;
+            raised += stats->tasks_raised;
         }
 
         if (fired == 0)
             fail("the presolver fired on none of the random corpus, so it checked nothing");
-        println(cerr, "solution preservation: strengthened {} of 60 random instances", fired);
+        if (raised == 0)
+            fail("the presolver raised no height across the random corpus, so the heights half checked nothing");
+        println(cerr, "solution preservation: strengthened {} of 60 random instances, raising {} heights", fired, raised);
     }
 
     if (! proofs) {
         println(cerr, "veripb is not available, so the proof-level checks are skipped");
         return EXIT_SUCCESS;
+    }
+
+    // The raise arithmetic has more cases than a fixture set reaches evenly: a
+    // raise into a row with nothing else in it, one into a row everything fits
+    // alongside, one that takes several steps, and a time point whose own
+    // largest load is below the declared capacity and has to be relaxed up to
+    // it first. So the corpus gets a second turn with proofs on, where every
+    // one of them is checked by veripb rather than by inspection.
+    {
+        std::mt19937 rand(*get_seed());
+        std::uniform_int_distribution<> n_dist(2, 4), lo_dist(0, 3), span_dist(0, 3), len_dist(1, 3), cap_dist(4, 10), tall_dist(0, 1);
+
+        size_t raised = 0, rows = 0;
+        for (int k = 0; k < 25; ++k) {
+            Instance inst;
+            inst.capacity = cap_dist(rand);
+            std::uniform_int_distribution<> tall(inst.capacity / 2 + 1, inst.capacity), rest(1, inst.capacity / 2);
+
+            auto n = n_dist(rand);
+            for (int i = 0; i < n; ++i) {
+                auto lo = lo_dist(rand), span = span_dist(rand);
+                inst.start_ranges.emplace_back(lo, lo + span);
+                inst.lengths.push_back(len_dist(rand));
+                inst.heights.push_back(0 == tall_dist(rand) ? tall(rand) : rest(rand));
+            }
+
+            set<vector<int>> expected;
+            build_expected(expected, [&](const vector<int> & starts) { return is_satisfying(inst, starts); }, inst.start_ranges);
+
+            auto stats = make_shared<CumulativeStrengtheningStats>();
+            auto outcome = solve_it(inst, Setup{.stats = stats}, make_optional("cumulative_strengthening_sweep"));
+            if (outcome.solutions != expected) {
+                println(cerr, "starts={} lens={} hts={} c={}", inst.start_ranges, inst.lengths, inst.heights, inst.capacity);
+                fail("the verified sweep lost solutions");
+            }
+            raised += stats->tasks_raised;
+            rows += stats->rows_with_a_raise;
+        }
+
+        if (raised == 0)
+            fail("the verified sweep raised nothing, so veripb checked no raising");
+        println(cerr, "verified sweep: {} heights raised over {} rows, every proof checked", raised, rows);
     }
 
     // Mutations. Both corrupt the *conclusion* rather than the route to it,
@@ -507,11 +770,25 @@ auto main(int argc, char * argv[]) -> int
     // is a perfectly sound proof step --- it lands on a line that is not the one
     // the derived constraint was told it had, and only the `ia` step pinning
     // each row's content notices that.
-    for (const auto & [what, mutation] :
-        {pair<string, CumulativeStrengtheningMutation>{"one better", cumulative_strengthening_mutation::ClaimOneBetter{}},
-            pair<string, CumulativeStrengtheningMutation>{"bogus divisor", cumulative_strengthening_mutation::BogusDivisor{}}}) {
+    for (const auto & [what, inst, mutation] :
+        {std::tuple<string, Instance, CumulativeStrengtheningMutation>{"one better", pack, cumulative_strengthening_mutation::ClaimOneBetter{}},
+            std::tuple<string, Instance, CumulativeStrengtheningMutation>{"bogus divisor", pack, cumulative_strengthening_mutation::BogusDivisor{}},
+            // The pairwise conflict test is the only thing standing between the
+            // heights rule and an unsound constraint, and this is what says so.
+            // Run on the control fixture, where the tallest task misses the
+            // test by exactly one: raising it anyway claims that a task of
+            // height four cannot run beside one of height two under a capacity
+            // of six, which it plainly can.
+            std::tuple<string, Instance, CumulativeStrengtheningMutation>{
+                "unentitled raise", r1_control, cumulative_strengthening_mutation::RaiseUnentitled{}},
+            // And the step-size rule, which is the arithmetic a rearrangement
+            // of this derivation is most likely to lose: one step too far and
+            // the division rounds the degree down instead of up, leaving a
+            // sound but weaker line that only the row's own pin objects to.
+            std::tuple<string, Instance, CumulativeStrengtheningMutation>{
+                "raise too fast", knapsack_raise, cumulative_strengthening_mutation::RaiseTooFast{}}}) {
         const string name = "cumulative_strengthening_mutation";
-        solve_it(pack, Setup{.mutation = mutation}, make_optional(name), false);
+        solve_it(inst, Setup{.mutation = mutation}, make_optional(name), false);
 
         if (run_veripb(name + ".opb", name + ".pbp"))
             fail("veripb accepted the " + what + " mutation");
@@ -525,7 +802,12 @@ auto main(int argc, char * argv[]) -> int
     {
         for (const auto & [what, inst, wanted, unwanted] :
             {std::tuple<string, Instance, string, string>{"pack", pack, "presolve cumulative gcd", "presolve cumulative kappa"},
-                std::tuple<string, Instance, string, string>{"deep gap", deep_gap, "presolve cumulative kappa", "presolve cumulative gcd"}}) {
+                std::tuple<string, Instance, string, string>{"deep gap", deep_gap, "presolve cumulative kappa", "presolve cumulative gcd"},
+                // A raised row is marked as such, and a fixture with nothing to
+                // raise must not be: the marker is how a reader tells which of
+                // the two rules a row came from.
+                std::tuple<string, Instance, string, string>{"knapsack raise", knapsack_raise, "presolve cumulative amo", ""},
+                std::tuple<string, Instance, string, string>{"pack, unraised", pack, "presolve cumulative gcd", "presolve cumulative amo"}}) {
             const string name = "cumulative_strengthening_markers";
             // Unverified here, because verifying is what deletes the file this
             // needs to read; veripb still gets its turn, below.
@@ -536,7 +818,7 @@ auto main(int argc, char * argv[]) -> int
                 fail(what + " markers: veripb rejected the proof");
             if (0 == count_occurrences(proof, wanted))
                 fail(what + " markers: no `" + wanted + "` in the proof, so the rule did not fire where the fixture says");
-            if (0 != count_occurrences(proof, unwanted))
+            if (! unwanted.empty() && 0 != count_occurrences(proof, unwanted))
                 fail(what + " markers: `" + unwanted + "` in the proof, so the fixture is exercising the other derivation");
             println(cerr, "{} markers: {} occurrences of `{}`", what, count_occurrences(proof, wanted), wanted);
             dispose_of_proof_files(name);
@@ -553,7 +835,7 @@ auto main(int argc, char * argv[]) -> int
             fail("negative control: veripb rejected the proof");
 
         auto proof = read_file(with + ".pbp");
-        for (const auto & marker : {"presolve cumulative gcd", "presolve cumulative kappa", "presolve cumulative:"})
+        for (const auto & marker : {"presolve cumulative gcd", "presolve cumulative kappa", "presolve cumulative amo", "presolve cumulative:"})
             if (0 != count_occurrences(proof, marker))
                 fail(string{"negative control: `"} + marker + "` in the proof of a donor that was passed over");
 

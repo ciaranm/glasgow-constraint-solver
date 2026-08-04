@@ -39,6 +39,12 @@ namespace gcs
         /// off each", which are different claims about the fixture.
         Integer capacity_units_removed = 0_i;
 
+        /// Tasks whose height was raised to the strengthened capacity, over
+        /// those donors: the other half of what the presolver does, and the
+        /// only record that it happened, since a raise can leave the capacity
+        /// untouched and a capacity reduction can raise nothing.
+        std::size_t tasks_raised = 0;
+
         /**
          * \name Why a donor was passed over.
          *
@@ -51,6 +57,7 @@ namespace gcs
         std::size_t declined_optional = 0;
         std::size_t declined_variable_arguments = 0;
         std::size_t declined_over_budget = 0;
+        std::size_t declined_over_raise_budget = 0;
         std::size_t declined_nothing_to_gain = 0;
         /// Declined by install_derived_cumulative itself, which is a bug rather
         /// than a restriction: the presolver derives its rows over the donor's
@@ -71,6 +78,24 @@ namespace gcs
         ///@{
         std::size_t rows_by_division = 0;
         std::size_t rows_by_dynamic_programming = 0;
+        ///@}
+
+        /**
+         * \name What the raising cost, in the proof.
+         *
+         * Zero when proofs are off. `rows_with_a_raise` counts time points
+         * whose row needed at-most-one reasoning at all; `raise_lines_emitted`
+         * counts the steps that took, which is not one per raised task --- how
+         * many a raise takes depends on how far the rest of the row overshoots
+         * the capacity, and is the sequence
+         * CumulativeStrengthening::with_raise_budget caps. It does not count
+         * the at-most-ones themselves, nor the implication steps that relax a
+         * row's right hand side, both of which are bounded by the tasks
+         * present rather than by the arithmetic.
+         */
+        ///@{
+        std::size_t rows_with_a_raise = 0;
+        std::size_t raise_lines_emitted = 0;
         ///@}
     };
 
@@ -102,10 +127,30 @@ namespace gcs
         struct BogusDivisor
         {
         };
+
+        /// Raise the tallest task that did *not* qualify for it. The pairwise
+        /// conflict test is the only thing standing between the rule and an
+        /// unsound constraint, and this is what says so: the derivation itself
+        /// runs honestly and every step of it is sound, on a set that is wrong.
+        /// Needs a fixture with a task that fails the test, which is what an
+        /// R1 control fixture is.
+        struct RaiseUnentitled
+        {
+        };
+
+        /// Take one more than the largest step the division survives, on the
+        /// first step of each raise. The step lands on a sound but weaker line,
+        /// every later step compounds it, and the row's own `ia` pin is what
+        /// rejects. Needs a raise with a step to spare, and throws rather than
+        /// passing quietly if given one that has none.
+        struct RaiseTooFast
+        {
+        };
     }
 
     using CumulativeStrengtheningMutation = std::variant<cumulative_strengthening_mutation::None, cumulative_strengthening_mutation::ClaimOneBetter,
-        cumulative_strengthening_mutation::BogusDivisor>;
+        cumulative_strengthening_mutation::BogusDivisor, cumulative_strengthening_mutation::RaiseUnentitled,
+        cumulative_strengthening_mutation::RaiseTooFast>;
 
     /**
      * \brief Strengthen each posted Cumulative by integrality, posting the
@@ -121,29 +166,33 @@ namespace gcs
      *     kappa = max over t of (largest subset sum of the heights of the tasks
      *                            that can run at t, that is at most the capacity)
      *
-     * loses no solution. Schulz's two capacity rules are the two ways that
-     * quantity gets computed --- his gcd rule is the case where the heights
-     * share a factor `d`, making the answer `d * floor(C / d)`, and his knapsack
-     * rule is the general one --- and they reach the proof as the two
-     * derivations derive_subset_sum_strengthening() chooses between: two `pol`
-     * steps of Chvatal-Gomory rounding, or a layered dynamic program. Which one
-     * a row took is in CumulativeStrengtheningStats.
+     * loses no solution --- as long as the tasks that quantity is a subset sum
+     * *of* are the right ones. Schulz's two capacity rules are the two ways it
+     * gets computed --- his gcd rule is the case where the heights share a
+     * factor `d`, making the answer `d * floor(C / d)`, and his knapsack rule
+     * is the general one --- and they reach the proof as the two derivations
+     * derive_subset_sum_strengthening() chooses between: two `pol` steps of
+     * Chvatal-Gomory rounding, or a layered dynamic program. Which one a row
+     * took is in CumulativeStrengtheningStats.
      *
-     * Two deliberate deviations from the paper's statement of the rules, both
-     * documented in `dev_docs/cumulative-strengthening.md`:
+     * The right tasks are the ones that can run beside something. A task that
+     * cannot --- `c_i + c_j > C` for every other `j` that consumes anything and
+     * whose window overlaps its own --- occupies the resource whenever it runs,
+     * so it reaches `C` on its own and would make kappa the capacity and the
+     * rule do nothing. Set those aside and kappa is computed over the rest;
+     * their own heights then come down to kappa, which is what makes setting
+     * them aside sound and is Schulz's coefficient-raising rule arriving at the
+     * same place from the other direction. Both of his height rules are
+     * therefore this one step, and it is what
+     * CumulativeStrengtheningStats::tasks_raised counts.
      *
-     * - The knapsack rule's per-time set is taken over *every* task that can run
-     *   at `t`, rather than only those with `c_j < C`. Excluding the tasks that
-     *   fill the resource by themselves gives a smaller kappa, but it is then
-     *   only sound if those tasks' own heights come down to kappa as well ---
-     *   which changes the derived constraint's coefficients, and needs the
-     *   at-most-one reasoning that is issue #547's remaining half.
-     * - The coefficient-raising rule (any `c_i` above `C - min_j c_j` can be
-     *   raised to `C`) is not here at all, for the same reason: it changes
-     *   heights.
-     *
-     * Neither costs soundness or solutions; both leave strengthening on the
-     * table, which is what an unimplemented rule does.
+     * That step is where the proof gets expensive. A raised task's row has to
+     * be built out of at-most-ones taken off the donor's own row --- one per
+     * pair --- and then the task's coefficient walked up to kappa a `pol` at a
+     * time, because cutting planes cannot raise a coefficient to the right hand
+     * side in one division unless the rest of the row barely overshoots it. See
+     * with_raise_budget(), and `dev_docs/cumulative-strengthening.md` for the
+     * arithmetic.
      *
      * **Do not expect this to make anything faster on its own.** The rules are
      * time-table neutral --- a load is a sum of heights, so it clears `C`
@@ -160,6 +209,7 @@ namespace gcs
     private:
         std::shared_ptr<CumulativeStrengtheningStats> _stats;
         long long _max_dynamic_programming_states;
+        long long _max_raise_lines;
         CumulativeRules _rules;
         CumulativeStrengtheningMutation _mutation;
 
@@ -186,6 +236,25 @@ namespace gcs
          * disappear while the divisibility one keeps working.
          */
         auto with_dynamic_programming_budget(long long states) -> CumulativeStrengthening &;
+
+        /**
+         * \brief Cap the number of proof lines spent raising heights, summed
+         * over a donor's time points and raised tasks.
+         *
+         * A raise is a `pol` per step, and the number of steps depends on how
+         * far the rest of the row overshoots the capacity: a row that only just
+         * overshoots raises in one, and one that overshoots by half pays a line
+         * per unit of the strengthened capacity. So the cost is not something a
+         * caller can read off the model, and a donor whose raising would exceed
+         * this is passed over entirely and counted in
+         * CumulativeStrengtheningStats::declined_over_raise_budget.
+         *
+         * Separate from the dynamic-programming budget because the two buy
+         * different things and are counted in different units: a donor can want
+         * one and not the other, and a test setting either to zero should watch
+         * only its own half disappear.
+         */
+        auto with_raise_budget(long long lines) -> CumulativeStrengthening &;
 
         /**
          * \brief Select which propagation rules the derived constraints run.

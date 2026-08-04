@@ -142,13 +142,16 @@ library. For an introduction to *using* the solver, start with the top-level
   unit propagation cannot do, and why a satisfiable test model and an `ia`
   content check are both needed to test it.
 - [Strengthening a `Cumulative` by integrality](cumulative-strengthening.md) —
-  Schulz's pre-solving capacity rules as the `CumulativeStrengthening` presolver,
-  posting the strengthened constraint in derived mode. Covers why the largest
-  reachable load is the real capacity, why the rules are *time-table neutral* and
-  how that turns into a node-for-node soundness tripwire, the `ia` step that
-  pins every row to the declared capacity (and is the only thing that catches a
-  sound derivation of the wrong line), the deviations from the paper's statement
-  of the rules, and why the deep-gap fixture everyone quotes cannot be a
+  Schulz's pre-solving rules as the `CumulativeStrengthening` presolver, posting
+  the strengthened constraint in derived mode. Covers why the largest reachable
+  load is the real capacity, why the tasks that fill the resource on their own
+  have to be set aside from that sum and given the capacity as their height
+  instead (which is both of Schulz's height rules arriving at the same place),
+  why raising a coefficient in cutting planes is a loop rather than one
+  division, why the rules are *time-table neutral* and how that turns into a
+  node-for-node soundness tripwire, the `ia` step that pins every row to the
+  declared capacity (and is the only thing that catches a sound derivation of
+  the wrong line), and why the deep-gap fixture everyone quotes cannot be a
   `Cumulative` instance.
 - [Inferring `Disjunctive` constraints across resources](inferred-disjunctive.md) —
   the `InferredDisjunctive` presolver: conflict cliques spanning several posted

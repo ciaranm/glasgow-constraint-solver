@@ -15,15 +15,58 @@ computes
                              that is at most C )
 ```
 
-and, when `kappa < C`, posts a
+— over the tasks that can run *beside something*, which is the subtlety the whole
+thing turns on, and posts a
 [derived `Cumulative`](cumulative-proof-logging.md#derived-cumulatives-an-implied-constraint-that-adds-nothing-to-the-model)
-over the same tasks with the same heights and a capacity of `kappa`. The donor
-stays posted and the OPB is untouched: each per-time capacity row of the derived
-constraint is *proved* from the donor's row for that time point, by
-[subset-sum strengthening](subset-sum-strengthening.md).
+at a capacity of `kappa`. The donor stays posted and the OPB is untouched: each
+per-time capacity row of the derived constraint is *proved* from the donor's row
+for that time point, by [subset-sum strengthening](subset-sum-strengthening.md).
 
 The rules are Schulz's pre-solving strengthenings, recapped by Cloutier and
 Quimper (CP 2026, §2.3).
+
+## The tasks that fill the resource, and why they are set aside
+
+Call a task **full** when it cannot run beside any other task that consumes
+anything: `h_i + h_j > C` for every `j ≠ i` with `h_j > 0` whose window overlaps
+its own. Such a task occupies the resource whenever it runs, whatever its height
+says.
+
+A full task ruins the subset sum. It reaches `C` on its own, so the largest
+reachable load *is* the capacity and `kappa = C` and nothing happens — a task of
+height `C` in the model turns the capacity rule off entirely. Excluding the full
+tasks from the sum is Schulz's refinement, and it is only sound if their own
+heights come down to `kappa` as well, which is what the derived constraint does:
+
+| | capacity | full task's height | every other height |
+|---|---|---|---|
+| donor | `C` | `h_i` | `h_j` |
+| derived | `kappa` | `kappa` | `h_j` |
+
+Both of Schulz's height rules arrive at that same table. His coefficient raising
+— any `c_i` above `C − min_j c_j` can be raised to `C` — is the same set of
+tasks, since `c_i > C − min{c_j : j ≠ i, c_j > 0}` says exactly that no other
+task fits alongside; and his knapsack rule's "`c_i = C` can be reduced to
+`kappa`" is what happens to those tasks once the capacity moves. So there is one
+rule here, not two, and `CumulativeStrengtheningStats::tasks_raised` counts it.
+
+Stating it as the pairwise test rather than as the minimum is deliberate. The
+two conditions are the same, but the pairwise one is what the certificate needs
+anyway — one at-most-one per pair, off the donor's own row — and it does not
+need the empty-minimum case argued separately. Tasks whose windows cannot
+overlap are left out of the test, which is a little more than the paper claims
+and costs nothing: if they can never be active together, no row ever mentions
+both.
+
+The set is **not** computed per time point, even though fewer tasks can run at
+one time point than over the whole horizon and the set would be larger for it. A
+`Cumulative` has one height per task, not one per time point, so a task that
+only fills the resource at some of them cannot be given a raised height at all.
+
+When *every* task is full, `kappa` is a subset sum over nothing and comes out at
+zero. That is not a strengthening but a disjunctive, and the donor is declined:
+inferring those from conflict cliques is
+[`InferredDisjunctive`](cumulative-proof-logging.md)'s job.
 
 ## Why `kappa` is the right number, and why the max is the max
 
@@ -48,13 +91,27 @@ heights, so it exceeds `kappa` exactly when it exceeds `C`:
   heights, so it is at most `kappa_t ≤ kappa`.
 
 The paper says the same thing in one line — "time tabling is unaffected since any
-propagation detected after the pre-solving is detectable beforehand". The useful
-consequence is a *test*: with the energy rules off on both the donor and the
-derived constraint, the search tree with the presolver must be
+propagation detected after the pre-solving is detectable beforehand".
+
+A **raised** height needs its own argument, because the profile really is
+different: a full task contributes `kappa` to the derived profile and `h_i` to
+the donor's. What saves it is that a raised task conflicts with everything, so
+every verdict the raised height reaches is one the donor reaches too:
+
+- if a full task's compulsory part covers `t`, the derived profile there is
+  already `kappa` and pushes every other task out — and the donor pushes them
+  out too, since `h_i + h_j > C` for each of them;
+- if none does, the derived profile at `t` is a sum of unraised heights, and the
+  argument above applies to it unchanged; a full task is then pushed out of `t`
+  exactly when something else is compulsory there, which the donor also does.
+
+The useful consequence is a *test*: with the energy rules off on both the donor
+and the derived constraint, the search tree with the presolver must be
 **node-for-node identical** to the one without it. Any difference means the
 strengthening changed what the profile permits, which is the shape an unsound one
-takes, and `cumulative_strengthening_presolver` asserts it on two fixtures before
-VeriPB gets a say.
+takes, and `cumulative_strengthening_presolver` asserts it on four fixtures —
+two that only move the capacity and two that raise a height — before VeriPB gets
+a say.
 
 The same theorem, used the other way round, is why the derived constraints ship
 with **time-tabling off**: every time-table inference a derived constraint could
@@ -75,6 +132,15 @@ six, which changes no profile verdict at all, but the window then supplies
 `6 × 3 = 18` against the `21` units the tasks need, and the overload check
 refutes at the root. At a capacity of eight it supplies `24`, and the solver
 searches.
+
+The heights half has its own demonstration, and it is a fixture the capacity
+rule alone gets *nothing* on: five unit-length tasks of height three plus one of
+height eight, all able to run in `[0, 3)`, against a capacity of eight. The tall
+task reaches the capacity by itself, so `kappa` over every task is eight and the
+capacity rule declines the donor outright. Setting it aside takes `kappa` to six
+and brings its own height down with it, and the window then supplies `18`
+against the `21` those six tasks need. The donor needs `23` against a supply of
+`24`, and searches.
 
 ## What reaches the proof
 
@@ -118,34 +184,92 @@ hint"). Nothing else in the proof objects. This is
 [the third net](subset-sum-strengthening.md#testing-it) the subset-sum utility's
 own tests describe, applied at the point of use.
 
-## Two deviations from the paper's rules
+## Raising a coefficient, in cutting planes
 
-Both leave strengthening on the table; neither costs soundness or solutions.
+The capacity half is one call to the subset-sum utility. The heights half is not,
+and the reason is worth having written down, because the obvious derivation does
+not work and it is not obvious why.
 
-**The per-time knapsack set is not restricted to `c_j < C`.** The paper's `kappa`
-excludes tasks that fill the resource by themselves, which gives a smaller number
-— a task with `c_j = C` reaches `C` on its own, so including it makes `kappa = C`
-and the rule does nothing. Excluding it is only sound if those tasks' own heights
-come down to `kappa` as well, which the paper's statement duly does ("all
-consumption `c_i` such that `c_i = C`, as well as `C`, can be reduced to
-`kappa`"). That changes the derived constraint's *coefficients*, and the
-derivation for it needs at-most-one reasoning off the donor's row: if a task with
-`c_j = C` is running, nothing else is, so the row's value is `kappa` either way.
-That is the same machinery the coefficient-raising rule needs, and it is the
-remaining half of issue #547.
+The row wanted at time `t`, over the full tasks `F` present and the rest `N`, is
 
-**Coefficient raising is not implemented.** The paper's first rule — any `c_i`
-above `C − min_j c_j` can be raised to `C`, because such a task can never run
-beside another — changes heights for the same reason and needs the same
-at-most-one derivation.
+```
+    sum_{i in F} kappa·a_i  +  sum_{j in N} h_j·a_j  <=  kappa
+```
 
-A note for whoever writes that half. The paper's condition takes the minimum over
-*all* `j ∈ I`, task `i` included, which is sound but blunter than it needs to be:
-what the argument actually requires is that `i` cannot run beside any *other*
-task that consumes anything, i.e. `c_i + min{c_j : j ≠ i, c_j > 0} > C`. Issue
-#547 states it that way, and that is the version to implement — with `c_i > 0`
-guarded explicitly, since a zero-height task can always run beside anything and
-the empty-minimum case would otherwise raise it to `C`.
+It is implied by the donor's row alone. If a full task is active, everything else
+is off and the left side is exactly `kappa`; if none is, the left side is a subset
+sum of `N`'s heights that the donor keeps at most `C`, hence at most `kappa`. So
+there is a derivation to find. The route is:
+
+1. the pairwise **at-most-ones**, one per pair the full tasks are in, each
+   [off the donor's own row](../gcs/innards/proofs/am1_from_row.hh) — weaken the
+   others out, saturate, divide;
+2. the full tasks **weakened out** of the row, leaving `sum_N h_j·a_j <= C`;
+3. **subset-sum strengthening** of what is left, to `kappa_t`, then an `ia` step
+   relaxing it to the declared `kappa` if the two differ;
+4. each full task's coefficient **raised** from zero to `kappa`, in the row the
+   last one left behind.
+
+Step 3 has to happen before step 4 and not after: a raise keeps whatever right
+hand side it is given and can raise a coefficient no higher, so a row left on a
+smaller `kappa_t` would neither reach `kappa` nor pin to it.
+
+### Why step 4 is a loop
+
+Given the row `c·a_i + sum_k w_k·a_k <= R` and the at-most-ones tying `i` to each
+`k`, one `pol` raises `c` by `k` while keeping `R`: take `lambda` copies of the
+row, add each at-most-one weighted by its own `w_k`, scaled by `e`, and divide by
+`lambda + e`, with `lambda/e = (T − c − k)/k` and `T = sum_k w_k`. Every
+coefficient divides exactly; only the degree rounds, and it has `e·(T − R)` to
+round through, so the step lands back on `R` exactly when
+
+```
+    k · (T − R)  <  T − c
+```
+
+That bound is the whole of it. When the rest of the row only just overshoots the
+capacity — `T − R = 1` — one step raises all the way. When it overshoots by half,
+the steps are of size one and the raise costs a `pol` per unit of `kappa`. And no
+single `lambda`, `e`, divisor and set of weakenings does better: asking for the
+whole raise at once forces `(k − 1)·(T − R − 1) < 1`, which is why the loop is
+there and not a tidier one-shot. Hence `with_raise_budget`, which caps the lines
+this may spend on a donor; `raise_steps()` computes the same sequence for the
+budget and for the derivation, since a prediction that disagreed would decline the
+wrong donors.
+
+Two ends of the loop are not the loop:
+
+- `T <= kappa` — everything else fits alongside — needs no division at all. The
+  at-most-ones summed *are* the row, at a right hand side of `T`, which one `ia`
+  step relaxes to `kappa`. So a time point like this pays for no subset sum
+  either, and step 3 is derived lazily for that reason.
+- `T = 0` — nothing else can run at `t` — has no row to raise into and no
+  at-most-one to do it with. The claim is only that a flag is at most one, and
+  it is RUP.
+
+### What the pin catches, and what nothing catches
+
+Every step above is sound whatever it is fed, so a wrong margin, a wrong step
+size or a missing weakening all land on lines that are true and simply weaker
+than intended. The row's closing `ia` step is what rejects them, and the
+`RaiseTooFast` mutation is exactly that: one step past the bound, the degree
+rounds down instead of up, and every later step compounds it.
+
+What no proof can catch is the *set*. If a task that does not conflict with
+everything is raised anyway, the derivation runs honestly and the row it lands on
+is simply not implied by the donor — which VeriPB does reject, but only because
+the conclusion is false, not because anything about the derivation was wrong.
+`RaiseUnentitled` covers it, on the control fixture where the tallest task misses
+the pairwise test by exactly one. `recover_am1_from_row` refuses a set that does
+not overshoot the capacity outright for the same reason:
+[it cannot be caught later](../gcs/innards/proofs/am1_from_row.hh).
+
+Those at-most-ones all come off *one* donor row, which is the case where
+recovering a whole set's bound in one step beats recovering its pairs. The
+rule's own shape hides most of the win — the raise needs the individual pairwise
+lines, one per step, so they cannot simply be replaced — but a time point where
+only full tasks can run is exactly `sum_F a_i <= 1` and is one `pol`. Left for
+the proof-size pass, with #666.
 
 ## Fixtures, and one that cannot be one
 
@@ -154,14 +278,24 @@ The sharpness fixtures are checked as arithmetic against
 that has drifted makes every claim built on it a claim about something else.
 
 - **gcd path**: heights `{2, 4, 6}`, `C = 13` → `kappa = 12`, by division.
-- **dynamic programming path**: heights `{6, 10, 4}`, `C = 13` → `kappa = 10`.
+- **dynamic programming path**: heights `{2, 6, 6}`, `C = 10` → `kappa = 8`.
+- **raising**: heights `{5, 4, 2}`, `C = 6` → the five is raised to six, and the
+  capacity does not move at all; its control, heights `{4, 4, 2}`, sits exactly
+  on `C − min` and is not raised, so the whole donor is then declined.
 
-That second one is worth dwelling on, because the obvious reading gets it wrong.
-Those heights have a gcd of two, so the gcd rule offers `2·⌊13/2⌋ = 12` — but the
-largest load they can actually reach at or below thirteen is `4 + 6 = 10`, so the
-answer is ten and only the dynamic programme gets there. Rounding by the gcd is
+The second is worth dwelling on, because the obvious reading gets it wrong. Those
+heights have a gcd of two, so the gcd rule offers `2·⌊10/2⌋ = 10` — but the
+largest load they can actually reach at or below ten is `2 + 6 = 8`, so the
+answer is eight and only the dynamic programme gets there. Rounding by the gcd is
 the whole answer only when the gcd's multiples are all reachable, which
-`{2, 4, 6}` manages and `{6, 10, 4}` does not.
+`{2, 4, 6}` manages and `{2, 6, 6}` does not.
+
+The textbook version of that fixture — heights `{6, 10, 4}` against `C = 13` — is
+not one any more, and the reason is the heights half. The ten conflicts with both
+of the others, so it is full: it is set aside, `kappa` is computed over `{6, 4}`
+and comes to ten, and the derivation is a raise rather than a subset sum. A
+fixture for the dynamic programme needs every task to fit beside *something*,
+which is what `{2, 6, 6}` was chosen for.
 
 The deep gap this rule is usually illustrated with — heights `{6, 10, 15}` against
 `C = 14`, overall gcd one, answer ten — is a subset-sum fixture and **cannot be a
@@ -185,7 +319,10 @@ stop being strengthened in silence:
   row is over bit-linearised contribution flags rather than `height × active`, so
   a subset sum of the heights is not a subset sum of the row's coefficients.
 - **A height above the capacity**, as above.
-- **The dynamic-programming budget.**
+- **Every task full**, which makes `kappa` zero: a disjunctive rather than a
+  strengthening, and `InferredDisjunctive`'s to find.
+- **The dynamic-programming budget**, and separately **the raise budget** —
+  different costs in different units, so a donor can want one and not the other.
 
 ## Testing it
 
@@ -196,21 +333,37 @@ being time-table neutral — does not even change the search tree unless energy
 reasoning is on. So:
 
 1. **The stats block is a tripwire, not decoration.** Every fixture asserts the
-   presolver fired, on how many donors, by how many units of capacity, and down
-   which of the two derivations. `CumulativeStrengtheningStats::rows_by_division`
-   against `rows_by_dynamic_programming` is what stops a fixture drifting onto
-   the other path without failing anything.
-2. **Neutrality**, asserted as node-for-node equality under time-tabling alone.
-3. **The energy differential**, where the strengthening is the only thing that
-   refutes the `pack` fixture at the root.
-4. **Solution preservation** over a random corpus against brute force, with an
-   assertion that the presolver fired on some of it.
-5. **Negative controls**: a capacity that is already the largest reachable load
-   is passed over, the OPB matches a run with no presolver byte for byte, and no
-   marker comment appears in the proof at all.
-6. **Mutations**, both of which corrupt the *conclusion* rather than the route to
-   it, which is what a rule whose content is a numeric bound needs: `ClaimOneBetter`
-   claims one below the largest reachable load, and `BogusDivisor` rounds by a
-   divisor that does not divide every height. VeriPB rejects each.
+   presolver fired, on how many donors, by how many units of capacity, on how
+   many raised heights, and down which derivation.
+   `CumulativeStrengtheningStats::rows_by_division` against
+   `rows_by_dynamic_programming` is what stops a fixture drifting onto the other
+   path without failing anything, and `tasks_raised` is the only record that the
+   heights half ran at all — a raise can leave the capacity untouched, and a
+   capacity reduction can raise nothing.
+2. **The split, checked as arithmetic** before any proof, the same way `kappa`
+   is: which tasks are full, and what `kappa` over the rest comes to. The rule
+   turns on the pairwise test, and a fixture that has drifted over the boundary
+   is a fixture for the other case.
+3. **Neutrality**, asserted as node-for-node equality under time-tabling alone,
+   on fixtures that raise as well as fixtures that do not.
+4. **Two energy differentials**: the `pack` fixture, where the capacity rule is
+   the only thing that refutes at the root, and the full-task pack, where the
+   capacity rule gets nothing and only the raising refutes.
+5. **Solution preservation** over a random corpus against brute force, with
+   heights drawn against each instance's own capacity so that full tasks turn up
+   — a fixed height pool gives instances that are declined outright, and covers
+   the heights half only by accident. A second, smaller sweep runs the same
+   instances with proofs on and veripb checking every one, which is where the
+   raise arithmetic's odd corners get exercised.
+6. **Negative controls**: a capacity that is already the largest reachable load
+   is passed over, a task exactly on `C − min` is not raised, the OPB matches a
+   run with no presolver byte for byte, and no marker comment appears in the
+   proof at all.
+7. **Mutations**, each corrupting the *conclusion* rather than the route to it,
+   which is what a rule whose content is a number needs: `ClaimOneBetter` claims
+   one below the largest reachable load, `BogusDivisor` rounds by a divisor that
+   does not divide every height, `RaiseTooFast` takes one step past the bound the
+   division survives, and `RaiseUnentitled` raises a task that does not qualify.
+   VeriPB rejects each.
 
 <!-- vim: set tw=72 spell spelllang=en : -->
