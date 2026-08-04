@@ -100,6 +100,7 @@ add_library(glasgow_constraint_solver
         innards/literal.cc
         innards/power.cc
         innards/proofs/bits_encoding.cc
+        innards/proofs/clique_from_amos.cc
         innards/proofs/constraint_proof_model_data.cc
         innards/proofs/emit_inequality_to.cc
         innards/proofs/names_and_ids_tracker.cc
@@ -577,6 +578,10 @@ if(GCS_BUILD_TESTS)
     add_executable(eqvar_polarity_test innards/proofs/eqvar_polarity_test.cc)
     target_link_libraries(eqvar_polarity_test PRIVATE glasgow_constraint_solver)
     add_test(NAME eqvar_polarity_test COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_and_verify.bash $<TARGET_FILE:eqvar_polarity_test>)
+
+    add_executable(clique_from_amos_test innards/proofs/clique_from_amos_test.cc)
+    target_link_libraries(clique_from_amos_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME clique_from_amos_test COMMAND $<TARGET_FILE:clique_from_amos_test>)
 
     add_executable(subset_sum_strengthening_test innards/proofs/subset_sum_strengthening_test.cc)
     target_link_libraries(subset_sum_strengthening_test PRIVATE glasgow_constraint_solver)

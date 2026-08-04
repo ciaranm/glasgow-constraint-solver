@@ -24,15 +24,6 @@ using std::vector;
 
 namespace
 {
-    auto add_term_to(WPBSum & sum, Integer coefficient, const ProofLiteralOrFlag & term) -> void
-    {
-        overloaded{                                                      //
-            [&](const ProofLiteral & l) { sum += coefficient * l; },     //
-            [&](const ProofFlag & f) { sum += coefficient * f; },        //
-            [&](const ProofBitVariable & b) { sum += coefficient * b; }} //
-            .visit(term);
-    }
-
     // The file-format literal for a term, so that it can be pushed onto a pol
     // stack as a literal axiom (`x >= 0`). Constants have no literal, and an
     // item that is always in or always out of the sum is a caller error rather
