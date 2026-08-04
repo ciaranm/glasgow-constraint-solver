@@ -396,9 +396,9 @@ auto main(int argc, char * argv[]) -> int
 
         std::size_t posted = 0, non_unit = 0, steps = 0, weakened = 0;
         for (int k = 0; k < 60; ++k) {
-            Instance instance{{}, {}, Integer{cap_dist(rand)}, 0};
-            std::uniform_int_distribution<> tall(instance.capacity.raw_value / 2 + 1, static_cast<int>(instance.capacity.raw_value)),
-                rest(1, instance.capacity.raw_value / 2);
+            auto capacity = cap_dist(rand);
+            Instance instance{{}, {}, Integer{capacity}, 0};
+            std::uniform_int_distribution<> tall(capacity / 2 + 1, capacity), rest(1, capacity / 2);
 
             auto n = n_dist(rand);
             int longest = 0;
