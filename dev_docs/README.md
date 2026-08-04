@@ -150,6 +150,14 @@ library. For an introduction to *using* the solver, start with the top-level
   sound derivation of the wrong line), the deviations from the paper's statement
   of the rules, and why the deep-gap fixture everyone quotes cannot be a
   `Cumulative` instance.
+- [Inferring `Disjunctive` constraints across resources](inferred-disjunctive.md) —
+  the `InferredDisjunctive` presolver: conflict cliques spanning several posted
+  Cumulatives, posted in derived mode. Covers why the cross-resource case is an
+  inference no single Cumulative can make, the three-piece certificate (pairwise
+  at-most-one out of a witnessing row, flag bridge, clique merge), why two-task
+  cliques are never worth posting, the camouflage fixture the mutations need, and
+  the measured proof size — which is the thing to fix before pointing this at a
+  real instance.
 - [Restarts, nogoods, and dom/wdeg weighting](restarts-nogoods-weighting.md) —
   the search-side machinery from issue #315: the restart loop and its
   `SearchResult` unwind signal, `RestartSchedule`, the `ConflictObserver`

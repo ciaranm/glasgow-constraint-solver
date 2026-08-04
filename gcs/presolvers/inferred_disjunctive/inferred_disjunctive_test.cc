@@ -16,7 +16,7 @@
 
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
-#include <gcs/presolvers/inferred_disjunctive/inferred_disjunctive.hh>
+#include <gcs/presolvers/inferred_disjunctive.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -77,6 +77,7 @@ namespace
         optional<CumulativeRules> inferred_rules = nullopt;
         std::size_t min_clique_size = 3;
         std::size_t max_candidates = 100, max_posted = 5;
+        InferredDisjunctiveMutation mutation = inferred_disjunctive_mutation::None{};
         shared_ptr<InferredDisjunctiveStats> stats = nullptr;
     };
 
@@ -362,6 +363,66 @@ auto main(int argc, char * argv[]) -> int
         for (const auto & name : {with, without})
             dispose_of_proof_files(name);
         println(cerr, "the OPB is untouched");
+    }
+
+    /* Mutations of the assembled certificate.
+     *
+     * The pieces have their own, and those cover the pieces. What is left is
+     * the assembly, and it needs a fixture with a *camouflage* task: a fourth
+     * task on a resource of capacity two, where every pairwise demand sums to
+     * exactly two. Compatible, but only just --- which is what an off-by-one in
+     * the conflict test would get wrong, and what IncludeNonConflicting forces.
+     */
+    {
+        auto camouflage = [](Problem & p, const Setup & setup) {
+            vector<IntegerVariableID> starts;
+            for (int i = 0; i < 4; ++i)
+                starts.push_back(p.create_integer_variable(0_i, 3_i, "s" + to_string(i)));
+
+            const vector<Integer> lengths(4, 2_i);
+            // The three-task cross-resource family, over the first three.
+            p.post(Cumulative{starts, lengths, vector<Integer>{0_i, 1_i, 1_i, 0_i}, 1_i});
+            p.post(Cumulative{starts, lengths, vector<Integer>{1_i, 1_i, 0_i, 0_i}, 1_i});
+            p.post(Cumulative{starts, lengths, vector<Integer>{1_i, 0_i, 1_i, 0_i}, 1_i});
+            // And a resource all four share, where any two of them fit exactly.
+            p.post(Cumulative{starts, lengths, vector<Integer>{1_i, 1_i, 1_i, 1_i}, 2_i});
+
+            auto presolver = InferredDisjunctive{setup.stats};
+            presolver.with_proof_mutation(setup.mutation);
+            p.add_presolver(presolver);
+            return starts;
+        };
+
+        // Honestly, task three joins no clique: it is compatible with every
+        // one of the others, by exactly one unit.
+        {
+            auto stats = make_shared<InferredDisjunctiveStats>();
+            Problem p;
+            camouflage(p, Setup{.stats = stats});
+            solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }},
+                make_optional<ProofOptions>(ProofFileNames{"inferred_disjunctive_camouflage"}));
+            if (stats->cliques_posted != 1 || stats->clique_members_posted != 3)
+                fail("camouflage: posted " + to_string(stats->cliques_posted) + " cliques over " + to_string(stats->clique_members_posted) +
+                    " members, not the one clique of three");
+            verify_proof_and_clean_up("inferred_disjunctive_camouflage");
+            println(cerr, "camouflage: the compatible task stayed out of the clique, and the proof verifies");
+        }
+
+        for (const auto & [what, mutation] :
+            {std::pair<string, InferredDisjunctiveMutation>{"rhs zero", inferred_disjunctive_mutation::ClaimRhsZero{}},
+                std::pair<string, InferredDisjunctiveMutation>{"wrong task bridged", inferred_disjunctive_mutation::BridgeWrongTask{}},
+                std::pair<string, InferredDisjunctiveMutation>{"non-conflicting member", inferred_disjunctive_mutation::IncludeNonConflicting{}}}) {
+            const string name = "inferred_disjunctive_mutation";
+            Problem p;
+            camouflage(p, Setup{.mutation = mutation});
+            solve_with(
+                p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
+
+            if (run_veripb(name + ".opb", name + ".pbp"))
+                fail("veripb accepted the " + what + " mutation, so the honest certificate has slack in it");
+            println(cerr, "veripb rejected the {} mutation, as expected", what);
+            dispose_of_proof_files(name);
+        }
     }
 
     // And the markers say the clique derivation actually ran, per time point.

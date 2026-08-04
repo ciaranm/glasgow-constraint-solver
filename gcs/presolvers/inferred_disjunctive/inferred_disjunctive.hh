@@ -7,9 +7,53 @@
 
 #include <cstddef>
 #include <memory>
+#include <variant>
 
 namespace gcs
 {
+    /**
+     * \brief Deliberate corruptions of the assembled per-time certificate, for
+     * testing only. VeriPB must reject each of them.
+     *
+     * The pieces this is built from each have their own mutations, and those
+     * cover the pieces. What is left for these is the *assembly*: whether the
+     * at-most-ones being merged really are about the tasks the clique claims,
+     * whether the conclusion is the one the arithmetic supports, and whether a
+     * pair that merely looks like a conflict can be smuggled in. Each of these
+     * corrupts the conclusion rather than the route to it, since the route is
+     * where a conflict-shaped derivation forgives everything.
+     *
+     * \ingroup Presolvers
+     */
+    namespace inferred_disjunctive_mutation
+    {
+        /// Emit the honest derivation.
+        struct None
+        {
+        };
+
+        /// Claim no member may run at all, rather than at most one.
+        struct ClaimRhsZero
+        {
+        };
+
+        /// Bridge one task's flags onto the *other* task's, so the at-most-one
+        /// being merged is about a task the derivation never cornered.
+        struct BridgeWrongTask
+        {
+        };
+
+        /// Grow a clique with a task that does not conflict with its members ---
+        /// the camouflage case, where a pair's demands sum to exactly the
+        /// capacity and so are compatible by one unit. An off-by-one in the
+        /// conflict test lands exactly here.
+        struct IncludeNonConflicting
+        {
+        };
+    }
+
+    using InferredDisjunctiveMutation = std::variant<inferred_disjunctive_mutation::None, inferred_disjunctive_mutation::ClaimRhsZero,
+        inferred_disjunctive_mutation::BridgeWrongTask, inferred_disjunctive_mutation::IncludeNonConflicting>;
     /**
      * \brief What the inferred-Disjunctive presolver did, filled in when it
      * runs.
@@ -110,6 +154,7 @@ namespace gcs
         std::size_t _max_posted;
         std::size_t _min_clique_size;
         CumulativeRules _rules;
+        InferredDisjunctiveMutation _mutation;
 
     public:
         explicit InferredDisjunctive(std::shared_ptr<InferredDisjunctiveStats> stats = nullptr);
@@ -144,6 +189,11 @@ namespace gcs
          * redundancy has to turn time-tabling back on.
          */
         auto with_rules(CumulativeRules rules) -> InferredDisjunctive &;
+
+        /// Corrupt one step of the assembled certificate. For tests only, which
+        /// assert that VeriPB rejects the result; see
+        /// InferredDisjunctiveMutation.
+        auto with_proof_mutation(InferredDisjunctiveMutation mutation) -> InferredDisjunctive &;
 
         [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool override;
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Presolver> override;

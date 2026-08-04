@@ -102,8 +102,14 @@ InferredDisjunctive::InferredDisjunctive(shared_ptr<InferredDisjunctiveStats> st
     _stats(move(stats)), _max_candidates(100), _max_posted(5), _min_clique_size(3),
     // Energy only: a conflicting pair is already kept apart by the resource
     // that witnesses it, so an inferred constraint's time-tabling is redundant.
-    _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true})
+    _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(inferred_disjunctive_mutation::None{})
 {
+}
+
+auto InferredDisjunctive::with_proof_mutation(InferredDisjunctiveMutation mutation) -> InferredDisjunctive &
+{
+    _mutation = mutation;
+    return *this;
 }
 
 auto InferredDisjunctive::with_budgets(size_t max_candidates, size_t max_posted) -> InferredDisjunctive &
@@ -131,6 +137,10 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         if (_stats)
             (*_stats).*field += by;
     };
+
+    auto claim_rhs_zero = std::holds_alternative<inferred_disjunctive_mutation::ClaimRhsZero>(_mutation);
+    auto bridge_wrong_task = std::holds_alternative<inferred_disjunctive_mutation::BridgeWrongTask>(_mutation);
+    auto include_non_conflicting = std::holds_alternative<inferred_disjunctive_mutation::IncludeNonConflicting>(_mutation);
 
     // Collect the tasks, keyed by start variable so that the same task on two
     // resources is one node of the conflict graph.
@@ -297,6 +307,51 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         found.push_back(move(clique));
     }
 
+    // The camouflage mutation: extend one clique with a task that is
+    // *compatible* with its members, inventing the conflict record the
+    // certificate would need. A pair whose demands sum to exactly the capacity
+    // looks like a conflict to an off-by-one and is not one, and the
+    // at-most-one for it cannot be derived --- which is what has to be caught.
+    if (include_non_conflicting && ! found.empty()) {
+        auto & clique = found.front();
+        for (size_t w = 0; w < tasks.size(); ++w) {
+            if (std::find(clique.begin(), clique.end(), w) != clique.end())
+                continue;
+
+            // Every member has to at least share a resource with it, or there
+            // would be no row to build a bogus at-most-one on.
+            vector<pair<size_t, Conflict>> invented;
+            bool usable = true;
+            for (auto member : clique) {
+                if (conflict[member][w]) {
+                    invented.emplace_back(member, *conflict[member][w]);
+                    continue;
+                }
+                optional<Conflict> shared;
+                for (const auto & aw : tasks[w].appearances)
+                    for (const auto & am : tasks[member].appearances)
+                        if (aw.donor == am.donor && ! shared)
+                            shared = Conflict{aw.donor, am.position, aw.position, 1_i};
+                if (! shared) {
+                    usable = false;
+                    break;
+                }
+                invented.emplace_back(member, *shared);
+            }
+            if (! usable)
+                continue;
+
+            for (const auto & [member, c] : invented)
+                if (! conflict[member][w]) {
+                    conflict[member][w] = c;
+                    conflict[w][member] = Conflict{c.witness, c.witness_position_v, c.witness_position_u, c.margin};
+                }
+            clique.push_back(w);
+            std::sort(clique.begin(), clique.end());
+            break;
+        }
+    }
+
     bump(&InferredDisjunctiveStats::cliques_found, found.size());
 
     // Rank by the capacity-bound metric, which at unit coefficients is just the
@@ -359,7 +414,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         DerivedCumulativeSpec spec{.tasks = derived_tasks,
             .capacity = 1_i,
             .row_donors = vector<ConstraintID>{row_donors.begin(), row_donors.end()},
-            .recipe = [members, task_data, conflicts, resource_size, stats](
+            .recipe = [members, task_data, conflicts, resource_size, stats, claim_rhs_zero, bridge_wrong_task](
                           ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
                 auto & tracker = recipe_logger.names_and_ids_tracker();
 
@@ -453,23 +508,29 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         pair_amo.saturate();
                         pair_amo.divide_by(c.margin);
 
-                        auto bridged_u = bridge_to(here[a], c.witness, c.witness_position_u);
+                        // Bridging a task onto the *other* task's flags leaves
+                        // its own term uncancelled, so what is merged is not the
+                        // at-most-one for this pair at all.
+                        // Carrying the at-most-one onto this constraint's own
+                        // flags continues the same `pol` rather than starting
+                        // another: the bridges just go on the stack, each
+                        // cancelling its task's term and leaving the other, and
+                        // one saturation clears up after all of it. A line per
+                        // pair per time point saved, which over a horizon is the
+                        // difference worth having.
+                        auto bridged_u = bridge_to(here[a], c.witness, bridge_wrong_task ? c.witness_position_v : c.witness_position_u);
                         auto bridged_v = bridge_to(here[b], c.witness, c.witness_position_v);
-                        if (bridged_u || bridged_v) {
-                            PolBuilder carry;
-                            carry.add(pair_amo.emit(recipe_logger, ProofLevel::Top));
-                            if (bridged_u)
-                                carry.add(*bridged_u);
-                            if (bridged_v)
-                                carry.add(*bridged_v);
-                            carry.saturate();
-                            at_most_ones[b].push_back(carry.emit(recipe_logger, ProofLevel::Top));
-                        }
-                        else
-                            at_most_ones[b].push_back(pair_amo.emit(recipe_logger, ProofLevel::Top));
+                        if (bridged_u)
+                            pair_amo.add(*bridged_u);
+                        if (bridged_v)
+                            pair_amo.add(*bridged_v);
+                        if (bridged_u || bridged_v)
+                            pair_amo.saturate();
+                        at_most_ones[b].push_back(pair_amo.emit(recipe_logger, ProofLevel::Top));
                     }
 
-                return derive_clique_from_amos(recipe_logger, flags, at_most_ones, ProofLevel::Top);
+                return derive_clique_from_amos(recipe_logger, flags, at_most_ones, ProofLevel::Top,
+                    claim_rhs_zero ? CliqueMutation{clique_mutation::ClaimOneMore{}} : CliqueMutation{clique_mutation::None{}});
             },
             .rules = _rules};
 
@@ -502,5 +563,6 @@ auto InferredDisjunctive::clone() const -> unique_ptr<Presolver>
     result->with_budgets(_max_candidates, _max_posted);
     result->with_minimum_clique_size(_min_clique_size);
     result->with_rules(_rules);
+    result->with_proof_mutation(_mutation);
     return result;
 }
