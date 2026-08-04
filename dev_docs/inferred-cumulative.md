@@ -127,9 +127,37 @@ Writing the row in the complemented form VeriPB normalises it to,
    inputs need.
 3. **A cover, then one `pol` per lifted member**: `μ` copies of the row weakened
    to the support so far plus the new member, `ν` copies of the cut so far, and
-   a division. Non-unit coefficients live here and nowhere else. No single
-   weaken/saturate/divide reaches `2a + b + c + d ≤ 2` from
-   `5a + 2b + 2c + 2d ≤ 5`; one copy of each, over three, does.
+   a division. This is where the non-unit coefficients the implementation
+   currently reaches come from: `2a + b + c + d ≤ 2` from
+   `5a + 2b + 2c + 2d ≤ 5` is one copy of each, over three.
+
+### The operation this vocabulary is missing
+
+`pol` has a fourth operation these three do not use: pushing a **literal axiom**
+(`x ≥ 0`), which cancels against that literal's complement and so shaves *part*
+of a coefficient where `w` can only remove all of it. `window_energy` already
+uses it; this file does not, and it should.
+
+With it, the example above is **one `pol`**, not a chain. Adding one copy of
+`a ≥ 0` to the complemented row `5~a + 2~b + 2~c + 2~d ≥ 6` cancels one unit,
+giving `4~a + 2~b + 2~c + 2~d ≥ 5`; dividing by two lands exactly on
+`2~a + ~b + ~c + ~d ≥ 3`. Verified against veripb with an `e` (equality) check,
+so it lands there exactly and not merely somewhere implying it:
+
+```
+pol 1 aa + 2 d ;
+e 2 ~aa 1 ~bb 1 ~cc 1 ~dd >= 3 : -1 ;
+```
+
+So "non-unit coefficients need a chain" — which an earlier version of this file
+asserted — is **false**. What is true is that the two families are
+*incomparable*: over all four-member instances with demands at most five, 157
+cuts are reachable by a chain and by nothing in the one-`pol`-with-shaving
+family, and 40 go the other way. The chain is not redundant; it is also not the
+only route to a non-unit coefficient.
+
+Adopting shaving is
+[#674](https://github.com/ciaranm/glasgow-constraint-solver/issues/674).
 
 The result is pinned with an `ia`, which is the only thing that says the `pol`s
 arrived where the plan predicted. Every step is sound whatever it is fed, so a

@@ -318,9 +318,11 @@ auto gcs::innards::plan_lifted_cover_cut(const vector<Integer> & demands, const 
         return plan;
 
     // Otherwise a cover, and then the rest of the members lifted into it one at
-    // a time. Non-unit coefficients live here: no single weaken/saturate/divide
-    // gets to `2a + b + c + d <= 2` from `5a + 2b + 2c + 2d <= 5`, and one copy
-    // of the row plus one of the cover cut, over three, does.
+    // a time, which is where the non-unit coefficients reachable today come
+    // from: `2a + b + c + d <= 2` from `5a + 2b + 2c + 2d <= 5` is one copy of
+    // the row plus one of the cover cut, over three. A literal-axiom shave
+    // would reach the same line in one `pol` and is not implemented; see #674
+    // and the header, which says what the two families can and cannot do.
     auto by_demand = everything;
     std::sort(by_demand.begin(), by_demand.end(), [&](size_t a, size_t b) {
         if (demands[a] != demands[b])

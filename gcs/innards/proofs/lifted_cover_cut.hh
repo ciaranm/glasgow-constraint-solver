@@ -135,10 +135,18 @@ namespace gcs::innards
      *     restrictions of a cut to the members present at one time point.
      *  3. A cover, and then one `pol` per lifted member: `row_copies` of the
      *     row weakened to the support so far plus the new member, and
-     *     `cut_copies` of the cut so far, divided. Non-unit coefficients need
-     *     this: no single weaken/saturate/divide reaches
-     *     `2a + b + c + d <= 2` from `5a + 2b + 2c + 2d <= 5`, but one copy of
-     *     each, over three, does.
+     *     `cut_copies` of the cut so far, divided. This is where the non-unit
+     *     coefficients reachable today come from --- `2a + b + c + d <= 2` from
+     *     `5a + 2b + 2c + 2d <= 5` is one copy of each, over three.
+     *
+     * Missing from that vocabulary, and worth knowing about before extending
+     * it: `pol` can also push a **literal axiom**, which cancels against that
+     * literal's complement and so shaves *part* of a coefficient where `w` can
+     * only remove all of it. With one copy of `a >= 0` the example above is a
+     * single `pol` --- `pol 1 aa + 2 d`, checked exact against veripb --- so
+     * "non-unit needs a chain" is not true, only "non-unit needs more than
+     * weaken/saturate/divide". The two families are incomparable, so the chain
+     * stays either way; see issue #674.
      *
      * `demands` and `coefficients` are parallel and describe the same members
      * in the same order. `max_covers` caps the third shape's search, which is
