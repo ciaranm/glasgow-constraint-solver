@@ -90,6 +90,17 @@ namespace
         vector<Integer> demands, lengths;
         Integer capacity;
         int horizon;
+
+        /// Latest start per task, where it is tighter than the horizon allows.
+        /// Empty means `horizon - length` for everyone --- which gives every
+        /// task the window `[0, horizon - 1]` whatever its length, so a fixture
+        /// leaving this empty exercises none of the window-edge restriction.
+        vector<int> latest_start = {};
+
+        [[nodiscard]] auto latest(std::size_t i) const -> int
+        {
+            return latest_start.empty() ? horizon - lengths[i].raw_value : latest_start[i];
+        }
     };
 
     /// The headline fixture. One task of demand five and three of demand two,
@@ -129,7 +140,7 @@ namespace
     {
         vector<IntegerVariableID> starts;
         for (std::size_t i = 0; i < instance.demands.size(); ++i)
-            starts.push_back(p.create_integer_variable(0_i, Integer{instance.horizon} - instance.lengths[i], "s" + to_string(i)));
+            starts.push_back(p.create_integer_variable(0_i, Integer{instance.latest(i)}, "s" + to_string(i)));
 
         p.post(Cumulative{starts, instance.lengths, instance.demands, instance.capacity}.with_rules(setup.rules));
 
@@ -214,7 +225,7 @@ namespace
                     expected.insert(current);
                 return;
             }
-            for (int s = 0; s <= instance.horizon - instance.lengths[at].raw_value; ++s) {
+            for (int s = 0; s <= instance.latest(at); ++s) {
                 current[at] = s;
                 self(self, at + 1);
             }
@@ -340,6 +351,45 @@ auto main(int argc, char * argv[]) -> int
         println(cerr, "cardinality cut: posted over three mutually compatible tasks, bound 5");
     }
 
+    // The window edges, which is the only place the backward planner is asked
+    // anything. Pinning the big task into the first half of the horizon leaves
+    // the second half holding only the three small ones, so those time points
+    // need `b + c + d <= 2` --- the same cut over fewer members, with the same
+    // coefficients, since a Cumulative has one height per task and they cannot
+    // move to suit a time point.
+    //
+    // Without this the presolver's tests say nothing about that path at all:
+    // a task whose start domain is `[0, horizon - length]` has the window
+    // `[0, horizon - 1]` however long it is, so every other fixture here has
+    // all its members present at every time point.
+    {
+        auto stats = make_shared<InferredCumulativeStats>();
+        auto instance = lifted_instance(12);
+        instance.latest_start = {2, 8, 8, 8};
+        auto lifted = solve_instance(instance, Setup{.stats = stats}, proofs ? make_optional("inferred_cumulative_edges") : nullopt);
+
+        if (stats->cuts_posted != 1 || stats->non_unit_cuts_posted != 1)
+            fail("window edges: the lifted cut was not posted, so the restriction is not being exercised");
+        if (stats->restricted_rows_planned == 0)
+            fail("window edges: every time point had all four members, so the backward planner was never asked anything");
+        auto expected = expected_solutions(instance);
+        if (expected.empty())
+            fail("window edges: the fixture has no solutions, so it says nothing about preservation");
+        if (lifted.solutions != expected)
+            fail("window edges: solutions do not match brute force");
+        println(cerr, "window edges: {} restricted rows planned, {} solutions matching brute force", stats->restricted_rows_planned,
+            lifted.solutions.size());
+    }
+
+    // And the fixtures that do *not* restrict say so, rather than leaving it
+    // ambiguous whether the path ran.
+    {
+        auto stats = make_shared<InferredCumulativeStats>();
+        solve_instance(lifted_instance(12), Setup{.stats = stats}, nullopt);
+        if (stats->restricted_rows_planned != 0)
+            fail("uniform windows: something was restricted, so the fixture above is not the one testing that");
+    }
+
     // Time-table neutrality. A cut is *valid*, so every occupancy point the
     // donor's row allows satisfies it too, and no verdict about a single time
     // point can differ. With the energy rules off everywhere the node counts
@@ -390,11 +440,16 @@ auto main(int argc, char * argv[]) -> int
     // coefficient above one, so drawing one deliberately is how the non-unit
     // case gets a turn at all --- with a fixed pool it happens by accident and
     // the corpus is seed-flaky about whether it happened.
+    //
+    // Latest starts are drawn too, and for the same kind of reason: leaving
+    // them at `horizon - length` gives every task the window `[0, horizon - 1]`
+    // however long it is, so a corpus built that way never restricts a row to
+    // fewer members and never asks the backward planner anything.
     {
         std::mt19937 rand(*get_seed());
-        std::uniform_int_distribution<> n_dist(3, 5), cap_dist(4, 12), len_dist(1, 3), tall_dist(0, 2);
+        std::uniform_int_distribution<> n_dist(3, 5), cap_dist(4, 12), len_dist(1, 3), tall_dist(0, 2), pin_dist(0, 2);
 
-        std::size_t posted = 0, non_unit = 0, steps = 0;
+        std::size_t posted = 0, non_unit = 0, steps = 0, restricted = 0;
         for (int k = 0; k < 60; ++k) {
             auto capacity = cap_dist(rand);
             Instance instance{{}, {}, Integer{capacity}, 0};
@@ -411,6 +466,10 @@ auto main(int argc, char * argv[]) -> int
             // Enough horizon that every task can move, and little enough that
             // the enumeration stays small.
             instance.horizon = longest + 2;
+            for (int i = 0; i < n; ++i) {
+                auto latest = static_cast<int>(instance.horizon - instance.lengths[i].raw_value);
+                instance.latest_start.push_back(0 == pin_dist(rand) && latest > 0 ? latest - 1 : latest);
+            }
 
             auto stats = make_shared<InferredCumulativeStats>();
             auto lifted = solve_instance(instance, Setup{.stats = stats}, nullopt);
@@ -422,6 +481,7 @@ auto main(int argc, char * argv[]) -> int
             posted += stats->cuts_posted;
             non_unit += stats->non_unit_cuts_posted;
             steps += stats->lifting_steps;
+            restricted += stats->restricted_rows_planned;
         }
 
         if (posted == 0)
@@ -430,6 +490,11 @@ auto main(int argc, char * argv[]) -> int
             fail("no cut in the random corpus had a coefficient above one, so the lifting checked nothing");
         if (steps == 0)
             fail("no lifting step was taken across the random corpus");
+        // Not asserted here: with proofs off the recipe never runs, so no row
+        // is derived and nothing is restricted whatever the windows do. That
+        // belongs to the verified sweep below.
+        if (restricted != 0)
+            fail("rows were derived with proofs off, which means work is being done that nothing will check");
         println(
             cerr, "solution preservation: {} cuts over 60 random instances ({} non-unit), {} members lifted into a cover", posted, non_unit, steps);
     }
@@ -459,6 +524,54 @@ auto main(int argc, char * argv[]) -> int
     if (! proofs) {
         println(cerr, "veripb is not available, so the proof-level checks are skipped");
         return EXIT_SUCCESS;
+    }
+
+    // The corpus again with proofs on, which is the only way the certificate
+    // gets a turn: with proofs off no row is derived at all, so everything
+    // above says nothing about whether the arithmetic is right. Windows are
+    // deliberately ragged, so that veripb sees restricted rows across many
+    // shapes rather than only the hand-built fixture.
+    {
+        std::mt19937 rand(*get_seed());
+        std::uniform_int_distribution<> n_dist(3, 5), cap_dist(4, 10), len_dist(1, 3), tall_dist(0, 2), pin_dist(0, 1);
+
+        std::size_t posted = 0, restricted = 0;
+        for (int k = 0; k < 25; ++k) {
+            auto capacity = cap_dist(rand);
+            Instance instance{{}, {}, Integer{capacity}, 0};
+            std::uniform_int_distribution<> tall(capacity / 2 + 1, capacity), rest(1, capacity / 2);
+
+            auto n = n_dist(rand);
+            int longest = 0;
+            for (int i = 0; i < n; ++i) {
+                auto length = len_dist(rand);
+                longest = std::max(longest, length);
+                instance.lengths.push_back(Integer{length});
+                instance.demands.push_back(Integer{0 == tall_dist(rand) ? tall(rand) : rest(rand)});
+            }
+            instance.horizon = longest + 3;
+            for (int i = 0; i < n; ++i) {
+                auto latest = static_cast<int>(instance.horizon - instance.lengths[i].raw_value);
+                instance.latest_start.push_back(0 == pin_dist(rand) && latest > 1 ? latest - 1 : latest);
+            }
+
+            auto stats = make_shared<InferredCumulativeStats>();
+            auto lifted = solve_instance(instance, Setup{.stats = stats}, make_optional("inferred_cumulative_sweep"));
+            if (lifted.solutions != expected_solutions(instance)) {
+                println(cerr, "demands={} lengths={} capacity={} horizon={} latest={}", instance.demands, instance.lengths,
+                    instance.capacity.raw_value, instance.horizon, instance.latest_start);
+                fail("the verified sweep lost solutions");
+            }
+            posted += stats->cuts_posted;
+            restricted += stats->restricted_rows_planned;
+        }
+
+        if (posted == 0)
+            fail("the verified sweep posted nothing, so veripb checked no certificate of ours");
+        if (restricted == 0)
+            fail("no row in the verified sweep was restricted to fewer members, so the backward planner was never asked anything");
+        println(
+            cerr, "verified sweep: {} cuts over 25 random instances, {} rows restricted to fewer members, every proof checked", posted, restricted);
     }
 
     // Nothing may have reached the OPB: the whole plan turns on an inferred

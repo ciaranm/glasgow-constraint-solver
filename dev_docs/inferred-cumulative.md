@@ -156,6 +156,21 @@ Over a corpus of random cuts and every subset of each, 40% of the restrictions
 came out trivial, 58% needed one `pol`, 2% needed the full chain, and none was
 unreachable. A time point it cannot answer declines the whole constraint.
 
+**Testing this needs deliberate effort, and it is easy to believe you have.** A
+task whose start domain is `[0, horizon - length]` has the window
+`[0, horizon - 1]` *however long it is*, so a fixture built the obvious way gives
+every task the same window, every time point has every member present, and the
+planner is never asked anything. `InferredCumulativeStats::restricted_rows_planned`
+counts what actually reached it, and the test asserts on it — both that the
+ragged-window fixtures do restrict, and that the uniform ones do not, so it stays
+clear which is testing what.
+
+The other half of that trap: with proofs **off**, no row is derived at all
+(`install_derived_cumulative` only runs a recipe when there is a logger), so a
+corpus that never asks for a proof exercises none of this whatever its windows
+look like. The verified sweep is a separate pass for exactly that reason, and it
+asserts a non-zero restriction count so it cannot quietly stop covering them.
+
 ## Proof size
 
 One `pol` per step of the plan per time point, plus the pin — against the

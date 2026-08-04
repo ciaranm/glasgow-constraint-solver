@@ -94,6 +94,20 @@ namespace gcs
         std::size_t lifting_steps = 0;
 
         /**
+         * \brief Time points whose row had to be derived over *fewer* than the
+         * cut's members, because the rest were outside their windows there.
+         *
+         * The one number that says the backward planner was asked anything at
+         * all: the row for a time point where every member is present is the
+         * plan discovery already grew, and is seeded rather than searched for.
+         * Zero here means a fixture's tasks all share a window, which is what
+         * happens whenever their start domains are `[0, horizon - length]` ---
+         * every such task has the window `[0, horizon - 1]` whatever its length,
+         * so a corpus built that way exercises none of this.
+         */
+        std::size_t restricted_rows_planned = 0;
+
+        /**
          * \brief The largest makespan bound over the posted cuts: Sidorov's
          * `L = ceil(sum_i d_i pi_i / pi_0)`.
          *

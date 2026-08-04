@@ -150,6 +150,7 @@ namespace
         size_t max_covers;
         InferredCumulativeMutation mutation;
         shared_ptr<map<vector<size_t>, optional<LiftedCoverCutPlan>>> plans;
+        shared_ptr<InferredCumulativeStats> stats;
 
         /// One entry per member of the cut, in the derived constraint's own
         /// task order, filled in by the caller after construction.
@@ -365,6 +366,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 .max_covers = planner_budget,
                 .mutation = _mutation,
                 .plans = make_shared<map<vector<size_t>, optional<LiftedCoverCutPlan>>>(),
+                .stats = _stats,
                 .positions = {},
                 .demands = {},
                 .coefficients = {},
@@ -437,11 +439,17 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                             weaken_out.push_back(*flag);
                     }
 
+                    // A miss here is a genuine restriction: the row for a time
+                    // point where every member is present is the plan discovery
+                    // grew, seeded before any of this ran.
                     auto cached = recipe.plans->find(present);
-                    if (cached == recipe.plans->end())
+                    if (cached == recipe.plans->end()) {
+                        if (recipe.stats)
+                            ++recipe.stats->restricted_rows_planned;
                         cached = recipe.plans
                                      ->emplace(present, plan_lifted_cover_cut(demands, coefficients, recipe.capacity, recipe.rhs, recipe.max_covers))
                                      .first;
+                    }
                     if (! cached->second)
                         return std::nullopt;
 
