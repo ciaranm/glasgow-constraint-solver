@@ -98,6 +98,13 @@ resources.
 - **Neutrality**, as node-for-node equality under time-tabling alone.
 - **Budgets**, on a two-disjoint-edges fixture where the drops are real rather
   than an artefact of there being no candidates.
+- **The capacity bound itself**, asserted as six on the differential fixture —
+  which is also *why* it refutes, three length-two tasks needing six units of a
+  five-unit horizon — and as zero where nothing was posted, so a stale bound
+  cannot masquerade as a derived one.
+- **End to end from a file**, as the `rcpsp_dzn_inferred` example test:
+  `examples/rcpsp/sample.dzn` is built so each conflicting pair is witnessed by a
+  different resource, and its proof is VeriPB-checked like every other example.
 - **Mutations**, on a fixture carrying a *camouflage* task — a fourth task on a
   capacity-two resource where every pairwise demand sums to exactly two, so it is
   compatible with everything by exactly one unit. Honestly it stays out of the
@@ -113,11 +120,46 @@ resources.
   which is what a conflict-shaped derivation requires: the route is where it
   forgives everything.
 
+## The Pack / Pack-d cross-check
+
+Sidorov's §5.1 says "no less than twelve of the instances in Pack and Pack-d
+collections can be closed immediately by using one of the lifted cumulative
+constraints, with the capacities varying between one and three". Twenty of those
+lifted constraints have capacity one, which is what this presolver infers, and
+for those his capacity bound `L = sum_i d_i pi_i / pi_0` collapses to the
+clique's total duration — `InferredDisjunctiveStats::largest_capacity_bound`.
+
+The instances are the MiniZinc benchmarks' `rcpsp/data_pack` and
+`rcpsp/data_pack_d`, read with `--dzn`. On all twenty capacity-one targets this
+presolver reports **exactly the bound the paper does**, under his own budgets
+(`N_cover = 100`, `N_out = 5`, the defaults here):
+
+| collection | instances | `L` reproduced |
+|---|---|---|
+| Pack | 4, 5, 8, 9, 11, 13, 16, 23, 28, 29 | 10 / 10 |
+| Pack-d | 8, 9, 12, 15, 16, 17, 18, 20, 24, 43 | 10 / 10 |
+
+Eleven of the twenty have `L` equal to the best known makespan, so the bound
+closes the instance with no search at all.
+
+Two things about the comparison are worth writing down, because both are easy to
+get wrong and neither is visible from the paper:
+
+- His logs record the bound **unrounded** — the rational `sum_i d_i w_i / r` to
+  three decimal places, not its ceiling. Capacity-one rows are integral either
+  way, so a naive comparison looks right and then fails on every non-unit
+  capacity. His own reporting script compares the unrounded value, which is why
+  the paper's counts are conservative: twenty Pack/Pack-d instances close on that
+  comparison and thirty-six close with the ceiling.
+- The standard `rcpsp.mzn` posts redundant pairwise non-overlap constraints for
+  conflicting pairs. His preprocessor does not, and neither does `--dzn`: they
+  are a modelling choice of that file rather than part of the instance, and
+  posting them would hand the presolver conflicts it is supposed to find.
+
 ## Not done
 
-- Sidorov's Pack/Pack_d cross-check (his §5.1, instance lists in the zenodo
-  logs), which would say whether the cliques found here match the ones his
-  capacity-bound metric reports.
+- The general lifted case, capacity above one with non-unit coefficients, which
+  is where the remaining sixteen of his thirty-six closures live (issue #549).
 - Budget-robustness sweeps on larger instances.
 - The proof-size work above.
 

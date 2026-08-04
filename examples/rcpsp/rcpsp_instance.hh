@@ -29,6 +29,8 @@
 // this example is part of the proof benchmark set (issues #632, #633), and the
 // default instance family, horizon and posting order have to stay put.
 
+#include <examples/dzn.hh>
+
 #include <gcs/integer.hh>
 
 #include <algorithm>
@@ -623,6 +625,92 @@ namespace rcpsp
         if (! in)
             throw std::runtime_error{"could not open instance file: " + path};
         return read_sch_stream(in, "file " + path);
+    }
+
+    /// Read a plain RCPSP instance in the MiniZinc data format that goes with
+    /// the standard `rcpsp.mzn` model, as distributed in the MiniZinc
+    /// benchmarks: the Pack, Pack_d, PSPLib (j30/j60/j120), la_x, ksd15_d and
+    /// bl collections.
+    ///
+    /// The file defines `n_res`, the capacities `rc`, `n_tasks`, the durations
+    /// `d`, the demands `rr` as a `[Res, Tasks]` matrix, and the successors
+    /// `suc` as an array of sets of one-based task indices. RCPSP/max data files
+    /// name the same things `rcap`, `dur` and `dcons` instead and carry time
+    /// lags rather than precedences; those are a different format and belong in
+    /// read_sch_stream, not here.
+    ///
+    /// This is plain RCPSP, so the instance comes back with no time lags, no
+    /// machine tasks and no pinned source: `suc` is finish-to-start throughout.
+    ///
+    /// \warning Only the resource and precedence structure is read. The
+    /// redundant pairwise non-overlap constraints that `rcpsp.mzn` itself posts
+    /// are deliberately **not** reproduced --- they are a modelling choice of
+    /// that file, not part of the instance, and posting them changes what a
+    /// presolver looking for cross-resource conflicts has left to find.
+    [[nodiscard]] inline auto read_dzn_file(const std::string & path) -> Instance
+    {
+        auto data = dzn::read(path);
+
+        Instance inst;
+        inst.n_tasks = static_cast<int>(data.integer("n_tasks"));
+        auto n_res = static_cast<std::size_t>(data.integer("n_res"));
+        if (inst.n_tasks < 1)
+            throw std::runtime_error{"'" + path + "' has no tasks"};
+
+        for (auto & c : data.integers("rc"))
+            inst.capacities.push_back(gcs::Integer{c});
+        if (inst.capacities.size() != n_res)
+            throw std::runtime_error{
+                "'" + path + "' gives " + std::to_string(inst.capacities.size()) + " capacities for " + std::to_string(n_res) + " resources"};
+
+        for (auto & p : data.integers("d")) {
+            if (p < 1)
+                throw std::runtime_error{
+                    "'" + path + "' has a task of duration " + std::to_string(p) + "; this model needs every duration to be at least one"};
+            inst.durations.push_back(gcs::Integer{p});
+        }
+        if (static_cast<int>(inst.durations.size()) != inst.n_tasks)
+            throw std::runtime_error{
+                "'" + path + "' gives " + std::to_string(inst.durations.size()) + " durations for " + std::to_string(inst.n_tasks) + " tasks"};
+
+        auto rr = data.matrix("rr");
+        if (rr.size() != n_res)
+            throw std::runtime_error{"'" + path + "' gives demands for " + std::to_string(rr.size()) + " resources, not " + std::to_string(n_res)};
+        inst.demands.assign(n_res, std::vector<gcs::Integer>(static_cast<std::size_t>(inst.n_tasks), gcs::Integer{0}));
+        for (std::size_t r = 0; r != n_res; ++r) {
+            if (static_cast<int>(rr[r].size()) != inst.n_tasks)
+                throw std::runtime_error{"'" + path + "' gives " + std::to_string(rr[r].size()) + " demands for resource " + std::to_string(r) +
+                    ", not " + std::to_string(inst.n_tasks)};
+            for (int i = 0; i != inst.n_tasks; ++i) {
+                if (rr[r][static_cast<std::size_t>(i)] < 0)
+                    throw std::runtime_error{"'" + path + "' has a negative demand"};
+                inst.demands[r][static_cast<std::size_t>(i)] = gcs::Integer{rr[r][static_cast<std::size_t>(i)]};
+            }
+        }
+
+        // `suc` is one-based, and every collection in the MiniZinc benchmarks
+        // lists it in topological order. earliest_starts(), tails() and
+        // longest_paths() all walk the tasks in index order and rely on that, so
+        // a file that broke it would give silently wrong bounds rather than an
+        // error --- hence the check rather than a sort.
+        auto suc = data.sets("suc");
+        if (static_cast<int>(suc.size()) != inst.n_tasks)
+            throw std::runtime_error{
+                "'" + path + "' gives successors for " + std::to_string(suc.size()) + " tasks, not " + std::to_string(inst.n_tasks)};
+        for (int i = 0; i != inst.n_tasks; ++i)
+            for (auto & one_based : suc[static_cast<std::size_t>(i)]) {
+                auto j = static_cast<int>(one_based) - 1;
+                if (j < 0 || j >= inst.n_tasks)
+                    throw std::runtime_error{"'" + path + "' has a precedence to a nonexistent task"};
+                if (j <= i)
+                    throw std::runtime_error{"'" + path + "' lists task " + std::to_string(one_based) + " as a successor of task " +
+                        std::to_string(i + 1) + ", so the tasks are not in topological order; this reader needs them to be"};
+                inst.precedences.emplace_back(i, j);
+            }
+
+        inst.description = "dzn " + path + " n=" + std::to_string(inst.n_tasks) + " resources=" + std::to_string(n_res) +
+            " precedences=" + std::to_string(inst.precedences.size());
+        return inst;
     }
 }
 

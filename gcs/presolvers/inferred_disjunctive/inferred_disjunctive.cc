@@ -354,17 +354,22 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
 
     bump(&InferredDisjunctiveStats::cliques_found, found.size());
 
-    // Rank by the capacity-bound metric, which at unit coefficients is just the
-    // total duration the clique must serialise, and drop any clique contained
-    // in one already accepted.
+    // The capacity bound a clique carries: its members run one after another, so
+    // the schedule cannot finish before their durations summed. This is
+    // Sidorov's L at unit coefficients, it is what the cliques are ranked by,
+    // and it is what InferredDisjunctiveStats reports --- one function, so the
+    // number a test compares against a published bound is the number the
+    // ranking actually used.
+    auto capacity_bound = [&](const vector<size_t> & c) {
+        auto sum = 0_i;
+        for (auto i : c)
+            sum += tasks[i].length;
+        return sum;
+    };
+
+    // Rank by that, and drop any clique contained in one already accepted.
     std::sort(found.begin(), found.end(), [&](const vector<size_t> & a, const vector<size_t> & b) {
-        auto total = [&](const vector<size_t> & c) {
-            auto sum = 0_i;
-            for (auto i : c)
-                sum += tasks[i].length;
-            return sum;
-        };
-        auto ta = total(a), tb = total(b);
+        auto ta = capacity_bound(a), tb = capacity_bound(b);
         if (ta != tb)
             return ta > tb;
         return a < b;
@@ -541,8 +546,12 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
 
         bump(&InferredDisjunctiveStats::cliques_posted);
         bump(&InferredDisjunctiveStats::clique_members_posted, clique.size());
+        auto bound = capacity_bound(clique);
+        if (_stats && bound > _stats->largest_capacity_bound)
+            _stats->largest_capacity_bound = bound;
         if (logger)
-            logger->emit_proof_comment("presolve disjunctive: inferred a clique of " + to_string(clique.size()) + " tasks");
+            logger->emit_proof_comment(
+                "presolve disjunctive: inferred a clique of " + to_string(clique.size()) + " tasks, total duration " + to_string(bound.raw_value));
     }
 
     // How much of this genuinely spanned resources, which is what says a

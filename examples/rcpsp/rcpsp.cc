@@ -79,6 +79,7 @@
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/presolvers/difference_logic.hh>
+#include <gcs/presolvers/inferred_disjunctive/inferred_disjunctive.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
 #include <gcs/solve.hh>
@@ -87,6 +88,7 @@
 #include <examples/rcpsp/rcpsp_instance.hh>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -282,16 +284,31 @@ auto main(int argc, char * argv[]) -> int
             ("max-demand", "Largest demand a task can place on a resource, zero meaning it does not use it", //
                 cxxopts::value<int>()->default_value("3"))                                                   //
             ("density",
-                "Probability of a precedence between two tasks close together in the topological " //
-                "order",                                                                           //
-                cxxopts::value<double>()->default_value("0.3"))                                    //
-            ("machine-fraction", "Probability that a task also needs the unary machine",           //
-                cxxopts::value<double>()->default_value("0.35"))                                   //
-            ("print-instance", "Print the generated instance before solving")                      //
-            ("file",                                                                               //
-                "Read a single-mode RCPSP/max instance from PATH, in ProGen/max .sch format (the " //
-                "UBO, CD and SM sets), instead of generating one",                                 //
-                cxxopts::value<string>())                                                          //
+                "Probability of a precedence between two tasks close together in the topological "       //
+                "order",                                                                                 //
+                cxxopts::value<double>()->default_value("0.3"))                                          //
+            ("machine-fraction", "Probability that a task also needs the unary machine",                 //
+                cxxopts::value<double>()->default_value("0.35"))                                         //
+            ("print-instance", "Print the generated instance before solving")                            //
+            ("infer-disjunctive",                                                                        //
+                "Run the InferredDisjunctive presolver, which looks for cliques of tasks that no "       //
+                "single resource can hold pairwise and posts each as a derived capacity-one Cumulative", //
+                cxxopts::value<bool>()->default_value("false"))                                          //
+            ("infer-disjunctive-candidates",                                                             //
+                "Cap how many candidate pairs the clique search grows (Sidorov's N_cover)",              //
+                cxxopts::value<std::size_t>()->default_value("100"))                                     //
+            ("infer-disjunctive-posted",                                                                 //
+                "Cap how many cliques are posted (Sidorov's N_out)",                                     //
+                cxxopts::value<std::size_t>()->default_value("5"))                                       //
+            ("file",                                                                                     //
+                "Read a single-mode RCPSP/max instance from PATH, in ProGen/max .sch format (the "       //
+                "UBO, CD and SM sets), instead of generating one",                                       //
+                cxxopts::value<string>())                                                                //
+            ("dzn",                                                                                      //
+                "Read a plain RCPSP instance from PATH, in the MiniZinc data format that goes with "     //
+                "rcpsp.mzn (the Pack, Pack_d, PSPLib, la_x, ksd15_d and bl sets), instead of "           //
+                "generating one",                                                                        //
+                cxxopts::value<string>())                                                                //
             ("max-lag-density",
                 "Probability that a pair joined by a precedence path also gets a maximum time " //
                 "lag, which is what turns this into an RCPSP/max instance. Zero, the default, " //
@@ -382,8 +399,12 @@ auto main(int argc, char * argv[]) -> int
 
     rcpsp::Instance instance;
     try {
+        if (options_vars.contains("file") && options_vars.contains("dzn"))
+            throw std::runtime_error{"--file and --dzn both name an instance; give only one"};
         if (options_vars.contains("file"))
             instance = rcpsp::read_file(options_vars["file"].as<string>());
+        else if (options_vars.contains("dzn"))
+            instance = rcpsp::read_dzn_file(options_vars["dzn"].as<string>());
         else {
             rcpsp::GeneratorOptions gen_opts;
             gen_opts.n_tasks = options_vars["size"].as<int>();
@@ -638,6 +659,15 @@ auto main(int argc, char * argv[]) -> int
                 }
     }
 
+    // Added after every Cumulative above, because what it has to work with is
+    // the set of posted resources: it looks for pairs of tasks that some
+    // resource cannot hold together, and grows those into cliques.
+    auto disjunctive_stats = std::make_shared<InferredDisjunctiveStats>();
+    auto infer_disjunctive = options_vars["infer-disjunctive"].as<bool>();
+    if (infer_disjunctive)
+        problem.add_presolver(InferredDisjunctive{disjunctive_stats}.with_budgets(
+            options_vars["infer-disjunctive-candidates"].as<std::size_t>(), options_vars["infer-disjunctive-posted"].as<std::size_t>()));
+
     auto all = options_vars.contains("all");
 
     // A deadline that the horizon already enforces needs nothing more; one
@@ -717,6 +747,15 @@ auto main(int argc, char * argv[]) -> int
     if (*variant == Variant::Presolved) {
         println("presolver_edges_lifted: {}", presolver_stats->edges_lifted);
         println("presolver_nodes: {}", presolver_stats->nodes);
+    }
+    if (infer_disjunctive) {
+        println("inferred_disjunctive_conflicting_pairs: {}", disjunctive_stats->conflicting_pairs);
+        println("inferred_disjunctive_cross_donor_pairs: {}", disjunctive_stats->cross_donor_pairs);
+        println("inferred_disjunctive_cliques_found: {}", disjunctive_stats->cliques_found);
+        println("inferred_disjunctive_cliques_posted: {}", disjunctive_stats->cliques_posted);
+        println("inferred_disjunctive_clique_members_posted: {}", disjunctive_stats->clique_members_posted);
+        // Sidorov's L: a makespan lower bound that needs no search to believe.
+        println("inferred_disjunctive_capacity_bound: {}", disjunctive_stats->largest_capacity_bound.raw_value);
     }
     if (*variant != Variant::Decomposed) {
         println("simplify: {}", simplify_name);

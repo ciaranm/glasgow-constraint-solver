@@ -95,6 +95,23 @@ namespace gcs
         /// three of two.
         std::size_t clique_members_posted = 0;
 
+        /**
+         * \brief The largest capacity bound over the posted cliques: Sidorov's
+         * `L`, and a lower bound on the makespan.
+         *
+         * A capacity-one Cumulative over a set of tasks says they must run one
+         * after another, so the schedule cannot finish before their durations
+         * summed. Sidorov reports this as `L = sum_i d_i pi_i / pi_0`; at the
+         * unit coefficients this presolver deals in, `pi_0` is one and it is
+         * just the clique's total duration --- which is already the metric the
+         * cliques are ranked by, so this is that ranking's winning score.
+         *
+         * It is the number to compare against a published bound, and the only
+         * output of this presolver that is meaningful without running a search.
+         * Zero when nothing was posted.
+         */
+        Integer largest_capacity_bound{0};
+
         /// Flag bridges emitted, one per (task, time) that had to be carried
         /// from a witnessing resource to the one holding the task's flags.
         std::size_t bridges_derived = 0;

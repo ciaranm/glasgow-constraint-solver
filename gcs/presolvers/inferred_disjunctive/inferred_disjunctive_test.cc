@@ -222,6 +222,15 @@ auto main(int argc, char * argv[]) -> int
             fail("posted " + to_string(stats->cliques_posted) + " cliques, not the one the family contains");
         if (stats->clique_members_posted != 3)
             fail("the posted clique had " + to_string(stats->clique_members_posted) + " members, not three");
+        // Sidorov's L, and the whole reason this fixture is unsatisfiable:
+        // three tasks of length two must run one after another, so they need
+        // six units, and the horizon supplies five. Asserting it here rather
+        // than just the clique's size is what makes the reported bound a
+        // checked number rather than an incidental one --- it is the number
+        // the Pack / Pack-d cross-check compares against the paper.
+        if (stats->largest_capacity_bound != 6_i)
+            fail("reported a capacity bound of " + to_string(stats->largest_capacity_bound.raw_value) +
+                ", not the six units three length-two tasks must serialise into");
         if (stats->cross_donor_pairs == 0)
             fail("no pair needed bridging, so the fixture is not exercising the cross-resource case");
         if (proofs && stats->bridges_derived == 0)
@@ -292,6 +301,10 @@ auto main(int argc, char * argv[]) -> int
             fail("a zero candidate budget still posted a clique");
         if (stats->dropped_over_budget == 0)
             fail("a zero candidate budget dropped candidates without counting them");
+        // Nothing posted has to mean no bound claimed: a stale capacity bound
+        // would be a lower bound nobody derived.
+        if (stats->largest_capacity_bound != 0_i)
+            fail("posted no clique but still reported a capacity bound of " + to_string(stats->largest_capacity_bound.raw_value));
     }
 
     // Two resources, each forbidding one pair, with no conflict between the
