@@ -164,10 +164,13 @@ namespace
         size_t donor_size;
         Integer capacity, rhs;
         size_t max_covers;
-        vector<size_t> positions;
-        vector<Integer> demands, coefficients, t_lo, t_hi;
         InferredCumulativeMutation mutation;
         shared_ptr<map<vector<size_t>, optional<LiftedCoverCutPlan>>> plans;
+
+        /// One entry per member of the cut, in the derived constraint's own
+        /// task order, filled in by the caller after construction.
+        vector<size_t> positions;
+        vector<Integer> demands, coefficients, t_lo, t_hi;
     };
 }
 
@@ -397,8 +400,13 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
 
         for (const auto & cut : accepted) {
             vector<DerivedCumulativeTask> derived_tasks;
-            Recipe recipe{donor.constraint_id(), starts.size(), *capacity, cut.rhs, planner_budget, {}, {}, {}, {}, {}, _mutation,
-                make_shared<map<vector<size_t>, optional<LiftedCoverCutPlan>>>()};
+            Recipe recipe{.donor = donor.constraint_id(),
+                .donor_size = starts.size(),
+                .capacity = *capacity,
+                .rhs = cut.rhs,
+                .max_covers = planner_budget,
+                .mutation = _mutation,
+                .plans = make_shared<map<vector<size_t>, optional<LiftedCoverCutPlan>>>()};
             for (size_t k = 0; k < cut.support.size(); ++k) {
                 const auto & task = tasks[cut.support[k]];
                 derived_tasks.push_back(DerivedCumulativeTask{recipe.donor, task.position, task.start, task.length, cut.coefficients[k]});
