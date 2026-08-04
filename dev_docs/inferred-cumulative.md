@@ -28,14 +28,16 @@ per time step, so no schedule containing them can be shorter than their ratio �
 Sidorov's `L`, reported as `InferredCumulativeStats::largest_capacity_bound`, and
 the only output of this presolver that means anything without running a search.
 
-For the example above, with every task of length four, that is `20 / 2 = 10`
-against the donor row's own `44 / 5 = 8.8`. A horizon of nine satisfies the
-resource and not the cut, which is exactly the fixture the test refutes at the
-root.
+For the example above, with the big task of length three and the small ones of
+length five, that is `21 / 2 = 10.5` against the donor row's own `45 / 5 = 9`. A
+horizon of ten satisfies the resource and not the cut, which is exactly the
+fixture the test refutes at the root.
 
-Where the ratio does **not** improve, the cut is dropped and counted. The donor
-already said it better, and posting a second constraint to say it worse is a
-propagator that cannot pay for itself.
+The ratio is also the *only* thing a cut can buy, which is why it is what covers
+and constraints are both ranked by. Note that it is not used as a filter: the
+published procedure discards a constraint only when a model row dominates it
+term by term, and adding a ratio test of our own would mean posting a different
+set of constraints from the paper's.
 
 ## Time-table neutrality, again
 
@@ -51,66 +53,64 @@ node-for-node equality with it turned back on.
 What is new is the *window* argument, where the two constraints supply and
 consume at different rates and the ratio is what decides.
 
-## Finding the cut
+## Finding the cut: Sidorov's Algorithms 1 and 2, unchanged
 
-Per posted `Cumulative`, over its tasks with a constant positive length and
-demand, discarding any task whose demand alone exceeds the capacity (it can never
-run, and would pad every cover it touched):
+The constraints are the published procedure's, not ones chosen for being easy
+to prove. That is the whole point: a reproduction whose inferences differed from
+the paper's could not be compared against its published bounds, however good the
+inferences were.
 
-1. **Covers**, biggest demands first: start at each task in turn, take the
-   next-biggest until the capacity is overshot, then drop anything whose removal
-   leaves it still overshooting. Starting *further down* the list is what
-   produces a cover of small tasks, and that is where the interesting cuts are —
-   a big task lifted into such a cover takes a coefficient above one, which is
-   the whole gain over the capacity-one stage.
-2. **The cover inequality**, which is
-   [`build_am1_from_row`](../gcs/innards/proofs/am1_from_row.hh)'s program:
-   weaken the row down to the cover, saturate, divide by the margin.
-3. **Lifting**, over the remaining tasks in descending demand, run *forward*:
-   sweep the one-`pol` steps the certificate allows, see what each produces, and
-   take whichever result argues about the most energy. A task no step improves
-   on is left out.
+**Algorithm 1, cover enumeration.** Every pair of tasks whose demands overshoot
+the capacity is a cover. For each pair that does *not*, the pair plus the
+longest-duration task big enough to push it over is one too. Those are ranked by
+the capacity bound of their own cover inequality, `Σᵢ dᵢ / (|C| − 1)`, and the
+best `N_cover` kept. Then the "long covers": for each distinct demand `v`, the
+smallest `k` with `k·v > C`, taking the `k` longest and the `k` shortest tasks of
+that demand — these are added *after* the budget, so the budget caps the short
+families only.
 
-Both budgets (`N_cover`, `N_out` in the paper) count what they drop.
+**Algorithm 2, lifting.** Start from `Σ_C xᵢ ≤ |C| − 1`. Take the remaining
+tasks longest duration first, and give each the largest coefficient that keeps
+the inequality valid: `π₀ − v*`, where `v*` is the most the current left-hand
+side can weigh once that task is forced to run. The right-hand side never moves,
+which is what makes the ratio climb. A cover already inside the support of
+something lifted earlier is skipped, since lifting it again would re-derive the
+same constraint (the paper's Example 12). Constraints a model row already
+dominates are discarded, and the best `N_out` by capacity bound are kept.
 
-## Forward, not backward
+Budgets are the paper's: `N_cover`, `N_out`, and `N_calls` against the lifting
+subproblems, which are the bottleneck. The defaults here are what its
+experiments used — 100, 5 and 2·10⁴, with the capacity cap effectively off.
 
-The textbook version of step 3 goes the other way. Sequential lifting (Padberg,
-Zemel) computes the largest coefficient a task can validly take — the right-hand
-side less the most the current support can weigh while still leaving that task
-room to run, a knapsack — and *then* you go looking for a derivation of it.
+### Where this deliberately differs
 
-That is the wrong way round here, because **the largest valid coefficient is not
-the largest reachable one**. A lifted inequality's validity is coNP-hard to
-decide, so nothing may be posted on the strength of the presolver's own
-arithmetic; every cut has to arrive with a derivation. Asking the knapsack first
-means asking for coefficients the arithmetic cannot deliver, discovering that by
-failing, and stepping down until something works.
+**The lifting subproblem is one resource, not all of them.** The paper's
+Equation 4 constrains over every resource at once, which is what makes its
+lifting cross-resource. Ours is a single donor row, because that is what the
+certificate can reach. This is a restriction on *what is inferred*, not only on
+what is proved, and it is
+[#673](https://github.com/ciaranm/glasgow-constraint-solver/issues/673).
 
-`grow_lifted_cover_cut` runs the arithmetic forward instead: every candidate
-weighed is one that derives, so there is nothing to step down from and no
-knapsack to run. It is also *stronger*, because a forward step may move the
-coefficients already in the cut when that improves the ratio, which a lifting
-step by definition cannot. On the test's sixty-instance corpus that is the
-difference between 8 and 16 cuts carrying a non-unit coefficient, and between 76
-and 108 members brought in.
+**Two places where the paper and its implementation disagree**, both resolved in
+favour of the code, which produced the published results:
 
-The backward direction still exists and is still needed — but only where the cut
-is *given* and not up for negotiation, which is the window-edge case below.
+- Algorithm 2 step L3 says to lift `arg min dᵢ`, shortest duration first; the
+  implementation sorts by duration *descending*.
+- Algorithm 1 picks "the longest task among the ones satisfying …", but the code
+  compares a duration against an array *index* when doing so. Ours takes the
+  longest, as the paper says.
 
-## What is not taken on trust
+## The certified fraction, which is the number this exists to produce
 
-Growing a cut forward means predicting what each `pol` will produce, which means
-an in-tree model of VeriPB's normalised form. That model could drift from the
-real thing, so nothing relies on it being right: every cut ends in an `ia` pin
-against the exact inequality claimed, and that check is veripb's. A drifted model
-gives a **rejected proof** at that line, not an unsound row.
+Nothing is posted without a derivation. A constraint the published procedure
+infers and this cannot derive is **dropped and counted** as
+`cuts_uncertifiable` — not weakened into something derivable, because a weakened
+constraint is a different constraint and would quietly break the comparison the
+exercise is for.
 
-Separately, `lifted_cover_cut_test` checks the planner against a brute-force
-oracle that needs no proof checker at all: a few thousand random claims, most of
-them nonsense, with every occupancy point enumerated for any it accepts. About
-700 are planned per seed, 120-odd with a non-unit coefficient, and none has ever
-been invalid.
+Over the test's twenty-five-instance verified sweep, between 95% and 100% of
+attempted constraints certify, depending on seed. The shortfall is real and is
+the honest measure of the gap between the published method and a certified one.
 
 ## The certificate
 

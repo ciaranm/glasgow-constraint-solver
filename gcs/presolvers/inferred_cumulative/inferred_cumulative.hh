@@ -74,12 +74,28 @@ namespace gcs
         /// resource.
         std::size_t tasks = 0;
 
-        /// Covers grown and then lifted, before ranking and budgeting.
+        /// Covers enumerated by Algorithm 1 and then offered to Algorithm 2.
         std::size_t covers_considered = 0;
 
-        /// Lifted cuts that came out valid, certifiable, and worth more than
-        /// the row they came from.
+        /// Lifting subproblems solved. The paper's `N_calls` budget is against
+        /// this, because it is the bottleneck of Algorithm 2.
+        std::size_t lifting_subproblems = 0;
+
+        /// Constraints Algorithm 2 inferred: what the published method would
+        /// post, before anything is asked about proving them.
         std::size_t cuts_found = 0;
+
+        /**
+         * \brief Constraints the published method infers and we cannot derive.
+         *
+         * The headline number of this whole exercise. Everything else here
+         * measures the reproduction; this measures the gap between it and a
+         * *certified* reproduction. A constraint counted here was dropped, not
+         * weakened and not posted: a lifted inequality's validity is coNP-hard
+         * to decide, so one we cannot derive is one we have no business
+         * asserting.
+         */
+        std::size_t cuts_uncertifiable = 0;
 
         /// Cuts actually posted as derived Cumulatives: the number that matters.
         std::size_t cuts_posted = 0;
@@ -87,11 +103,6 @@ namespace gcs
         /// Of those, the ones with a coefficient above one --- the inference
         /// this stage adds over the capacity-one stage before it.
         std::size_t non_unit_cuts_posted = 0;
-
-        /// Members brought into a cover by a lifting step, over all the covers
-        /// considered. Zero here with cuts posted means every one of them is a
-        /// plain cover inequality.
-        std::size_t lifting_steps = 0;
 
         /**
          * \brief Time points whose row had to be derived over *fewer* than the
@@ -126,8 +137,11 @@ namespace gcs
         ///@{
         std::size_t declined_optional = 0;
         std::size_t declined_variable_arguments = 0;
-        std::size_t dropped_no_gain = 0;
-        std::size_t dropped_subset = 0;
+        /// Covers already inside the support of something lifted earlier, which
+        /// would re-derive it and waste the subproblems (paper, Example 12).
+        std::size_t dropped_visited = 0;
+        /// Constraints a donor's own row already implies term by term.
+        std::size_t dropped_dominated = 0;
         std::size_t dropped_over_budget = 0;
         std::size_t declined_by_install = 0;
         ///@}
@@ -162,13 +176,13 @@ namespace gcs
      * Restricted, as its stage in the plan is, to constant lengths, heights and
      * capacities, and to donors with no optional tasks.
      *
-     * Nothing reaches the OPB. Each cut is grown *forward* by
-     * \ref grow_lifted_cover_cut --- the arithmetic is run and the cut is
-     * whatever comes out, so there is never a coefficient chosen first and
-     * justified afterwards. Only the restrictions at the edges of a window are
-     * a question for \ref plan_lifted_cover_cut, since there the heights are
-     * already fixed and only the route may vary; a time point it cannot answer
-     * declines the whole constraint rather than asserting anything.
+     * Nothing reaches the OPB. Every row of every posted constraint is
+     * *derived*, by \ref plan_lifted_cover_cut and
+     * \ref derive_lifted_cover_cut. Since the constraints come from the
+     * published procedure rather than from what happens to be easy, some of
+     * them have no derivation this can find; those are dropped and counted as
+     * \ref InferredCumulativeStats::cuts_uncertifiable, which is the number
+     * separating this from a certified reproduction.
      *
      * \ingroup Presolvers
      */
@@ -178,7 +192,8 @@ namespace gcs
         std::shared_ptr<InferredCumulativeStats> _stats;
         std::size_t _max_covers;
         std::size_t _max_posted;
-        std::size_t _max_support;
+        std::size_t _maximum_capacity;
+        std::size_t _max_lifting_calls;
         CumulativeRules _rules;
         InferredCumulativeMutation _mutation;
 
@@ -196,15 +211,26 @@ namespace gcs
         auto with_budgets(std::size_t max_covers, std::size_t max_posted) -> InferredCumulative &;
 
         /**
-         * \brief The most tasks a single cut may span; twelve by default.
+         * \brief The largest capacity an inferred constraint may have; a
+         * thousand by default, which is what the paper's experiments used.
          *
-         * Both ends of this are searches over subsets --- lifting order here,
-         * covers again when the certificate is replayed at each time point ---
-         * and a derived constraint over a resource's whole task list would make
-         * both of them exponential for no gain, since the cuts worth having are
-         * small.
+         * The paper's `-b`. A cover of `k` tasks yields a right-hand side of
+         * `k - 1`, so bounding the capacity bounds the cover size: one allows
+         * binary covers only, two adds the pair-plus-a-third family, and three
+         * or more turns on the equal-demand "long cover" rule as well. Lifting
+         * is what grows a cover into a wide constraint, so this does not bound
+         * the support.
          */
-        auto with_maximum_support(std::size_t size) -> InferredCumulative &;
+        auto with_maximum_capacity(std::size_t capacity) -> InferredCumulative &;
+
+        /**
+         * \brief How many lifting subproblems may be solved in total.
+         *
+         * The paper's `N_calls`, whose Appendix C setting is 2*10^4. Solving
+         * these is the bottleneck of Algorithm 2, so the budget is against
+         * them rather than against wall-clock.
+         */
+        auto with_lifting_call_budget(std::size_t calls) -> InferredCumulative &;
 
         /**
          * \brief Select which propagation rules the inferred constraints run.

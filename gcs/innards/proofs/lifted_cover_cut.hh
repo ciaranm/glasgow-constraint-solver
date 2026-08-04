@@ -52,59 +52,14 @@ namespace gcs::innards
     using LiftedCoverCutPlan = std::vector<LiftedCoverCutStep>;
 
     /**
-     * \brief A cut, and how it was arrived at.
-     *
-     * `coefficients` is parallel to the demands it was grown from, and every
-     * entry is at least one: a member whose coefficient fell to zero would be a
-     * task the cut does not speak about, which is a different cut over fewer
-     * members rather than this one.
-     *
-     * \ingroup Innards
-     */
-    struct LiftedCoverCut
-    {
-        std::vector<Integer> coefficients;
-        Integer rhs;
-        LiftedCoverCutPlan plan;
-    };
-
-    /**
-     * \brief Grow a cut *forward* from a cover: run the arithmetic and report
-     * what comes out, rather than picking a cut and looking for a derivation.
-     *
-     * The cover inequality first, exactly as \ref build_am1_from_row recovers
-     * it. Then each remaining member is brought in by whichever single `pol`
-     * yields the best cut, where "best" is `sum_i w_i pi_i / pi_0` --- the
-     * caller's weights against the right-hand side, which for a Cumulative is
-     * durations against a capacity and so is the energy the cut can argue
-     * about. A member no step improves on is left out.
-     *
-     * This is the forward reading of sequential lifting, and it is the one to
-     * use for *choosing* a cut. Computing the largest valid coefficient first
-     * (a knapsack, by Padberg and Zemel) and then hunting for a derivation of it
-     * is the same thing done backwards, and it can only ever ask for
-     * coefficients this cannot deliver: the maximum a cut may carry is not the
-     * maximum a `pol` can reach, and the difference has to be discovered by
-     * failing. Going forward, every candidate considered is one that derives,
-     * so there is nothing to step down from.
-     *
-     * Returns nullopt when `cover` is not a cover, or has fewer than two
-     * members, or its inequality leaves nothing to say.
-     *
-     * \ingroup Innards
-     */
-    [[nodiscard]] auto grow_lifted_cover_cut(const std::vector<Integer> & demands, const std::vector<Integer> & weights, Integer capacity,
-        const std::vector<std::size_t> & cover, std::size_t max_support) -> std::optional<LiftedCoverCut>;
-
-    /**
      * \brief Find a cutting-planes derivation of `sum pi_i a_i <= rhs` from a
      * capacity row `sum c_i a_i <= C`, or say there is none to be had.
      *
-     * The backward direction, for when the cut is *given* and not up for
-     * negotiation --- which is the position a derived Cumulative is in at the
-     * edges of its window, where its heights are already fixed and only the
-     * route to them may vary. Use \ref grow_lifted_cover_cut to choose a cut in
-     * the first place.
+     * The cut is *given* and not up for negotiation. That is the position
+     * every caller is in: InferredCumulative reproduces a published inference
+     * procedure, so the constraint to be posted is decided before any of this
+     * runs, and a constraint no derivation reaches is dropped rather than
+     * traded for one that happens to be easier.
      *
      * A *cover* is a set of tasks whose demands overshoot the capacity, and its
      * cover inequality says they cannot all run. *Lifting* then brings the

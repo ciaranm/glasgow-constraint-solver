@@ -29,6 +29,7 @@ using std::max;
 using std::min;
 using std::move;
 using std::optional;
+using std::pair;
 using std::set;
 using std::shared_ptr;
 using std::size_t;
@@ -87,57 +88,195 @@ namespace
         return tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
     }
 
-    /// Covers of a donor's tasks, biggest demands first: start at each task in
-    /// turn and take the next-biggest until the capacity is overshot, then drop
-    /// anything whose removal leaves it still overshooting.
+    /// Algorithm 1 of Sidorov (CP 2026), for one resource. Two families.
     ///
-    /// Starting further down the list is what produces a cover of *small* tasks,
-    /// and that is where the interesting cuts come from: a big task lifted into
-    /// such a cover takes a coefficient above one, which is the whole gain over
-    /// the capacity-one stage before this one.
-    [[nodiscard]] auto candidate_covers(const vector<Task> & tasks, Integer capacity, size_t max_covers) -> vector<vector<size_t>>
+    /// **Short covers**: every pair whose demands overshoot, and --- for each
+    /// pair that does *not* --- that pair plus the longest-duration task big
+    /// enough to push it over. Covers are then ranked by the capacity bound of
+    /// their own cover inequality, `sum_i d_i / (|C| - 1)`, and the best
+    /// `max_covers` kept. Lifting is what grows them; they do not need to be
+    /// large to start with.
+    ///
+    /// **Long covers**: for each distinct demand `v`, the smallest `k` with
+    /// `k*v > C`, taking the `k` longest and the `k` shortest tasks of that
+    /// demand. Only for `cover_cardinality` of four or more, since two and
+    /// three are covered above.
+    ///
+    /// The reference implementation compares a duration against an *index* when
+    /// picking the longest task of a given demand (`durations[ix] >
+    /// inv_A_longest[a]`), which cannot be what was meant; the paper says
+    /// longest and that is what happens here.
+    [[nodiscard]] auto collect_covers(const vector<Task> & tasks, Integer capacity, size_t max_covers, size_t cover_cardinality)
+        -> vector<vector<size_t>>
     {
-        vector<size_t> by_demand(tasks.size());
-        std::iota(by_demand.begin(), by_demand.end(), size_t{0});
-        std::sort(by_demand.begin(), by_demand.end(), [&](size_t a, size_t b) {
-            if (tasks[a].demand != tasks[b].demand)
-                return tasks[a].demand > tasks[b].demand;
-            return a < b;
-        });
+        auto n = tasks.size();
+        map<Integer, vector<size_t>> by_demand;
+        for (size_t i = 0; i < n; ++i)
+            by_demand[tasks[i].demand].push_back(i);
 
-        auto total = [&](const vector<size_t> & set) {
-            return std::accumulate(set.begin(), set.end(), 0_i, [&](Integer a, size_t i) { return a + tasks[i].demand; });
-        };
+        map<Integer, size_t> longest_of_demand;
+        for (const auto & [demand, group] : by_demand) {
+            auto longest = group.front();
+            for (auto i : group)
+                if (tasks[i].length > tasks[longest].length)
+                    longest = i;
+            longest_of_demand.emplace(demand, longest);
+        }
 
         set<vector<size_t>> seen;
         vector<vector<size_t>> covers;
-        for (size_t start = 0; start < by_demand.size() && covers.size() < max_covers; ++start) {
-            vector<size_t> cover;
-            for (size_t k = start; k < by_demand.size(); ++k) {
-                cover.push_back(by_demand[k]);
-                if (total(cover) > capacity)
-                    break;
-            }
-            if (total(cover) <= capacity)
-                continue;
+        auto remember = [&](vector<size_t> cover) {
+            std::sort(cover.begin(), cover.end());
+            if (seen.insert(cover).second)
+                covers.push_back(move(cover));
+        };
 
-            // Minimalise from the big end: a cover that still overshoots
-            // without its largest member says more about the small ones.
-            for (size_t k = 0; k < cover.size();) {
-                auto without = cover;
-                without.erase(without.begin() + static_cast<long>(k));
-                if (without.size() >= 2 && total(without) > capacity)
-                    cover = move(without);
-                else
-                    ++k;
+        for (size_t x = 0; x < n; ++x)
+            for (size_t y = x + 1; y < n; ++y)
+                if (tasks[x].demand + tasks[y].demand > capacity)
+                    remember({x, y});
+
+        if (cover_cardinality >= 3)
+            for (size_t x = 0; x < n; ++x)
+                for (size_t y = x + 1; y < n; ++y) {
+                    auto room = capacity - tasks[x].demand - tasks[y].demand;
+                    if (room < 0_i)
+                        continue;
+                    for (const auto & [demand, z] : longest_of_demand)
+                        if (demand > room && z != x && z != y)
+                            remember({x, y, z});
+                }
+
+        // The capacity bound of the cover inequality itself, which is what the
+        // covers are ranked by: unit coefficients over a right-hand side of
+        // |C| - 1.
+        auto bound_of = [&](const vector<size_t> & cover) {
+            auto total = 0_i;
+            for (auto i : cover)
+                total += tasks[i].length;
+            return pair{total, Integer{static_cast<long long>(cover.size()) - 1}};
+        };
+        std::sort(covers.begin(), covers.end(), [&](const vector<size_t> & a, const vector<size_t> & b) {
+            auto [ta, ra] = bound_of(a);
+            auto [tb, rb] = bound_of(b);
+            if (ta * rb != tb * ra)
+                return ta * rb > tb * ra;
+            return a < b;
+        });
+        if (covers.size() > max_covers)
+            covers.resize(max_covers);
+
+        // The long covers are added *after* the budget has been applied, so the
+        // budget caps the short families only --- and the duplicate check has
+        // to be rebuilt against what survived, or a long cover identical to a
+        // short one the budget just dropped would be lost with it.
+        seen.clear();
+        seen.insert(covers.begin(), covers.end());
+
+        if (cover_cardinality >= 4)
+            for (const auto & [demand, group] : by_demand) {
+                if (demand <= 0_i)
+                    continue;
+                auto size = static_cast<size_t>(((capacity + 1_i + demand - 1_i) / demand).raw_value);
+                if (size <= 2 || size > cover_cardinality || size > group.size())
+                    continue;
+                auto by_length = group;
+                std::sort(by_length.begin(), by_length.end(), [&](size_t a, size_t b) {
+                    if (tasks[a].length != tasks[b].length)
+                        return tasks[a].length > tasks[b].length;
+                    return a < b;
+                });
+                remember(vector<size_t>(by_length.begin(), by_length.begin() + static_cast<long>(size)));
+                remember(vector<size_t>(by_length.end() - static_cast<long>(size), by_length.end()));
             }
 
-            auto sorted = cover;
-            std::sort(sorted.begin(), sorted.end());
-            if (seen.insert(sorted).second)
-                covers.push_back(move(sorted));
-        }
+        // Covers of more than three tasks go first, as they do in the reference
+        // implementation: they are the ones the short-cover families cannot
+        // produce, and the visited-cover skip would otherwise let a ternary
+        // cover's lifted support swallow them.
+        std::stable_sort(
+            covers.begin(), covers.end(), [](const vector<size_t> & a, const vector<size_t> & b) { return (a.size() > 3) && (b.size() <= 3); });
+
         return covers;
+    }
+
+    /// The lifting subproblem `v*` of Sidorov Equation 4: the most the current
+    /// inequality's left-hand side can weigh over the variables already in it,
+    /// once `member` is forced to run and has taken its demand off the
+    /// capacity. A 0/1 knapsack, by the usual table over residual capacity.
+    ///
+    /// The paper solves this over *every* resource at once, which is what makes
+    /// its lifting cross-resource; this is one row, matching what the
+    /// certificate can reach. See issue #673.
+    [[nodiscard]] auto lifting_subproblem(
+        const vector<Task> & tasks, Integer capacity, const vector<Integer> & coefficients, const vector<size_t> & support, size_t member) -> Integer
+    {
+        auto residual = capacity - tasks[member].demand;
+        if (residual < 0_i)
+            return 0_i;
+
+        vector<Integer> best(static_cast<size_t>(residual.raw_value) + 1, 0_i);
+        for (auto i : support) {
+            if (coefficients[i] <= 0_i)
+                continue;
+            for (auto room = residual; room >= tasks[i].demand; --room) {
+                auto with = best[static_cast<size_t>((room - tasks[i].demand).raw_value)] + coefficients[i];
+                auto & here = best[static_cast<size_t>(room.raw_value)];
+                here = max(here, with);
+            }
+        }
+        return best[static_cast<size_t>(residual.raw_value)];
+    }
+
+    /// Algorithm 2's inner loop: start from the cover inequality
+    /// `sum_C x_i <= |C| - 1` and lift every other task into it, longest
+    /// duration first, each with the largest coefficient the subproblem allows.
+    /// The right-hand side never moves.
+    ///
+    /// Longest first follows the reference implementation, which sorts by
+    /// duration descending; the paper's Algorithm 2 says `arg min d_i`. The
+    /// published results came from the code.
+    struct Lifted
+    {
+        vector<Integer> coefficients;
+        Integer rhs;
+        size_t subproblems;
+    };
+
+    [[nodiscard]] auto lift_cover(const vector<Task> & tasks, Integer capacity, const vector<size_t> & cover, size_t budget) -> Lifted
+    {
+        vector<Integer> coefficients(tasks.size(), 0_i);
+        for (auto i : cover)
+            coefficients[i] = 1_i;
+        auto rhs = Integer{static_cast<long long>(cover.size()) - 1};
+
+        vector<size_t> remaining;
+        for (size_t i = 0; i < tasks.size(); ++i)
+            if (std::find(cover.begin(), cover.end(), i) == cover.end())
+                remaining.push_back(i);
+        std::sort(remaining.begin(), remaining.end(), [&](size_t a, size_t b) {
+            if (tasks[a].length != tasks[b].length)
+                return tasks[a].length > tasks[b].length;
+            return a < b;
+        });
+
+        auto support = cover;
+        size_t used = 0;
+        for (auto member : remaining) {
+            if (used >= budget)
+                break;
+            ++used;
+            auto lifted = rhs - lifting_subproblem(tasks, capacity, coefficients, support, member);
+            // A negative coefficient would mean the subproblem beat the
+            // right-hand side, which cannot happen for a valid inequality; the
+            // reference implementation warns about it rather than trusting it.
+            if (lifted <= 0_i)
+                continue;
+            coefficients[member] = lifted;
+            support.push_back(member);
+        }
+
+        return Lifted{move(coefficients), rhs, used};
     }
 
     /// Everything the per-time recipe needs, copied out of the presolver so the
@@ -160,7 +299,7 @@ namespace
 }
 
 InferredCumulative::InferredCumulative(shared_ptr<InferredCumulativeStats> stats) :
-    _stats(move(stats)), _max_covers(100), _max_posted(5), _max_support(12),
+    _stats(move(stats)), _max_covers(100), _max_posted(5), _maximum_capacity(1000), _max_lifting_calls(20000),
     // Energy only: a valid cut holds at every 0/1 point the donor's row allows,
     // so no time-tabling verdict about a single time point can differ.
     _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true}), _mutation(inferred_cumulative_mutation::None{})
@@ -174,9 +313,15 @@ auto InferredCumulative::with_budgets(size_t max_covers, size_t max_posted) -> I
     return *this;
 }
 
-auto InferredCumulative::with_maximum_support(size_t size) -> InferredCumulative &
+auto InferredCumulative::with_maximum_capacity(size_t capacity) -> InferredCumulative &
 {
-    _max_support = size;
+    _maximum_capacity = capacity;
+    return *this;
+}
+
+auto InferredCumulative::with_lifting_call_budget(size_t calls) -> InferredCumulative &
+{
+    _max_lifting_calls = calls;
     return *this;
 }
 
@@ -199,10 +344,11 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             (*_stats).*field += by;
     };
 
-    // The planner's exhaustive cover search is over subsets of a cut's support,
-    // so the budget it gets has to cover them all or it would refuse time points
-    // it could have derived.
-    auto planner_budget = _max_support < 20 ? (size_t{1} << _max_support) : size_t{1} << 20;
+    // The planner enumerates covers exhaustively while this allows, and falls
+    // back to a greedy family beyond it. Lifting makes supports wide, so the
+    // fallback is the normal case on a large resource; every drop it causes is
+    // a refusal rather than a wrong answer.
+    const size_t planner_budget = 4096;
 
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
         bump(&InferredCumulativeStats::donors_seen);
@@ -267,93 +413,105 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             return a < b;
         });
 
+        // Algorithm 2: lift each cover, skipping any whose support a previous
+        // lifting already established, and keeping the best `_max_posted` by
+        // capacity bound. Nothing here asks whether a constraint can be
+        // *proved* --- that comes after, so the gap between what the published
+        // method infers and what we can certify is a number rather than a
+        // design decision.
         vector<Cut> cuts;
-        for (const auto & cover : candidate_covers(tasks, *capacity, _max_covers)) {
+        vector<pair<set<size_t>, size_t>> visited;
+        auto calls_left = _max_lifting_calls;
+
+        for (const auto & cover : collect_covers(tasks, *capacity, _max_covers, _maximum_capacity + 1)) {
             bump(&InferredCumulativeStats::covers_considered);
 
-            // Forward: run the arithmetic and see what cut comes out, ranking
-            // each step by the energy the result can argue about. Nothing here
-            // decides what the coefficients ought to be and then goes looking
-            // for a derivation --- every candidate weighed is one that derives,
-            // so there is no gap between the largest valid coefficient and the
-            // largest reachable one to discover by failing.
-            auto grown = grow_lifted_cover_cut(demands, durations, *capacity, cover, _max_support);
-            if (! grown)
+            // Example 12: a cover already inside the support of something
+            // lifted earlier will re-derive it, so the subproblems are wasted.
+            bool already = false;
+            for (const auto & [support, cardinality] : visited)
+                if (cardinality <= cover.size() && std::includes(support.begin(), support.end(), cover.begin(), cover.end())) {
+                    already = true;
+                    break;
+                }
+            if (already) {
+                bump(&InferredCumulativeStats::dropped_visited);
+                continue;
+            }
+
+            if (calls_left == 0)
+                break;
+            auto lifted = lift_cover(tasks, *capacity, cover, calls_left);
+            calls_left -= lifted.subproblems;
+            bump(&InferredCumulativeStats::lifting_subproblems, lifted.subproblems);
+            if (lifted.rhs < 1_i)
                 continue;
 
             vector<size_t> support;
             for (size_t i = 0; i < tasks.size(); ++i)
-                if (grown->coefficients[i] > 0_i)
+                if (lifted.coefficients[i] > 0_i)
                     support.push_back(i);
             if (support.size() < 2)
                 continue;
-            if (support.size() > cover.size())
-                bump(&InferredCumulativeStats::lifting_steps, support.size() - cover.size());
 
-            // Is it worth anything? The tasks in the cut need `sum d_i pi_i`
-            // units of a resource supplying `rhs`, and the donor's own row over
-            // the same tasks needs `sum d_i c_i` of one supplying the capacity.
-            // A ratio that does not improve means the row already said it better.
-            Integer energy = 0_i, donor_energy = 0_i;
-            for (auto i : support) {
-                energy += durations[i] * grown->coefficients[i];
-                donor_energy += durations[i] * demands[i];
-            }
-            if (energy * *capacity <= donor_energy * grown->rhs) {
-                bump(&InferredCumulativeStats::dropped_no_gain);
+            set<size_t> unit;
+            for (size_t i = 0; i < tasks.size(); ++i)
+                if (lifted.coefficients[i] == 1_i)
+                    unit.insert(i);
+            visited.emplace_back(move(unit), cover.size());
+
+            // Dominance: a constraint the donor's own row already implies term
+            // by term says nothing new.
+            bool dominated = true;
+            for (size_t i = 0; i < tasks.size() && dominated; ++i)
+                if (lifted.coefficients[i] > demands[i])
+                    dominated = false;
+            if (dominated && *capacity > lifted.rhs)
+                dominated = false;
+            if (dominated) {
+                bump(&InferredCumulativeStats::dropped_dominated);
                 continue;
             }
 
-            // The plan came back indexed by the donor's task positions, and
-            // the recipe will replay it against the cut's own members. Remap it
-            // once here rather than teaching the emitter about two index
-            // spaces.
+            Integer energy = 0_i;
+            for (auto i : support)
+                energy += durations[i] * lifted.coefficients[i];
+
             vector<Integer> cut_coefficients;
-            map<size_t, size_t> member_of;
-            for (auto i : support) {
-                member_of.emplace(i, cut_coefficients.size());
-                cut_coefficients.push_back(grown->coefficients[i]);
-            }
-            auto remapped = move(grown->plan);
-            for (auto & step : remapped) {
-                vector<size_t> members;
-                for (auto i : step.support)
-                    if (auto found = member_of.find(i); found != member_of.end())
-                        members.push_back(found->second);
-                step.support = move(members);
-            }
-            cuts.push_back(Cut{support, move(cut_coefficients), grown->rhs, remapped, energy});
+            for (auto i : support)
+                cut_coefficients.push_back(lifted.coefficients[i]);
+            cuts.push_back(Cut{support, move(cut_coefficients), lifted.rhs, {}, energy});
             bump(&InferredCumulativeStats::cuts_found);
         }
 
-        // Rank by the makespan bound each carries, and drop anything whose
-        // tasks an accepted cut already covers.
+        // Step L5: the best `_max_posted` by capacity bound.
         std::sort(cuts.begin(), cuts.end(), [&](const Cut & a, const Cut & b) {
-            if (a.bound() != b.bound())
-                return a.bound() > b.bound();
+            if (a.energy * b.rhs != b.energy * a.rhs)
+                return a.energy * b.rhs > b.energy * a.rhs;
             return a.support < b.support;
         });
+        if (cuts.size() > _max_posted) {
+            bump(&InferredCumulativeStats::dropped_over_budget, cuts.size() - _max_posted);
+            cuts.erase(cuts.begin() + static_cast<long>(_max_posted), cuts.end());
+        }
 
+        // Only now, the part the paper does not have to do: find a derivation
+        // for each. A constraint we cannot derive is dropped and counted --- it
+        // is one the published method would have posted and we cannot justify.
         vector<Cut> accepted;
         for (auto & cut : cuts) {
-            if (accepted.size() >= _max_posted) {
-                bump(&InferredCumulativeStats::dropped_over_budget);
+            vector<Integer> support_demands;
+            for (auto i : cut.support)
+                support_demands.push_back(demands[i]);
+            auto plan = plan_lifted_cover_cut(support_demands, cut.coefficients, *capacity, cut.rhs, planner_budget);
+            if (! plan) {
+                bump(&InferredCumulativeStats::cuts_uncertifiable);
                 if (logger)
-                    logger->emit_proof_comment("presolve lifted cover: a cut beyond the output budget of " + to_string(_max_posted) + " was dropped");
+                    logger->emit_proof_comment("presolve lifted cover: dropping an inferred constraint over " + to_string(cut.support.size()) +
+                        " tasks, no derivation found");
                 continue;
             }
-
-            bool subsumed = false;
-            for (const auto & already : accepted)
-                if (std::includes(already.support.begin(), already.support.end(), cut.support.begin(), cut.support.end())) {
-                    subsumed = true;
-                    break;
-                }
-            if (subsumed) {
-                bump(&InferredCumulativeStats::dropped_subset);
-                continue;
-            }
-
+            cut.plan = move(*plan);
             accepted.push_back(move(cut));
         }
 
@@ -496,7 +654,8 @@ auto InferredCumulative::clone() const -> unique_ptr<Presolver>
 {
     auto result = make_unique<InferredCumulative>(_stats);
     result->with_budgets(_max_covers, _max_posted);
-    result->with_maximum_support(_max_support);
+    result->with_maximum_capacity(_maximum_capacity);
+    result->with_lifting_call_budget(_max_lifting_calls);
     result->with_rules(_rules);
     result->with_proof_mutation(_mutation);
     return result;

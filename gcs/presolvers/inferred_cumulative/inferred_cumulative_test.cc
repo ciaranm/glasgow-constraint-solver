@@ -1,13 +1,18 @@
-/* Inferring Cumulative constraints with non-unit heights, by lifting cover
- * inequalities over a posted Cumulative's capacity rows.
+/* Inferring Cumulative constraints by lifting cover inequalities, following
+ * Sidorov (CP 2026) Algorithms 1 and 2.
  *
- * The fixture that carries this file is one resource of capacity five holding
- * one task of demand five and three of demand two. The cover is the three small
- * ones --- six units into five --- so at most two of them run at once, and the
- * big one lifts into that cover with a coefficient of *two*, since it leaves no
- * room for any of them at all. The result, `2a + b + c + d <= 2`, holds at every
- * occupancy point the row allows and at no rational relaxation of it, and its
- * energy per unit of capacity is ten quarters against the row's eleven fifths.
+ * The point of the exercise is a *certified reproduction*, so the constraints
+ * are whatever the published procedure infers and not whatever happens to be
+ * easy to prove. That makes the number this file cares most about the fraction
+ * of inferred constraints a derivation was found for, which the verified sweep
+ * reports and which the accounting assertion beside it keeps honest.
+ *
+ * The headline fixture is one task filling a resource of capacity five against
+ * three of demand two, and its durations are load-bearing in a way that says
+ * something about the published procedure: the cover of the three small tasks
+ * has to outrank the ternary covers containing the big one, or Algorithm 2's
+ * visited-cover rule skips it and no coefficient above one is ever produced.
+ * See lifted_instance() for the two inequalities the durations must satisfy.
  *
  * That fixture is also the differential pair the issue asks for. Its conflict
  * graph is a star --- the big task fights each small one, no two small ones
@@ -103,19 +108,31 @@ namespace
         }
     };
 
-    /// The headline fixture. One task of demand five and three of demand two,
-    /// all of length four, on a resource of capacity five.
+    /// The headline fixture: one task filling a resource of capacity five, and
+    /// three of demand two which fit in pairs but not in threes.
+    ///
+    /// The durations are what make this the fixture it is. Algorithm 1 ranks
+    /// covers by the capacity bound of their own cover inequality, and
+    /// Algorithm 2 then refuses to lift a cover whose members a previous
+    /// lifting already brought together. So the equal-demand cover of the three
+    /// small tasks has to outrank the ternary covers containing the big one, or
+    /// it is skipped before it is ever lifted and no coefficient above one is
+    /// produced at all. That needs `d_big < d_small`. Meanwhile the cut only
+    /// bites on a horizon the donor's own energy check clears, which needs
+    /// `2 d_big > d_small`. Three against five satisfies both; four equal
+    /// durations satisfies neither, which is why the obvious version of this
+    /// fixture finds nothing. That is a property of the published procedure,
+    /// not of this implementation.
     auto lifted_instance(int horizon) -> Instance
     {
-        return Instance{{5_i, 2_i, 2_i, 2_i}, {4_i, 4_i, 4_i, 4_i}, 5_i, horizon};
+        return Instance{{5_i, 2_i, 2_i, 2_i}, {3_i, 5_i, 5_i, 5_i}, 5_i, horizon};
     }
 
-    /// The same, plus a task the cut does not reach --- short and slight enough
-    /// to leave the donor's own energy check with nothing to say --- so that
-    /// there is always something in the weakening sweep to skip.
+    /// The same, plus a task the cut does not reach, so that the weakening
+    /// sweep always has something to skip.
     auto lifted_instance_with_spare(int horizon) -> Instance
     {
-        return Instance{{5_i, 2_i, 2_i, 2_i, 1_i}, {4_i, 4_i, 4_i, 4_i, 1_i}, 5_i, horizon};
+        return Instance{{5_i, 2_i, 2_i, 2_i, 1_i}, {3_i, 5_i, 5_i, 5_i, 1_i}, 5_i, horizon};
     }
 
     enum struct Stage
@@ -256,36 +273,33 @@ auto main(int argc, char * argv[]) -> int
     establish_and_announce_seed(argc, argv);
     auto proofs = can_run_veripb();
 
-    // Four tasks of length four into nine time points. The resource supplies
-    // forty-five units and the tasks need forty-four, so its own energy check
-    // is content; the lifted cut needs twenty units of a supply of eighteen and
-    // is not.
+    // The tasks need forty-five units of a resource that supplies five a step,
+    // so the donor's own energy check is content with a horizon of ten; the
+    // lifted cut needs twenty-one units of a supply of two, and is not.
     {
         auto stats = make_shared<InferredCumulativeStats>();
 
-        auto donor_only = solve_instance(lifted_instance(9), Setup{.stage = Stage::none}, nullopt);
+        auto donor_only = solve_instance(lifted_instance(10), Setup{.stage = Stage::none}, nullopt);
         if (donor_only.refuted_at_root)
             fail("the donor alone refuted at the root, so the fixture proves nothing");
 
-        auto lifted = solve_instance(lifted_instance(9), Setup{.stats = stats}, proofs ? make_optional("inferred_cumulative_unsat") : nullopt);
+        auto lifted = solve_instance(lifted_instance(10), Setup{.stats = stats}, proofs ? make_optional("inferred_cumulative_unsat") : nullopt);
 
-        if (stats->cuts_posted != 1)
-            fail("posted " + to_string(stats->cuts_posted) + " cuts, not the one the fixture contains");
         if (stats->non_unit_cuts_posted != 1)
-            fail("the posted cut had every coefficient at one, so it is not the lifted cut the fixture is about");
-        // Sidorov's L: the cut's tasks need 2*4 + 1*4*3 = 20 units of a
-        // resource supplying 2 per step, so no schedule can finish before 10.
-        if (stats->largest_capacity_bound != 10_i)
-            fail("reported a makespan bound of " + to_string(stats->largest_capacity_bound.raw_value) + ", not the ten the cut carries");
-        if (stats->lifting_steps == 0)
-            fail("no lifting step was taken, so the cut is a plain cover inequality");
+            fail("posted " + to_string(stats->non_unit_cuts_posted) + " cuts with a coefficient above one, not the one the fixture is about");
+        // Sidorov's L for that cut: 2*3 + 1*5*3 = 21 units of a resource
+        // supplying 2 per step, so no schedule can finish before 11.
+        if (stats->largest_capacity_bound != 11_i)
+            fail("reported a makespan bound of " + to_string(stats->largest_capacity_bound.raw_value) + ", not the eleven the cut carries");
+        if (stats->lifting_subproblems == 0)
+            fail("no lifting subproblem was solved, so nothing was lifted");
         if (! lifted.refuted_at_root)
             fail("the lifted cut did not refute at the root");
         if (! lifted.solutions.empty())
             fail("the instance is unsatisfiable but solutions were reported");
 
-        println(cerr, "lifted cut: refuted at the root against {} nodes without it, bound {}", donor_only.recursions,
-            stats->largest_capacity_bound.raw_value);
+        println(cerr, "lifted cut: refuted at the root against {} nodes without it, {} constraints inferred, bound {}", donor_only.recursions,
+            stats->cuts_found, stats->largest_capacity_bound.raw_value);
     }
 
     // The differential pair. The conflict graph here is a star, so there is no
@@ -293,7 +307,7 @@ auto main(int argc, char * argv[]) -> int
     // instance is closed by a non-unit coefficient or not at all.
     {
         auto stats = make_shared<InferredDisjunctiveStats>();
-        auto disjunctive_only = solve_instance(lifted_instance(9), Setup{.stage = Stage::disjunctive, .disjunctive_stats = stats}, nullopt);
+        auto disjunctive_only = solve_instance(lifted_instance(10), Setup{.stage = Stage::disjunctive, .disjunctive_stats = stats}, nullopt);
 
         if (stats->conflicting_pairs != 3)
             fail("differential pair: found " + to_string(stats->conflicting_pairs) + " conflicting pairs, not the three of the star");
@@ -310,11 +324,11 @@ auto main(int argc, char * argv[]) -> int
     // where it is not decisive.
     {
         auto stats = make_shared<InferredCumulativeStats>();
-        auto lifted = solve_instance(lifted_instance(12), Setup{.stats = stats}, proofs ? make_optional("inferred_cumulative_sat") : nullopt);
+        auto lifted = solve_instance(lifted_instance(13), Setup{.stats = stats}, proofs ? make_optional("inferred_cumulative_sat") : nullopt);
 
-        if (stats->cuts_posted != 1)
-            fail("sharp twin: the cut was not posted, so the comparison is vacuous");
-        auto expected = expected_solutions(lifted_instance(12));
+        if (stats->non_unit_cuts_posted != 1)
+            fail("sharp twin: the lifted cut was not posted, so the comparison is vacuous");
+        auto expected = expected_solutions(lifted_instance(13));
         if (expected.empty())
             fail("sharp twin: the fixture has no solutions, so it is not the twin it claims to be");
         if (lifted.solutions != expected)
@@ -324,7 +338,7 @@ auto main(int argc, char * argv[]) -> int
 
     // Solution preservation at several shapes, including the spare-task one,
     // where the cut spans some of the resource rather than all of it.
-    for (const auto & instance : {lifted_instance(13), lifted_instance_with_spare(11), Instance{{4_i, 4_i, 4_i}, {3_i, 3_i, 3_i}, 10_i, 7}}) {
+    for (const auto & instance : {lifted_instance(14), lifted_instance_with_spare(13), Instance{{4_i, 4_i, 4_i}, {3_i, 3_i, 3_i}, 10_i, 7}}) {
         auto stats = make_shared<InferredCumulativeStats>();
         auto lifted = solve_instance(instance, Setup{.stats = stats}, nullopt);
         auto expected = expected_solutions(instance);
@@ -364,11 +378,16 @@ auto main(int argc, char * argv[]) -> int
     // all its members present at every time point.
     {
         auto stats = make_shared<InferredCumulativeStats>();
-        auto instance = lifted_instance(12);
-        instance.latest_start = {2, 8, 8, 8};
+        auto instance = lifted_instance(13);
+        // Every task a different window, so that *whatever* cut Algorithm 2
+        // picks, its members do not all appear at the same time points. Pinning
+        // only one task makes this fixture depend on that task being in the
+        // posted cut, which is not something the test should be asserting by
+        // accident --- it went quiet on one platform for exactly that reason.
+        instance.latest_start = {2, 4, 6, 8};
         auto lifted = solve_instance(instance, Setup{.stats = stats}, proofs ? make_optional("inferred_cumulative_edges") : nullopt);
 
-        if (stats->cuts_posted != 1 || stats->non_unit_cuts_posted != 1)
+        if (stats->non_unit_cuts_posted != 1)
             fail("window edges: the lifted cut was not posted, so the restriction is not being exercised");
         if (stats->restricted_rows_planned == 0)
             fail("window edges: every time point had all four members, so the backward planner was never asked anything");
@@ -385,7 +404,7 @@ auto main(int argc, char * argv[]) -> int
     // ambiguous whether the path ran.
     {
         auto stats = make_shared<InferredCumulativeStats>();
-        solve_instance(lifted_instance(12), Setup{.stats = stats}, nullopt);
+        solve_instance(lifted_instance(13), Setup{.stats = stats}, nullopt);
         if (stats->restricted_rows_planned != 0)
             fail("uniform windows: something was restricted, so the fixture above is not the one testing that");
     }
@@ -398,10 +417,10 @@ auto main(int argc, char * argv[]) -> int
         const CumulativeRules tt_only{.time_table = true, .overload = false, .profile_overload = false};
         auto stats = make_shared<InferredCumulativeStats>();
 
-        auto without = solve_instance(lifted_instance(12), Setup{.stage = Stage::none, .rules = tt_only}, nullopt);
-        auto with = solve_instance(lifted_instance(12), Setup{.rules = tt_only, .inferred_rules = make_optional(tt_only), .stats = stats}, nullopt);
+        auto without = solve_instance(lifted_instance(13), Setup{.stage = Stage::none, .rules = tt_only}, nullopt);
+        auto with = solve_instance(lifted_instance(13), Setup{.rules = tt_only, .inferred_rules = make_optional(tt_only), .stats = stats}, nullopt);
 
-        if (stats->cuts_posted != 1)
+        if (stats->cuts_posted == 0)
             fail("neutrality: nothing was posted, so the comparison is vacuous");
         if (without.solutions != with.solutions)
             fail("neutrality: the solution set changed");
@@ -413,24 +432,30 @@ auto main(int argc, char * argv[]) -> int
 
     // Budgets, and that they are counted rather than silent.
     {
+        auto unbounded = make_shared<InferredCumulativeStats>();
+        solve_instance(lifted_instance(13), Setup{.stats = unbounded}, nullopt);
         auto stats = make_shared<InferredCumulativeStats>();
-        solve_instance(lifted_instance(12), Setup{.max_covers = 0, .stats = stats}, nullopt);
-        if (stats->cuts_posted != 0)
-            fail("a zero cover budget still posted a cut");
-        if (stats->covers_considered != 0)
-            fail("a zero cover budget grew covers anyway");
-        // Nothing posted has to mean no bound claimed: a stale bound would be a
-        // lower bound nobody derived.
-        if (stats->largest_capacity_bound != 0_i)
-            fail("posted no cut but still reported a bound of " + to_string(stats->largest_capacity_bound.raw_value));
+        solve_instance(lifted_instance(13), Setup{.max_covers = 0, .stats = stats}, nullopt);
+        // The cover budget caps the *short* families only: the equal-demand
+        // long covers are added after it has been applied, exactly as in the
+        // reference implementation, so this does not go to zero.
+        if (stats->covers_considered >= unbounded->covers_considered)
+            fail("a zero cover budget considered " + to_string(stats->covers_considered) + " covers against " +
+                to_string(unbounded->covers_considered) + " unbounded, so the budget did not bite");
+        if (stats->covers_considered == 0)
+            fail("a zero cover budget dropped the long covers too, which are added after it");
     }
     {
         auto stats = make_shared<InferredCumulativeStats>();
-        solve_instance(lifted_instance_with_spare(12), Setup{.max_posted = 0, .stats = stats}, nullopt);
+        solve_instance(lifted_instance_with_spare(13), Setup{.max_posted = 0, .stats = stats}, nullopt);
         if (stats->cuts_posted != 0)
             fail("a zero output budget still posted a cut");
         if (stats->dropped_over_budget == 0)
             fail("a zero output budget dropped cuts without counting them");
+        // Nothing posted has to mean no bound claimed: a stale bound would be a
+        // lower bound nobody derived.
+        if (stats->largest_capacity_bound != 0_i)
+            fail("posted no cut but still reported a bound of " + to_string(stats->largest_capacity_bound.raw_value));
     }
     println(cerr, "budgets: both caps bite, and both are counted");
 
@@ -480,7 +505,7 @@ auto main(int argc, char * argv[]) -> int
             }
             posted += stats->cuts_posted;
             non_unit += stats->non_unit_cuts_posted;
-            steps += stats->lifting_steps;
+            steps += stats->lifting_subproblems;
             restricted += stats->restricted_rows_planned;
         }
 
@@ -489,14 +514,13 @@ auto main(int argc, char * argv[]) -> int
         if (non_unit == 0)
             fail("no cut in the random corpus had a coefficient above one, so the lifting checked nothing");
         if (steps == 0)
-            fail("no lifting step was taken across the random corpus");
+            fail("no lifting subproblem was solved across the random corpus");
         // Not asserted here: with proofs off the recipe never runs, so no row
         // is derived and nothing is restricted whatever the windows do. That
         // belongs to the verified sweep below.
         if (restricted != 0)
             fail("rows were derived with proofs off, which means work is being done that nothing will check");
-        println(
-            cerr, "solution preservation: {} cuts over 60 random instances ({} non-unit), {} members lifted into a cover", posted, non_unit, steps);
+        println(cerr, "solution preservation: {} cuts over 60 random instances ({} non-unit), {} lifting subproblems", posted, non_unit, steps);
     }
 
     // An optional-task donor is declined loudly rather than mis-derived.
@@ -535,7 +559,7 @@ auto main(int argc, char * argv[]) -> int
         std::mt19937 rand(*get_seed());
         std::uniform_int_distribution<> n_dist(3, 5), cap_dist(4, 10), len_dist(1, 3), tall_dist(0, 2), pin_dist(0, 1);
 
-        std::size_t posted = 0, restricted = 0;
+        std::size_t posted = 0, restricted = 0, inferred = 0, uncertifiable = 0, over_budget = 0, declined = 0;
         for (int k = 0; k < 25; ++k) {
             auto capacity = cap_dist(rand);
             Instance instance{{}, {}, Integer{capacity}, 0};
@@ -564,14 +588,27 @@ auto main(int argc, char * argv[]) -> int
             }
             posted += stats->cuts_posted;
             restricted += stats->restricted_rows_planned;
+            inferred += stats->cuts_found;
+            uncertifiable += stats->cuts_uncertifiable;
+            over_budget += stats->dropped_over_budget;
+            declined += stats->declined_by_install;
         }
 
         if (posted == 0)
             fail("the verified sweep posted nothing, so veripb checked no certificate of ours");
         if (restricted == 0)
             fail("no row in the verified sweep was restricted to fewer members, so the backward planner was never asked anything");
-        println(
-            cerr, "verified sweep: {} cuts over 25 random instances, {} rows restricted to fewer members, every proof checked", posted, restricted);
+        // Every constraint Algorithm 2 inferred was posted, dropped by the
+        // output budget before anyone asked about proving it, dropped for want
+        // of a derivation, or declined by the install. If those do not add up,
+        // something else is happening to constraints and the certified fraction
+        // means nothing.
+        if (posted + uncertifiable + over_budget + declined != inferred)
+            fail("the sweep inferred " + to_string(inferred) + " constraints but accounts for " + to_string(posted) + " posted, " +
+                to_string(uncertifiable) + " uncertifiable, " + to_string(over_budget) + " over budget and " + to_string(declined) + " declined");
+        auto attempted = inferred - over_budget;
+        println(cerr, "verified sweep: {} of {} attempted constraints certified, {} with no derivation found, {} rows restricted", posted, attempted,
+            uncertifiable, restricted);
     }
 
     // Nothing may have reached the OPB: the whole plan turns on an inferred
@@ -580,7 +617,7 @@ auto main(int argc, char * argv[]) -> int
         const string with = "inferred_cumulative_opb_with", without = "inferred_cumulative_opb_without";
         for (const auto & [name, stage] : {std::pair{with, Stage::cumulative}, std::pair{without, Stage::none}}) {
             Problem p;
-            post(p, lifted_instance(12), Setup{.stage = stage});
+            post(p, lifted_instance(13), Setup{.stage = stage});
             solve_with(
                 p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }}, make_optional<ProofOptions>(ProofFileNames{name}));
         }
@@ -597,10 +634,10 @@ auto main(int argc, char * argv[]) -> int
     // something to skip.
     {
         auto honest = make_shared<InferredCumulativeStats>();
-        solve_instance(lifted_instance_with_spare(11), Setup{.stats = honest}, make_optional("inferred_cumulative_honest"));
-        if (honest->cuts_posted != 1 || honest->non_unit_cuts_posted != 1)
-            fail("mutations: the honest run posted " + to_string(honest->cuts_posted) + " cuts (" + to_string(honest->non_unit_cuts_posted) +
-                " non-unit), so the mutants are not corrupting the cut this file is about");
+        solve_instance(lifted_instance_with_spare(13), Setup{.stats = honest}, make_optional("inferred_cumulative_honest"));
+        if (honest->non_unit_cuts_posted != 1)
+            fail("mutations: the honest run posted " + to_string(honest->non_unit_cuts_posted) +
+                " cuts with a coefficient above one, so the mutants are not corrupting the cut this file is about");
         println(cerr, "the honest certificate over the spare-task fixture verifies");
 
         for (const auto & [what, mutation] :
@@ -609,7 +646,7 @@ auto main(int argc, char * argv[]) -> int
                 std::pair<string, InferredCumulativeMutation>{"a skipped weakening", inferred_cumulative_mutation::SkipAWeakening{}}}) {
             const string name = "inferred_cumulative_mutation";
             Problem p;
-            post(p, lifted_instance_with_spare(11), Setup{.mutation = mutation});
+            post(p, lifted_instance_with_spare(13), Setup{.mutation = mutation});
             solve_with(
                 p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
 
@@ -623,7 +660,7 @@ auto main(int argc, char * argv[]) -> int
     // And the markers say the derivation actually ran.
     {
         const string name = "inferred_cumulative_markers";
-        solve_instance(lifted_instance(12), Setup{}, make_optional(name), false);
+        solve_instance(lifted_instance(13), Setup{}, make_optional(name), false);
         if (! run_veripb(name + ".opb", name + ".pbp"))
             fail("markers: veripb rejected the proof");
         auto proof = read_file(name + ".pbp");
