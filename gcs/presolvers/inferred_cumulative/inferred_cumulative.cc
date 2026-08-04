@@ -55,6 +55,11 @@ namespace
         vector<size_t> support;
         vector<Integer> coefficients;
         Integer rhs;
+        /// The derivation discovery arrived at, over the whole support. Kept
+        /// rather than re-found: the row every time point in the middle of the
+        /// window needs is this one, and only the restrictions at the edges are
+        /// a question the planner has to answer.
+        LiftedCoverCutPlan plan;
         /// `sum_i d_i pi_i`, the energy the cut's tasks need out of a resource
         /// supplying `rhs` per time step. Kept rather than recomputed, so the
         /// number ranking the cuts is the number reported.
@@ -80,27 +85,6 @@ namespace
         -> optional<ProofFlag>
     {
         return tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
-    }
-
-    /// The largest coefficient `member` could be lifted into a cut with
-    /// (Padberg, Zemel): the right-hand side, less the most the support can
-    /// weigh while still leaving the member room to run. A knapsack, by the
-    /// usual table over residual capacity.
-    [[nodiscard]] auto max_lifting_coefficient(const vector<Integer> & demands, const vector<Integer> & coefficients, Integer capacity, Integer rhs,
-        const vector<size_t> & support, size_t member) -> Integer
-    {
-        auto residual = capacity - demands[member];
-        if (residual < 0_i)
-            return rhs + 1_i;
-
-        vector<Integer> best(static_cast<size_t>(residual.raw_value) + 1, 0_i);
-        for (auto i : support)
-            for (auto room = residual; room >= demands[i]; --room) {
-                auto with = best[static_cast<size_t>((room - demands[i]).raw_value)] + coefficients[i];
-                auto & here = best[static_cast<size_t>(room.raw_value)];
-                here = max(here, with);
-            }
-        return rhs - best[static_cast<size_t>(residual.raw_value)];
     }
 
     /// Covers of a donor's tasks, biggest demands first: start at each task in
@@ -286,65 +270,24 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         for (const auto & cover : candidate_covers(tasks, *capacity, _max_covers)) {
             bump(&InferredCumulativeStats::covers_considered);
 
-            // The cover inequality, as build_am1_from_row would recover it:
-            // weaken to the cover, saturate, and divide by the margin, which is
-            // the divisor bringing every capped coefficient down to one.
-            auto overshoot = std::accumulate(cover.begin(), cover.end(), -*capacity, [&](Integer a, size_t i) { return a + demands[i]; });
-            auto largest = std::accumulate(cover.begin(), cover.end(), 0_i, [&](Integer a, size_t i) { return max(a, demands[i]); });
-            auto divisor = min(largest, overshoot);
-            auto rhs = Integer{static_cast<long long>(cover.size())} - (overshoot + divisor - 1_i) / divisor;
-            if (rhs < 1_i)
+            // Forward: run the arithmetic and see what cut comes out, ranking
+            // each step by the energy the result can argue about. Nothing here
+            // decides what the coefficients ought to be and then goes looking
+            // for a derivation --- every candidate weighed is one that derives,
+            // so there is no gap between the largest valid coefficient and the
+            // largest reachable one to discover by failing.
+            auto grown = grow_lifted_cover_cut(demands, durations, *capacity, cover, _max_support);
+            if (! grown)
                 continue;
 
-            vector<Integer> coefficients(tasks.size(), 0_i);
-            for (auto i : cover)
-                coefficients[i] = 1_i;
-
-            auto plan_over = [&](const vector<size_t> & support) {
-                vector<Integer> support_demands, support_coefficients;
-                for (auto i : support) {
-                    support_demands.push_back(demands[i]);
-                    support_coefficients.push_back(coefficients[i]);
-                }
-                return plan_lifted_cover_cut(support_demands, support_coefficients, *capacity, rhs, planner_budget);
-            };
-
-            if (! plan_over(cover)) {
-                bump(&InferredCumulativeStats::dropped_uncertifiable);
+            vector<size_t> support;
+            for (size_t i = 0; i < tasks.size(); ++i)
+                if (grown->coefficients[i] > 0_i)
+                    support.push_back(i);
+            if (support.size() < 2)
                 continue;
-            }
-
-            // Sequential lifting, biggest demands first. The largest valid
-            // coefficient is one thing and the largest *certifiable* one is
-            // another, so step down until the derivation is there --- a weaker
-            // constraint, never a wrong one.
-            auto support = cover;
-            for (auto member : by_demand) {
-                if (support.size() >= _max_support)
-                    break;
-                if (std::find(support.begin(), support.end(), member) != support.end())
-                    continue;
-
-                auto grown = support;
-                grown.push_back(member);
-                auto wanted = max_lifting_coefficient(demands, coefficients, *capacity, rhs, support, member);
-                bool lifted = false;
-                for (auto coefficient = wanted; coefficient > 0_i; --coefficient) {
-                    coefficients[member] = coefficient;
-                    if (plan_over(grown)) {
-                        bump(&InferredCumulativeStats::lifting_steps);
-                        if (coefficient < wanted)
-                            bump(&InferredCumulativeStats::lifting_steps_weakened);
-                        support = grown;
-                        lifted = true;
-                        break;
-                    }
-                }
-                if (! lifted)
-                    coefficients[member] = 0_i;
-            }
-
-            std::sort(support.begin(), support.end());
+            if (support.size() > cover.size())
+                bump(&InferredCumulativeStats::lifting_steps, support.size() - cover.size());
 
             // Is it worth anything? The tasks in the cut need `sum d_i pi_i`
             // units of a resource supplying `rhs`, and the donor's own row over
@@ -352,18 +295,33 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             // A ratio that does not improve means the row already said it better.
             Integer energy = 0_i, donor_energy = 0_i;
             for (auto i : support) {
-                energy += durations[i] * coefficients[i];
+                energy += durations[i] * grown->coefficients[i];
                 donor_energy += durations[i] * demands[i];
             }
-            if (energy * *capacity <= donor_energy * rhs) {
+            if (energy * *capacity <= donor_energy * grown->rhs) {
                 bump(&InferredCumulativeStats::dropped_no_gain);
                 continue;
             }
 
+            // The plan came back indexed by the donor's task positions, and
+            // the recipe will replay it against the cut's own members. Remap it
+            // once here rather than teaching the emitter about two index
+            // spaces.
             vector<Integer> cut_coefficients;
-            for (auto i : support)
-                cut_coefficients.push_back(coefficients[i]);
-            cuts.push_back(Cut{support, move(cut_coefficients), rhs, energy});
+            map<size_t, size_t> member_of;
+            for (auto i : support) {
+                member_of.emplace(i, cut_coefficients.size());
+                cut_coefficients.push_back(grown->coefficients[i]);
+            }
+            auto remapped = move(grown->plan);
+            for (auto & step : remapped) {
+                vector<size_t> members;
+                for (auto i : step.support)
+                    if (auto found = member_of.find(i); found != member_of.end())
+                        members.push_back(found->second);
+                step.support = move(members);
+            }
+            cuts.push_back(Cut{support, move(cut_coefficients), grown->rhs, remapped, energy});
             bump(&InferredCumulativeStats::cuts_found);
         }
 
@@ -406,7 +364,12 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 .rhs = cut.rhs,
                 .max_covers = planner_budget,
                 .mutation = _mutation,
-                .plans = make_shared<map<vector<size_t>, optional<LiftedCoverCutPlan>>>()};
+                .plans = make_shared<map<vector<size_t>, optional<LiftedCoverCutPlan>>>(),
+                .positions = {},
+                .demands = {},
+                .coefficients = {},
+                .t_lo = {},
+                .t_hi = {}};
             for (size_t k = 0; k < cut.support.size(); ++k) {
                 const auto & task = tasks[cut.support[k]];
                 derived_tasks.push_back(DerivedCumulativeTask{recipe.donor, task.position, task.start, task.length, cut.coefficients[k]});
@@ -416,6 +379,15 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 recipe.t_lo.push_back(task.t_lo);
                 recipe.t_hi.push_back(task.t_hi);
             }
+
+            // Every time point in the middle of the window has all of the cut's
+            // members present, and the derivation for that is the one discovery
+            // already ran forward. Seed it, so the planner is only ever asked
+            // about the restrictions at the edges --- where the coefficients are
+            // fixed and the route genuinely has to be searched for.
+            vector<size_t> everyone(recipe.positions.size());
+            std::iota(everyone.begin(), everyone.end(), size_t{0});
+            recipe.plans->emplace(move(everyone), cut.plan);
 
             DerivedCumulativeSpec spec{.tasks = derived_tasks,
                 .capacity = cut.rhs,

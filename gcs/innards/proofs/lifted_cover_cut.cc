@@ -190,6 +190,103 @@ namespace
     }
 }
 
+auto gcs::innards::grow_lifted_cover_cut(const vector<Integer> & demands, const vector<Integer> & weights, Integer capacity,
+    const vector<size_t> & cover, size_t max_support) -> optional<LiftedCoverCut>
+{
+    if (demands.size() != weights.size())
+        throw ProofError{"a lifted cover cut needs one weight per demand"};
+    if (cover.size() < 2)
+        return nullopt;
+
+    // The cover inequality, as build_am1_from_row recovers it: weaken to the
+    // cover, saturate, and divide by the margin, which is the smallest divisor
+    // bringing every capped coefficient down to one.
+    auto base = row_weakened_to(demands, capacity, cover);
+    if (base.degree <= 0_i)
+        return nullopt;
+    auto largest = 0_i;
+    for (auto i : cover)
+        largest = max(largest, demands[i]);
+    auto divisor = std::min(largest, base.degree);
+
+    LiftedCoverCut result{{}, 0_i, {LiftedCoverCutStep{cover, 1_i, 0_i, true, divisor}}};
+    auto current = base.saturated().divided_by(divisor);
+    auto right_hand_side = [](const Normalised & cut) { return std::accumulate(cut.coefficients.begin(), cut.coefficients.end(), 0_i) - cut.degree; };
+    if (right_hand_side(current) < 1_i)
+        return nullopt;
+
+    // What the caller is ranking by: the weight the cut's members carry per
+    // unit of its right-hand side. Compared by cross-multiplication, since
+    // whether one ratio beats another is the whole question and rounding it
+    // first would decide some of them wrongly.
+    auto weight_of = [&](const Normalised & cut) {
+        auto total = 0_i;
+        for (size_t i = 0; i < weights.size(); ++i)
+            total += weights[i] * cut.coefficients[i];
+        return total;
+    };
+
+    auto support = cover;
+    vector<size_t> by_demand(demands.size());
+    std::iota(by_demand.begin(), by_demand.end(), size_t{0});
+    std::sort(by_demand.begin(), by_demand.end(), [&](size_t a, size_t b) {
+        if (demands[a] != demands[b])
+            return demands[a] > demands[b];
+        return a < b;
+    });
+
+    for (auto member : by_demand) {
+        if (support.size() >= max_support)
+            break;
+        if (std::find(support.begin(), support.end(), member) != support.end())
+            continue;
+
+        auto grown = support;
+        grown.push_back(member);
+        auto row = row_weakened_to(demands, capacity, grown);
+
+        optional<Normalised> best;
+        optional<LiftedCoverCutStep> best_step;
+        for (auto row_copies = 1_i; row_copies <= max_copies; ++row_copies)
+            for (auto cut_copies = 0_i; cut_copies <= max_copies; ++cut_copies) {
+                auto combined = row.scaled_by(row_copies).plus(current, cut_copies);
+                if (combined.degree <= 0_i)
+                    continue;
+                for (auto saturate : {false, true}) {
+                    auto rounded = saturate ? combined.saturated() : combined;
+                    auto top = max(rounded.largest_coefficient(), rounded.degree);
+                    for (auto d = 1_i; d <= top; ++d) {
+                        auto got = rounded.divided_by(d);
+                        // A member whose coefficient came out at zero is not in
+                        // this cut, and a right-hand side below one is a
+                        // constraint saying nothing may run --- neither is a
+                        // Cumulative the caller can post.
+                        if (std::any_of(grown.begin(), grown.end(), [&](size_t i) { return got.coefficients[i] < 1_i; }))
+                            continue;
+                        auto rhs = right_hand_side(got);
+                        if (rhs < 1_i)
+                            continue;
+                        if (! best || weight_of(got) * right_hand_side(*best) > weight_of(*best) * rhs) {
+                            best = got;
+                            best_step = LiftedCoverCutStep{grown, row_copies, cut_copies, saturate, d};
+                        }
+                    }
+                }
+            }
+
+        // Only worth taking if it argues about more than the cut already does.
+        if (best && weight_of(*best) * right_hand_side(current) > weight_of(current) * right_hand_side(*best)) {
+            current = *best;
+            support = best_step->support;
+            result.plan.push_back(move(*best_step));
+        }
+    }
+
+    result.coefficients = current.coefficients;
+    result.rhs = right_hand_side(current);
+    return result;
+}
+
 auto gcs::innards::plan_lifted_cover_cut(const vector<Integer> & demands, const vector<Integer> & coefficients, Integer capacity, Integer rhs,
     size_t max_covers) -> optional<LiftedCoverCutPlan>
 {

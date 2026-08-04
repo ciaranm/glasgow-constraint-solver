@@ -394,7 +394,7 @@ auto main(int argc, char * argv[]) -> int
         std::mt19937 rand(*get_seed());
         std::uniform_int_distribution<> n_dist(3, 5), cap_dist(4, 12), len_dist(1, 3), tall_dist(0, 2);
 
-        std::size_t posted = 0, non_unit = 0, steps = 0, weakened = 0;
+        std::size_t posted = 0, non_unit = 0, steps = 0;
         for (int k = 0; k < 60; ++k) {
             auto capacity = cap_dist(rand);
             Instance instance{{}, {}, Integer{capacity}, 0};
@@ -422,7 +422,6 @@ auto main(int argc, char * argv[]) -> int
             posted += stats->cuts_posted;
             non_unit += stats->non_unit_cuts_posted;
             steps += stats->lifting_steps;
-            weakened += stats->lifting_steps_weakened;
         }
 
         if (posted == 0)
@@ -431,10 +430,8 @@ auto main(int argc, char * argv[]) -> int
             fail("no cut in the random corpus had a coefficient above one, so the lifting checked nothing");
         if (steps == 0)
             fail("no lifting step was taken across the random corpus");
-        println(cerr,
-            "solution preservation: {} cuts over 60 random instances ({} non-unit), {} lifting steps of which {} had to settle for a "
-            "smaller coefficient than the knapsack allows",
-            posted, non_unit, steps, weakened);
+        println(
+            cerr, "solution preservation: {} cuts over 60 random instances ({} non-unit), {} members lifted into a cover", posted, non_unit, steps);
     }
 
     // An optional-task donor is declined loudly rather than mis-derived.

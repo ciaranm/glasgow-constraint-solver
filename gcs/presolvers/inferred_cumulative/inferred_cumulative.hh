@@ -88,14 +88,10 @@ namespace gcs
         /// this stage adds over the capacity-one stage before it.
         std::size_t non_unit_cuts_posted = 0;
 
-        /// Lifting steps taken over all the covers considered.
+        /// Members brought into a cover by a lifting step, over all the covers
+        /// considered. Zero here with cuts posted means every one of them is a
+        /// plain cover inequality.
         std::size_t lifting_steps = 0;
-
-        /// Of those, the ones where the largest valid coefficient could not be
-        /// certified and a smaller one was taken instead. A weaker constraint,
-        /// never a wrong one, and worth knowing about because it is the gap
-        /// between what lifting can justify and what it can prove.
-        std::size_t lifting_steps_weakened = 0;
 
         /**
          * \brief The largest makespan bound over the posted cuts: Sidorov's
@@ -117,7 +113,6 @@ namespace gcs
         std::size_t declined_optional = 0;
         std::size_t declined_variable_arguments = 0;
         std::size_t dropped_no_gain = 0;
-        std::size_t dropped_uncertifiable = 0;
         std::size_t dropped_subset = 0;
         std::size_t dropped_over_budget = 0;
         std::size_t declined_by_install = 0;
@@ -153,12 +148,13 @@ namespace gcs
      * Restricted, as its stage in the plan is, to constant lengths, heights and
      * capacities, and to donors with no optional tasks.
      *
-     * Nothing reaches the OPB. Each cut is posted as a derived Cumulative whose
-     * per-time rows are *proved*, by \ref plan_lifted_cover_cut and
-     * \ref derive_lifted_cover_cut. A cut whose derivation cannot be found is
-     * dropped and counted rather than asserted: a lifted inequality's validity
-     * is coNP-hard to decide, and a presolver that posted one on the strength of
-     * its own arithmetic would be changing the statement being verified.
+     * Nothing reaches the OPB. Each cut is grown *forward* by
+     * \ref grow_lifted_cover_cut --- the arithmetic is run and the cut is
+     * whatever comes out, so there is never a coefficient chosen first and
+     * justified afterwards. Only the restrictions at the edges of a window are
+     * a question for \ref plan_lifted_cover_cut, since there the heights are
+     * already fixed and only the route may vary; a time point it cannot answer
+     * declines the whole constraint rather than asserting anything.
      *
      * \ingroup Presolvers
      */

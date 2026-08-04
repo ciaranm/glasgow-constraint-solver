@@ -66,26 +66,51 @@ run, and would pad every cover it touched):
 2. **The cover inequality**, which is
    [`build_am1_from_row`](../gcs/innards/proofs/am1_from_row.hh)'s program:
    weaken the row down to the cover, saturate, divide by the margin.
-3. **Sequential lifting** (Padberg, Zemel) over the remaining tasks in
-   descending demand: the largest coefficient a task can take is the right-hand
-   side less the most the current support can weigh while still leaving that
-   task room to run, which is a knapsack, computed by the usual table over
-   residual capacity.
+3. **Lifting**, over the remaining tasks in descending demand, run *forward*:
+   sweep the one-`pol` steps the certificate allows, see what each produces, and
+   take whichever result argues about the most energy. A task no step improves
+   on is left out.
 
 Both budgets (`N_cover`, `N_out` in the paper) count what they drop.
 
-## The largest coefficient and the largest *certifiable* coefficient
+## Forward, not backward
 
-These are not the same number, and the difference is the interesting part.
+The textbook version of step 3 goes the other way. Sequential lifting (Padberg,
+Zemel) computes the largest coefficient a task can validly take — the right-hand
+side less the most the current support can weigh while still leaving that task
+room to run, a knapsack — and *then* you go looking for a derivation of it.
 
-A lifted inequality's validity is coNP-hard to decide in general, so nothing here
-is posted on the strength of the presolver's own arithmetic. Every candidate goes
-through [`plan_lifted_cover_cut`](../gcs/innards/proofs/lifted_cover_cut.hh),
-which searches for a *derivation* and fails if it cannot find one. When the
-knapsack's coefficient cannot be certified, the presolver steps down until one
-can be — a weaker constraint, never a wrong one, counted as
-`lifting_steps_weakened`. On a corpus of a few hundred random single-resource
-instances that happens to about one lifting step in sixty.
+That is the wrong way round here, because **the largest valid coefficient is not
+the largest reachable one**. A lifted inequality's validity is coNP-hard to
+decide, so nothing may be posted on the strength of the presolver's own
+arithmetic; every cut has to arrive with a derivation. Asking the knapsack first
+means asking for coefficients the arithmetic cannot deliver, discovering that by
+failing, and stepping down until something works.
+
+`grow_lifted_cover_cut` runs the arithmetic forward instead: every candidate
+weighed is one that derives, so there is nothing to step down from and no
+knapsack to run. It is also *stronger*, because a forward step may move the
+coefficients already in the cut when that improves the ratio, which a lifting
+step by definition cannot. On the test's sixty-instance corpus that is the
+difference between 8 and 16 cuts carrying a non-unit coefficient, and between 76
+and 108 members brought in.
+
+The backward direction still exists and is still needed — but only where the cut
+is *given* and not up for negotiation, which is the window-edge case below.
+
+## What is not taken on trust
+
+Growing a cut forward means predicting what each `pol` will produce, which means
+an in-tree model of VeriPB's normalised form. That model could drift from the
+real thing, so nothing relies on it being right: every cut ends in an `ia` pin
+against the exact inequality claimed, and that check is veripb's. A drifted model
+gives a **rejected proof** at that line, not an unsound row.
+
+Separately, `lifted_cover_cut_test` checks the planner against a brute-force
+oracle that needs no proof checker at all: a few thousand random claims, most of
+them nonsense, with every occupancy point enumerated for any it accepts. About
+700 are planned per seed, 120-odd with a non-unit coefficient, and none has ever
+been invalid.
 
 ## The certificate
 
@@ -121,10 +146,15 @@ some of the cut's tasks have flags — and only those have terms in the donor's 
 there — so the cut is simply restricted to them, which stays valid because
 setting an absent task's flag to zero is a point the cut already covered.
 
-The route, though, has to be found again: the planner is re-run per distinct set
-of present tasks and the answers cached. Over a corpus of random cuts and every
-subset of each, 40% of the restrictions came out trivial, 58% needed one `pol`,
-2% needed the full chain, and none was unreachable.
+The route, though, has to be found again, and *this* is where the backward
+direction earns its keep: `plan_lifted_cover_cut` searches for a derivation of a
+cut it is handed rather than choosing one. It is asked only about genuine
+restrictions — the full-support plan is the one discovery already grew, and is
+seeded into the cache — and its answers are cached per distinct present set.
+
+Over a corpus of random cuts and every subset of each, 40% of the restrictions
+came out trivial, 58% needed one `pol`, 2% needed the full chain, and none was
+unreachable. A time point it cannot answer declines the whole constraint.
 
 ## Proof size
 
@@ -132,15 +162,12 @@ One `pol` per step of the plan per time point, plus the pin — against the
 capacity-one stage's `O(k²)` per time point.
 
 Measured on the four-task fixture over twelve time points, the presolve prefix is
-**63 lines and 3 KB: 36 `pol`, 12 `ia`, and 12 `del`**. Three `pol` per time
-point, because the planner reaches this cut through a two-task cover and two
-lifting steps rather than the three-task cover it could also have used — any
-route that lands on the claimed line is as good as any other, and the `ia` is
-what says it landed there.
+**51 lines and 2.4 KB: 24 `pol`, 12 `ia`, and 12 `del`** — a cover and one
+lifting step per time point.
 
 The twelve `del` are the point. Scaffolding is emitted one proof level deeper
 than the caller's and forgotten on the way out, so **only the twelve pinned lines
-survive** and the thirty-six working ones do not — which is the fix
+survive** and the twenty-four working ones do not — which is the fix
 [#666](https://github.com/ciaranm/glasgow-constraint-solver/issues/666) asks for,
 applied from the start rather than retrofitted. Live constraints tax every later
 unhinted RUP, so a derived constraint over a real horizon has to leave one line
