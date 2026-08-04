@@ -2,7 +2,9 @@
 #
 # Reject a commit whose staged C++ is not clang-formatted, mirroring the
 # clang-format CI job (.github/workflows/clang-format.yml). The vendored
-# XCSP3-CPP-Parser is excluded, as in CI.
+# XCSP3-CPP-Parser is excluded, as in CI. Note that CI checks the whole tree
+# while this checks only what is staged, so the two agree on a clean tree but
+# this one has to be careful about which staged files it looks at.
 #
 # Bypass once with:  git commit --no-verify
 #
@@ -15,8 +17,13 @@ fmt=$(command -v clang-format-21 || command -v clang-format) || {
     exit 0
 }
 
-# Staged, added/copied/modified .cc/.hh files, minus the vendored parser.
-files=$(git diff --cached --name-only --diff-filter=ACM -- '*.cc' '*.hh' | grep -v '^XCSP3-CPP-Parser/')
+# Staged .cc/.hh files, minus the vendored parser. Renames are in the filter as
+# well as additions and modifications: git reports a file as R even when its
+# content changed too, so leaving R out silently skipped exactly the commits
+# most likely to need checking --- renaming a symbol is the thing that reflows a
+# line past the column limit. Deletions are the one status with nothing to
+# format.
+files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.cc' '*.hh' | grep -v '^XCSP3-CPP-Parser/')
 [ -z "$files" ] && exit 0
 
 bad=""
