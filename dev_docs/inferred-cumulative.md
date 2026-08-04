@@ -219,6 +219,31 @@ applied from the start rather than retrofitted. Live constraints tax every later
 unhinted RUP, so a derived constraint over a real horizon has to leave one line
 per time point behind, not one per step.
 
+## Decision: the derivation search is provisional; the DP replay is the plan
+
+The search described above --- three shapes of `pol`, a model of VeriPB's
+normalised arithmetic to predict them, and an `ia` pin to catch that model
+drifting --- is **not the intended long-term design**. It certifies about 96% of
+what the published procedure infers, and every way of widening it found so far
+trades a smaller tail for a wider search and more arithmetic modelled in-tree.
+
+The agreed direction is
+[#675](https://github.com/ciaranm/glasgow-constraint-solver/issues/675): the
+lifting coefficient already comes from a knapsack dynamic programme, so
+**proof-log the dynamic programme** rather than deriving its conclusion by some
+other route. That is complete by construction --- there is no tail --- and it
+deletes the search, the arithmetic model and the pin along with it, since a
+replayed computation needs no prediction. `KnapsackUpfront` (#200) already does
+this shape, with a Top-level proof flag per DP state; `dev_docs/knapsack.md` is
+the precedent to read.
+
+The reason it is not already done is size, not difficulty: `O(|S|² · C)` per
+time point against one or two `pol` now, times the horizon. **The rule agreed
+is to take the DP proofs and only look for something cleverer once proof size or
+checking time is demonstrably a problem** — not before, and not because a
+shorter derivation exists for some family. Chasing families is how this file
+grew the machinery it has.
+
 ## What is not here
 
 - **Multi-resource lifting**

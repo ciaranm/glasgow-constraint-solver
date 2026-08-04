@@ -55,6 +55,15 @@ namespace gcs::innards
      * \brief Find a cutting-planes derivation of `sum pi_i a_i <= rhs` from a
      * capacity row `sum c_i a_i <= C`, or say there is none to be had.
      *
+     * **Provisional.** This searches for a short derivation and fails on about
+     * one candidate in twenty-five. The agreed replacement is issue #675:
+     * proof-log the knapsack dynamic programme that produced the coefficient in
+     * the first place, which is complete by construction and would delete this
+     * function, the normalised-form model behind it and the `ia` pin that
+     * guards that model. Do not widen the search here to close the gap --- take
+     * the DP, and look for something shorter only once proof size or checking
+     * time is demonstrably a problem.
+     *
      * The cut is *given* and not up for negotiation. That is the position
      * every caller is in: InferredCumulative reproduces a published inference
      * procedure, so the constraint to be posted is decided before any of this
