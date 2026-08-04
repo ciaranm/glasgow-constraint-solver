@@ -148,15 +148,21 @@ per time point behind, not one per step.
 
 ## What is not here
 
-- **Multi-resource lifting.** A cut mixing demands from two resources needs the
-  two rows scaled against each other, and the certificate schemata here do not
-  cover it. Sidorov solves those subproblems and so could we — the precedent for
-  a nested solve is `gcs/presolvers/auto_table/auto_table.cc` — but the result
-  would have to be dropped uncertified, which is not a trade this plan makes.
-- **Certified makespan bounds.** `largest_capacity_bound` is a number the
-  presolver computed, not a bound the proof establishes. Turning it into a
-  refutation of `[M ≤ μ]` for each candidate `μ`, and shipping a table of RCPSP
-  bounds each with its verified `.pbp`, is the rest of issue #549.
+- **Multi-resource lifting**
+  ([#673](https://github.com/ciaranm/glasgow-constraint-solver/issues/673)). A
+  cut mixing demands from two resources needs the two rows scaled against each
+  other, and neither schema here reaches that. The capacity-one stage spans
+  resources by merging *at-most-ones*, which works because an at-most-one is
+  scale-free; non-unit coefficients are not, which is exactly where that trick
+  stops. Sidorov solves those subproblems and so could we — the precedent for a
+  nested solve is `gcs/presolvers/auto_table/auto_table.cc` — but the result
+  would have to be posted uncertified, which is not a trade this plan makes.
+- **Certified makespan bounds**
+  ([#672](https://github.com/ciaranm/glasgow-constraint-solver/issues/672)).
+  `largest_capacity_bound` is a number the presolver computed, not a bound the
+  proof establishes. Turning it into a refutation of `[M ≤ μ]` for each candidate
+  `μ`, and shipping a table of RCPSP bounds each with its verified `.pbp`, is the
+  headline deliverable of issue #549.
 - Optional tasks, variable durations or demands, and lifting during search
   (a constraint lifted from a conflict does not propagate after backtracking, so
   this is root-level only).
