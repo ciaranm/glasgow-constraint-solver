@@ -44,7 +44,7 @@ namespace
     }
 }
 
-auto gcs::innards::derive_flag_bridge(ProofLogger & logger, const ProofFlag & from, const ProofFlag & to, ProofLevel level) -> ProofLine
+auto gcs::innards::recover_flag_bridge(ProofLogger & logger, const ProofFlag & from, const ProofFlag & to, ProofLevel level) -> ProofLine
 {
     auto & tracker = logger.names_and_ids_tracker();
 
@@ -58,7 +58,7 @@ auto gcs::innards::derive_flag_bridge(ProofLogger & logger, const ProofFlag & fr
     return bridge.emit(logger, level);
 }
 
-auto gcs::innards::derive_conjunction_flag_bridge(ProofLogger & logger, const ProofFlag & from, const vector<ProofFlag> & from_conjuncts,
+auto gcs::innards::recover_conjunction_flag_bridge(ProofLogger & logger, const ProofFlag & from, const vector<ProofFlag> & from_conjuncts,
     const ProofFlag & to, const vector<ProofFlag> & to_conjuncts, ProofLevel level) -> ProofLine
 {
     if (from_conjuncts.size() != to_conjuncts.size())
@@ -74,7 +74,7 @@ auto gcs::innards::derive_conjunction_flag_bridge(ProofLogger & logger, const Pr
     vector<ProofLine> conjunct_bridges;
     conjunct_bridges.reserve(from_conjuncts.size());
     for (size_t i = 0; i < from_conjuncts.size(); ++i)
-        conjunct_bridges.push_back(derive_flag_bridge(logger, from_conjuncts[i], to_conjuncts[i], level));
+        conjunct_bridges.push_back(recover_flag_bridge(logger, from_conjuncts[i], to_conjuncts[i], level));
 
     // Then every conjunct appears once positively (out of `from`'s [r] half,
     // which says all of them hold) and once negatively (out of `to`'s [f] half,

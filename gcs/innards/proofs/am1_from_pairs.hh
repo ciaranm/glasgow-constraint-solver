@@ -1,5 +1,5 @@
-#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_CLIQUE_FROM_AMOS_HH
-#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_CLIQUE_FROM_AMOS_HH
+#ifndef GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_AM1_FROM_PAIRS_HH
+#define GLASGOW_CONSTRAINT_SOLVER_GUARD_GCS_INNARDS_PROOFS_AM1_FROM_PAIRS_HH
 
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
@@ -15,7 +15,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    namespace clique_mutation
+    namespace am1_from_pairs_mutation
     {
         /// Emit the honest derivation.
         struct None
@@ -60,8 +60,8 @@ namespace gcs::innards
         };
     }
 
-    using CliqueMutation = std::variant<clique_mutation::None, clique_mutation::DropAnAtMostOne, clique_mutation::ClaimOneMore,
-        clique_mutation::NaiveOneShot, clique_mutation::SkipFinalDivision>;
+    using Am1FromPairsMutation = std::variant<am1_from_pairs_mutation::None, am1_from_pairs_mutation::DropAnAtMostOne,
+        am1_from_pairs_mutation::ClaimOneMore, am1_from_pairs_mutation::NaiveOneShot, am1_from_pairs_mutation::SkipFinalDivision>;
 
     /**
      * \brief Merge the pairwise at-most-ones of a clique into the clique
@@ -105,7 +105,7 @@ namespace gcs::innards
      * differently shaped, and even one that is strictly stronger: leaving the
      * division off the last merge gives `m*(sum ~a) >= m(m-1)+1`, which implies
      * the clique inequality mathematically and does not pin
-     * (\ref clique_mutation::SkipFinalDivision covers it). The final division
+     * (\ref am1_from_pairs_mutation::SkipFinalDivision covers it). The final division
      * is therefore load-bearing twice over, and any rearrangement of this
      * arithmetic that changes the shape of the last line will break the pin
      * even if it stays sound. On the other hand the pin *normalises*: `ia`
@@ -129,8 +129,9 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto derive_clique_from_amos(ProofLogger &, const std::vector<ProofLiteralOrFlag> & members,
-        const std::vector<std::vector<ProofLine>> & at_most_ones, ProofLevel, CliqueMutation mutation = clique_mutation::None{}) -> ProofLine;
+    [[nodiscard]] auto recover_am1_from_pairs(ProofLogger &, const std::vector<ProofLiteralOrFlag> & members,
+        const std::vector<std::vector<ProofLine>> & at_most_ones, ProofLevel, Am1FromPairsMutation mutation = am1_from_pairs_mutation::None{})
+        -> ProofLine;
 }
 
 #endif

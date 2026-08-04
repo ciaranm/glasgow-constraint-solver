@@ -149,8 +149,8 @@ namespace gcs
      * whose per-time rows are *proved*: the pairwise at-most-ones come out of a
      * witnessing resource's capacity row by weakening, saturating and dividing
      * by the margin; where the pair's witness is not where a task's flags live,
-     * derive_conjunction_flag_bridge carries it across; and
-     * derive_clique_from_amos merges them into the clique inequality, which is
+     * recover_conjunction_flag_bridge carries it across; and
+     * recover_am1_from_pairs merges them into the clique inequality, which is
      * exactly a unit-height capacity-one row.
      *
      * **Expect no speedup from time-tabling.** A pair that conflicts is already

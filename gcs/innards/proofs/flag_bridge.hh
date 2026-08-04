@@ -40,10 +40,10 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto derive_flag_bridge(ProofLogger &, const ProofFlag & from, const ProofFlag & to, ProofLevel) -> ProofLine;
+    [[nodiscard]] auto recover_flag_bridge(ProofLogger &, const ProofFlag & from, const ProofFlag & to, ProofLevel) -> ProofLine;
 
     /**
-     * \brief As derive_flag_bridge, for two flags each fully reified
+     * \brief As recover_flag_bridge, for two flags each fully reified
      * as the *conjunction* of some other flags: derive `from -> to`, given that
      * the conjuncts correspond in order and each corresponding pair is reified
      * on the same inequality.
@@ -60,7 +60,7 @@ namespace gcs::innards
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto derive_conjunction_flag_bridge(ProofLogger &, const ProofFlag & from, const std::vector<ProofFlag> & from_conjuncts,
+    [[nodiscard]] auto recover_conjunction_flag_bridge(ProofLogger &, const ProofFlag & from, const std::vector<ProofFlag> & from_conjuncts,
         const ProofFlag & to, const std::vector<ProofFlag> & to_conjuncts, ProofLevel) -> ProofLine;
 }
 

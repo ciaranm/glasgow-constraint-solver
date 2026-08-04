@@ -2,7 +2,8 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
 #include <gcs/exception.hh>
-#include <gcs/innards/proofs/clique_from_amos.hh>
+#include <gcs/innards/proofs/am1_from_pairs.hh>
+#include <gcs/innards/proofs/am1_from_row.hh>
 #include <gcs/innards/proofs/flag_bridge.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
@@ -68,13 +69,16 @@ namespace
         size_t size;
     };
 
-    /// Why a pair conflicts: the resource that cannot hold both, and the margin
-    /// by which it cannot.
+    /// Why a pair conflicts: the resource that cannot hold both, and the
+    /// numbers saying it cannot. The demands and the capacity rather than the
+    /// margin between them, because that is what recovering the at-most-one
+    /// needs, and a caller that works the margin out for itself is a caller
+    /// that can work it out wrongly.
     struct Conflict
     {
         ConstraintID witness;
         size_t witness_position_u, witness_position_v;
-        Integer margin;
+        Integer demand_u, demand_v, capacity;
     };
 
     [[nodiscard]] auto constant_value_of(const IntegerVariableID & v) -> optional<Integer>
@@ -236,7 +240,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                     auto capacity = capacity_of.at(au.donor);
                     if (au.height + av.height <= capacity)
                         continue;
-                    conflict[u][v] = conflict[v][u] = Conflict{au.donor, au.position, av.position, au.height + av.height - capacity};
+                    conflict[u][v] = conflict[v][u] = Conflict{au.donor, au.position, av.position, au.height, av.height, capacity};
                     break;
                 }
                 if (conflict[u][v])
@@ -331,7 +335,12 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 for (const auto & aw : tasks[w].appearances)
                     for (const auto & am : tasks[member].appearances)
                         if (aw.donor == am.donor && ! shared)
-                            shared = Conflict{aw.donor, am.position, aw.position, 1_i};
+                            // Demands that overshoot by exactly one: a lie,
+                            // and the same lie the mutation is about, since
+                            // what it fabricates is a conflict that is not
+                            // there. Recovering the at-most-one then runs
+                            // honestly on numbers that are wrong.
+                            shared = Conflict{aw.donor, am.position, aw.position, capacity_of.at(aw.donor), 1_i, capacity_of.at(aw.donor)};
                 if (! shared) {
                     usable = false;
                     break;
@@ -344,7 +353,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             for (const auto & [member, c] : invented)
                 if (! conflict[member][w]) {
                     conflict[member][w] = c;
-                    conflict[w][member] = Conflict{c.witness, c.witness_position_v, c.witness_position_u, c.margin};
+                    conflict[w][member] = Conflict{c.witness, c.witness_position_v, c.witness_position_u, c.demand_v, c.demand_u, c.capacity};
                 }
             clique.push_back(w);
             std::sort(clique.begin(), clique.end());
@@ -470,7 +479,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         throw ProofError{"inferred disjunctive: a resource that witnesses a conflict at time " + to_string(t.raw_value) +
                             " has no flags for one of the tasks it is about"};
 
-                    auto line = derive_conjunction_flag_bridge(recipe_logger, std::get<2>(*from), {std::get<0>(*from), std::get<1>(*from)},
+                    auto line = recover_conjunction_flag_bridge(recipe_logger, std::get<2>(*from), {std::get<0>(*from), std::get<1>(*from)},
                         std::get<2>(*to), {std::get<0>(*to), std::get<1>(*to)}, ProofLevel::Top);
                     if (stats)
                         ++stats->bridges_derived;
@@ -501,17 +510,25 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         // task that demands nothing of this resource has no
                         // term in the row and no flags either, and stopping
                         // there would leave the later tasks' terms in.
-                        PolBuilder pair_amo;
-                        pair_amo.add(row->second);
+                        vector<ProofFlag> weaken_out;
                         for (size_t other = 0; other < resource_size.at(c.witness); ++other) {
                             if (other == c.witness_position_u || other == c.witness_position_v)
                                 continue;
                             auto other_flags = flags_for(tracker, c.witness, other, t);
                             if (other_flags)
-                                pair_amo.weaken(std::get<2>(*other_flags), tracker);
+                                weaken_out.push_back(std::get<2>(*other_flags));
                         }
-                        pair_amo.saturate();
-                        pair_amo.divide_by(c.margin);
+
+                        // Not emitted: the at-most-one is only ever the opening
+                        // of this `pol`, which goes on to carry it onto this
+                        // constraint's own flags below. Two members, which is
+                        // the pairwise case of the same program --- and where
+                        // a clique's members share a witness, recovering their
+                        // sub-clique in one step instead is what issue #666
+                        // is about.
+                        PolBuilder pair_amo;
+                        [[maybe_unused]] auto at_most =
+                            build_am1_from_row(pair_amo, row->second, {c.demand_u, c.demand_v}, weaken_out, c.capacity, tracker);
 
                         // Bridging a task onto the *other* task's flags leaves
                         // its own term uncancelled, so what is merged is not the
@@ -534,8 +551,9 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         at_most_ones[b].push_back(pair_amo.emit(recipe_logger, ProofLevel::Top));
                     }
 
-                return derive_clique_from_amos(recipe_logger, flags, at_most_ones, ProofLevel::Top,
-                    claim_rhs_zero ? CliqueMutation{clique_mutation::ClaimOneMore{}} : CliqueMutation{clique_mutation::None{}});
+                return recover_am1_from_pairs(recipe_logger, flags, at_most_ones, ProofLevel::Top,
+                    claim_rhs_zero ? Am1FromPairsMutation{am1_from_pairs_mutation::ClaimOneMore{}}
+                                   : Am1FromPairsMutation{am1_from_pairs_mutation::None{}});
             },
             .rules = _rules};
 

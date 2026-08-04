@@ -32,7 +32,7 @@ namespace gcs::innards
      * on different resources has no single donor covering all of it --- and it
      * is the caller's job to make sure the flags it points at mean the same
      * thing as the ones its rows are derived from, which
-     * derive_conjunction_flag_bridge exists to establish.
+     * recover_conjunction_flag_bridge exists to establish.
      *
      * \ingroup Innards
      */

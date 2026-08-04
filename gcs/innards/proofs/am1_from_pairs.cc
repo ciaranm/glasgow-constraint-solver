@@ -1,4 +1,4 @@
-#include <gcs/innards/proofs/clique_from_amos.hh>
+#include <gcs/innards/proofs/am1_from_pairs.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
@@ -18,8 +18,8 @@ using std::size_t;
 using std::to_string;
 using std::vector;
 
-auto gcs::innards::derive_clique_from_amos(ProofLogger & logger, const vector<ProofLiteralOrFlag> & members,
-    const vector<vector<ProofLine>> & at_most_ones, ProofLevel level, CliqueMutation mutation) -> ProofLine
+auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<ProofLiteralOrFlag> & members,
+    const vector<vector<ProofLine>> & at_most_ones, ProofLevel level, Am1FromPairsMutation mutation) -> ProofLine
 {
     auto k = members.size();
     if (k < 2)
@@ -31,9 +31,9 @@ auto gcs::innards::derive_clique_from_amos(ProofLogger & logger, const vector<Pr
             throw ProofError{"clique derivation: member " + to_string(j) + " has " + to_string(at_most_ones[j].size()) +
                 " at-most-ones, needing one per earlier member (" + to_string(j) + ")"};
 
-    auto drop_one = std::holds_alternative<clique_mutation::DropAnAtMostOne>(mutation);
-    auto claim_one_more = std::holds_alternative<clique_mutation::ClaimOneMore>(mutation);
-    auto skip_final_division = std::holds_alternative<clique_mutation::SkipFinalDivision>(mutation);
+    auto drop_one = std::holds_alternative<am1_from_pairs_mutation::DropAnAtMostOne>(mutation);
+    auto claim_one_more = std::holds_alternative<am1_from_pairs_mutation::ClaimOneMore>(mutation);
+    auto skip_final_division = std::holds_alternative<am1_from_pairs_mutation::SkipFinalDivision>(mutation);
     if ((drop_one || skip_final_division) && k < 3)
         throw ProofError{"clique derivation: this mutation needs a merge to corrupt, so at least three members"};
 
@@ -43,7 +43,7 @@ auto gcs::innards::derive_clique_from_amos(ProofLogger & logger, const vector<Pr
     // already is the clique inequality for those two.
     auto current = at_most_ones[1][0];
 
-    if (std::holds_alternative<clique_mutation::NaiveOneShot>(mutation)) {
+    if (std::holds_alternative<am1_from_pairs_mutation::NaiveOneShot>(mutation)) {
         // Everything at once. Each member appears in `k - 1` pairs, so this
         // sums to `(k-1) * sum ~a_p >= k(k-1)/2`, and the division lands on
         // `ceil(k/2)` --- the answer for two and three members, and short of
@@ -60,7 +60,7 @@ auto gcs::innards::derive_clique_from_amos(ProofLogger & logger, const vector<Pr
     // Then one member at a time. At the top of each pass `current` says
     // `sum_{i<m} ~a_i >= m - 1` over the first `m`, and the pass extends it to
     // `m + 1`.
-    for (size_t m = 2; ! std::holds_alternative<clique_mutation::NaiveOneShot>(mutation) && m < k; ++m) {
+    for (size_t m = 2; ! std::holds_alternative<am1_from_pairs_mutation::NaiveOneShot>(mutation) && m < k; ++m) {
         PolBuilder merge;
 
         // The `m` at-most-ones tying the new member to the ones already in.

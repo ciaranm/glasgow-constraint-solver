@@ -79,7 +79,7 @@ namespace
         logger.start_proof(model);
         tracker.emit_delayed_proof_steps();
 
-        auto bridge = derive_flag_bridge(logger, from, to, ProofLevel::Top);
+        auto bridge = recover_flag_bridge(logger, from, to, ProofLevel::Top);
 
         // And it says what it is for: `from` implies `to`. Pinned, because a
         // pol that landed somewhere weaker would otherwise pass unnoticed ---
@@ -126,7 +126,7 @@ namespace
         tracker.emit_delayed_proof_steps();
 
         auto bridge =
-            derive_conjunction_flag_bridge(logger, from_active, {from_before, from_after}, to_active, {to_before, to_after}, ProofLevel::Top);
+            recover_conjunction_flag_bridge(logger, from_active, {from_before, from_after}, to_active, {to_before, to_after}, ProofLevel::Top);
 
         logger.emit(ImpliesProofRule{bridge}, WPBSum{} + 1_i * ! from_active + 1_i * to_active >= 1_i, ProofLevel::Top);
         logger.conclude_none();

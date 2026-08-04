@@ -99,8 +99,9 @@ add_library(glasgow_constraint_solver
         innards/integer_overflow.cc
         innards/literal.cc
         innards/power.cc
+        innards/proofs/am1_from_pairs.cc
+        innards/proofs/am1_from_row.cc
         innards/proofs/bits_encoding.cc
-        innards/proofs/clique_from_amos.cc
         innards/proofs/constraint_proof_model_data.cc
         innards/proofs/emit_inequality_to.cc
         innards/proofs/flag_bridge.cc
@@ -590,9 +591,15 @@ if(GCS_BUILD_TESTS)
     target_link_libraries(flag_bridge_test PRIVATE glasgow_constraint_solver)
     add_test(NAME flag_bridge_test COMMAND $<TARGET_FILE:flag_bridge_test>)
 
-    add_executable(clique_from_amos_test innards/proofs/clique_from_amos_test.cc)
-    target_link_libraries(clique_from_amos_test PRIVATE glasgow_constraint_solver)
-    add_test(NAME clique_from_amos_test COMMAND $<TARGET_FILE:clique_from_amos_test>)
+    add_executable(am1_from_pairs_test innards/proofs/am1_from_pairs_test.cc)
+    target_link_libraries(am1_from_pairs_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME am1_from_pairs_test COMMAND $<TARGET_FILE:am1_from_pairs_test>)
+
+    add_executable(am1_from_row_test innards/proofs/am1_from_row_test.cc)
+    target_link_libraries(am1_from_row_test PRIVATE glasgow_constraint_solver)
+    # Verifies (and deliberately fails to verify) its own proofs internally, so
+    # it needs no wrapper.
+    add_test(NAME am1_from_row_test COMMAND $<TARGET_FILE:am1_from_row_test>)
 
     add_executable(subset_sum_strengthening_test innards/proofs/subset_sum_strengthening_test.cc)
     target_link_libraries(subset_sum_strengthening_test PRIVATE glasgow_constraint_solver)

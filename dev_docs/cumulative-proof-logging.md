@@ -575,7 +575,7 @@ for that time point, by donor, and may return nullopt to decline a time point it
 cannot derive — which declines the whole constraint, since the propagator cites
 a row at every time it covers.
 
-**The bridge is one `pol`.** `derive_flag_bridge`
+**The bridge is one `pol`.** `recover_flag_bridge`
 ([`flag_bridge.hh`](../gcs/innards/proofs/flag_bridge.hh)) turns one donor's
 flag into another's. A fully reified flag emits `g → ineq` under `[r]` and
 `ineq → g` under `[f]`; adding one flag's `[r]` to another's `[f]` puts the two
@@ -586,7 +586,7 @@ they are not.
 
 `active ⇔ before ∧ after` needs one more step, since two `active` flags are
 reified over *different* flags and so do not cancel against each other.
-`derive_conjunction_flag_bridge` bridges the conjuncts first, after which each
+`recover_conjunction_flag_bridge` bridges the conjuncts first, after which each
 appears with both signs and drops out. Three `pol`s per `(task, time, donor
 pair)`.
 

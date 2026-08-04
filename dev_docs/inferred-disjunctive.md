@@ -46,18 +46,28 @@ there.
 Per time point, over the clique members whose window covers it:
 
 1. **The pairwise at-most-one**, out of its witnessing resource's capacity row:
-   weaken every other task away, saturate, divide by the margin
-   `c_u + c_v - C`. No side condition on `c_u, c_v <= C` is needed — saturation
-   caps both coefficients at the margin and the division rounds them back to one.
-   A pair summing to *exactly* the capacity has margin zero and correctly yields
-   nothing.
+   weaken every other task away, saturate, divide. This is
+   [`build_am1_from_row`](../gcs/innards/proofs/am1_from_row.hh) over the two of
+   them, shared with the `Cumulative` strengthening presolver, which wants the
+   same program over a single donor. The divisor comes out as the margin
+   `c_u + c_v - C` on its own, and no side condition on `c_u, c_v <= C` is
+   needed — saturation caps both coefficients at that margin and the division
+   rounds them back to one. A pair summing to *exactly* the capacity does not
+   overshoot, which the utility refuses outright rather than deriving: nothing
+   later in the proof can catch a pair that does not conflict.
+
+   Two members is not a special case of that routine but its smallest one, and
+   where several of a clique's members share a witnessing row, recovering their
+   whole sub-clique in one step instead of pair by pair is the proof-size fix
+   [#666](https://github.com/ciaranm/glasgow-constraint-solver/issues/666) is
+   about.
 2. **The bridge**, where the witness is not where a task's flags live — which is
    the normal case, since a clique's pairs are witnessed by different resources.
-   `derive_conjunction_flag_bridge` carries it across, cached per
+   `recover_conjunction_flag_bridge` carries it across, cached per
    `(task, resource)` rather than per pair. The carry *continues the same `pol`*
    as step 1 rather than starting another: the bridges go on the stack, each
    cancelling its task's term, and one saturation clears up after all of it.
-3. **The merge**, `derive_clique_from_amos`, whose pinned output *is* the
+3. **The merge**, `recover_am1_from_pairs`, whose pinned output *is* the
    unit-height capacity-one row the derived constraint needs. No separate step
    is required to turn one into the other.
 
