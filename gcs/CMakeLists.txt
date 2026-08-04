@@ -121,6 +121,7 @@ add_library(glasgow_constraint_solver
         presolvers/auto_table/auto_table.cc
         presolvers/cumulative_strengthening/cumulative_strengthening.cc
         presolvers/difference_logic/difference_logic.cc
+        presolvers/inferred_disjunctive/inferred_disjunctive.cc
 )
 
 # The repo root contains both gcs/ and util/, so it must be on the include path.
@@ -197,6 +198,11 @@ if(GCS_BUILD_TESTS)
     endforeach()
     add_test(NAME difference_logic_presolver_proofs
         COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:difference_logic_presolver_test> proofs)
+
+    add_executable(inferred_disjunctive_presolver_test presolvers/inferred_disjunctive/inferred_disjunctive_test.cc)
+    target_link_libraries(inferred_disjunctive_presolver_test PRIVATE glasgow_constraint_solver)
+    add_test(NAME inferred_disjunctive_presolver
+        COMMAND ${GCS_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/../run_test_only.bash $<TARGET_FILE:inferred_disjunctive_presolver_test>)
 
     add_executable(cumulative_strengthening_presolver_test presolvers/cumulative_strengthening/cumulative_strengthening_test.cc)
     target_link_libraries(cumulative_strengthening_presolver_test PRIVATE glasgow_constraint_solver)

@@ -1,0 +1,506 @@
+#include <gcs/constraint_id.hh>
+#include <gcs/constraints/cumulative.hh>
+#include <gcs/constraints/cumulative/derived_cumulative.hh>
+#include <gcs/exception.hh>
+#include <gcs/innards/proofs/clique_from_amos.hh>
+#include <gcs/innards/proofs/flag_bridge.hh>
+#include <gcs/innards/proofs/names_and_ids_tracker.hh>
+#include <gcs/innards/proofs/pol_builder.hh>
+#include <gcs/innards/proofs/proof_error.hh>
+#include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/pseudo_boolean.hh>
+#include <gcs/innards/state.hh>
+#include <gcs/presolvers/inferred_disjunctive/inferred_disjunctive.hh>
+#include <gcs/problem.hh>
+
+#include <algorithm>
+#include <map>
+#include <memory>
+#include <optional>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
+
+using namespace gcs;
+using namespace gcs::innards;
+
+using std::make_unique;
+using std::map;
+using std::move;
+using std::optional;
+using std::pair;
+using std::set;
+using std::shared_ptr;
+using std::size_t;
+using std::to_string;
+using std::unique_ptr;
+using std::vector;
+
+namespace
+{
+    /// One appearance of a task on a resource: which donor, where in it, and
+    /// what it demands there.
+    struct Appearance
+    {
+        ConstraintID donor;
+        size_t position;
+        Integer height;
+    };
+
+    /// A task, as the conflict graph sees it. Identified by its start variable,
+    /// which is what makes two donors' entries the same task.
+    struct Task
+    {
+        IntegerVariableID start;
+        Integer length;
+        Integer t_lo, t_hi;
+        vector<Appearance> appearances;
+    };
+
+    /// A resource, once confirmed usable.
+    struct Resource
+    {
+        ConstraintID id;
+        Integer capacity;
+        /// How many tasks it was posted over, which is how far a weakening
+        /// sweep has to go: positions with no flags are simply skipped.
+        size_t size;
+    };
+
+    /// Why a pair conflicts: the resource that cannot hold both, and the margin
+    /// by which it cannot.
+    struct Conflict
+    {
+        ConstraintID witness;
+        size_t witness_position_u, witness_position_v;
+        Integer margin;
+    };
+
+    [[nodiscard]] auto constant_value_of(const IntegerVariableID & v) -> optional<Integer>
+    {
+        if (! is_constant_variable(v))
+            return std::nullopt;
+        return std::get<ConstantIntegerVariableID>(v).const_value;
+    }
+
+    /// The flags a task's activity is expressed in, on one resource, at one
+    /// time. Absent when that resource never encoded the pair.
+    [[nodiscard]] auto flags_for(const NamesAndIDsTracker & tracker, const ConstraintID & donor, size_t position, Integer t)
+        -> optional<std::tuple<ProofFlag, ProofFlag, ProofFlag>>
+    {
+        auto before = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
+        auto after = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
+        auto active = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
+        if (! before || ! after || ! active)
+            return std::nullopt;
+        return std::tuple{*before, *after, *active};
+    }
+}
+
+InferredDisjunctive::InferredDisjunctive(shared_ptr<InferredDisjunctiveStats> stats) :
+    _stats(move(stats)), _max_candidates(100), _max_posted(5), _min_clique_size(3),
+    // Energy only: a conflicting pair is already kept apart by the resource
+    // that witnesses it, so an inferred constraint's time-tabling is redundant.
+    _rules(CumulativeRules{.time_table = false, .overload = true, .profile_overload = true})
+{
+}
+
+auto InferredDisjunctive::with_budgets(size_t max_candidates, size_t max_posted) -> InferredDisjunctive &
+{
+    _max_candidates = max_candidates;
+    _max_posted = max_posted;
+    return *this;
+}
+
+auto InferredDisjunctive::with_minimum_clique_size(size_t size) -> InferredDisjunctive &
+{
+    _min_clique_size = size;
+    return *this;
+}
+
+auto InferredDisjunctive::with_rules(CumulativeRules rules) -> InferredDisjunctive &
+{
+    _rules = rules;
+    return *this;
+}
+
+auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, State & state, ProofLogger * const logger) -> bool
+{
+    auto bump = [&](size_t InferredDisjunctiveStats::* field, size_t by = 1) {
+        if (_stats)
+            (*_stats).*field += by;
+    };
+
+    // Collect the tasks, keyed by start variable so that the same task on two
+    // resources is one node of the conflict graph.
+    vector<Task> tasks;
+    map<IntegerVariableID, size_t> task_of_start;
+    vector<Resource> resources;
+
+    for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
+        bump(&InferredDisjunctiveStats::donors_seen);
+
+        if (! donor.presences().empty()) {
+            bump(&InferredDisjunctiveStats::declined_optional);
+            if (logger)
+                logger->emit_proof_comment("presolve disjunctive: declining " + as_string(donor.constraint_id()) + ", optional tasks");
+            continue;
+        }
+
+        auto capacity = constant_value_of(donor.capacity());
+        if (! capacity) {
+            bump(&InferredDisjunctiveStats::declined_variable_arguments);
+            if (logger)
+                logger->emit_proof_comment("presolve disjunctive: declining " + as_string(donor.constraint_id()) + ", variable capacity");
+            continue;
+        }
+
+        vector<Integer> lengths, heights;
+        bool constant = true;
+        for (const auto & l : donor.lengths()) {
+            auto value = constant_value_of(l);
+            constant = constant && value.has_value();
+            lengths.push_back(value.value_or(0_i));
+        }
+        for (const auto & h : donor.heights()) {
+            auto value = constant_value_of(h);
+            constant = constant && value.has_value();
+            heights.push_back(value.value_or(0_i));
+        }
+        if (! constant) {
+            bump(&InferredDisjunctiveStats::declined_variable_arguments);
+            if (logger)
+                logger->emit_proof_comment("presolve disjunctive: declining " + as_string(donor.constraint_id()) + ", variable lengths or heights");
+            continue;
+        }
+
+        const auto & starts = donor.starts();
+        resources.push_back(Resource{donor.constraint_id(), *capacity, starts.size()});
+
+        for (size_t i = 0; i < starts.size(); ++i) {
+            // A task that cannot load this resource has no flags on it, so it
+            // is not reachable through it even if it is listed.
+            if (lengths[i] <= 0_i || heights[i] <= 0_i)
+                continue;
+
+            auto found = task_of_start.find(starts[i]);
+            if (found == task_of_start.end()) {
+                auto [s_lo, s_hi] = state.bounds(starts[i]);
+                found = task_of_start.emplace(starts[i], tasks.size()).first;
+                tasks.push_back(Task{starts[i], lengths[i], s_lo, s_hi + lengths[i] - 1_i, {}});
+            }
+            else if (tasks[found->second].length != lengths[i]) {
+                // Two resources disagreeing about a duration is not something
+                // to average over: the flags would reify different conditions
+                // and no bridge between them exists.
+                continue;
+            }
+
+            tasks[found->second].appearances.push_back(Appearance{donor.constraint_id(), i, heights[i]});
+        }
+    }
+
+    bump(&InferredDisjunctiveStats::tasks, tasks.size());
+    if (tasks.size() < _min_clique_size)
+        return true;
+
+    // The conflict graph. A pair conflicts if some one resource cannot hold
+    // both; the first such resource found is the witness the certificate will
+    // use, since any of them proves the same at-most-one.
+    map<ConstraintID, Integer> capacity_of;
+    map<ConstraintID, size_t> resource_size;
+    for (const auto & resource : resources) {
+        capacity_of.emplace(resource.id, resource.capacity);
+        resource_size.emplace(resource.id, resource.size);
+    }
+
+    vector<vector<optional<Conflict>>> conflict(tasks.size(), vector<optional<Conflict>>(tasks.size()));
+    vector<pair<size_t, size_t>> candidate_pairs;
+    for (size_t u = 0; u < tasks.size(); ++u)
+        for (size_t v = u + 1; v < tasks.size(); ++v) {
+            for (const auto & au : tasks[u].appearances) {
+                for (const auto & av : tasks[v].appearances) {
+                    if (au.donor != av.donor)
+                        continue;
+                    auto capacity = capacity_of.at(au.donor);
+                    if (au.height + av.height <= capacity)
+                        continue;
+                    conflict[u][v] = conflict[v][u] = Conflict{au.donor, au.position, av.position, au.height + av.height - capacity};
+                    break;
+                }
+                if (conflict[u][v])
+                    break;
+            }
+
+            if (conflict[u][v]) {
+                bump(&InferredDisjunctiveStats::conflicting_pairs);
+                candidate_pairs.emplace_back(u, v);
+            }
+        }
+
+    if (candidate_pairs.empty())
+        return true;
+
+    // Grow each candidate pair into a maximal clique, taking the longest task
+    // first --- the unit-coefficient reading of Sidorov's lifting order, and
+    // the one that maximises the energy the resulting constraint can argue
+    // about.
+    auto grow = [&](size_t u, size_t v) -> vector<size_t> {
+        vector<size_t> clique{u, v};
+        vector<size_t> candidates;
+        for (size_t w = 0; w < tasks.size(); ++w)
+            if (w != u && w != v && conflict[u][w] && conflict[v][w])
+                candidates.push_back(w);
+
+        std::sort(candidates.begin(), candidates.end(), [&](size_t a, size_t b) {
+            if (tasks[a].length != tasks[b].length)
+                return tasks[a].length > tasks[b].length;
+            return a < b;
+        });
+
+        for (auto w : candidates) {
+            bool joins = true;
+            for (auto member : clique)
+                if (! conflict[member][w]) {
+                    joins = false;
+                    break;
+                }
+            if (joins)
+                clique.push_back(w);
+        }
+
+        std::sort(clique.begin(), clique.end());
+        return clique;
+    };
+
+    vector<vector<size_t>> found;
+    set<vector<size_t>> seen;
+    size_t considered = 0;
+    for (const auto & [u, v] : candidate_pairs) {
+        if (considered >= _max_candidates) {
+            bump(&InferredDisjunctiveStats::dropped_over_budget, candidate_pairs.size() - considered);
+            if (logger)
+                logger->emit_proof_comment("presolve disjunctive: " + to_string(candidate_pairs.size() - considered) +
+                    " candidate pairs left ungrown, against a budget of " + to_string(_max_candidates));
+            break;
+        }
+        ++considered;
+
+        auto clique = grow(u, v);
+        if (clique.size() < _min_clique_size) {
+            bump(&InferredDisjunctiveStats::dropped_too_small);
+            continue;
+        }
+        if (! seen.insert(clique).second)
+            continue;
+        found.push_back(move(clique));
+    }
+
+    bump(&InferredDisjunctiveStats::cliques_found, found.size());
+
+    // Rank by the capacity-bound metric, which at unit coefficients is just the
+    // total duration the clique must serialise, and drop any clique contained
+    // in one already accepted.
+    std::sort(found.begin(), found.end(), [&](const vector<size_t> & a, const vector<size_t> & b) {
+        auto total = [&](const vector<size_t> & c) {
+            auto sum = 0_i;
+            for (auto i : c)
+                sum += tasks[i].length;
+            return sum;
+        };
+        auto ta = total(a), tb = total(b);
+        if (ta != tb)
+            return ta > tb;
+        return a < b;
+    });
+
+    vector<vector<size_t>> accepted;
+    for (auto & clique : found) {
+        if (accepted.size() >= _max_posted) {
+            bump(&InferredDisjunctiveStats::dropped_over_budget);
+            if (logger)
+                logger->emit_proof_comment("presolve disjunctive: a clique beyond the output budget of " + to_string(_max_posted) + " was dropped");
+            continue;
+        }
+
+        bool subsumed = false;
+        for (const auto & already : accepted)
+            if (std::includes(already.begin(), already.end(), clique.begin(), clique.end())) {
+                subsumed = true;
+                break;
+            }
+        if (subsumed) {
+            bump(&InferredDisjunctiveStats::dropped_subset);
+            continue;
+        }
+
+        accepted.push_back(move(clique));
+    }
+
+    for (const auto & clique : accepted) {
+        // Each member's flags come from its first appearance; the certificate
+        // bridges a pair's witness across to those where they differ.
+        vector<DerivedCumulativeTask> derived_tasks;
+        set<ConstraintID> row_donors;
+        for (auto i : clique) {
+            const auto & home = tasks[i].appearances.front();
+            derived_tasks.push_back(DerivedCumulativeTask{home.donor, home.position, tasks[i].start, tasks[i].length, 1_i});
+        }
+        for (size_t a = 0; a < clique.size(); ++a)
+            for (size_t b = a + 1; b < clique.size(); ++b)
+                row_donors.insert(conflict[clique[a]][clique[b]]->witness);
+
+        auto members = clique;
+        auto task_data = tasks;
+        auto conflicts = conflict;
+        auto stats = _stats;
+
+        DerivedCumulativeSpec spec{.tasks = derived_tasks,
+            .capacity = 1_i,
+            .row_donors = vector<ConstraintID>{row_donors.begin(), row_donors.end()},
+            .recipe = [members, task_data, conflicts, resource_size, stats](
+                          ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
+                auto & tracker = recipe_logger.names_and_ids_tracker();
+
+                // Only the members that can be running at t appear in this time
+                // point's inequality; the donors windowed them all the same way,
+                // so this is the same set their flags exist for.
+                vector<size_t> here;
+                for (auto i : members)
+                    if (t >= task_data[i].t_lo && t <= task_data[i].t_hi)
+                        here.push_back(i);
+
+                vector<ProofLiteralOrFlag> flags;
+                for (auto i : here) {
+                    const auto & home = task_data[i].appearances.front();
+                    auto found = flags_for(tracker, home.donor, home.position, t);
+                    if (! found)
+                        return std::nullopt;
+                    flags.push_back(std::get<2>(*found));
+                }
+
+                WPBSum at_most_one;
+                for (const auto & flag : flags)
+                    add_term_to(at_most_one, 1_i, flag);
+
+                // One member here means the row says a single flag is at most
+                // one, which is true of any 0/1 and needs no derivation.
+                if (here.size() < 2)
+                    return recipe_logger.emit_rup_proof_line(move(at_most_one) <= 1_i, ProofLevel::Top);
+
+                recipe_logger.emit_proof_comment("presolve disjunctive clique at time " + to_string(t.raw_value));
+
+                // Bridges, once per (member, witnessing resource) rather than
+                // once per pair: several pairs of a clique often share a witness.
+                map<pair<size_t, ConstraintID>, ProofLine> bridges;
+                auto bridge_to = [&](size_t i, const ConstraintID & witness, size_t witness_position) -> optional<ProofLine> {
+                    const auto & home = task_data[i].appearances.front();
+                    if (home.donor == witness)
+                        return std::nullopt; // already there, nothing to carry
+
+                    auto key = pair{i, witness};
+                    auto already = bridges.find(key);
+                    if (already != bridges.end())
+                        return already->second;
+
+                    auto from = flags_for(tracker, home.donor, home.position, t);
+                    auto to = flags_for(tracker, witness, witness_position, t);
+                    if (! from || ! to)
+                        throw ProofError{"inferred disjunctive: a resource that witnesses a conflict at time " + to_string(t.raw_value) +
+                            " has no flags for one of the tasks it is about"};
+
+                    auto line = derive_conjunction_flag_bridge(recipe_logger, std::get<2>(*from), {std::get<0>(*from), std::get<1>(*from)},
+                        std::get<2>(*to), {std::get<0>(*to), std::get<1>(*to)}, ProofLevel::Top);
+                    if (stats)
+                        ++stats->bridges_derived;
+                    bridges.emplace(key, line);
+                    return line;
+                };
+
+                // The pairwise at-most-ones, each out of its witness's capacity
+                // row: weaken every other task out, saturate, divide by the
+                // margin. Then carry it onto the flags this constraint is
+                // expressed in.
+                vector<vector<ProofLine>> at_most_ones(here.size());
+                for (size_t b = 1; b < here.size(); ++b)
+                    for (size_t a = 0; a < b; ++a) {
+                        const auto & c = *conflicts[here[a]][here[b]];
+                        auto row = rows.find(c.witness);
+                        if (row == rows.end())
+                            return std::nullopt;
+
+                        auto u_flags = flags_for(tracker, c.witness, c.witness_position_u, t);
+                        auto v_flags = flags_for(tracker, c.witness, c.witness_position_v, t);
+                        if (! u_flags || ! v_flags)
+                            return std::nullopt;
+
+                        // Everything else on that resource that could be running
+                        // now has to come out of the row first. Over every
+                        // position, not up to the first one without flags: a
+                        // task that demands nothing of this resource has no
+                        // term in the row and no flags either, and stopping
+                        // there would leave the later tasks' terms in.
+                        PolBuilder pair_amo;
+                        pair_amo.add(row->second);
+                        for (size_t other = 0; other < resource_size.at(c.witness); ++other) {
+                            if (other == c.witness_position_u || other == c.witness_position_v)
+                                continue;
+                            auto other_flags = flags_for(tracker, c.witness, other, t);
+                            if (other_flags)
+                                pair_amo.weaken(std::get<2>(*other_flags), tracker);
+                        }
+                        pair_amo.saturate();
+                        pair_amo.divide_by(c.margin);
+
+                        auto bridged_u = bridge_to(here[a], c.witness, c.witness_position_u);
+                        auto bridged_v = bridge_to(here[b], c.witness, c.witness_position_v);
+                        if (bridged_u || bridged_v) {
+                            PolBuilder carry;
+                            carry.add(pair_amo.emit(recipe_logger, ProofLevel::Top));
+                            if (bridged_u)
+                                carry.add(*bridged_u);
+                            if (bridged_v)
+                                carry.add(*bridged_v);
+                            carry.saturate();
+                            at_most_ones[b].push_back(carry.emit(recipe_logger, ProofLevel::Top));
+                        }
+                        else
+                            at_most_ones[b].push_back(pair_amo.emit(recipe_logger, ProofLevel::Top));
+                    }
+
+                return derive_clique_from_amos(recipe_logger, flags, at_most_ones, ProofLevel::Top);
+            },
+            .rules = _rules};
+
+        if (! install_derived_cumulative(propagators, state, logger, move(spec))) {
+            bump(&InferredDisjunctiveStats::declined_by_install);
+            continue;
+        }
+
+        bump(&InferredDisjunctiveStats::cliques_posted);
+        bump(&InferredDisjunctiveStats::clique_members_posted, clique.size());
+        if (logger)
+            logger->emit_proof_comment("presolve disjunctive: inferred a clique of " + to_string(clique.size()) + " tasks");
+    }
+
+    // How much of this genuinely spanned resources, which is what says a
+    // fixture is exercising the cross-resource case rather than something a
+    // single Cumulative could have found.
+    for (const auto & [u, v] : candidate_pairs) {
+        const auto & c = *conflict[u][v];
+        if (tasks[u].appearances.front().donor != c.witness || tasks[v].appearances.front().donor != c.witness)
+            bump(&InferredDisjunctiveStats::cross_donor_pairs);
+    }
+
+    return true;
+}
+
+auto InferredDisjunctive::clone() const -> unique_ptr<Presolver>
+{
+    auto result = make_unique<InferredDisjunctive>(_stats);
+    result->with_budgets(_max_candidates, _max_posted);
+    result->with_minimum_clique_size(_min_clique_size);
+    result->with_rules(_rules);
+    return result;
+}
