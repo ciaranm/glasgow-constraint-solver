@@ -263,16 +263,22 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 [](const cumulative_strengthening_mutation::BogusDivisor &) -> SubsetSumMutation { return subset_sum_mutation::BogusDivisor{}; }},
             _mutation);
 
-        DerivedCumulativeSpec spec{.donor = donor_id,
-            .starts = starts,
-            .lengths = data->lengths,
-            .heights = heights,
+        DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, starts, data->lengths, heights),
             .capacity = kappa,
+            .row_donors = {donor_id},
             .recipe = [donor_id, heights, capacity, kappa, by_time, stats, subset_sum_corruption](
-                          ProofLogger & recipe_logger, ProofLine donor_row, Integer t) -> ProofLine {
+                          ProofLogger & recipe_logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
                 auto point = by_time.find(t);
                 if (point == by_time.end())
                     throw ProofError{"cumulative strengthening: no time point worked out for " + to_string(t.raw_value)};
+
+                // The donor is the only row source, and it wrote a row wherever
+                // this constraint has one, since they cover the same tasks.
+                auto donor_row_at = rows.find(donor_id);
+                if (donor_row_at == rows.end())
+                    throw ProofError{"cumulative strengthening: the donor has no capacity row at time " + to_string(t.raw_value) +
+                        ", which cannot happen for a constraint derived over all of its tasks"};
+                auto donor_row = donor_row_at->second;
 
                 vector<SubsetSumItem> items;
                 for (auto i : point->second.tasks) {

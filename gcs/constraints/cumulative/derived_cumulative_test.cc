@@ -125,19 +125,27 @@ namespace
                     if (lengths[i] > 0_i && heights[i] > 0_i)
                         divisor = Integer{std::gcd(divisor.raw_value, heights[i].raw_value)};
 
-                DerivedCumulativeSpec spec{.donor = donor.constraint_id(),
-                    .starts = donor.starts(),
-                    .lengths = lengths,
-                    .heights = heights,
+                auto donor_id = donor.constraint_id();
+                DerivedCumulativeSpec spec{.tasks = derived_cumulative_tasks_from(donor_id, donor.starts(), lengths, heights),
                     .capacity = capacity,
+                    .row_donors = {donor_id},
                     .recipe = {},
                     .rules = CumulativeRules{}};
 
+                // Every demo here derives from the one donor it was built over,
+                // so each pulls that donor's row out of the map it is handed.
+                auto row_of = [donor_id](const DerivedCumulativeRows & rows) -> ProofLine {
+                    auto at = rows.find(donor_id);
+                    if (at == rows.end())
+                        fail("the donor had no capacity row where the derived constraint has one");
+                    return at->second;
+                };
+
                 switch (demo) {
                 case Demo::Duplicate:
-                    spec.recipe = [](ProofLogger & logger, ProofLine donor_row, Integer) -> ProofLine {
+                    spec.recipe = [row_of](ProofLogger & logger, const DerivedCumulativeRows & rows, Integer) -> optional<ProofLine> {
                         PolBuilder copy;
-                        copy.add(donor_row);
+                        copy.add(row_of(rows));
                         return copy.emit(logger, ProofLevel::Top);
                     };
                     break;
@@ -156,10 +164,10 @@ namespace
                     // cumulative uses, which is the presolver's half of the
                     // contract.
                     auto starts = donor.starts();
-                    auto donor_id = donor.constraint_id();
                     auto claim_one_lower = (demo == Demo::ClaimOneLower);
-                    spec.recipe = [starts, heights, lengths, capacity, donor_id, claim_one_lower, &state](
-                                      ProofLogger & logger, ProofLine donor_row, Integer t) -> ProofLine {
+                    spec.recipe = [starts, heights, lengths, capacity, donor_id, claim_one_lower, row_of, &state](
+                                      ProofLogger & logger, const DerivedCumulativeRows & rows, Integer t) -> optional<ProofLine> {
+                        auto donor_row = row_of(rows);
                         vector<SubsetSumItem> items;
                         for (size_t i = 0; i < starts.size(); ++i) {
                             if (lengths[i] <= 0_i || heights[i] <= 0_i)
@@ -187,11 +195,11 @@ namespace
                     // One unit longer than the donor's tasks, so the derived
                     // constraint's last time point is one the donor never
                     // encoded a flag for.
-                    for (auto & l : spec.lengths)
-                        l += 1_i;
-                    spec.recipe = [](ProofLogger & logger, ProofLine donor_row, Integer) -> ProofLine {
+                    for (auto & task : spec.tasks)
+                        task.length += 1_i;
+                    spec.recipe = [row_of](ProofLogger & logger, const DerivedCumulativeRows & rows, Integer) -> optional<ProofLine> {
                         PolBuilder copy;
-                        copy.add(donor_row);
+                        copy.add(row_of(rows));
                         return copy.emit(logger, ProofLevel::Top);
                     };
                     break;

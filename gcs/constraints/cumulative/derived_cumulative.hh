@@ -10,15 +10,68 @@
 #include <gcs/integer.hh>
 #include <gcs/variable_id.hh>
 
+#include <cstddef>
 #include <functional>
+#include <map>
+#include <optional>
 #include <vector>
 
 namespace gcs::innards
 {
     /**
+     * \brief One task of a derived Cumulative, and where its activity flags are
+     * to be found.
+     *
+     * A derived constraint creates no flags of its own, so every task has to
+     * point at a posted Cumulative that already encoded it: `donor` says which,
+     * and `position` says which of that donor's tasks it is, since the flag keys
+     * ConstraintProofModelData publishes are by task position.
+     *
+     * Tasks may name *different* donors. That is what an inferred constraint
+     * over several resources needs --- a clique whose members conflict pairwise
+     * on different resources has no single donor covering all of it --- and it
+     * is the caller's job to make sure the flags it points at mean the same
+     * thing as the ones its rows are derived from, which
+     * derive_conjunction_flag_bridge exists to establish.
+     *
+     * \ingroup Innards
+     */
+    struct DerivedCumulativeTask
+    {
+        /// The posted Cumulative whose flags express this task's activity.
+        ConstraintID donor;
+
+        /// This task's index within that donor's own task list.
+        std::size_t position;
+
+        /// The start variable, which must be the one the donor was posted with
+        /// at `position`: the flags are reified on it, so a different variable
+        /// would silently mean something else.
+        IntegerVariableID start;
+
+        /// Constant by type, which is the v1 restriction made structural: a
+        /// variable height enters a donor's capacity row as a bit-linearised
+        /// contribution rather than as `height x active`, and a derived row
+        /// would have to speak about those bits too.
+        Integer length, height;
+    };
+
+    /**
+     * \brief The donors' capacity rows for one time point, by donor, as handed
+     * to a recipe.
+     *
+     * Only donors that wrote a row for that time point appear: a donor whose own
+     * tasks cannot be active then has nothing there to cite, which is a fact
+     * about the donor and not an error.
+     *
+     * \ingroup Innards
+     */
+    using DerivedCumulativeRows = std::map<ConstraintID, ProofLine>;
+
+    /**
      * \brief A Cumulative whose proof semantics are *derived* rather than
      * asserted: it adds no rows to the OPB, and establishes its per-time
-     * capacity rows inside the proof instead, from a donor Cumulative's.
+     * capacity rows inside the proof instead, from posted Cumulatives'.
      *
      * This is what lets a presolver add an implied Cumulative without touching
      * the model. The model is the statement being verified, so a presolver that
@@ -26,56 +79,60 @@ namespace gcs::innards
      * than proving anything about it --- VeriPB would verify the result and it
      * would mean nothing.
      *
-     * The derived constraint covers the donor's tasks, with its own heights and
-     * capacity. It creates no flags: it pins the donor's, found through the keys
-     * ConstraintProofModelData<Cumulative> publishes, which is also what checks
-     * that the two agree about the tasks' possible-active windows --- a key
-     * outside the window the donor encoded has no flag, and this declines rather
-     * than inventing one.
-     *
      * \ingroup Innards
      */
     struct DerivedCumulativeSpec
     {
-        /// The Cumulative whose flags and capacity rows this is derived from.
-        /// Its arguments come from the donor's own accessors. The donor must
-        /// not be an optional-task Cumulative: its active flags would carry a
-        /// presence conjunct, and a derived constraint reasoning over them
-        /// would need the donor's presence literals in every reason it gives.
-        /// A caller building one of these from a donor should decline when the
-        /// donor's presences() is non-empty.
-        ConstraintID donor;
+        /// The derived constraint's tasks, each pointing at the donor that
+        /// encoded it. No donor may be an optional-task Cumulative: its active
+        /// flags would carry a presence conjunct, and a derived constraint
+        /// reasoning over them would need that donor's presence literals in
+        /// every reason it gives. A caller building one of these should decline
+        /// when a donor's presences() is non-empty.
+        std::vector<DerivedCumulativeTask> tasks;
 
-        /// The donor's starts, in the donor's order: the flag keys are by task
-        /// position, so these must be the donor's tasks and nothing else.
-        std::vector<IntegerVariableID> starts;
-
-        /// Constant by type, which is the v1 restriction made structural: a
-        /// variable height enters the donor's capacity row as a bit-linearised
-        /// contribution rather than as `height x active`, and the derived row
-        /// would have to speak about those bits too.
-        std::vector<Integer> lengths, heights;
         Integer capacity;
 
+        /// The donors whose per-time capacity rows the recipe wants to build
+        /// on. Usually the same donors the tasks name, but not necessarily ---
+        /// a pairwise conflict is witnessed by whichever resource cannot hold
+        /// both tasks, which need not be where either task's flags are taken
+        /// from.
+        std::vector<ConstraintID> row_donors;
+
         /**
-         * \brief How the derived row for time `t` comes off the donor's.
+         * \brief How the derived row for time `t` is established.
          *
-         * Called once per time point, at ProofLevel::Top, with the donor's row
-         * for `t`; returns the derived row, which must say
-         * `Σ heights[i]·active[i,t] ≤ capacity` over the donor's flags. Anything
-         * else and the propagator's `pol`s will not cancel, which VeriPB will
-         * say so about.
+         * Called once per time point, at ProofLevel::Top, with the rows those
+         * of \ref row_donors that have one wrote for `t`; returns the derived
+         * row, which must say `Σ heights[i]·active[i,t] ≤ capacity` over the
+         * flags \ref tasks point at. Anything else and the propagator's `pol`s
+         * will not cancel, which VeriPB will say so about.
+         *
+         * Returning nullopt means this time point cannot be derived, and the
+         * whole constraint is then declined: a derived Cumulative needs a row
+         * everywhere its propagator will cite one, so there is no useful
+         * halfway house.
          *
          * A recipe is a derivation, never an axiom: it has a ProofLogger and no
          * ProofModel, so it cannot write to the OPB even by mistake.
          */
-        std::function<auto(ProofLogger &, ProofLine donor_row, Integer t)->ProofLine> recipe;
+        std::function<auto(ProofLogger &, const DerivedCumulativeRows &, Integer t)->std::optional<ProofLine>> recipe;
 
         /// Which propagation rules the derived constraint runs. The default is
         /// all of them: it gets the same time-tabling and overload checking a
-        /// posted Cumulative does, over the donor's flags.
+        /// posted Cumulative does, over the donors' flags.
         CumulativeRules rules;
     };
+
+    /**
+     * \brief Build the task list for the common case of a derived Cumulative
+     * over all of one donor's tasks, in the donor's order.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto derived_cumulative_tasks_from(const ConstraintID & donor, const std::vector<IntegerVariableID> & starts,
+        const std::vector<Integer> & lengths, const std::vector<Integer> & heights) -> std::vector<DerivedCumulativeTask>;
 
     /**
      * \brief Install a derived Cumulative's propagator.
@@ -85,12 +142,12 @@ namespace gcs::innards
      * what writes to the OPB.
      *
      * Returns false when the derived constraint could not be set up --- proofs
-     * are on but the donor's flags or rows are not where its published keys say,
-     * which means the donor was never installed, or the windows disagree. That
-     * is a decline, not a failure: the caller should not install a propagator
-     * whose inferences it cannot justify. With proofs off there is nothing to
-     * cite and nothing to decline, and the propagator installs unconditionally,
-     * so the same inferences are drawn either way.
+     * are on but a donor's flags are not where its published keys say, which
+     * means the donor was never installed or the windows disagree, or the recipe
+     * declined a time point. That is a decline, not a failure: the caller should
+     * not install a propagator whose inferences it cannot justify. With proofs
+     * off there is nothing to cite and nothing to decline, and the propagator
+     * installs unconditionally, so the same inferences are drawn either way.
      *
      * \ingroup Innards
      */

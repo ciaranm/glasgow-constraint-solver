@@ -6,6 +6,7 @@
 #include <gcs/innards/propagators.hh>
 #include <gcs/innards/state.hh>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -22,33 +23,44 @@ using std::string;
 using std::to_string;
 using std::vector;
 
+auto gcs::innards::derived_cumulative_tasks_from(const ConstraintID & donor, const vector<IntegerVariableID> & starts,
+    const vector<Integer> & lengths, const vector<Integer> & heights) -> vector<DerivedCumulativeTask>
+{
+    if (starts.size() != lengths.size() || starts.size() != heights.size())
+        throw InvalidProblemDefinitionException{"derived Cumulative: starts, lengths, heights must have the same size"};
+
+    vector<DerivedCumulativeTask> tasks;
+    tasks.reserve(starts.size());
+    for (size_t i = 0; i < starts.size(); ++i)
+        tasks.push_back(DerivedCumulativeTask{donor, i, starts[i], lengths[i], heights[i]});
+    return tasks;
+}
+
 auto gcs::innards::install_derived_cumulative(
     Propagators & propagators, const State & initial_state, ProofLogger * const logger, DerivedCumulativeSpec spec) -> bool
 {
-    auto n = spec.starts.size();
-    if (n != spec.lengths.size() || n != spec.heights.size())
-        throw InvalidProblemDefinitionException{"derived Cumulative: starts, lengths, heights must have the same size"};
+    auto n = spec.tasks.size();
     if (spec.capacity < 0_i)
         throw InvalidProblemDefinitionException{"derived Cumulative: capacity must be non-negative"};
-    for (size_t i = 0; i < n; ++i)
-        if (spec.lengths[i] < 0_i || spec.heights[i] < 0_i)
+    for (const auto & task : spec.tasks)
+        if (task.length < 0_i || task.height < 0_i)
             throw InvalidProblemDefinitionException{"derived Cumulative: lengths and heights must be non-negative"};
     if (! spec.recipe)
         throw InvalidProblemDefinitionException{"derived Cumulative: no recipe for deriving the capacity rows"};
 
     auto inputs = make_shared<CumulativeInputs>();
     inputs->owner = CurrentlyUnnamedConstraint{};
-    inputs->starts = spec.starts;
     inputs->capacity = constant_variable(spec.capacity);
     inputs->rules = spec.rules;
     // Every task unconditionally present: a derived Cumulative over an optional
-    // donor would have to carry the donor's presence literals into its own
+    // donor would have to carry that donor's presence literals into its own
     // reasons, which is future work rather than something to get wrong quietly.
-    // See DerivedCumulativeSpec, which says the donor must not be optional.
+    // See DerivedCumulativeSpec, which says no donor may be optional.
     inputs->presence.assign(n, std::nullopt);
-    for (size_t i = 0; i < n; ++i) {
-        inputs->lengths.push_back(constant_variable(spec.lengths[i]));
-        inputs->heights.push_back(constant_variable(spec.heights[i]));
+    for (const auto & task : spec.tasks) {
+        inputs->starts.push_back(task.start);
+        inputs->lengths.push_back(constant_variable(task.length));
+        inputs->heights.push_back(constant_variable(task.height));
     }
 
     // The same windowing a posted Cumulative resolves in prepare(): a task can
@@ -57,12 +69,12 @@ auto gcs::innards::install_derived_cumulative(
     inputs->per_task_t_lo.assign(n, 0_i);
     vector<Integer> per_task_t_hi(n, 0_i);
     for (size_t i = 0; i < n; ++i) {
-        if (spec.lengths[i] <= 0_i || spec.heights[i] <= 0_i)
+        if (spec.tasks[i].length <= 0_i || spec.tasks[i].height <= 0_i)
             continue;
         inputs->active_tasks.push_back(i);
-        auto [s_lo, s_hi] = initial_state.bounds(spec.starts[i]);
+        auto [s_lo, s_hi] = initial_state.bounds(spec.tasks[i].start);
         inputs->per_task_t_lo[i] = s_lo;
-        per_task_t_hi[i] = s_hi + spec.lengths[i] - 1_i;
+        per_task_t_hi[i] = s_hi + spec.tasks[i].length - 1_i;
     }
 
     if (inputs->active_tasks.empty())
@@ -76,11 +88,11 @@ auto gcs::innards::install_derived_cumulative(
         inputs->time_slot_lo = overload_data.time_slot_lo;
     }
 
-    // The donor's rows, to derive from. Resolved before anything is installed:
-    // a derived constraint that cannot cite its donor must not be installed at
-    // all, since its propagator would then be drawing inferences it has no way
-    // to justify.
-    vector<std::pair<Integer, ProofLine>> donor_rows;
+    // The donors' rows, to derive from. Resolved before anything is installed:
+    // a derived constraint that cannot cite what it needs must not be installed
+    // at all, since its propagator would then be drawing inferences it has no
+    // way to justify.
+    vector<std::pair<Integer, DerivedCumulativeRows>> rows_by_time;
     if (logger) {
         auto & tracker = logger->names_and_ids_tracker();
 
@@ -91,12 +103,14 @@ auto gcs::innards::install_derived_cumulative(
         inputs->ends.assign(n, std::nullopt);
         inputs->end_lines = make_shared<vector<std::optional<std::pair<ProofLine, ProofLine>>>>(n);
 
-        for (auto i : inputs->active_tasks)
+        for (auto i : inputs->active_tasks) {
+            const auto & task = spec.tasks[i];
+            auto position = task.position;
             for (Integer t = inputs->per_task_t_lo[i]; t <= per_task_t_hi[i]; ++t) {
-                auto before = tracker.find_proof_flag_values(spec.donor, ConstraintProofModelData<Cumulative>::before_flag_key(i, t));
-                auto after = tracker.find_proof_flag_values(spec.donor, ConstraintProofModelData<Cumulative>::after_flag_key(i, t));
-                auto active = tracker.find_proof_flag_values(spec.donor, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
-                // Missing means the donor never encoded this (task, time): it
+                auto before = tracker.find_proof_flag_values(task.donor, ConstraintProofModelData<Cumulative>::before_flag_key(position, t));
+                auto after = tracker.find_proof_flag_values(task.donor, ConstraintProofModelData<Cumulative>::after_flag_key(position, t));
+                auto active = tracker.find_proof_flag_values(task.donor, ConstraintProofModelData<Cumulative>::active_flag_key(position, t));
+                // Missing means that donor never encoded this (task, time): it
                 // was not installed, or it windowed the task differently. Either
                 // way there is nothing to pin, so decline rather than guess.
                 if (! before || ! after || ! active)
@@ -105,9 +119,12 @@ auto gcs::innards::install_derived_cumulative(
                 inputs->after_flags[i].push_back(*after);
                 inputs->active_flags[i].push_back(*active);
             }
+        }
 
-        // One donor row per time point some task can occupy, which is exactly
-        // where the donor wrote one.
+        // One entry per time point some task of *this* constraint can occupy,
+        // carrying whichever of the row donors wrote a row there. A donor with
+        // nothing at that time is simply absent: the recipe is what knows
+        // whether it needed it.
         Integer global_lo = inputs->per_task_t_lo[inputs->active_tasks.front()], global_hi = per_task_t_hi[inputs->active_tasks.front()];
         for (auto i : inputs->active_tasks) {
             global_lo = std::min(global_lo, inputs->per_task_t_lo[i]);
@@ -124,10 +141,11 @@ auto gcs::innards::install_derived_cumulative(
             if (! covered)
                 continue;
 
-            auto row = tracker.constraint_row_label(spec.donor, ConstraintProofModelData<Cumulative>::capacity_row_role(t));
-            if (! row)
-                return false;
-            donor_rows.emplace_back(t, *row);
+            DerivedCumulativeRows rows;
+            for (const auto & donor : spec.row_donors)
+                if (auto row = tracker.constraint_row_label(donor, ConstraintProofModelData<Cumulative>::capacity_row_role(t)))
+                    rows.emplace(donor, *row);
+            rows_by_time.emplace_back(t, move(rows));
         }
     }
 
@@ -146,14 +164,19 @@ auto gcs::innards::install_derived_cumulative(
     // still the option of not installing a propagator whose inferences could
     // not be justified.
     if (logger) {
-        logger->emit_proof_comment("derived cumulative: " + to_string(donor_rows.size()) + " capacity rows from " + as_string(spec.donor));
-        for (const auto & [t, donor_row] : donor_rows)
-            inputs->capacity_lines.emplace(t, spec.recipe(*logger, donor_row, t));
+        logger->emit_proof_comment(
+            "derived cumulative: " + to_string(rows_by_time.size()) + " capacity rows over " + to_string(spec.row_donors.size()) + " donors");
+        for (const auto & [t, rows] : rows_by_time) {
+            auto derived = spec.recipe(*logger, rows, t);
+            if (! derived)
+                return false;
+            inputs->capacity_lines.emplace(t, *derived);
+        }
     }
 
     Triggers triggers;
     for (auto i : inputs->active_tasks)
-        triggers.on_bounds.emplace_back(spec.starts[i]);
+        triggers.on_bounds.emplace_back(spec.tasks[i].start);
 
     propagators.install(
         inputs->owner,

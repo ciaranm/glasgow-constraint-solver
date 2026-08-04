@@ -558,24 +558,52 @@ The real presolver built on that recipe is `CumulativeStrengthening` — see
 [cumulative-strengthening.md](cumulative-strengthening.md), which turns the
 invisibility above into an automated soundness tripwire rather than a caveat.
 
-### Multi-donor, for later
+### Multi-donor
 
 Issues #548 and #549 infer a Cumulative over tasks drawn from *several* donors,
-each with its own flag copies for the same `(task, time)` semantics. Two ways to
-make one derivation speak about all of them:
+each with its own flag copies for the same `(task, time)` semantics. Two things
+make that work, and both are now here.
 
-1. **Bridge lemmas.** Pick one donor's flags as canonical and derive
-   `active^{(r)}_{i,t} ↔ active^{(1)}_{i,t}` per `(i, t)`, by `pol` over the two
-   reification halves — the start variable's bits cancel, exactly as in the
-   window-energy bridges above. O(tasks × times) extra Top lines per extra
-   donor, and it needs no new API: both donors' rows are citable by name.
-2. **Rewrite each donor's row.** One `pol` pass per row, over the flag-defining
-   rows directly, landing on the canonical flags without ever stating the
-   bridge.
+**The spec is per task.** `DerivedCumulativeTask` names the donor and the
+position within it for each task separately, so a constraint whose members come
+from different donors needs nothing special — `derived_cumulative_tasks_from`
+builds the all-of-one-donor case, which is still the common one. `row_donors`
+is separate from the tasks' donors, because a pairwise conflict is witnessed by
+whichever resource cannot hold both tasks, and that need not be where either
+task's flags are taken from. The recipe is handed the rows those donors wrote
+for that time point, by donor, and may return nullopt to decline a time point it
+cannot derive — which declines the whole constraint, since the propagator cites
+a row at every time it covers.
 
-Neither is implemented here. The first is the safer starting point (each lemma
-is checkable on its own); the second is smaller if it works. Whichever lands
-should measure the proof size, since that is the whole difference between them.
+**The bridge is one `pol`.** `derive_flag_bridge`
+([`flag_bridge.hh`](../gcs/innards/proofs/flag_bridge.hh)) turns one donor's
+flag into another's. A fully reified flag emits `g → ineq` under `[r]` and
+`ineq → g` under `[f]`; adding one flag's `[r]` to another's `[f]` puts the two
+inequalities in with opposite signs, so their terms cancel — every bit of every
+variable they mention — and saturation leaves the two-literal clause. The
+sketch this replaces assumed order literals and bit reasoning would be needed;
+they are not.
+
+`active ⇔ before ∧ after` needs one more step, since two `active` flags are
+reified over *different* flags and so do not cancel against each other.
+`derive_conjunction_flag_bridge` bridges the conjuncts first, after which each
+appears with both signs and drops out. Three `pol`s per `(task, time, donor
+pair)`.
+
+What the derivation needs is not that the conditions match but that the
+constants leave something behind: for `e ≤ p` and `e ≤ q` the sum has degree
+`q − p + 1`, so it goes through exactly when the implication is true. Identical
+conditions are the case this is for; a weaker target also works, a stronger one
+correctly does not.
+
+Two traps, both guarded. The halves are labelled from the flag's **full PB
+rendering**, not `name_of`, whose plain-flag form is the bare stem — the
+window-energy bridges get away with `name_of` only because `Cumulative`'s flags
+are values-named. And a negated flag has no halves of its own, so bridging one
+is refused rather than silently naming the positive flag's rows.
+
+Proof size is the thing to watch: the bridges are O(tasks × times) Top lines per
+extra donor, and at `Top` none of them ever dies.
 ## Optional tasks (issue #543)
 
 The optional-task constructor gives each task a `{0, 1}` presence
