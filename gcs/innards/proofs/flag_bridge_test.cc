@@ -16,6 +16,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/proof_model.hh>
 
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -35,6 +36,7 @@
 
 using std::cerr;
 using std::move;
+using std::size_t;
 using std::string;
 using std::vector;
 
@@ -137,6 +139,70 @@ namespace
             fail("conjunction bridge (" + name + "): veripb " + (accepted ? "accepted" : "rejected") + " it, expecting the opposite");
         dispose_of_proof_files(proof_name);
     }
+
+    /* What one Cumulative's capacity row looks like once another's flags are
+     * speaking for it, which is what a cut lifted over several resources needs
+     * before any of its rows can be put in the same derivation.
+     */
+    enum class BridgedRowCorruption
+    {
+        None,
+        BridgeBackwards,   ///< carry `b -> a` rather than `a -> b`
+        CoefficientTooBig, ///< add one copy too many of a bridge, so it fails to cancel
+        ClaimTighter       ///< pin a capacity one below the row's
+    };
+
+    auto check_bridged_row(const string & name, BridgedRowCorruption corruption, bool expect_veripb_to_accept) -> void
+    {
+        auto proof_name = "flag_bridge_row_" + name;
+        ProofOptions proof_options{proof_name};
+        NamesAndIDsTracker tracker(proof_options);
+        ProofModel model(proof_options, tracker);
+
+        const vector<Integer> demands{2_i, 3_i, 1_i};
+        const auto capacity = 5_i;
+
+        vector<ProofFlag> ours, theirs;
+        WPBSum load;
+        for (size_t i = 0; i < demands.size(); ++i) {
+            SimpleIntegerVariableID start{i};
+            model.set_up_integer_variable(start, 0_i, 10_i, "start" + std::to_string(i), std::nullopt);
+            // The same condition written twice, as two posted constraints over
+            // the same tasks would write it.
+            ours.push_back(model.create_proof_flag_fully_reifying("ours" + std::to_string(i), WPBSum{} + 1_i * start <= 4_i));
+            theirs.push_back(model.create_proof_flag_fully_reifying("theirs" + std::to_string(i), WPBSum{} + 1_i * start <= 4_i));
+            load += demands[i] * theirs[i];
+        }
+
+        // A task of theirs that is no part of what we are asking about.
+        auto spare = model.create_proof_flag("spare");
+        load += 1_i * spare;
+        auto row = model.add_labelled_constraint("row", move(load) <= capacity);
+        model.finalise();
+
+        ProofLogger logger(proof_options, tracker);
+        tracker.switch_from_model_to_proof(&logger);
+        logger.start_proof(model);
+        tracker.emit_delayed_proof_steps();
+
+        vector<BridgedRowTerm> terms;
+        for (size_t i = 0; i < demands.size(); ++i) {
+            auto bridge = corruption == BridgedRowCorruption::BridgeBackwards ? recover_flag_bridge(logger, theirs[i], ours[i], ProofLevel::Top)
+                                                                              : recover_flag_bridge(logger, ours[i], theirs[i], ProofLevel::Top);
+            auto coefficient = (corruption == BridgedRowCorruption::CoefficientTooBig && i == 0) ? demands[i] + 1_i : demands[i];
+            terms.push_back(BridgedRowTerm{coefficient, ours[i], bridge});
+        }
+
+        auto claimed = corruption == BridgedRowCorruption::ClaimTighter ? capacity - 1_i : capacity;
+        [[maybe_unused]] auto bridged = recover_bridged_row(logger, row, terms, {spare}, claimed, ProofLevel::Top);
+        logger.conclude_none();
+        tracker.finalise();
+
+        auto accepted = run_veripb(proof_name + ".opb", proof_name + ".pbp");
+        if (accepted != expect_veripb_to_accept)
+            fail("bridged row (" + name + "): veripb " + (accepted ? "accepted" : "rejected") + " it, expecting the opposite");
+        dispose_of_proof_files(proof_name);
+    }
 }
 
 auto main(int argc, char * argv[]) -> int
@@ -166,6 +232,18 @@ auto main(int argc, char * argv[]) -> int
     // `after` is then the stronger condition and the conjunct bridge fails.
     check_conjunction("shorter_target", 3_i, 2_i, false);
     println(cerr, "conjunction bridges: derived for matching conjuncts, refused for mismatched ones");
+
+    check_bridged_row("identical", BridgedRowCorruption::None, true);
+    // The direction is the thing to get wrong, and it is invisible from the
+    // types: both bridges exist and only one of them lets the row's left-hand
+    // side grow. Backwards, nothing cancels and the pin has nothing to work on.
+    check_bridged_row("backwards", BridgedRowCorruption::BridgeBackwards, false);
+    // A coefficient that is not the row's leaves that flag behind with the
+    // wrong sign, so the row that comes out is not over the flags claimed.
+    check_bridged_row("coefficient_too_big", BridgedRowCorruption::CoefficientTooBig, false);
+    // And the capacity does not move in the crossing.
+    check_bridged_row("claim_tighter", BridgedRowCorruption::ClaimTighter, false);
+    println(cerr, "a capacity row crosses onto another constraint's flags, and does not cross wrongly");
 
     return EXIT_SUCCESS;
 }

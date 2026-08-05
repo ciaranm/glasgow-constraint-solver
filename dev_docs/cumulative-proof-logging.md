@@ -602,8 +602,19 @@ window-energy bridges get away with `name_of` only because `Cumulative`'s flags
 are values-named. And a negated flag has no halves of its own, so bridging one
 is refused rather than silently naming the positive flag's rows.
 
-Proof size is the thing to watch: the bridges are O(tasks × times) Top lines per
-extra donor, and at `Top` none of them ever dies.
+`recover_bridged_row` composes the bridges with the row itself, which is what
+[#549's lifted cover cuts](inferred-cumulative.md) need: weaken a donor's row
+down to the members of a cut, add each member's bridge as many times as its
+coefficient, and the same inequality comes back over another donor's flags. The
+result is pinned, since a bridge pointing the wrong way is otherwise a mistake
+that only shows up thousands of lines later.
+
+Proof size is the thing to watch: the bridges are O(tasks × times) lines per
+extra donor. #548's are emitted at `Top`, where none of them ever dies, which is
+[#666](https://github.com/ciaranm/glasgow-constraint-solver/issues/666). A recipe
+that raises the level around its own working before bridging does not have that
+problem --- `InferredCumulative`'s does, and only the row it hands back
+survives.
 ## Optional tasks (issue #543)
 
 The optional-task constructor gives each task a `{0, 1}` presence

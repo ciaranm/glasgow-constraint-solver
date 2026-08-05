@@ -4,7 +4,9 @@
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/proofs/proof_only_variables.hh>
+#include <gcs/integer.hh>
 
+#include <optional>
 #include <vector>
 
 namespace gcs::innards
@@ -62,6 +64,62 @@ namespace gcs::innards
      */
     [[nodiscard]] auto recover_conjunction_flag_bridge(ProofLogger &, const ProofFlag & from, const std::vector<ProofFlag> & from_conjuncts,
         const ProofFlag & to, const std::vector<ProofFlag> & to_conjuncts, ProofLevel) -> ProofLine;
+
+    /**
+     * \brief One term of a row being carried onto other flags: its coefficient,
+     * the flag it is to end up over, and the bridge saying that flag implies the
+     * one the row actually mentions.
+     *
+     * The bridge points that way round and not the other, which is worth being
+     * clear about because both directions exist and only one is sound here. To
+     * turn `sum c_j b_j <= C` into `sum c_j a_j <= C` the sum has to be able to
+     * grow, so each `a_j` has to imply its `b_j`: a point where the new flag
+     * holds is one where the old one did, and so one the row already spoke
+     * about. Bridging the other way would say the row constrains points it never
+     * saw.
+     *
+     * There is nothing to carry when a term is already over the flag wanted,
+     * which is the usual case for whichever constraint the row belongs to, so
+     * the bridge is optional and a term without one is left where it is.
+     *
+     * \ingroup Innards
+     */
+    struct BridgedRowTerm
+    {
+        Integer coefficient;
+        ProofFlag flag;
+        std::optional<ProofLine> implies_row_flag;
+    };
+
+    /**
+     * \brief Recover a capacity row over another constraint's flags: the same
+     * inequality, said in flags that mean the same thing.
+     *
+     * A row belonging to one Cumulative mentions that constraint's own activity
+     * flags, and a derivation combining rows from several of them --- a cut
+     * lifted over more than one resource, which is what Sidorov's Equation 4
+     * produces --- needs them all over one set. This is what makes that
+     * possible, and it is one `pol`: weaken the row down to the terms wanted,
+     * then add `c_j` copies of each term's bridge, which puts each flag in with
+     * both signs so that all of them cancel and the constants leave the same
+     * right-hand side behind.
+     *
+     * `weaken_out` names the row's other terms, and is for shape rather than for
+     * soundness: a term left in survives into the `pol` with its own flag, which
+     * the pin below then drops again, so what a caller gets is the same row
+     * either way and only the working is wider. Passing a flag the row does not
+     * mention is what `w` rejects, so a wrong list is an error rather than a
+     * silent weakening.
+     *
+     * The result is pinned with an `ia` against the row asked for, so what comes
+     * back is literal-exact whatever shape the `pol` landed on --- and a bridge
+     * pointing the wrong way, or a coefficient that does not match the row's, is
+     * refused here rather than several thousand lines later.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto recover_bridged_row(ProofLogger &, ProofLine row, const std::vector<BridgedRowTerm> & terms,
+        const std::vector<ProofFlag> & weaken_out, Integer capacity, ProofLevel) -> ProofLine;
 }
 
 #endif

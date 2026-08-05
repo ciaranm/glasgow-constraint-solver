@@ -3,14 +3,17 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/pseudo_boolean.hh>
 
 #include <cstddef>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace gcs;
 using namespace gcs::innards;
 
+using std::move;
 using std::size_t;
 using std::string;
 using std::to_string;
@@ -88,4 +91,37 @@ auto gcs::innards::recover_conjunction_flag_bridge(ProofLogger & logger, const P
     combine.add(implied_by_condition(tracker, to));
     combine.saturate();
     return combine.emit(logger, level);
+}
+
+auto gcs::innards::recover_bridged_row(ProofLogger & logger, ProofLine row, const vector<BridgedRowTerm> & terms,
+    const vector<ProofFlag> & weaken_out, Integer capacity, ProofLevel level) -> ProofLine
+{
+    if (terms.empty())
+        throw ProofError{"bridged row: no terms to carry across, so there would be nothing left of the row"};
+
+    // Weaken first, so that the terms being carried are all there is left, and
+    // then add each one's bridge as many times as its coefficient. Every flag
+    // the row mentions then appears once with each sign and cancels, and the
+    // constants that leaves behind are exactly what the degree loses, so the
+    // right-hand side does not move.
+    //
+    // No saturation: the row wanted is the row the arithmetic lands on, and
+    // capping a coefficient at the degree would quietly hand back a different
+    // one --- stronger, which the pin below would accept without comment.
+    //
+    // A term nobody asked to weaken out is not a soundness problem, since the
+    // pin drops it again; it only makes this pol wider than it needed to be.
+    PolBuilder carry;
+    carry.add(row);
+    for (const auto & flag : weaken_out)
+        carry.weaken(flag, logger.names_and_ids_tracker());
+    for (const auto & term : terms)
+        if (term.implies_row_flag)
+            carry.add(*term.implies_row_flag, term.coefficient);
+    auto carried = carry.emit(logger, level);
+
+    WPBSum bridged;
+    for (const auto & term : terms)
+        bridged += term.coefficient * term.flag;
+    return logger.emit(ImpliesProofRule{carried}, move(bridged) <= capacity, level);
 }
