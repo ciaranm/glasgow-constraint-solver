@@ -731,8 +731,13 @@ auto main(int argc, char * argv[]) -> int
         std::mt19937 rand(*get_seed());
         std::uniform_int_distribution<> n_dist(2, 4), lo_dist(0, 3), span_dist(0, 3), len_dist(1, 3), cap_dist(4, 10), tall_dist(0, 1);
 
+        // Twenty-five instances, and then more until one of them has had
+        // something to raise. About one seed in fifty draws twenty-five that do
+        // not, and an assertion failing then would be saying something about the
+        // draw rather than about the presolver --- while dropping the assertion
+        // would let a sweep that certified no raising at all pass quietly.
         size_t raised = 0, rows = 0;
-        for (int k = 0; k < 25; ++k) {
+        for (int k = 0; k < 100 && (k < 25 || 0 == raised); ++k) {
             Instance inst;
             inst.capacity = cap_dist(rand);
             std::uniform_int_distribution<> tall(inst.capacity / 2 + 1, inst.capacity), rest(1, inst.capacity / 2);
@@ -759,7 +764,7 @@ auto main(int argc, char * argv[]) -> int
         }
 
         if (raised == 0)
-            fail("the verified sweep raised nothing, so veripb checked no raising");
+            fail("a hundred swept instances raised nothing, so veripb checked no raising");
         println(cerr, "verified sweep: {} heights raised over {} rows, every proof checked", raised, rows);
     }
 
