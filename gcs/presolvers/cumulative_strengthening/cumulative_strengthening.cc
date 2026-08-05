@@ -430,10 +430,24 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 for (const auto & item : items)
                     load += item.coefficient * std::get<ProofFlag>(item.term);
 
+                // Everything between here and the pin is working: the
+                // strengthened rows, the at-most-ones and the raises all exist
+                // only to reach the line this returns, and at Top not one of
+                // them would ever be deleted (issue #666, which is the same
+                // defect one presolver over). One level deeper, and forgotten
+                // on the way out.
+                auto saved_level = recipe_logger.proof_level();
+                recipe_logger.enter_proof_level(saved_level + 1);
+                auto give_back = [&](optional<ProofLine> line) {
+                    recipe_logger.enter_proof_level(saved_level);
+                    recipe_logger.forget_proof_level(saved_level + 2);
+                    return line;
+                };
+
                 auto strengthen_to_kappa = [&](ProofLine source) -> ProofLine {
                     recipe_logger.emit_proof_comment(point->second.by_division ? "presolve cumulative gcd" : "presolve cumulative kappa");
                     auto strengthened =
-                        derive_subset_sum_strengthening(recipe_logger, items, source, capacity, ProofLevel::Top, subset_sum_corruption);
+                        derive_subset_sum_strengthening(recipe_logger, items, source, capacity, ProofLevel::Temporary, subset_sum_corruption);
                     if (stats) {
                         if (strengthened.by_division)
                             ++stats->rows_by_division;
@@ -452,8 +466,10 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 // other than where it claimed: a divisor that does not divide
                 // every height still divides *soundly*, and nothing else in the
                 // proof would object.
-                if (full_here.empty())
-                    return recipe_logger.emit(ImpliesProofRule{strengthen_to_kappa(donor_row)}, move(load) <= kappa, ProofLevel::Top);
+                if (full_here.empty()) {
+                    auto strengthened = strengthen_to_kappa(donor_row);
+                    return give_back(recipe_logger.emit(ImpliesProofRule{strengthened}, move(load) <= kappa, ProofLevel::Top));
+                }
 
                 recipe_logger.emit_proof_comment("presolve cumulative amo");
 
@@ -488,7 +504,8 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                     if (unentitled_raise && heights[a] + heights[b] <= capacity)
                         demand_a = capacity - heights[b] + 1_i;
 
-                    auto recovered = recover_am1_from_row(recipe_logger, donor_row, {demand_a, heights[b]}, weaken_out, capacity, ProofLevel::Top);
+                    auto recovered =
+                        recover_am1_from_row(recipe_logger, donor_row, {demand_a, heights[b]}, weaken_out, capacity, ProofLevel::Temporary);
                     at_most_ones.emplace(key, recovered.line);
                     return recovered.line;
                 };
@@ -512,7 +529,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                     without_full.add(donor_row);
                     for (auto i : full_here)
                         without_full.weaken(flag_for(i), tracker);
-                    row = strengthen_to_kappa(without_full.emit(recipe_logger, ProofLevel::Top));
+                    row = strengthen_to_kappa(without_full.emit(recipe_logger, ProofLevel::Temporary));
 
                     // A time point whose own largest load is below the declared
                     // capacity has to be relaxed up to it *before* anything is
@@ -524,7 +541,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                         WPBSum rest;
                         for (const auto & item : items)
                             rest += item.coefficient * std::get<ProofFlag>(item.term);
-                        row = recipe_logger.emit(ImpliesProofRule{*row}, move(rest) <= kappa, ProofLevel::Top);
+                        row = recipe_logger.emit(ImpliesProofRule{*row}, move(rest) <= kappa, ProofLevel::Temporary);
                     }
                     return *row;
                 };
@@ -546,7 +563,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                         // claim is only that a flag is at most one.
                         WPBSum alone;
                         alone += kappa * flag_for(task);
-                        row = recipe_logger.emit_rup_proof_line(move(alone) <= kappa, ProofLevel::Top);
+                        row = recipe_logger.emit_rup_proof_line(move(alone) <= kappa, ProofLevel::Temporary);
                         if (stats)
                             ++stats->raise_lines_emitted;
                     }
@@ -558,7 +575,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                         PolBuilder summed;
                         for (const auto & [other, weight] : running)
                             summed.add(at_most_one_between(task, other), weight);
-                        row = summed.emit(recipe_logger, ProofLevel::Top);
+                        row = summed.emit(recipe_logger, ProofLevel::Temporary);
                         if (stats)
                             ++stats->raise_lines_emitted;
 
@@ -567,7 +584,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                             raised += kappa * flag_for(task);
                             for (const auto & [other, weight] : running)
                                 raised += weight * flag_for(other);
-                            row = recipe_logger.emit(ImpliesProofRule{*row}, move(raised) <= kappa, ProofLevel::Top);
+                            row = recipe_logger.emit(ImpliesProofRule{*row}, move(raised) <= kappa, ProofLevel::Temporary);
                         }
                     }
                     else {
@@ -599,7 +616,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                             for (const auto & [other, weight] : running)
                                 raise.add(at_most_one_between(task, other), e * weight);
                             raise.divide_by(lambda + e);
-                            row = raise.emit(recipe_logger, ProofLevel::Top);
+                            row = raise.emit(recipe_logger, ProofLevel::Temporary);
                             if (stats)
                                 ++stats->raise_lines_emitted;
 
@@ -613,7 +630,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 if (stats)
                     ++stats->rows_with_a_raise;
 
-                return recipe_logger.emit(ImpliesProofRule{*row}, move(load) <= kappa, ProofLevel::Top);
+                return give_back(recipe_logger.emit(ImpliesProofRule{*row}, move(load) <= kappa, ProofLevel::Top));
             },
             .rules = _rules};
 
