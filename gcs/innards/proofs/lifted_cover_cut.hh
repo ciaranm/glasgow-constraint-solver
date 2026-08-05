@@ -6,154 +6,130 @@
 #include <gcs/innards/proofs/proof_only_variables.hh>
 #include <gcs/integer.hh>
 
-#include <cstddef>
+#include <compare>
 #include <optional>
 #include <vector>
 
 namespace gcs::innards
 {
     /**
-     * \brief One `pol` of a lifted cover cut's derivation.
+     * \brief One state of the knapsack dynamic programme that says a lifted
+     * cover cut holds.
      *
-     * Each step weakens the capacity row down to `support`, takes `row_copies`
-     * of it and `cut_copies` of the step before, optionally saturates, and
-     * divides. The first step has no step before it and so no `cut_copies`; it
-     * is the plain cover cut, and on most inputs it is also the only step.
+     * Every 0/1 point reaching this state puts **at least** `weight` on the
+     * capacity row's left-hand side and **at most** `profit` on the cut's. Both
+     * halves are one-sided on purpose: it is what lets one state stand for a
+     * whole family of points, and what lets a state that uses less of the
+     * resource while allowing more on the cut absorb another outright.
      *
      * \ingroup Innards
      */
-    struct LiftedCoverCutStep
+    struct LiftedCoverCutState
     {
-        /// Which members, by index into the caller's parallel vectors, are left
-        /// in the row. Everything else is weakened away, which drops its term
-        /// and takes its demand off the degree.
-        std::vector<std::size_t> support;
+        Integer weight, profit;
 
-        Integer row_copies;
-
-        /// Zero on the first step.
-        Integer cut_copies;
-
-        bool saturate;
-
-        Integer divisor;
+        [[nodiscard]] auto operator<=>(const LiftedCoverCutState &) const = default;
     };
 
     /**
-     * \brief How to get from a capacity row to a lifted cover cut.
+     * \brief The states some prefix of a cut's members can reach, in increasing
+     * order of both weight and profit.
      *
-     * Empty means the cut is true of every 0/1 point --- which happens at the
-     * edges of a derived constraint's window, where so few of its tasks have
-     * flags that their coefficients cannot reach the right-hand side --- so one
-     * RUP establishes it and no arithmetic is needed.
+     * That ordering is not incidental: it is what is left after states another
+     * state already covers are dropped, and the last entry is therefore the
+     * most the prefix can put on the cut's left-hand side.
      *
      * \ingroup Innards
      */
-    using LiftedCoverCutPlan = std::vector<LiftedCoverCutStep>;
+    using LiftedCoverCutLayer = std::vector<LiftedCoverCutState>;
 
     /**
-     * \brief Find a cutting-planes derivation of `sum pi_i a_i <= rhs` from a
-     * capacity row `sum c_i a_i <= C`, or say there is none to be had.
-     *
-     * **Provisional.** This searches for a short derivation and fails on about
-     * one candidate in twenty-five. The agreed replacement is issue #675:
-     * proof-log the knapsack dynamic programme that produced the coefficient in
-     * the first place, which is complete by construction and would delete this
-     * function, the normalised-form model behind it and the `ia` pin that
-     * guards that model. Do not widen the search here to close the gap --- take
-     * the DP, and look for something shorter only once proof size or checking
-     * time is demonstrably a problem.
-     *
-     * The cut is *given* and not up for negotiation. That is the position
-     * every caller is in: InferredCumulative reproduces a published inference
-     * procedure, so the constraint to be posted is decided before any of this
-     * runs, and a constraint no derivation reaches is dropped rather than
-     * traded for one that happens to be easier.
-     *
-     * A *cover* is a set of tasks whose demands overshoot the capacity, and its
-     * cover inequality says they cannot all run. *Lifting* then brings the
-     * remaining tasks in with coefficients large enough to stay valid, which is
-     * what produces a cut with non-unit coefficients --- a statement about the
-     * resource that its own row does not make, and the whole point of the
-     * exercise. Which cut to aim for is the caller's business (see
-     * InferredCumulative, which searches for the one carrying the most energy);
-     * this is the part that has to convince a proof checker, and it takes the
-     * cut as given.
-     *
-     * Validity of a lifted inequality is coNP-hard to decide in general, so
-     * nothing here trusts the caller's claim: the search is over *derivations*,
-     * and it succeeds only when the arithmetic lands on the claimed
-     * coefficients and right-hand side exactly. A cut that is valid but that
-     * this cannot derive is refused rather than asserted --- an uncertified
-     * constraint would be a change to the statement being verified rather than
-     * a consequence of it.
-     *
-     * Three shapes are tried, cheapest first.
-     *
-     *  1. Nothing at all, when `sum pi_i - rhs <= 0` leaves a degree no 0/1
-     *     point can miss.
-     *  2. One `pol`: weaken the row down to the members, saturate or not, and
-     *     divide. This is \ref build_am1_from_row's program with the divisor
-     *     free rather than fixed at the one giving unit coefficients, and it is
-     *     what the overwhelming majority of inputs need --- including most
-     *     restrictions of a cut to the members present at one time point.
-     *  3. A cover, and then one `pol` per lifted member: `row_copies` of the
-     *     row weakened to the support so far plus the new member, and
-     *     `cut_copies` of the cut so far, divided. This is where the non-unit
-     *     coefficients reachable today come from --- `2a + b + c + d <= 2` from
-     *     `5a + 2b + 2c + 2d <= 5` is one copy of each, over three.
-     *
-     * Missing from that vocabulary, and worth knowing about before extending
-     * it: `pol` can also push a **literal axiom**, which cancels against that
-     * literal's complement and so shaves *part* of a coefficient where `w` can
-     * only remove all of it. With one copy of `a >= 0` the example above is a
-     * single `pol` --- `pol 1 aa + 2 d`, checked exact against veripb --- so
-     * "non-unit needs a chain" is not true, only "non-unit needs more than
-     * weaken/saturate/divide". The two families are incomparable, so the chain
-     * stays either way; see issue #674.
-     *
-     * `demands` and `coefficients` are parallel and describe the same members
-     * in the same order. `max_covers` caps the third shape's search, which is
-     * over subsets; every drop it causes is a refusal rather than a wrong
-     * answer.
+     * \brief A lifted cover inequality `sum_i coefficients[i] a_i <= rhs`, and
+     * the dynamic programme that says it follows from the capacity row
+     * `sum_i demands[i] a_i <= capacity`.
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto plan_lifted_cover_cut(const std::vector<Integer> & demands, const std::vector<Integer> & coefficients, Integer capacity,
-        Integer rhs, std::size_t max_covers) -> std::optional<LiftedCoverCutPlan>;
+    struct LiftedCoverCut
+    {
+        std::vector<Integer> demands, coefficients;
+        Integer capacity, rhs;
+
+        /// One entry per prefix of the members, from the empty one to all of
+        /// them, so `layers.size()` is `demands.size() + 1`.
+        std::vector<LiftedCoverCutLayer> layers;
+    };
 
     /**
-     * \brief Emit a plan from \ref plan_lifted_cover_cut, and pin what it
-     * arrived at.
+     * \brief Decide whether a lifted cover cut follows from a capacity row, by
+     * running the knapsack dynamic programme that will later be its
+     * certificate.
      *
-     * `flags` are the members' activity flags, parallel to the `coefficients`
-     * and to the `demands` the plan was made from; `weaken_out` names every
-     * other task with a term in the row, which a caller sweeping a donor's
-     * positions must give in full rather than stopping at the first task that
-     * has no flags.
+     * Returns nothing exactly when the cut is *false* --- when some 0/1 point
+     * the row allows breaks it. There is no third answer: every valid cut gets
+     * a dynamic programme and every dynamic programme becomes a proof, which is
+     * the whole point of doing it this way. The earlier design searched for a
+     * short cutting-planes derivation and refused about one valid cut in
+     * twenty-five, and a refusal there meant a constraint the published
+     * inference procedure would have posted was dropped.
      *
-     * The intermediate steps are emitted one proof level deeper than the
-     * caller's, and forgotten on the way out: only the pinned result survives,
-     * so a derived constraint over a long horizon leaves one live line per time
-     * point rather than one per lifting step per time point. The result is
-     * emitted at the level the caller asked for, while the scaffolding is still
-     * alive for VeriPB to resolve the references against.
+     * The programme is the textbook one. A state after the first `i` members is
+     * a (weight, profit) pair some assignment to those members reaches; a
+     * successor either leaves the next member out, or takes it and pays its
+     * demand. A successor that would overrun the capacity is not created at
+     * all, because the row forbids it --- which is the only place the row is
+     * used, and is why the cut is a consequence of it. States another state
+     * covers are then dropped, so a layer holds only the frontier: strictly
+     * increasing weight against strictly increasing profit, at most one state
+     * per achievable profit, and so at most `rhs + 1` of them.
      *
-     * The pin is an `ia` against the last step, and it is the only thing that
-     * says the derivation arrived where the plan predicted. Its check is
-     * syntactic, so it also *normalises*: whatever shape the last `pol` left
-     * behind, the caller gets the literal-exact inequality it asked for, which
-     * is what a derived Cumulative's propagator will go on to cite.
-     *
-     * `claimed_coefficients` and `claimed_rhs` are what the pin says. They are
-     * the honest ones for every real caller; a test passes something else to
-     * check that VeriPB rejects a cut claiming one better than was derived.
+     * A cover is a set of members whose demands overshoot the capacity, and
+     * lifting is what brings the others in with coefficients large enough to
+     * keep the inequality valid --- which is what produces the non-unit
+     * coefficients that make such a cut say something the row does not. None of
+     * that appears here: which cut to aim for is the caller's business (see
+     * InferredCumulative, which reproduces a published procedure's choice), and
+     * this decides only whether the answer is true and assembles the reason.
      *
      * \ingroup Innards
      */
-    [[nodiscard]] auto derive_lifted_cover_cut(ProofLogger &, ProofLine capacity_row, const LiftedCoverCutPlan &,
-        const std::vector<ProofFlag> & flags, const std::vector<Integer> & claimed_coefficients, const std::vector<ProofFlag> & weaken_out,
-        Integer claimed_rhs, ProofLevel) -> ProofLine;
+    [[nodiscard]] auto validate_lifted_cover_cut(const std::vector<Integer> & demands, const std::vector<Integer> & coefficients, Integer capacity,
+        Integer rhs) -> std::optional<LiftedCoverCut>;
+
+    /**
+     * \brief Derive a validated lifted cover cut from a capacity row, by
+     * replaying its dynamic programme in the proof.
+     *
+     * The shape is Demirović et al.'s (CP 2024), in its one-sided form: an
+     * extension variable per state, reifying "at least this much weight" and
+     * "at most this much profit" and their conjunction; an implication per
+     * transition; an at-least-one per layer, saying the frontier is complete;
+     * and, at the last layer, one flag reifying the cut itself, which every
+     * final state contradicts. Nothing here is a search, so nothing here can
+     * fail on a cut \ref validate_lifted_cover_cut accepted.
+     *
+     * `flags` are the members' activity flags, parallel to the cut's `demands`
+     * and `coefficients`; `weaken_out` names every *other* task with a term in
+     * the row, which a caller sweeping a donor's positions must give in full
+     * rather than stopping at the first task that has no flags.
+     *
+     * The scaffolding is emitted one proof level deeper than the caller's, and
+     * forgotten on the way out --- the extension variables along with it, since
+     * deleting a variable's two defining constraints deletes the variable. Only
+     * the pinned result survives, so a derived constraint over a long horizon
+     * leaves one live line per time point rather than one per state.
+     *
+     * The pin is an `ia` against the derived cut, and it normalises: whatever
+     * shape the last `pol` left behind, the caller gets the literal-exact
+     * inequality it asked for, which is what a derived Cumulative's propagator
+     * will go on to cite. `claimed_coefficients` and `claimed_rhs` are what it
+     * says; they are the cut's own for every real caller, and a test passes
+     * something one better to check that veripb refuses to pin it.
+     *
+     * \ingroup Innards
+     */
+    [[nodiscard]] auto derive_lifted_cover_cut(ProofLogger &, ProofLine capacity_row, const LiftedCoverCut &, const std::vector<ProofFlag> & flags,
+        const std::vector<Integer> & claimed_coefficients, const std::vector<ProofFlag> & weaken_out, Integer claimed_rhs, ProofLevel) -> ProofLine;
 }
 
 #endif

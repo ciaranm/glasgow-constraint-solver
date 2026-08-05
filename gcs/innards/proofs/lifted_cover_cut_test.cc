@@ -1,29 +1,31 @@
 /* Deriving a lifted cover cut from a capacity row.
  *
- * Nothing here goes near a Cumulative: the routine's whole job is the cutting-
- * planes arithmetic, so it is tested on a micro model whose only constraint is
- * one resource row --- and that model is *satisfiable* (everything false fits
- * under any non-negative capacity), which matters, since against an
- * unsatisfiable one every step is vacuously valid and a corrupted derivation
- * would sail through.
+ * Nothing here goes near a Cumulative: the routine's whole job is to turn a
+ * knapsack dynamic programme into a proof, so it is tested on a micro model
+ * whose only constraint is one resource row --- and that model is
+ * *satisfiable* (everything false fits under any non-negative capacity), which
+ * matters, since against an unsatisfiable one every step is vacuously valid and
+ * a corrupted derivation would sail through.
  *
  * Two things are being checked, and they are checked by different means.
  *
- * The first is that a plan is never made for a cut that is not valid. That has
- * nothing to do with proofs: it is settled by enumerating every occupancy point
- * the row allows and looking, which the random corpus below does thousands of
- * times over. A lifted inequality's validity is coNP-hard to decide in general,
- * so this is the property that matters --- the planner is allowed to refuse a
- * valid cut it cannot derive, and is not allowed to plan an invalid one.
+ * The first is that the dynamic programme decides validity exactly: it is built
+ * for every cut that holds at every occupancy point the row allows, and for no
+ * other. That has nothing to do with proofs, and is settled by enumerating
+ * those points and looking, which the random corpus below does thousands of
+ * times over. It is a stronger property than the search this replaced could
+ * offer --- that one was allowed to refuse a valid cut, and did so about once
+ * in twenty-five, which is a constraint the published inference procedure would
+ * have posted and we could not justify.
  *
- * The second is that the emitted `pol`s land where the plan predicted, which
- * only veripb can say. The prediction is a model of VeriPB's normalised-form
- * arithmetic, and a model that has drifted from the real thing would produce
- * plans that derive *something* --- every step is sound whatever it is fed ---
- * just not the line claimed. The `ia` pin is what turns that into a rejection,
- * since its implication check is syntactic. So every case here pins, and the
- * "one better" cases pin something the derivation cannot support and require a
- * rejection: a right-hand side one smaller, and a coefficient one larger.
+ * The second is that the emitted replay checks, which only veripb can say. Its
+ * steps are individually sound whatever they are fed, so a mistake in the
+ * bookkeeping --- a state linked to the wrong successor, a layer whose
+ * at-least-one is not in fact complete --- shows up as a step that does not
+ * follow rather than as a wrong answer. Every case here also pins its result,
+ * and the "one better" cases pin something the derivation cannot support and
+ * require a rejection: a right-hand side one smaller, and a coefficient one
+ * larger.
  */
 
 #include <gcs/constraints/innards/constraints_test_utils.hh>
@@ -70,8 +72,6 @@ using namespace gcs::test_innards;
 
 namespace
 {
-    const size_t max_covers = 4096;
-
     auto fail(const string & message) -> void
     {
         println(cerr, "lifted cover cut test failure: {}", message);
@@ -79,8 +79,8 @@ namespace
     }
 
     /// Does `sum pi_i a_i <= rhs` hold at every occupancy point the row allows?
-    /// Brute force over all of them, which is the only oracle that does not
-    /// beg the question.
+    /// Brute force over all of them, which is the only oracle that does not beg
+    /// the question.
     [[nodiscard]] auto valid(const vector<Integer> & demands, Integer capacity, const vector<Integer> & coefficients, Integer rhs) -> bool
     {
         for (unsigned long long mask = 0; mask < (1uLL << demands.size()); ++mask) {
@@ -96,29 +96,28 @@ namespace
         return true;
     }
 
-    /// Plan the honest cut, emit it against a one-row model, pin
-    /// `claimed_coefficients <= claimed_rhs`, and say whether veripb agreed.
-    /// The model carries one task the cut says nothing about, so the weakening
-    /// sweep is exercised in every case rather than assumed.
+    /// Validate the honest cut, emit its replay against a one-row model, pin
+    /// `claimed_coefficients <= claimed_rhs`, and say whether veripb agreed. The
+    /// model carries one task the cut says nothing about, so the weakening sweep
+    /// is exercised in every case rather than assumed.
     auto check(const string & name, const vector<Integer> & demands, Integer capacity, const vector<Integer> & coefficients, Integer rhs,
-        const vector<Integer> & claimed_coefficients, Integer claimed_rhs, bool expect_veripb_to_accept, bool expect_plan = true) -> void
+        const vector<Integer> & claimed_coefficients, Integer claimed_rhs, bool expect_veripb_to_accept, bool expect_valid = true) -> void
     {
-        auto plan = plan_lifted_cover_cut(demands, coefficients, capacity, rhs, max_covers);
-        if (plan.has_value() != expect_plan)
-            fail(name + ": the planner " + (plan ? "found" : "refused") + " a derivation, expecting the opposite");
-        if (! plan)
+        auto cut = validate_lifted_cover_cut(demands, coefficients, capacity, rhs);
+        if (cut.has_value() != expect_valid)
+            fail(name + ": the dynamic programme " + (cut ? "accepted" : "refused") + " the cut, expecting the opposite");
+        if (cut.has_value() != valid(demands, capacity, coefficients, rhs))
+            fail(name + ": the dynamic programme disagrees with enumerating the row's occupancy points");
+        if (! cut)
             return;
-
-        if (! valid(demands, capacity, coefficients, rhs))
-            fail(name + ": a plan was made for a cut that is not valid");
 
         auto proof_name = "lifted_cover_cut_" + name;
         ProofOptions proof_options{proof_name};
         NamesAndIDsTracker tracker(proof_options);
         ProofModel model(proof_options, tracker);
 
-        // One extra task with a term in the row and no part in the cut, so
-        // that every case has something to weaken out.
+        // One extra task with a term in the row and no part in the cut, so that
+        // every case has something to weaken out.
         vector<ProofFlag> flags;
         WPBSum load;
         for (size_t i = 0; i < demands.size(); ++i) {
@@ -136,7 +135,7 @@ namespace
         tracker.emit_delayed_proof_steps();
 
         [[maybe_unused]] auto line =
-            derive_lifted_cover_cut(logger, resource, *plan, flags, claimed_coefficients, {spare}, claimed_rhs, ProofLevel::Top);
+            derive_lifted_cover_cut(logger, resource, *cut, flags, claimed_coefficients, {spare}, claimed_rhs, ProofLevel::Top);
         logger.conclude_none();
         tracker.finalise();
 
@@ -148,8 +147,8 @@ namespace
 
     /// The honest cut, and then the two "one better" claims over it. Every
     /// certified artefact gets this treatment: with small integers a slack
-    /// derivation can verify by coincidence, and a +1 rejection is what says
-    /// the honest one is tight to its claim rather than merely true.
+    /// derivation can verify by coincidence, and a +1 rejection is what says the
+    /// honest one is tight to its claim rather than merely true.
     auto check_and_claim_one_better(
         const string & name, const vector<Integer> & demands, Integer capacity, const vector<Integer> & coefficients, Integer rhs) -> void
     {
@@ -167,14 +166,14 @@ auto main(int argc, char * argv[]) -> int
 {
     establish_and_announce_seed(argc, argv);
 
-    // The property that matters, and the one that needs no proof checker: a
-    // plan is never made for a cut that is not valid. Most random claims here
-    // are nonsense, and the planner has to refuse all of them while still
-    // finding enough real ones for this to be saying something.
+    // The property that matters, and the one that needs no proof checker: the
+    // dynamic programme is built exactly when the cut holds. Most random claims
+    // here are nonsense and have to be refused, and enough of the rest have to
+    // be real for this to be saying something.
     {
         std::mt19937 rand(*get_seed());
         std::uniform_int_distribution<> n_dist(2, 5), cap_dist(4, 15), coeff_dist(1, 3);
-        size_t planned = 0, refused = 0, planned_non_unit = 0;
+        size_t validated = 0, refused = 0, validated_non_unit = 0, largest_layer = 0;
         for (size_t trial = 0; trial < 4000; ++trial) {
             auto n = static_cast<size_t>(n_dist(rand));
             auto capacity = Integer{cap_dist(rand)};
@@ -188,24 +187,28 @@ auto main(int argc, char * argv[]) -> int
             std::uniform_int_distribution<> rhs_dist(0, static_cast<int>(total.raw_value));
             auto rhs = Integer{rhs_dist(rand)};
 
-            auto plan = plan_lifted_cover_cut(demands, coefficients, capacity, rhs, max_covers);
-            if (! plan) {
+            auto cut = validate_lifted_cover_cut(demands, coefficients, capacity, rhs);
+            if (cut.has_value() != valid(demands, capacity, coefficients, rhs))
+                fail("the dynamic programme disagrees with enumeration over demands " + to_string(demands.size()) + " and capacity " +
+                    to_string(capacity.raw_value));
+            if (! cut) {
                 ++refused;
                 continue;
             }
-            if (! valid(demands, capacity, coefficients, rhs))
-                fail("planned an invalid cut over demands " + to_string(demands.size()) + " and capacity " + to_string(capacity.raw_value));
-            ++planned;
-            if (*std::max_element(coefficients.begin(), coefficients.end()) > 1_i && ! plan->empty())
-                ++planned_non_unit;
+            ++validated;
+            if (*std::max_element(coefficients.begin(), coefficients.end()) > 1_i && total > rhs)
+                ++validated_non_unit;
+            for (const auto & layer : cut->layers)
+                largest_layer = std::max(largest_layer, layer.size());
         }
-        println(
-            cerr, "{} random cuts planned ({} with a non-unit coefficient), {} refused, none of them invalid", planned, planned_non_unit, refused);
-        // A planner that refused everything would pass the line above without
-        // having derived anything at all.
-        if (planned < 100 || planned_non_unit < 10)
-            fail("the random corpus is not exercising the planner: " + to_string(planned) + " plans, " + to_string(planned_non_unit) +
-                " with a non-unit coefficient");
+        println(cerr,
+            "{} random cuts validated ({} with a non-unit coefficient and something to derive), {} refused, the widest layer holding {} states",
+            validated, validated_non_unit, refused, largest_layer);
+        // A programme that refused everything would agree with enumeration on
+        // the refusals alone and have derived nothing at all.
+        if (validated < 100 || validated_non_unit < 10)
+            fail("the random corpus is not exercising the dynamic programme: " + to_string(validated) + " validated, " +
+                to_string(validated_non_unit) + " with a non-unit coefficient");
     }
 
     if (! can_run_veripb()) {
@@ -213,10 +216,9 @@ auto main(int argc, char * argv[]) -> int
         return EXIT_SUCCESS;
     }
 
-    // Unit coefficients: what build_am1_from_row already recovers, reached here
-    // through the free divisor instead of the fixed one. Three sixes under ten
-    // is the clique; three fours under ten conflicts nowhere and is a
-    // cardinality cut all the same.
+    // Unit coefficients, which a single weaken-saturate-divide already reaches:
+    // three sixes under ten is the clique, three fours under ten conflicts
+    // nowhere and is a cardinality cut all the same.
     check_and_claim_one_better("clique", {6_i, 6_i, 6_i}, 10_i, {1_i, 1_i, 1_i}, 1_i);
     check_and_claim_one_better("cardinality", {4_i, 4_i, 4_i}, 10_i, {1_i, 1_i, 1_i}, 2_i);
     println(cerr, "unit coefficients derive, and a claim one better is rejected");
@@ -229,25 +231,39 @@ auto main(int argc, char * argv[]) -> int
     println(cerr, "a lifted cover cut derives");
 
     // Non-unit coefficients, which are what this file exists for and what no
-    // single weaken/saturate/divide can reach: one copy of the row plus one of
-    // the cover cut, over three.
+    // single weaken/saturate/divide can reach.
     check_and_claim_one_better("non_unit", {5_i, 2_i, 2_i, 2_i}, 5_i, {2_i, 1_i, 1_i, 1_i}, 2_i);
     check_and_claim_one_better("non_unit_wider", {7_i, 3_i, 3_i, 3_i, 3_i}, 9_i, {2_i, 1_i, 1_i, 1_i, 1_i}, 3_i);
-    println(cerr, "non-unit coefficients derive, through a cover and a lifting step");
+    println(cerr, "non-unit coefficients derive");
+
+    // What the search this replaced could not reach at all. `3a + 2b + 2c + 2d
+    // <= 4` holds at every point `6a + 3b + 3c + 3d <= 8` allows, and no
+    // sequence of weakenings, saturations and divisions of that row arrives at
+    // it; a replay of the programme has nothing to arrive at, so it derives.
+    check_and_claim_one_better("beyond_the_old_search", {6_i, 3_i, 3_i, 3_i}, 8_i, {3_i, 2_i, 2_i, 2_i}, 4_i);
+    println(cerr, "a cut no short cutting-planes route reaches derives too");
+
+    // A cut where the `pol` that rules a member out is the only thing that does.
+    // Elsewhere the checker reaches the same conclusion unaided: a state's weight
+    // bound usually pins the members it counts, or the residual capacity left
+    // after taking the next one does, and either way unit propagation gets there
+    // without being told. Neither happens here --- two of four unit-demand
+    // members reach a weight of two and nothing says which, and taking the
+    // demand-four member still leaves room for one of them --- so removing that
+    // step makes veripb reject this case, and it rejects no other.
+    check_and_claim_one_better("row_not_pinned", {1_i, 1_i, 1_i, 1_i, 4_i}, 5_i, {1_i, 1_i, 1_i, 1_i, 3_i}, 4_i);
+    println(cerr, "a cut whose states leave the row slack derives, which needs the row step");
 
     // The restrictions a derived constraint meets at the edges of its window,
     // where only some of its tasks have flags. The coefficients cannot move ---
-    // a Cumulative has one height per task --- so only the route may, and the
-    // degenerate end of that is a cut no 0/1 point can miss, which is one RUP
-    // and no arithmetic.
+    // a Cumulative has one height per task --- so the cut is simply restricted,
+    // and the degenerate end of that is a cut no 0/1 point can miss, which is
+    // one RUP and no dynamic programme at all.
     check("restricted", {5_i, 3_i, 3_i}, 8_i, {1_i, 1_i, 1_i}, 2_i, {1_i, 1_i, 1_i}, 2_i, true);
     check("restricted_trivial", {5_i, 3_i}, 8_i, {1_i, 1_i}, 2_i, {1_i, 1_i}, 2_i, true);
     println(cerr, "a cut restricted to fewer tasks still derives, or is trivial");
 
-    // Refusals. A cut that is not valid has no derivation to find, and one that
-    // is valid but out of reach is refused rather than asserted: `3a + 2b + 2c
-    // + 2d <= 4` holds at every point the row allows, and nothing in the shapes
-    // this routine knows arrives at it.
+    // A cut that is not valid has no programme to build and no proof to emit.
     check("invalid_rhs", {6_i, 6_i, 6_i}, 10_i, {1_i, 1_i, 1_i}, 0_i, {1_i, 1_i, 1_i}, 0_i, false, false);
     println(cerr, "an invalid cut is refused rather than derived");
 

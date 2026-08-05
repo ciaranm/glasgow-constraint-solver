@@ -42,16 +42,18 @@ namespace gcs
         {
         };
 
-        /// Leave one of the donor's other tasks in the row rather than
-        /// weakening it away, so the arithmetic runs on a degree that includes
-        /// a demand the cut is not about.
-        struct SkipAWeakening
+        /// Build the dynamic programme against a capacity one smaller than the
+        /// donor's row, so that its states claim the row rules out a member it
+        /// does not. Unlike the two above, this corrupts the *derivation* rather
+        /// than what is claimed of it, and is caught inside the replay rather
+        /// than at the pin.
+        struct ClaimTighterRow
         {
         };
     }
 
     using InferredCumulativeMutation = std::variant<inferred_cumulative_mutation::None, inferred_cumulative_mutation::ClaimTighterCapacity,
-        inferred_cumulative_mutation::ClaimTallerTask, inferred_cumulative_mutation::SkipAWeakening>;
+        inferred_cumulative_mutation::ClaimTallerTask, inferred_cumulative_mutation::ClaimTighterRow>;
 
     /**
      * \brief What the inferred-Cumulative presolver did, filled in when it runs.
@@ -88,12 +90,18 @@ namespace gcs
         /**
          * \brief Constraints the published method infers and we cannot derive.
          *
-         * The headline number of this whole exercise. Everything else here
-         * measures the reproduction; this measures the gap between it and a
-         * *certified* reproduction. A constraint counted here was dropped, not
-         * weakened and not posted: a lifted inequality's validity is coNP-hard
-         * to decide, so one we cannot derive is one we have no business
-         * asserting.
+         * The headline number of this whole exercise: everything else here
+         * measures the reproduction, and this measures the gap between it and a
+         * *certified* reproduction. It is now **zero by construction**, which is
+         * the point of certifying by replaying the lifting procedure's own
+         * knapsack programme rather than looking for a short cutting-planes
+         * route to its conclusion --- the earlier search dropped about one
+         * constraint in twenty-five.
+         *
+         * It is still counted, and still means the same thing, because it is
+         * the one number that would notice Algorithm 2 producing a constraint
+         * that does not follow from the donor's row. Such a constraint is
+         * dropped, not weakened and not posted.
          */
         std::size_t cuts_uncertifiable = 0;
 
@@ -108,15 +116,15 @@ namespace gcs
          * \brief Time points whose row had to be derived over *fewer* than the
          * cut's members, because the rest were outside their windows there.
          *
-         * The one number that says the backward planner was asked anything at
-         * all: the row for a time point where every member is present is the
-         * plan discovery already grew, and is seeded rather than searched for.
-         * Zero here means a fixture's tasks all share a window, which is what
-         * happens whenever their start domains are `[0, horizon - length]` ---
-         * every such task has the window `[0, horizon - 1]` whatever its length,
-         * so a corpus built that way exercises none of this.
+         * The one number that says a restricted programme was ever built: the
+         * row for a time point where every member is present uses the one
+         * discovery already built, which is seeded rather than rebuilt. Zero
+         * here means a fixture's tasks all share a window, which is what happens
+         * whenever their start domains are `[0, horizon - length]` --- every
+         * such task has the window `[0, horizon - 1]` whatever its length, so a
+         * corpus built that way exercises none of this.
          */
-        std::size_t restricted_rows_planned = 0;
+        std::size_t restricted_rows_rebuilt = 0;
 
         /**
          * \brief The largest makespan bound over the posted cuts: Sidorov's
@@ -177,12 +185,12 @@ namespace gcs
      * capacities, and to donors with no optional tasks.
      *
      * Nothing reaches the OPB. Every row of every posted constraint is
-     * *derived*, by \ref plan_lifted_cover_cut and
-     * \ref derive_lifted_cover_cut. Since the constraints come from the
-     * published procedure rather than from what happens to be easy, some of
-     * them have no derivation this can find; those are dropped and counted as
-     * \ref InferredCumulativeStats::cuts_uncertifiable, which is the number
-     * separating this from a certified reproduction.
+     * *derived*, by \ref validate_lifted_cover_cut and
+     * \ref derive_lifted_cover_cut, which certify a cut by replaying the
+     * knapsack dynamic programme that says it holds. That is complete by
+     * construction, so the constraints coming from the published procedure
+     * rather than from what happens to be easy to prove costs nothing:
+     * \ref InferredCumulativeStats::cuts_uncertifiable is zero.
      *
      * \ingroup Presolvers
      */

@@ -26,8 +26,10 @@
  * weaker than intended still lands somewhere true, and only a `+1` that veripb
  * *refuses* says the honest line is tight to what the constraint assumes of it.
  * Both directions are mutated here --- one less capacity, one more height ---
- * over a fixture carrying a spare task, so that the weakening sweep has
- * something to skip as well.
+ * over a fixture carrying a spare task, so that the row the certificate runs on
+ * has something in it the cut is not about. A third mutation corrupts the
+ * derivation rather than the claim, by building the certificate's dynamic
+ * programme against a capacity one below the donor's.
  */
 
 #include <gcs/constraints/cumulative.hh>
@@ -128,8 +130,8 @@ namespace
         return Instance{{5_i, 2_i, 2_i, 2_i}, {3_i, 5_i, 5_i, 5_i}, 5_i, horizon};
     }
 
-    /// The same, plus a task the cut does not reach, so that the weakening
-    /// sweep always has something to skip.
+    /// The same, plus a task the cut does not reach, so that the donor's row
+    /// always carries a term the cut is not about.
     auto lifted_instance_with_spare(int horizon) -> Instance
     {
         return Instance{{5_i, 2_i, 2_i, 2_i, 1_i}, {3_i, 5_i, 5_i, 5_i, 1_i}, 5_i, horizon};
@@ -365,8 +367,8 @@ auto main(int argc, char * argv[]) -> int
         println(cerr, "cardinality cut: posted over three mutually compatible tasks, bound 5");
     }
 
-    // The window edges, which is the only place the backward planner is asked
-    // anything. Pinning the big task into the first half of the horizon leaves
+    // The window edges, which is the only place a programme is built over
+    // fewer than all of the members. Pinning the big task into the first half of the horizon leaves
     // the second half holding only the three small ones, so those time points
     // need `b + c + d <= 2` --- the same cut over fewer members, with the same
     // coefficients, since a Cumulative has one height per task and they cannot
@@ -389,14 +391,14 @@ auto main(int argc, char * argv[]) -> int
 
         if (stats->non_unit_cuts_posted != 1)
             fail("window edges: the lifted cut was not posted, so the restriction is not being exercised");
-        if (stats->restricted_rows_planned == 0)
-            fail("window edges: every time point had all four members, so the backward planner was never asked anything");
+        if (stats->restricted_rows_rebuilt == 0)
+            fail("window edges: every time point had all four members, so no restricted programme was ever built");
         auto expected = expected_solutions(instance);
         if (expected.empty())
             fail("window edges: the fixture has no solutions, so it says nothing about preservation");
         if (lifted.solutions != expected)
             fail("window edges: solutions do not match brute force");
-        println(cerr, "window edges: {} restricted rows planned, {} solutions matching brute force", stats->restricted_rows_planned,
+        println(cerr, "window edges: {} restricted rows rebuilt, {} solutions matching brute force", stats->restricted_rows_rebuilt,
             lifted.solutions.size());
     }
 
@@ -405,7 +407,7 @@ auto main(int argc, char * argv[]) -> int
     {
         auto stats = make_shared<InferredCumulativeStats>();
         solve_instance(lifted_instance(13), Setup{.stats = stats}, nullopt);
-        if (stats->restricted_rows_planned != 0)
+        if (stats->restricted_rows_rebuilt != 0)
             fail("uniform windows: something was restricted, so the fixture above is not the one testing that");
     }
 
@@ -469,7 +471,7 @@ auto main(int argc, char * argv[]) -> int
     // Latest starts are drawn too, and for the same kind of reason: leaving
     // them at `horizon - length` gives every task the window `[0, horizon - 1]`
     // however long it is, so a corpus built that way never restricts a row to
-    // fewer members and never asks the backward planner anything.
+    // fewer members and never builds a restricted programme.
     {
         std::mt19937 rand(*get_seed());
         std::uniform_int_distribution<> n_dist(3, 5), cap_dist(4, 12), len_dist(1, 3), tall_dist(0, 2), pin_dist(0, 2);
@@ -506,7 +508,7 @@ auto main(int argc, char * argv[]) -> int
             posted += stats->cuts_posted;
             non_unit += stats->non_unit_cuts_posted;
             steps += stats->lifting_subproblems;
-            restricted += stats->restricted_rows_planned;
+            restricted += stats->restricted_rows_rebuilt;
         }
 
         if (posted == 0)
@@ -587,7 +589,7 @@ auto main(int argc, char * argv[]) -> int
                 fail("the verified sweep lost solutions");
             }
             posted += stats->cuts_posted;
-            restricted += stats->restricted_rows_planned;
+            restricted += stats->restricted_rows_rebuilt;
             inferred += stats->cuts_found;
             uncertifiable += stats->cuts_uncertifiable;
             over_budget += stats->dropped_over_budget;
@@ -597,7 +599,7 @@ auto main(int argc, char * argv[]) -> int
         if (posted == 0)
             fail("the verified sweep posted nothing, so veripb checked no certificate of ours");
         if (restricted == 0)
-            fail("no row in the verified sweep was restricted to fewer members, so the backward planner was never asked anything");
+            fail("no row in the verified sweep was restricted to fewer members, so no restricted programme was ever built");
         // Every constraint Algorithm 2 inferred was posted, dropped by the
         // output budget before anyone asked about proving it, dropped for want
         // of a derivation, or declined by the install. If those do not add up,
@@ -606,9 +608,14 @@ auto main(int argc, char * argv[]) -> int
         if (posted + uncertifiable + over_budget + declined != inferred)
             fail("the sweep inferred " + to_string(inferred) + " constraints but accounts for " + to_string(posted) + " posted, " +
                 to_string(uncertifiable) + " uncertifiable, " + to_string(over_budget) + " over budget and " + to_string(declined) + " declined");
+        // And the certified fraction is all of it. This is the whole point of
+        // certifying by replaying the lifting procedure's own knapsack
+        // programme: it is complete by construction, where the cutting-planes
+        // search it replaced dropped about one constraint in twenty-five.
+        if (uncertifiable != 0)
+            fail("the sweep could not derive " + to_string(uncertifiable) + " constraints, which the dynamic programme should make impossible");
         auto attempted = inferred - over_budget;
-        println(cerr, "verified sweep: {} of {} attempted constraints certified, {} with no derivation found, {} rows restricted", posted, attempted,
-            uncertifiable, restricted);
+        println(cerr, "verified sweep: {} of {} attempted constraints certified, {} rows restricted", posted, attempted, restricted);
     }
 
     // Nothing may have reached the OPB: the whole plan turns on an inferred
@@ -643,7 +650,7 @@ auto main(int argc, char * argv[]) -> int
         for (const auto & [what, mutation] :
             {std::pair<string, InferredCumulativeMutation>{"one less capacity", inferred_cumulative_mutation::ClaimTighterCapacity{}},
                 std::pair<string, InferredCumulativeMutation>{"one more height", inferred_cumulative_mutation::ClaimTallerTask{}},
-                std::pair<string, InferredCumulativeMutation>{"a skipped weakening", inferred_cumulative_mutation::SkipAWeakening{}}}) {
+                std::pair<string, InferredCumulativeMutation>{"a tighter row", inferred_cumulative_mutation::ClaimTighterRow{}}}) {
             const string name = "inferred_cumulative_mutation";
             Problem p;
             post(p, lifted_instance_with_spare(13), Setup{.mutation = mutation});

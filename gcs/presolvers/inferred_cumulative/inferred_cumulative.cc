@@ -56,11 +56,11 @@ namespace
         vector<size_t> support;
         vector<Integer> coefficients;
         Integer rhs;
-        /// The derivation discovery arrived at, over the whole support. Kept
-        /// rather than re-found: the row every time point in the middle of the
-        /// window needs is this one, and only the restrictions at the edges are
-        /// a question the planner has to answer.
-        LiftedCoverCutPlan plan;
+        /// The dynamic programme over the whole support, which is what says the
+        /// cut holds. Kept rather than rebuilt: the row every time point in the
+        /// middle of the window needs is this one, and only the restrictions at
+        /// the edges have members missing.
+        optional<LiftedCoverCut> validated;
         /// `sum_i d_i pi_i`, the energy the cut's tasks need out of a resource
         /// supplying `rhs` per time step. Kept rather than recomputed, so the
         /// number ranking the cuts is the number reported.
@@ -286,9 +286,8 @@ namespace
         ConstraintID donor;
         size_t donor_size;
         Integer capacity, rhs;
-        size_t max_covers;
         InferredCumulativeMutation mutation;
-        shared_ptr<map<vector<size_t>, optional<LiftedCoverCutPlan>>> plans;
+        shared_ptr<map<vector<size_t>, optional<LiftedCoverCut>>> programmes;
         shared_ptr<InferredCumulativeStats> stats;
 
         /// One entry per member of the cut, in the derived constraint's own
@@ -343,12 +342,6 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         if (_stats)
             (*_stats).*field += by;
     };
-
-    // The planner enumerates covers exhaustively while this allows, and falls
-    // back to a greedy family beyond it. Lifting makes supports wide, so the
-    // fallback is the normal case on a large resource; every drop it causes is
-    // a refusal rather than a wrong answer.
-    const size_t planner_budget = 4096;
 
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
         bump(&InferredCumulativeStats::donors_seen);
@@ -495,23 +488,25 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             cuts.erase(cuts.begin() + static_cast<long>(_max_posted), cuts.end());
         }
 
-        // Only now, the part the paper does not have to do: find a derivation
-        // for each. A constraint we cannot derive is dropped and counted --- it
-        // is one the published method would have posted and we cannot justify.
+        // Only now, the part the paper does not have to do: build the dynamic
+        // programme that says each cut follows from the donor's row, which is
+        // also its certificate. Algorithm 2 solves its lifting subproblems
+        // exactly, so this should accept everything it produced; a constraint it
+        // refuses is a constraint the published method inferred and that does
+        // not in fact hold, which is dropped and counted rather than asserted.
         vector<Cut> accepted;
         for (auto & cut : cuts) {
             vector<Integer> support_demands;
             for (auto i : cut.support)
                 support_demands.push_back(demands[i]);
-            auto plan = plan_lifted_cover_cut(support_demands, cut.coefficients, *capacity, cut.rhs, planner_budget);
-            if (! plan) {
+            cut.validated = validate_lifted_cover_cut(support_demands, cut.coefficients, *capacity, cut.rhs);
+            if (! cut.validated) {
                 bump(&InferredCumulativeStats::cuts_uncertifiable);
                 if (logger)
                     logger->emit_proof_comment("presolve lifted cover: dropping an inferred constraint over " + to_string(cut.support.size()) +
-                        " tasks, no derivation found");
+                        " tasks, it does not follow from the donor's row");
                 continue;
             }
-            cut.plan = move(*plan);
             accepted.push_back(move(cut));
         }
 
@@ -521,9 +516,8 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 .donor_size = starts.size(),
                 .capacity = *capacity,
                 .rhs = cut.rhs,
-                .max_covers = planner_budget,
                 .mutation = _mutation,
-                .plans = make_shared<map<vector<size_t>, optional<LiftedCoverCutPlan>>>(),
+                .programmes = make_shared<map<vector<size_t>, optional<LiftedCoverCut>>>(),
                 .stats = _stats,
                 .positions = {},
                 .demands = {},
@@ -541,13 +535,13 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             }
 
             // Every time point in the middle of the window has all of the cut's
-            // members present, and the derivation for that is the one discovery
-            // already ran forward. Seed it, so the planner is only ever asked
-            // about the restrictions at the edges --- where the coefficients are
-            // fixed and the route genuinely has to be searched for.
+            // members present, and its programme is the one discovery already
+            // built. Seed it, so only the restrictions at the edges --- where
+            // some members have no flags and so no terms in the row --- have a
+            // programme of their own.
             vector<size_t> everyone(recipe.positions.size());
             std::iota(everyone.begin(), everyone.end(), size_t{0});
-            recipe.plans->emplace(move(everyone), cut.plan);
+            recipe.programmes->emplace(move(everyone), cut.validated);
 
             DerivedCumulativeSpec spec{.tasks = derived_tasks,
                 .capacity = cut.rhs,
@@ -598,21 +592,21 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                     }
 
                     // A miss here is a genuine restriction: the row for a time
-                    // point where every member is present is the plan discovery
-                    // grew, seeded before any of this ran.
-                    auto cached = recipe.plans->find(present);
-                    if (cached == recipe.plans->end()) {
+                    // point where every member is present is the programme
+                    // discovery built, seeded before any of this ran.
+                    auto cached = recipe.programmes->find(present);
+                    if (cached == recipe.programmes->end()) {
                         if (recipe.stats)
-                            ++recipe.stats->restricted_rows_planned;
-                        cached = recipe.plans
-                                     ->emplace(present, plan_lifted_cover_cut(demands, coefficients, recipe.capacity, recipe.rhs, recipe.max_covers))
-                                     .first;
+                            ++recipe.stats->restricted_rows_rebuilt;
+                        cached =
+                            recipe.programmes->emplace(present, validate_lifted_cover_cut(demands, coefficients, recipe.capacity, recipe.rhs)).first;
                     }
                     if (! cached->second)
                         return std::nullopt;
 
                     auto claimed = coefficients;
                     auto claimed_rhs = recipe.rhs;
+                    auto programme = cached->second;
                     overloaded{//
                         [&](const inferred_cumulative_mutation::None &) {},
                         [&](const inferred_cumulative_mutation::ClaimTighterCapacity &) { claimed_rhs -= 1_i; },
@@ -620,14 +614,17 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                             if (! claimed.empty())
                                 claimed[0] += 1_i;
                         },
-                        [&](const inferred_cumulative_mutation::SkipAWeakening &) {
-                            if (! weaken_out.empty())
-                                weaken_out.erase(weaken_out.begin());
+                        [&](const inferred_cumulative_mutation::ClaimTighterRow &) {
+                            programme = validate_lifted_cover_cut(demands, coefficients, recipe.capacity - 1_i, recipe.rhs);
                         }}
                         .visit(recipe.mutation);
+                    // A mutation that leaves nothing to derive has nothing to be
+                    // rejected either, and a test asserting on it would be
+                    // asserting that a constraint went missing.
+                    if (! programme)
+                        return std::nullopt;
 
-                    return derive_lifted_cover_cut(
-                        recipe_logger, row->second, *cached->second, flags, claimed, weaken_out, claimed_rhs, ProofLevel::Top);
+                    return derive_lifted_cover_cut(recipe_logger, row->second, *programme, flags, claimed, weaken_out, claimed_rhs, ProofLevel::Top);
                 },
                 .rules = _rules};
 

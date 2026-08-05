@@ -103,71 +103,72 @@ favour of the code, which produced the published results:
 ## The certified fraction, which is the number this exists to produce
 
 Nothing is posted without a derivation. A constraint the published procedure
-infers and this cannot derive is **dropped and counted** as
+infers and this cannot derive would be **dropped and counted** as
 `cuts_uncertifiable` — not weakened into something derivable, because a weakened
 constraint is a different constraint and would quietly break the comparison the
 exercise is for.
 
-Over the test's twenty-five-instance verified sweep, between 95% and 100% of
-attempted constraints certify, depending on seed. The shortfall is real and is
-the honest measure of the gap between the published method and a certified one.
+That number is **zero**, and it is zero by construction rather than by luck: the
+certificate replays the same knapsack computation the inference already did, so
+every constraint the procedure produces is one the proof reaches. The test's
+twenty-five-instance verified sweep asserts it.
+
+It was not always. The first version of this file went looking for a short
+cutting-planes derivation of each constraint's *conclusion* — three shapes of
+`pol`, an in-tree model of VeriPB's normalised-form arithmetic to predict where
+they would land, and an `ia` pin to catch that model drifting — and refused about
+one valid constraint in twenty-five. Every way of widening that search traded a
+smaller tail for more of VeriPB's arithmetic reimplemented here, and none of them
+emptied the tail.
 
 ## The certificate
 
-Everything is one shape of `pol`, and which one depends on the numbers.
+A lifted cover cut is true because a knapsack optimum says so:
+`Σ πᵢ aᵢ ≤ π₀` holds at every 0/1 point the row allows exactly when
+`max { Σ πᵢ xᵢ : Σ cᵢ xᵢ ≤ C }` is at most `π₀`. So rather than deriving that
+conclusion, the proof derives the *computation*, in the states-and-transitions
+shape of Demirović et al. (CP 2024) — and in its **one-sided** form, the one
+their standalone knapsack solver uses, where a state says "at least this much
+weight, at most this much profit" rather than "exactly this much of each".
 
-Writing the row in the complemented form VeriPB normalises it to,
-`Σ c_i ~a_i ≥ Σ c_i − C`, and the cut as `Σ π_i ~a_i ≥ Σ π_i − π₀`:
+`validate_lifted_cover_cut` builds the programme and answers the only question
+worth asking of a candidate cut; `derive_lifted_cover_cut` emits it. Layer `i`
+holds the (weight, profit) pairs the first `i` members can reach. A successor
+either leaves the next member out, or takes it and pays its demand — and **a
+successor that would overrun the capacity is not created at all**. That is the
+only use the donor's row gets, and it is exactly what makes the cut a
+consequence of it.
 
-1. **Nothing at all**, when `Σ π_i − π₀ ≤ 0` leaves a degree no 0/1 point can
-   miss. One RUP.
-2. **One `pol`**: weaken the row down to the members, saturate or not, divide.
-   This is `build_am1_from_row` with the divisor *free* rather than fixed at the
-   one giving unit coefficients, and it is what the overwhelming majority of
-   inputs need.
-3. **A cover, then one `pol` per lifted member**: `μ` copies of the row weakened
-   to the support so far plus the new member, `ν` copies of the cut so far, and
-   a division. This is where the non-unit coefficients the implementation
-   currently reaches come from: `2a + b + c + d ≤ 2` from
-   `5a + 2b + 2c + 2d ≤ 5` is one copy of each, over three.
+Each state carries three extension variables — `Σ_{j≤i} c_j a_j ≥ w`,
+`Σ_{j≤i} π_j a_j ≤ p`, and their conjunction — and each transition an
+implication, emitted as a `pol` that leaves its clause one unit propagation away
+and then the clause. Each layer then gets an at-least-one saying its states are
+between them complete, by resolution over the layer before. At the end one more
+flag reifies the cut itself; every final state contradicts it, since a state with
+a profit above `π₀` is precisely what `validate_lifted_cover_cut` refuses; and
+resolving those against the last layer's at-least-one leaves the flag true.
 
-### The operation this vocabulary is missing
+Nothing in that is a search, and nothing in it can fail. What it deleted is the
+whole of the previous scheme: the `Normalised` model of VeriPB's arithmetic, the
+divisor and copy-count search, the cover enumeration inside the planner, and the
+backward planner the window edges needed.
 
-`pol` has a fourth operation these three do not use: pushing a **literal axiom**
-(`x ≥ 0`), which cancels against that literal's complement and so shaves *part*
-of a coefficient where `w` can only remove all of it. `window_energy` already
-uses it; this file does not, and it should.
+### Dominated states, which is what keeps this small
 
-With it, the example above is **one `pol`**, not a chain. Adding one copy of
-`a ≥ 0` to the complemented row `5~a + 2~b + 2~c + 2~d ≥ 6` cancels one unit,
-giving `4~a + 2~b + 2~c + 2~d ≥ 5`; dividing by two lands exactly on
-`2~a + ~b + ~c + ~d ≥ 3`. Verified against veripb with an `e` (equality) check,
-so it lands there exactly and not merely somewhere implying it:
+A state taking no more of the resource while allowing no less on the cut says
+everything another one does, so the other can go. What survives runs strictly
+upwards in both coordinates, which means **a layer holds at most one state per
+achievable profit** — and since a state whose profit exceeds `π₀` would be a
+point breaking the cut, no layer can be wider than `π₀ + 1`.
 
-```
-pol 1 aa + 2 d ;
-e 2 ~aa 1 ~bb 1 ~cc 1 ~dd >= 3 : -1 ;
-```
+That is the whole reason this is affordable, and it is why the size below does
+not depend on the capacity at all. `π₀` is a cover's size minus one, so it is
+two or three on the constraints the procedure actually infers, where a
+capacity-indexed programme would have been as wide as the resource.
 
-So "non-unit coefficients need a chain" — which an earlier version of this file
-asserted — is **false**. What is true is that the two families are
-*incomparable*: over all four-member instances with demands at most five, 157
-cuts are reachable by a chain and by nothing in the one-`pol`-with-shaving
-family, and 40 go the other way. The chain is not redundant; it is also not the
-only route to a non-unit coefficient.
-
-Adopting shaving is
-[#674](https://github.com/ciaranm/glasgow-constraint-solver/issues/674) — though
-[#675](https://github.com/ciaranm/glasgow-constraint-solver/issues/675) argues
-for going the other way entirely and proof-logging the lifting DP, which would
-be complete by construction and would delete this whole search.
-
-The result is pinned with an `ia`, which is the only thing that says the `pol`s
-arrived where the plan predicted. Every step is sound whatever it is fed, so a
-prediction that had drifted from VeriPB's real arithmetic would derive
-*something* — just not the line the constraint goes on to cite. The pin also
-normalises, so the caller gets the literal-exact inequality whatever shape the
-last `pol` left behind.
+The dropped states are never named in the proof. A transition landing on one is
+emitted straight into the state that covers it, which is valid for the same
+reason the drop was.
 
 ### Restricting to a time point
 
@@ -177,24 +178,19 @@ some of the cut's tasks have flags — and only those have terms in the donor's 
 there — so the cut is simply restricted to them, which stays valid because
 setting an absent task's flag to zero is a point the cut already covered.
 
-The route, though, has to be found again, and *this* is where the backward
-direction earns its keep: `plan_lifted_cover_cut` searches for a derivation of a
-cut it is handed rather than choosing one. It is asked only about genuine
-restrictions — the full-support plan is the one discovery already grew, and is
-seeded into the cache — and its answers are cached per distinct present set.
-
-Over a corpus of random cuts and every subset of each, 40% of the restrictions
-came out trivial, 58% needed one `pol`, 2% needed the full chain, and none was
-unreachable. A time point it cannot answer declines the whole constraint.
+The programme has to be built again over the members that are present, which is
+cheap and always succeeds; a restriction of a valid cut is valid. Answers are
+cached per distinct present set, so the middle of the window uses the one
+discovery already built and only the edges build their own.
 
 **Testing this needs deliberate effort, and it is easy to believe you have.** A
 task whose start domain is `[0, horizon - length]` has the window
 `[0, horizon - 1]` *however long it is*, so a fixture built the obvious way gives
-every task the same window, every time point has every member present, and the
-planner is never asked anything. `InferredCumulativeStats::restricted_rows_planned`
-counts what actually reached it, and the test asserts on it — both that the
-ragged-window fixtures do restrict, and that the uniform ones do not, so it stays
-clear which is testing what.
+every task the same window, every time point has every member present, and no
+restricted programme is ever built.
+`InferredCumulativeStats::restricted_rows_rebuilt` counts what actually was, and
+the test asserts on it — both that the ragged-window fixtures do restrict, and
+that the uniform ones do not, so it stays clear which is testing what.
 
 The other half of that trap: with proofs **off**, no row is derived at all
 (`install_derived_cumulative` only runs a recipe when there is a logger), so a
@@ -202,47 +198,58 @@ corpus that never asks for a proof exercises none of this whatever its windows
 look like. The verified sweep is a separate pass for exactly that reason, and it
 asserts a non-zero restriction count so it cannot quietly stop covering them.
 
-## Proof size
+## Proof size, which is what decided the design
 
-One `pol` per step of the plan per time point, plus the pin — against the
-capacity-one stage's `O(k²)` per time point.
+Measured, since the estimate that nearly sank this was out by two orders of
+magnitude. One derived row costs about **fifteen lines per state**, and the
+states are `members × (π₀ + 1)`:
 
-Measured on the four-task fixture over twelve time points, the presolve prefix is
-**51 lines and 2.4 KB: 24 `pol`, 12 `ia`, and 12 `del`** — a cover and one
-lifting step per time point.
+| members | capacity | `π₀` | states | lines | bytes |
+|--------:|---------:|-----:|-------:|------:|------:|
+| 4 | 5 | 2 | 12 | 175 | 11 K |
+| 6 | 10…80 | 3 | 23 | 331 | 23 K |
+| 8 | 10…80 | 3 | 31 | 457 | 33 K |
+| 12 | 10…80 | 3 | 47 | 697 | 59 K |
 
-The twelve `del` are the point. Scaffolding is emitted one proof level deeper
-than the caller's and forgotten on the way out, so **only the twelve pinned lines
-survive** and the twenty-four working ones do not — which is the fix
-[#666](https://github.com/ciaranm/glasgow-constraint-solver/issues/666) asks for,
-applied from the start rather than retrofitted. Live constraints tax every later
-unhinted RUP, so a derived constraint over a real horizon has to leave one line
-per time point behind, not one per step.
+**The capacity does not appear.** Issue #675 budgeted `O(|S|² · C)` per time
+point — around `10⁶` lines per constraint at `|S| = 10`, `C = 20`, horizon 1000 —
+because it assumed a programme per lifting step, indexed by residual capacity.
+Neither is needed: one programme certifies the finished cut, and the frontier is
+indexed by profit, which is bounded by the right-hand side.
 
-## Decision: the derivation search is provisional; the DP replay is the plan
+Over a horizon, a derived `Cumulative` costs one such row per time point. For
+eight members and a capacity of twenty:
 
-The search described above --- three shapes of `pol`, a model of VeriPB's
-normalised arithmetic to predict them, and an `ia` pin to catch that model
-drifting --- is **not the intended long-term design**. It certifies about 96% of
-what the published procedure infers, and every way of widening it found so far
-trades a smaller tail for a wider search and more arithmetic modelled in-tree.
+| rows | lines | bytes | veripb | peak RSS |
+|-----:|------:|------:|-------:|---------:|
+| 200 | 91 K | 6.9 MB | 0.19 s | 49 MB |
+| 1000 | 457 K | 35 MB | 0.99 s | 164 MB |
 
-The agreed direction is
-[#675](https://github.com/ciaranm/glasgow-constraint-solver/issues/675): the
-lifting coefficient already comes from a knapsack dynamic programme, so
-**proof-log the dynamic programme** rather than deriving its conclusion by some
-other route. That is complete by construction --- there is no tail --- and it
-deletes the search, the arithmetic model and the pin along with it, since a
-replayed computation needs no prediction. `KnapsackUpfront` (#200) already does
-this shape, with a Top-level proof flag per DP state; `dev_docs/knapsack.md` is
-the precedent to read.
+Linear, and a second of checking for a horizon of a thousand. Scaffolding is
+emitted one proof level deeper than the caller's and forgotten on the way out —
+extension variables included, since deleting a variable's two defining
+constraints deletes the variable — so **only one line per time point survives**.
+That is what keeps the checking cheap as well as the memory: live constraints tax
+every later unhinted RUP, and there are 456 of them per time point that do not
+outlive the row they establish.
 
-The reason it is not already done is size, not difficulty: `O(|S|² · C)` per
-time point against one or two `pol` now, times the horizon. **The rule agreed
-is to take the DP proofs and only look for something cleverer once proof size or
-checking time is demonstrably a problem** — not before, and not because a
-shorter derivation exists for some family. Chasing families is how this file
-grew the machinery it has.
+The rule agreed with this design still stands: **take the replay, and look for
+something shorter only once proof size or checking time is demonstrably a
+problem.** On these numbers it is not.
+
+### One step that is not what makes it sound
+
+The `pol` that rules a member out weakens the donor's other tasks out of the row
+first. That weakening is for the checker's benefit, not for soundness: every term
+left in adds its own demand to the degree, and the literals it leaves behind
+cannot between them cover a degree they raised by more than they can reach, so
+the member is forced out either way. What the sweep buys is that the step lands
+on a two-literal clause rather than on something as wide as the donor.
+
+So a mutation that skips a weakening cannot be caught, and there is no longer one
+that tries. The mutation that replaced it builds the programme against a capacity
+one below the donor's, so that its states claim the row rules out a member it does
+not — which veripb refuses inside the replay rather than at the pin.
 
 ## What is not here
 
