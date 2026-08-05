@@ -151,7 +151,10 @@ presolver reports **exactly the bound the paper does**, under his own budgets
 | Pack-d | 8, 9, 12, 15, 16, 17, 18, 20, 24, 43 | 10 / 10 |
 
 Eleven of the twenty have `L` equal to the best known makespan, so the bound
-closes the instance with no search at all.
+closes the instance with no search at all. Give the presolver the makespan
+variable, with `with_makespan`, and that bound is *derived* rather than
+reported: see [certified makespan bounds](certified-makespan-bounds.md), which
+carries the argument and the sweep over both collections.
 
 Two things about the comparison are worth writing down, because both are easy to
 get wrong and neither is visible from the paper:

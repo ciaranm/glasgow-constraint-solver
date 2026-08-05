@@ -33,6 +33,11 @@ length five, that is `21 / 2 = 10.5` against the donor row's own `45 / 5 = 9`. A
 horizon of ten satisfies the resource and not the cut, which is exactly the
 fixture the test refutes at the root.
 
+Give the presolver the makespan variable, with `with_makespan`, and it derives
+that ratio rather than only reporting it: see
+[certified makespan bounds](certified-makespan-bounds.md), which is where the
+argument, its mutations and the RCPSP artefact live.
+
 The ratio is also the *only* thing a cut can buy, which is why it is what covers
 and constraints are both ranked by. Note that it is not used as a filter: the
 published procedure discards a constraint only when a model row dominates it
@@ -262,12 +267,6 @@ not — which veripb refuses inside the replay rather than at the pin.
   stops. Sidorov solves those subproblems and so could we — the precedent for a
   nested solve is `gcs/presolvers/auto_table/auto_table.cc` — but the result
   would have to be posted uncertified, which is not a trade this plan makes.
-- **Certified makespan bounds**
-  ([#672](https://github.com/ciaranm/glasgow-constraint-solver/issues/672)).
-  `largest_capacity_bound` is a number the presolver computed, not a bound the
-  proof establishes. Turning it into a refutation of `[M ≤ μ]` for each candidate
-  `μ`, and shipping a table of RCPSP bounds each with its verified `.pbp`, is the
-  headline deliverable of issue #549.
 - Optional tasks, variable durations or demands, and lifting during search
   (a constraint lifted from a conflict does not propagate after backtracking, so
   this is root-level only).

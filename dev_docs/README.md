@@ -171,6 +171,13 @@ library. For an introduction to *using* the solver, start with the top-level
   certificate takes and why non-unit coefficients need the third, how a cut is
   restricted to the tasks present at one time point when its heights cannot move,
   and the differential fixture that separates this from the capacity-one stage.
+- [Certified makespan lower bounds from a `Cumulative`'s energy](certified-makespan-bounds.md) —
+  turning the `L` those two presolvers report into a number the proof contains.
+  Covers the window-energy argument under the objective's order literal, the two
+  places the derived bound is *not* `L`, why the deadline step has to be a `pol`
+  and cannot be a RUP (and so why a makespan is a variable with rows around it
+  rather than a kind of variable), the three mutations VeriPB refuses and the
+  fourth that cannot be caught, and the RCPSP bounds artefact.
 - [Restarts, nogoods, and dom/wdeg weighting](restarts-nogoods-weighting.md) —
   the search-side machinery from issue #315: the restart loop and its
   `SearchResult` unwind signal, `RestartSchedule`, the `ConflictObserver`
