@@ -1,6 +1,9 @@
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
+#include <gcs/constraints/cumulative/hints.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
+#include <gcs/constraints/innards/makespan_energy.hh>
 #include <gcs/exception.hh>
+#include <gcs/innards/inference_tracker.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/propagators.hh>
@@ -11,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace gcs;
@@ -172,6 +176,92 @@ auto gcs::innards::install_derived_cumulative(
                 return false;
             inputs->capacity_lines.emplace(t, *derived);
         }
+    }
+
+    // The makespan bound, which is a statement about a variable this constraint
+    // does not otherwise mention. It fires once, so it goes in an initialiser
+    // rather than in the propagator: nothing it reads changes below the root
+    // that would let it say more.
+    if (spec.makespan) {
+        // Which tasks can carry energy is the window-energy lemma's question,
+        // and prepare_cumulative_overload_check is where it is answered. A
+        // constraint posted for its energy alone runs with the overload rule
+        // off, so ask anyway rather than going without a bound.
+        if (! spec.rules.overload) {
+            auto overload_data = prepare_cumulative_overload_check(
+                inputs->starts, inputs->lengths, inputs->heights, inputs->active_tasks, inputs->per_task_t_lo, per_task_t_hi, initial_state);
+            inputs->overload_tasks = move(overload_data.overload_tasks);
+            inputs->time_slot_prefix = move(overload_data.time_slot_prefix);
+            inputs->time_slot_lo = overload_data.time_slot_lo;
+        }
+
+        // Everything but the start bounds is settled now: the flag vectors live
+        // in `inputs`, which the initialiser holds a share of, and the windows
+        // are the ones its rows were derived over.
+        vector<makespan_energy::EnergyTask> energy_tasks;
+        vector<IntegerVariableID> scope;
+        for (auto i : inputs->overload_tasks) {
+            energy_tasks.push_back(makespan_energy::EnergyTask{.start = std::get<SimpleIntegerVariableID>(spec.tasks[i].start),
+                .length = spec.tasks[i].length,
+                .height = spec.tasks[i].height,
+                .t_lo = inputs->per_task_t_lo[i],
+                .t_hi = per_task_t_hi[i],
+                .start_lb = 0_i,
+                .start_ub = 0_i,
+                .link = i < spec.makespan_links.size() ? spec.makespan_links[i] : std::nullopt,
+                .before = logger ? &inputs->before_flags[i] : nullptr,
+                .after = logger ? &inputs->after_flags[i] : nullptr,
+                .active = logger ? &inputs->active_flags[i] : nullptr});
+            scope.push_back(spec.tasks[i].start);
+        }
+
+        propagators.install_initialiser(
+            [inputs, energy_tasks, scope, makespan = *spec.makespan, capacity = spec.capacity, mutation = spec.makespan_mutation,
+                reached = spec.makespan_bound_reached](const State & state, auto & inference, ProofLogger * const logger) mutable -> void {
+                for (auto & task : energy_tasks) {
+                    auto [s_lo, s_hi] = state.bounds(task.start);
+                    task.start_lb = s_lo;
+                    task.start_ub = s_hi;
+                }
+
+                // What the model already says the makespan is, which an energy
+                // argument has to beat to be worth making. The link rows give
+                // it directly, and asking them is not the same as asking
+                // `state`: initialisers run before anything has propagated, so
+                // the makespan's own lower bound is still whatever it was
+                // declared with. Without this the search below settles for a
+                // window too narrow to hold every task --- which is sound, and
+                // is a weaker number than the constraint deserves.
+                auto [makespan_lo, makespan_hi] = state.bounds(makespan);
+                auto known = makespan_lo;
+                for (const auto & task : energy_tasks)
+                    if (task.link)
+                        known = std::max(known, task.start_lb + task.link->bound);
+
+                auto bound = makespan_energy::makespan_energy_bound(
+                    energy_tasks, capacity, inputs->time_slot_prefix, inputs->time_slot_lo, known, makespan_hi);
+                if (! bound)
+                    return;
+
+                if (reached)
+                    reached(bound->bound);
+
+                // Tests only: claiming one more than the argument reaches must
+                // be refused, since a derivation with slack in it verifies
+                // whatever it concludes.
+                auto claimed =
+                    std::holds_alternative<makespan_energy::makespan_energy_mutation::ClaimHigherBound>(mutation) ? bound->bound + 1_i : bound->bound;
+
+                auto justify = [&](const ReasonLiterals & reason) -> void {
+                    if (logger)
+                        makespan_energy::derive_makespan_bound(
+                            *logger, reason, makespan, energy_tasks, inputs->capacity_lines, *bound, mutation, ProofLevel::Temporary);
+                };
+
+                inference.infer_greater_than_or_equal(logger, makespan, claimed,
+                    JustifyExplicitly{justify, ThenRUP::Yes, hints::CumulativeMakespan{inputs->owner}}, bounds_reason(scope));
+            },
+            InitialiserPriority::Expensive);
     }
 
     Triggers triggers;

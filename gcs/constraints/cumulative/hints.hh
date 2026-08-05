@@ -35,6 +35,21 @@ namespace gcs::innards::hints
     {
         static constexpr std::string_view subhint_name = "overload";
     };
+
+    /**
+     * \brief Cumulative's makespan-bound hint: the owning constraint, plus the
+     * `makespan` subhint.
+     *
+     * Fires once, at the root, and pushes a variable that is not one of the
+     * constraint's own --- so it is worth being able to isolate from the two
+     * rules that reason about starts.
+     *
+     * \ingroup Innards
+     */
+    struct CumulativeMakespan : Cumulative
+    {
+        static constexpr std::string_view subhint_name = "makespan";
+    };
 }
 
 #endif

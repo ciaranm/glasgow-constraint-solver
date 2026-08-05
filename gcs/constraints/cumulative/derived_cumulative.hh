@@ -3,6 +3,7 @@
 
 #include <gcs/constraint_id.hh>
 #include <gcs/constraints/cumulative/cumulative.hh>
+#include <gcs/constraints/innards/makespan_energy.hh>
 #include <gcs/innards/proofs/proof_line.hh>
 #include <gcs/innards/proofs/proof_logger-fwd.hh>
 #include <gcs/innards/propagators-fwd.hh>
@@ -118,6 +119,39 @@ namespace gcs::innards
          * ProofModel, so it cannot write to the OPB even by mistake.
          */
         std::function<auto(ProofLogger &, const DerivedCumulativeRows &, Integer t)->std::optional<ProofLine>> recipe;
+
+        /**
+         * \brief A variable every task must finish by, if there is one: the
+         * makespan this constraint's energy bounds from below.
+         *
+         * Set it, along with \ref makespan_links, and the constraint pushes that
+         * variable's lower bound once, at the root, with a certificate. What
+         * makes the variable a makespan is those links: the rows saying each
+         * task finishes by it are what confine the tasks to the window the
+         * argument counts supply over, and they are summed into the derivation
+         * rather than taken on trust. Name a variable that is not a makespan
+         * and the bound is simply weaker, not wrong.
+         *
+         * The bound is found from the task geometry and the links' bounds
+         * alone, so it is the same with proofs off; only the certificate needs
+         * a logger.
+         */
+        std::optional<IntegerVariableID> makespan = std::nullopt;
+
+        /// Per task, the model row saying that task must finish by the
+        /// makespan. A task with none keeps only what its own domain gives,
+        /// which is a weaker bound rather than a wrong one; see
+        /// find_makespan_links, which is what a presolver builds this with.
+        std::vector<std::optional<makespan_energy::MakespanLink>> makespan_links = {};
+
+        /// Called with the bound, if one is reached. For a presolver to record
+        /// what its inference came to, which is the number a bounds artefact
+        /// reports.
+        std::function<auto(Integer)->void> makespan_bound_reached = {};
+
+        /// Corrupt the makespan bound's certificate. For tests only, which
+        /// assert that VeriPB rejects the result; see MakespanEnergyMutation.
+        makespan_energy::MakespanEnergyMutation makespan_mutation = makespan_energy::makespan_energy_mutation::None{};
 
         /// Which propagation rules the derived constraint runs. The default is
         /// all of them: it gets the same time-tabling and overload checking a

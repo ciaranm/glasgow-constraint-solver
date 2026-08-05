@@ -52,6 +52,7 @@ add_library(glasgow_constraint_solver
         constraints/increasing/increasing.cc
         constraints/innards/cake_truthiness.cc
         constraints/innards/linear_stages.cc
+        constraints/innards/makespan_energy.cc
         constraints/innards/product_encoding.cc
         constraints/innards/product_justify.cc
         constraints/innards/justify_not_in_range.cc
@@ -125,6 +126,7 @@ add_library(glasgow_constraint_solver
         presolvers/difference_logic/difference_logic.cc
         presolvers/inferred_cumulative/inferred_cumulative.cc
         presolvers/inferred_disjunctive/inferred_disjunctive.cc
+        presolvers/innards/makespan_links.cc
 )
 
 # The repo root contains both gcs/ and util/, so it must be on the include path.

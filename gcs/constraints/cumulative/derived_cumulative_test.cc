@@ -1,11 +1,13 @@
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/cumulative/derived_cumulative.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/proofs/subset_sum_strengthening.hh>
 #include <gcs/presolver.hh>
+#include <gcs/presolvers/innards/makespan_links.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
 
@@ -94,16 +96,32 @@ namespace
         /// A derived constraint whose tasks run longer than the donor's, so it
         /// asks about (task, time) pairs the donor never encoded. The install
         /// must decline.
-        BeyondDonorWindow
+        BeyondDonorWindow,
+        /// C'_t := C_t, plus a certified lower bound on the makespan from the
+        /// tasks' energy.
+        Makespan,
+        /// The same, claiming a makespan one larger than the energy supports.
+        /// VeriPB must reject.
+        MakespanClaimHigher,
+        /// The same, counting the window one capacity row short. VeriPB must
+        /// reject.
+        MakespanOmitRow,
+        /// The same, deriving the tasks' window energy without the deadline
+        /// that confines them to the window. VeriPB must reject.
+        MakespanForgetDeadline
     };
 
     struct DerivedDemoPresolver : Presolver
     {
         Demo demo;
+        // The model's makespan variable, for the demos that bound it.
+        optional<IntegerVariableID> makespan;
         // Set by run(), read by the test: whether anything was installed.
         std::shared_ptr<bool> installed = std::make_shared<bool>(false);
+        // Set by the derived constraint's initialiser: the bound it reached.
+        std::shared_ptr<optional<Integer>> bound_reached = std::make_shared<optional<Integer>>();
 
-        explicit DerivedDemoPresolver(Demo d) : demo(d)
+        explicit DerivedDemoPresolver(Demo d, optional<IntegerVariableID> m = nullopt) : demo(d), makespan(m)
         {
         }
 
@@ -191,6 +209,36 @@ namespace
                     };
                 } break;
 
+                case Demo::Makespan:
+                case Demo::MakespanClaimHigher:
+                case Demo::MakespanOmitRow:
+                case Demo::MakespanForgetDeadline:
+                    if (! makespan)
+                        fail("a makespan demo was run on a model with no makespan variable");
+                    spec.makespan = makespan;
+                    {
+                        // What the model says the makespan is: the rows the
+                        // derivation sums, rather than a promise it makes.
+                        auto links = find_makespan_links(problem, logger, *makespan);
+                        for (const auto & task : spec.tasks) {
+                            auto link = links.find(task.start);
+                            spec.makespan_links.push_back(link == links.end() ? nullopt : make_optional<makespan_energy::MakespanLink>(link->second));
+                        }
+                    }
+                    spec.makespan_bound_reached = [reached = bound_reached](Integer bound) { *reached = bound; };
+                    switch (demo) {
+                    case Demo::MakespanClaimHigher: spec.makespan_mutation = makespan_energy::makespan_energy_mutation::ClaimHigherBound{}; break;
+                    case Demo::MakespanOmitRow: spec.makespan_mutation = makespan_energy::makespan_energy_mutation::OmitCapacityRow{}; break;
+                    case Demo::MakespanForgetDeadline: spec.makespan_mutation = makespan_energy::makespan_energy_mutation::ForgetTheDeadline{}; break;
+                    default: break;
+                    }
+                    spec.recipe = [row_of](ProofLogger & logger, const DerivedCumulativeRows & rows, Integer) -> optional<ProofLine> {
+                        PolBuilder copy;
+                        copy.add(row_of(rows));
+                        return copy.emit(logger, ProofLevel::Top);
+                    };
+                    break;
+
                 case Demo::BeyondDonorWindow:
                     // One unit longer than the donor's tasks, so the derived
                     // constraint's last time point is one the donor never
@@ -212,8 +260,9 @@ namespace
 
         [[nodiscard]] auto clone() const -> unique_ptr<Presolver> override
         {
-            auto result = make_unique<DerivedDemoPresolver>(demo);
+            auto result = make_unique<DerivedDemoPresolver>(demo, makespan);
             result->installed = installed;
+            result->bound_reached = bound_reached;
             return result;
         }
     };
@@ -224,6 +273,11 @@ namespace
         vector<int> lengths;
         vector<int> heights;
         int capacity;
+        /// When set, the model also gets a `makespan` variable over
+        /// `[0, horizon]` with `start_i + length_i <= makespan` for every task
+        /// --- which is the entailment the makespan bound's derivation rests
+        /// on, and the only thing that makes those demos legal.
+        optional<int> makespan_horizon = nullopt;
     };
 
     auto is_satisfying(const Instance & inst, const vector<int> & starts) -> bool
@@ -247,11 +301,20 @@ namespace
         return true;
     }
 
-    auto post(Problem & p, const Instance & inst, optional<Demo> demo, CumulativeRules donor_rules = CumulativeRules{}) -> vector<IntegerVariableID>
+    struct Posted
+    {
+        vector<IntegerVariableID> starts;
+        optional<IntegerVariableID> makespan;
+        /// The demo presolver's record of what its derived constraint's
+        /// initialiser inferred, if anything.
+        std::shared_ptr<optional<Integer>> bound_reached;
+    };
+
+    auto post(Problem & p, const Instance & inst, optional<Demo> demo, CumulativeRules donor_rules = CumulativeRules{}) -> Posted
     {
         vector<IntegerVariableID> starts;
         for (auto & [lo, hi] : inst.start_ranges)
-            starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}));
+            starts.push_back(p.create_integer_variable(Integer{lo}, Integer{hi}, "start" + std::to_string(starts.size())));
 
         vector<Integer> lengths, heights;
         for (auto l : inst.lengths)
@@ -259,10 +322,18 @@ namespace
         for (auto h : inst.heights)
             heights.push_back(Integer{h});
 
+        optional<IntegerVariableID> makespan;
+        if (inst.makespan_horizon) {
+            makespan = p.create_integer_variable(0_i, Integer{*inst.makespan_horizon}, "makespan");
+            for (size_t i = 0; i < starts.size(); ++i)
+                p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * *makespan + -1_i * starts[i], lengths[i]});
+        }
+
         p.post(Cumulative{starts, lengths, heights, Integer{inst.capacity}}.with_rules(donor_rules));
+        auto presolver = DerivedDemoPresolver{demo.value_or(Demo::Duplicate), makespan};
         if (demo)
-            p.add_presolver(DerivedDemoPresolver{*demo});
-        return starts;
+            p.add_presolver(presolver);
+        return Posted{move(starts), makespan, presolver.bound_reached};
     }
 
     struct Outcome
@@ -270,13 +341,16 @@ namespace
         set<vector<int>> solutions;
         unsigned long long recursions = 0;
         bool refuted_at_root = false;
+        /// What the makespan demos' initialiser inferred, if it ran.
+        optional<Integer> makespan_bound;
     };
 
     auto solve_it(const Instance & inst, optional<Demo> demo, const optional<string> & proof_name, CumulativeRules donor_rules = CumulativeRules{})
         -> Outcome
     {
         Problem p;
-        auto starts = post(p, inst, demo, donor_rules);
+        auto posted = post(p, inst, demo, donor_rules);
+        const auto & starts = posted.starts;
 
         Outcome outcome;
         bool reached_a_node = false, found_a_solution = false;
@@ -297,6 +371,7 @@ namespace
 
         outcome.recursions = stats.recursions;
         outcome.refuted_at_root = ! reached_a_node && ! found_a_solution;
+        outcome.makespan_bound = *posted.bound_reached;
 
         if (proof_name)
             verify_proof_and_clean_up(*proof_name);
@@ -418,9 +493,42 @@ auto main(int argc, char * argv[]) -> int
             donor_silent.recursions);
     }
 
+    // Demo three: a certified makespan bound. Three tasks of length two on a
+    // unary resource must run one after another, so no schedule finishes before
+    // time six --- and the makespan variable's own domain, and the model's
+    // `start + 2 <= makespan` rows, say only that it is at least two.
+    //
+    // The margin is exactly one: over [0, 5) the tasks need six units and the
+    // resource supplies five. That is what makes the mutations below bite; with
+    // any slack a corrupted derivation lands somewhere weaker and still
+    // contradicts.
+    const Instance makespan_instance{{{0, 5}, {0, 5}, {0, 5}}, {2, 2, 2}, {1, 1, 1}, 1, make_optional(8)};
+
+    {
+        auto with_bound = solve_it(makespan_instance, make_optional(Demo::Makespan), proofs ? make_optional("derived_cumulative_makespan") : nullopt);
+
+        if (with_bound.makespan_bound != make_optional(6_i))
+            fail("makespan demo: the derived constraint inferred " +
+                (with_bound.makespan_bound ? std::to_string(with_bound.makespan_bound->raw_value) : string{"nothing"}) +
+                ", not the six its tasks' energy supports");
+
+        set<vector<int>> expected;
+        build_expected(
+            expected, [&](const vector<int> & starts) { return is_satisfying(makespan_instance, starts); }, makespan_instance.start_ranges);
+        if (expected != with_bound.solutions)
+            fail("makespan demo: solutions do not match brute force");
+
+        // With proofs off the bound has to be the same number, or the solver is
+        // doing different arithmetic depending on whether anyone is watching.
+        auto unproved = solve_it(makespan_instance, make_optional(Demo::Makespan), nullopt);
+        if (unproved.makespan_bound != with_bound.makespan_bound)
+            fail("makespan demo: the bound differs with proofs off");
+    }
+
     // Nothing above may have reached the OPB.
     check_opb_unaffected("duplicate", duplicate_instance, Demo::Duplicate);
     check_opb_unaffected("strengthened", strengthened_instance, Demo::Strengthened);
+    check_opb_unaffected("makespan", makespan_instance, Demo::Makespan);
 
     // A derived constraint is implied, so it must not cost solutions. Random
     // instances, against brute force, with the duplicate recipe (which keeps
@@ -465,7 +573,7 @@ auto main(int argc, char * argv[]) -> int
         auto presolver = DerivedDemoPresolver{Demo::BeyondDonorWindow};
         auto installed = presolver.installed;
         Problem p2;
-        auto starts = post(p2, duplicate_instance, nullopt);
+        post(p2, duplicate_instance, nullopt);
         p2.add_presolver(presolver);
         solve_with(p2, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return false; }},
             proofs ? make_optional<ProofOptions>(ProofFileNames{"derived_cumulative_beyond_window"}) : nullopt);
@@ -492,6 +600,23 @@ auto main(int argc, char * argv[]) -> int
             fail("veripb accepted a derived capacity one lower than the derivation supports");
         println(cerr, "veripb rejected the one-lower capacity, as expected");
         dispose_of_proof_files("derived_cumulative_one_lower");
+    }
+
+    // Each way of getting the makespan bound wrong, and VeriPB refusing it.
+    // The `+1` is the one that matters: a bound whose derivation has slack
+    // verifies whatever it concludes, so only a refusal says this one is tight.
+    for (auto [demo, what] : {pair{Demo::MakespanClaimHigher, "a makespan one larger than the energy supports"},
+             pair{Demo::MakespanOmitRow, "a makespan bound counting the window one capacity row short"},
+             pair{Demo::MakespanForgetDeadline, "a makespan bound whose window energy forgets the deadline"}}) {
+        const string name = "derived_cumulative_makespan_mutation";
+        Problem p;
+        post(p, makespan_instance, make_optional(demo));
+        solve_with(p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
+
+        if (run_veripb(name + ".opb", name + ".pbp"))
+            fail(string{"veripb accepted "} + what);
+        println(cerr, "veripb rejected {}, as expected", what);
+        dispose_of_proof_files(name);
     }
 
     // Backtracking soak: the derived rows are emitted once, at the top of the
