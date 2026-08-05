@@ -110,8 +110,11 @@ namespace gcs::innards
      *
      * `flags` are the members' activity flags, parallel to the cut's `demands`
      * and `coefficients`; `weaken_out` names every *other* task with a term in
-     * the row, which a caller sweeping a donor's positions must give in full
-     * rather than stopping at the first task that has no flags.
+     * the row. Getting that list wrong costs proof size rather than soundness:
+     * the one step it feeds is the `pol` ruling a member out, and saturation
+     * forces the member out whatever else is left in the row. What the list buys
+     * is that the step lands on a two-literal clause rather than on something as
+     * wide as the donor.
      *
      * The scaffolding is emitted one proof level deeper than the caller's, and
      * forgotten on the way out --- the extension variables along with it, since
