@@ -689,7 +689,8 @@ auto main(int argc, char * argv[]) -> int
         // count makes them assertions about the *draw*: seed 268 raises no
         // height in sixty instances, and CI eventually meets such a seed.
         size_t fired = 0, raised = 0;
-        for (int k = 0; k < 240 && (k < 60 || 0 == raised || 0 == fired); ++k) {
+        int drawn = 0;
+        for (; drawn < 240 && (drawn < 60 || 0 == raised || 0 == fired); ++drawn) {
             Instance inst;
             inst.capacity = cap_dist(rand);
             std::uniform_int_distribution<> tall(inst.capacity / 2 + 1, inst.capacity), rest(1, inst.capacity / 2);
@@ -719,7 +720,7 @@ auto main(int argc, char * argv[]) -> int
             fail("the presolver fired on none of two hundred and forty random instances, so it checked nothing");
         if (raised == 0)
             fail("no height was raised across two hundred and forty random instances, so the heights half checked nothing");
-        println(cerr, "solution preservation: strengthened {} of 60 random instances, raising {} heights", fired, raised);
+        println(cerr, "solution preservation: strengthened {} of {} random instances, raising {} heights", fired, drawn, raised);
     }
 
     if (! proofs) {
