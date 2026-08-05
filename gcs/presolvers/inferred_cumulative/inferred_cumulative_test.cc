@@ -391,7 +391,13 @@ auto main(int argc, char * argv[]) -> int
 
         if (stats->non_unit_cuts_posted != 1)
             fail("window edges: the lifted cut was not posted, so the restriction is not being exercised");
-        if (stats->restricted_rows_rebuilt == 0)
+        // Only when a proof was asked for. No row is derived at all with proofs
+        // off --- install_derived_cumulative runs a recipe only when there is a
+        // logger --- so the count is zero for a reason that says nothing about
+        // windows. That is what turned the Windows lane red: `can_run_veripb()`
+        // shells out to `veripb --help >/dev/null`, which cmd.exe cannot
+        // redirect, so that platform takes the proofs-off path throughout.
+        if (proofs && 0 == stats->restricted_rows_rebuilt)
             fail("window edges: every time point had all four members, so no restricted programme was ever built");
         auto expected = expected_solutions(instance);
         if (expected.empty())
