@@ -32,7 +32,9 @@ using std::nullopt;
 using std::optional;
 using std::size_t;
 using std::vector;
+using std::ranges::any_of;
 using std::ranges::sort;
+using std::ranges::unique;
 
 namespace
 {
@@ -44,74 +46,193 @@ namespace
         ProofLine forward, reverse;
     };
 
-    /// Drop every state another one already covers. A state taking no more of
-    /// the resource while allowing no less on the cut says everything the
-    /// covered one does, so the covered one can go --- and the state carrying
-    /// the most is never covered, so the bound the last layer reports does not
-    /// move. What is left runs strictly upwards in both coordinates, which is
-    /// why a layer holds at most one state per achievable profit.
+    /// Does the first state say everything the second does? It takes no more of
+    /// any resource and allows no less on the cut, so every point in the second
+    /// is a point in the first.
+    [[nodiscard]] auto covers(const LiftedCoverCutState & state, const LiftedCoverCutState & covered) -> bool
+    {
+        if (state.profit < covered.profit)
+            return false;
+        for (size_t row = 0; row < state.weights.size(); ++row)
+            if (state.weights[row] > covered.weights[row])
+                return false;
+        return true;
+    }
+
+    /// Drop every state another one already covers, leaving an antichain. The
+    /// state carrying the most is never covered, so the bound the last layer
+    /// reports does not move --- and every state left is still a tuple some 0/1
+    /// point reaches exactly, which is what makes that bound the true optimum
+    /// rather than an over-estimate.
+    ///
+    /// Over one row this is a staircase, and what survives runs strictly upwards
+    /// in both coordinates, which is why a layer then holds at most one state
+    /// per achievable profit. Over several there is no such shape, and the
+    /// budget is what stands in for it.
     auto reduce_to_frontier(LiftedCoverCutLayer & states) -> void
     {
-        sort(states, [](const LiftedCoverCutState & a, const LiftedCoverCutState & b) {
-            if (a.weight != b.weight)
-                return a.weight < b.weight;
-            return a.profit > b.profit;
-        });
+        sort(states);
+        states.erase(unique(states).begin(), states.end());
 
         LiftedCoverCutLayer frontier;
-        auto covered_up_to = -1_i;
         for (const auto & state : states)
-            if (state.profit > covered_up_to) {
-                covered_up_to = state.profit;
+            if (! any_of(states, [&](const LiftedCoverCutState & other) { return other != state && covers(other, state); }))
                 frontier.push_back(state);
-            }
         states = move(frontier);
     }
-}
 
-auto gcs::innards::validate_lifted_cover_cut(const vector<Integer> & demands, const vector<Integer> & coefficients, Integer capacity, Integer rhs)
-    -> optional<LiftedCoverCut>
-{
-    if (demands.size() != coefficients.size())
-        throw ProofError{"a lifted cover cut needs one coefficient per demand"};
-
-    vector<LiftedCoverCutLayer> layers{LiftedCoverCutLayer{LiftedCoverCutState{0_i, 0_i}}};
-    for (size_t member = 0; member < demands.size(); ++member) {
-        LiftedCoverCutLayer next;
-        for (const auto & state : layers.back()) {
-            // Leaving the member out reaches the same pair one layer on; taking
-            // it costs its demand and pays its coefficient, and the row rules it
-            // out entirely once that overruns the capacity. That is the only use
-            // the row gets, and is what makes the cut a consequence of it.
-            next.push_back(state);
-            if (state.weight + demands[member] <= capacity)
-                next.push_back(LiftedCoverCutState{state.weight + demands[member], state.profit + coefficients[member]});
-        }
-        reduce_to_frontier(next);
-        layers.push_back(move(next));
+    /// The rows that can rule something out: everything else admits every subset
+    /// of the members, so no derivation could use it and a weight bound against
+    /// it would be a flag per state saying nothing.
+    [[nodiscard]] auto binding_rows(const vector<vector<Integer>> & demands, const vector<Integer> & capacities) -> vector<size_t>
+    {
+        vector<size_t> binding;
+        for (size_t row = 0; row < capacities.size(); ++row)
+            if (std::accumulate(demands[row].begin(), demands[row].end(), 0_i) > capacities[row])
+                binding.push_back(row);
+        return binding;
     }
 
-    // The frontier runs upwards, so the last state of the last layer is the
-    // most any 0/1 point the row allows can put on the cut's left-hand side.
-    if (layers.back().back().profit > rhs)
-        return nullopt;
+    struct Programme
+    {
+        vector<LiftedCoverCutLayer> layers;
+        bool over_budget = false;
+        /// Set when some state's profit reached the ceiling asked about, in
+        /// which case the layers are whatever had been built when it did. Since
+        /// coefficients are never negative and a state only covers one whose
+        /// profit is no larger, such a state has a descendant in every later
+        /// layer, so stopping there loses nothing.
+        bool reached_ceiling = false;
+    };
 
-    return LiftedCoverCut{demands, coefficients, capacity, rhs, move(layers)};
+    /// Run the programme forwards, layer by layer. A state after the first `i`
+    /// members is a (weights, profit) tuple reachable by taking some of them; a
+    /// successor either leaves the next member out or takes it, and one that
+    /// would overrun some capacity is not created, because that row forbids it.
+    [[nodiscard]] auto build_programme(const vector<vector<Integer>> & demands, const vector<Integer> & coefficients,
+        const vector<Integer> & capacities, Integer profit_ceiling, size_t state_budget) -> Programme
+    {
+        auto rows = capacities.size();
+        Programme programme;
+        programme.layers.push_back(LiftedCoverCutLayer{LiftedCoverCutState{vector<Integer>(rows, 0_i), 0_i}});
+        size_t states = 1;
+
+        for (size_t member = 0; member < coefficients.size(); ++member) {
+            LiftedCoverCutLayer next;
+            for (const auto & state : programme.layers.back()) {
+                next.push_back(state);
+
+                auto weights = state.weights;
+                auto fits = true;
+                for (size_t row = 0; row < rows && fits; ++row) {
+                    weights[row] += demands[row][member];
+                    fits = weights[row] <= capacities[row];
+                }
+                if (fits)
+                    next.push_back(LiftedCoverCutState{move(weights), state.profit + coefficients[member]});
+            }
+
+            reduce_to_frontier(next);
+            states += next.size();
+            if (states > state_budget) {
+                programme.over_budget = true;
+                return programme;
+            }
+
+            programme.reached_ceiling = any_of(next, [&](const LiftedCoverCutState & state) { return state.profit >= profit_ceiling; });
+            programme.layers.push_back(move(next));
+            if (programme.reached_ceiling)
+                return programme;
+        }
+
+        return programme;
+    }
+
+    /// The most any state in a layer allows on the cut.
+    [[nodiscard]] auto largest_profit(const LiftedCoverCutLayer & layer) -> Integer
+    {
+        auto best = 0_i;
+        for (const auto & state : layer)
+            best = std::max(best, state.profit);
+        return best;
+    }
+
+    auto check_shape(const vector<vector<Integer>> & demands, const vector<Integer> & coefficients, const vector<Integer> & capacities) -> void
+    {
+        if (demands.size() != capacities.size())
+            throw ProofError{"a lifted cover cut needs one capacity per row of demands"};
+        for (const auto & row : demands)
+            if (row.size() != coefficients.size())
+                throw ProofError{"a lifted cover cut needs one coefficient per demand"};
+    }
 }
 
-auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, ProofLine capacity_row, const LiftedCoverCut & cut, const vector<ProofFlag> & flags,
-    const vector<Integer> & claimed_coefficients, const vector<ProofFlag> & weaken_out, Integer claimed_rhs, ProofLevel level) -> ProofLine
+auto gcs::innards::validate_lifted_cover_cut(const vector<vector<Integer>> & demands, const vector<Integer> & coefficients,
+    const vector<Integer> & capacities, Integer rhs, size_t state_budget) -> LiftedCoverCutValidity
+{
+    check_shape(demands, coefficients, capacities);
+
+    auto binding = binding_rows(demands, capacities);
+    vector<vector<Integer>> kept_demands;
+    vector<Integer> kept_capacities;
+    for (auto row : binding) {
+        kept_demands.push_back(demands[row]);
+        kept_capacities.push_back(capacities[row]);
+    }
+
+    // A state whose profit is above the right-hand side is a point breaking the
+    // cut, so there is nothing to gain by carrying on once one appears --- and
+    // asking about it here is what keeps a layer to one state per achievable
+    // profit below the right-hand side, times whatever the weights need.
+    auto programme = build_programme(kept_demands, coefficients, kept_capacities, rhs + 1_i, state_budget);
+    if (programme.over_budget)
+        return LiftedCoverCutValidity{nullopt, true};
+    if (programme.reached_ceiling || largest_profit(programme.layers.back()) > rhs)
+        return LiftedCoverCutValidity{nullopt, false};
+
+    return LiftedCoverCutValidity{
+        LiftedCoverCut{move(kept_demands), move(kept_capacities), move(binding), coefficients, rhs, move(programme.layers)}, false};
+}
+
+auto gcs::innards::lifted_cover_cut_optimum(const vector<vector<Integer>> & demands, const vector<Integer> & coefficients,
+    const vector<Integer> & capacities, Integer profit_ceiling, size_t state_budget) -> LiftedCoverCutOptimum
+{
+    check_shape(demands, coefficients, capacities);
+
+    auto binding = binding_rows(demands, capacities);
+    vector<vector<Integer>> kept_demands;
+    vector<Integer> kept_capacities;
+    for (auto row : binding) {
+        kept_demands.push_back(demands[row]);
+        kept_capacities.push_back(capacities[row]);
+    }
+
+    auto programme = build_programme(kept_demands, coefficients, kept_capacities, profit_ceiling, state_budget);
+    if (programme.over_budget)
+        return LiftedCoverCutOptimum{nullopt, true};
+    if (programme.reached_ceiling)
+        return LiftedCoverCutOptimum{nullopt, false};
+
+    return LiftedCoverCutOptimum{largest_profit(programme.layers.back()), false};
+}
+
+auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<ProofLine> & capacity_rows, const LiftedCoverCut & cut,
+    const vector<ProofFlag> & flags, const vector<Integer> & claimed_coefficients, const vector<vector<ProofFlag>> & weaken_out, Integer claimed_rhs,
+    ProofLevel level) -> ProofLine
 {
     auto members = flags.size();
-    if (members != claimed_coefficients.size() || members != cut.demands.size() || cut.layers.size() != members + 1)
+    auto rows = cut.capacities.size();
+    if (members != claimed_coefficients.size() || members != cut.coefficients.size() || cut.layers.size() != members + 1)
         throw ProofError{"a lifted cover cut needs one flag and one coefficient per member"};
+    if (capacity_rows.size() != rows || weaken_out.size() != rows)
+        throw ProofError{"a lifted cover cut needs one supplied row and one weakening list per row it kept"};
 
     WPBSum claimed;
     for (size_t member = 0; member < members; ++member)
         claimed += claimed_coefficients[member] * flags[member];
 
     // Nothing to derive: the members cannot between them reach the right-hand
-    // side, so no 0/1 point can miss it and the resource does not come into it.
+    // side, so no 0/1 point can miss it and the resources do not come into it.
     // This is the usual state of affairs at the edges of a derived constraint's
     // window, where too few of its tasks have flags to add up to anything.
     auto total = std::accumulate(cut.coefficients.begin(), cut.coefficients.end(), 0_i);
@@ -129,50 +250,67 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, ProofLine capac
 
     const auto & tracker = logger.names_and_ids_tracker();
 
-    // The two running sums every state speaks about: what the first so-many
-    // members take from the resource, and what they put on the cut.
-    vector<WPBSum> row_prefix(members + 1), cut_prefix(members + 1);
+    // The running sums every state speaks about: what the first so-many members
+    // take from each resource, and what they put on the cut.
+    vector<vector<WPBSum>> row_prefix(rows, vector<WPBSum>(members + 1));
+    vector<WPBSum> cut_prefix(members + 1);
     for (size_t member = 0; member < members; ++member) {
-        row_prefix[member + 1] = row_prefix[member];
-        row_prefix[member + 1] += cut.demands[member] * flags[member];
+        for (size_t row = 0; row < rows; ++row) {
+            row_prefix[row][member + 1] = row_prefix[row][member];
+            row_prefix[row][member + 1] += cut.demands[row][member] * flags[member];
+        }
         cut_prefix[member + 1] = cut_prefix[member];
         cut_prefix[member + 1] += cut.coefficients[member] * flags[member];
     }
 
     // One extension variable per half of a state and one for their conjunction.
-    // A layer's weights and profits are distinct, so a state is keyed by either.
-    vector<map<Integer, Reified>> at_least(members + 1), at_most(members + 1);
+    // States within a layer share halves wherever they agree on a coordinate,
+    // which over one row means a weight is a state's whole identity and over
+    // several means the sharing is worth having.
+    vector<vector<map<Integer, Reified>>> at_least(rows, vector<map<Integer, Reified>>(members + 1));
+    vector<map<Integer, Reified>> at_most(members + 1);
     vector<map<LiftedCoverCutState, ProofFlag>> reached(members + 1);
 
     for (size_t layer = 0; layer <= members; ++layer)
         for (const auto & state : cut.layers[layer]) {
-            auto [weight_flag, weight_forward, weight_reverse] = logger.create_proof_flag_reifying(
-                row_prefix[layer] >= state.weight, format("lccw{}_{}", layer, state.weight.raw_value), ProofLevel::Temporary);
-            at_least[layer].emplace(state.weight, Reified{weight_flag, weight_forward, weight_reverse});
+            WPBSum conjuncts;
+            for (size_t row = 0; row < rows; ++row) {
+                auto weight = state.weights[row];
+                if (! at_least[row][layer].contains(weight)) {
+                    auto [flag, forward, reverse] = logger.create_proof_flag_reifying(
+                        row_prefix[row][layer] >= weight, format("lccw{}_{}_{}", row, layer, weight.raw_value), ProofLevel::Temporary);
+                    at_least[row][layer].emplace(weight, Reified{flag, forward, reverse});
+                }
+                conjuncts += 1_i * at_least[row][layer].at(weight).flag;
+            }
 
-            auto [profit_flag, profit_forward, profit_reverse] = logger.create_proof_flag_reifying(
-                cut_prefix[layer] <= state.profit, format("lccp{}_{}", layer, state.profit.raw_value), ProofLevel::Temporary);
-            at_most[layer].emplace(state.profit, Reified{profit_flag, profit_forward, profit_reverse});
+            if (! at_most[layer].contains(state.profit)) {
+                auto [flag, forward, reverse] = logger.create_proof_flag_reifying(
+                    cut_prefix[layer] <= state.profit, format("lccp{}_{}", layer, state.profit.raw_value), ProofLevel::Temporary);
+                at_most[layer].emplace(state.profit, Reified{flag, forward, reverse});
+            }
+            conjuncts += 1_i * at_most[layer].at(state.profit).flag;
 
+            auto name = format("lccs{}_{}", layer, state.profit.raw_value);
+            for (auto weight : state.weights)
+                name += format("_{}", weight.raw_value);
             auto [state_flag, state_forward, state_reverse] =
-                logger.create_proof_flag_reifying(WPBSum{} + 1_i * weight_flag + 1_i * profit_flag >= 2_i,
-                    format("lccs{}_{}_{}", layer, state.weight.raw_value, state.profit.raw_value), ProofLevel::Temporary);
+                logger.create_proof_flag_reifying(move(conjuncts) >= Integer{static_cast<long long>(rows) + 1}, name, ProofLevel::Temporary);
             reached[layer].emplace(state, state_flag);
             (void)state_forward;
             (void)state_reverse;
         }
 
-    // The empty prefix takes nothing and carries nothing, so both halves of its
-    // one state are true of every point and the reifications force the flag.
+    // The empty prefix takes nothing and carries nothing, so every half of its
+    // one state is true of every point and the reifications force the flag.
     logger.emit_rup_proof_line(WPBSum{} + 1_i * reached[0].at(cut.layers[0].front()) >= 1_i, ProofLevel::Temporary);
 
     // The state a layer kept in place of one a transition lands on: it takes no
-    // more of the resource and allows no less, so an implication into what was
-    // landed on is an implication into this. The frontier runs upwards, so the
-    // first one that qualifies is the one with the tightest profit.
+    // more of any resource and allows no less, so an implication into what was
+    // landed on is an implication into this.
     auto covering = [&](size_t layer, const LiftedCoverCutState & landed) -> const LiftedCoverCutState & {
         for (const auto & state : cut.layers[layer])
-            if (state.weight <= landed.weight && state.profit >= landed.profit)
+            if (covers(state, landed))
                 return state;
         throw ProofError{"a lifted cover cut's dynamic programme dropped a state nothing covers"};
     };
@@ -180,19 +318,18 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, ProofLine capac
     // One transition: whether or not the layer's member is taken, a point in
     // `from` is a point in `to`. Each half is a `pol` leaving its clause one
     // unit propagation away, exactly as knapsack_upfront's forward chains do,
-    // and the state follows from the two through the conjunction.
+    // and the state follows from the halves through the conjunction.
     auto link = [&](size_t layer, const LiftedCoverCutState & from, const LiftedCoverCutState & to, bool taking) {
         auto other_branch = taking ? ! flags[layer - 1] : flags[layer - 1];
-        const auto & from_weight = at_least[layer - 1].at(from.weight);
-        const auto & to_weight = at_least[layer].at(to.weight);
-        const auto & from_profit = at_most[layer - 1].at(from.profit);
-        const auto & to_profit = at_most[layer].at(to.profit);
 
-        PolBuilder{}.add(to_weight.reverse).add(from_weight.forward).saturate().emit(logger, ProofLevel::Temporary);
-        logger.emit_rup_proof_line(WPBSum{} + 1_i * ! from_weight.flag + 1_i * other_branch + 1_i * to_weight.flag >= 1_i, ProofLevel::Temporary);
+        auto half = [&](const Reified & from_half, const Reified & to_half) {
+            PolBuilder{}.add(to_half.reverse).add(from_half.forward).saturate().emit(logger, ProofLevel::Temporary);
+            logger.emit_rup_proof_line(WPBSum{} + 1_i * ! from_half.flag + 1_i * other_branch + 1_i * to_half.flag >= 1_i, ProofLevel::Temporary);
+        };
 
-        PolBuilder{}.add(to_profit.reverse).add(from_profit.forward).saturate().emit(logger, ProofLevel::Temporary);
-        logger.emit_rup_proof_line(WPBSum{} + 1_i * ! from_profit.flag + 1_i * other_branch + 1_i * to_profit.flag >= 1_i, ProofLevel::Temporary);
+        for (size_t row = 0; row < rows; ++row)
+            half(at_least[row][layer - 1].at(from.weights[row]), at_least[row][layer].at(to.weights[row]));
+        half(at_most[layer - 1].at(from.profit), at_most[layer].at(to.profit));
 
         logger.emit_rup_proof_line(
             WPBSum{} + 1_i * ! reached[layer - 1].at(from) + 1_i * other_branch + 1_i * reached[layer].at(to) >= 1_i, ProofLevel::Temporary);
@@ -208,15 +345,26 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, ProofLine capac
             successors += 1_i * ! reached[layer - 1].at(from);
             successors += 1_i * reached[layer].at(left_out);
 
-            auto weight = from.weight + cut.demands[member];
-            if (weight <= cut.capacity) {
-                const auto & taken = covering(layer, LiftedCoverCutState{weight, from.profit + cut.coefficients[member]});
+            // Which resource, if any, the member overruns from here. Several
+            // may; one is a proof.
+            auto overrun = optional<size_t>{};
+            auto weights = from.weights;
+            for (size_t row = 0; row < rows && ! overrun; ++row) {
+                weights[row] += cut.demands[row][member];
+                if (weights[row] > cut.capacities[row])
+                    overrun = row;
+            }
+
+            if (! overrun) {
+                const auto & taken = covering(layer, LiftedCoverCutState{move(weights), from.profit + cut.coefficients[member]});
                 link(layer, from, taken, true);
+                // One state can cover both branches, once there is more than one
+                // resource for it to be slack in.
                 if (taken != left_out)
                     successors += 1_i * reached[layer].at(taken);
             }
             else {
-                // The row rules the member out from here. Weaken it down to
+                // That row rules the member out from here. Weaken it down to
                 // this member and the ones the state already accounts for, add
                 // what the state says about those --- which cancels them --- and
                 // what is left says this member alone would overshoot.
@@ -231,12 +379,12 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, ProofLine capac
                 // for. Removing it therefore makes nothing fail, which is why
                 // there is no mutation for it.
                 PolBuilder pol;
-                pol.add(capacity_row).add(at_least[layer - 1].at(from.weight).forward);
+                pol.add(capacity_rows[*overrun]).add(at_least[*overrun][layer - 1].at(from.weights[*overrun]).forward);
                 for (size_t later = layer; later < members; ++later)
                     pol.weaken(flags[later], tracker);
-                for (const auto & flag : weaken_out)
+                for (const auto & flag : weaken_out[*overrun])
                     pol.weaken(flag, tracker);
-                pol.saturate().divide_by(weight - cut.capacity).emit(logger, ProofLevel::Temporary);
+                pol.saturate().divide_by(weights[*overrun] - cut.capacities[*overrun]).emit(logger, ProofLevel::Temporary);
             }
 
             logger.emit_rup_proof_line(move(successors) >= 1_i, ProofLevel::Temporary);
