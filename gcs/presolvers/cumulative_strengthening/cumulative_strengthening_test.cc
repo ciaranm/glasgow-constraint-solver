@@ -682,8 +682,14 @@ auto main(int argc, char * argv[]) -> int
         std::mt19937 rand(*get_seed());
         std::uniform_int_distribution<> n_dist(2, 4), lo_dist(0, 3), span_dist(0, 3), len_dist(0, 3), cap_dist(4, 12), tall_dist(0, 2);
 
+        // Sixty instances, and then more until the heights half has had a turn.
+        // Both assertions below are of the "it actually fired" kind, which is
+        // the only sort with any power over a presolver --- doing nothing
+        // preserves every solution and verifies every proof --- but a fixed
+        // count makes them assertions about the *draw*: seed 268 raises no
+        // height in sixty instances, and CI eventually meets such a seed.
         size_t fired = 0, raised = 0;
-        for (int k = 0; k < 60; ++k) {
+        for (int k = 0; k < 240 && (k < 60 || 0 == raised || 0 == fired); ++k) {
             Instance inst;
             inst.capacity = cap_dist(rand);
             std::uniform_int_distribution<> tall(inst.capacity / 2 + 1, inst.capacity), rest(1, inst.capacity / 2);
@@ -710,9 +716,9 @@ auto main(int argc, char * argv[]) -> int
         }
 
         if (fired == 0)
-            fail("the presolver fired on none of the random corpus, so it checked nothing");
+            fail("the presolver fired on none of two hundred and forty random instances, so it checked nothing");
         if (raised == 0)
-            fail("the presolver raised no height across the random corpus, so the heights half checked nothing");
+            fail("no height was raised across two hundred and forty random instances, so the heights half checked nothing");
         println(cerr, "solution preservation: strengthened {} of 60 random instances, raising {} heights", fired, raised);
     }
 
