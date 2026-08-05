@@ -39,6 +39,16 @@ auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<Pro
 
     logger.emit_proof_comment("clique at-most-one over " + to_string(k) + " members");
 
+    // The induction goes one proof level deeper than the caller's own, and is
+    // forgotten on the way out. Only the pin below is ever cited again: every
+    // line between here and it exists to reach it, and at Top every one of them
+    // would stay live for the rest of the proof, taxing every later unhinted RUP
+    // (issue #666). The extra depth rather than plain Temporary is what stops
+    // the forget taking the caller's scope with it, since a caller inside a
+    // JustifyExplicitly is already using its own Temporary depth.
+    auto saved_level = logger.proof_level();
+    logger.enter_proof_level(saved_level + 1);
+
     // The base case is not a derivation: the at-most-one for the first pair
     // already is the clique inequality for those two.
     auto current = at_most_ones[1][0];
@@ -54,7 +64,7 @@ auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<Pro
                 naive.add(at_most_ones[j][i]);
         if (k > 2)
             naive.divide_by(Integer{static_cast<long long>(k) - 1});
-        current = naive.emit(logger, level);
+        current = naive.emit(logger, ProofLevel::Temporary);
     }
 
     // Then one member at a time. At the top of each pass `current` says
@@ -86,7 +96,7 @@ auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<Pro
         // and the induction would not advance.
         if (! (skip_final_division && m == k - 1))
             merge.divide_by(Integer{static_cast<long long>(m)});
-        current = merge.emit(logger, level);
+        current = merge.emit(logger, ProofLevel::Temporary);
     }
 
     // Pin what came back. Every step above is sound whatever was fed into it,
@@ -97,5 +107,10 @@ auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<Pro
     for (const auto & member : members)
         add_term_to(clique, 1_i, member);
 
-    return logger.emit(ImpliesProofRule{current}, move(clique) <= (claim_one_more ? 0_i : 1_i), level);
+    // Back at the caller's level to pin, while the induction is still alive for
+    // VeriPB to resolve the reference against, and only then drop it.
+    logger.enter_proof_level(saved_level);
+    auto result = logger.emit(ImpliesProofRule{current}, move(clique) <= (claim_one_more ? 0_i : 1_i), level);
+    logger.forget_proof_level(saved_level + 2);
+    return result;
 }

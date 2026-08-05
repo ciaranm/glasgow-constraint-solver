@@ -477,6 +477,21 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
 
                 recipe_logger.emit_proof_comment("presolve disjunctive clique at time " + to_string(t.raw_value));
 
+                // The bridges and the pairwise at-most-ones go one proof level
+                // deeper than the caller's and are forgotten on the way out.
+                // They exist only to reach the line recover_am1_from_pairs pins,
+                // and at Top there are order k squared of them per time point,
+                // none of which is ever deleted -- 180k live constraints from
+                // one presolver on a realistic instance, taxing every later
+                // unhinted RUP (issue #666).
+                auto saved_level = recipe_logger.proof_level();
+                recipe_logger.enter_proof_level(saved_level + 1);
+                auto give_back = [&](optional<ProofLine> line) {
+                    recipe_logger.enter_proof_level(saved_level);
+                    recipe_logger.forget_proof_level(saved_level + 2);
+                    return line;
+                };
+
                 // Bridges, once per (member, witnessing resource) rather than
                 // once per pair: several pairs of a clique often share a witness.
                 map<pair<size_t, ConstraintID>, ProofLine> bridges;
@@ -497,7 +512,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                             " has no flags for one of the tasks it is about"};
 
                     auto line = recover_conjunction_flag_bridge(recipe_logger, std::get<2>(*from), {std::get<0>(*from), std::get<1>(*from)},
-                        std::get<2>(*to), {std::get<0>(*to), std::get<1>(*to)}, ProofLevel::Top);
+                        std::get<2>(*to), {std::get<0>(*to), std::get<1>(*to)}, ProofLevel::Temporary);
                     if (stats)
                         ++stats->bridges_derived;
                     bridges.emplace(key, line);
@@ -514,12 +529,12 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         const auto & c = *conflicts[here[a]][here[b]];
                         auto row = rows.find(c.witness);
                         if (row == rows.end())
-                            return std::nullopt;
+                            return give_back(std::nullopt);
 
                         auto u_flags = flags_for(tracker, c.witness, c.witness_position_u, t);
                         auto v_flags = flags_for(tracker, c.witness, c.witness_position_v, t);
                         if (! u_flags || ! v_flags)
-                            return std::nullopt;
+                            return give_back(std::nullopt);
 
                         // Everything else on that resource that could be running
                         // now has to come out of the row first. Over every
@@ -565,12 +580,12 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                             pair_amo.add(*bridged_v);
                         if (bridged_u || bridged_v)
                             pair_amo.saturate();
-                        at_most_ones[b].push_back(pair_amo.emit(recipe_logger, ProofLevel::Top));
+                        at_most_ones[b].push_back(pair_amo.emit(recipe_logger, ProofLevel::Temporary));
                     }
 
-                return recover_am1_from_pairs(recipe_logger, flags, at_most_ones, ProofLevel::Top,
+                return give_back(recover_am1_from_pairs(recipe_logger, flags, at_most_ones, ProofLevel::Top,
                     claim_rhs_zero ? Am1FromPairsMutation{am1_from_pairs_mutation::ClaimOneMore{}}
-                                   : Am1FromPairsMutation{am1_from_pairs_mutation::None{}});
+                                   : Am1FromPairsMutation{am1_from_pairs_mutation::None{}}));
             },
             .makespan = _makespan,
             .makespan_links = links,

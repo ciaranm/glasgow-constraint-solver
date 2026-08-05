@@ -491,6 +491,20 @@ auto main(int argc, char * argv[]) -> int
         if (0 == count_occurrences(proof, "presolve disjunctive clique at time"))
             fail("markers: no per-time clique derivation in the proof");
         println(cerr, "markers: {} per-time clique derivations", count_occurrences(proof, "presolve disjunctive clique at time"));
+
+        // And the working is deleted rather than left in the database. Every
+        // line a time point emits except its pin exists only to reach that pin,
+        // and at Top there are order k squared of them per time point that
+        // nothing ever cites again (issue #666). The presolve prefix is
+        // everything up to the last clique marker, so counting deletions there
+        // asks about this presolver rather than about the search.
+        auto prefix = proof.substr(0, proof.rfind("presolve disjunctive: inferred a clique"));
+        auto derivations = count_occurrences(prefix, "presolve disjunctive clique at time");
+        auto deletions = count_occurrences(prefix, "del ");
+        if (deletions < derivations)
+            fail("proof size: " + to_string(derivations) + " per-time derivations left " + to_string(deletions) +
+                " deletions behind, so their scaffolding is still live");
+        println(cerr, "proof size: {} deletions over {} per-time derivations, so only the pins outlive them", deletions, derivations);
         dispose_of_proof_files(name);
     }
 
