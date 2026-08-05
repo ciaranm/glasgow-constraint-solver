@@ -12,6 +12,7 @@
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/presolvers/inferred_disjunctive/inferred_disjunctive.hh>
+#include <gcs/presolvers/innards/makespan_links.hh>
 #include <gcs/problem.hh>
 
 #include <algorithm>
@@ -110,6 +111,12 @@ InferredDisjunctive::InferredDisjunctive(shared_ptr<InferredDisjunctiveStats> st
 {
 }
 
+auto InferredDisjunctive::with_makespan(IntegerVariableID makespan) -> InferredDisjunctive &
+{
+    _makespan = makespan;
+    return *this;
+}
+
 auto InferredDisjunctive::with_proof_mutation(InferredDisjunctiveMutation mutation) -> InferredDisjunctive &
 {
     _mutation = mutation;
@@ -141,6 +148,13 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         if (_stats)
             (*_stats).*field += by;
     };
+
+    // What the model says about the makespan, if the caller named one: the rows
+    // saying each task finishes by it, which are what a bound on it is derived
+    // from. Looked up once rather than per clique.
+    map<IntegerVariableID, makespan_energy::MakespanLink> makespan_links;
+    if (_makespan)
+        makespan_links = find_makespan_links(problem, logger, *_makespan);
 
     auto claim_rhs_zero = std::holds_alternative<inferred_disjunctive_mutation::ClaimRhsZero>(_mutation);
     auto bridge_wrong_task = std::holds_alternative<inferred_disjunctive_mutation::BridgeWrongTask>(_mutation);
@@ -411,9 +425,12 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         // Each member's flags come from its first appearance; the certificate
         // bridges a pair's witness across to those where they differ.
         vector<DerivedCumulativeTask> derived_tasks;
+        vector<optional<makespan_energy::MakespanLink>> links;
         set<ConstraintID> row_donors;
         for (auto i : clique) {
             const auto & home = tasks[i].appearances.front();
+            auto link = makespan_links.find(tasks[i].start);
+            links.push_back(link == makespan_links.end() ? std::nullopt : optional<makespan_energy::MakespanLink>{link->second});
             derived_tasks.push_back(DerivedCumulativeTask{home.donor, home.position, tasks[i].start, tasks[i].length, 1_i});
         }
         for (size_t a = 0; a < clique.size(); ++a)
@@ -555,6 +572,16 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                     claim_rhs_zero ? Am1FromPairsMutation{am1_from_pairs_mutation::ClaimOneMore{}}
                                    : Am1FromPairsMutation{am1_from_pairs_mutation::None{}});
             },
+            .makespan = _makespan,
+            .makespan_links = links,
+            .makespan_bound_reached =
+                [stats = _stats](Integer bound) {
+                    if (stats && bound > stats->certified_makespan_bound)
+                        stats->certified_makespan_bound = bound;
+                },
+            .makespan_mutation = std::holds_alternative<inferred_disjunctive_mutation::ClaimHigherMakespanBound>(_mutation)
+                ? makespan_energy::MakespanEnergyMutation{makespan_energy::makespan_energy_mutation::ClaimHigherBound{}}
+                : makespan_energy::MakespanEnergyMutation{makespan_energy::makespan_energy_mutation::None{}},
             .rules = _rules};
 
         if (! install_derived_cumulative(propagators, state, logger, move(spec))) {
@@ -591,5 +618,7 @@ auto InferredDisjunctive::clone() const -> unique_ptr<Presolver>
     result->with_minimum_clique_size(_min_clique_size);
     result->with_rules(_rules);
     result->with_proof_mutation(_mutation);
+    if (_makespan)
+        result->with_makespan(*_makespan);
     return result;
 }

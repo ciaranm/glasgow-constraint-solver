@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <variant>
 
 namespace gcs
@@ -50,10 +51,19 @@ namespace gcs
         struct ClaimTighterRow
         {
         };
+
+        /// Claim a makespan one larger than a posted cut's energy supports.
+        /// The same discipline again, against the other thing a cut is used
+        /// for: `L` is the number this whole exercise reports, so a derivation
+        /// with slack in it would report it while proving something weaker.
+        struct ClaimHigherMakespanBound
+        {
+        };
     }
 
     using InferredCumulativeMutation = std::variant<inferred_cumulative_mutation::None, inferred_cumulative_mutation::ClaimTighterCapacity,
-        inferred_cumulative_mutation::ClaimTallerTask, inferred_cumulative_mutation::ClaimTighterRow>;
+        inferred_cumulative_mutation::ClaimTallerTask, inferred_cumulative_mutation::ClaimTighterRow,
+        inferred_cumulative_mutation::ClaimHigherMakespanBound>;
 
     /**
      * \brief What the inferred-Cumulative presolver did, filled in when it runs.
@@ -140,6 +150,23 @@ namespace gcs
         Integer largest_capacity_bound{0};
 
         /**
+         * \brief The largest makespan bound actually *derived*, over the posted
+         * cuts, when a makespan variable was given.
+         *
+         * The certified counterpart of \ref largest_capacity_bound, and the one
+         * that comes with a `.pbp`. It is usually the same number, and can be
+         * larger: `L` assumes the tasks may start at time zero, while the
+         * derivation argues over the window the tasks' earliest starts actually
+         * leave them, and every time point before that window is a unit the
+         * resource never had to supply. It can also be smaller, when a task the
+         * window-energy lemma cannot speak about carries some of the energy `L`
+         * counted.
+         *
+         * Zero when no makespan was given, or when nothing was posted.
+         */
+        Integer certified_makespan_bound{0};
+
+        /**
          * \name Why a candidate or a donor was passed over.
          */
         ///@{
@@ -204,6 +231,7 @@ namespace gcs
         std::size_t _max_lifting_calls;
         CumulativeRules _rules;
         InferredCumulativeMutation _mutation;
+        std::optional<IntegerVariableID> _makespan;
 
     public:
         explicit InferredCumulative(std::shared_ptr<InferredCumulativeStats> stats = nullptr);
@@ -247,6 +275,25 @@ namespace gcs
          * time-tabling verdict the donor's own row did not already reach.
          */
         auto with_rules(CumulativeRules rules) -> InferredCumulative &;
+
+        /**
+         * \brief Name the makespan, so that each posted cut also derives a
+         * lower bound on it.
+         *
+         * A cut says its tasks cannot occupy more than `pi_0` of the resource
+         * at once, and between them they need `sum_i d_i pi_i`, so no schedule
+         * can be shorter than the ratio --- Sidorov's `L`, which
+         * \ref InferredCumulativeStats::largest_capacity_bound reports and
+         * which nothing in the proof otherwise says. With a makespan given, the
+         * argument is made in the proof and the bound is inferred, so the
+         * search starts from it and a `.pbp` contains it.
+         *
+         * The model must entail `start + length <= makespan` for every task of
+         * every donor, which is what a scheduling model's makespan is for. That
+         * is a promise, not something checkable from here; break it and VeriPB
+         * refuses the derivation.
+         */
+        auto with_makespan(IntegerVariableID makespan) -> InferredCumulative &;
 
         /// Corrupt the certificate. For tests only, which assert that VeriPB
         /// rejects the result; see InferredCumulativeMutation.

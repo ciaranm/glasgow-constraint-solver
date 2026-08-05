@@ -16,6 +16,7 @@
 
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/presolvers/inferred_disjunctive.hh>
 #include <gcs/problem.hh>
 #include <gcs/solve.hh>
@@ -79,6 +80,11 @@ namespace
         std::size_t max_candidates = 100, max_posted = 5;
         InferredDisjunctiveMutation mutation = inferred_disjunctive_mutation::None{};
         shared_ptr<InferredDisjunctiveStats> stats = nullptr;
+
+        /// Add a makespan variable, the `start_i + length <= makespan` rows
+        /// that make it one, and minimise it --- so that a posted clique's
+        /// total duration is not only reported but derived.
+        bool minimise_makespan = false;
     };
 
     /* k tasks of length p, and k resources of capacity one. Resource r carries
@@ -108,11 +114,21 @@ namespace
             p.post(Cumulative{starts, lengths, heights, 1_i}.with_rules(setup.rules));
         }
 
+        optional<IntegerVariableID> makespan;
+        if (setup.minimise_makespan) {
+            makespan = p.create_integer_variable(0_i, Integer{horizon}, "makespan");
+            for (const auto & start : starts)
+                p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * *makespan + -1_i * start, Integer{length}});
+            p.minimise(*makespan);
+        }
+
         if (setup.presolve) {
             auto presolver = InferredDisjunctive{setup.stats};
             presolver.with_budgets(setup.max_candidates, setup.max_posted).with_minimum_clique_size(setup.min_clique_size);
             if (setup.inferred_rules)
                 presolver.with_rules(*setup.inferred_rules);
+            if (makespan)
+                presolver.with_makespan(*makespan);
             p.add_presolver(presolver);
         }
         return starts;
@@ -242,6 +258,31 @@ auto main(int argc, char * argv[]) -> int
 
         println(cerr, "cross-resource clique: refuted at the root against {} nodes without it, {} bridges", donors_only.recursions,
             stats->bridges_derived);
+    }
+
+    // The same six, derived rather than reported. With a makespan named, the
+    // clique's total duration is pushed onto it at the root with a certificate,
+    // and it is exactly the optimum here --- three length-two tasks that must
+    // serialise finish at six and no sooner.
+    {
+        auto stats = make_shared<InferredDisjunctiveStats>();
+        auto certified = solve_family(
+            3, 2, 8, Setup{.stats = stats, .minimise_makespan = true}, proofs ? make_optional("inferred_disjunctive_makespan") : nullopt);
+
+        if (stats->largest_capacity_bound != 6_i)
+            fail("certified bound: reported an L of " + to_string(stats->largest_capacity_bound.raw_value) + ", not six");
+        if (stats->certified_makespan_bound != 6_i)
+            fail("certified bound: derived a makespan bound of " + to_string(stats->certified_makespan_bound.raw_value) +
+                ", not the six the clique carries");
+
+        // The same number with proofs off, or the solver is doing different
+        // arithmetic depending on whether anyone is watching.
+        auto unproved_stats = make_shared<InferredDisjunctiveStats>();
+        solve_family(3, 2, 8, Setup{.stats = unproved_stats, .minimise_makespan = true}, nullopt);
+        if (unproved_stats->certified_makespan_bound != stats->certified_makespan_bound)
+            fail("certified bound: the bound differs with proofs off");
+
+        println(cerr, "certified makespan bound: derived {} over {} nodes", stats->certified_makespan_bound.raw_value, certified.recursions);
     }
 
     // The sharp twin: one more unit of horizon and the three tasks fit exactly.

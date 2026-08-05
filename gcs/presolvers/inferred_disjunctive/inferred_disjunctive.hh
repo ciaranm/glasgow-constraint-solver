@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <variant>
 
 namespace gcs
@@ -50,10 +51,19 @@ namespace gcs
         struct IncludeNonConflicting
         {
         };
+
+        /// Claim a makespan one larger than a posted clique's energy supports.
+        /// The same discipline again, against the other thing a clique is used
+        /// for: `L` is the number this whole exercise reports, so a derivation
+        /// with slack in it would report it while proving something weaker.
+        struct ClaimHigherMakespanBound
+        {
+        };
     }
 
-    using InferredDisjunctiveMutation = std::variant<inferred_disjunctive_mutation::None, inferred_disjunctive_mutation::ClaimRhsZero,
-        inferred_disjunctive_mutation::BridgeWrongTask, inferred_disjunctive_mutation::IncludeNonConflicting>;
+    using InferredDisjunctiveMutation =
+        std::variant<inferred_disjunctive_mutation::None, inferred_disjunctive_mutation::ClaimRhsZero, inferred_disjunctive_mutation::BridgeWrongTask,
+            inferred_disjunctive_mutation::IncludeNonConflicting, inferred_disjunctive_mutation::ClaimHigherMakespanBound>;
     /**
      * \brief What the inferred-Disjunctive presolver did, filled in when it
      * runs.
@@ -111,6 +121,20 @@ namespace gcs
          * Zero when nothing was posted.
          */
         Integer largest_capacity_bound{0};
+
+        /**
+         * \brief The largest makespan bound actually *derived*, over the posted
+         * cliques, when a makespan variable was given.
+         *
+         * The certified counterpart of \ref largest_capacity_bound, and the one
+         * that comes with a `.pbp`. It is usually the same number, and can be
+         * larger: `L` assumes the tasks may start at time zero, while the
+         * derivation argues over the window their earliest starts actually
+         * leave them.
+         *
+         * Zero when no makespan was given, or when nothing was posted.
+         */
+        Integer certified_makespan_bound{0};
 
         /// Flag bridges emitted, one per (task, time) that had to be carried
         /// from a witnessing resource to the one holding the task's flags.
@@ -173,6 +197,7 @@ namespace gcs
         std::size_t _min_clique_size;
         CumulativeRules _rules;
         InferredDisjunctiveMutation _mutation;
+        std::optional<IntegerVariableID> _makespan;
 
     public:
         explicit InferredDisjunctive(std::shared_ptr<InferredDisjunctiveStats> stats = nullptr);
@@ -207,6 +232,22 @@ namespace gcs
          * redundancy has to turn time-tabling back on.
          */
         auto with_rules(CumulativeRules rules) -> InferredDisjunctive &;
+
+        /**
+         * \brief Name the makespan, so that each posted clique also derives a
+         * lower bound on it.
+         *
+         * A clique's tasks run one after another, so the schedule cannot finish
+         * before their durations summed --- which is what
+         * \ref InferredDisjunctiveStats::largest_capacity_bound reports and what
+         * nothing in the proof otherwise says. With a makespan given, the
+         * argument is made in the proof and the bound is inferred.
+         *
+         * The model must entail `start + length <= makespan` for every task of
+         * every donor. That is a promise, not something checkable from here;
+         * break it and VeriPB refuses the derivation.
+         */
+        auto with_makespan(IntegerVariableID makespan) -> InferredDisjunctive &;
 
         /// Corrupt one step of the assembled certificate. For tests only, which
         /// assert that VeriPB rejects the result; see

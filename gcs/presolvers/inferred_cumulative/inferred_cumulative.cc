@@ -6,6 +6,7 @@
 #include <gcs/innards/proofs/proof_logger.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/presolvers/inferred_cumulative/inferred_cumulative.hh>
+#include <gcs/presolvers/innards/makespan_links.hh>
 #include <gcs/problem.hh>
 #include <util/overloaded.hh>
 
@@ -336,12 +337,25 @@ auto InferredCumulative::with_proof_mutation(InferredCumulativeMutation mutation
     return *this;
 }
 
+auto InferredCumulative::with_makespan(IntegerVariableID makespan) -> InferredCumulative &
+{
+    _makespan = makespan;
+    return *this;
+}
+
 auto InferredCumulative::run(Problem & problem, Propagators & propagators, State & state, ProofLogger * const logger) -> bool
 {
     auto bump = [&](size_t InferredCumulativeStats::* field, size_t by = 1) {
         if (_stats)
             (*_stats).*field += by;
     };
+
+    // What the model says about the makespan, if the caller named one: the rows
+    // saying each task finishes by it, which are what a bound on it is derived
+    // from. Looked up once rather than per cut.
+    map<IntegerVariableID, makespan_energy::MakespanLink> makespan_links;
+    if (_makespan)
+        makespan_links = find_makespan_links(problem, logger, *_makespan);
 
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
         bump(&InferredCumulativeStats::donors_seen);
@@ -524,8 +538,11 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 .coefficients = {},
                 .t_lo = {},
                 .t_hi = {}};
+            vector<optional<makespan_energy::MakespanLink>> links;
             for (size_t k = 0; k < cut.support.size(); ++k) {
                 const auto & task = tasks[cut.support[k]];
+                auto link = makespan_links.find(task.start);
+                links.push_back(link == makespan_links.end() ? std::nullopt : optional<makespan_energy::MakespanLink>{link->second});
                 derived_tasks.push_back(DerivedCumulativeTask{recipe.donor, task.position, task.start, task.length, cut.coefficients[k]});
                 recipe.positions.push_back(task.position);
                 recipe.demands.push_back(task.demand);
@@ -616,7 +633,10 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                         },
                         [&](const inferred_cumulative_mutation::ClaimTighterRow &) {
                             programme = validate_lifted_cover_cut(demands, coefficients, recipe.capacity - 1_i, recipe.rhs);
-                        }}
+                        },
+                        // Corrupts the makespan bound rather than the row, so
+                        // the row is the honest one.
+                        [&](const inferred_cumulative_mutation::ClaimHigherMakespanBound &) {}}
                         .visit(recipe.mutation);
                     // A mutation that leaves nothing to derive has nothing to be
                     // rejected either, and a test asserting on it would be
@@ -626,6 +646,16 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
 
                     return derive_lifted_cover_cut(recipe_logger, row->second, *programme, flags, claimed, weaken_out, claimed_rhs, ProofLevel::Top);
                 },
+                .makespan = _makespan,
+                .makespan_links = links,
+                .makespan_bound_reached =
+                    [stats = _stats](Integer bound) {
+                        if (stats && bound > stats->certified_makespan_bound)
+                            stats->certified_makespan_bound = bound;
+                    },
+                .makespan_mutation = std::holds_alternative<inferred_cumulative_mutation::ClaimHigherMakespanBound>(_mutation)
+                    ? makespan_energy::MakespanEnergyMutation{makespan_energy::makespan_energy_mutation::ClaimHigherBound{}}
+                    : makespan_energy::MakespanEnergyMutation{makespan_energy::makespan_energy_mutation::None{}},
                 .rules = _rules};
 
             if (! install_derived_cumulative(propagators, state, logger, move(spec))) {
@@ -655,5 +685,7 @@ auto InferredCumulative::clone() const -> unique_ptr<Presolver>
     result->with_lifting_call_budget(_max_lifting_calls);
     result->with_rules(_rules);
     result->with_proof_mutation(_mutation);
+    if (_makespan)
+        result->with_makespan(*_makespan);
     return result;
 }

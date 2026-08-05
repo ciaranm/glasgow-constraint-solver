@@ -34,6 +34,7 @@
 
 #include <gcs/constraints/cumulative.hh>
 #include <gcs/constraints/innards/constraints_test_utils.hh>
+#include <gcs/constraints/linear.hh>
 #include <gcs/presolvers/inferred_cumulative.hh>
 #include <gcs/presolvers/inferred_disjunctive.hh>
 #include <gcs/problem.hh>
@@ -153,6 +154,12 @@ namespace
         InferredCumulativeMutation mutation = inferred_cumulative_mutation::None{};
         shared_ptr<InferredCumulativeStats> stats = nullptr;
         shared_ptr<InferredDisjunctiveStats> disjunctive_stats = nullptr;
+
+        /// Add a makespan variable, the `start_i + length_i <= makespan` rows
+        /// that make it one, and minimise it --- so that the cut's capacity
+        /// bound is not only reported but derived, and the search starts from
+        /// it.
+        bool minimise_makespan = false;
     };
 
     auto post(Problem & p, const Instance & instance, const Setup & setup) -> vector<IntegerVariableID>
@@ -160,6 +167,14 @@ namespace
         vector<IntegerVariableID> starts;
         for (std::size_t i = 0; i < instance.demands.size(); ++i)
             starts.push_back(p.create_integer_variable(0_i, Integer{instance.latest(i)}, "s" + to_string(i)));
+
+        optional<IntegerVariableID> makespan;
+        if (setup.minimise_makespan) {
+            makespan = p.create_integer_variable(0_i, Integer{instance.horizon}, "makespan");
+            for (std::size_t i = 0; i < starts.size(); ++i)
+                p.post(LinearGreaterThanEqual{WeightedSum{} + 1_i * *makespan + -1_i * starts[i], instance.lengths[i]});
+            p.minimise(*makespan);
+        }
 
         p.post(Cumulative{starts, instance.lengths, instance.demands, instance.capacity}.with_rules(setup.rules));
 
@@ -177,6 +192,8 @@ namespace
             presolver.with_budgets(setup.max_covers, setup.max_posted).with_proof_mutation(setup.mutation);
             if (setup.inferred_rules)
                 presolver.with_rules(*setup.inferred_rules);
+            if (makespan)
+                presolver.with_makespan(*makespan);
             p.add_presolver(presolver);
         } break;
         }
@@ -188,6 +205,8 @@ namespace
         set<vector<int>> solutions;
         unsigned long long recursions = 0;
         bool refuted_at_root = false;
+        /// The best objective reported, when the setup minimises a makespan.
+        optional<Integer> best_makespan;
     };
 
     auto solve_instance(const Instance & instance, const Setup & setup, const optional<string> & proof_name, bool verify = true) -> Outcome
@@ -204,6 +223,12 @@ namespace
                                for (const auto & v : starts)
                                    solution.push_back(s(v).raw_value);
                                outcome.solutions.insert(move(solution));
+                               if (setup.minimise_makespan) {
+                                   Integer end = 0_i;
+                                   for (std::size_t i = 0; i < starts.size(); ++i)
+                                       end = std::max(end, s(starts[i]) + instance.lengths[i]);
+                                   outcome.best_makespan = end;
+                               }
                                return true;
                            },
                 .trace = [&](const CurrentState &) -> bool {
@@ -318,6 +343,45 @@ auto main(int argc, char * argv[]) -> int
         if (disjunctive_only.refuted_at_root)
             fail("differential pair: the capacity-one stage refuted at the root, so it did not need this one");
         println(cerr, "differential pair: capacity-one inference finds no clique and does not refute");
+    }
+
+    // The bound in the proof rather than only in the stats. With the makespan
+    // named, the presolver derives its `L` instead of reporting it, the search
+    // starts from it, and the branch-and-bound proof closes against a lower
+    // bound VeriPB has checked.
+    //
+    // Eleven against an optimum of thirteen, which is the shape of the whole
+    // exercise: `L` is a relaxation bound and is not expected to be tight. What
+    // *is* asserted is the validation the artefact runs --- a bound above a
+    // feasible makespan would be a bug, and this fixture knows its optimum. The
+    // margin-of-one fixture that says the arithmetic is tight, and the
+    // mutations that say so by being refused, are in
+    // derived_cumulative_test.cc.
+    {
+        auto stats = make_shared<InferredCumulativeStats>();
+        auto certified = solve_instance(
+            lifted_instance(13), Setup{.stats = stats, .minimise_makespan = true}, proofs ? make_optional("inferred_cumulative_makespan") : nullopt);
+
+        if (stats->largest_capacity_bound != 11_i)
+            fail("certified bound: reported an L of " + to_string(stats->largest_capacity_bound.raw_value) + ", not eleven");
+        if (stats->certified_makespan_bound != 11_i)
+            fail("certified bound: derived a makespan bound of " + to_string(stats->certified_makespan_bound.raw_value) +
+                ", not the eleven the cut's capacity bound carries");
+        if (certified.best_makespan != make_optional(13_i))
+            fail("certified bound: the optimum is " +
+                (certified.best_makespan ? to_string(certified.best_makespan->raw_value) : string{"unreachable"}) + ", not the thirteen expected");
+        if (*certified.best_makespan < stats->certified_makespan_bound)
+            fail("certified bound: derived a bound above a schedule that exists");
+
+        // The same number with proofs off, or the solver is doing different
+        // arithmetic depending on whether anyone is watching.
+        auto unproved_stats = make_shared<InferredCumulativeStats>();
+        solve_instance(lifted_instance(13), Setup{.stats = unproved_stats, .minimise_makespan = true}, nullopt);
+        if (unproved_stats->certified_makespan_bound != stats->certified_makespan_bound)
+            fail("certified bound: the bound differs with proofs off");
+
+        println(cerr, "certified makespan bound: derived {}, optimum {}, over {} nodes", stats->certified_makespan_bound.raw_value,
+            certified.best_makespan->raw_value, certified.recursions);
     }
 
     // Twelve time points, where the tasks fit: the big one alone, then two of
