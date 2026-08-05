@@ -33,6 +33,27 @@
 // see rcpsp_instance.hh. Scale up with --size (more tasks), --max-duration
 // (longer time horizon, so larger start-time domains) and --resources.
 //
+// Inferred resources, and the makespan bound they carry
+// -----------------------------------------------------
+//
+// --infer-disjunctive and --infer-cumulative run the two presolvers that read
+// implied resources off the posted ones: cliques of tasks no single resource
+// can hold pairwise, and cover inequalities lifted to non-unit heights. Each
+// posts a derived Cumulative, adding nothing to the model.
+//
+// What such a constraint is worth is energy, and energy is a bound on the
+// makespan: its tasks need a fixed number of resource-units out of something
+// that supplies so many per time step. --infer-makespan-bound, on by default,
+// has that bound *derived* rather than only reported, by naming the makespan
+// variable to the presolvers. It is only a bound if the model says every task
+// finishes by it, so the derivation sums the model's own
+// `start + duration <= makespan` rows --- which exist under --variant=decomposed
+// and --variant=presolved and not under --variant=global, where the whole
+// temporal network is one propagator instead.
+//
+// --mutate-makespan-bound claims one more than the energy supports, which VeriPB
+// must refuse. See dev_docs/certified-makespan-bounds.md.
+//
 // RCPSP/max
 // ---------
 //
@@ -79,6 +100,7 @@
 #include <gcs/constraints/disjunctive.hh>
 #include <gcs/constraints/linear.hh>
 #include <gcs/presolvers/difference_logic.hh>
+#include <gcs/presolvers/inferred_cumulative/inferred_cumulative.hh>
 #include <gcs/presolvers/inferred_disjunctive/inferred_disjunctive.hh>
 #include <gcs/problem.hh>
 #include <gcs/search_heuristics.hh>
@@ -300,6 +322,29 @@ auto main(int argc, char * argv[]) -> int
             ("infer-disjunctive-posted",                                                                 //
                 "Cap how many cliques are posted (Sidorov's N_out)",                                     //
                 cxxopts::value<std::size_t>()->default_value("5"))                                       //
+            ("infer-cumulative",                                                                         //
+                "Run the InferredCumulative presolver, which lifts cover inequalities over a "           //
+                "resource's capacity rows into implied Cumulatives with non-unit heights",               //
+                cxxopts::value<bool>()->default_value("false"))                                          //
+            ("infer-cumulative-covers",                                                                  //
+                "Cap how many covers are grown and lifted (Sidorov's N_cover)",                          //
+                cxxopts::value<std::size_t>()->default_value("100"))                                     //
+            ("infer-cumulative-posted",                                                                  //
+                "Cap how many lifted cuts are posted (Sidorov's N_out)",                                 //
+                cxxopts::value<std::size_t>()->default_value("5"))                                       //
+            ("infer-cumulative-lifting-calls",                                                           //
+                "Cap how many lifting subproblems are solved (Sidorov's N_calls)",                       //
+                cxxopts::value<std::size_t>()->default_value("20000"))                                   //
+            ("mutate-makespan-bound",                                                                    //
+                "Claim a makespan one larger than the inferred constraints' energy supports. For "       //
+                "validating the bound only: VeriPB must reject the resulting proof, and a run that "     //
+                "verifies is a finding about the honest derivation",                                     //
+                cxxopts::value<bool>()->default_value("false"))                                          //
+            ("infer-makespan-bound",                                                                     //
+                "Have the inferring presolvers derive a lower bound on the makespan from each "          //
+                "constraint they post, rather than only reporting one. Needs the model's "               //
+                "`start + duration <= makespan` rows, so --variant=global does not have them",           //
+                cxxopts::value<bool>()->default_value("true"))                                           //
             ("file",                                                                                     //
                 "Read a single-mode RCPSP/max instance from PATH, in ProGen/max .sch format (the "       //
                 "UBO, CD and SM sets), instead of generating one",                                       //
@@ -662,11 +707,43 @@ auto main(int argc, char * argv[]) -> int
     // Added after every Cumulative above, because what it has to work with is
     // the set of posted resources: it looks for pairs of tasks that some
     // resource cannot hold together, and grows those into cliques.
+    //
+    // Naming the makespan is what turns each posted constraint's capacity bound
+    // from a number the presolver reports into one the proof contains: the
+    // model's `start + duration <= makespan` rows confine the tasks to a
+    // window, and the constraint's energy then says how wide that window has to
+    // be. Those rows exist under --variant=decomposed and --variant=presolved;
+    // --variant=global puts the whole temporal network into one propagator
+    // instead, so there is no per-task row to sum and the bound falls back to
+    // whatever the tasks' own domains give.
+    auto infer_makespan_bound = options_vars["infer-makespan-bound"].as<bool>();
+    auto mutate_makespan_bound = options_vars["mutate-makespan-bound"].as<bool>();
+
     auto disjunctive_stats = std::make_shared<InferredDisjunctiveStats>();
     auto infer_disjunctive = options_vars["infer-disjunctive"].as<bool>();
-    if (infer_disjunctive)
-        problem.add_presolver(InferredDisjunctive{disjunctive_stats}.with_budgets(
-            options_vars["infer-disjunctive-candidates"].as<std::size_t>(), options_vars["infer-disjunctive-posted"].as<std::size_t>()));
+    if (infer_disjunctive) {
+        auto presolver = InferredDisjunctive{disjunctive_stats}.with_budgets(
+            options_vars["infer-disjunctive-candidates"].as<std::size_t>(), options_vars["infer-disjunctive-posted"].as<std::size_t>());
+        if (infer_makespan_bound)
+            presolver.with_makespan(makespan);
+        if (mutate_makespan_bound)
+            presolver.with_proof_mutation(inferred_disjunctive_mutation::ClaimHigherMakespanBound{});
+        problem.add_presolver(presolver);
+    }
+
+    auto cumulative_stats = std::make_shared<InferredCumulativeStats>();
+    auto infer_cumulative = options_vars["infer-cumulative"].as<bool>();
+    if (infer_cumulative) {
+        auto presolver =
+            InferredCumulative{cumulative_stats}
+                .with_budgets(options_vars["infer-cumulative-covers"].as<std::size_t>(), options_vars["infer-cumulative-posted"].as<std::size_t>())
+                .with_lifting_call_budget(options_vars["infer-cumulative-lifting-calls"].as<std::size_t>());
+        if (infer_makespan_bound)
+            presolver.with_makespan(makespan);
+        if (mutate_makespan_bound)
+            presolver.with_proof_mutation(inferred_cumulative_mutation::ClaimHigherMakespanBound{});
+        problem.add_presolver(presolver);
+    }
 
     auto all = options_vars.contains("all");
 
@@ -756,6 +833,19 @@ auto main(int argc, char * argv[]) -> int
         println("inferred_disjunctive_clique_members_posted: {}", disjunctive_stats->clique_members_posted);
         // Sidorov's L: a makespan lower bound that needs no search to believe.
         println("inferred_disjunctive_capacity_bound: {}", disjunctive_stats->largest_capacity_bound.raw_value);
+        // What of that L the proof actually contains.
+        println("inferred_disjunctive_certified_bound: {}", disjunctive_stats->certified_makespan_bound.raw_value);
+    }
+    if (infer_cumulative) {
+        println("inferred_cumulative_tasks: {}", cumulative_stats->tasks);
+        println("inferred_cumulative_covers_considered: {}", cumulative_stats->covers_considered);
+        println("inferred_cumulative_lifting_subproblems: {}", cumulative_stats->lifting_subproblems);
+        println("inferred_cumulative_cuts_found: {}", cumulative_stats->cuts_found);
+        println("inferred_cumulative_cuts_uncertifiable: {}", cumulative_stats->cuts_uncertifiable);
+        println("inferred_cumulative_cuts_posted: {}", cumulative_stats->cuts_posted);
+        println("inferred_cumulative_non_unit_cuts_posted: {}", cumulative_stats->non_unit_cuts_posted);
+        println("inferred_cumulative_capacity_bound: {}", cumulative_stats->largest_capacity_bound.raw_value);
+        println("inferred_cumulative_certified_bound: {}", cumulative_stats->certified_makespan_bound.raw_value);
     }
     if (*variant != Variant::Decomposed) {
         println("simplify: {}", simplify_name);
