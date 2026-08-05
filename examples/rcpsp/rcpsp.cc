@@ -323,8 +323,8 @@ auto main(int argc, char * argv[]) -> int
                 "Cap how many cliques are posted (Sidorov's N_out)",                                     //
                 cxxopts::value<std::size_t>()->default_value("5"))                                       //
             ("infer-cumulative",                                                                         //
-                "Run the InferredCumulative presolver, which lifts cover inequalities over a "           //
-                "resource's capacity rows into implied Cumulatives with non-unit heights",               //
+                "Run the InferredCumulative presolver, which lifts cover inequalities over the "         //
+                "resources' capacity rows into implied Cumulatives with non-unit heights",               //
                 cxxopts::value<bool>()->default_value("false"))                                          //
             ("infer-cumulative-covers",                                                                  //
                 "Cap how many covers are grown and lifted (Sidorov's N_cover)",                          //

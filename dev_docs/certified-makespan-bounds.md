@@ -180,12 +180,19 @@ equals the best makespan anybody found, so no search is needed at all. The
 paper's §5.1 claims "no less than twelve". The largest is 3050; the median
 `.pbp` is 28 MB and the largest 504 MB, and `veripb` takes 45 s on that one.
 
-Twenty-three instances fall short of Sidorov's `L`, and on every one of them it
-is this presolver's *own* `L` that falls short while the derivation reaches it
-exactly. That is an inference gap and not a certification one — his lifting
-subproblem spans every resource and
-[`InferredCumulative`](inferred-cumulative.md)'s is single-resource — which
-makes it a measurement of what #673 costs.
+Some instances fall short of Sidorov's `L`, and on every one of them it is this
+presolver's *own* `L` that falls short while the derivation reaches it exactly:
+an inference gap and not a certification one. Most of the apparent gap is not
+even that — five of the largest shortfalls are Pack_d instances whose lifted
+stages were never run, and are compute rather than code. What is left, once the
+lifting stage has actually run, is a handful of instances short by two to four,
+and it was the measurement that motivated lifting over every resource rather
+than one, which the presolver now does; four of those instances have an `L` equal
+to their best known makespan, so closing the gap closes them.
+
+**These numbers predate that change and have not been rerun.** They are the
+single-resource lifting's, and the artefact's `run.bash` is what regenerates
+them.
 
 Note the makespan rows have to be there to be cited: `--variant=global` puts the
 whole temporal network into one `DifferenceConstraints` propagator, so there is

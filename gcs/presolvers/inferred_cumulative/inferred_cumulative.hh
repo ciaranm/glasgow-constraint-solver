@@ -59,11 +59,24 @@ namespace gcs
         struct ClaimHigherMakespanBound
         {
         };
+
+        /// Carry a resource's row onto the *wrong* member's flags when a cut
+        /// spans more than one of them, so that the row a state is ruled out by
+        /// is about a task other than the one it names.
+        ///
+        /// The corruption a cut over several resources adds over one over a
+        /// single resource: nothing else in this list touches the crossing, and
+        /// with one donor there is no crossing to touch --- so a fixture for
+        /// this has to be genuinely multi-resource, which is the point of
+        /// having it.
+        struct BridgeWrongTask
+        {
+        };
     }
 
     using InferredCumulativeMutation = std::variant<inferred_cumulative_mutation::None, inferred_cumulative_mutation::ClaimTighterCapacity,
         inferred_cumulative_mutation::ClaimTallerTask, inferred_cumulative_mutation::ClaimTighterRow,
-        inferred_cumulative_mutation::ClaimHigherMakespanBound>;
+        inferred_cumulative_mutation::ClaimHigherMakespanBound, inferred_cumulative_mutation::BridgeWrongTask>;
 
     /**
      * \brief What the inferred-Cumulative presolver did, filled in when it runs.
@@ -93,6 +106,12 @@ namespace gcs
         /// this, because it is the bottleneck of Algorithm 2.
         std::size_t lifting_subproblems = 0;
 
+        /// Of those, ones whose programme went over the state budget, so the
+        /// task was left out of the cut rather than lifted into it. A cut short
+        /// of a coefficient is weaker than the published procedure's, not
+        /// unsound; this is the number that says so.
+        std::size_t lifting_subproblems_over_budget = 0;
+
         /// Constraints Algorithm 2 inferred: what the published method would
         /// post, before anything is asked about proving them.
         std::size_t cuts_found = 0;
@@ -121,6 +140,19 @@ namespace gcs
         /// Of those, the ones with a coefficient above one --- the inference
         /// this stage adds over the capacity-one stage before it.
         std::size_t non_unit_cuts_posted = 0;
+
+        /**
+         * \brief Of those, the ones whose certificate needs more than one
+         * resource's capacity row.
+         *
+         * Equation 4's lifting is over every resource at once, so a cut can be a
+         * consequence of several rows together and of none of them alone. The
+         * derivation for one carries every row it needs onto the members' own
+         * flags first, which is machinery a single-resource cut never touches,
+         * so this is the number that says whether the multi-resource path ran at
+         * all --- and a corpus where it is zero has tested none of it.
+         */
+        std::size_t multi_resource_cuts_posted = 0;
 
         /**
          * \brief Time points whose row had to be derived over *fewer* than the
@@ -175,17 +207,23 @@ namespace gcs
         /// Covers already inside the support of something lifted earlier, which
         /// would re-derive it and waste the subproblems (paper, Example 12).
         std::size_t dropped_visited = 0;
-        /// Constraints a donor's own row already implies term by term.
+        /// Constraints some model row already implies term by term.
         std::size_t dropped_dominated = 0;
         std::size_t dropped_over_budget = 0;
+        /// Cuts whose dynamic programme would have been wider than the state
+        /// budget allows. Distinct from \ref cuts_uncertifiable, which counts
+        /// constraints that do not hold: these may well, and a non-zero count
+        /// here is a certificate this could not afford rather than one it could
+        /// not find.
+        std::size_t dropped_over_state_budget = 0;
         std::size_t declined_by_install = 0;
         ///@}
     };
 
     /**
      * \brief Infer `Cumulative` constraints with non-unit heights, by lifting
-     * cover inequalities over a posted Cumulative's capacity rows, and post them
-     * in derived mode.
+     * cover inequalities over the posted Cumulatives' capacity rows, and post
+     * them in derived mode.
      *
      * This is the second stage of Sidorov (CP 2026). A *cover* is a set of tasks
      * whose demands together overshoot a resource, so they cannot all run;
@@ -208,16 +246,27 @@ namespace gcs
      * InferredDisjunctive and CumulativeStrengthening do; a test asserting the
      * redundancy has to turn it back on.
      *
+     * **Every resource at once**, which is Equation 4 and is what makes the
+     * lifting cross-resource. A cover belongs to one row --- Algorithm 1
+     * enumerates them per resource --- but the subproblem deciding what
+     * coefficient to lift a task in with is constrained by all of them, so it
+     * gives a smaller answer and hence a larger coefficient than any single row
+     * would. The cut that comes out can then be a consequence of several rows
+     * together and of none of them alone, which is why one pass runs over the
+     * whole problem rather than one pass per posted constraint, and why the
+     * budgets, the visited-cover rule and the output limit are all global.
+     *
      * Restricted, as its stage in the plan is, to constant lengths, heights and
      * capacities, and to donors with no optional tasks.
      *
      * Nothing reaches the OPB. Every row of every posted constraint is
      * *derived*, by \ref validate_lifted_cover_cut and
      * \ref derive_lifted_cover_cut, which certify a cut by replaying the
-     * knapsack dynamic programme that says it holds. That is complete by
-     * construction, so the constraints coming from the published procedure
-     * rather than from what happens to be easy to prove costs nothing:
-     * \ref InferredCumulativeStats::cuts_uncertifiable is zero.
+     * knapsack dynamic programme that says it holds --- over one weight per
+     * resource, and carrying each resource's row onto the members' own flags
+     * first. That is complete by construction, so the constraints coming from
+     * the published procedure rather than from what happens to be easy to prove
+     * costs nothing: \ref InferredCumulativeStats::cuts_uncertifiable is zero.
      *
      * \ingroup Presolvers
      */
@@ -229,6 +278,7 @@ namespace gcs
         std::size_t _max_posted;
         std::size_t _maximum_capacity;
         std::size_t _max_lifting_calls;
+        std::size_t _max_programme_states;
         CumulativeRules _rules;
         InferredCumulativeMutation _mutation;
         std::optional<IntegerVariableID> _makespan;
@@ -267,6 +317,23 @@ namespace gcs
          * them rather than against wall-clock.
          */
         auto with_lifting_call_budget(std::size_t calls) -> InferredCumulative &;
+
+        /**
+         * \brief How many states a cut's dynamic programme may hold before it
+         * is dropped uncertified.
+         *
+         * Nothing the published procedure produces comes close, and on the
+         * paper's own instances no programme exceeds a few hundred states, so
+         * this exists to bound a pathology rather than to make a trade. Over a
+         * single row a layer cannot be wider than the right-hand side plus one,
+         * which is two or three; over several the frontier is a Pareto set and
+         * there is no such bound to lean on, so there is a number instead.
+         *
+         * A cut dropped this way is counted separately from one that does not
+         * hold (\ref InferredCumulativeStats::dropped_over_state_budget), since
+         * they say opposite things about the inference.
+         */
+        auto with_programme_state_budget(std::size_t states) -> InferredCumulative &;
 
         /**
          * \brief Select which propagation rules the inferred constraints run.

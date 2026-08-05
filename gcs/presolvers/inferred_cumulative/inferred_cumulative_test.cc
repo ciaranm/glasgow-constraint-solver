@@ -29,7 +29,17 @@
  * over a fixture carrying a spare task, so that the row the certificate runs on
  * has something in it the cut is not about. A third mutation corrupts the
  * derivation rather than the claim, by building the certificate's dynamic
- * programme against a capacity one below the donor's.
+ * programme against capacities one below the rows'.
+ *
+ * Then all of that again over two resources, which is what Equation 4's lifting
+ * is actually over. That fixture's cut is a consequence of both rows and of
+ * neither alone, so nothing in the single-resource cases reaches the machinery
+ * it needs: a weight per resource in the programme, and each resource's row
+ * carried onto the members' own flags before any of them can be put in the same
+ * derivation. `BridgeWrongTask` is the mutation that only exists there --- with
+ * one resource there is no crossing to corrupt --- and the verified sweep draws
+ * one to three resources so that veripb sees the crossing across many shapes
+ * rather than only over the fixture built to need it.
  */
 
 #include <gcs/constraints/cumulative.hh>
@@ -92,7 +102,18 @@ namespace
         std::exit(EXIT_FAILURE);
     }
 
-    /// One resource: a task list and a capacity, plus the horizon they live in.
+    /// A further resource over the same tasks: what each takes of it, and how
+    /// much of it there is.
+    struct Resource
+    {
+        vector<Integer> demands;
+        Integer capacity;
+    };
+
+    /// A task list with lengths and a horizon, and one or more resources over
+    /// it. More than one is what Equation 4's lifting is for, and is posted as
+    /// one Cumulative apiece --- which is also how Sidorov's own preprocessor
+    /// builds an RCPSP.
     struct Instance
     {
         vector<Integer> demands, lengths;
@@ -104,6 +125,16 @@ namespace
         /// task the window `[0, horizon - 1]` whatever its length, so a fixture
         /// leaving this empty exercises none of the window-edge restriction.
         vector<int> latest_start = {};
+
+        /// Resources beyond the first.
+        vector<Resource> also = {};
+
+        [[nodiscard]] auto resources() const -> vector<Resource>
+        {
+            vector<Resource> all{Resource{demands, capacity}};
+            all.insert(all.end(), also.begin(), also.end());
+            return all;
+        }
 
         [[nodiscard]] auto latest(std::size_t i) const -> int
         {
@@ -136,6 +167,38 @@ namespace
     auto lifted_instance_with_spare(int horizon) -> Instance
     {
         return Instance{{5_i, 2_i, 2_i, 2_i, 1_i}, {3_i, 5_i, 5_i, 5_i, 1_i}, 5_i, horizon};
+    }
+
+    /// One whose equal-demand family is a cover of *four* tasks: four demands of
+    /// two overshoot a capacity of seven, and five of them are there for the
+    /// longest and the shortest four to be different sets. That size is what
+    /// survives the budget being applied a second time across the resources.
+    auto long_cover_instance(int horizon) -> Instance
+    {
+        return Instance{{5_i, 2_i, 2_i, 2_i, 2_i, 2_i}, {3_i, 6_i, 5_i, 5_i, 5_i, 4_i}, 7_i, horizon};
+    }
+
+    /// Two resources, and a cut that is a consequence of both of them and of
+    /// neither alone. This is what Equation 4's lifting is for, and nothing in
+    /// the single-resource fixtures above reaches it.
+    ///
+    /// The two rows do different halves of the work, which is the point. The
+    /// cover `{0, 1, 2}` belongs to the *second* resource --- two and three and
+    /// one overshoot its five --- and is no cover of the first, where the same
+    /// three tasks come to exactly its three. Lifting the fourth task then asks
+    /// what those three can still weigh once it is running, and the answer comes
+    /// from the *first* resource, which the fourth task fills on its own, so
+    /// nothing else can run beside it and the coefficient is two rather than
+    /// one.
+    ///
+    /// So `a0 + a1 + a2 + 2 a3 <= 2` needs both rows and each for a different
+    /// reason: the second is what refuses `{0, 1, 2}` and the first is what
+    /// refuses `{1, 3}`. Its energy is fifteen against a capacity of two, so no
+    /// schedule is shorter than eight --- which is the optimum, while the best
+    /// either row reaches on its own is seven.
+    auto two_resource_instance(int horizon) -> Instance
+    {
+        return Instance{{1_i, 1_i, 1_i, 3_i}, {2_i, 5_i, 4_i, 2_i}, 3_i, horizon, {}, {Resource{{2_i, 3_i, 1_i, 2_i}, 5_i}}};
     }
 
     enum struct Stage
@@ -176,7 +239,8 @@ namespace
             p.minimise(*makespan);
         }
 
-        p.post(Cumulative{starts, instance.lengths, instance.demands, instance.capacity}.with_rules(setup.rules));
+        for (const auto & resource : instance.resources())
+            p.post(Cumulative{starts, instance.lengths, resource.demands, resource.capacity}.with_rules(setup.rules));
 
         switch (setup.stage) {
             using enum Stage;
@@ -252,15 +316,17 @@ namespace
         auto n = instance.demands.size();
         set<vector<int>> expected;
         vector<int> current(n, 0);
+        auto resources = instance.resources();
         auto ok = [&]() {
-            for (int t = 0; t < instance.horizon; ++t) {
-                Integer load = 0_i;
-                for (std::size_t i = 0; i < n; ++i)
-                    if (t >= current[i] && t < current[i] + instance.lengths[i].raw_value)
-                        load += instance.demands[i];
-                if (load > instance.capacity)
-                    return false;
-            }
+            for (int t = 0; t < instance.horizon; ++t)
+                for (const auto & resource : resources) {
+                    Integer load = 0_i;
+                    for (std::size_t i = 0; i < n; ++i)
+                        if (t >= current[i] && t < current[i] + instance.lengths[i].raw_value)
+                            load += resource.demands[i];
+                    if (load > resource.capacity)
+                        return false;
+                }
             return true;
         };
         auto recurse = [&](auto && self, std::size_t at) -> void {
@@ -508,14 +574,22 @@ auto main(int argc, char * argv[]) -> int
         solve_instance(lifted_instance(13), Setup{.stats = unbounded}, nullopt);
         auto stats = make_shared<InferredCumulativeStats>();
         solve_instance(lifted_instance(13), Setup{.max_covers = 0, .stats = stats}, nullopt);
-        // The cover budget caps the *short* families only: the equal-demand
-        // long covers are added after it has been applied, exactly as in the
-        // reference implementation, so this does not go to zero.
         if (stats->covers_considered >= unbounded->covers_considered)
             fail("a zero cover budget considered " + to_string(stats->covers_considered) + " covers against " +
                 to_string(unbounded->covers_considered) + " unbounded, so the budget did not bite");
+    }
+    {
+        // The cover budget bites twice, and what survives both is a cover of
+        // *more* than three tasks: the equal-demand families are added after
+        // each resource's own budget, and the merge across resources then keeps
+        // every large cover outright and only the best `max_covers` of the rest.
+        // A long cover of exactly three does not survive a budget of zero, which
+        // is why this fixture's five demand-two tasks under a capacity of seven
+        // are five and not four.
+        auto stats = make_shared<InferredCumulativeStats>();
+        solve_instance(long_cover_instance(13), Setup{.max_covers = 0, .stats = stats}, nullopt);
         if (stats->covers_considered == 0)
-            fail("a zero cover budget dropped the long covers too, which are added after it");
+            fail("a zero cover budget dropped the long covers too, which survive it");
     }
     {
         auto stats = make_shared<InferredCumulativeStats>();
@@ -629,21 +703,24 @@ auto main(int argc, char * argv[]) -> int
     // shapes rather than only the hand-built fixture.
     {
         std::mt19937 rand(*get_seed());
-        std::uniform_int_distribution<> n_dist(3, 5), cap_dist(4, 10), len_dist(1, 3), tall_dist(0, 2), pin_dist(0, 1);
+        std::uniform_int_distribution<> n_dist(3, 5), rows_dist(1, 3), cap_dist(4, 10), len_dist(1, 3), tall_dist(0, 2), pin_dist(0, 1);
 
-        std::size_t posted = 0, restricted = 0, inferred = 0, uncertifiable = 0, over_budget = 0, declined = 0;
+        std::size_t posted = 0, restricted = 0, inferred = 0, uncertifiable = 0, over_budget = 0, declined = 0, over_state_budget = 0,
+                    subproblems_over_budget = 0, multi_resource = 0;
         for (int k = 0; k < 25; ++k) {
-            auto capacity = cap_dist(rand);
-            Instance instance{{}, {}, Integer{capacity}, 0};
-            std::uniform_int_distribution<> tall(capacity / 2 + 1, capacity), rest(1, capacity / 2);
-
+            // One to three resources over the same tasks, so that the crossing
+            // is exercised over many shapes rather than only over the fixture
+            // built to need it --- and so that a cut whose certificate cites two
+            // rows is checked by veripb rather than argued about.
+            auto rows = rows_dist(rand);
             auto n = n_dist(rand);
+
+            Instance instance{{}, {}, 0_i, 0};
             int longest = 0;
             for (int i = 0; i < n; ++i) {
                 auto length = len_dist(rand);
                 longest = std::max(longest, length);
                 instance.lengths.push_back(Integer{length});
-                instance.demands.push_back(Integer{0 == tall_dist(rand) ? tall(rand) : rest(rand)});
             }
             instance.horizon = longest + 3;
             for (int i = 0; i < n; ++i) {
@@ -651,11 +728,25 @@ auto main(int argc, char * argv[]) -> int
                 instance.latest_start.push_back(0 == pin_dist(rand) && latest > 1 ? latest - 1 : latest);
             }
 
+            for (int row = 0; row < rows; ++row) {
+                auto capacity = cap_dist(rand);
+                std::uniform_int_distribution<> tall(capacity / 2 + 1, capacity), rest(1, capacity / 2);
+                vector<Integer> demands;
+                for (int i = 0; i < n; ++i)
+                    demands.push_back(Integer{0 == tall_dist(rand) ? tall(rand) : rest(rand)});
+                if (0 == row) {
+                    instance.demands = move(demands);
+                    instance.capacity = Integer{capacity};
+                }
+                else
+                    instance.also.push_back(Resource{move(demands), Integer{capacity}});
+            }
+
             auto stats = make_shared<InferredCumulativeStats>();
             auto lifted = solve_instance(instance, Setup{.stats = stats}, make_optional("inferred_cumulative_sweep"));
             if (lifted.solutions != expected_solutions(instance)) {
-                println(cerr, "demands={} lengths={} capacity={} horizon={} latest={}", instance.demands, instance.lengths,
-                    instance.capacity.raw_value, instance.horizon, instance.latest_start);
+                println(cerr, "demands={} lengths={} capacity={} horizon={} latest={} extra rows={}", instance.demands, instance.lengths,
+                    instance.capacity.raw_value, instance.horizon, instance.latest_start, instance.also.size());
                 fail("the verified sweep lost solutions");
             }
             posted += stats->cuts_posted;
@@ -664,6 +755,9 @@ auto main(int argc, char * argv[]) -> int
             uncertifiable += stats->cuts_uncertifiable;
             over_budget += stats->dropped_over_budget;
             declined += stats->declined_by_install;
+            over_state_budget += stats->dropped_over_state_budget;
+            subproblems_over_budget += stats->lifting_subproblems_over_budget;
+            multi_resource += stats->multi_resource_cuts_posted;
         }
 
         if (posted == 0)
@@ -675,17 +769,30 @@ auto main(int argc, char * argv[]) -> int
         // of a derivation, or declined by the install. If those do not add up,
         // something else is happening to constraints and the certified fraction
         // means nothing.
-        if (posted + uncertifiable + over_budget + declined != inferred)
+        if (posted + uncertifiable + over_budget + declined + over_state_budget != inferred)
             fail("the sweep inferred " + to_string(inferred) + " constraints but accounts for " + to_string(posted) + " posted, " +
-                to_string(uncertifiable) + " uncertifiable, " + to_string(over_budget) + " over budget and " + to_string(declined) + " declined");
+                to_string(uncertifiable) + " uncertifiable, " + to_string(over_budget) + " over budget, " + to_string(over_state_budget) +
+                " over the state budget and " + to_string(declined) + " declined");
         // And the certified fraction is all of it. This is the whole point of
         // certifying by replaying the lifting procedure's own knapsack
         // programme: it is complete by construction, where the cutting-planes
         // search it replaced dropped about one constraint in twenty-five.
         if (uncertifiable != 0)
             fail("the sweep could not derive " + to_string(uncertifiable) + " constraints, which the dynamic programme should make impossible");
+        // The state budget is there for a pathology, not for these: a programme
+        // it stops is a cut this could probably have certified, and one it stops
+        // during lifting is a coefficient the published procedure would have
+        // found. Either happening at these sizes means the budget is wrong.
+        if (over_state_budget != 0 || subproblems_over_budget != 0)
+            fail("the sweep hit the state budget " + to_string(over_state_budget) + " times certifying and " + to_string(subproblems_over_budget) +
+                " times lifting, at sizes where it should never be reached");
+        // And the multi-resource path is genuinely being checked here rather
+        // than only by the fixture built for it.
+        if (multi_resource == 0)
+            fail("no cut in the verified sweep needed more than one row, so veripb checked no crossing");
         auto attempted = inferred - over_budget;
-        println(cerr, "verified sweep: {} of {} attempted constraints certified, {} rows restricted", posted, attempted, restricted);
+        println(cerr, "verified sweep: {} of {} attempted constraints certified ({} over more than one row), {} rows restricted", posted, attempted,
+            multi_resource, restricted);
     }
 
     // Nothing may have reached the OPB: the whole plan turns on an inferred
@@ -730,6 +837,74 @@ auto main(int argc, char * argv[]) -> int
             if (run_veripb(name + ".opb", name + ".pbp"))
                 fail("veripb accepted the " + what + " mutation, so the honest certificate has slack in it");
             println(cerr, "veripb rejected the {} mutation, as expected", what);
+            dispose_of_proof_files(name);
+        }
+    }
+
+    // Two resources, which is what Equation 4's lifting is actually over, and
+    // the only fixture here whose certificate carries a row onto flags that are
+    // not its own.
+    {
+        auto stats = make_shared<InferredCumulativeStats>();
+
+        auto resources_only = solve_instance(two_resource_instance(7), Setup{.stage = Stage::none}, nullopt);
+        if (resources_only.refuted_at_root)
+            fail("two resources: the rows alone refuted at the root, so the fixture proves nothing");
+
+        auto lifted =
+            solve_instance(two_resource_instance(7), Setup{.stats = stats}, proofs ? make_optional("inferred_cumulative_two_resources") : nullopt);
+
+        if (stats->donors_seen != 2)
+            fail("two resources: saw " + to_string(stats->donors_seen) + " donors, so they were not both offered");
+        if (stats->multi_resource_cuts_posted == 0)
+            fail("two resources: every posted cut came from a single row, so the crossing this fixture exists for never ran");
+        if (stats->non_unit_cuts_posted == 0)
+            fail("two resources: nothing posted with a coefficient above one, so this is the capacity-one stage's case and not this one");
+        // Fifteen units of a supply of two: eight, which is the optimum, and one
+        // more than either row reaches on its own.
+        if (stats->largest_capacity_bound != 8_i)
+            fail("two resources: reported a makespan bound of " + to_string(stats->largest_capacity_bound.raw_value) +
+                ", not the eight the cut "
+                "carries");
+        if (! lifted.refuted_at_root)
+            fail("two resources: the cut did not refute a horizon of seven at the root");
+
+        println(cerr, "two resources: {} cuts posted, {} of them over more than one row, bound {}, refuted at the root against {} nodes without",
+            stats->cuts_posted, stats->multi_resource_cuts_posted, stats->largest_capacity_bound.raw_value, resources_only.recursions);
+    }
+
+    // And the horizon it does not refute enumerates correctly, which is the
+    // half that says the cut is implied rather than merely strong.
+    {
+        auto stats = make_shared<InferredCumulativeStats>();
+        auto instance = two_resource_instance(8);
+        auto outcome = solve_instance(instance, Setup{.stats = stats}, proofs ? make_optional("inferred_cumulative_two_resources_sat") : nullopt);
+        if (stats->multi_resource_cuts_posted == 0)
+            fail("two resources, satisfiable: no cut over more than one row was posted");
+        if (outcome.solutions != expected_solutions(instance))
+            fail("two resources, satisfiable: " + to_string(outcome.solutions.size()) + " solutions against " +
+                to_string(expected_solutions(instance).size()) + " by brute force");
+        println(cerr, "two resources: {} solutions at the bound, matching brute force", outcome.solutions.size());
+    }
+
+    // Every mutation again, over the fixture that crosses --- including the one
+    // that can only exist here, where a row is carried onto the wrong member's
+    // flags. With a single donor there is no crossing for it to corrupt.
+    if (proofs) {
+        for (const auto & [what, mutation] :
+            {std::pair<string, InferredCumulativeMutation>{"one less capacity", inferred_cumulative_mutation::ClaimTighterCapacity{}},
+                std::pair<string, InferredCumulativeMutation>{"one more height", inferred_cumulative_mutation::ClaimTallerTask{}},
+                std::pair<string, InferredCumulativeMutation>{"a tighter row", inferred_cumulative_mutation::ClaimTighterRow{}},
+                std::pair<string, InferredCumulativeMutation>{"the wrong task bridged", inferred_cumulative_mutation::BridgeWrongTask{}}}) {
+            const string name = "inferred_cumulative_two_resource_mutation";
+            Problem p;
+            post(p, two_resource_instance(8), Setup{.mutation = mutation});
+            solve_with(
+                p, SolveCallbacks{.trace = [](const CurrentState &) -> bool { return true; }}, make_optional<ProofOptions>(ProofFileNames{name}));
+
+            if (run_veripb(name + ".opb", name + ".pbp"))
+                fail("veripb accepted the " + what + " mutation over two resources, so that certificate has slack in it");
+            println(cerr, "veripb rejected the {} mutation over two resources, as expected", what);
             dispose_of_proof_files(name);
         }
     }

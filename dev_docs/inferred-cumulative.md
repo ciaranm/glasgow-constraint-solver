@@ -49,8 +49,9 @@ set of constraints from the paper's.
 As with [capacity strengthening](cumulative-strengthening.md) and the
 [capacity-one stage](inferred-disjunctive.md), the inference cannot change a
 time-table verdict — and here the argument is a one-liner. A cut is *valid*:
-every 0/1 point the donor's row allows satisfies it. So no set of tasks that
-fits under the donor at one time point fails under the cut at that time point,
+every 0/1 point the rows it is lifted from allow satisfies it. So no set of tasks
+that fits under those resources at one time point fails under the cut at that
+time point,
 and time-tabling, which only ever reasons about one time point, can reach nothing
 new. It therefore ships with **time-tabling off**, and the test asserts
 node-for-node equality with it turned back on.
@@ -87,14 +88,27 @@ Budgets are the paper's: `N_cover`, `N_out`, and `N_calls` against the lifting
 subproblems, which are the bottleneck. The defaults here are what its
 experiments used — 100, 5 and 2·10⁴, with the capacity cap effectively off.
 
-### Where this deliberately differs
+### Every resource at once
 
-**The lifting subproblem is one resource, not all of them.** The paper's
-Equation 4 constrains over every resource at once, which is what makes its
-lifting cross-resource. Ours is a single donor row, because that is what the
-certificate can reach. This is a restriction on *what is inferred*, not only on
-what is proved, and it is
-[#673](https://github.com/ciaranm/glasgow-constraint-solver/issues/673).
+**The lifting subproblem is Equation 4's**, constrained by every posted
+resource's row rather than by the donor's alone. That is what makes the lifting
+cross-resource, and it matters because more constraints on the subproblem mean a
+*smaller* answer, and so a *larger* coefficient: the task being lifted excludes
+more, and the inequality says more.
+
+A cover still belongs to one resource --- Algorithm 1 enumerates them per row,
+and a set that fits under every resource is nobody's cover --- but the cut lifted
+from it need not be a consequence of that row, or of any single row. The
+[two-resource fixture](../gcs/presolvers/inferred_cumulative/inferred_cumulative_test.cc)
+is the smallest case: the cover belongs to the second resource, the coefficient
+comes from the first, and neither row on its own implies the result.
+
+So the presolver runs **once over the whole problem** rather than once per
+posted constraint, which is what the reference implementation's single demand
+matrix does, and the budgets follow: the cover budget applies to each resource's
+short families and then again across all of them, and the subproblem budget, the
+visited-cover rule and the output limit are one each rather than one per
+resource.
 
 **Two places where the paper and its implementation disagree**, both resolved in
 favour of the code, which produced the published results:
@@ -129,25 +143,40 @@ emptied the tail.
 ## The certificate
 
 A lifted cover cut is true because a knapsack optimum says so:
-`Σ πᵢ aᵢ ≤ π₀` holds at every 0/1 point the row allows exactly when
-`max { Σ πᵢ xᵢ : Σ cᵢ xᵢ ≤ C }` is at most `π₀`. So rather than deriving that
-conclusion, the proof derives the *computation*, in the states-and-transitions
-shape of Demirović et al. (CP 2024) — and in its **one-sided** form, the one
-their standalone knapsack solver uses, where a state says "at least this much
-weight, at most this much profit" rather than "exactly this much of each".
+`Σ πᵢ aᵢ ≤ π₀` holds at every 0/1 point the rows *jointly* allow exactly when
+`max { Σ πᵢ xᵢ : Σ c_{r,i} xᵢ ≤ C_r for every r }` is at most `π₀`. So rather
+than deriving that conclusion, the proof derives the *computation*, in the
+states-and-transitions shape of Demirović et al. (CP 2024) — and in its
+**one-sided** form, the one their standalone knapsack solver uses, where a state
+says "at least this much weight, at most this much profit" rather than "exactly
+this much of each".
+
+The same programme answers the lifting subproblem, which is not an economy but
+the point: the inference and the certificate ask the same question of the same
+rows, so a cut the procedure produces cannot be one the proof fails to reach.
 
 `validate_lifted_cover_cut` builds the programme and answers the only question
 worth asking of a candidate cut; `derive_lifted_cover_cut` emits it. Layer `i`
-holds the (weight, profit) pairs the first `i` members can reach. A successor
-either leaves the next member out, or takes it and pays its demand — and **a
-successor that would overrun the capacity is not created at all**. That is the
-only use the donor's row gets, and it is exactly what makes the cut a
-consequence of it.
+holds the (weights, profit) tuples the first `i` members can reach, with one
+weight per resource. A successor either leaves the next member out, or takes it
+and pays its demand on every resource — and **a successor that would overrun some
+capacity is not created at all**. That is the only use a row gets, and it is
+exactly what makes the cut a consequence of the rows.
 
-Each state carries three extension variables — `Σ_{j≤i} c_j a_j ≥ w`,
-`Σ_{j≤i} π_j a_j ≤ p`, and their conjunction — and each transition an
-implication, emitted as a `pol` that leaves its clause one unit propagation away
-and then the clause. Each layer then gets an at-least-one saying its states are
+Nothing here scales one row against another or adds them together, which is what
+the sketch in [#673](https://github.com/ciaranm/glasgow-constraint-solver/issues/673)
+assumed a multi-resource certificate would need. Each row is used exactly where
+the single row was used: to say that one transition cannot happen.
+
+Rows that cannot rule anything out — whose members' demands sum to no more than
+the capacity — are dropped before the programme is built, since a weight bound
+against one would be a flag per state saying nothing. Such a row admits every
+subset of the members, so no derivation could have used it.
+
+Each state carries an extension variable per resource for
+`Σ_{j≤i} c_{r,j} a_j ≥ w_r`, one for `Σ_{j≤i} π_j a_j ≤ p`, and one for their
+conjunction — and each transition an implication per half, emitted as a `pol`
+that leaves its clause one unit propagation away and then the clause. Each layer then gets an at-least-one saying its states are
 between them complete, by resolution over the layer before. At the end one more
 flag reifies the cut itself; every final state contradicts it, since a state with
 a profit above `π₀` is precisely what `validate_lifted_cover_cut` refuses; and
@@ -158,29 +187,67 @@ whole of the previous scheme: the `Normalised` model of VeriPB's arithmetic, the
 divisor and copy-count search, the cover enumeration inside the planner, and the
 backward planner the window edges needed.
 
+### Carrying a row onto other flags
+
+Each resource is a separately posted `Cumulative` with its own activity flags, so
+its row speaks a different language from the members' own. `recover_bridged_row`
+([`flag_bridge.hh`](../gcs/innards/proofs/flag_bridge.hh)) translates it: weaken
+the row down to the members, then add `c_j` copies of each member's bridge, which
+puts every flag in with both signs so all of them cancel and the constants leave
+the right-hand side where it was. The bridges are
+`recover_conjunction_flag_bridge`'s, three `pol` per member per row, since
+`active ⇔ before ∧ after` needs its conjuncts crossed first.
+
+The direction is the thing to get right and the types will not tell you: to turn
+`Σ c_j b_j ≤ C` into `Σ c_j a_j ≤ C` the sum has to be able to grow, so each
+`a_j` must imply its `b_j`. Backwards, nothing cancels. The result is pinned, so
+that a bridge pointing the wrong way is refused there rather than several
+thousand lines later, and the `BridgeWrongTask` mutation is the test.
+
+Whichever resource the members' flags already come from needs no crossing at all,
+so a single-resource cut emits none of this and pays nothing for the machinery.
+The crossing is emitted a proof level deeper than the caller's and forgotten on
+the way out, along with the rest of the working: at `Top` there would be three
+`pol` per member per resource per time point and none of them would ever be
+deleted, which is [#666](https://github.com/ciaranm/glasgow-constraint-solver/issues/666)
+all over again.
+
 ### Dominated states, which is what keeps this small
 
-A state taking no more of the resource while allowing no less on the cut says
-everything another one does, so the other can go. What survives runs strictly
-upwards in both coordinates, which means **a layer holds at most one state per
-achievable profit** — and since a state whose profit exceeds `π₀` would be a
-point breaking the cut, no layer can be wider than `π₀ + 1`.
+A state taking no more of *any* resource while allowing no less on the cut says
+everything another one does, so the other can go. What survives is an antichain.
 
-That is the whole reason this is affordable, and it is why the size below does
-not depend on the capacity at all. `π₀` is a cover's size minus one, so it is
-two or three on the constraints the procedure actually infers, where a
-capacity-indexed programme would have been as wide as the resource.
+Over one resource that antichain is a staircase running strictly upwards in both
+coordinates, so **a layer holds at most one state per achievable profit** — and
+since a state whose profit exceeds `π₀` would be a point breaking the cut, no
+layer can be wider than `π₀ + 1`. That is the whole reason this is affordable,
+and it is why the size below does not depend on the capacity at all. `π₀` is a
+cover's size minus one, so it is two or three on the constraints the procedure
+actually infers, where a capacity-indexed programme would have been as wide as
+the resource.
+
+Over several resources the frontier is a Pareto set and there is no such bound to
+lean on: a layer can hold many states of the same profit, differing in which
+resource they have spent. Measured on all 83 lifted constraints Sidorov publishes
+for Pack and Pack-d, switching every resource on takes the widest layer from 4 to
+14 and the largest programme from 111 states to 222 — the same order, not a
+different regime, because lifting drives the coefficients up and so keeps `π₀`
+small whatever the capacities are. But "measured" is not "bounded", so
+`with_programme_state_budget` exists and a cut over it is dropped and counted
+separately from one that does not hold. It is never reached in the test suite,
+and the sweep asserts that.
 
 The dropped states are never named in the proof. A transition landing on one is
 emitted straight into the state that covers it, which is valid for the same
-reason the drop was.
+reason the drop was. With more than one resource a single state can cover *both*
+branches of a transition, which cannot happen over one.
 
 ### Restricting to a time point
 
 A derived `Cumulative` has one height per task and one capacity, so every time
 point's row has to carry the *same* coefficients. At the edges of the window only
-some of the cut's tasks have flags — and only those have terms in the donor's row
-there — so the cut is simply restricted to them, which stays valid because
+some of the cut's tasks have flags — and only those have terms in the rows there —
+so the cut is simply restricted to them, which stays valid because
 setting an absent task's flag to zero is a point the cut already covered.
 
 The programme has to be built again over the members that are present, which is
@@ -206,8 +273,8 @@ asserts a non-zero restriction count so it cannot quietly stop covering them.
 ## Proof size, which is what decided the design
 
 Measured, since the estimate that nearly sank this was out by two orders of
-magnitude. One derived row costs about **fifteen lines per state**, and the
-states are `members × (π₀ + 1)`:
+magnitude. Over a single resource one derived row costs about **fifteen lines per
+state**, and the states are `members × (π₀ + 1)`:
 
 | members | capacity | `π₀` | states | lines | bytes |
 |--------:|---------:|-----:|-------:|------:|------:|
@@ -221,6 +288,12 @@ point — around `10⁶` lines per constraint at `|S| = 10`, `C = 20`, horizon 1
 because it assumed a programme per lifting step, indexed by residual capacity.
 Neither is needed: one programme certifies the finished cut, and the frontier is
 indexed by profit, which is bounded by the right-hand side.
+
+Each further resource adds a weight variable per state — two more lines to define
+it and two more per transition — and however many states the Pareto frontier
+turns out to need. On the published Pack constraints that is about three times a
+single-resource row for three resources, plus the crossing, which is a few lines
+per member per row per time point and is lost in the noise beside the programme.
 
 Over a horizon, a derived `Cumulative` costs one such row per time point. For
 eight members and a capacity of twenty:
@@ -244,29 +317,35 @@ problem.** On these numbers it is not.
 
 ### One step that is not what makes it sound
 
-The `pol` that rules a member out weakens the donor's other tasks out of the row
-first. That weakening is for the checker's benefit, not for soundness: every term
-left in adds its own demand to the degree, and the literals it leaves behind
-cannot between them cover a degree they raised by more than they can reach, so
-the member is forced out either way. What the sweep buys is that the step lands
-on a two-literal clause rather than on something as wide as the donor.
+The `pol` that rules a member out weakens the row's other tasks out of it first.
+That weakening is for the checker's benefit, not for soundness: every term left
+in adds its own demand to the degree, and the literals it leaves behind cannot
+between them cover a degree they raised by more than they can reach, so the
+member is forced out either way. What the sweep buys is that the step lands on a
+two-literal clause rather than on something as wide as the donor.
 
 So a mutation that skips a weakening cannot be caught, and there is no longer one
-that tries. The mutation that replaced it builds the programme against a capacity
-one below the donor's, so that its states claim the row rules out a member it does
+that tries. The mutation that replaced it builds the programme against capacities
+one below the rows', so that its states claim a row rules out a member it does
 not — which veripb refuses inside the replay rather than at the pin.
+
+**That mutation needs a fixture the tightening actually changes, and over several
+resources it is easy to build one where it does not.** Every state is a subset of
+the members that fits; if no feasible subset sits exactly at a capacity, taking
+one off every capacity leaves the whole programme identical and only changes
+which row gets the blame for a kill — and the kill is still true, so veripb
+rightly accepts. Worse, even a genuinely misattributed kill can survive, because
+the other rows are in the database and unit propagation can reach the same
+conclusion through them. This is the conflict-shaped-rule problem from #660
+again: corrupting the *route* is not a test when a second route is true. The
+two-resource fixture is chosen so that tightening forbids something, and the
+corruption that is specific to several resources — carrying a row onto the wrong
+member's flags — is `BridgeWrongTask`.
 
 ## What is not here
 
-- **Multi-resource lifting**
-  ([#673](https://github.com/ciaranm/glasgow-constraint-solver/issues/673)). A
-  cut mixing demands from two resources needs the two rows scaled against each
-  other, and neither schema here reaches that. The capacity-one stage spans
-  resources by merging *at-most-ones*, which works because an at-most-one is
-  scale-free; non-unit coefficients are not, which is exactly where that trick
-  stops. Sidorov solves those subproblems and so could we — the precedent for a
-  nested solve is `gcs/presolvers/auto_table/auto_table.cc` — but the result
-  would have to be posted uncertified, which is not a trade this plan makes.
 - Optional tasks, variable durations or demands, and lifting during search
   (a constraint lifted from a conflict does not propagate after backtracking, so
   this is root-level only).
+- Nothing else: the lifting is Equation 4's, over every resource, and every
+  constraint it produces is derived.

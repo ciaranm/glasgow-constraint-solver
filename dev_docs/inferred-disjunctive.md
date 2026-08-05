@@ -172,9 +172,11 @@ get wrong and neither is visible from the paper:
 
 ## Not done
 
-- Multi-resource lifting. The single-resource half of the general lifted case is
-  [`InferredCumulative`](inferred-cumulative.md); a cut mixing demands from two
-  resources is still open (issue #549).
+- The general lifted case, with non-unit coefficients, is
+  [`InferredCumulative`](inferred-cumulative.md), and it spans resources too ---
+  by a weight per resource in its knapsack programme rather than by merging
+  at-most-ones, which is scale-free and so stops working as soon as a
+  coefficient is not one.
 - Budget-robustness sweeps on larger instances.
 - The proof-size work above.
 
