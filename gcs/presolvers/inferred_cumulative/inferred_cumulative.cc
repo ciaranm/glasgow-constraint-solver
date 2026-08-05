@@ -146,8 +146,11 @@ namespace
     ///
     /// The reference implementation compares a duration against an *index* when
     /// picking the longest task of a given demand (`durations[ix] >
-    /// inv_A_longest[a]`), which cannot be what was meant; the paper says
-    /// longest and that is what happens here.
+    /// inv_A_longest[a]`); Sidorov confirms the intended line is
+    /// `durations[ix] > durations[inv_A_longest[a]]`, which is what happens
+    /// here. Its published results came from the shipped line, so the ternary
+    /// covers here are not the ones its numbers were produced from --- never
+    /// worse ones, which is the awkward direction. See the writeup.
     [[nodiscard]] auto collect_covers(const vector<Task> & tasks, const vector<Integer> & demands, Integer capacity, size_t max_covers,
         size_t cover_cardinality) -> vector<vector<size_t>>
     {
@@ -288,8 +291,12 @@ namespace
     /// The right-hand side never moves.
     ///
     /// Longest first follows the reference implementation, which sorts by
-    /// duration descending; the paper's Algorithm 2 says `arg min d_i`. The
-    /// published results came from the code.
+    /// duration descending; the paper's Algorithm 2 says `arg min d_i`, and
+    /// Sidorov confirms that is the typo. Bringing the tasks with the biggest
+    /// effect on the bound in first keeps them out of the subproblem's objective
+    /// while it is still small, so they meet a smaller `v*` and get a larger
+    /// coefficient. Lifting is sequence-dependent even over one row (Zemel
+    /// 1978), so the order is load-bearing rather than cosmetic.
     struct Lifted
     {
         vector<Integer> coefficients;

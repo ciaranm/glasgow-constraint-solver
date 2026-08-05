@@ -110,14 +110,38 @@ short families and then again across all of them, and the subproblem budget, the
 visited-cover rule and the output limit are one each rather than one per
 resource.
 
-**Two places where the paper and its implementation disagree**, both resolved in
-favour of the code, which produced the published results:
+**Two places where the paper and its implementation disagree**, both since
+resolved by Konstantin Sidorov by email (2026-08-05), and both in the same
+direction: *longest first*.
 
-- Algorithm 2 step L3 says to lift `arg min dᵢ`, shortest duration first; the
-  implementation sorts by duration *descending*.
-- Algorithm 1 picks "the longest task among the ones satisfying …", but the code
-  compares a duration against an array *index* when doing so. Ours takes the
-  longest, as the paper says.
+- Algorithm 2 step L3 says to lift `arg min dᵢ`, shortest duration first, while
+  the implementation sorts by duration *descending*. **The paper has the typo**;
+  the intent is the longest unlifted task. Lifting assigns coefficients greedily,
+  so bringing in the tasks with the biggest effect on the bound first keeps them
+  out of the subproblem's objective while it is still small — a later task meets
+  a larger `v*` and so gets a smaller coefficient. That the order matters at all
+  is not an artefact of doing several resources: **lifting is sequence-dependent
+  even over a single row** (Zemel 1978). Which order is best is a heuristic
+  question, and depends on what will consume the constraint downstream.
+- Algorithm 1 picks "the longest task among the ones satisfying …", and the code
+  compares a duration against an array *index* when doing so. **The code has the
+  bug**; the intended line reads `durations[ix] > durations[inv_A_longest[a]]`,
+  which is what happens here.
+
+That second one is not a formality, and it matters for how the comparisons in
+this repository should be read. **The published results came from the shipped
+line**, and over the Pack and Pack-d instances the two readings pick a different
+representative on 306 of 314 resource rows. The ternary cover family that comes
+out differs on 164 of those rows and on 103 of the 110 instances.
+
+The difference runs one way. The shipped line's pick is **never longer** than the
+intended one — shorter on 542 of the 922 (demand, row) pairs and equal on the
+rest — so the corrected reading's best ternary cover is never worse, and is
+better on 61 rows. A per-instance comparison against the paper's numbers is
+therefore not a comparison over the same covers, and where this presolver's `L`
+beats the published one that is a likely cause. It is also the one place where
+reproducing the method as *described* means out-performing the artefact as
+*shipped*, which is the opposite of the usual risk and worth saying out loud.
 
 ## The certified fraction, which is the number this exists to produce
 
