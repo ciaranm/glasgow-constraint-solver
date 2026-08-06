@@ -270,6 +270,14 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
     // eligible is not lost to the check: whatever it must occupy still counts,
     // through the profile term of the (TTOC) strengthening.
     //
+    // The height half is looser than it reads. A *derived* Cumulative's tasks
+    // carry constant heights by construction, so one whose donor height was a
+    // variable arrives here already converted to the demand it guarantees and
+    // passes --- which is how an all-variable-height donor's energy gets
+    // counted at all. A posted constraint's variable height is still turned
+    // away, and need not be: the same conversion would serve. The length half
+    // is the one that genuinely binds, and #689 is what it would take.
+    //
     // Seam for optional tasks (#543): once a task can be absent, only one
     // whose presence is fixed true may join the energy set or the profile, and
     // its presence literal joins the reason. Nothing here consults a presence

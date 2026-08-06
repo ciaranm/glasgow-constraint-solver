@@ -1057,15 +1057,19 @@ that gap is now named rather than hidden.
   piece of it: horizontally elastic and knapsack-augmented checking
   (#550) build on the clipped form, and the lifted-constraint
   presolvers (#549) on the contained one.
-- **Variable lengths, heights and capacity in the energy set.** Staged
-  deliberately; the extensions are sketched in #542. A variable-duration
-  task now takes part in a derived Cumulative's rows and time-tabling
-  (#685), and contributes its mandatory part to the (TTOC) profile term,
-  but the window-energy lemma still cannot count its energy: that needs a
-  task's energy to be a number. A variable **height** is converted to the
-  demand it guarantees (#686), which *is* a number — so such a task does
-  join the energy set, and a task with a variable duration and a variable
-  height gets its demand counted but not its energy.
+- **A variable duration in the energy set (#689).** The window-energy
+  lemma's eligibility filter turns away a task whose length or height is
+  not a constant, and those two halves are now in different states. The
+  **height** one has resolved itself: a task #686 converted arrives at the
+  filter as a constant and passes, which
+  `cumulative_strengthening_all_var_heights` demonstrates by refuting at
+  the root through the energy check. The **length** one still binds, since
+  #685 passes a length through as the variable it was posted with — so a
+  multi-mode RCPSP task gets its demand counted and its energy discarded,
+  and it is the duration that discards it. Loosening it is not free: the
+  lemma telescopes order literals over ranges fixed by a constant length,
+  and a variable-duration task's `after` is reified on `start + length`
+  instead. #689 has the sketch. The rest of #542's staging is unchanged.
 - **Conditional bounds for optional tasks.** An undecided task's start
   bounds are never pruned, because there is no conditional-bounds store
   and an unconditional prune would be unsound if the task turns out
