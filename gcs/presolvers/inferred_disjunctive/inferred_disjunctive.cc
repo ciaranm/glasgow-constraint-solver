@@ -216,6 +216,9 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         }
         if (! view->set_aside.empty())
             bump(&InferredDisjunctiveStats::resources_with_set_aside_tasks);
+        for (auto i : view->usable)
+            if (view->height_bounded_by[i])
+                bump(&InferredDisjunctiveStats::converted_heights);
 
         const auto & starts = donor.starts();
         resources.push_back(Resource{donor.constraint_id(), view->capacity, starts.size()});

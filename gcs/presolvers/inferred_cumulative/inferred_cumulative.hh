@@ -146,14 +146,20 @@ namespace gcs
         std::size_t declined_optional = 0;
         std::size_t declined_variable_arguments = 0;
 
-        /// Donors that could only be lifted out of in part, because a task's
-        /// height is a variable and so has no constant term in their rows. Such
-        /// a task takes no part in any cover and its terms are weakened out of
-        /// every row first; what that costs is a smaller matrix, never a wrong
-        /// cut. Counted because a donor drifting into it looks exactly like one
-        /// used in full. A variable *length* is not one of these: no length
-        /// appears in a row, so such a task keeps its column.
+        /// Donors that could only be lifted out of in part, because a task
+        /// could not be argued about at all: a height that is a view, or one
+        /// whose lower bound is zero. Such a task takes no part in any cover and
+        /// its terms are weakened out of every row first; what that costs is a
+        /// smaller matrix, never a wrong cut. Counted because a donor drifting
+        /// into it looks exactly like one used in full. Neither a variable
+        /// *length* nor an ordinary variable height is one of these any more.
         std::size_t donors_with_set_aside_tasks = 0;
+
+        /// Task appearances kept by converting a variable height into its lower
+        /// bound --- the demand the task is guaranteed to make --- rather than
+        /// setting them aside. Per (donor, task), since a task can be a variable
+        /// height on one donor and a constant on another.
+        std::size_t converted_heights = 0;
         /// Covers already inside the support of something lifted earlier, which
         /// would re-derive it and waste the subproblems (paper, Example 12).
         std::size_t dropped_visited = 0;

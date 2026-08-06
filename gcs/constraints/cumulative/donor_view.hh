@@ -43,6 +43,17 @@ namespace gcs::innards
      * is kept exactly where the donor published the line giving that proxy its
      * lower bound, and set aside where it did not.
      *
+     * A variable *height* is a restriction, but a payable one. Its terms in a
+     * capacity row are the bits of a linearised contribution rather than a
+     * coefficient on the activity flag, so a recipe cannot say anything about
+     * it as the row stands --- but the row saying the contribution is at least
+     * the height turns those bits back into `lb(height) x active`, which is a
+     * coefficient on the flag again, and the task's guaranteed demand. Such a
+     * task is kept whenever that is available, and what stays set aside is a
+     * height that cannot be argued about at all: a view (whose reification is
+     * over its own bit vector, so the height's bound rows do not cancel against
+     * it), or one whose lower bound is zero, which guarantees nothing.
+     *
      * \ingroup Innards
      */
     struct CumulativeDonorView
@@ -56,10 +67,20 @@ namespace gcs::innards
         std::vector<IntegerVariableID> lengths;
 
         /// Per task, in the donor's own order, and **zero for a set-aside
-        /// task**: a height that is not a constant is not a number this
-        /// constraint may quote, its terms in a capacity row being the bits of
-        /// a linearised contribution rather than a coefficient on a flag.
+        /// task**. A height that is not a constant is a number this constraint
+        /// may quote only after its terms in a capacity row --- the bits of a
+        /// linearised contribution --- have been converted into a coefficient
+        /// on the activity flag, which is what \ref height_bounded_by marks.
         std::vector<Integer> heights;
+
+        /// Per task, the height variable \ref heights came from, where it came
+        /// from one rather than being posted as a constant. Such a task's terms
+        /// in a derived row are the bits of a linearised contribution, and
+        /// recover_constant_argument_row converts them into
+        /// `heights[i] x active` --- the task's *guaranteed* demand, which is
+        /// what its lower bound is. Nullopt for a posted constant, and for a
+        /// set-aside task.
+        std::vector<std::optional<IntegerVariableID>> height_bounded_by;
 
         /// Per task, the presence argument as posted, for
         /// derived_cumulative_tasks_from.
@@ -84,6 +105,21 @@ namespace gcs::innards
         /// posted, in which case every derived row has to buy it. See
         /// recover_constant_argument_row.
         std::optional<IntegerVariableID> capacity_bounded_by;
+
+        /**
+         * \brief This view with every converted task set aside instead, as it
+         * would have been before the conversion existed.
+         *
+         * Converting is not always a gain, and the presolver that has to know
+         * is the one whose argument is a subset sum: kappa is the largest
+         * subset sum of the heights that the capacity allows, so *adding* a
+         * task can only push it up, and a converted task can therefore cost a
+         * donor its strengthening. What it buys, against that, is the task's
+         * energy in the overload check. Neither dominates and both are
+         * arithmetic, so a caller that cares works out both and keeps the
+         * better --- which is what this is for.
+         */
+        [[nodiscard]] auto with_converted_heights_set_aside() const -> CumulativeDonorView;
     };
 
     /**

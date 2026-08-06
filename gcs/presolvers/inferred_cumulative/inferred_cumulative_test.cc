@@ -506,10 +506,11 @@ auto main(int argc, char * argv[]) -> int
      * is not one less than a power of two --- so the order atom the reduction
      * resolves really does come back with a coefficient to pay off. The fourth
      * task's terms in the row are the bits of a linearised contribution rather
-     * than `height x active`, so all of them have to come out before anything
-     * is lifted out of what is left; it takes no part in the cover, and the
-     * three demand-four tasks still fit in twos and not in threes at either
-     * capacity, so the cut is the same one.
+     * than `height x active`, so those bits are converted into `lb(h) x active`
+     * before anything is lifted out of what is left. At a guaranteed demand of
+     * one it takes no part in the cover --- four and four and one is nine,
+     * which ten holds --- and the three demand-four tasks still fit in twos and
+     * not in threes at either capacity, so the cut is the same one.
      */
     {
         const int horizon = 7, length = 3, latest = horizon - length;
@@ -542,8 +543,10 @@ auto main(int argc, char * argv[]) -> int
 
         if (stats->cuts_posted != 1)
             fail("variable arguments: posted " + to_string(stats->cuts_posted) + " cuts, not the one over the three constant tasks");
-        if (stats->donors_with_set_aside_tasks != 1)
-            fail("variable arguments: the variable-height task was not set aside");
+        if (stats->converted_heights != 1)
+            fail("variable arguments: the variable-height task was not converted to its guaranteed demand");
+        if (stats->donors_with_set_aside_tasks != 0)
+            fail("variable arguments: a variable height set its task aside, rather than being converted");
         if (stats->declined_variable_arguments != 0)
             fail("variable arguments: the donor was declined rather than reduced");
 
@@ -574,6 +577,81 @@ auto main(int argc, char * argv[]) -> int
         if (expected != solutions)
             fail("variable arguments: solutions do not match brute force");
         println(cerr, "variable arguments: cut posted over a variable capacity, one task set aside, {} solutions", solutions.size());
+    }
+
+    /* The same cardinality cut over a donor whose every demand is a variable,
+     * which is the shape multi-mode RCPSP has. Set aside, as they would all
+     * have been, this donor has no column in the matrix at all and the
+     * presolver infers nothing; converted to the demands they are guaranteed to
+     * make --- four, their lower bound --- the three tasks fit in twos and not
+     * in threes exactly as the constant version does, and the same cut comes
+     * out.
+     */
+    {
+        const int horizon = 7, length = 3, latest = horizon - length;
+        auto stats = make_shared<InferredCumulativeStats>();
+
+        Problem p;
+        vector<IntegerVariableID> starts, heights;
+        for (int i = 0; i < 3; ++i) {
+            starts.push_back(p.create_integer_variable(0_i, Integer{latest}, "s" + to_string(i)));
+            heights.push_back(p.create_integer_variable(4_i, 5_i, "h" + to_string(i)));
+        }
+        vector<IntegerVariableID> lengths(3, constant_variable(Integer{length}));
+        p.post(Cumulative{starts, lengths, heights, constant_variable(10_i)});
+        p.add_presolver(InferredCumulative{stats});
+
+        set<vector<int>> solutions;
+        solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            vector<int> solution;
+            for (const auto & v : starts)
+                solution.push_back(s(v).raw_value);
+            for (const auto & v : heights)
+                solution.push_back(s(v).raw_value);
+            solutions.insert(move(solution));
+            return true;
+        }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"inferred_cumulative_converted_heights"}) : nullopt);
+        if (proofs)
+            verify_proof_and_clean_up("inferred_cumulative_converted_heights");
+
+        if (stats->cuts_posted != 1)
+            fail("converted heights: posted " + to_string(stats->cuts_posted) + " cuts, not the one over the three tasks");
+        if (stats->converted_heights != 3)
+            fail("converted heights: only " + to_string(stats->converted_heights) + " of the three variable demands were converted");
+        if (stats->donors_with_set_aside_tasks != 0)
+            fail("converted heights: a task was set aside on a donor every one of whose demands converts");
+        if (stats->largest_capacity_bound != 5_i)
+            fail("converted heights: reported a bound of " + to_string(stats->largest_capacity_bound.raw_value) +
+                ", not the five nine units of work against a supply of two per step carry");
+
+        set<vector<int>> expected;
+        vector<int> assignment(6, 0);
+        std::function<auto(std::size_t)->void> enumerate = [&](std::size_t at) {
+            if (at == assignment.size()) {
+                for (int t = 0; t < horizon; ++t) {
+                    int load = 0;
+                    for (int i = 0; i < 3; ++i)
+                        if (assignment[static_cast<std::size_t>(i)] <= t && t < assignment[static_cast<std::size_t>(i)] + length)
+                            load += assignment[static_cast<std::size_t>(i) + 3];
+                    if (load > 10)
+                        return;
+                }
+                expected.insert(assignment);
+                return;
+            }
+            auto lo = at >= 3 ? 4 : 0;
+            auto hi = at >= 3 ? 5 : latest;
+            for (auto v = lo; v <= hi; ++v) {
+                assignment[at] = v;
+                enumerate(at + 1);
+            }
+        };
+        enumerate(0);
+
+        if (expected != solutions)
+            fail("converted heights: solutions do not match brute force");
+        println(cerr, "converted heights: a cut over three variable demands, {} solutions", solutions.size());
     }
 
     /* And the same cut with a variable *duration* in it, which unlike a

@@ -416,6 +416,12 @@ auto main(int argc, char * argv[]) -> int
      * so the clique is the same one; the fourth task demands one, which does not
      * conflict with three at five but does at three, so it stays a decision the
      * search makes rather than one the presolver has taken.
+     *
+     * Its height being a variable no longer keeps it out of the graph: it is
+     * converted to the demand it is guaranteed to make, which is one. What the
+     * reduction still has to do is the capacity, and the fourth task's terms
+     * are still the bits of a linearised contribution --- converted rather than
+     * weakened away now, which is a different `pol` over the same bits.
      */
     {
         const int k = 3, length = 2, horizon = 6, latest = horizon - length;
@@ -457,10 +463,12 @@ auto main(int argc, char * argv[]) -> int
 
         if (stats->cliques_posted != 1)
             fail("a clique was not posted over resources with variable arguments");
-        if (stats->resources_with_set_aside_tasks != static_cast<size_t>(k))
-            fail("the variable-height task was not set aside on every resource");
+        if (stats->converted_heights != static_cast<size_t>(k))
+            fail("the variable-height task was not converted on every resource");
+        if (stats->resources_with_set_aside_tasks != 0)
+            fail("a variable height set its task aside, rather than being converted to its guaranteed demand");
         if (stats->declined_variable_arguments != 0)
-            fail("a resource was declined for a task's variable height, which is now a set-aside");
+            fail("a resource was declined for a task's variable height, which is now a conversion");
 
         // Brute force over the same model: the fourth task takes part or not
         // depending on the capacity, which is why it is in the tuple.
@@ -500,6 +508,98 @@ auto main(int argc, char * argv[]) -> int
         if (expected != solutions)
             fail("variable-argument solutions do not match brute force");
         println(cerr, "variable arguments: clique posted, {} solutions", solutions.size());
+    }
+
+    /* A clique that exists only because a variable height was converted. Three
+     * tasks, pairwise conflicting on the three resources `(i + j) mod 3` covers
+     * between them at a demand of three against a capacity of five --- except
+     * that the third task's demand is a *variable* over [3, 4], so on the two
+     * resources it appears on its terms are the bits of a linearised
+     * contribution rather than a coefficient on its activity flag.
+     *
+     * Set aside, as it would have been, that task has no conflicts at all: one
+     * pair is left, the clique is of two, and the minimum size of three refuses
+     * it. Converted to the demand it is guaranteed to make --- three, its lower
+     * bound --- all three pairs conflict and the clique is the whole family. So
+     * `conflicting_pairs` is the measure here: three with the conversion, one
+     * without.
+     */
+    {
+        const int k = 3, length = 2, horizon = 6, latest = horizon - length;
+        auto stats = make_shared<InferredDisjunctiveStats>();
+
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (int i = 0; i < k; ++i)
+            starts.push_back(p.create_integer_variable(0_i, Integer{latest}, "s" + to_string(i)));
+        auto varying = p.create_integer_variable(3_i, 4_i, "h2");
+
+        vector<IntegerVariableID> lengths(static_cast<size_t>(k), constant_variable(Integer{length}));
+        for (int r = 0; r < k; ++r) {
+            vector<IntegerVariableID> heights(static_cast<size_t>(k), constant_variable(0_i));
+            for (int i = 0; i < k; ++i)
+                for (int j = i + 1; j < k; ++j)
+                    if ((i + j) % k == r) {
+                        // The last task's demand is the variable one wherever it
+                        // appears; everyone else's is the constant three.
+                        heights[static_cast<size_t>(i)] = i == k - 1 ? varying : constant_variable(3_i);
+                        heights[static_cast<size_t>(j)] = j == k - 1 ? varying : constant_variable(3_i);
+                    }
+            p.post(Cumulative{starts, lengths, heights, constant_variable(5_i)});
+        }
+        p.add_presolver(InferredDisjunctive{stats});
+
+        set<vector<int>> solutions;
+        solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            vector<int> solution;
+            for (const auto & v : starts)
+                solution.push_back(s(v).raw_value);
+            solution.push_back(s(varying).raw_value);
+            solutions.insert(move(solution));
+            return true;
+        }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"inferred_disjunctive_converted_height"}) : nullopt);
+        if (proofs)
+            verify_proof_and_clean_up("inferred_disjunctive_converted_height");
+
+        if (stats->conflicting_pairs != 3)
+            fail("found " + to_string(stats->conflicting_pairs) +
+                " conflicting pairs, not the three the conversion reaches --- one is what setting the task aside would give");
+        if (stats->cliques_posted != 1)
+            fail("no clique was posted over a converted height");
+        if (stats->clique_members_posted != static_cast<size_t>(k))
+            fail("the converted task did not join the clique");
+        if (stats->converted_heights != 2)
+            fail("the variable height was converted on " + to_string(stats->converted_heights) + " resources, not the two it appears on");
+        if (stats->resources_with_set_aside_tasks != 0)
+            fail("a variable height set its task aside rather than converting");
+
+        // Brute force: no two tasks may overlap, whatever the third's demand
+        // turns out to be, since three plus anything at least three is over five.
+        set<vector<int>> expected;
+        vector<int> assignment(static_cast<size_t>(k) + 1, 0);
+        std::function<auto(size_t)->void> enumerate = [&](size_t at) {
+            if (at == assignment.size()) {
+                for (int i = 0; i < k; ++i)
+                    for (int j = i + 1; j < k; ++j)
+                        if (assignment[static_cast<size_t>(i)] < assignment[static_cast<size_t>(j)] + length &&
+                            assignment[static_cast<size_t>(j)] < assignment[static_cast<size_t>(i)] + length)
+                            return;
+                expected.insert(assignment);
+                return;
+            }
+            auto lo = at == assignment.size() - 1 ? 3 : 0;
+            auto hi = at == assignment.size() - 1 ? 4 : latest;
+            for (auto v = lo; v <= hi; ++v) {
+                assignment[at] = v;
+                enumerate(at + 1);
+            }
+        };
+        enumerate(0);
+
+        if (expected != solutions)
+            fail("converted-height solutions do not match brute force");
+        println(cerr, "converted height: {} conflicting pairs, a clique of {}", stats->conflicting_pairs, stats->clique_members_posted);
     }
 
     /* A variable duration, which unlike a variable height is not a restriction

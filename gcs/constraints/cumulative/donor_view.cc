@@ -1,5 +1,6 @@
 #include <gcs/constraints/cumulative/donor_view.hh>
 #include <gcs/constraints/cumulative/propagate.hh>
+#include <gcs/innards/power.hh>
 #include <gcs/innards/proofs/bits_encoding.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/pol_builder.hh>
@@ -7,7 +8,9 @@
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/state.hh>
 
+#include <algorithm>
 #include <optional>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -23,8 +26,10 @@ namespace
 }
 
 using std::make_optional;
+using std::move;
 using std::nullopt;
 using std::optional;
+using std::pair;
 using std::size_t;
 using std::vector;
 
@@ -49,19 +54,34 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
 
     view.lengths.assign(n, constant_variable(0_i));
     view.heights.assign(n, 0_i);
+    view.height_bounded_by.assign(n, nullopt);
     view.presences = donor.presences();
 
     for (size_t i = 0; i < n; ++i) {
         auto length = donor.lengths()[i], height = donor.heights()[i];
 
-        // A variable height is what a set-aside is for: it makes the donor's
-        // row terms the bits of a linearised contribution rather than
-        // `height x active`, so a subset sum of the heights is not a subset sum
-        // of the row's coefficients, and nothing a recipe does to that row is
-        // an argument about this task.
-        if (! is_constant_variable(height)) {
-            view.set_aside.push_back(i);
-            continue;
+        // A variable height makes the donor's row terms the bits of a
+        // linearised contribution rather than `height x active`, so a subset
+        // sum of the heights is not a subset sum of the row's coefficients ---
+        // until the contribution is converted back into a coefficient on the
+        // activity flag, which recover_constant_argument_row does with the row
+        // saying the contribution is at least the height. What that leaves is
+        // the *guaranteed* demand, which is the height's lower bound.
+        auto height_value = 0_i;
+        if (is_constant_variable(height))
+            height_value = const_value_of(height);
+        else {
+            // A view's reification is over its own bit vector rather than the
+            // underlying variable's, so the height's bound rows have nothing to
+            // cancel against and there is no conversion to make. A zero lower
+            // bound guarantees nothing, which is the same as having no term.
+            // Either way, what is left is the set-aside this used to be.
+            if (! std::holds_alternative<SimpleIntegerVariableID>(height) || state.lower_bound(height) <= 0_i) {
+                view.set_aside.push_back(i);
+                continue;
+            }
+            height_value = state.lower_bound(height);
+            view.height_bounded_by[i] = height;
         }
 
         // A task that can never load the resource, or that was posted as
@@ -74,8 +94,10 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
         // whether it can run at all, and is the same bound the donor windowed
         // its flags with.
         auto presence = cumulative_task_presence(view.presences.empty() ? nullopt : make_optional(view.presences[i]));
-        if (state.upper_bound(length) <= 0_i || const_value_of(height) <= 0_i || presence.never_present)
+        if (state.upper_bound(length) <= 0_i || height_value <= 0_i || presence.never_present) {
+            view.height_bounded_by[i] = nullopt;
             continue;
+        }
 
         // A variable length is not a set-aside. It leaves the row untouched ---
         // no length appears in one --- and costs the *pins* instead: `after` is
@@ -90,16 +112,38 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
         if (logger && ! is_constant_variable(length) && ! is_constant_variable(donor.starts()[i]) &&
             ! logger->names_and_ids_tracker().find_derived_line(
                 donor.constraint_id(), ConstraintProofModelData<Cumulative>::end_lower_bound_role(i))) {
+            view.height_bounded_by[i] = nullopt;
             view.set_aside.push_back(i);
             continue;
         }
 
         view.lengths[i] = length;
-        view.heights[i] = const_value_of(height);
+        view.heights[i] = height_value;
         view.usable.push_back(i);
     }
 
     return view;
+}
+
+auto CumulativeDonorView::with_converted_heights_set_aside() const -> CumulativeDonorView
+{
+    CumulativeDonorView result = *this;
+    result.usable.clear();
+    for (auto i : usable) {
+        if (! height_bounded_by[i]) {
+            result.usable.push_back(i);
+            continue;
+        }
+        // Back to what it was before the conversion: no length and no height to
+        // quote, its position among the ones every derived row is weakened
+        // over, and nothing left saying it was ever convertible.
+        result.lengths[i] = constant_variable(0_i);
+        result.heights[i] = 0_i;
+        result.height_bounded_by[i] = nullopt;
+        result.set_aside.push_back(i);
+    }
+    std::sort(result.set_aside.begin(), result.set_aside.end());
+    return result;
 }
 
 auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const CumulativeDonorView & view, const ConstraintID & donor, ProofLine row,
@@ -140,14 +184,88 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
         }
     }
 
+    // And which of the *converted* tasks have one: same question, same answer,
+    // and the bits are what the conversion is about rather than what it weakens
+    // away. A task the donor gave no window here has nothing to convert.
+    vector<pair<size_t, vector<ProofFlag>>> convert;
+    for (auto i : view.usable) {
+        if (! view.height_bounded_by[i])
+            continue;
+        vector<ProofFlag> cc;
+        for (auto bit = 0;; ++bit) {
+            auto flag = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::contribution_flag_key(i, t, Integer{bit}));
+            if (! flag)
+                break;
+            cc.push_back(*flag);
+        }
+        if (! cc.empty())
+            convert.emplace_back(i, move(cc));
+    }
+
     // The all-constant case, which is the common one: the row already says what
     // a recipe needs, so it is handed back untouched and the proof is
     // byte-identical to one written without any of this.
-    if (weaken_out.empty() && ! view.capacity_bounded_by)
+    if (weaken_out.empty() && convert.empty() && ! view.capacity_bounded_by)
         return row;
 
     PolBuilder reduced;
     reduced.add(row);
+
+    // Convert each variable-height task's bit terms into `lb(h) x active`,
+    // which is a coefficient on a flag again and so a term a recipe can argue
+    // about. One line each:
+    //
+    //     Sum_k 2^k cc_k  +  lb(h) ~active  >=  lb(h)
+    //
+    // added to the row with coefficient one, so the bits cancel exactly and
+    // what is left on the task is `lb(h) x active`. It is a RUP rather than a
+    // `pol`, and that is not laziness: negating it forces `~active` to zero,
+    // and what remains is the `cge` row and the height's lower bound over two
+    // power-of-two bit counters, which unit propagation walks down a bit at a
+    // time. Every step is single-constraint, so any fixpoint finds it --- I
+    // swept it over several thousand (bound, upper bound, bit width) shapes,
+    // including contribution bits narrower than the height's, before believing
+    // it. The `pol` it replaces would be the `cge` row plus the bound, then a
+    // saturate to cap the reification constant down to the bound, then a
+    // literal axiom per bit to put the coefficients back.
+    for (const auto & [i, cc] : convert) {
+        auto height = std::get<SimpleIntegerVariableID>(*view.height_bounded_by[i]);
+        auto active = tracker.find_proof_flag_values(donor, ConstraintProofModelData<Cumulative>::active_flag_key(i, t));
+        auto contribution_row = tracker.constraint_row_label(donor, ConstraintProofModelData<Cumulative>::contribution_ge_row_role(i, t));
+        // The flags exist, so the donor gave this task a window here and both
+        // of these went out with them. Missing means the donor is not the
+        // Cumulative these keys were published by.
+        if (! active || ! contribution_row)
+            return nullopt;
+
+        // The bound the height has *now*, by the same route the capacity takes
+        // and for the same reason: the declared one is a weaker number the
+        // moment anything has tightened it, and a declared zero would give up
+        // the conversion altogether. The atom's definition supplies the bits,
+        // and the unit saying the atom holds is what makes the row
+        // unconditional --- permanently, the bound having been reached before
+        // the search started.
+        auto at_least = height >= view.heights[i];
+        auto definition = tracker.need_pol_item_defining_literal(at_least);
+        auto holds = tracker.boundary_pin_line(height, view.heights[i]);
+        if (! holds)
+            holds = logger.emit_rup_proof_line(WPBSum{} + 1_i * at_least >= 1_i, ProofLevel::Temporary);
+
+        // Hints, where the definition came back as a line: they are what makes
+        // this cheap to check, and they are exactly the three facts the
+        // argument above uses. A zero-one height resolves to a bare literal
+        // instead, which a hint list cannot carry --- so that one goes
+        // unhinted, which is slower to check and no less true.
+        std::optional<vector<ProofLine>> hints;
+        if (auto line = std::get_if<ProofLine>(&definition))
+            hints = vector<ProofLine>{ProofLine{*contribution_row}, *line, *holds};
+
+        WPBSum guaranteed;
+        for (Integer k = 0_i; k.raw_value < static_cast<long long>(cc.size()); ++k)
+            guaranteed += power2(k) * cc[k.raw_value];
+        guaranteed += view.heights[i] * ! *active;
+        reduced.add(logger.emit(RUPProofRule{hints}, move(guaranteed) >= view.heights[i], ProofLevel::Temporary));
+    }
 
     if (view.capacity_bounded_by) {
         // How much of the order literal is left once its definition has handed

@@ -501,6 +501,9 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         }
         if (! view->set_aside.empty())
             bump(&InferredCumulativeStats::donors_with_set_aside_tasks);
+        for (auto i : view->usable)
+            if (view->height_bounded_by[i])
+                bump(&InferredCumulativeStats::converted_heights);
 
         const auto & starts = donor.starts();
         auto capacity = view->capacity;
