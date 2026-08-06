@@ -116,6 +116,11 @@ namespace
         // variable's values). Value-keyed like the literal tables.
         std::unordered_map<long long, AtomDefs> eq_defs;
         std::unordered_map<long long, AtomDefs> ge_defs;
+        // The line pinning a boundary ge atom to the value the variable's
+        // declared bounds force, for the atoms that got one (see fix_bound in
+        // need_gevar). Filled when the pin is actually emitted, which for an
+        // atom needed during model building is at proof start rather than here.
+        std::unordered_map<long long, ProofLine> ge_pins;
     };
 
     struct HashView
@@ -476,6 +481,17 @@ auto NamesAndIDsTracker::need_constraint_saying_variable_takes_at_least_one_valu
         } //
     }
         .visit(var);
+}
+
+auto NamesAndIDsTracker::boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> optional<ProofLine>
+{
+    auto atoms = _imp->find_atoms(id);
+    if (! atoms)
+        return nullopt;
+    auto pin = atoms->ge_pins.find(v.raw_value);
+    if (pin == atoms->ge_pins.end())
+        return nullopt;
+    return pin->second;
 }
 
 auto NamesAndIDsTracker::need_pol_item_defining_literal(const IntegerVariableCondition & cond) -> variant<ProofLine, XLiteral>
@@ -945,17 +961,21 @@ auto NamesAndIDsTracker::need_gevar(SimpleOrProofOnlyIntegerVariableID id, Integ
         // throughout both enumeration and refutation. emit_proof_line_now_or_at_start
         // queues it to proof start when the logger is not yet attached (model
         // building) and emits it immediately otherwise.
-        emit_proof_line_now_or_at_start([id, v, negated](ProofLogger * const logger) {
+        emit_proof_line_now_or_at_start([this, id, v, negated](ProofLogger * const logger) {
             if (logger->get_assertion_level() > AssertionLevel::Links)
                 return;
             ProofRule assert_or_rup =
                 logger->get_assertion_level() == AssertionLevel::Links ? ProofRule(AssertProofRule{}) : ProofRule(RUPProofRule{});
             auto annotation = AssertionAnnotation{.hint_name = hints::InitialBound::hint_name};
-            visit(
+            auto line = visit(
                 [&](auto vid) {
-                    logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::Top, annotation);
+                    return logger->emit(assert_or_rup, WPBSum{} + 1_i * (negated ? ! (vid >= v) : (vid >= v)) >= 1_i, ProofLevel::Top, annotation);
                 },
                 id);
+            // Remembered so that a step wanting this fact can cite it instead of
+            // emitting the same unit again --- which is what the pin being a
+            // persistent top-of-proof line is for.
+            _imp->atoms_for(id).ge_pins.insert_or_assign(v.raw_value, line);
         });
     };
 

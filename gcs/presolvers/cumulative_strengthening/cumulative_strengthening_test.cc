@@ -284,8 +284,8 @@ namespace
     /// Solve a general instance, collecting the same tuples brute force
     /// produces. A null `stats` leaves the presolver off, which is how a
     /// fixture asks what the donor manages on its own.
-    auto solve_general(const GeneralInstance & inst, const shared_ptr<CumulativeStrengtheningStats> & stats, const optional<string> & proof_name)
-        -> Outcome
+    auto solve_general(const GeneralInstance & inst, const shared_ptr<CumulativeStrengtheningStats> & stats, const optional<string> & proof_name,
+        bool verify = true) -> Outcome
     {
         auto layout = layout_of(inst);
 
@@ -344,7 +344,7 @@ namespace
 
         outcome.refuted_at_root = ! reached_a_node && ! found_a_solution;
 
-        if (proof_name)
+        if (proof_name && verify)
             verify_proof_and_clean_up(*proof_name);
         return outcome;
     }
@@ -852,6 +852,27 @@ auto main(int argc, char * argv[]) -> int
                 fail("the strengthened energy check did not refute the variable-capacity instance at the root");
             if (solve_general(inst, nullptr, nullopt).refuted_at_root)
                 fail("the donor alone refuted the variable-capacity instance at the root");
+
+            // The atom saying the capacity is at most its bound is *cited*, not
+            // re-derived: need_gevar pins it once as a persistent top-of-proof
+            // line and NamesAndIDsTracker::boundary_pin_line hands it over.
+            // Nothing about verification would notice a regression here --- the
+            // fallback derives the same unit and the proof still checks --- so
+            // the only way to say "once" is to count. `ge9` is the capacity's
+            // upper bound of eight plus one, and `>= 1;` is what the pin says
+            // about it; the definitions above it say `>= 9` and `>= -8`.
+            if (proofs) {
+                const string name = "cumulative_strengthening_var_capacity_pin";
+                solve_general(inst, make_shared<CumulativeStrengtheningStats>(), make_optional(name), false);
+                auto proof = read_file(name + ".pbp");
+                if (! run_veripb(name + ".opb", name + ".pbp"))
+                    fail("variable capacity: veripb rejected the proof");
+                auto pins = count_occurrences(proof, "[ge9] >= 1;");
+                if (1 != pins)
+                    fail("variable capacity: the capacity bound was written down " + std::to_string(pins) +
+                        " times, not once --- the pin is not being reused");
+                dispose_of_proof_files(name);
+            }
         }
 
         // A variable height on the fifth task, which is the sharper of the two

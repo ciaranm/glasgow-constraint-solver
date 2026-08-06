@@ -301,6 +301,28 @@ namespace gcs::innards
         [[nodiscard]] auto need_pol_item_defining_literal(const IntegerVariableCondition &) -> std::variant<ProofLine, XLiteral>;
 
         /**
+         * The line pinning the order atom `id >= v` to the value the variable's
+         * declared bounds already force, if there is one.
+         *
+         * need_gevar pins the boundary atoms --- `id >= v` for a `v` at or
+         * below the declared lower bound, `!(id >= v)` for a `v` above the
+         * declared upper --- once, as a persistent top-of-proof line, precisely
+         * so that a step wanting the fact can cite it. Ask for it rather than
+         * emitting the same unit again: a `pol` that needs it needs it once per
+         * use, and re-deriving it per use is what the pin exists to avoid.
+         *
+         * Nullopt when there is no such fact (a `v` strictly inside the
+         * declared bounds), when the pin was suppressed (see
+         * note_bounds_not_trivially_derivable), when assertions are on above
+         * AssertionLevel::Links, and while the pin is still queued for proof
+         * start --- so a caller during model building gets nothing and must
+         * derive the fact itself. Call this after whatever made the atom
+         * exist, since a pin for an atom nobody has asked for has not been
+         * emitted.
+         */
+        [[nodiscard]] auto boundary_pin_line(const SimpleOrProofOnlyIntegerVariableID & id, Integer v) const -> std::optional<ProofLine>;
+
+        /**
          * Set things up internally as if the specified variable was a real
          * variable, so that proof_name() etc will work with it.
          */

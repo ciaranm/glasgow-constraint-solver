@@ -140,20 +140,26 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
             return nullopt; // a signed capacity, which Cumulative rejects anyway
         auto atom_coefficient = 2_i * highest_bit - 1_i - view.capacity;
 
-        // And what pays it off: the atom is false, permanently. The bound it
-        // denies is the one the capacity had before the search started, so
-        // nothing below can undo it, and a unit RUP reaches it from the
-        // definition and the variable's own bound row.
-        //
-        // Working, and so Temporary whatever level the caller wants the *row*
-        // at: it is cited once, by the `pol` below, and a caller asking for its
-        // row at Top has not asked for this line to live there too.
-        auto atom_is_false =
-            logger.emit_rup_proof_line(WPBSum{} + 1_i * (*view.capacity_bounded_by < view.capacity + 1_i) >= 1_i, ProofLevel::Temporary);
+        // The definition, which is what brings the capacity's bits over to
+        // cancel against the row's, and what leaves the atom behind.
+        auto capacity_at_most = *view.capacity_bounded_by < view.capacity + 1_i;
+        reduced.add_for_literal(tracker, capacity_at_most);
 
-        reduced.add_for_literal(tracker, *view.capacity_bounded_by < view.capacity + 1_i);
+        // And what pays the atom off: the line saying it is false. Where the
+        // bound is the capacity's declared one, need_gevar has already pinned
+        // that as a persistent top-of-proof line --- the pin exists to be
+        // cited, so cite it rather than emit the same unit again per row.
+        // Anywhere else the fact is still permanent, the bound having been
+        // reached before the search started, but nothing has written it down:
+        // a unit RUP does, as working, and so at Temporary whatever level the
+        // caller wants the row itself at.
+        auto capacity_variable = std::get<SimpleIntegerVariableID>(*view.capacity_bounded_by);
+        auto atom_is_false = tracker.boundary_pin_line(capacity_variable, view.capacity + 1_i);
+        if (! atom_is_false)
+            atom_is_false = logger.emit_rup_proof_line(WPBSum{} + 1_i * capacity_at_most >= 1_i, ProofLevel::Temporary);
+
         if (atom_coefficient > 0_i)
-            reduced.add(atom_is_false, atom_coefficient);
+            reduced.add(*atom_is_false, atom_coefficient);
     }
 
     for (const auto & flag : weaken_out)
