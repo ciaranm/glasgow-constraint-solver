@@ -56,20 +56,6 @@ using fmt::print;
 
 namespace
 {
-    auto const_value_of(const IntegerVariableID & v) -> Integer
-    {
-        return std::get<ConstantIntegerVariableID>(v).const_value;
-    }
-
-    auto as_constant_var_ids(const vector<Integer> & vals) -> vector<IntegerVariableID>
-    {
-        vector<IntegerVariableID> result;
-        result.reserve(vals.size());
-        for (const auto & v : vals)
-            result.push_back(constant_variable(v));
-        return result;
-    }
-
     // The variable-height contribution h_i·active is linearised over cake's
     // per-bit contribution flags cc_k (weight 2^k): contrib = Σ 2^k · cc_k.
     auto contrib_sum_of(const vector<ProofFlag> & cc) -> WPBSum
@@ -89,18 +75,18 @@ Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableI
     // Constant non-negativity is checked here; variable lengths/heights/
     // capacity are checked in prepare(), where their domains first become
     // available.
-    if (is_constant_variable(_capacity) && const_value_of(_capacity) < 0_i)
+    if (is_constant_variable(_capacity) && constant_value_of(_capacity) < 0_i)
         throw InvalidProblemDefinitionException{"Cumulative: capacity must be non-negative"};
     for (const auto & l : _lengths)
-        if (is_constant_variable(l) && const_value_of(l) < 0_i)
+        if (is_constant_variable(l) && constant_value_of(l) < 0_i)
             throw InvalidProblemDefinitionException{"Cumulative: lengths must be non-negative"};
     for (const auto & h : _heights)
-        if (is_constant_variable(h) && const_value_of(h) < 0_i)
+        if (is_constant_variable(h) && constant_value_of(h) < 0_i)
             throw InvalidProblemDefinitionException{"Cumulative: heights must be non-negative"};
 }
 
 Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<Integer> lengths, vector<Integer> heights, Integer capacity) :
-    Cumulative(move(starts), as_constant_var_ids(lengths), as_constant_var_ids(heights), constant_variable(capacity))
+    Cumulative(move(starts), as_constant_variables(lengths), as_constant_variables(heights), constant_variable(capacity))
 {
 }
 
@@ -113,7 +99,7 @@ Cumulative::Cumulative(vector<IntegerVariableID> starts, vector<IntegerVariableI
     // A constant presence is checked here; a variable one is checked in
     // prepare(), where its domain first becomes available.
     for (const auto & p : _presences)
-        if (is_constant_variable(p) && const_value_of(p) != 0_i && const_value_of(p) != 1_i)
+        if (is_constant_variable(p) && constant_value_of(p) != 0_i && constant_value_of(p) != 1_i)
             throw InvalidProblemDefinitionException{"Cumulative: presences must be within {0, 1}"};
 }
 
@@ -153,7 +139,7 @@ auto gcs::innards::cumulative_task_presence(const optional<IntegerVariableID> & 
     if (! is_constant_variable(*posted))
         return CumulativeTaskPresence{*posted, false};
 
-    auto value = const_value_of(*posted);
+    auto value = constant_value_of(*posted);
     if (value == 1_i)
         return CumulativeTaskPresence{};
     if (value == 0_i)
@@ -215,16 +201,16 @@ auto Cumulative::prepare(Propagators &, State & initial_state, ProofModel * cons
     _height_vals.reserve(n);
     _height_ub.reserve(n);
     for (const auto & l : _lengths) {
-        _length_vals.push_back(is_constant_variable(l) ? const_value_of(l) : 0_i);
+        _length_vals.push_back(is_constant_variable(l) ? constant_value_of(l) : 0_i);
         _length_lb.push_back(initial_state.lower_bound(l));
         _length_ub.push_back(initial_state.upper_bound(l));
     }
     for (const auto & h : _heights) {
-        _height_vals.push_back(is_constant_variable(h) ? const_value_of(h) : 0_i);
+        _height_vals.push_back(is_constant_variable(h) ? constant_value_of(h) : 0_i);
         _height_ub.push_back(initial_state.upper_bound(h));
     }
     if (is_constant_variable(_capacity))
-        _capacity_val = const_value_of(_capacity);
+        _capacity_val = constant_value_of(_capacity);
 
     // Tasks whose length can only ever be 0, or whose height can only ever be 0,
     // or which are constantly absent, never raise the load profile.
@@ -290,7 +276,7 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
     for (auto i : active_tasks) {
         if (! is_constant_variable(lengths[i]) || ! is_constant_variable(heights[i]))
             continue;
-        if (const_value_of(lengths[i]) <= 0_i || const_value_of(heights[i]) <= 0_i)
+        if (constant_value_of(lengths[i]) <= 0_i || constant_value_of(heights[i]) <= 0_i)
             continue;
         if (! std::holds_alternative<SimpleIntegerVariableID>(starts[i]))
             continue;

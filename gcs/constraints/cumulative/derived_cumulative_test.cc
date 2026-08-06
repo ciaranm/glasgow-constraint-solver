@@ -71,11 +71,6 @@ namespace
         std::exit(EXIT_FAILURE);
     }
 
-    auto constant_value_of(const IntegerVariableID & v) -> Integer
-    {
-        return std::get<ConstantIntegerVariableID>(v).const_value;
-    }
-
     /**
      * What the demo presolver derives from each Cumulative it finds.
      */

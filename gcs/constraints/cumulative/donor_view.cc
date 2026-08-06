@@ -17,14 +17,6 @@
 using namespace gcs;
 using namespace gcs::innards;
 
-namespace
-{
-    auto const_value_of(const IntegerVariableID & v) -> Integer
-    {
-        return std::get<ConstantIntegerVariableID>(v).const_value;
-    }
-}
-
 using std::make_optional;
 using std::move;
 using std::nullopt;
@@ -46,7 +38,7 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
         return nullopt;
 
     if (is_constant_variable(donor.capacity()))
-        view.capacity = const_value_of(donor.capacity());
+        view.capacity = constant_value_of(donor.capacity());
     else {
         view.capacity = state.upper_bound(donor.capacity());
         view.capacity_bounded_by = donor.capacity();
@@ -69,7 +61,7 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
         // the *guaranteed* demand, which is the height's lower bound.
         auto height_value = 0_i;
         if (is_constant_variable(height))
-            height_value = const_value_of(height);
+            height_value = constant_value_of(height);
         else {
             // A view's reification is over its own bit vector rather than the
             // underlying variable's, so the height's bound rows have nothing to
