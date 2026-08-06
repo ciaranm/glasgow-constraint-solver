@@ -746,33 +746,42 @@ auto main(int argc, char * argv[]) -> int
     /* A donor with variable durations, which the derived constraint takes as
      * they are. Nothing about a length appears in a capacity row, so the
      * duplicate recipe is the same one line as ever; what changes is every
-     * *pin*, `after` being reified on the two-variable `start + length`, which
-     * no RUP reaches from the operands' bounds. The propagator goes through the
-     * donor's proof-only `end = start + length` instead, and the line handing
-     * that proxy its lower bound is what the donor publishes and this cites.
+     * *pin*, `after` being reified on the two-variable `start + length`. The
+     * propagator goes through the donor's proof-only `end = start + length`
+     * instead, and the line handing that proxy its lower bound is what the
+     * donor publishes and this cites.
      *
-     * All three lengths are variables, so there is no pin here that does *not*
-     * go that way. The donor has every rule turned off, so every inference in
-     * the proof is the derived constraint's --- and the three tasks each demand
-     * two of a capacity of three, so they may not overlap and there is plenty to
-     * infer: at length two apiece over starts in [0, 4] the only schedules left
-     * are the permutations of {0, 2, 4}, and the first task's shorter option
-     * opens up a handful more.
+     * Both lengths are variables, so there is no pin here that does not go that
+     * way, and the donor has every rule turned off, so every inference in the
+     * proof is the derived constraint's. Two unit-demand tasks on a unit
+     * resource may not overlap, and over starts in [0, 6] at durations in
+     * [3, 5] that leaves plenty to infer.
+     *
+     * What this fixture does *not* establish, and a tripwire for whoever
+     * assumes it does: that the published line is the right one. Publish
+     * `end <= start + length` instead of `end >= start + length` and every
+     * proof here still verifies, because VeriPB's unit propagation reaches
+     * these `after` pins without the `pol` at all --- the reasons instantiate
+     * the lengths, and an eq atom pins the bits the reification row needs. That
+     * the `pol` is load-bearing in general is pinned instead by cumulative's
+     * own len_wide case, which fails without it. So: a change here that stops
+     * this citing what materialise_after_sum needs will be caught by the
+     * install declining (below) and by nothing else in this file.
      */
     {
-        const vector<pair<int, int>> length_ranges{{1, 2}, {2, 2}, {2, 2}};
+        const vector<pair<int, int>> length_ranges{{3, 5}, {3, 5}};
 
         auto solve_variable_lengths = [&](bool derive, const optional<string> & proof_name) {
             Problem p;
             vector<IntegerVariableID> starts, lengths;
             for (size_t i = 0; i < length_ranges.size(); ++i) {
-                starts.push_back(p.create_integer_variable(0_i, 4_i, "start" + std::to_string(i)));
+                starts.push_back(p.create_integer_variable(0_i, 6_i, "start" + std::to_string(i)));
                 lengths.push_back(
                     p.create_integer_variable(Integer{length_ranges[i].first}, Integer{length_ranges[i].second}, "length" + std::to_string(i)));
             }
-            vector<IntegerVariableID> heights(length_ranges.size(), constant_variable(2_i));
+            vector<IntegerVariableID> heights(length_ranges.size(), constant_variable(1_i));
 
-            p.post(Cumulative{starts, lengths, heights, constant_variable(3_i)}.with_rules(
+            p.post(Cumulative{starts, lengths, heights, constant_variable(1_i)}.with_rules(
                 CumulativeRules{.time_table = false, .overload = false, .profile_overload = false}));
 
             DerivedVariableLengthPresolver presolver;
@@ -805,17 +814,17 @@ auto main(int argc, char * argv[]) -> int
         // off the donor is not even a checker, so what the derived constraint
         // has to agree with is the model, not it.
         set<vector<int>> expected;
-        vector<pair<int, int>> ranges{{0, 4}, {0, 4}, {0, 4}};
+        vector<pair<int, int>> ranges{{0, 6}, {0, 6}};
         ranges.insert(ranges.end(), length_ranges.begin(), length_ranges.end());
         build_expected(
             expected,
             [&](const vector<int> & assignment) {
-                for (int t = 0; t <= 6; ++t) {
+                for (int t = 0; t <= 11; ++t) {
                     int load = 0;
-                    for (size_t i = 0; i < 3; ++i)
-                        if (assignment[i] <= t && t < assignment[i] + assignment[i + 3])
-                            load += 2;
-                    if (load > 3)
+                    for (size_t i = 0; i < 2; ++i)
+                        if (assignment[i] <= t && t < assignment[i] + assignment[i + 2])
+                            load += 1;
+                    if (load > 1)
                         return false;
                 }
                 return true;
@@ -844,7 +853,7 @@ auto main(int argc, char * argv[]) -> int
         Problem p;
         vector<IntegerVariableID> starts;
         for (int i = 0; i < 3; ++i)
-            starts.push_back(p.create_integer_variable(0_i, 4_i, "start" + std::to_string(i)));
+            starts.push_back(p.create_integer_variable(0_i, 6_i, "start" + std::to_string(i)));
         // Only a variable is one, whatever its domain: a length of exactly two
         // says the same thing the donor's constant two does, so what the
         // decline is about is unmistakably the missing proxy.
