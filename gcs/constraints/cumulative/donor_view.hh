@@ -28,35 +28,52 @@ namespace gcs::innards
      * fourth copy of the same three tests.
      *
      * The restrictions are made per *task* rather than per donor, which is the
-     * whole point: one task with a variable length no longer costs a donor its
+     * whole point: one task with a variable height no longer costs a donor its
      * strengthening. A set-aside task is weakened out of every row derived from
      * this donor and given a zero length in the derived constraint, so it has
      * no flags to pin and no term to argue over --- see
      * recover_constant_argument_row.
      *
+     * A variable *length* is not a restriction at all, which is the difference
+     * between this and a height: nothing about a length appears in a capacity
+     * row, so the rows are the same rows and the recipes read them the same
+     * way. What it costs is the `after` pin, which is then reified on
+     * `start + length` and no longer single-variable, and the donor's
+     * proof-only end proxy is what pins go through instead --- so such a task
+     * is kept exactly where the donor published the line giving that proxy its
+     * lower bound, and set aside where it did not.
+     *
      * \ingroup Innards
      */
     struct CumulativeDonorView
     {
+        /// Per task, in the donor's own order, as posted --- so a variable
+        /// length comes back as the variable, a caller wanting a number having
+        /// to say which of its bounds it means. **The constant zero for a
+        /// set-aside task**, which is what excludes it: pass these straight to
+        /// derived_cumulative_tasks_from, whose zero-length tasks are dropped
+        /// exactly as a posted Cumulative drops its own.
+        std::vector<IntegerVariableID> lengths;
+
         /// Per task, in the donor's own order, and **zero for a set-aside
-        /// task**: a length or height that is not a constant is not a number
-        /// this constraint may quote. Pass these straight to
-        /// derived_cumulative_tasks_from, whose zero-length tasks are excluded
-        /// exactly as a posted Cumulative excludes its own.
-        std::vector<Integer> lengths, heights;
+        /// task**: a height that is not a constant is not a number this
+        /// constraint may quote, its terms in a capacity row being the bits of
+        /// a linearised contribution rather than a coefficient on a flag.
+        std::vector<Integer> heights;
 
         /// Per task, the presence argument as posted, for
         /// derived_cumulative_tasks_from.
         std::vector<IntegerVariableID> presences;
 
         /// The task positions a derived constraint may speak about: a constant
-        /// non-zero length and height, and not constantly absent.
+        /// non-zero height, a length that can be non-zero, and not constantly
+        /// absent.
         std::vector<std::size_t> usable;
 
-        /// The task positions set aside for a variable length or height, whose
-        /// terms every derived row has to be weakened over. Not an error and
-        /// not a decline: what is lost is those tasks' contribution to the
-        /// argument, which makes it weaker rather than wrong.
+        /// The task positions set aside, whose terms every derived row has to
+        /// be weakened over. Not an error and not a decline: what is lost is
+        /// those tasks' contribution to the argument, which makes it weaker
+        /// rather than wrong.
         std::vector<std::size_t> set_aside;
 
         /// The capacity to argue against: the posted constant, or a variable
@@ -79,9 +96,15 @@ namespace gcs::innards
      * is not an error: it says the donor has nothing a derived constraint could
      * speak about, which is the caller's own "nothing to gain" answer.
      *
+     * `logger` is what a variable-duration task is judged by --- whether the
+     * donor published the `end >= start + length` line a pin of its `after`
+     * would need. Null means proofs are off, in which case there is nothing to
+     * pin and nothing to decline over, and every such task is kept.
+     *
      * \ingroup Innards
      */
-    [[nodiscard]] auto cumulative_donor_view(const Cumulative & donor, const State & state) -> std::optional<CumulativeDonorView>;
+    [[nodiscard]] auto cumulative_donor_view(const Cumulative & donor, const State & state, const ProofLogger * const logger)
+        -> std::optional<CumulativeDonorView>;
 
     /**
      * \brief Reduce one of a donor's capacity rows to the form a recipe argues

@@ -56,7 +56,15 @@ namespace
     struct Task
     {
         IntegerVariableID start;
-        Integer length;
+        /// As posted, which may be a variable: it is what the derived
+        /// constraint is given, so that its propagator reads the same duration
+        /// the donor's flags were reified on.
+        IntegerVariableID length;
+        /// The duration this task is guaranteed to occupy, lb(length). What a
+        /// clique can *say* about the schedule is a statement about durations
+        /// every solution has to contain, so it is the smallest one still
+        /// allowed that every energy sum and every ranking here counts.
+        Integer least_length;
         Integer t_lo, t_hi;
         vector<Appearance> appearances;
     };
@@ -192,12 +200,14 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
         }
 
         // What of this donor an inferred constraint can argue over: its
-        // capacity as a number, and the tasks whose length and height are the
-        // constants its rows put on them. A task with a variable one is set
-        // aside rather than costing the whole resource its place in the
-        // conflict graph --- it simply cannot be a clique member, and every row
-        // this resource witnesses is weakened over it first.
-        auto view = cumulative_donor_view(donor, state);
+        // capacity as a number, and the tasks whose height is the constant its
+        // rows put on them. A task with a variable one is set aside rather than
+        // costing the whole resource its place in the conflict graph --- it
+        // simply cannot be a clique member, and every row this resource
+        // witnesses is weakened over it first. A variable duration is no
+        // obstacle: a conflict is a statement about heights, and a clique's
+        // rows say nothing about how long anything runs for.
+        auto view = cumulative_donor_view(donor, state, logger);
         if (! view) {
             bump(&InferredDisjunctiveStats::declined_variable_arguments);
             if (logger)
@@ -217,13 +227,16 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
             auto found = task_of_start.find(starts[i]);
             if (found == task_of_start.end()) {
                 auto [s_lo, s_hi] = state.bounds(starts[i]);
+                auto [l_lo, l_hi] = state.bounds(lengths[i]);
                 found = task_of_start.emplace(starts[i], tasks.size()).first;
-                tasks.push_back(Task{starts[i], lengths[i], s_lo, s_hi + lengths[i] - 1_i, {}});
+                tasks.push_back(Task{starts[i], lengths[i], l_lo, s_lo, s_hi + l_hi - 1_i, {}});
             }
             else if (tasks[found->second].length != lengths[i]) {
                 // Two resources disagreeing about a duration is not something
                 // to average over: the flags would reify different conditions
-                // and no bridge between them exists.
+                // and no bridge between them exists. The same variable is the
+                // same duration, whatever its bounds come to; two different
+                // ones are not, even where their bounds agree today.
                 continue;
             }
 
@@ -281,8 +294,8 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 candidates.push_back(w);
 
         std::sort(candidates.begin(), candidates.end(), [&](size_t a, size_t b) {
-            if (tasks[a].length != tasks[b].length)
-                return tasks[a].length > tasks[b].length;
+            if (tasks[a].least_length != tasks[b].least_length)
+                return tasks[a].least_length > tasks[b].least_length;
             return a < b;
         });
 
@@ -385,7 +398,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
     auto capacity_bound = [&](const vector<size_t> & c) {
         auto sum = 0_i;
         for (auto i : c)
-            sum += tasks[i].length;
+            sum += tasks[i].least_length;
         return sum;
     };
 

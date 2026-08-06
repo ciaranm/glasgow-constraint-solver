@@ -147,11 +147,13 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // `Σ h_i·active_{i,t} ≤ C`, which only says that when every argument is
         // a constant --- so this is where a donor that is not all constants
         // gets reduced to the part of itself that is. The reduction is per
-        // *task*: one variable length no longer costs a whole donor its
-        // strengthening, it costs that task its term. Optional tasks need
+        // *task*: one variable height no longer costs a whole donor its
+        // strengthening, it costs that task its term. A variable length costs
+        // nothing at all --- no length is in a row --- so long as the donor
+        // published what a pin of that task's `after` needs. Optional tasks need
         // nothing at all, their presence being a conjunct inside the activity
         // flag rather than a term beside it.
-        auto view = cumulative_donor_view(donor, state);
+        auto view = cumulative_donor_view(donor, state, logger);
         if (! view) {
             bump(&CumulativeStrengtheningStats::declined_variable_arguments);
             if (logger)
@@ -167,13 +169,14 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
 
         // The same windowing install_derived_cumulative resolves, and the same
         // windowing the donor encoded: a task can be active from its earliest
-        // start to its latest finish. This is the paper's `t in [est_j, lct_j)`.
+        // start to its latest finish, which for a variable duration is the
+        // largest one still allowed. This is the paper's `t in [est_j, lct_j)`.
         vector<Integer> t_lo(n, 0_i), t_hi(n, 0_i);
         const auto & active_tasks = view->usable;
         for (auto i : active_tasks) {
             auto [s_lo, s_hi] = state.bounds(starts[i]);
             t_lo[i] = s_lo;
-            t_hi[i] = s_hi + view->lengths[i] - 1_i;
+            t_hi[i] = s_hi + state.upper_bound(view->lengths[i]) - 1_i;
         }
 
         if (active_tasks.empty()) {

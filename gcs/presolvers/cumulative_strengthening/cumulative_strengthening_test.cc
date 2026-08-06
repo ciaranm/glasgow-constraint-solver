@@ -899,21 +899,44 @@ auto main(int argc, char * argv[]) -> int
             check_solutions("variable height", inst, outcome);
         }
 
-        // A variable length, which leaves the rows alone --- lengths are not in
-        // them --- and breaks the pins instead, `after` being reified on
-        // `start + length` and no longer single-variable. Set aside for that,
-        // and weakened out by its one activity flag rather than by any bits.
+        // A variable length, which is not a restriction on the argument at
+        // all: no length appears in a capacity row, so the rows a recipe is
+        // made over are the same rows and the subset sum is the same subset
+        // sum. What it costs is the *pin* --- `after` is then reified on
+        // `start + length`, which no RUP reaches from the operands' bounds ---
+        // and the donor's proof-only end proxy is what a pin goes through
+        // instead. So this fixture is not about the reduction; it is about the
+        // task being kept, and about the line the donor publishes for it being
+        // enough to pin with.
+        //
+        // The fifth task's start is a unit tighter than the rest so that it has
+        // a mandatory part at the root, which is where a variable-duration task
+        // earns its place here. A strengthened Cumulative runs the energy rules
+        // only, and the window-energy lemma cannot speak for a task whose
+        // energy is not a number --- but the (TTOC) profile term can, and that
+        // is the term whose pins go through the proxy.
+        //
+        // Four tasks of energy six fill a window of four at the strengthened
+        // capacity of six exactly, so the fifth task's one compulsory time
+        // point is the whole of the overshoot: refuting at the root is the
+        // set-aside being taken back and nothing else.
         {
             auto stats = make_shared<CumulativeStrengtheningStats>();
-            const auto inst = base({1, 2}, {3, 3}, {8, 8});
+            const GeneralInstance inst{{{0, 2}, {0, 2}, {0, 2}, {0, 2}, {1, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}, {2, 3}},
+                {{3, 3}, {3, 3}, {3, 3}, {3, 3}, {3, 3}}, {}, {8, 8}};
             auto outcome = solve_general(inst, stats, proofs ? make_optional("cumulative_strengthening_var_length") : nullopt);
 
             if (stats->donors_strengthened != 1)
-                fail("a donor with one variable length was not strengthened over the rest of itself");
-            if (stats->donors_with_set_aside_tasks != 1)
-                fail("a variable length did not set its task aside");
+                fail("a donor with one variable length was not strengthened");
+            if (stats->donors_with_set_aside_tasks != 0)
+                fail("a variable length set its task aside, which is what the published end proxy is there to avoid");
 
             check_solutions("variable length", inst, outcome);
+
+            if (! outcome.refuted_at_root)
+                fail("the strengthened energy check did not refute the variable-length instance at the root");
+            if (solve_general(inst, nullptr, nullopt).refuted_at_root)
+                fail("the donor alone refuted the variable-length instance at the root");
         }
     }
 

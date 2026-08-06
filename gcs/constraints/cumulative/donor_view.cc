@@ -28,7 +28,8 @@ using std::optional;
 using std::size_t;
 using std::vector;
 
-auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State & state) -> optional<CumulativeDonorView>
+auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State & state, const ProofLogger * const logger)
+    -> optional<CumulativeDonorView>
 {
     CumulativeDonorView view;
     auto n = donor.starts().size();
@@ -46,32 +47,50 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
         view.capacity_bounded_by = donor.capacity();
     }
 
-    view.lengths.assign(n, 0_i);
+    view.lengths.assign(n, constant_variable(0_i));
     view.heights.assign(n, 0_i);
     view.presences = donor.presences();
 
     for (size_t i = 0; i < n; ++i) {
         auto length = donor.lengths()[i], height = donor.heights()[i];
 
-        // A variable length or height is what a set-aside is for. The height
-        // is the sharper of the two: it makes the donor's row terms the bits of
-        // a linearised contribution rather than `height x active`, so a subset
-        // sum of the heights is not a subset sum of the row's coefficients. A
-        // variable length leaves the row alone but not the pins, whose `after`
-        // is then reified on `start + length` and no longer single-variable.
-        if (! is_constant_variable(length) || ! is_constant_variable(height)) {
+        // A variable height is what a set-aside is for: it makes the donor's
+        // row terms the bits of a linearised contribution rather than
+        // `height x active`, so a subset sum of the heights is not a subset sum
+        // of the row's coefficients, and nothing a recipe does to that row is
+        // an argument about this task.
+        if (! is_constant_variable(height)) {
+            view.set_aside.push_back(i);
+            continue;
+        }
+
+        // A variable length is not. It leaves the row untouched --- no length
+        // appears in one --- and costs the *pins* instead: `after` is then
+        // reified on the two-variable `start + length`, which no RUP reaches
+        // from the operands' bounds, so pinning it goes through the donor's
+        // proof-only end proxy and through the line giving that proxy its lower
+        // bound. That line is the donor's to publish, and asking for it is the
+        // whole test: a constant start needs no proxy and publishes none, and a
+        // proof written with assertions on omits the definition along with
+        // everything else it asserts. With no logger there is nothing to pin
+        // and nothing to ask.
+        if (logger && ! is_constant_variable(length) && ! is_constant_variable(donor.starts()[i]) &&
+            ! logger->names_and_ids_tracker().find_derived_line(
+                donor.constraint_id(), ConstraintProofModelData<Cumulative>::end_lower_bound_role(i))) {
             view.set_aside.push_back(i);
             continue;
         }
 
         // A task that can never load the resource, or that was posted as
         // constantly absent, has no flags and no term in any row: nothing to
-        // set aside, because there is nothing there.
+        // set aside, because there is nothing there. The largest duration still
+        // allowed is what says whether it can run at all, and is the same bound
+        // the donor windowed its flags with.
         auto presence = cumulative_task_presence(view.presences.empty() ? nullopt : make_optional(view.presences[i]));
-        if (const_value_of(length) <= 0_i || const_value_of(height) <= 0_i || presence.never_present)
+        if (state.upper_bound(length) <= 0_i || const_value_of(height) <= 0_i || presence.never_present)
             continue;
 
-        view.lengths[i] = const_value_of(length);
+        view.lengths[i] = length;
         view.heights[i] = const_value_of(height);
         view.usable.push_back(i);
     }

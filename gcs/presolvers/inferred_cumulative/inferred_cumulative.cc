@@ -67,7 +67,16 @@ namespace
     struct Task
     {
         IntegerVariableID start;
-        Integer length;
+        /// As posted, which may be a variable: it is what the lifted constraint
+        /// is given, so that its propagator reads the same duration the donors'
+        /// flags were reified on. Two tasks are the same column only if this is
+        /// the *same* variable, whatever its bounds happen to be.
+        IntegerVariableID length;
+        /// The duration this task is guaranteed to occupy, lb(length). A cover
+        /// is a statement about work every solution has to contain, so the
+        /// energy a cut carries and the order the covers are ranked in both
+        /// count the smallest duration still allowed.
+        Integer least_length;
         Integer t_lo, t_hi;
 
         /// Per donor: what this task takes, and where it sits in that donor's
@@ -169,7 +178,7 @@ namespace
         for (const auto & [demand, group] : by_demand) {
             auto longest = group.front();
             for (auto i : group)
-                if (tasks[i].length > tasks[longest].length)
+                if (tasks[i].least_length > tasks[longest].least_length)
                     longest = i;
             longest_of_demand.emplace(demand, longest);
         }
@@ -206,7 +215,7 @@ namespace
         auto bound_of = [&](const vector<size_t> & cover) {
             auto total = 0_i;
             for (auto i : cover)
-                total += tasks[i].length;
+                total += tasks[i].least_length;
             return pair{total, Integer{static_cast<long long>(cover.size()) - 1}};
         };
         std::sort(covers.begin(), covers.end(), [&](const vector<size_t> & a, const vector<size_t> & b) {
@@ -235,8 +244,8 @@ namespace
                     continue;
                 auto by_length = group;
                 std::sort(by_length.begin(), by_length.end(), [&](size_t a, size_t b) {
-                    if (tasks[a].length != tasks[b].length)
-                        return tasks[a].length > tasks[b].length;
+                    if (tasks[a].least_length != tasks[b].least_length)
+                        return tasks[a].least_length > tasks[b].least_length;
                     return a < b;
                 });
                 remember(vector<size_t>(by_length.begin(), by_length.begin() + static_cast<long>(size)));
@@ -456,7 +465,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
     // reference implementation does with its single matrix.
     vector<Donor> donors;
     vector<Task> tasks;
-    map<pair<IntegerVariableID, Integer>, size_t> task_of;
+    map<pair<IntegerVariableID, IntegerVariableID>, size_t> task_of;
 
     for (const auto & donor : problem.each_constraint_of_type<Cumulative>()) {
         bump(&InferredCumulativeStats::donors_seen);
@@ -477,11 +486,13 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         }
 
         // What of this donor a cut can be lifted out of: its capacity as a
-        // number, and the tasks whose length and height are the constants its
-        // rows put on them. A task with a variable one is set aside rather than
-        // costing the whole donor its column in the matrix --- it takes no part
-        // in any cover, and its terms come out of every row first.
-        auto view = cumulative_donor_view(donor, state);
+        // number, and the tasks whose height is the constant its rows put on
+        // them. A task with a variable one is set aside rather than costing the
+        // whole donor its column in the matrix --- it takes no part in any
+        // cover, and its terms come out of every row first. A variable duration
+        // is no obstacle: a cover is a statement about demands, and lifting
+        // works over a row no length appears in.
+        auto view = cumulative_donor_view(donor, state, logger);
         if (! view) {
             bump(&InferredCumulativeStats::declined_variable_arguments);
             if (logger)
@@ -527,7 +538,8 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
             }
 
             auto [s_lo, s_hi] = state.bounds(starts[i]);
-            Task task{starts[i], length, s_lo, s_hi + length - 1_i, vector<Integer>(donors.size(), 0_i),
+            auto [l_lo, l_hi] = state.bounds(length);
+            Task task{starts[i], length, l_lo, s_lo, s_hi + l_hi - 1_i, vector<Integer>(donors.size(), 0_i),
                 vector<optional<size_t>>(donors.size(), std::nullopt), which};
             task.demands[which] = demand;
             task.positions[which] = i;
@@ -544,7 +556,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
     for (const auto & donor : donors)
         capacities.push_back(donor.capacity);
     for (const auto & task : tasks)
-        durations.push_back(task.length);
+        durations.push_back(task.least_length);
 
     vector<vector<Integer>> demands(donors.size());
     for (size_t row = 0; row < donors.size(); ++row)
@@ -567,7 +579,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
         auto bound_of = [&](const vector<size_t> & cover) {
             auto total = 0_i;
             for (auto i : cover)
-                total += tasks[i].length;
+                total += tasks[i].least_length;
             return pair{total, Integer{static_cast<long long>(cover.size()) - 1}};
         };
         std::sort(pooled.begin(), pooled.end(), [&](const vector<size_t> & a, const vector<size_t> & b) {
