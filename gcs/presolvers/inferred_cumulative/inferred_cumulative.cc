@@ -7,6 +7,7 @@
 #include <gcs/innards/proofs/lifted_cover_cut.hh>
 #include <gcs/innards/proofs/names_and_ids_tracker.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_scaffolding_scope.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/presolvers/inferred_cumulative/inferred_cumulative.hh>
 #include <gcs/presolvers/innards/makespan_links.hh>
@@ -830,29 +831,23 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                 // rest of the working: there are three `pol` per member per
                 // donor per time point, and at Top none of them would ever be
                 // deleted. Only the pin the caller gets back survives.
-                auto saved_level = recipe_logger.proof_level();
-                recipe_logger.enter_proof_level(saved_level + 1);
+                ProofScaffoldingScope scaffolding{recipe_logger};
 
                 vector<ProofLine> kept_rows;
                 vector<vector<ProofFlag>> kept_weaken_out;
-                auto give_up = false;
                 for (auto row : programme->row_indices) {
                     const auto & donor = recipe.donors[row];
                     auto found_row = rows.find(donor.id);
-                    if (found_row == rows.end()) {
-                        give_up = true;
-                        break;
-                    }
+                    if (found_row == rows.end())
+                        return std::nullopt;
 
                     // Reduced to the constant-argument form everything below
                     // lifts out of: this donor's set-aside tasks weakened away,
                     // and a variable capacity replaced by the number
                     // `donor.capacity` already holds.
                     auto line = recover_constant_argument_row(recipe_logger, donor.view, donor.id, found_row->second, t, ProofLevel::Temporary);
-                    if (! line) {
-                        give_up = true;
-                        break;
-                    }
+                    if (! line)
+                        return std::nullopt;
 
                     // Which of the present members this row actually speaks
                     // about, and where they sit in it.
@@ -901,10 +896,8 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                         terms.push_back(BridgedRowTerm{member.demands[row], flags[j], bridge});
                     }
 
-                    if (missing || terms.empty()) {
-                        give_up = true;
-                        break;
-                    }
+                    if (missing || terms.empty())
+                        return std::nullopt;
 
                     // Everything else of this donor's that could be running now
                     // has to come out of the row. Over every position, not up to
@@ -930,14 +923,7 @@ auto InferredCumulative::run(Problem & problem, Propagators & propagators, State
                     }
                 }
 
-                optional<ProofLine> result;
-                if (! give_up)
-                    result =
-                        derive_lifted_cover_cut(recipe_logger, kept_rows, *programme, flags, claimed, kept_weaken_out, claimed_rhs, ProofLevel::Top);
-
-                recipe_logger.enter_proof_level(saved_level);
-                recipe_logger.forget_proof_level(saved_level + 2);
-                return result;
+                return derive_lifted_cover_cut(recipe_logger, kept_rows, *programme, flags, claimed, kept_weaken_out, claimed_rhs, ProofLevel::Top);
             },
             .makespan = _makespan,
             .makespan_links = links,

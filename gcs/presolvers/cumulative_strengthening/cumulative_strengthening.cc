@@ -9,6 +9,7 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_scaffolding_scope.hh>
 #include <gcs/innards/proofs/subset_sum_strengthening.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/presolvers/cumulative_strengthening/cumulative_strengthening.hh>
@@ -446,13 +447,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 // them would ever be deleted (issue #666, which is the same
                 // defect one presolver over). One level deeper, and forgotten
                 // on the way out.
-                auto saved_level = recipe_logger.proof_level();
-                recipe_logger.enter_proof_level(saved_level + 1);
-                auto give_back = [&](optional<ProofLine> line) {
-                    recipe_logger.enter_proof_level(saved_level);
-                    recipe_logger.forget_proof_level(saved_level + 2);
-                    return line;
-                };
+                ProofScaffoldingScope scaffolding{recipe_logger};
 
                 // The row everything below argues from, reduced to the
                 // constant-argument form it reads it as: the set-aside tasks'
@@ -461,7 +456,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 // goes inside the level that gets forgotten.
                 auto reduced_row = recover_constant_argument_row(recipe_logger, view, donor_id, donor_row_at->second, t, ProofLevel::Temporary);
                 if (! reduced_row)
-                    return give_back(std::nullopt);
+                    return std::nullopt;
                 auto donor_row = *reduced_row;
 
                 auto strengthen_to_kappa = [&](ProofLine source) -> ProofLine {
@@ -488,7 +483,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 // proof would object.
                 if (full_here.empty()) {
                     auto strengthened = strengthen_to_kappa(donor_row);
-                    return give_back(recipe_logger.emit(ImpliesProofRule{strengthened}, move(load) <= kappa, ProofLevel::Top));
+                    return recipe_logger.emit(ImpliesProofRule{strengthened}, move(load) <= kappa, ProofLevel::Top);
                 }
 
                 recipe_logger.emit_proof_comment("presolve cumulative amo");
@@ -650,7 +645,7 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 if (stats)
                     ++stats->rows_with_a_raise;
 
-                return give_back(recipe_logger.emit(ImpliesProofRule{*row}, move(load) <= kappa, ProofLevel::Top));
+                return recipe_logger.emit(ImpliesProofRule{*row}, move(load) <= kappa, ProofLevel::Top);
             },
             .rules = _rules};
 

@@ -3,6 +3,7 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_scaffolding_scope.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 
 #include <version>
@@ -239,14 +240,10 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<Pr
     if (total <= cut.rhs)
         return logger.emit_rup_proof_line(move(claimed) <= claimed_rhs, level);
 
-    // The scaffolding goes one level deeper than the caller's own, so that
-    // forgetting it on the way out cannot take the caller's scope with it ---
-    // the same isolation recover_am1() needs, and for the same reason: a caller
-    // inside a JustifyExplicitly is already using its own Temporary depth. Only
-    // the pin below survives this routine, extension variables included, since
-    // deleting a variable's two defining constraints deletes the variable.
-    auto saved_level = logger.proof_level();
-    logger.enter_proof_level(saved_level + 1);
+    // Only the pin below survives this routine, extension variables included,
+    // since deleting a variable's two defining constraints deletes the
+    // variable. See ProofScaffoldingScope.
+    ProofScaffoldingScope scaffolding{logger};
 
     const auto & tracker = logger.names_and_ids_tracker();
 
@@ -445,8 +442,6 @@ auto gcs::innards::derive_lifted_cover_cut(ProofLogger & logger, const vector<Pr
 
     // Restore the caller's level and pin there, while the scaffolding is still
     // alive for VeriPB to resolve the reference against, then drop it.
-    logger.enter_proof_level(saved_level);
-    auto result = logger.emit(ImpliesProofRule{derived}, move(claimed) <= claimed_rhs, level);
-    logger.forget_proof_level(saved_level + 2);
-    return result;
+    scaffolding.restore();
+    return logger.emit(ImpliesProofRule{derived}, move(claimed) <= claimed_rhs, level);
 }

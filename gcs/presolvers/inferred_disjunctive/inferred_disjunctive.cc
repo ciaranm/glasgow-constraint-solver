@@ -11,6 +11,7 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_scaffolding_scope.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 #include <gcs/innards/state.hh>
 #include <gcs/presolvers/inferred_disjunctive/inferred_disjunctive.hh>
@@ -492,13 +493,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                 // none of which is ever deleted -- 180k live constraints from
                 // one presolver on a realistic instance, taxing every later
                 // unhinted RUP (issue #666).
-                auto saved_level = recipe_logger.proof_level();
-                recipe_logger.enter_proof_level(saved_level + 1);
-                auto give_back = [&](optional<ProofLine> line) {
-                    recipe_logger.enter_proof_level(saved_level);
-                    recipe_logger.forget_proof_level(saved_level + 2);
-                    return line;
-                };
+                ProofScaffoldingScope scaffolding{recipe_logger};
 
                 // Bridges, once per (member, witnessing resource) rather than
                 // once per pair: several pairs of a clique often share a witness.
@@ -537,7 +532,7 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         const auto & c = *conflicts[here[a]][here[b]];
                         auto row = rows.find(c.witness);
                         if (row == rows.end())
-                            return give_back(std::nullopt);
+                            return std::nullopt;
 
                         // Reduced to the constant-argument form the at-most-one
                         // program reads it as: the witness's set-aside tasks
@@ -546,12 +541,12 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         const auto & witness_view = views.at(c.witness);
                         auto reduced = recover_constant_argument_row(recipe_logger, witness_view, c.witness, row->second, t, ProofLevel::Temporary);
                         if (! reduced)
-                            return give_back(std::nullopt);
+                            return std::nullopt;
 
                         auto u_flags = flags_for(tracker, c.witness, c.witness_position_u, t);
                         auto v_flags = flags_for(tracker, c.witness, c.witness_position_v, t);
                         if (! u_flags || ! v_flags)
-                            return give_back(std::nullopt);
+                            return std::nullopt;
 
                         // Everything else on that resource that could be running
                         // now has to come out of the row first. Over the
@@ -602,9 +597,9 @@ auto InferredDisjunctive::run(Problem & problem, Propagators & propagators, Stat
                         at_most_ones[b].push_back(pair_amo.emit(recipe_logger, ProofLevel::Temporary));
                     }
 
-                return give_back(recover_am1_from_pairs(recipe_logger, flags, at_most_ones, ProofLevel::Top,
+                return recover_am1_from_pairs(recipe_logger, flags, at_most_ones, ProofLevel::Top,
                     claim_rhs_zero ? Am1FromPairsMutation{am1_from_pairs_mutation::ClaimOneMore{}}
-                                   : Am1FromPairsMutation{am1_from_pairs_mutation::None{}}));
+                                   : Am1FromPairsMutation{am1_from_pairs_mutation::None{}});
             },
             .makespan = _makespan,
             .makespan_links = links,

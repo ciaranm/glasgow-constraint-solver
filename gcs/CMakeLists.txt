@@ -114,6 +114,7 @@ add_library(glasgow_constraint_solver
         innards/proofs/proof_logger.cc
         innards/proofs/proof_model.cc
         innards/proofs/proof_only_variables.cc
+        innards/proofs/proof_scaffolding_scope.cc
         innards/proofs/scp_writer.cc
         innards/proofs/simplify_literal.cc
         innards/proofs/subset_sum_strengthening.cc

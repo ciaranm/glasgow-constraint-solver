@@ -2,6 +2,7 @@
 #include <gcs/innards/proofs/pol_builder.hh>
 #include <gcs/innards/proofs/proof_error.hh>
 #include <gcs/innards/proofs/proof_logger.hh>
+#include <gcs/innards/proofs/proof_scaffolding_scope.hh>
 #include <gcs/innards/proofs/pseudo_boolean.hh>
 
 #include <cstddef>
@@ -39,15 +40,9 @@ auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<Pro
 
     logger.emit_proof_comment("clique at-most-one over " + to_string(k) + " members");
 
-    // The induction goes one proof level deeper than the caller's own, and is
-    // forgotten on the way out. Only the pin below is ever cited again: every
-    // line between here and it exists to reach it, and at Top every one of them
-    // would stay live for the rest of the proof, taxing every later unhinted RUP
-    // (issue #666). The extra depth rather than plain Temporary is what stops
-    // the forget taking the caller's scope with it, since a caller inside a
-    // JustifyExplicitly is already using its own Temporary depth.
-    auto saved_level = logger.proof_level();
-    logger.enter_proof_level(saved_level + 1);
+    // Only the pin below is ever cited again: every line the induction emits
+    // between here and it exists to reach it. See ProofScaffoldingScope.
+    ProofScaffoldingScope scaffolding{logger};
 
     // The base case is not a derivation: the at-most-one for the first pair
     // already is the clique inequality for those two.
@@ -109,8 +104,6 @@ auto gcs::innards::recover_am1_from_pairs(ProofLogger & logger, const vector<Pro
 
     // Back at the caller's level to pin, while the induction is still alive for
     // VeriPB to resolve the reference against, and only then drop it.
-    logger.enter_proof_level(saved_level);
-    auto result = logger.emit(ImpliesProofRule{current}, move(clique) <= (claim_one_more ? 0_i : 1_i), level);
-    logger.forget_proof_level(saved_level + 2);
-    return result;
+    scaffolding.restore();
+    return logger.emit(ImpliesProofRule{current}, move(clique) <= (claim_one_more ? 0_i : 1_i), level);
 }
