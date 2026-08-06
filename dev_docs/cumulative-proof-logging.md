@@ -740,14 +740,20 @@ form `Σ h_i·active_{i,t} ≤ C`, and a donor only writes those when its argume
 are constants. `CumulativeDonorView`
 ([`donor_view.hh`](../gcs/constraints/cumulative/donor_view.hh)) is what reduces
 a donor to the part of itself that is, and the reduction is per **task**: one
-task with a variable length no longer costs a whole donor its strengthening, it
+task with a variable height no longer costs a whole donor its strengthening, it
 costs that task its term.
+
+A variable **length** is not a reduction at all, and the difference is worth
+being clear about. No length appears in a capacity row, so the rows are the same
+rows and a recipe reads them identically. What a variable length costs is the
+`after` pin, and that is bought back rather than given up — see *A task whose
+length is a variable*, below.
 
 `recover_constant_argument_row` does the proof half, and it is one `pol`:
 
-- **A set-aside task** — variable length or variable height — is weakened out of
-  the row with `w`. For a constant height that is one `w` on its activity flag;
-  for a variable height the row's terms for it are the bits of the linearised
+- **A set-aside task** — a variable height — is weakened out of the row with
+  `w`. For a constant height that is one `w` on its activity flag; for a
+  variable height the row's terms for it are the bits of the linearised
   contribution, so every one of them goes, which is what
   `ConstraintProofModelData<Cumulative>::contribution_flag_key` is published for.
   How many bits there are is not published: ask for bit zero, one, two and so on
@@ -791,6 +797,75 @@ written before any of this existed.
 What stays declined is a capacity that is a **view**, whose bits are not the ones
 the row mentions, so there is no order literal whose definition would cancel
 them.
+
+### A task whose length is a variable
+
+Nothing in a capacity row mentions a length, so a derived constraint over such a
+task derives exactly the row it would otherwise. What breaks is the pin.
+`after_{i,t}` for a constant length is `s_i ≥ t − l + 1`, single-variable and
+RUP-closable from the start's bounds; for a variable one it is reified on
+`s_i + l_i ≥ t+1`, which no RUP reaches from the operands' bounds separately —
+the VeriPB linear-combination limit.
+
+`Cumulative` already solves that for itself, with a proof-only
+`end = s_i + l_i` introduced by `ProofLogger::introduce_bits_of` and a
+per-`(i, t)` bridge lemma `end ≥ t+1 → after`. Almost all of it was already
+reachable by a citer:
+
+- **The bridge lemmas need no publishing.** They go out at `ProofLevel::Top` for
+  every `(i, t)` in the donor's window, unit propagation finds them, and a
+  derived constraint's flag lookups have already established that its window is
+  inside the donor's — `find_proof_flag_values` declines otherwise.
+- **`materialise_after_sum` reads one line**, `end ≥ s + l`, plus two order
+  literals any citer makes for itself. So the whole publication requirement is
+  **one `ProofLine` per task**.
+
+That line is a **third kind of citable thing**. A labelled OPB row is found by
+`NamesAndIDsTracker::constraint_row_label` and a flag by `find_proof_flag_values`;
+a line an install initialiser *derived* has no row to label and no reification to
+key. `publish_derived_line` / `find_derived_line` is the pair for it, under a
+role `ConstraintProofModelData<Cumulative>::end_lower_bound_role` publishes like
+any other, and it hands back a line number because that is all there is to hand
+back — per-solve state, exactly as `boundary_pin_line` already keeps.
+
+It could not have been a getter on `Cumulative`. A presolver sees the constraint
+`Problem` stored, and `create_propagators` installs a *clone*; the clone is what
+ran the initialiser and the clone is what the tracker heard from. Everything a
+citer reaches goes through the tracker keyed by `ConstraintID`, and this is no
+exception.
+
+What a citer then does:
+
+- widen the task's length to an `IntegerVariableID` and window with `ub(l)`, as
+  the donor did, or the flag lookups do not line up;
+- ask `find_derived_line` for a task whose start *and* length both vary, and
+  decline if it comes back empty. Empty means the donor had a constant somewhere
+  after all, or the proof is being written with assertions on, which omits
+  definitions. Either way there is no pin to be had.
+
+`CumulativeDonorView` sets such a task aside when the answer is empty, and keeps
+it otherwise. It asks "can this task load the resource at all?" *first*: a task
+the donor gave no window — a zero height on this resource — published no proxy
+either, and would otherwise be counted as set aside for the wrong reason.
+
+The energy rules need no thought. `prepare_cumulative_overload_check` keeps only
+constant-length tasks, a window-energy lemma needing a task's energy to be a
+number, so a variable-duration task takes part in the rows and the time-tabling
+and stays out of the lemma. Where it *does* earn its place in a presolver that
+runs the energy rules alone is the (TTOC) profile term, which counts a task's
+mandatory part whether or not the lemma can speak for it — and those pins are the
+ones that go through the proxy. `cumulative_strengthening_var_length` is that
+case: four tasks of energy six fill a window of four at the strengthened capacity
+exactly, and one compulsory time point of a fifth, variable-duration task is the
+whole of the overshoot.
+
+**A tripwire.** No fixture in the tree catches the *wrong* line being published.
+Publish `end ≤ s + l` in place of `end ≥ s + l` and every proof still verifies:
+VeriPB's unit propagation reaches these `after` pins without the `pol` at all,
+the reasons instantiating the lengths and an eq atom pinning the bits the
+reification row wants. That the `pol` is load-bearing in general is pinned by
+`cumulative`'s own `len_wide` case, which fails without it. What does catch a
+broken citation here is the install declining, and nothing else.
 
 ### Deriving over an optional donor
 
@@ -855,6 +930,14 @@ anything out of it. Both then weaken over the donor's **usable** positions
 only, since a set-aside task's terms went out with the reduction and `w`
 on a variable the constraint no longer mentions is refused.
 
+A variable duration they take too, and it costs them nothing but a choice
+of bound. A window takes `ub(l)`, which is what the donor encoded its
+flags over and so the only thing that finds them; an energy sum or a
+ranking takes `lb(l)`, which is the work every solution has to contain.
+Tasks are matched across donors by the length *variable*, since the same
+variable is the same duration whatever its bounds come to, and two
+different ones are not even where their bounds agree today.
+
 `constraint_type()` is `cumulative_optional` for the optional form, so
 the verified-encoding chain does not silently match it against
 `cake_pb_cp`'s `cumulative` encoder, which would re-derive a strictly
@@ -871,7 +954,12 @@ that gap is now named rather than hidden.
   (#550) build on the clipped form, and the lifted-constraint
   presolvers (#549) on the contained one.
 - **Variable lengths, heights and capacity in the energy set.** Staged
-  deliberately; the extensions are sketched in #542.
+  deliberately; the extensions are sketched in #542. A variable-duration
+  task now takes part in a derived Cumulative's rows and time-tabling
+  (#685), and contributes its mandatory part to the (TTOC) profile term,
+  but the window-energy lemma still cannot count its energy: that needs a
+  task's energy to be a number. A variable **height** is still set aside
+  from a derived constraint altogether (#686 is the height half of #685).
 - **Conditional bounds for optional tasks.** An undecided task's start
   bounds are never pruned, because there is no conditional-bounds store
   and an unconditional prune would be unsound if the task turns out

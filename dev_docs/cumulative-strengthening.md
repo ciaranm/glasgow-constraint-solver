@@ -315,10 +315,18 @@ Variable lengths and heights are deliberately **not** on this list either, and
 nor is a variable capacity. `CumulativeDonorView`
 ([`donor_view.hh`](../gcs/constraints/cumulative/donor_view.hh)) reduces a donor
 to the part of itself the argument can be made over, per *task*: one task with a
-variable length or height is set aside and weakened out of every row, and the
-rest of the donor is strengthened exactly as before. `donors_with_set_aside_tasks`
-counts the donors that happened to, because one strengthened over four of its
-five tasks otherwise looks just like one strengthened in full.
+variable height is set aside and weakened out of every row, and the rest of the
+donor is strengthened exactly as before. `donors_with_set_aside_tasks` counts the
+donors that happened to, because one strengthened over four of its five tasks
+otherwise looks just like one strengthened in full.
+
+A variable **length** is not set aside at all. No length appears in a capacity
+row, so the rows are the same rows; what it costs is the `after` pin, and the
+donor's proof-only end proxy is what that goes through, published for the purpose
+(#685). Such a task therefore keeps its term, its window and its mandatory part
+— which is what earns it a place here, this presolver running the energy rules
+alone and the (TTOC) profile term being the one that can count a task the
+window-energy lemma cannot.
 
 Optional tasks are deliberately **not** on this list. The whole strengthening is
 an argument about the donor's per-time rows, and an optional task's presence is a
@@ -334,8 +342,9 @@ cancel across that bridge first.
 
 - **A capacity that is a view.** Its bits are not the ones the donor's rows
   mention, so there is no order literal whose definition would cancel them, and
-  nothing to reduce a row against. A *variable* capacity is fine, and a variable
-  length or height costs its own task rather than the donor — see below.
+  nothing to reduce a row against. A *variable* capacity is fine, a variable
+  height costs its own task rather than the donor, and a variable length costs
+  nothing — see below.
 - **A height above the capacity**, as above.
 - **Every task full**, which makes `kappa` zero: a disjunctive rather than a
   strengthening, and `InferredDisjunctive`'s to find.

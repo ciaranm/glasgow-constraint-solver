@@ -147,11 +147,12 @@ namespace gcs
         std::size_t declined_variable_arguments = 0;
 
         /// Donors that could only be lifted out of in part, because a task's
-        /// length or height is a variable and so has no constant term in their
-        /// rows. Such a task takes no part in any cover and its terms are
-        /// weakened out of every row first; what that costs is a smaller matrix,
-        /// never a wrong cut. Counted because a donor drifting into it looks
-        /// exactly like one used in full.
+        /// height is a variable and so has no constant term in their rows. Such
+        /// a task takes no part in any cover and its terms are weakened out of
+        /// every row first; what that costs is a smaller matrix, never a wrong
+        /// cut. Counted because a donor drifting into it looks exactly like one
+        /// used in full. A variable *length* is not one of these: no length
+        /// appears in a row, so such a task keeps its column.
         std::size_t donors_with_set_aside_tasks = 0;
         /// Covers already inside the support of something lifted earlier, which
         /// would re-derive it and waste the subproblems (paper, Example 12).
