@@ -727,7 +727,7 @@ auto main(int argc, char * argv[]) -> int
         if (infer_makespan_bound)
             presolver.with_makespan(makespan);
         if (mutate_makespan_bound)
-            presolver.with_proof_mutation(inferred_disjunctive_mutation::ClaimHigherMakespanBound{});
+            presolver.with_proof_mutation(gcs::innards::inferred_disjunctive_mutation::ClaimHigherMakespanBound{});
         problem.add_presolver(presolver);
     }
 
@@ -741,7 +741,7 @@ auto main(int argc, char * argv[]) -> int
         if (infer_makespan_bound)
             presolver.with_makespan(makespan);
         if (mutate_makespan_bound)
-            presolver.with_proof_mutation(inferred_cumulative_mutation::ClaimHigherMakespanBound{});
+            presolver.with_proof_mutation(gcs::innards::inferred_cumulative_mutation::ClaimHigherMakespanBound{});
         problem.add_presolver(presolver);
     }
 

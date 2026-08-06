@@ -4,6 +4,7 @@
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/integer.hh>
 #include <gcs/presolver.hh>
+#include <gcs/presolvers/innards/inferred_disjunctive_mutations.hh>
 
 #include <cstddef>
 #include <memory>
@@ -12,58 +13,7 @@
 
 namespace gcs
 {
-    /**
-     * \brief Deliberate corruptions of the assembled per-time certificate, for
-     * testing only. VeriPB must reject each of them.
-     *
-     * The pieces this is built from each have their own mutations, and those
-     * cover the pieces. What is left for these is the *assembly*: whether the
-     * at-most-ones being merged really are about the tasks the clique claims,
-     * whether the conclusion is the one the arithmetic supports, and whether a
-     * pair that merely looks like a conflict can be smuggled in. Each of these
-     * corrupts the conclusion rather than the route to it, since the route is
-     * where a conflict-shaped derivation forgives everything.
-     *
-     * \ingroup Presolvers
-     */
-    namespace inferred_disjunctive_mutation
-    {
-        /// Emit the honest derivation.
-        struct None
-        {
-        };
 
-        /// Claim no member may run at all, rather than at most one.
-        struct ClaimRhsZero
-        {
-        };
-
-        /// Bridge one task's flags onto the *other* task's, so the at-most-one
-        /// being merged is about a task the derivation never cornered.
-        struct BridgeWrongTask
-        {
-        };
-
-        /// Grow a clique with a task that does not conflict with its members ---
-        /// the camouflage case, where a pair's demands sum to exactly the
-        /// capacity and so are compatible by one unit. An off-by-one in the
-        /// conflict test lands exactly here.
-        struct IncludeNonConflicting
-        {
-        };
-
-        /// Claim a makespan one larger than a posted clique's energy supports.
-        /// The same discipline again, against the other thing a clique is used
-        /// for: `L` is the number this whole exercise reports, so a derivation
-        /// with slack in it would report it while proving something weaker.
-        struct ClaimHigherMakespanBound
-        {
-        };
-    }
-
-    using InferredDisjunctiveMutation =
-        std::variant<inferred_disjunctive_mutation::None, inferred_disjunctive_mutation::ClaimRhsZero, inferred_disjunctive_mutation::BridgeWrongTask,
-            inferred_disjunctive_mutation::IncludeNonConflicting, inferred_disjunctive_mutation::ClaimHigherMakespanBound>;
     /**
      * \brief What the inferred-Disjunctive presolver did, filled in when it
      * runs.
@@ -196,7 +146,7 @@ namespace gcs
         std::size_t _max_posted;
         std::size_t _min_clique_size;
         CumulativeRules _rules;
-        InferredDisjunctiveMutation _mutation;
+        innards::InferredDisjunctiveMutation _mutation;
         std::optional<IntegerVariableID> _makespan;
 
     public:
@@ -251,8 +201,8 @@ namespace gcs
 
         /// Corrupt one step of the assembled certificate. For tests only, which
         /// assert that VeriPB rejects the result; see
-        /// InferredDisjunctiveMutation.
-        auto with_proof_mutation(InferredDisjunctiveMutation mutation) -> InferredDisjunctive &;
+        /// innards::InferredDisjunctiveMutation.
+        auto with_proof_mutation(innards::InferredDisjunctiveMutation mutation) -> InferredDisjunctive &;
 
         [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool override;
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Presolver> override;

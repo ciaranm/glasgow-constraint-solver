@@ -4,6 +4,7 @@
 #include <gcs/constraints/cumulative/cumulative.hh>
 #include <gcs/integer.hh>
 #include <gcs/presolver.hh>
+#include <gcs/presolvers/innards/inferred_cumulative_mutations.hh>
 
 #include <cstddef>
 #include <memory>
@@ -12,71 +13,6 @@
 
 namespace gcs
 {
-    /**
-     * \brief Deliberate corruptions of a lifted cut's certificate, for testing
-     * only. VeriPB must reject each of them.
-     *
-     * The first two are the signature test of a lifted constraint: claim one
-     * better than was derived and require a rejection. With small,
-     * close-together integers a slack derivation can verify by coincidence ---
-     * a `pol` that lands somewhere weaker than intended still lands somewhere
-     * true --- and only a `+1` that is *refused* says the honest line is tight
-     * to what the constraint goes on to assume of it.
-     *
-     * \ingroup Presolvers
-     */
-    namespace inferred_cumulative_mutation
-    {
-        /// Emit the honest derivation.
-        struct None
-        {
-        };
-
-        /// Pin one less capacity than the derivation supports.
-        struct ClaimTighterCapacity
-        {
-        };
-
-        /// Pin one more height for the first member than the derivation
-        /// supports.
-        struct ClaimTallerTask
-        {
-        };
-
-        /// Build the dynamic programme against a capacity one smaller than the
-        /// donor's row, so that its states claim the row rules out a member it
-        /// does not. Unlike the two above, this corrupts the *derivation* rather
-        /// than what is claimed of it, and is caught inside the replay rather
-        /// than at the pin.
-        struct ClaimTighterRow
-        {
-        };
-
-        /// Claim a makespan one larger than a posted cut's energy supports.
-        /// The same discipline again, against the other thing a cut is used
-        /// for: `L` is the number this whole exercise reports, so a derivation
-        /// with slack in it would report it while proving something weaker.
-        struct ClaimHigherMakespanBound
-        {
-        };
-
-        /// Carry a resource's row onto the *wrong* member's flags when a cut
-        /// spans more than one of them, so that the row a state is ruled out by
-        /// is about a task other than the one it names.
-        ///
-        /// The corruption a cut over several resources adds over one over a
-        /// single resource: nothing else in this list touches the crossing, and
-        /// with one donor there is no crossing to touch --- so a fixture for
-        /// this has to be genuinely multi-resource, which is the point of
-        /// having it.
-        struct BridgeWrongTask
-        {
-        };
-    }
-
-    using InferredCumulativeMutation = std::variant<inferred_cumulative_mutation::None, inferred_cumulative_mutation::ClaimTighterCapacity,
-        inferred_cumulative_mutation::ClaimTallerTask, inferred_cumulative_mutation::ClaimTighterRow,
-        inferred_cumulative_mutation::ClaimHigherMakespanBound, inferred_cumulative_mutation::BridgeWrongTask>;
 
     /**
      * \brief What the inferred-Cumulative presolver did, filled in when it runs.
@@ -280,7 +216,7 @@ namespace gcs
         std::size_t _max_lifting_calls;
         std::size_t _max_programme_states;
         CumulativeRules _rules;
-        InferredCumulativeMutation _mutation;
+        innards::InferredCumulativeMutation _mutation;
         std::optional<IntegerVariableID> _makespan;
 
     public:
@@ -363,8 +299,8 @@ namespace gcs
         auto with_makespan(IntegerVariableID makespan) -> InferredCumulative &;
 
         /// Corrupt the certificate. For tests only, which assert that VeriPB
-        /// rejects the result; see InferredCumulativeMutation.
-        auto with_proof_mutation(InferredCumulativeMutation mutation) -> InferredCumulative &;
+        /// rejects the result; see innards::InferredCumulativeMutation.
+        auto with_proof_mutation(innards::InferredCumulativeMutation mutation) -> InferredCumulative &;
 
         [[nodiscard]] virtual auto run(Problem &, innards::Propagators &, innards::State &, innards::ProofLogger * const) -> bool override;
         [[nodiscard]] virtual auto clone() const -> std::unique_ptr<Presolver> override;

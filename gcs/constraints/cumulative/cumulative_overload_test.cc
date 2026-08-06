@@ -49,6 +49,7 @@ using fmt::println;
 #endif
 
 using namespace gcs;
+using namespace gcs::innards;
 using namespace gcs::test_innards;
 
 namespace
