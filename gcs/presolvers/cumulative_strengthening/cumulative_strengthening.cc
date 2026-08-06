@@ -173,10 +173,9 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
         // that sets it aside. Nullopt means this candidate has nothing to say.
         struct Assessment
         {
-            vector<Integer> t_lo, t_hi;
             vector<size_t> full_tasks;
             vector<TimePoint> time_points;
-            Integer kappa;
+            Integer kappa = 0_i;
         };
 
         auto assess = [&](const CumulativeDonorView & candidate) -> optional<Assessment> {
@@ -188,10 +187,11 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             // same windowing the donor encoded: a task can be active from its
             // earliest start to its latest finish, which for a variable
             // duration is the largest one still allowed. This is the paper's
-            // `t in [est_j, lct_j)`.
-            Assessment assessment{vector<Integer>(n, 0_i), vector<Integer>(n, 0_i), {}, {}, 0_i};
-            auto & t_lo = assessment.t_lo;
-            auto & t_hi = assessment.t_hi;
+            // `t in [est_j, lct_j)`. Local to the assessment: what comes out of
+            // it is the time points, which is where the windows have already
+            // been applied, so nothing downstream asks about them again.
+            Assessment assessment;
+            vector<Integer> t_lo(n, 0_i), t_hi(n, 0_i);
             for (auto i : active_tasks) {
                 auto [s_lo, s_hi] = state.bounds(starts[i]);
                 t_lo[i] = s_lo;
@@ -335,8 +335,6 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
             if (view->height_bounded_by[i])
                 bump(&CumulativeStrengtheningStats::converted_heights);
 
-        const auto & t_lo = assessed->t_lo;
-        const auto & t_hi = assessed->t_hi;
         const auto & full_tasks = assessed->full_tasks;
         auto & time_points = assessed->time_points;
         auto kappa = assessed->kappa;

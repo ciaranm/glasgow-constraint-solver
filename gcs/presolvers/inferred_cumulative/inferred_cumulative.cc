@@ -116,13 +116,6 @@ namespace
         }
     };
 
-    [[nodiscard]] auto constant_value_of(const IntegerVariableID & v) -> optional<Integer>
-    {
-        if (! is_constant_variable(v))
-            return std::nullopt;
-        return std::get<ConstantIntegerVariableID>(v).const_value;
-    }
-
     /// A task's activity flag on a donor at one time, absent when that donor
     /// never encoded the pair --- which is how a task outside its window looks,
     /// and is also how it looks in the donor's own capacity row.

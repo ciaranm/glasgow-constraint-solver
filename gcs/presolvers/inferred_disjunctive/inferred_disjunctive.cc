@@ -96,13 +96,6 @@ namespace
         Integer demand_u, demand_v, capacity;
     };
 
-    [[nodiscard]] auto constant_value_of(const IntegerVariableID & v) -> optional<Integer>
-    {
-        if (! is_constant_variable(v))
-            return std::nullopt;
-        return std::get<ConstantIntegerVariableID>(v).const_value;
-    }
-
     /// The flags a task's activity is expressed in, on one resource, at one
     /// time. Absent when that resource never encoded the pair.
     [[nodiscard]] auto flags_for(const NamesAndIDsTracker & tracker, const ConstraintID & donor, size_t position, Integer t)
