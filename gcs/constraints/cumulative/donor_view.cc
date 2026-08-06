@@ -144,7 +144,12 @@ auto gcs::innards::recover_constant_argument_row(ProofLogger & logger, const Cum
         // denies is the one the capacity had before the search started, so
         // nothing below can undo it, and a unit RUP reaches it from the
         // definition and the variable's own bound row.
-        auto atom_is_false = logger.emit_rup_proof_line(WPBSum{} + 1_i * (*view.capacity_bounded_by < view.capacity + 1_i) >= 1_i, level);
+        //
+        // Working, and so Temporary whatever level the caller wants the *row*
+        // at: it is cited once, by the `pol` below, and a caller asking for its
+        // row at Top has not asked for this line to live there too.
+        auto atom_is_false =
+            logger.emit_rup_proof_line(WPBSum{} + 1_i * (*view.capacity_bounded_by < view.capacity + 1_i) >= 1_i, ProofLevel::Temporary);
 
         reduced.add_for_literal(tracker, *view.capacity_bounded_by < view.capacity + 1_i);
         if (atom_coefficient > 0_i)

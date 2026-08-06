@@ -107,6 +107,10 @@ namespace gcs::innards
      * exact. It has to be exact: a recipe pins what it returns with an `ia`,
      * and every `pol` the propagator later builds on it cancels term by term.
      *
+     * The ProofLevel is where the row that comes back goes. The one working
+     * line this needs is Temporary regardless, being cited once and by nothing
+     * else.
+     *
      * Returns the row unchanged when there is nothing to do, which is the
      * all-constant case and so the common one: no `pol`, no line, and a proof
      * byte-identical to the one written before any of this existed.
