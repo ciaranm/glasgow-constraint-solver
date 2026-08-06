@@ -502,6 +502,93 @@ auto main(int argc, char * argv[]) -> int
         println(cerr, "variable arguments: clique posted, {} solutions", solutions.size());
     }
 
+    /* A variable duration, which unlike a variable height is not a restriction
+     * at all. A conflict is a statement about demands, and a clique's rows say
+     * nothing about how long anything runs for --- so what used to cost a task
+     * its place in the conflict graph now costs it nothing, provided its donor
+     * published the line a pin of its `after` goes through.
+     *
+     * Four tasks, pairwise conflicting on the four resources `(i + j) mod 4`
+     * covers between them, and the last one's duration a variable. The clique
+     * is a clique of *four*: three is what it would be with that task set
+     * aside, and the difference is the whole point.
+     */
+    {
+        const int k = 4, length = 2, horizon = 9, latest = horizon - length;
+        auto stats = make_shared<InferredDisjunctiveStats>();
+
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (int i = 0; i < k; ++i)
+            starts.push_back(p.create_integer_variable(0_i, Integer{latest}, "s" + to_string(i)));
+        // Only the last, so that what the fixture counts is one task joining a
+        // clique it could not have joined, rather than a clique of tasks none
+        // of which the energy rules could have counted anyway.
+        auto varying = p.create_integer_variable(Integer{length}, Integer{length + 1}, "l3");
+
+        vector<IntegerVariableID> lengths(static_cast<size_t>(k), constant_variable(Integer{length}));
+        lengths.back() = varying;
+        for (int r = 0; r < k; ++r) {
+            vector<IntegerVariableID> heights(static_cast<size_t>(k), constant_variable(0_i));
+            for (int i = 0; i < k; ++i)
+                for (int j = i + 1; j < k; ++j)
+                    if ((i + j) % k == r) {
+                        heights[static_cast<size_t>(i)] = constant_variable(1_i);
+                        heights[static_cast<size_t>(j)] = constant_variable(1_i);
+                    }
+            p.post(Cumulative{starts, lengths, heights, constant_variable(1_i)});
+        }
+        p.add_presolver(InferredDisjunctive{stats});
+
+        set<vector<int>> solutions;
+        solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            vector<int> solution;
+            for (const auto & v : starts)
+                solution.push_back(s(v).raw_value);
+            solution.push_back(s(varying).raw_value);
+            solutions.insert(move(solution));
+            return true;
+        }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"inferred_disjunctive_variable_length"}) : nullopt);
+        if (proofs)
+            verify_proof_and_clean_up("inferred_disjunctive_variable_length");
+
+        if (stats->cliques_posted != 1)
+            fail("a clique was not posted over a resource with a variable duration");
+        if (stats->clique_members_posted != static_cast<size_t>(k))
+            fail("the variable-duration task did not join the clique, which is the whole gain");
+        if (stats->resources_with_set_aside_tasks != 0)
+            fail("a variable duration set its task aside, which is what the published end proxy is there to avoid");
+
+        // Brute force over the same model: no two tasks may overlap, and the
+        // last one's duration is part of the assignment.
+        set<vector<int>> expected;
+        vector<int> assignment(static_cast<size_t>(k) + 1, 0);
+        auto duration = [&](int i) { return i == k - 1 ? assignment.back() : length; };
+        std::function<auto(size_t)->void> enumerate = [&](size_t at) {
+            if (at == assignment.size()) {
+                for (int i = 0; i < k; ++i)
+                    for (int j = i + 1; j < k; ++j)
+                        if (assignment[static_cast<size_t>(i)] < assignment[static_cast<size_t>(j)] + duration(j) &&
+                            assignment[static_cast<size_t>(j)] < assignment[static_cast<size_t>(i)] + duration(i))
+                            return;
+                expected.insert(assignment);
+                return;
+            }
+            auto lo = at == assignment.size() - 1 ? length : 0;
+            auto hi = at == assignment.size() - 1 ? length + 1 : latest;
+            for (auto v = lo; v <= hi; ++v) {
+                assignment[at] = v;
+                enumerate(at + 1);
+            }
+        };
+        enumerate(0);
+
+        if (expected != solutions)
+            fail("variable-duration solutions do not match brute force");
+        println(cerr, "variable duration: a clique of {} tasks, {} solutions", stats->clique_members_posted, solutions.size());
+    }
+
     if (! proofs) {
         println(cerr, "veripb is not available, so the proof-level checks are skipped");
         return EXIT_SUCCESS;

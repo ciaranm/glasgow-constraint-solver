@@ -64,31 +64,35 @@ auto gcs::innards::cumulative_donor_view(const Cumulative & donor, const State &
             continue;
         }
 
-        // A variable length is not. It leaves the row untouched --- no length
-        // appears in one --- and costs the *pins* instead: `after` is then
-        // reified on the two-variable `start + length`, which no RUP reaches
-        // from the operands' bounds, so pinning it goes through the donor's
-        // proof-only end proxy and through the line giving that proxy its lower
-        // bound. That line is the donor's to publish, and asking for it is the
-        // whole test: a constant start needs no proxy and publishes none, and a
-        // proof written with assertions on omits the definition along with
-        // everything else it asserts. With no logger there is nothing to pin
-        // and nothing to ask.
+        // A task that can never load the resource, or that was posted as
+        // constantly absent, has no flags and no term in any row: nothing to
+        // set aside, because there is nothing there. Asked before the length
+        // test below, and that is not an ordering nicety: the donor gave such a
+        // task no window, so it published no end proxy for it either, and
+        // asking would come back with the same nullopt a genuinely unusable
+        // duration does. The largest duration still allowed is what says
+        // whether it can run at all, and is the same bound the donor windowed
+        // its flags with.
+        auto presence = cumulative_task_presence(view.presences.empty() ? nullopt : make_optional(view.presences[i]));
+        if (state.upper_bound(length) <= 0_i || const_value_of(height) <= 0_i || presence.never_present)
+            continue;
+
+        // A variable length is not a set-aside. It leaves the row untouched ---
+        // no length appears in one --- and costs the *pins* instead: `after` is
+        // then reified on the two-variable `start + length`, which no RUP
+        // reaches from the operands' bounds, so pinning it goes through the
+        // donor's proof-only end proxy and through the line giving that proxy
+        // its lower bound. That line is the donor's to publish, and asking for
+        // it is the whole test: a constant start needs no proxy and publishes
+        // none, and a proof written with assertions on omits the definition
+        // along with everything else it asserts. With no logger there is
+        // nothing to pin and nothing to ask.
         if (logger && ! is_constant_variable(length) && ! is_constant_variable(donor.starts()[i]) &&
             ! logger->names_and_ids_tracker().find_derived_line(
                 donor.constraint_id(), ConstraintProofModelData<Cumulative>::end_lower_bound_role(i))) {
             view.set_aside.push_back(i);
             continue;
         }
-
-        // A task that can never load the resource, or that was posted as
-        // constantly absent, has no flags and no term in any row: nothing to
-        // set aside, because there is nothing there. The largest duration still
-        // allowed is what says whether it can run at all, and is the same bound
-        // the donor windowed its flags with.
-        auto presence = cumulative_task_presence(view.presences.empty() ? nullopt : make_optional(view.presences[i]));
-        if (state.upper_bound(length) <= 0_i || const_value_of(height) <= 0_i || presence.never_present)
-            continue;
 
         view.lengths[i] = length;
         view.heights[i] = const_value_of(height);

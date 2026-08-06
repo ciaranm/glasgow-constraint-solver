@@ -576,6 +576,86 @@ auto main(int argc, char * argv[]) -> int
         println(cerr, "variable arguments: cut posted over a variable capacity, one task set aside, {} solutions", solutions.size());
     }
 
+    /* And the same cut with a variable *duration* in it, which unlike a
+     * variable height costs nothing: no length appears in a capacity row, so
+     * lifting works over the same row and the task stays a column of the
+     * matrix. What it costs is the `after` pin, and the donor's published end
+     * proxy is what that goes through.
+     *
+     * The first task's duration is [3, 5], and the bound the cut reports is
+     * five --- nine units of work against a supply of two per step, counting
+     * the *smallest* duration still allowed, which is the only one every
+     * solution has to contain. Count the largest instead and it would be six,
+     * which is why the number is asserted rather than the cut merely being
+     * present.
+     */
+    {
+        const int horizon = 9, length = 3, latest = 4;
+        auto stats = make_shared<InferredCumulativeStats>();
+
+        Problem p;
+        vector<IntegerVariableID> starts;
+        for (int i = 0; i < 3; ++i)
+            starts.push_back(p.create_integer_variable(0_i, Integer{latest}, "s" + to_string(i)));
+        auto varying = p.create_integer_variable(Integer{length}, 5_i, "l0");
+
+        vector<IntegerVariableID> lengths{varying, constant_variable(Integer{length}), constant_variable(Integer{length})};
+        vector<IntegerVariableID> heights(3, constant_variable(4_i));
+        p.post(Cumulative{starts, lengths, heights, constant_variable(10_i)});
+        p.add_presolver(InferredCumulative{stats});
+
+        set<vector<int>> solutions;
+        solve_with(p, SolveCallbacks{.solution = [&](const CurrentState & s) -> bool {
+            vector<int> solution;
+            for (const auto & v : starts)
+                solution.push_back(s(v).raw_value);
+            solution.push_back(s(varying).raw_value);
+            solutions.insert(move(solution));
+            return true;
+        }},
+            proofs ? make_optional<ProofOptions>(ProofFileNames{"inferred_cumulative_variable_length"}) : nullopt);
+        if (proofs)
+            verify_proof_and_clean_up("inferred_cumulative_variable_length");
+
+        if (stats->cuts_posted != 1)
+            fail("variable duration: posted " + to_string(stats->cuts_posted) + " cuts, not the one over the three tasks");
+        if (stats->donors_with_set_aside_tasks != 0)
+            fail("variable duration: the task was set aside, which is what the published end proxy is there to avoid");
+        if (stats->largest_capacity_bound != 5_i)
+            fail("variable duration: reported a bound of " + to_string(stats->largest_capacity_bound.raw_value) +
+                ", not the five the smallest durations carry");
+
+        set<vector<int>> expected;
+        vector<int> assignment(4, 0);
+        std::function<auto(std::size_t)->void> enumerate = [&](std::size_t at) {
+            if (at == assignment.size()) {
+                for (int t = 0; t < horizon; ++t) {
+                    int load = 0;
+                    for (int i = 0; i < 3; ++i) {
+                        auto duration = i == 0 ? assignment.back() : length;
+                        if (assignment[static_cast<std::size_t>(i)] <= t && t < assignment[static_cast<std::size_t>(i)] + duration)
+                            load += 4;
+                    }
+                    if (load > 10)
+                        return;
+                }
+                expected.insert(assignment);
+                return;
+            }
+            auto lo = at == assignment.size() - 1 ? length : 0;
+            auto hi = at == assignment.size() - 1 ? 5 : latest;
+            for (auto v = lo; v <= hi; ++v) {
+                assignment[at] = v;
+                enumerate(at + 1);
+            }
+        };
+        enumerate(0);
+
+        if (expected != solutions)
+            fail("variable duration: solutions do not match brute force");
+        println(cerr, "variable duration: cut posted over a task the donor gave a duration variable, {} solutions", solutions.size());
+    }
+
     // The window edges, which is the only place a programme is built over
     // fewer than all of the members. Pinning the big task into the first half of the horizon leaves
     // the second half holding only the three small ones, so those time points
