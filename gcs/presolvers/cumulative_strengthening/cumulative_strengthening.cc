@@ -34,6 +34,7 @@ using std::map;
 using std::max;
 using std::min;
 using std::move;
+using std::nullopt;
 using std::optional;
 using std::pair;
 using std::shared_ptr;
@@ -160,131 +161,185 @@ auto CumulativeStrengthening::run(Problem & problem, Propagators & propagators, 
                 logger->emit_proof_comment("presolve cumulative: declining " + as_string(donor.constraint_id()) + ", capacity is not reducible");
             continue;
         }
-        if (! view->set_aside.empty())
-            bump(&CumulativeStrengtheningStats::donors_with_set_aside_tasks);
-
         const auto & starts = donor.starts();
         auto n = starts.size();
         auto capacity = view->capacity;
-
-        // The same windowing install_derived_cumulative resolves, and the same
-        // windowing the donor encoded: a task can be active from its earliest
-        // start to its latest finish, which for a variable duration is the
-        // largest one still allowed. This is the paper's `t in [est_j, lct_j)`.
-        vector<Integer> t_lo(n, 0_i), t_hi(n, 0_i);
-        const auto & active_tasks = view->usable;
-        for (auto i : active_tasks) {
-            auto [s_lo, s_hi] = state.bounds(starts[i]);
-            t_lo[i] = s_lo;
-            t_hi[i] = s_hi + state.upper_bound(view->lengths[i]) - 1_i;
-        }
-
-        if (active_tasks.empty()) {
-            bump(&CumulativeStrengtheningStats::declined_nothing_to_gain);
-            continue;
-        }
-
-        // A height above the capacity means the donor is infeasible on its own,
-        // which is the donor's business to detect and not something to build a
-        // subset sum over.
-        if (std::any_of(active_tasks.begin(), active_tasks.end(), [&](size_t i) { return view->heights[i] > capacity; })) {
-            bump(&CumulativeStrengtheningStats::declined_nothing_to_gain);
-            continue;
-        }
-
-        // Schulz's coefficient raising, as the set of tasks it applies to. A
-        // task that cannot run beside any *other* task that consumes anything
-        // occupies the resource whenever it runs, whatever its height says, so
-        // its height is really the capacity --- and, once the capacity comes
-        // down to kappa below, really kappa.
-        //
-        // Stated as the pairwise test rather than as the paper's
-        // `c_i > C - min_j c_j`, because the two are the same condition and the
-        // pairwise one is what the certificate needs anyway: it is one
-        // at-most-one per pair, each derived from the donor's own row. Tasks
-        // whose windows cannot overlap are not part of it, which is a little
-        // more than the paper claims and costs nothing --- if they can never be
-        // active together, no row ever mentions both.
-        //
-        // Deliberately *not* per time point, even though fewer tasks can run at
-        // one time point than over the whole horizon and the set would be
-        // larger for it: a Cumulative has one height per task, not one per time
-        // point, so a task that only fills the resource at some of them cannot
-        // be given a raised height at all.
-        vector<size_t> full_tasks, other_tasks;
-        for (auto i : active_tasks) {
-            auto conflicts_with_everything = std::all_of(active_tasks.begin(), active_tasks.end(),
-                [&](size_t j) { return i == j || t_hi[i] < t_lo[j] || t_hi[j] < t_lo[i] || view->heights[i] + view->heights[j] > capacity; });
-            (conflicts_with_everything ? full_tasks : other_tasks).push_back(i);
-        }
-
-        // The mutation that says the pairwise test is the load-bearing part:
-        // take the tallest task that did *not* qualify and raise it anyway.
-        // Everything downstream then runs honestly on a set that is wrong, and
-        // the row it lands on is a row the donor does not imply.
         auto unentitled_raise = std::holds_alternative<cumulative_strengthening_mutation::RaiseUnentitled>(_mutation);
-        if (unentitled_raise && ! other_tasks.empty()) {
-            auto tallest =
-                std::max_element(other_tasks.begin(), other_tasks.end(), [&](size_t a, size_t b) { return view->heights[a] < view->heights[b]; });
-            full_tasks.push_back(*tallest);
-            other_tasks.erase(tallest);
-            std::sort(full_tasks.begin(), full_tasks.end());
+
+        // Everything about a candidate view that decides whether it is worth
+        // strengthening over, and what the strengthening would be. A candidate
+        // rather than *the* view, because a donor with a variable height has
+        // two: one that converts such a task into its guaranteed demand and one
+        // that sets it aside. Nullopt means this candidate has nothing to say.
+        struct Assessment
+        {
+            vector<Integer> t_lo, t_hi;
+            vector<size_t> full_tasks;
+            vector<TimePoint> time_points;
+            Integer kappa;
+        };
+
+        auto assess = [&](const CumulativeDonorView & candidate) -> optional<Assessment> {
+            const auto & active_tasks = candidate.usable;
+            if (active_tasks.empty())
+                return nullopt;
+
+            // The same windowing install_derived_cumulative resolves, and the
+            // same windowing the donor encoded: a task can be active from its
+            // earliest start to its latest finish, which for a variable
+            // duration is the largest one still allowed. This is the paper's
+            // `t in [est_j, lct_j)`.
+            Assessment assessment{vector<Integer>(n, 0_i), vector<Integer>(n, 0_i), {}, {}, 0_i};
+            auto & t_lo = assessment.t_lo;
+            auto & t_hi = assessment.t_hi;
+            for (auto i : active_tasks) {
+                auto [s_lo, s_hi] = state.bounds(starts[i]);
+                t_lo[i] = s_lo;
+                t_hi[i] = s_hi + state.upper_bound(candidate.lengths[i]) - 1_i;
+            }
+
+            // A height above the capacity means the donor is infeasible on its
+            // own, which is the donor's business to detect and not something to
+            // build a subset sum over.
+            if (std::any_of(active_tasks.begin(), active_tasks.end(), [&](size_t i) { return candidate.heights[i] > capacity; }))
+                return nullopt;
+
+            // Schulz's coefficient raising, as the set of tasks it applies to.
+            // A task that cannot run beside any *other* task that consumes
+            // anything occupies the resource whenever it runs, whatever its
+            // height says, so its height is really the capacity --- and, once
+            // the capacity comes down to kappa below, really kappa.
+            //
+            // Stated as the pairwise test rather than as the paper's
+            // `c_i > C - min_j c_j`, because the two are the same condition and
+            // the pairwise one is what the certificate needs anyway: it is one
+            // at-most-one per pair, each derived from the donor's own row.
+            // Tasks whose windows cannot overlap are not part of it, which is a
+            // little more than the paper claims and costs nothing --- if they
+            // can never be active together, no row ever mentions both.
+            //
+            // Deliberately *not* per time point, even though fewer tasks can
+            // run at one time point than over the whole horizon and the set
+            // would be larger for it: a Cumulative has one height per task, not
+            // one per time point, so a task that only fills the resource at
+            // some of them cannot be given a raised height at all.
+            auto & full_tasks = assessment.full_tasks;
+            vector<size_t> other_tasks;
+            for (auto i : active_tasks) {
+                auto conflicts_with_everything = std::all_of(active_tasks.begin(), active_tasks.end(), [&](size_t j) {
+                    return i == j || t_hi[i] < t_lo[j] || t_hi[j] < t_lo[i] || candidate.heights[i] + candidate.heights[j] > capacity;
+                });
+                (conflicts_with_everything ? full_tasks : other_tasks).push_back(i);
+            }
+
+            // The mutation that says the pairwise test is the load-bearing
+            // part: take the tallest task that did *not* qualify and raise it
+            // anyway. Everything downstream then runs honestly on a set that is
+            // wrong, and the row it lands on is a row the donor does not imply.
+            if (unentitled_raise && ! other_tasks.empty()) {
+                auto tallest = std::max_element(
+                    other_tasks.begin(), other_tasks.end(), [&](size_t a, size_t b) { return candidate.heights[a] < candidate.heights[b]; });
+                full_tasks.push_back(*tallest);
+                other_tasks.erase(tallest);
+                std::sort(full_tasks.begin(), full_tasks.end());
+            }
+
+            auto global_lo = t_lo[active_tasks.front()], global_hi = t_hi[active_tasks.front()];
+            for (auto i : active_tasks) {
+                global_lo = min(global_lo, t_lo[i]);
+                global_hi = max(global_hi, t_hi[i]);
+            }
+
+            for (Integer t = global_lo; t <= global_hi; ++t) {
+                TimePoint point{t, {}, {}, {}, 0_i, false};
+                for (auto i : other_tasks)
+                    if (t >= t_lo[i] && t <= t_hi[i]) {
+                        point.tasks.push_back(i);
+                        point.heights.push_back(candidate.heights[i]);
+                    }
+                for (auto i : full_tasks)
+                    if (t >= t_lo[i] && t <= t_hi[i])
+                        point.full_tasks.push_back(i);
+
+                // No task can be active here, so the donor wrote no row and
+                // there is nothing to derive from.
+                if (point.tasks.empty() && point.full_tasks.empty())
+                    continue;
+
+                point.kappa = largest_subset_sum_at_most(point.heights, capacity);
+
+                auto divisor = 0_i;
+                for (const auto & h : point.heights)
+                    divisor = Integer{std::gcd(divisor.raw_value, h.raw_value)};
+                point.by_division = (divisor > 1_i && divisor * (capacity / divisor) == point.kappa);
+
+                assessment.kappa = max(assessment.kappa, point.kappa);
+                assessment.time_points.push_back(move(point));
+            }
+
+            // Every task fills the resource on its own, so the tasks the
+            // capacity is a subset sum *of* are none of them and kappa is zero.
+            // That is not a strengthening but a disjunctive, and inferring
+            // those from conflict cliques is what the InferredDisjunctive
+            // presolver does.
+            if (assessment.kappa <= 0_i)
+                return nullopt;
+
+            // kappa is the largest load reachable at any one time point once
+            // the tasks that fill the resource are set aside, so it is what the
+            // capacity really is. If that is the capacity already, and no
+            // task's height changes either, the donor was posted with the
+            // numbers it deserved and there is nothing here.
+            auto raises_a_height =
+                std::any_of(full_tasks.begin(), full_tasks.end(), [&](size_t i) { return candidate.heights[i] != assessment.kappa; });
+            if (assessment.kappa >= capacity && ! raises_a_height)
+                return nullopt;
+
+            return assessment;
+        };
+
+        auto assessed = assess(*view);
+
+        // Converting a variable height is not free. kappa is the largest subset
+        // sum of the heights the capacity allows, so *adding* a task can only
+        // push it up, and a converted task can therefore cost this donor the
+        // very reduction the presolver exists to make: heights {3, 3} under a
+        // capacity of eight give six, and converting a task at a guaranteed
+        // demand of two gives {3, 3, 2}, whose largest subset sum at most eight
+        // is eight --- no strengthening at all where there used to be two units
+        // of one. Against that, the converted task's energy joins the derived
+        // constraint's overload check, which is the only rule it runs.
+        //
+        // Neither direction dominates and both are arithmetic, so work out both
+        // and keep the bigger reduction rather than assuming. A tie goes to the
+        // converted one, which says the same about the capacity over more tasks.
+        if (std::any_of(view->height_bounded_by.begin(), view->height_bounded_by.end(), [](const auto & h) { return h.has_value(); })) {
+            auto without = view->with_converted_heights_set_aside();
+            if (auto set_aside_instead = assess(without); set_aside_instead && (! assessed || set_aside_instead->kappa < assessed->kappa)) {
+                bump(&CumulativeStrengtheningStats::donors_better_off_setting_heights_aside);
+                assessed = move(set_aside_instead);
+                *view = move(without);
+            }
         }
 
-        auto global_lo = t_lo[active_tasks.front()], global_hi = t_hi[active_tasks.front()];
-        for (auto i : active_tasks) {
-            global_lo = min(global_lo, t_lo[i]);
-            global_hi = max(global_hi, t_hi[i]);
-        }
-
-        vector<TimePoint> time_points;
-        auto kappa = 0_i;
-        for (Integer t = global_lo; t <= global_hi; ++t) {
-            TimePoint point{t, {}, {}, {}, 0_i, false};
-            for (auto i : other_tasks)
-                if (t >= t_lo[i] && t <= t_hi[i]) {
-                    point.tasks.push_back(i);
-                    point.heights.push_back(view->heights[i]);
-                }
-            for (auto i : full_tasks)
-                if (t >= t_lo[i] && t <= t_hi[i])
-                    point.full_tasks.push_back(i);
-
-            // No task can be active here, so the donor wrote no row and there is
-            // nothing to derive from.
-            if (point.tasks.empty() && point.full_tasks.empty())
-                continue;
-
-            point.kappa = largest_subset_sum_at_most(point.heights, capacity);
-
-            auto divisor = 0_i;
-            for (const auto & h : point.heights)
-                divisor = Integer{std::gcd(divisor.raw_value, h.raw_value)};
-            point.by_division = (divisor > 1_i && divisor * (capacity / divisor) == point.kappa);
-
-            kappa = max(kappa, point.kappa);
-            time_points.push_back(move(point));
-        }
-
-        // Every task fills the resource on its own, so the tasks the capacity
-        // is a subset sum *of* are none of them and kappa is zero. That is not
-        // a strengthening but a disjunctive, and inferring those from conflict
-        // cliques is what the InferredDisjunctive presolver does.
-        if (kappa <= 0_i) {
+        if (! assessed) {
             bump(&CumulativeStrengtheningStats::declined_nothing_to_gain);
             continue;
         }
 
-        // kappa is the largest load reachable at any one time point once the
-        // tasks that fill the resource are set aside, so it is what the
-        // capacity really is. If that is the capacity already, and no task's
-        // height changes either, the donor was posted with the numbers it
-        // deserved and there is nothing here.
-        auto raises_a_height = std::any_of(full_tasks.begin(), full_tasks.end(), [&](size_t i) { return view->heights[i] != kappa; });
-        if (kappa >= capacity && ! raises_a_height) {
-            bump(&CumulativeStrengtheningStats::declined_nothing_to_gain);
-            continue;
-        }
+        // Counted from the view that was actually used, since the choice above
+        // can turn a converted task back into a set-aside one.
+        if (! view->set_aside.empty())
+            bump(&CumulativeStrengtheningStats::donors_with_set_aside_tasks);
+        for (auto i : view->usable)
+            if (view->height_bounded_by[i])
+                bump(&CumulativeStrengtheningStats::converted_heights);
+
+        const auto & t_lo = assessed->t_lo;
+        const auto & t_hi = assessed->t_hi;
+        const auto & full_tasks = assessed->full_tasks;
+        auto & time_points = assessed->time_points;
+        auto kappa = assessed->kappa;
 
         // Budget the expensive derivations. The dynamic program has a state per
         // reachable partial sum per item, so `items * capacity` bounds it; the

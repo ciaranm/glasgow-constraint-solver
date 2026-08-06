@@ -875,17 +875,25 @@ auto main(int argc, char * argv[]) -> int
             }
         }
 
-        // A variable height on the fifth task, which is the sharper of the two
-        // set-asides: its terms in the donor's rows are the bits of a
-        // linearised contribution rather than `height x active`, so all of them
-        // have to be weakened away and the published contribution key is what
-        // finds them.
+        // A variable height on the fifth task, which a derived constraint can
+        // take at the demand it is *guaranteed* to make --- its lower bound ---
+        // by converting the bits of its linearised contribution back into a
+        // coefficient on its activity flag. Whether it should is the question
+        // this fixture is about, and here the answer is no.
+        //
+        // kappa is the largest subset sum of the heights the capacity allows,
+        // so adding a task can only push it up. Four tasks of height three
+        // under a capacity of eight give six; converting the fifth at a
+        // guaranteed demand of one gives {3, 3, 3, 3, 1}, whose largest subset
+        // sum at most eight is seven. That is a unit of strengthening lost to
+        // gain one task's energy, and the presolver is meant to work both out
+        // and keep the better --- so what this checks is that it did, and set
+        // the task aside after all.
         //
         // Four tasks of energy six need twenty-four in a window four wide,
-        // which six supplies exactly and so does not refute --- the fifth task
-        // is what tipped it over, and it no longer counts. The check here is
-        // that the donor is still strengthened over the other four, and that
-        // nothing is lost.
+        // which six supplies exactly and so does not refute. The check is that
+        // the donor is still strengthened over the other four, and that nothing
+        // is lost.
         {
             auto stats = make_shared<CumulativeStrengtheningStats>();
             const auto inst = base({2, 2}, {1, 3}, {8, 8});
@@ -893,8 +901,15 @@ auto main(int argc, char * argv[]) -> int
 
             if (stats->donors_strengthened != 1)
                 fail("a donor with one variable height was not strengthened over the rest of itself");
+            if (stats->capacity_units_removed != 2_i)
+                fail("the donor was strengthened by " + std::to_string(stats->capacity_units_removed.raw_value) +
+                    " units, not the two the set-aside reaches --- the conversion's seven was kept instead");
+            if (stats->donors_better_off_setting_heights_aside != 1)
+                fail("converting the variable height was not weighed against setting it aside");
+            if (stats->converted_heights != 0)
+                fail("the variable height was converted even though setting it aside strengthens more");
             if (stats->donors_with_set_aside_tasks != 1)
-                fail("a variable height did not set its task aside");
+                fail("the variable height was not set aside after all");
 
             check_solutions("variable height", inst, outcome);
         }
@@ -938,6 +953,42 @@ auto main(int argc, char * argv[]) -> int
             if (solve_general(inst, nullptr, nullopt).refuted_at_root)
                 fail("the donor alone refuted the variable-length instance at the root");
         }
+    }
+
+    // Every height a variable, which is the shape multi-mode RCPSP has: a task
+    // picks a mode, and the mode fixes both its duration and its demand. Before
+    // a variable height could be converted this donor had *no* usable task at
+    // all, so the presolver declined it outright and inferred nothing; now every
+    // task is there at the demand it is guaranteed to make.
+    //
+    // Five tasks of guaranteed height three under a capacity of eight: the
+    // largest subset sum eight allows is six, so the capacity is really six, and
+    // five tasks of energy six need thirty in a window four wide, which six
+    // supplies twenty-four of. The donor cannot reach that for itself from
+    // either end --- its window-energy lemma takes only tasks whose energy is a
+    // number, so its energy set is empty, and no task has a mandatory part to
+    // put in its profile.
+    {
+        auto stats = make_shared<CumulativeStrengtheningStats>();
+        const GeneralInstance inst{
+            {{0, 2}, {0, 2}, {0, 2}, {0, 2}, {0, 2}}, {{2, 2}, {2, 2}, {2, 2}, {2, 2}, {2, 2}}, {{3, 4}, {3, 4}, {3, 4}, {3, 4}, {3, 4}}, {}, {8, 8}};
+        auto outcome = solve_general(inst, stats, proofs ? make_optional("cumulative_strengthening_all_var_heights") : nullopt);
+
+        if (stats->donors_strengthened != 1)
+            fail("a donor whose every height is a variable was not strengthened");
+        if (stats->converted_heights != 5)
+            fail("only " + std::to_string(stats->converted_heights) + " of the five variable heights were converted");
+        if (stats->donors_with_set_aside_tasks != 0)
+            fail("a task was set aside on a donor every one of whose heights converts");
+        if (stats->capacity_units_removed != 2_i)
+            fail("the donor was strengthened by the wrong amount");
+
+        check_solutions("every height a variable", inst, outcome);
+
+        if (! outcome.refuted_at_root)
+            fail("the strengthened energy check did not refute the all-variable-height instance at the root");
+        if (solve_general(inst, nullptr, nullopt).refuted_at_root)
+            fail("the donor alone refuted the all-variable-height instance at the root");
     }
 
     // What is still declined outright: a capacity that is a *view*, whose bits

@@ -41,13 +41,28 @@ namespace gcs
         Integer capacity_units_removed = 0_i;
 
         /// Donors that were strengthened over only part of themselves, because
-        /// a task's height is a variable and so has no constant term in the rows
-        /// the argument is made over. Its terms are weakened away and it takes
-        /// no part; what that costs is a weaker strengthening, never a wrong
-        /// one. Counted because a donor drifting into this looks exactly like
-        /// one that was strengthened in full. A variable *length* is not one of
-        /// these: no length appears in a row, so such a task keeps its term.
+        /// a task could not be argued about at all: a height that is a view,
+        /// whose reification is over its own bit vector, or one whose lower
+        /// bound is zero and so guarantees nothing. Its terms are weakened away
+        /// and it takes no part; what that costs is a weaker strengthening,
+        /// never a wrong one. Counted because a donor drifting into this looks
+        /// exactly like one that was strengthened in full. Neither a variable
+        /// *length* nor an ordinary variable height is one of these any more.
         std::size_t donors_with_set_aside_tasks = 0;
+
+        /// Donors where converting a variable-height task into its guaranteed
+        /// demand would have made the strengthening *worse*, so it was set
+        /// aside after all. Adding a task can only push the largest subset sum
+        /// up, so a conversion can cost a donor the very reduction this
+        /// presolver exists to make; both are worked out and the bigger
+        /// reduction kept. Counted because the two look identical from outside
+        /// and this is the only thing that says the choice was made.
+        std::size_t donors_better_off_setting_heights_aside = 0;
+
+        /// Tasks kept by converting a variable height into its lower bound ---
+        /// the demand the task is guaranteed to make --- rather than setting
+        /// them aside, summed over the donors that kept them.
+        std::size_t converted_heights = 0;
 
         /// Tasks whose height was raised to the strengthened capacity, over
         /// those donors: the other half of what the presolver does, and the
