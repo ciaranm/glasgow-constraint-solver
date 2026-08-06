@@ -59,9 +59,9 @@ Per time point, over the clique members whose window covers it:
 
    Two members is not a special case of that routine but its smallest one, and
    where several of a clique's members share a witnessing row, recovering their
-   whole sub-clique in one step instead of pair by pair is the proof-size fix
-   [#666](https://github.com/ciaranm/glasgow-constraint-solver/issues/666) is
-   about.
+   whole sub-clique in one step instead of pair by pair would make the file
+   smaller — see Proof size, where the measurement and the reason it is not done
+   both are.
 2. **The bridge**, where the witness is not where a task's flags live — which is
    the normal case, since a clique's pairs are witnessed by different resources.
    `recover_conjunction_flag_bridge` carries it across, cached per
@@ -81,15 +81,39 @@ Measured on the three-task family over five time points: **251 lines, 11 KB, 139
 
 The shape is `O(k²)` pair derivations plus `O(k)` bridges plus `O(k)` merge steps,
 **per time point**, so the whole thing is multiplied by the horizon. At eight
-members and a horizon of a thousand that is order 10⁵ lines per clique, and every
-one of them is emitted at `ProofLevel::Top`, where it never dies and taxes every
-later unhinted RUP — the `table_layout15` pathology.
+members and a horizon of a thousand that is order 10⁵ lines per clique.
 
-Only the pinned per-time row needs to outlive the recipe. Deriving the
-intermediates at `Temporary` and forgetting them after each row, or inlining a
-whole time point into a single `pol` so they never enter the checker's database
-at all, is the fix. Neither is done yet, and it is the first thing to do before
-this is pointed at a real instance.
+**None of them stays in the database.** Only the pinned per-time row is ever cited
+again, so the bridges and the pairwise at-most-ones go one proof level deeper than
+the caller's, the merge induction one deeper again, and both are forgotten on the
+way out — the same dance `recover_am1` and `derive_lifted_cover_cut` do, and for
+the same reason. Emitting them at `Top` instead is what
+[#666](https://github.com/ciaranm/glasgow-constraint-solver/issues/666) was
+about: the `table_layout15` pathology, where a bloated live database cost twelve
+times at the root rather than at deletion time.
+
+Measured on `k`-cliques in which every pair has its own witnessing resource, so
+the bridges are at their worst:
+
+| k | time points | `pol` emitted | live before | live after |
+|--:|------------:|--------------:|------------:|-----------:|
+| 3 | 6 | 78 | 84 | 6 |
+| 4 | 8 | 256 | 264 | 8 |
+| 5 | 10 | 580 | 590 | 10 |
+| 6 | 12 | 1092 | 1104 | 12 |
+
+One line per time point survives rather than one per pair per time point, and it
+costs two `del` lines per time point — about 0.3% more proof.
+
+The **file** is another matter, and it is unchanged by this. On a real Pack
+clique (`pack008`, ten members over three resources) a time point emits 72 `pol`
+of bridges and pairwise at-most-ones and 14 of merge induction. Recovering a
+whole sub-clique in one step where members share a witnessing row would cut the
+at-most-ones by about a factor of two on the published Pack targets — 1897
+pairwise lines across the twenty of them become 881 — but it needs an induction
+over sub-clique premises rather than pairwise ones, which is a new derivation
+rather than a rearrangement of this one. Since the cost this file was paying was
+the database and not the bytes, it is not done.
 
 ## Testing it
 
