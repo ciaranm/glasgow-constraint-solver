@@ -278,10 +278,14 @@ auto gcs::innards::prepare_cumulative_overload_check(const vector<IntegerVariabl
     // away, and need not be: the same conversion would serve. The length half
     // is the one that genuinely binds, and #689 is what it would take.
     //
-    // Seam for optional tasks (#543): once a task can be absent, only one
-    // whose presence is fixed true may join the energy set or the profile, and
-    // its presence literal joins the reason. Nothing here consults a presence
-    // variable yet because there is not one to consult.
+    // Presence is not among the tests, and deliberately so. What is asked here
+    // is whether the lemma could *ever* speak about a task, which is a question
+    // about how it was posted and is settled once; whether it may speak about
+    // it now is a question about the search, and is asked at every node, where
+    // the propagator skips a task not yet known present and carries the
+    // presence literals of the ones it did use into the reason. A task that can
+    // never be present at all is gone before this is called, `active_tasks`
+    // having dropped it.
     result.overload_tasks.clear();
     for (auto i : active_tasks) {
         if (! is_constant_variable(lengths[i]) || ! is_constant_variable(heights[i]))

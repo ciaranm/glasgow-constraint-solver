@@ -65,10 +65,15 @@ namespace gcs::innards
         /// wrong sum and nothing here can tell.
         IntegerVariableID length;
 
-        /// Constant by type, which is the v1 restriction made structural: a
-        /// variable height enters a donor's capacity row as a bit-linearised
-        /// contribution rather than as `height x active`, and a derived row
-        /// would have to speak about those bits too.
+        /// A number, by type, and not because a variable height is out of
+        /// reach: it is because the reduction to one has already happened by
+        /// the time a task is built. A variable height enters a donor's
+        /// capacity row as a bit-linearised contribution rather than as
+        /// `height x active`, and recover_constant_argument_row is what turns
+        /// those bits back into a coefficient on the activity flag --- at the
+        /// task's *guaranteed* demand, `lb(height)`, which is the number
+        /// cumulative_donor_view puts here. So a derived row speaks about a
+        /// constant however its donor was posted, and so does the propagator.
         Integer height;
 
         /// The presence argument the donor was posted with at `position`, or

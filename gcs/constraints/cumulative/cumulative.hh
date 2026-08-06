@@ -224,8 +224,9 @@ namespace gcs
         [[nodiscard]] auto lengths() const -> const std::vector<IntegerVariableID> &;
         [[nodiscard]] auto heights() const -> const std::vector<IntegerVariableID> &;
         /// Empty for the non-optional constructors, which is how a caller asks
-        /// "is this an optional-task Cumulative?" --- DerivedCumulativeSpec
-        /// requires a donor for which this is empty.
+        /// "is this an optional-task Cumulative?" --- and what a deriver hands
+        /// straight to derived_cumulative_tasks_from, whose default argument
+        /// says the same thing.
         [[nodiscard]] auto presences() const -> const std::vector<IntegerVariableID> &;
         [[nodiscard]] auto capacity() const -> IntegerVariableID;
         ///@}
