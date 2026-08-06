@@ -314,11 +314,29 @@ stop being strengthened in silence:
 Variable lengths and heights are deliberately **not** on this list either, and
 nor is a variable capacity. `CumulativeDonorView`
 ([`donor_view.hh`](../gcs/constraints/cumulative/donor_view.hh)) reduces a donor
-to the part of itself the argument can be made over, per *task*: one task with a
-variable height is set aside and weakened out of every row, and the rest of the
-donor is strengthened exactly as before. `donors_with_set_aside_tasks` counts the
-donors that happened to, because one strengthened over four of its five tasks
+to the part of itself the argument can be made over, per *task*, and what is left
+as a set-aside is a task that cannot be argued about at all: a height that is a
+view, or one whose lower bound is zero. `donors_with_set_aside_tasks` counts the
+donors that had one, because one strengthened over four of its five tasks
 otherwise looks just like one strengthened in full.
+
+An ordinary variable height is **converted** rather than set aside: its terms in
+a row are the bits of a linearised contribution, and the row saying the
+contribution is at least the height turns them back into a coefficient on the
+activity flag, at the demand the task is guaranteed to make. That is not always a
+gain here, and it is the one place in this presolver where the answer is a
+judgement rather than a rule. `kappa` is the largest subset sum the capacity
+allows, so adding a task can only push it up: heights `{3, 3}` under a capacity
+of eight give six, and converting a fifth task at a guaranteed demand of one
+gives seven — a unit of strengthening surrendered to gain one task's energy in
+the overload check. Both are arithmetic and neither dominates, so the donor is
+assessed both ways and the bigger reduction kept, with
+`donors_better_off_setting_heights_aside` recording when the conversion lost.
+
+Where *every* height is a variable — the multi-mode RCPSP shape, a task picking a
+mode that fixes its duration and its demand — there is no "without" to lose to:
+before conversion such a donor had no usable task at all and was declined
+outright.
 
 A variable **length** is not set aside at all. No length appears in a capacity
 row, so the rows are the same rows; what it costs is the `after` pin, and the
@@ -343,7 +361,7 @@ cancel across that bridge first.
 - **A capacity that is a view.** Its bits are not the ones the donor's rows
   mention, so there is no order literal whose definition would cancel them, and
   nothing to reduce a row against. A *variable* capacity is fine, a variable
-  height costs its own task rather than the donor, and a variable length costs
+  height is converted to the demand it guarantees, and a variable length costs
   nothing — see below.
 - **A height above the capacity**, as above.
 - **Every task full**, which makes `kappa` zero: a disjunctive rather than a

@@ -749,12 +749,16 @@ rows and a recipe reads them identically. What a variable length costs is the
 `after` pin, and that is bought back rather than given up — see *A task whose
 length is a variable*, below.
 
+A variable **height** is a restriction, but a payable one — see *A task whose
+height is a variable*, below. What is left as a genuine set-aside is a height
+that cannot be argued about at all: a view, or one whose lower bound is zero.
+
 `recover_constant_argument_row` does the proof half, and it is one `pol`:
 
-- **A set-aside task** — a variable height — is weakened out of the row with
-  `w`. For a constant height that is one `w` on its activity flag; for a
-  variable height the row's terms for it are the bits of the linearised
-  contribution, so every one of them goes, which is what
+- **A set-aside task** is weakened out of the row with `w`. For a constant
+  height that is one `w` on its activity flag; for a variable height the row's
+  terms for it are the bits of the linearised contribution, so every one of them
+  goes, which is what
   `ConstraintProofModelData<Cumulative>::contribution_flag_key` is published for.
   How many bits there are is not published: ask for bit zero, one, two and so on
   until the tracker has none, the same "is it there?" question a citer asks of
@@ -867,6 +871,99 @@ reification row wants. That the `pol` is load-bearing in general is pinned by
 `cumulative`'s own `len_wide` case, which fails without it. What does catch a
 broken citation here is the install declining, and nothing else.
 
+### A task whose height is a variable
+
+A variable height is the one that touches the rows. A donor's capacity row does
+not contain `height × active` for such a task; it contains the bits of a
+linearised contribution:
+
+```
+C_t :   Σ_{i const} h_i·active_{i,t}  +  Σ_{i var} Σ_k 2^k·cc_{i,t,k}   ≤   capacity
+```
+
+so a subset sum of the heights is not a subset sum of the row's coefficients,
+and nothing a recipe says about that row is a statement about that task. What
+takes it back is the row saying the contribution is *at least* the height, which
+turns those bits into a coefficient on the activity flag again — at the height's
+lower bound, which is the demand the task is guaranteed to make.
+
+**The rows are citable, with cake's names.** `cake_pb_cp` already labels all
+three halves of the contribution definition, as `@c[id][<i>_<t>_cge]`,
+`[<i>_<t>_cle]` and `[<i>_<t>_cz]`, over the same terms and keyed by absolute
+`(task, time)` exactly as the flags are. Ours went out unlabelled, which is what
+made them uncitable; labelling them with cake's names is therefore a conformance
+improvement rather than a divergence, and
+`ConstraintProofModelData<Cumulative>::contribution_ge_row_role` and its two
+siblings publish them.
+
+**The conversion is one hinted RUP** per (variable-height task, time), with `L`
+the height's lower bound:
+
+```
+rup  Σ_k 2^k·cc_{i,t,k} + L·¬active_{i,t} >= L   :  @c[id][<i>_<t>_cge]  <the height's lower-bound line> ;
+```
+
+added to the capacity row with coefficient one, so the bits cancel exactly and
+what is left on that task is `L·active_{i,t}`.
+
+It closes for a reason, which is worth writing down because the alternative is
+believing a pass rate. Negating the target forces `¬active` to zero — its
+coefficient `L` exceeds the slack `L−1` — leaving
+`{Σ2^k·cc_k ≤ L−1, Σ2^k·cc_k ≥ Σ2^j·hb_j, Σ2^j·hb_j ≥ L}` over two
+power-of-two bit counters. Induct on the top bit `2^s`: if `L ≤ 2^s` the negated
+target zeroes `cc_s`, the `cge` row then zeroes `hb_s`, and the same system
+recurs one bit narrower; if `L > 2^s` the bound row forces `hb_s = 1`, `cge`
+forces `cc_s = 1`, and it recurs with `L' = L − 2^s`. Every step is
+single-constraint slack propagation, so any unit-propagation fixpoint finds it
+whatever the order — which is also why the hint order does not matter, and why
+the negated target does not need to be named in the hints.
+
+Swept over several thousand `(L, ub(h), bit width)` shapes before being believed,
+including contribution bits narrower than the height's, which is what happens
+when the install-time upper bound is tighter than the declared one. The negative
+controls fail: a target one stronger than justified is refused, and so is one
+with the bound line withheld from the hints.
+
+The `pol` this replaces is the `cge` row plus the bound, then a **saturate** to
+cap the reification constant down to the degree, then a literal axiom
+`(2^k − min(2^k, L))·cc_k ≥ 0` per bit to put the coefficients back. It works —
+and needs less than it looks, since `ia`'s implication check performs the
+saturate-and-restore itself, so `pol <cge> <lb> + ;` with an `ia` pin is enough.
+It is three times the code and O(bits) more addends than the RUP.
+
+**Which bound.** The one the height has *now*, through
+`need_pol_item_defining_literal`, exactly as the capacity's reduction does and
+for the same reason: the declared bound is a weaker number the moment anything
+has tightened it, and a declared zero would give the conversion up altogether on
+models that reach a height through an `Element` over a mode variable. The unit
+saying the atom holds is what makes the resulting row unconditional, permanently,
+the bound having been reached before the search started.
+
+**What stays set aside** is a height that cannot be argued about at all: a
+**view**, whose reification is emitted over its own bit vector so the height's
+bound rows have nothing to cancel against — and which `bound_rows` cannot even be
+asked about — or a lower bound of zero, which guarantees nothing.
+
+**Converting is not always a gain**, which is the one thing here that is
+arithmetic rather than proof. `kappa` is the largest subset sum of the heights
+the capacity allows, so adding a task can only push it up: heights `{3, 3}` under
+a capacity of eight give six, and converting a task at a guaranteed demand of two
+gives `{3, 3, 2}`, whose largest subset sum at most eight is eight — no
+strengthening where there used to be two units of one. Against that, the
+converted task's energy joins the overload check. `CumulativeStrengthening`
+therefore assesses the donor both ways and keeps the bigger reduction;
+`CumulativeDonorView::with_converted_heights_set_aside` is the other candidate.
+The two multi-donor presolvers need no such choice: a converted task can only add
+a conflict edge or a column.
+
+Unlike the end-proxy publication of the length half, this one has a tripwire. A
+recipe pins what `recover_constant_argument_row` returns with an `ia`, whose
+implication check is syntactic, so a conversion landing on the wrong row is
+refused immediately — which is what `cumulative_strengthening_var_capacity`
+already checks for the capacity half, and what two deliberate corruptions of the
+conversion (claiming one more than the demand, and using `ub(h)` in place of
+`lb(h)`) are caught by in all three presolvers' fixtures.
+
 ### Deriving over an optional donor
 
 A *derived* Cumulative (issue 04) works over an optional donor, and the
@@ -958,8 +1055,10 @@ that gap is now named rather than hidden.
   task now takes part in a derived Cumulative's rows and time-tabling
   (#685), and contributes its mandatory part to the (TTOC) profile term,
   but the window-energy lemma still cannot count its energy: that needs a
-  task's energy to be a number. A variable **height** is still set aside
-  from a derived constraint altogether (#686 is the height half of #685).
+  task's energy to be a number. A variable **height** is converted to the
+  demand it guarantees (#686), which *is* a number — so such a task does
+  join the energy set, and a task with a variable duration and a variable
+  height gets its demand counted but not its energy.
 - **Conditional bounds for optional tasks.** An undecided task's start
   bounds are never pruned, because there is no conditional-bounds store
   and an unconditional prune would be unsound if the task turns out
