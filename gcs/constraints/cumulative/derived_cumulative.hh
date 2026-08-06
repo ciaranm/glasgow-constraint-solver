@@ -57,6 +57,12 @@ namespace gcs::innards
         /// longer single-variable --- so such a task is only usable where its
         /// donor published the `end >= start + length` line the propagator pins
         /// through, which is what install_derived_cumulative goes looking for.
+        ///
+        /// The same caller's-job warning \ref start carries, and only half
+        /// checkable: naming a variable where the donor had a constant is
+        /// declined, there being no proxy to pin through, but naming a
+        /// *different* variable where the donor had one is a proxy for the
+        /// wrong sum and nothing here can tell.
         IntegerVariableID length;
 
         /// Constant by type, which is the v1 restriction made structural: a
